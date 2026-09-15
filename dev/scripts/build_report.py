@@ -1,19 +1,20 @@
 #!/usr/bin/env python3
 """The report pages around the flame graph and the heat map.
 
-  build_report.py test CALLGRIND -o OUT/index.html --test NAME [--log FILE]
-      [--meta LABEL=VALUE ...] [--top 20] [--callers 6] [--repo-root .]
-      One perf test's index page: a toolbar strip that switches between the
-      summary and the sub-pages (loaded into a frame only when picked), and
-      the summary itself -- meta, callgrind totals, the top-N functions by
-      self cost with their callers, the valgrind log.
+  build_report.py test CALLGRIND... -o OUT/index.html --test NAME [--log FILE ...]
+      [--meta LABEL=VALUE ...] [--top 20] [--repo-root .]
+      One perf test's index page: a strip with the page title and the links
+      that switch between the summary and the sub-pages (loaded into a frame
+      only when picked), and the summary itself -- meta, the top-N functions
+      by self cost with their callers, the valgrind log(s). Several callgrind
+      files are merged into one profile (the "all" report).
   build_report.py timing -o OUT/perf-tool/index.html --test NAME --output FILE
       [--meta LABEL=VALUE ...]
       The native timing run: meta and the run's output.
   build_report.py overview -o OUT/index.html --test NAME[=DIR] ...
       [--meta LABEL=VALUE ...]
-      The page over several tests: toolbar of tests, one row per test with
-      the numbers its native run printed.
+      The page over several tests: strip of tests (alphabetical), one row per
+      test with the numbers its native run printed.
 
 Every page inlines dev/scripts/theme.css and theme.js; nothing is fetched
 when a page is opened.
@@ -30,26 +31,38 @@ import callgrind as cg  # noqa: E402
 import theme  # noqa: E402
 from theme import Cell, Col, esc  # noqa: E402
 
-TITLE = "curl performance analyzer"
 PERF_CHART = "https://curl.se/perf/index.html"
-VIEWS = [  # (key, toolbar label, path relative to the test's index.html)
+VIEWS = [  # (key, strip label, path relative to the test's index.html)
     ("flame-graph", "flame graph", "flame-graph/index.html"),
     ("heat-map", "heat map", "heat-map/index.html"),
     ("perf-tool", "native timing", "perf-tool/index.html"),
 ]
-EXTRA_EVENTS = ["D1m", "DLm", "Bcm"]  # per-function miss columns, when the profile has them
-SYMBOL_CHARS = 20                     # visible characters of a function name before it is cut off
+SYMBOL_CHARS = 20   # visible characters of a function name before it is cut off
+LOG_SKIP = 9        # valgrind's banner: tool, copyright, version, command, parent
+                    # pid, blank, cache warning, "For interactive control", blank
 
 FRAME_JS = """\
-// Toolbar: a link with data-view loads its page into the frame (only when
-// picked, never up front); [summary] shows this page again. The choice lives
-// in the hash so it survives reload and can be linked to. Links inside the
-// summary that point at a sub-page (a location in the heat map) open there.
+// Strip: a link with data-view loads its page into the frame (only when
+// picked, never up front); the first link shows this page again. The choice
+// lives in the hash so it survives reload and can be linked to. Links inside
+// the summary that point at a sub-page (a location in the heat map) open
+// there. The title is the picked link's data-title ("urlparser / heat map");
+// a page loaded into the frame that is itself a frame page sends its own
+// title up and hides it, so the outermost strip carries the one title.
 // [reset columns] drops every saved column width, here and (by message, the
 // iframe is another file:// origin) in the page loaded into the frame.
 (function () {
   const bar = document.getElementById("bar"), home = document.getElementById("home"), view = document.getElementById("view");
-  const links = [...bar.querySelectorAll("a[data-view]")];
+  const titleEl = document.getElementById("title"), links = [...bar.querySelectorAll("a[data-view]")];
+  const framed = window.parent !== window;
+  let title = titleEl.textContent;
+  if (framed) titleEl.hidden = true;
+  function setTitle(t) {
+    title = t;
+    titleEl.textContent = t;
+    document.title = t;
+    if (framed) window.parent.postMessage({ theme: "title", title: t }, "*");
+  }
   bar.querySelector("a[data-reset]").addEventListener("click", e => {
     e.preventDefault();
     Theme.reset();
@@ -57,11 +70,13 @@ FRAME_JS = """\
   });
   function show(hash) {
     const m = /^#([\\w-]+)(?:=(.*))?$/.exec(hash);
-    const key = m ? m[1] : "", link = links.find(a => a.dataset.view === key);
-    for (const a of links) a.classList.toggle("on", a === (link || links[0]));
+    const key = m ? m[1] : "", link = links.find(a => a.dataset.view === key), cur = link || links[0];
+    for (const a of links) a.classList.toggle("on", a === cur);
+    setTitle(cur.dataset.title);
     if (!link || !key) { view.hidden = true; home.hidden = false; return; }
     const src = link.getAttribute("href") + (m[2] ? "#" + decodeURIComponent(m[2]) : "");
     if (view.dataset.src !== src) { view.src = src; view.dataset.src = src; }
+    else if (view.contentWindow) view.contentWindow.postMessage("theme:title?", "*");
     home.hidden = true; view.hidden = false;
   }
   function hashFor(href) {
@@ -82,6 +97,10 @@ FRAME_JS = """\
     if (hash == null) return;
     e.preventDefault();
     if (hash === (location.hash || "")) show(hash); else location.hash = hash;
+  });
+  window.addEventListener("message", e => {
+    if (e.data === "theme:title?") setTitle(title);
+    else if (e.data && e.data.theme === "title" && e.source === view.contentWindow) setTitle(e.data.title);
   });
   window.addEventListener("hashchange", () => show(location.hash));
   show(location.hash);
@@ -108,19 +127,19 @@ def read_text(path: str) -> str:
         return f"(missing: {path})"
 
 
-def toolbar(links: list[tuple[str, str, str]]) -> str:
-    """links: (view key or "" for the summary, label, href). Then [reset columns],
-    and [curl.se/perf] pushed to the far right."""
-    parts = [f'<a href="{esc(href)}" data-view="{esc(key)}">[{esc(label)}]</a>' for key, label, href in links]
+def strip(title: str, links: list[tuple[str, str, str, str]], perf_link: bool = False) -> str:
+    """The strip across the top: the title, then the links -- (view key or ""
+    for the page itself, label, href, title to show when picked) -- then
+    [reset columns] and, on the top-level page only, [curl.se/perf] pushed
+    to the far right."""
+    parts = [f'<b class="title" id="title">{esc(title)}</b>']
+    parts += [f'<a href="{esc(href)}" data-view="{esc(key)}" data-title="{esc(t)}">[{esc(label)}]</a>'
+              for key, label, href, t in links]
     parts.append('<a href="#" data-reset title="forget every saved column width">[reset columns]</a>')
-    parts.append('<span class="sp"></span>')
-    parts.append(f'<a href="{PERF_CHART}" target="_blank" rel="noopener">[curl.se/perf]</a>')
-    return f'<nav id="bar">{"".join(parts)}</nav>'
-
-
-def heading(subtitle: str) -> str:
-    return (f'<header><h1>{esc(TITLE)}</h1><a href="{PERF_CHART}">{esc(PERF_CHART)}</a></header>'
-            f"<h2>{esc(subtitle)}</h2>")
+    if perf_link:
+        parts.append('<span class="sp"></span>')
+        parts.append(f'<a href="{PERF_CHART}" target="_blank" rel="noopener">[curl.se/perf]</a>')
+    return f'<nav id="bar" class="strip">{"".join(parts)}</nav>'
 
 
 def meta_table(key: str, pairs: list[tuple[str, str]]) -> str:
@@ -128,15 +147,6 @@ def meta_table(key: str, pairs: list[tuple[str, str]]) -> str:
         return ""
     rows = [[Cell(label, cls="dim"), value] for label, value in pairs]
     return theme.table(key, [Col("label"), Col("value", clip=100)], rows, header=False)
-
-
-TOTALS_GROUPS = "I instruction cache, D data cache, LL last-level cache; events: every total; simulation: cache geometry used"
-
-
-def totals_table(p: cg.Profile) -> str:
-    cols = [Col("group", TOTALS_GROUPS), Col("metric"), Col("value", num=True), Col("detail", clip=72)]
-    rows = [[Cell(g, cls="dim"), m, v, Cell(d, cls="dim")] for g, m, v, d in cg.totals_rows(p)]
-    return theme.table("report.totals", cols, rows)
 
 
 def display_path(repo_root: str, path: str) -> str:
@@ -151,70 +161,50 @@ def display_path(repo_root: str, path: str) -> str:
     return norm
 
 
-def functions_table(p: cg.Profile, event: str, top: int, ncallers: int, repo_root: str) -> str:
-    """Top-N functions by self cost; under each, its callers by call count.
-    The function/caller column is cut off at SYMBOL_CHARS characters; the
-    divider bars are draggable (theme.js)."""
+def functions_table(p: cg.Profile, event: str, top: int, repo_root: str) -> str:
+    """Top-N functions by self cost, one line each: share, symbol (a link to
+    the heat map at its first line, cut off at SYMBOL_CHARS characters),
+    times called, and its callers by share of those calls -- the last
+    column takes the rest of the page and is cut off at the edge."""
     total = p.value(p.totals(), event) or 1
-    extras = [e for e in EXTRA_EVENTS if e in p.event_names() and p.value(p.totals(), e) > 0]
 
-    def where(fn: str) -> tuple[str, str]:
-        """(display text, heat-map link) for a function's entry line."""
+    def entry_link(fn: str) -> str:
+        """Heat-map link to the function's first executed line, if the file is here."""
         ef, el = p.fn_entry.get(fn, (p.fn_home.get(fn, "???"), 0))
         f = display_path(repo_root, ef)
-        if not f:
-            ob = os.path.basename(p.file_ob.get(ef, "") or "")
-            return (f"[{ob}]" if ob else "", "")
-        return (f"{f}:{el}" if el else f, site_link(ef, el))
-
-    def site_link(file: str, line: int) -> str:
-        f = display_path(repo_root, file)
-        if not f or not line or not (os.path.isfile(os.path.join(repo_root, f)) or os.path.isfile(f)):
+        if not f or not el or not (os.path.isfile(os.path.join(repo_root, f)) or os.path.isfile(f)):
             return ""
-        return f"heat-map/index.html#f={esc(f)}&l={line}"
-
-    def loc_cell(text: str, href: str) -> Cell:
-        return Cell(text, html=f'<a href="{href}">{esc(text)}</a>' if href else None)
+        return f"heat-map/index.html#f={esc(f)}&l={el}"
 
     ranked = sorted(((p.value(vec, event), fn) for fn, vec in p.fn_self.items() if p.value(vec, event) > 0),
                     key=lambda t: (-t[0], t[1]))[:top]
     max_pct = 100.0 * ranked[0][0] / total if ranked else 1.0
-    cols = [Col("#", "rank by self cost", num=True),
-            Col("self%", f"share of all {event} spent in the function itself, not in what it calls", num=True),
-            Col(event, p.event_long.get(event, ""), num=True)]
-    cols += [Col(e, p.event_long.get(e, ""), num=True) for e in extras]
-    cols += [Col("calls", "times the function was entered; on a caller row, calls from that caller and their share",
-                 num=True),
-             Col("function", f"the function, then its callers (first {SYMBOL_CHARS} characters; drag the bar for more)",
-                 width=SYMBOL_CHARS),
-             Col("defined at", "file:line of the function's first executed line; links open the heat map there",
-                 clip=48)]
+    cols = [Col("% self", f"share of all {event} spent in the function itself, not in what it calls", num=True),
+            Col("symbol", f"the function, first {SYMBOL_CHARS} characters (drag the bar for more); "
+                          "opens the heat map at its first line", width=SYMBOL_CHARS),
+            Col("calls", "times the function was entered", num=True),
+            Col("callers", "who called it, with the share of those calls; cut off at the edge, hover for all")]
     rows: list[list[object]] = []
-    for rank, (s, fn) in enumerate(ranked, 1):
-        ncalls = sum(c for c, _ in p.callers.get(fn, {}).values())
-        pct = 100.0 * s / total
-        row: list[object] = [str(rank), Cell(f"{pct:.2f}%", style=theme.heat_style(theme.heat_t(pct, max_pct))),
-                             f"{s:,}"]
-        row += [f"{p.value(p.fn_self[fn], e):,}" for e in extras]
-        row += [f"{ncalls:,}×" if ncalls else "", Cell(fn, title=fn), loc_cell(*where(fn))]
-        rows.append(row)
-        callers = sorted(p.callers.get(fn, {}).items(), key=lambda kv: (-kv[1][0], kv[0][0]))
-        if not callers:
-            rows.append(["", "", ""] + [""] * len(extras) + ["", Cell("(no recorded caller)", cls="dim"), ""])
-        for (cfn, cfile, cline), (count, _) in callers[:ncallers]:
-            share = 100.0 * count / ncalls if ncalls else 0.0
-            text = display_path(repo_root, cfile)
-            text = f"{text}:{cline}" if text and cline else text
-            rows.append(["", "", ""] + [""] * len(extras)
-                        + [Cell(f"{count:,}× {share:5.1f}%", cls="dim"), Cell(f"↳ {cfn}", cls="dim", title=cfn),
-                           Cell(text, cls="dim", html=(f'<a href="{site_link(cfile, cline)}">{esc(text)}</a>'
-                                                       if site_link(cfile, cline) else None))])
-        if len(callers) > ncallers:
-            rest = sum(c for _, (c, _) in callers[ncallers:])
-            rows.append(["", "", ""] + [""] * len(extras)
-                        + [Cell(f"{rest:,}×", cls="dim"),
-                           Cell(f"↳ +{len(callers) - ncallers} more callers", cls="dim"), ""])
-    return theme.table("report.functions", cols, rows)
+    for s, fn in ranked:
+        by_caller: dict[str, int] = {}
+        for (cfn, _, _), (count, _) in p.callers.get(fn, {}).items():
+            by_caller[cfn] = by_caller.get(cfn, 0) + count
+        ncalls = sum(by_caller.values())
+        share = 100.0 * s / total
+        href = entry_link(fn)
+        who = ", ".join(f"{cfn} ({theme.pct(100.0 * n / ncalls)})"
+                        for cfn, n in sorted(by_caller.items(), key=lambda kv: (-kv[1], kv[0])))
+        rows.append([Cell(theme.pct(share), style=theme.heat_style(theme.heat_t(share, max_pct))),
+                     Cell(fn, title=fn, html=f'<a href="{href}">{esc(fn)}</a>' if href else None),
+                     theme.human(ncalls) if ncalls else "",
+                     Cell(who, title=who) if who else Cell("(no recorded caller)", cls="dim")])
+    return theme.table("report.functions", cols, rows, fill=True, lines=True)
+
+
+def log_block(path: str) -> str:
+    """The valgrind log without its LOG_SKIP-line banner."""
+    lines = read_text(path).rstrip().split("\n")[LOG_SKIP:]
+    return f"<pre>{esc(chr(10).join(lines))}</pre>"
 
 
 def write(path: str, page: str) -> None:
@@ -228,8 +218,7 @@ def write(path: str, page: str) -> None:
 
 
 def cmd_test(args: argparse.Namespace) -> None:
-    with open(args.callgrind_file, encoding="utf-8", errors="replace") as f:
-        p = cg.parse_callgrind(f.read())
+    p = cg.load(args.callgrind_file)
     if not p.events:
         sys.exit("error: no 'events:' line -- not a callgrind file?")
     if args.event not in p.event_names():
@@ -239,23 +228,24 @@ def cmd_test(args: argparse.Namespace) -> None:
     if total and abs(ratio - 1.0) > 1e-6:
         sys.exit("error: per-line self cost does not add up to callgrind's summary")
 
-    body = toolbar([("", "summary", "#")] + [(k, label, path) for k, label, path in VIEWS])
-    body += '<main id="home"><div class="page">' + heading(args.test)
-    body += meta_table("report.meta", meta_pairs(args.meta))
-    body += "<h2>callgrind totals</h2>" + totals_table(p)
-    body += (f"<h2>top {args.top} functions by self {esc(args.event)}</h2>"
-             + functions_table(p, args.event, args.top, args.callers, args.repo_root))
+    links = [("", "summary", "#", args.test)] + [(k, label, path, f"{args.test} / {label}") for k, label, path in VIEWS]
+    body = strip(args.test, links)
+    body += '<main id="home"><div class="page">' + meta_table("report.meta", meta_pairs(args.meta))
+    body += f"<h2>top {args.top} functions by self</h2>" + functions_table(p, args.event, args.top, args.repo_root)
     if args.log:
-        body += f"<details><summary>valgrind log</summary><pre>{esc(read_text(args.log).rstrip())}</pre></details>"
+        body += "<h2>valgrind log</h2>"
+        for log in args.log:
+            if len(args.log) > 1:
+                body += f"<p>{esc(os.path.basename(log))}</p>"
+            body += log_block(log)
     body += '</div></main><iframe id="view" hidden title="report page"></iframe>'
-    write(args.output, theme.document(f"{TITLE}: {args.test}", body, extra_js=FRAME_JS, body_class="frame"))
+    write(args.output, theme.document(args.test, body, extra_js=FRAME_JS, body_class="frame"))
 
 
 def cmd_timing(args: argparse.Namespace) -> None:
-    body = '<div class="page">' + heading(f"{args.test}: native timing run")
-    body += meta_table("timing.meta", meta_pairs(args.meta))
+    body = '<div class="page">' + meta_table("timing.meta", meta_pairs(args.meta))
     body += f"<h2>output</h2><pre>{esc(read_text(args.output_file).rstrip())}</pre></div>"
-    write(args.output, theme.document(f"{TITLE}: {args.test} timing", body))
+    write(args.output, theme.document(f"{args.test} / native timing", body))
 
 
 def cmd_overview(args: argparse.Namespace) -> None:
@@ -264,6 +254,7 @@ def cmd_overview(args: argparse.Namespace) -> None:
     for item in args.test:
         name, _, d = item.partition("=")
         tests.append((name, d or os.path.join(out_dir, name)))
+    tests.sort()
     # every "label: value" line a native run printed, columns in first-seen order
     keys: list[str] = []
     numbers: dict[str, dict[str, str]] = {}
@@ -276,16 +267,16 @@ def cmd_overview(args: argparse.Namespace) -> None:
                 if m.group(1) not in keys:
                     keys.append(m.group(1))
         numbers[name] = vals
-    cols = [Col("test", "one report per test; the toolbar switches between them")]
+    cols = [Col("test", "one report per test; the strip switches between them")]
     cols += [Col(k, num=True) for k in keys]
     rows = [[Cell(name, html=f'<a href="{esc(name)}/index.html">{esc(name)}</a>')] + [numbers[name].get(k, "") for k in keys]
             for name, _ in tests]
-    body = toolbar([("", "overview", "#")] + [(name, name, f"{name}/index.html") for name, _ in tests])
-    body += '<main id="home"><div class="page">' + heading("all perf tests")
-    body += meta_table("overview.meta", meta_pairs(args.meta))
+    links = [("", "overview", "#", "overview")] + [(name, name, f"{name}/index.html", name) for name, _ in tests]
+    body = strip("overview", links, perf_link=True)
+    body += '<main id="home"><div class="page">' + meta_table("overview.meta", meta_pairs(args.meta))
     body += "<h2>native timing runs</h2>" + theme.table("overview.tests", cols, rows)
     body += '</div></main><iframe id="view" hidden title="report page"></iframe>'
-    write(args.output, theme.document(TITLE, body, extra_js=FRAME_JS, body_class="frame"))
+    write(args.output, theme.document("overview", body, extra_js=FRAME_JS, body_class="frame"))
 
 
 def main() -> None:
@@ -293,14 +284,13 @@ def main() -> None:
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     t = sub.add_parser("test", help="one perf test's index page")
-    t.add_argument("callgrind_file")
+    t.add_argument("callgrind_file", nargs="+", help="callgrind output file(s); several are merged into one profile")
     t.add_argument("-o", "--output", required=True)
     t.add_argument("--test", required=True, help="perf test name")
     t.add_argument("--meta", action="append", metavar="LABEL=VALUE", default=[])
-    t.add_argument("--log", help="valgrind log to include")
+    t.add_argument("--log", action="append", default=[], help="valgrind log to include (repeatable)")
     t.add_argument("--event", default="Ir", help="event that ranks the functions (default: Ir)")
     t.add_argument("--top", type=int, default=20)
-    t.add_argument("--callers", type=int, default=6, help="callers listed per function (default: 6)")
     t.add_argument("--repo-root", default=".")
     t.set_defaults(run=cmd_test)
 

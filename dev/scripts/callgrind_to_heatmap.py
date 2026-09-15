@@ -18,12 +18,13 @@ file:// or mailed around.
 Parsing and per-line attribution live in callgrind.py (same directory) and
 mirror callgrind_annotate exactly; the self-check ratio it computes (sum of
 self-cost lines / callgrind's own summary) is printed to stderr on every run
-and must be 1.0000. Colors, fonts and table behaviour come from theme.py.
+and must be 1.0000. Several callgrind files are merged into one profile.
+Colors, fonts and table behaviour come from theme.py.
 
 Usage:
-  callgrind_to_heatmap.py callgrind.out.X -o report/heat-map/index.html \
-      [--event Ir] [--repo-root .] [--tree lib include src tests/perf] \
-      [--all-sources] [--title "..."]
+  callgrind_to_heatmap.py callgrind.out.X [callgrind.out.Y ...] \
+      -o report/heat-map/index.html [--event Ir] [--repo-root .] \
+      [--tree lib include src tests/perf] [--all-sources] [--title "..."]
 """
 from __future__ import annotations
 
@@ -205,7 +206,6 @@ def build_model(p: cg.Profile, args: argparse.Namespace, src_name: str) -> dict:
             "derived": derived,
             "defaultEvent": default_event,
             "totals": p.totals(),
-            "totalsRows": cg.totals_rows(p),
             "cmd": p.cmd,
             "source": src_name,
             "generated": _dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -225,11 +225,9 @@ def build_model(p: cg.Profile, args: argparse.Namespace, src_name: str) -> dict:
 
 CSS = """\
 body { display: flex; flex-direction: column; height: 100vh; }
-#hdr { display: flex; gap: 4px 14px; align-items: center; flex-wrap: wrap; flex: none;
-  padding: 5px 14px; background: var(--nav); border-bottom: 1px solid var(--bar); }
-#hdr h1 { font-size: 13px; margin: 0; white-space: nowrap; }
-#hdr h1 a { color: var(--accent); }
-#hdr .meta, #hdr label { color: var(--muted); white-space: nowrap; }
+#hdr { gap: 4px 14px; }
+#hdr .meta { color: var(--muted); }
+#hdr label { color: var(--muted); white-space: nowrap; }
 #hdr input { width: 18ch; }
 .legend { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); }
 .legend i { display: inline-block; width: 96px; height: 10px; border-radius: 2px; background: var(--heat); }
@@ -271,7 +269,7 @@ table.src tr.target td { box-shadow: inset 0 0 0 2px var(--accent); }
 table.src tr.detail td { white-space: normal; overflow: visible; padding: 0; }
 .dbox { margin: 3px 12px 8px; padding: 6px 12px; background: var(--panel); border: 1px solid var(--bar); border-radius: 4px; }
 .dbox h4 { margin: 6px 0 2px; font-size: 12px; color: var(--muted); font-weight: 600; }
-.dbox .tbl { max-height: 40vh; background: var(--bg); }
+.dbox .tbl { background: var(--bg); }
 .home { padding: 12px 14px 40px; }
 .home h2:first-of-type { margin-top: 10px; }
 @media (max-width: 720px) {
@@ -282,8 +280,8 @@ table.src tr.detail td { white-space: normal; overflow: visible; padding: 0; }
 }
 """
 
-BODY = """<div id="hdr">
-  <h1><a id="homelink" href="#">__TITLE__</a></h1>
+BODY = """<div id="hdr" class="strip">
+  <a id="homelink" href="#" title="the hottest lines and functions">[home]</a>
   <span class="meta" id="hmeta"></span>
   <label>event <select id="event"></select></label>
   <label>find <input id="q" type="search" placeholder="file name\u2026"></label>
@@ -353,10 +351,16 @@ function recomputeScale() {
 // ---------- helpers ----------
 const esc = s => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 const pct = v => 100 * v / TOTAL;
-const fmtP = p => p >= 10 ? p.toFixed(1) + "%" : p >= 0.01 ? p.toFixed(2) + "%" : p > 0 ? "<0.01%" : "";
+const fmtP = p => p >= 9.95 ? p.toFixed(1) + "%" : p >= 0.01 ? p.toFixed(2) + "%" : p > 0 ? "<0.01%" : ""; // theme.pct()
 const fmtPct = v => fmtP(pct(v));
-const fmtN = v => v.toLocaleString("en-US");
-const fmtCount = v => v.toLocaleString("en-US") + "\\u00d7";
+const fmtN = v => v.toLocaleString("en-US"); // exact; tooltips only
+// 2.1K, 21K, 210K, 2.1M, 2.0G: at least two meaningful digits (theme.human() in theme.py)
+function fmtH(v) {
+  let unit = "";
+  for (const u of ["K", "M", "G", "T"]) { if (v < 999.5) break; v /= 1000; unit = u; }
+  return (unit && v < 9.95 ? v.toFixed(1) : v.toFixed(0)) + unit;
+}
+const num = v => ({ text: fmtH(v), title: fmtN(v) }); // a count cell: short, exact on hover
 const PMIN = 0.001; // lines below 0.001% of total stay uncolored in log mode
 function heatP(p, maxP) {
   if (p <= 0) return 0;
@@ -526,16 +530,8 @@ function topLines(n) {
 const SELF = { label: "self", title: "share of the total spent on this line/function itself, not in what it calls", num: true };
 function renderHome() {
   curFile = null;
-  const groups = [...TREE.dirs.values()].sort((a, b) => b.self - a.self);
   let h = `<div class="home">`;
-  h += `<p><b>${esc(ev.key)}</b> = ${esc(ev.long || ev.key)}. Every percentage is the share of the <b>${fmtN(TOTAL)}</b> total for that event. Click a file in the tree, or a line below. In a listing, click a line number to see every event for that line, what it calls (and, on a function's first line, who calls it). Pick another event in the header to re-color everything by cache misses or branch mispredicts.</p>`;
-  h += `<h2>Callgrind totals</h2>` + table("heat.totals",
-    [{ label: "group", title: "I instruction cache, D data cache, LL last-level cache; events: every total; simulation: cache geometry used" },
-     { label: "metric" }, { label: "value", num: true }, { label: "detail", clip: 72 }],
-    D.meta.totalsRows.map(r => [{ text: r[0], cls: "dim" }, r[1], r[2], { text: r[3], cls: "dim" }]));
-  h += `<h2>Where ${esc(ev.key)} goes</h2>` + table("heat.home.tree",
-    [{ label: "tree", title: "top-level directory of the source tree" }, SELF, evCol(ev)],
-    groups.map(g => [g.name + "/", { text: fmtPct(g.self), style: heatBg(heatT(g.self, 100)) }, fmtN(g.self)]));
+  h += `<p><b>${esc(ev.key)}</b> = ${esc(ev.long || ev.key)}. Every percentage is the share of the <b title="${fmtN(TOTAL)}">${fmtH(TOTAL)}</b> total for that event. Click a file in the tree, or a line below. In a listing, click a line number to see every event for that line, what it calls (and, on a function's first line, who calls it). Pick another event in the header to re-color everything by cache misses or branch mispredicts.</p>`;
   h += `<h2>Hottest lines by ${esc(ev.key)}</h2>` + table("heat.home.lines",
     [{ label: "#", title: "rank", num: true }, SELF, evCol(ev), ...extraCols(),
      { label: "location", title: "file:line; opens the listing there", clip: 28 },
@@ -543,7 +539,7 @@ function renderHome() {
      { label: "source", title: "the source line, trimmed; drag the bar for more", clip: 36 }],
     topLines(60).map((t, i) => {
       const [path, ln, cost, fnidx, snip] = t, rec = files[path].lines[ln];
-      return [String(i + 1), { text: fmtPct(cost), style: heatBg(heatT(cost, MAXP)) }, fmtN(cost), ...extraCells(rec[0]),
+      return [String(i + 1), { text: fmtPct(cost), style: heatBg(heatT(cost, MAXP)) }, num(cost), ...extraCells(rec[0]),
               { text: path + ":" + ln, html: link(path, ln, path + ":" + ln) }, { text: fnName(fnidx), title: fnName(fnidx) }, snip];
     }));
   const topF = fns.map((f, i) => [i, val(f.self)]).filter(t => t[1] > 0).sort((a, b) => b[1] - a[1]).slice(0, 60);
@@ -555,7 +551,7 @@ function renderHome() {
     topF.map(([fi, s], i) => {
       const f = fns[fi], loc = f.line ? f.file + ":" + f.line : f.file, ncalls = f.callers.reduce((a, c) => a + c[4], 0);
       return [String(i + 1), { text: fmtPct(s), style: heatBg(heatT(s, MAXP)) }, fmtPct(s + val(f.calls)), ...extraCells(f.self),
-              ncalls ? fmtCount(ncalls) : "", { text: f.name, title: f.name }, { text: loc, html: link(f.file, f.line, loc) }];
+              ncalls ? num(ncalls) : "", { text: f.name, title: f.name }, { text: loc, html: link(f.file, f.line, loc) }];
     }));
   h += `</div>`;
   mainEl.innerHTML = h;
@@ -575,8 +571,8 @@ function renderFile(path, line) {
   for (const rec of Object.values(lines)) { const s = val(rec[0]); if (s > fmax) fmax = s; }
   const maxP = scale === "file" ? Math.max(pct(fmax), 0.0001) : MAXP;
   let h = `<div class="fhead band"><span class="path">${esc(path)}</span>`;
-  h += `<span class="stat">self <b>${fmtPct(val(f.self)) || "0%"}</b> (${fmtN(val(f.self))} ${esc(ev.key)})</span>`;
-  for (const x of EXTRA) { const s = x.get(f.self); if (s) h += `<span class="stat" title="${esc(x.long)}">${esc(x.key)} <b>${fmtP(100 * s / MAXPX[x.key].total)}</b> (${fmtN(s)})</span>`; }
+  h += `<span class="stat" title="${fmtN(val(f.self))}">self <b>${fmtPct(val(f.self)) || "0%"}</b> (${fmtH(val(f.self))} ${esc(ev.key)})</span>`;
+  for (const x of EXTRA) { const s = x.get(f.self); if (s) h += `<span class="stat" title="${esc(x.long)}: ${fmtN(s)}">${esc(x.key)} <b>${fmtP(100 * s / MAXPX[x.key].total)}</b> (${fmtH(s)})</span>`; }
   if (f.group === "external") h += `<span class="stat">not in this repo (${esc(f.raw)})</span>`;
   h += `</div>`;
   const cols = [{ label: "line", num: true }, evCol(ev, { title: ev.long + ", share of total, spent on the line itself" }),
@@ -598,7 +594,7 @@ function renderFile(path, line) {
     const self = rec ? val(rec[0]) : 0, calls = rec ? val(rec[1]) : 0;
     const t = heatT(self, maxP), hs = heatBg(t);
     const fnidx = f.lfn[ln];
-    const title = rec ? `${fmtN(self)} ${ev.key} self, ${fmtN(calls)} in calls${rec[2] ? " (" + fmtCount(rec[2]) + ")" : ""}${fnidx != null ? " \\u2014 in " + fnName(fnidx) : ""}` : "";
+    const title = rec ? `${fmtN(self)} ${ev.key} self, ${fmtN(calls)} in calls${rec[2] ? " over " + fmtH(rec[2]) + " calls" : ""}${fnidx != null ? " \\u2014 in " + fnName(fnidx) : ""}` : "";
     const xs = rec ? extraCells(rec[0]).map(c => `<td class="n x${c.cls ? " " + c.cls : ""}" style="${c.style}" title="${esc(c.title)}">${esc(c.text)}</td>`).join("") : EXTRA.map(() => `<td class="n x"></td>`).join("");
     rows.push(`<tr id="L${ln}" class="${f.callees[ln] ? "hasc" : ""}${line === ln ? " target" : ""}${hs ? " heat" : ""}" style="${hs}"${title ? ` title="${esc(title)}"` : ""}><td class="n ln" data-ln="${ln}">${ln}</td><td class="n self${t > 0.45 ? " hot" : ""}">${self ? fmtPct(self) : ""}</td><td class="n incl">${calls ? fmtPct(calls) : ""}</td>${xs}<td class="code">${text == null ? "" : esc(text)}</td></tr>`);
   };
@@ -634,7 +630,7 @@ function eventTable(selfv, callsv) {
   for (const e of EVS) {
     const s = e.get(selfv), c = e.get(callsv), tot = e.get(D.meta.totals) || 1;
     if (!s && !c) continue;
-    rows.push([{ text: e.key, style: e === ev ? "font-weight:600" : "" }, fmtN(s), fmtP(100 * s / tot) || "0%", c ? fmtN(c) : "", { text: e.long, cls: "dim" }]);
+    rows.push([{ text: e.key, style: e === ev ? "font-weight:600" : "" }, num(s), fmtP(100 * s / tot) || "0%", c ? num(c) : "", { text: e.long, cls: "dim" }]);
   }
   return table("heat.detail.events",
     [{ label: "event" }, { label: "self", num: true }, { label: "% of total", num: true },
@@ -656,14 +652,14 @@ function toggleDetail(path, ln, forceOpen) {
   const fnCol = label => ({ label, title: `first ${SYMBOL_CHARS} characters; drag the bar for more`, width: SYMBOL_CHARS });
   const locCol = { label: "defined at", title: "file:line of the function's first executed line", clip: 48 };
   let h = `<div class="dbox">`;
-  h += `<div>line ${ln}${fnidx != null ? " in <b>" + esc(fnName(fnidx)) + "</b>" : ""}: self ${fmtN(val(rec[0]))} ${esc(ev.key)} (${fmtPct(val(rec[0])) || "0%"})${val(rec[1]) ? `, calls ${fmtN(val(rec[1]))} (${fmtPct(val(rec[1]))}) over ${fmtCount(rec[2])}` : ""}</div>`;
+  h += `<div>line ${ln}${fnidx != null ? " in <b>" + esc(fnName(fnidx)) + "</b>" : ""}: self ${fmtH(val(rec[0]))} ${esc(ev.key)} (${fmtPct(val(rec[0])) || "0%"})${val(rec[1]) ? `, calls ${fmtH(val(rec[1]))} (${fmtPct(val(rec[1]))}) over ${fmtH(rec[2])} calls` : ""}</div>`;
   h += `<h4>all events on this line</h4>` + eventTable(rec[0], rec[1]);
   if (callees.length) {
     h += `<h4>calls from this line (inclusive ${esc(ev.key)})</h4>` + table("heat.detail.callees",
       [{ label: "% of total", num: true }, evCol(ev), { label: "call count", num: true }, fnCol("callee"), locCol],
       callees.map(([ci, cf, cl, vec, count]) => {
         const loc = cl ? cf + ":" + cl : cf;
-        return [fmtPct(val(vec)), fmtN(val(vec)), fmtCount(count), { text: fnName(ci), title: fnName(ci) }, { text: loc, html: link(cf, cl, loc) }];
+        return [fmtPct(val(vec)), num(val(vec)), num(count), { text: fnName(ci), title: fnName(ci) }, { text: loc, html: link(cf, cl, loc) }];
       }), { noLegend: true });
   }
   if (fi != null) {
@@ -674,7 +670,7 @@ function toggleDetail(path, ln, forceOpen) {
       [{ label: "call count", num: true }, { label: "% of total", num: true }, evCol(ev), fnCol("caller"), { label: "called at", title: "file:line of the call", clip: 48 }],
       callers.map(([ci, cf, cl, vec, count]) => {
         const loc = cl ? cf + ":" + cl : cf;
-        return [fmtCount(count), fmtPct(val(vec)), fmtN(val(vec)), { text: fnName(ci), title: fnName(ci) }, { text: loc, html: link(cf, cl, loc) }];
+        return [num(count), fmtPct(val(vec)), num(val(vec)), { text: fnName(ci), title: fnName(ci) }, { text: loc, html: link(cf, cl, loc) }];
       }), { noLegend: true }) : `<div class="dim">(no recorded caller \\u2014 a root or a resolver stub)</div>`;
   }
   if (!callees.length && fi == null) h += `<div class="dim">no calls recorded from this line</div>`;
@@ -696,6 +692,7 @@ mainEl.addEventListener("click", ev2 => {
 // ---------- routing ----------
 function route() {
   const m = /^#f=([^&]*)(?:&l=(\\d+))?/.exec(location.hash);
+  document.getElementById("homelink").classList.toggle("on", !m);
   if (m) renderFile(decodeURIComponent(m[1]), m[2] ? +m[2] : 0);
   else renderHome();
 }
@@ -705,7 +702,7 @@ function setEvent(key) {
   recomputeScale();
   TREE = buildTree();
   for (const d of TREE.dirs.values()) if (d.self / TOTAL > 0.05) openDirs.add(d.path);
-  document.getElementById("hmeta").textContent = `${D.meta.cmd || ""} \\u00b7 ${fmtN(TOTAL)} ${ev.key} \\u00b7 ${D.meta.source} \\u00b7 ${D.meta.generated}`;
+  document.getElementById("hmeta").textContent = `${D.meta.cmd || ""} \\u00b7 ${fmtH(TOTAL)} ${ev.key} \\u00b7 ${D.meta.source} \\u00b7 ${D.meta.generated}`;
   route();
 }
 window.addEventListener("hashchange", route);
@@ -723,7 +720,7 @@ setEvent(ev.key);
 def render_html(model: dict, title: str) -> str:
     data = json.dumps(model, separators=(",", ":"), ensure_ascii=False)
     data = data.replace("</", "<\\/")  # never close our own <script>
-    body = BODY.replace("__TITLE__", theme.esc(title)).replace("__THEME_JS__", theme.js()).replace("__DATA__", data)
+    body = BODY.replace("__THEME_JS__", theme.js()).replace("__DATA__", data)
     return ("<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n"
             "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n"
             f"<title>{theme.esc(title)}</title>\n<style>\n{theme.css()}{CSS}</style>\n</head>\n<body>\n"
@@ -735,7 +732,7 @@ def render_html(model: dict, title: str) -> str:
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("callgrind_file")
+    ap.add_argument("callgrind_file", nargs="+", help="callgrind output file(s); several are merged into one profile")
     ap.add_argument("-o", "--output", required=True, help="output .html path (directories are created)")
     ap.add_argument("--event", default="Ir", help="event selected when the page opens (default: Ir)")
     ap.add_argument("--repo-root", default=".", help="repository root the profile's paths are relative to")
@@ -746,13 +743,14 @@ def main() -> None:
     ap.add_argument("--title", default=None)
     args = ap.parse_args()
 
-    with open(args.callgrind_file, encoding="utf-8", errors="replace") as f:
-        text = f.read()
-    prof = cg.parse_callgrind(text)
+    prof = cg.load(args.callgrind_file)
     if not prof.events:
         sys.exit("error: no 'events:' line -- not a callgrind file?")
+    src_name = os.path.basename(args.callgrind_file[0])
+    if len(args.callgrind_file) > 1:
+        src_name += f" + {len(args.callgrind_file) - 1} more"
     if args.title is None:
-        args.title = f"heatmap: {prof.cmd or os.path.basename(args.callgrind_file)}"
+        args.title = f"heat map: {prof.cmd or src_name}"
 
     self_sum, total, ratio = cg.self_check(prof)
     print(f"events: {' '.join(prof.events)}", file=sys.stderr)
@@ -763,7 +761,7 @@ def main() -> None:
         print("error: per-line self cost does not add up to callgrind's summary; refusing to write", file=sys.stderr)
         sys.exit(2)
 
-    model = build_model(prof, args, os.path.basename(args.callgrind_file))
+    model = build_model(prof, args, src_name)
     html = render_html(model, args.title)
     out_dir = os.path.dirname(os.path.abspath(args.output))
     os.makedirs(out_dir, exist_ok=True)

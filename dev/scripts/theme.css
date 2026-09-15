@@ -8,38 +8,38 @@ body { background: var(--bg); color: var(--fg); font: 12px/1.5 var(--font); }
 a { color: var(--link); text-decoration: none; }
 a:hover { text-decoration: underline; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-h1 { font-size: 16px; font-weight: 600; color: var(--accent); margin: 0; }
 h2 { font-size: 12px; font-weight: 600; color: var(--fg-dim); margin: 22px 0 6px; }
 p { margin: 4px 0; color: var(--muted); max-width: 96ch; }
 b { color: var(--fg); font-weight: 600; }
 pre { font: inherit; margin: 0; white-space: pre; overflow-x: auto; }
 select, input { font: inherit; color: var(--fg); background: var(--bg);
   border: 1px solid var(--bar); border-radius: 3px; padding: 2px 6px; }
-details > summary { cursor: pointer; color: var(--fg-dim); font-weight: 600; margin: 22px 0 6px; }
 
-/* toolbar strip: [links] the old-fashioned way; the current one is lit */
-#bar { display: flex; flex-wrap: wrap; gap: 2px 8px; align-items: center; flex: none;
+/* strip: the page's title, then [links] the old-fashioned way; the current
+   one is lit. The frame pages' toolbar and the heat map's header are strips. */
+.strip { display: flex; flex-wrap: wrap; gap: 2px 8px; align-items: center; flex: none;
   padding: 5px 12px; background: var(--nav); border-bottom: 1px solid var(--bar); }
-#bar a { padding: 0 2px; white-space: nowrap; }
-#bar a:hover { background: var(--link); color: var(--nav); text-decoration: none; }
-#bar a.on { color: var(--accent); }
-#bar .sp { flex: 1; }
+.strip a { padding: 0 2px; white-space: nowrap; }
+.strip a:hover { background: var(--link); color: var(--nav); text-decoration: none; }
+.strip a.on { color: var(--accent); }
+.strip .title { font-size: 13px; font-weight: 600; color: var(--accent); margin-right: 6px; white-space: nowrap; }
+.strip .sp { flex: 1; }
 
-/* frame: the toolbar over either the summary page (centered) or an iframe */
+/* frame: the toolbar over either the summary page or an iframe */
 body.frame { display: flex; flex-direction: column; height: 100vh; }
-body.frame > main { flex: 1; min-height: 0; overflow: auto; display: flex; }
-body.frame > main > .page { margin: auto; max-width: 100%; }
+body.frame > main { flex: 1; min-height: 0; overflow: auto; }
 body.frame > iframe { flex: 1; min-height: 0; width: 100%; border: 0; background: var(--bg); }
-.page { padding: 32px 36px 48px; }
-.page header { margin-bottom: 18px; }
-.page header a { display: block; margin-top: 2px; }
+.page { padding: 24px 36px 48px; }
 
 /* tables: no borders except the column divider bars; alternate columns shaded;
-   a legend banner and the header row stay put while the box scrolls.
-   Column widths are set in ch by the generators: content + 1ch padding each
-   side + 1ch slack for the divider bar and fractional rounding. */
-.tbl { position: relative; overflow: auto; max-height: 70vh; width: fit-content; max-width: 100%;
-  margin: 4px 0 10px; border: 1px solid var(--bar); border-radius: 4px; }
+   a legend banner and the header row stay put while the page scrolls past
+   the table. The box never scrolls on its own: it is as long as the table,
+   and as wide (or, with .fill, as wide as the page, the last column cut off
+   at the edge). Column widths are set in ch by the generators: content +
+   1ch padding each side + 1ch slack for the divider bar and fractional
+   rounding. */
+.tbl { position: relative; width: fit-content; margin: 4px 0 10px; border: 1px solid var(--bar); border-radius: 4px; }
+.tbl.fill { width: 100%; }
 .tbl-legend { display: flex; flex-wrap: wrap; gap: 1px 18px; width: 0; min-width: 100%;
   padding: 4px 10px; color: var(--muted); background: var(--panel); }
 .band { position: sticky; top: 0; z-index: 2; }
@@ -54,12 +54,19 @@ table.cols th { position: sticky; top: 0; z-index: 1; text-align: left; font-wei
   color: var(--fg-dim); background: var(--panel); }
 table.cols .n { text-align: right; font-variant-numeric: tabular-nums; }
 table.cols .dim { color: var(--muted); }
+table.cols.lines th, table.cols.lines td { border-bottom: 1px solid var(--bar); }
+table.cols.lines tbody > tr:last-child > td { border-bottom: 0; }
+/* the divider bar is the cells' 1px right border; the .bar overlay is the
+   9px grab area around it, and while the mouse is on it (or dragging) the
+   line is drawn 2px wide, one pixel further left, in the same color */
 .bar { position: absolute; top: 0; bottom: 0; width: 9px; margin-left: -5px; z-index: 1;
   cursor: col-resize; touch-action: none; }
-.bar::before { content: ""; position: absolute; top: 0; bottom: 0; left: 3px; width: 3px; }
-.bar:hover::before, .bar.active::before { background: var(--bar-hot); }
+.bar::before { content: ""; position: absolute; top: 0; bottom: 0; left: 3px; width: 2px; }
+.bar:hover::before, .bar.active::before { background: var(--bar); }
 
-/* splitter between two panes (the heat map's tree and listing) */
+/* splitter between two panes (the heat map's tree and listing): a 1px line
+   in a 7px grab area, 2px wide while the mouse is on it */
 .split { flex: none; width: 7px; cursor: col-resize; touch-action: none;
   background: linear-gradient(90deg, transparent 3px, var(--bar) 3px, var(--bar) 4px, transparent 4px); }
-.split:hover, .split.active { background: var(--bar-hot); }
+.split:hover, .split.active {
+  background: linear-gradient(90deg, transparent 2px, var(--bar) 2px, var(--bar) 4px, transparent 4px); }

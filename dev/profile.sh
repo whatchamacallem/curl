@@ -7,7 +7,8 @@
 #              A relative path is taken relative to the caller's cwd.
 #   PERFTEST   first argument to the perf binary: one of the tests in
 #              tests/perf/Makefile.inc (urlparser, base64enc, ...), or "all"
-#              to run every test into OUTDIR/<test>/. Default: all.
+#              to run every test into OUTDIR/<test>/ plus a combined report
+#              over all of them into OUTDIR/all/. Default: all.
 #   FLAGS...   everything else is passed to the compiler for a fresh curl
 #              build (CMAKE_C_FLAGS), e.g. -DUSE_AVX512. The flags are
 #              *reset* on every run, so omitting them builds plain again.
@@ -20,16 +21,22 @@
 #      pinned to one core (unpinned runs on WSL2 vary ~2x)
 #   3. run the test natively, pinned, for the real timing numbers
 #   4. convert: speedscope flame graph (one profile per event), per-line
-#      source heat map, the index page with totals and top-20 functions
+#      source heat map, the index page with the top-20 functions
+# With "all", the same pages are then built once more over every test's
+# callgrind file merged into one profile (the perf binary runs one test per
+# process, so the combined profile is the sum of the runs above) and the
+# native times summed, into OUTDIR/all/.
 #
 # Layout of OUTDIR (or OUTDIR/<test>/ with "all"):
-#   index.html            toolbar strip over the summary (meta, callgrind
-#                         totals, top 20 functions with callers, valgrind
+#   index.html            strip (title, [summary] [flame graph] [heat map]
+#                         [native timing] [reset columns]) over the summary
+#                         (meta, top 20 functions with callers, valgrind
 #                         log); the strip loads the pages below into a frame
 #   flame-graph/index.html  speedscope, auto-loads the profile
 #   heat-map/index.html   per-line heat map with cache-miss columns
 #   perf-tool/index.html  native timing run output
-# With "all", OUTDIR/index.html is the same kind of page over the tests.
+# With "all", OUTDIR/index.html is the same kind of page over the tests
+# ([overview] [all] [base64dec] ... alphabetical, [curl.se/perf] far right).
 # Raw callgrind data, valgrind log and speedscope JSON stay in dev/trace/.
 #
 # Environment:
@@ -42,7 +49,7 @@
 #   PROFILE_BUILD_DIR  build tree (default build-relwithdebinfo)
 set -euo pipefail
 
-usage() { sed -n '2,40p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { awk 'NR > 1 && !/^#/ { exit } NR > 1 { sub(/^# ?/, ""); print }' "$0"; }
 case "${1:-}" in -h|--help) usage; exit 0;; esac
 
 INVOKE_DIR="$(pwd)"
@@ -67,7 +74,7 @@ CG_EXTRA=(${CALLGRIND_OPTS:-})
 SS_EVENTS=(Ir D1mr+D1mw DLmr+DLmw I1mr Bcm Bim)
 
 all_tests() {
-  sed -n '/^TESTS_C *=/,/^$/p' tests/perf/Makefile.inc | grep -o '[A-Za-z0-9_]*\.c' | sed 's/\.c$//'
+  sed -n '/^TESTS_C *=/,/^$/p' tests/perf/Makefile.inc | grep -o '[A-Za-z0-9_]*\.c' | sed 's/\.c$//' | sort
 }
 cg_loops() {
   case "$1" in
@@ -125,14 +132,50 @@ BUILD_DESC="$BUILD_DIR, -O2 -g -DNDEBUG${CFLAGS_EXTRA[*]:+ ${CFLAGS_EXTRA[*]}}, 
 GIT_DESC="$(git describe --always --dirty 2>/dev/null || echo unknown) on $(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo ?)"
 
 # ---------------------------------------------------------------------------
+# The pages of one report directory: flame graph, heat map, native timing
+# page and index, from the callgrind file(s) in CG_FILES, the valgrind
+# log(s) in LOG_FILES and the native output at $out/perf-tool/output.txt.
+CG_FILES=()
+LOG_FILES=()
+build_pages() {
+  local name="$1" out="$2" json="$3" ss_name="$4" profiled="$5" timed="$6"
+  local ev_args=() log_args=() x
+
+  echo "== 4 [$name]: flame graph -> $out/flame-graph/index.html =="
+  for x in "${SS_EVENTS[@]}"; do ev_args+=(--event "$x"); done
+  python3 dev/scripts/callgrind_to_speedscope.py "${CG_FILES[@]}" -o "$json" "${ev_args[@]}" --name "$ss_name"
+  rm -rf "$out/flame-graph"
+  mkdir -p "$out/flame-graph"
+  cp -r "$SPEEDSCOPE_RELEASE"/. "$out/flame-graph"/
+  python3 dev/scripts/build_flame_graph.py --speedscope-dir "$out/flame-graph" --profile-json "$json"
+
+  echo "== 5 [$name]: heat map -> $out/heat-map/index.html =="
+  python3 dev/scripts/callgrind_to_heatmap.py "${CG_FILES[@]}" -o "$out/heat-map/index.html" \
+    --title "$name / heat map"
+
+  echo "== 6 [$name]: index -> $out/index.html =="
+  python3 dev/scripts/build_report.py timing -o "$out/perf-tool/index.html" --test "$name" \
+    --output-file "$out/perf-tool/output.txt" \
+    --meta "binary=$BIN" --meta "pinned to=CPU $CPU" --meta "build=$BUILD_DESC"
+  for x in "${LOG_FILES[@]}"; do log_args+=(--log "$x"); done
+  python3 dev/scripts/build_report.py test "${CG_FILES[@]}" -o "$out/index.html" --test "$name" "${log_args[@]}" \
+    --meta "generated=$(date '+%Y-%m-%d %H:%M:%S %Z') on $(hostname)" \
+    --meta "source=$GIT_DESC" \
+    --meta "build=$BUILD_DESC" \
+    --meta "profiled=$profiled" \
+    --meta "timed=$timed" \
+    --meta "flame graph=one speedscope profile per event: ${SS_EVENTS[*]}" \
+    --meta "raw data=${CG_FILES[*]}"
+  echo "   raw data: ${CG_FILES[*]}"
+}
+
 run_one() {
   local test="$1" out="$2"
-  local loops cg_out log json native_out
+  local loops cg_out log
   loops="$(cg_loops "$test")"
   cg_out="$TRACE_DIR/callgrind.out.$test.$loops.$STAMP"
   log="$TRACE_DIR/valgrind.$test.$loops.$STAMP.log"
-  json="$TRACE_DIR/$test.$loops.$STAMP.speedscope.json"
-  mkdir -p "$out/perf-tool" "$out/heat-map"
+  mkdir -p "$out/perf-tool"
 
   echo "== 2 [$test]: callgrind ${CG_FLAGS[*]} ${CG_EXTRA[*]:-} (pinned to CPU $CPU, loops=$loops) =="
   echo "   callgrind simulates every instruction (~30-50x slower than native); its"
@@ -142,39 +185,47 @@ run_one() {
     "$BIN" "$test" "$loops"
 
   echo "== 3 [$test]: native timing run (pinned to CPU $CPU) =="
-  native_out="$out/perf-tool/output.txt"
   {
     echo "\$ ${TASKSET[*]:-} $BIN $test"
     "${TASKSET[@]}" "$BIN" "$test" 2>&1
-  } | tee "$native_out"
+  } | tee "$out/perf-tool/output.txt"
 
-  echo "== 4 [$test]: flame graph -> $out/flame-graph/index.html =="
-  local ev_args=()
-  for e in "${SS_EVENTS[@]}"; do ev_args+=(--event "$e"); done
-  python3 dev/scripts/callgrind_to_speedscope.py "$cg_out" -o "$json" "${ev_args[@]}" \
-    --name "curl perf $test (loops=$loops, $STAMP)"
-  rm -rf "$out/flame-graph"
-  mkdir -p "$out/flame-graph"
-  cp -r "$SPEEDSCOPE_RELEASE"/. "$out/flame-graph"/
-  python3 dev/scripts/build_flame_graph.py --speedscope-dir "$out/flame-graph" --profile-json "$json"
+  CG_FILES=("$cg_out")
+  LOG_FILES=("$log")
+  build_pages "$test" "$out" "$TRACE_DIR/$test.$loops.$STAMP.speedscope.json" \
+    "curl perf $test (loops=$loops, $STAMP)" \
+    "$BIN $test $loops  (callgrind ${CG_FLAGS[*]} ${CG_EXTRA[*]:-}, pinned to CPU $CPU)" \
+    "$BIN $test  (native, pinned to CPU $CPU; the only valid speed number here)"
+}
 
-  echo "== 5 [$test]: heat map -> $out/heat-map/index.html =="
-  python3 dev/scripts/callgrind_to_heatmap.py "$cg_out" -o "$out/heat-map/index.html" \
-    --title "curl perf $test heatmap"
+# Every test's callgrind run merged into one profile, every native time
+# summed; the per-test pages have already been built.
+run_all() {
+  local out="$1" t loops usecs total=0
+  mkdir -p "$out/perf-tool"
+  CG_FILES=()
+  LOG_FILES=()
+  for t in "${TESTS[@]}"; do
+    loops="$(cg_loops "$t")"
+    CG_FILES+=("$TRACE_DIR/callgrind.out.$t.$loops.$STAMP")
+    LOG_FILES+=("$TRACE_DIR/valgrind.$t.$loops.$STAMP.log")
+  done
 
-  echo "== 6 [$test]: index -> $out/index.html =="
-  python3 dev/scripts/build_report.py timing -o "$out/perf-tool/index.html" --test "$test" \
-    --output-file "$native_out" \
-    --meta "binary=$BIN" --meta "pinned to=CPU $CPU" --meta "build=$BUILD_DESC"
-  python3 dev/scripts/build_report.py test "$cg_out" -o "$out/index.html" --test "$test" --log "$log" \
-    --meta "generated=$(date '+%Y-%m-%d %H:%M:%S %Z') on $(hostname)" \
-    --meta "source=$GIT_DESC" \
-    --meta "build=$BUILD_DESC" \
-    --meta "profiled=$BIN $test $loops  (callgrind ${CG_FLAGS[*]} ${CG_EXTRA[*]:-}, pinned to CPU $CPU)" \
-    --meta "timed=$BIN $test  (native, pinned to CPU $CPU; the only valid speed number here)" \
-    --meta "flame graph=one speedscope profile per event: ${SS_EVENTS[*]}" \
-    --meta "raw data=$cg_out"
-  echo "   raw data: $cg_out"
+  echo "== 3 [all]: native timing, every test's run above summed =="
+  {
+    echo "\$ ${TASKSET[*]:-} $BIN <test>   for every test, one after the other (each test's page has its full output)"
+    for t in "${TESTS[@]}"; do
+      usecs="$(awk '/^Time:/ { print $2; exit }' "$OUT_DIR/$t/perf-tool/output.txt")"
+      printf '%-14s %12s usecs\n' "$t" "${usecs:-?}"
+      total=$(( total + ${usecs:-0} ))
+    done
+    echo "Time:     $total usecs"
+  } | tee "$out/perf-tool/output.txt"
+
+  build_pages all "$out" "$TRACE_DIR/all.$STAMP.speedscope.json" \
+    "curl perf all ($STAMP)" \
+    "every test's callgrind run above, merged into one profile (${#CG_FILES[@]} files)" \
+    "every test's native run above, times summed"
 }
 
 for t in "${TESTS[@]}"; do
@@ -182,11 +233,13 @@ for t in "${TESTS[@]}"; do
 done
 
 if [ "$TEST" = all ]; then
+  run_all "$OUT_DIR/all"
   echo "== 7: overview -> $OUT_DIR/index.html =="
   args=(-o "$OUT_DIR/index.html"
         --meta "generated=$(date '+%Y-%m-%d %H:%M:%S %Z') on $(hostname)"
         --meta "source=$GIT_DESC" --meta "build=$BUILD_DESC"
-        --meta "timed=$BIN <test>  (native, pinned to CPU $CPU)")
+        --meta "timed=$BIN <test>  (native, pinned to CPU $CPU)"
+        --test all)
   for t in "${TESTS[@]}"; do args+=(--test "$t"); done
   python3 dev/scripts/build_report.py overview "${args[@]}"
 fi

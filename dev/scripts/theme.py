@@ -49,9 +49,8 @@ ROLE = {
     "muted": PAIR["gray"][0],     # secondary text (light member, same reason)
     "link": PAIR["blue"][0],      # links (light member, same reason)
     "link-bg": PAIR["blue"][1],   # link hover background
-    "accent": PAIR["yellow"][0],  # title, active toolbar link, active divider
-    "bar": PAIR["steel"][1],      # column divider bars, borders
-    "bar-hot": PAIR["yellow"][0],
+    "accent": PAIR["yellow"][0],  # title, active toolbar link
+    "bar": PAIR["steel"][1],      # column divider bars, row separators, borders
     "good": PAIR["green"][1],
     "bad": PAIR["red"][1],
 }
@@ -131,6 +130,32 @@ def heat_style(t: float, alpha: tuple[float, float] = (0.18, 0.92)) -> str:
 
 
 # --------------------------------------------------------------------------
+# Numbers (fmtH / fmtP in the heat map's script carry the same rules)
+# --------------------------------------------------------------------------
+
+
+def human(n: float) -> str:
+    """A count for reading, not for arithmetic: 2.1K, 21K, 210K, 2.1M, 2.0G --
+    always at least two meaningful digits, never a thousands separator."""
+    v, unit = float(n), ""
+    for u in ("K", "M", "G", "T"):
+        if v < 999.5:
+            break
+        v /= 1000
+        unit = u
+    return f"{v:.1f}{unit}" if unit and v < 9.95 else f"{v:.0f}{unit}"
+
+
+def pct(p: float) -> str:
+    """A share of a total: 63.2%, 5.12%, <0.01%, or "" for zero."""
+    if p >= 9.95:
+        return f"{p:.1f}%"
+    if p >= 0.01:
+        return f"{p:.2f}%"
+    return "<0.01%" if p > 0 else ""
+
+
+# --------------------------------------------------------------------------
 # Markup
 # --------------------------------------------------------------------------
 
@@ -168,14 +193,16 @@ PAD = 3
 
 
 def table(key: str, cols: list[Col], rows: list[list[object]], fill: bool = False,
-          header: bool = True, legend: bool = True) -> str:
+          header: bool = True, legend: bool = True, lines: bool = False) -> str:
     """A .tbl box: legend banner (from the columns' titles), then the table.
 
     Column widths are derived from the longest text in each column, in
     characters (everything is monospace, so this is exact), unless the
     column sets `width`; `clip` caps the derived width and clipped cells get
     their full text as a tooltip. With `fill` the last column takes the
-    remaining width and the table spans its container.
+    remaining width and the table spans its container, so that column is
+    cut off at the table's edge. With `lines` every row is underlined by
+    the same bar that divides the columns.
     """
     cells = [[_cell(c) for c in r] for r in rows]
     widths: list[int] = []
@@ -190,11 +217,12 @@ def table(key: str, cols: list[Col], rows: list[list[object]], fill: bool = Fals
         if col.clip is not None:
             n = min(n, col.clip)
         widths.append(n + PAD)
-    out = ['<div class="tbl">']
+    out = [f'<div class="tbl{" fill" if fill else ""}">']
     entries = [f"<span><b>{esc(c.label)}</b> {esc(c.title)}</span>" for c in cols if c.title]
     if legend and entries:
         out.append(f'<div class="tbl-legend band">{"".join(entries)}</div>')
-    out.append(f'<div class="tbl-cols"><table class="cols{" fill" if fill else ""}" data-key="{esc(key)}"><colgroup>')
+    classes = "cols" + (" fill" if fill else "") + (" lines" if lines else "")
+    out.append(f'<div class="tbl-cols"><table class="{classes}" data-key="{esc(key)}"><colgroup>')
     for i, w in enumerate(widths):
         alt = ' class="alt"' if i % 2 else ""
         style = "" if fill and i == len(widths) - 1 else f' style="width:{w}ch"'

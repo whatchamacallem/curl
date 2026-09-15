@@ -260,7 +260,7 @@ def build_document(p: cg.Profile, exprs: list[str], base_name: str) -> dict:
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("callgrind_file")
+    ap.add_argument("callgrind_file", nargs="+", help="callgrind output file(s); several are merged into one profile")
     ap.add_argument("-o", "--output", required=True, help="output .speedscope.json path")
     ap.add_argument("--event", action="append", default=None, metavar="EXPR",
                     help="event to weight by; repeatable, each becomes one profile; 'A+B' sums "
@@ -268,8 +268,7 @@ def main() -> None:
     ap.add_argument("--name", default=None, help="document name (default: input file basename)")
     args = ap.parse_args()
 
-    with open(args.callgrind_file, encoding="utf-8", errors="replace") as f:
-        p = cg.parse_callgrind(f.read())
+    p = cg.load(args.callgrind_file)
     if not p.events:
         sys.exit("error: no 'events:' line -- not a callgrind file?")
     self_sum, total, ratio = cg.self_check(p)
@@ -277,7 +276,7 @@ def main() -> None:
     if total and abs(ratio - 1.0) > 1e-6:
         sys.exit("error: per-line self cost does not add up to callgrind's summary")
 
-    doc = build_document(p, args.event or ["Ir"], args.name or os.path.basename(args.callgrind_file))
+    doc = build_document(p, args.event or ["Ir"], args.name or os.path.basename(args.callgrind_file[0]))
     with open(args.output, "w", encoding="utf-8") as f:
         json.dump(doc, f)
     print(f"wrote {args.output} ({len(doc['shared']['frames'])} frames)", file=sys.stderr)

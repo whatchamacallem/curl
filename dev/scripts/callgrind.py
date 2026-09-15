@@ -23,6 +23,10 @@ Functions are keyed by name: callgrind gives the same name several IDs when
 it lives in several objects (a PLT stub and the libc implementation, a
 function linked into both the library and the test binary), and those are
 merged here.
+
+`load(paths)` parses one or more files and `merge()`s them into a single
+profile (every cost summed, call graphs united) so that a run over several
+perf tests can be reported as one; the files must record the same events.
 """
 from __future__ import annotations
 
@@ -341,64 +345,67 @@ def self_check(p: Profile) -> tuple[int, int, float]:
 
 
 # ----------------------------------------------------------------------------
-# Totals (the block valgrind prints at exit, recomputed from the file)
+# Several files as one profile
 # ----------------------------------------------------------------------------
 
 
-def _rate(num: int, den: int) -> str:
-    return f"{100.0 * num / den:.2f}%" if den else "n/a"
+def merge(profiles: list[Profile]) -> Profile:
+    """One profile over several: every per-line, per-function and call-graph
+    cost summed, first-seen entries (home file, entry line) kept, summaries
+    added. Each file must record the same events in the same order; the
+    cache geometry (`desc:`) of the first is kept. The command becomes the
+    shared program followed by every run's arguments, comma separated."""
+    if len(profiles) == 1:
+        return profiles[0]
+    first = profiles[0]
+    for q in profiles[1:]:
+        if q.events != first.events:
+            raise ValueError(f"cannot merge profiles with different events: {first.events} vs {q.events}")
+    p = Profile()
+    p.events = list(first.events)
+    p.event_long = dict(first.event_long)
+    p.derived = list(first.derived)
+    p.desc = list(first.desc)
+    p.positions = list(first.positions)
+    cmds = [q.cmd.split() for q in profiles]
+    if all(c and c[0] == cmds[0][0] for c in cmds):
+        p.cmd = cmds[0][0] + " " + ", ".join(" ".join(c[1:]) for c in cmds)
+    else:
+        p.cmd = " + ".join(q.cmd for q in profiles)
+    if all(q.summary for q in profiles):
+        p.summary = [sum(q.summary[k] if k < len(q.summary) else 0 for q in profiles)
+                     for k in range(max(len(q.summary) for q in profiles))]
+    for q in profiles:
+        for key, vec in q.line_self.items():
+            p._acc(p.line_self, key, vec)
+        for key, vec in q.line_calls.items():
+            p._acc(p.line_calls, key, vec)
+        for key, n in q.line_callcount.items():
+            p.line_callcount[key] += n
+        for key, fn in q.line_fn.items():
+            p.line_fn.setdefault(key, fn)
+        for fn, home in q.fn_home.items():
+            p.fn_home.setdefault(fn, home)
+        for fn, vec in q.fn_self.items():
+            p._acc(p.fn_self, fn, vec)
+        for fn, vec in q.fn_calls.items():
+            p._acc(p.fn_calls, fn, vec)
+        for fn, entry in q.fn_entry.items():
+            p.fn_entry.setdefault(fn, entry)
+        for key, (count, vec) in q.callees.items():
+            p._acc_call(p.callees, key, count, vec)
+        for callee, table in q.callers.items():
+            for key, (count, vec) in table.items():
+                p._acc_call(p.callers[callee], key, count, vec)
+        for file, ob in q.file_ob.items():
+            p.file_ob.setdefault(file, ob)
+    return p
 
 
-def totals_rows(p: Profile) -> list[tuple[str, str, str, str]]:
-    """The callgrind exit summary as table rows (group, metric, value, detail):
-    refs, misses and miss rates for I1/D1/LL and the branch predictor, then
-    every raw and derived event total, then the simulated cache geometry."""
-    t = p.totals()
-    have = p.has
-
-    def g(name: str) -> int:
-        return t[p.events.index(name)]
-
-    out: list[tuple[str, str, str, str]] = []
-    if have("Ir"):
-        ir = g("Ir")
-        out.append(("I", "refs", f"{ir:,}", ""))
-        if have("I1mr", "ILmr"):
-            out.append(("I", "I1 misses", f"{g('I1mr'):,}", ""))
-            out.append(("I", "LLi misses", f"{g('ILmr'):,}", ""))
-            out.append(("I", "I1 miss rate", _rate(g("I1mr"), ir), ""))
-            out.append(("I", "LLi miss rate", _rate(g("ILmr"), ir), ""))
-    if have("Dr", "Dw"):
-        dr, dw = g("Dr"), g("Dw")
-        out.append(("D", "refs", f"{dr + dw:,}", f"{dr:,} rd + {dw:,} wr"))
-        if have("D1mr", "D1mw", "DLmr", "DLmw"):
-            d1r, d1w, dlr, dlw = g("D1mr"), g("D1mw"), g("DLmr"), g("DLmw")
-            out.append(("D", "D1 misses", f"{d1r + d1w:,}", f"{d1r:,} rd + {d1w:,} wr"))
-            out.append(("D", "LLd misses", f"{dlr + dlw:,}", f"{dlr:,} rd + {dlw:,} wr"))
-            out.append(("D", "D1 miss rate", _rate(d1r + d1w, dr + dw), f"{_rate(d1r, dr)} rd + {_rate(d1w, dw)} wr"))
-            out.append(("D", "LLd miss rate", _rate(dlr + dlw, dr + dw), f"{_rate(dlr, dr)} rd + {_rate(dlw, dw)} wr"))
-    if have("Ir", "Dr", "Dw", "I1mr", "D1mr", "D1mw", "ILmr", "DLmr", "DLmw"):
-        ll_refs = g("I1mr") + g("D1mr") + g("D1mw")
-        ll_miss = g("ILmr") + g("DLmr") + g("DLmw")
-        all_refs = g("Ir") + g("Dr") + g("Dw")
-        out.append(("LL", "refs", f"{ll_refs:,}", f"{g('I1mr') + g('D1mr'):,} rd + {g('D1mw'):,} wr"))
-        out.append(("LL", "misses", f"{ll_miss:,}", f"{g('ILmr') + g('DLmr'):,} rd + {g('DLmw'):,} wr"))
-        out.append(("LL", "miss rate", _rate(ll_miss, all_refs),
-                    f"{_rate(g('ILmr') + g('DLmr'), g('Ir') + g('Dr'))} rd + {_rate(g('DLmw'), g('Dw'))} wr"))
-    if have("Bc", "Bcm", "Bi", "Bim"):
-        bc, bcm, bi, bim = g("Bc"), g("Bcm"), g("Bi"), g("Bim")
-        out.append(("branches", "executed", f"{bc + bi:,}", f"{bc:,} cond + {bi:,} ind"))
-        out.append(("branches", "mispredicted", f"{bcm + bim:,}", f"{bcm:,} cond + {bim:,} ind"))
-        out.append(("branches", "mispredict rate", _rate(bcm + bim, bc + bi), f"{_rate(bcm, bc)} cond + {_rate(bim, bi)} ind"))
-    if have("sysCount"):
-        out.append(("system", "calls", f"{g('sysCount'):,}", ""))
-        if have("sysTime"):
-            out.append(("system", "call time", f"{g('sysTime'):,}", ""))
-    for name in p.events:
-        out.append(("events", name, f"{g(name):,}", p.event_long.get(name, "")))
-    for name, terms, long in p.derived_terms():
-        out.append(("events", name, f"{sum(c * t[i] for c, i in terms):,}", f"{long} [derived]"))
-    for d in p.desc:
-        metric, _, value = d.partition(":")
-        out.append(("simulation", metric.strip(), value.strip(), ""))
-    return out
+def load(paths: list[str]) -> Profile:
+    """Parse every file and merge them into one profile."""
+    profiles = []
+    for path in paths:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            profiles.append(parse_callgrind(f.read()))
+    return merge(profiles)

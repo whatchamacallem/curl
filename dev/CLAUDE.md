@@ -132,8 +132,13 @@ dev/profile.sh ~/artifacts urlparser -DUSE_AVX512   # rebuild curl with that def
 - `OUTDIR` defaults to `dev/report` (gitignored); a relative path is
   relative to the caller's cwd. `PERFTEST` is the perf binary's first
   argument (a test name from `tests/perf/Makefile.inc`) or `all`, the
-  default, which writes one report per test into `OUTDIR/<test>/` plus a
-  top-level `OUTDIR/index.html`. Everything after that goes into
+  default, which writes one report per test into `OUTDIR/<test>/`, a
+  combined report over every test into `OUTDIR/all/` and a top-level
+  `OUTDIR/index.html`. The perf binary runs one test per process (there is
+  no all-tests mode in `tests/perf/first.c`), so `all/` is the per-test
+  callgrind files merged into one profile by `callgrind.py`'s `load()`
+  (each test weighted by its own loop count, 200 vs 200000) and the
+  per-test native `Time:` values summed. Everything after that goes into
   `CMAKE_C_FLAGS` for a fresh build; the flags are passed on *every* run
   (empty when omitted) so a previous run's flags never linger in the cache.
 - Build: `build-relwithdebinfo`, `-O2 -g`, with `ccache` as
@@ -152,7 +157,7 @@ dev/profile.sh ~/artifacts urlparser -DUSE_AVX512   # rebuild curl with that def
   Zen 5) but LL "16777216 B, direct-mapped" with a "L3 cache found, using
   its data for the LL simulation" warning — the simulator fell back to
   direct-mapped, which overstates LL conflict misses. The geometry used
-  is printed in the report's `simulation` rows; override with
+  is in the `desc:` lines at the top of the callgrind file; override with
   `CALLGRIND_OPTS="--LL=16777216,16,64"` when LL numbers matter.
 - Timing: a second, native, pinned run of the same test (`perf <test>`,
   default loops) — the only valid speed number in the report. Callgrind's
@@ -162,16 +167,19 @@ Report layout (`OUTDIR/`, or `OUTDIR/<test>/` with `all`), all plain
 `file://`-openable, nothing fetched at view time:
 
 ```text
-index.html               "curl performance analyzer": a toolbar strip of
-                         [bracketed] links across the top, then the summary
-                         (meta, callgrind totals, top 20 functions by self
-                         Ir with call counts and callers, the valgrind log,
-                         folded) centered below it. A toolbar link loads
-                         that page into a frame under the strip, only when
-                         picked; a location in the summary opens the heat
-                         map at that line. With `all`, the top-level
-                         index.html is the same kind of page over the
-                         tests, one row of native-run numbers per test.
+index.html               a strip across the top -- the page title, then
+                         [bracketed] links -- and the summary under it:
+                         meta, "top 20 functions by self" (% self, symbol,
+                         calls, callers; one line per function) and the
+                         valgrind log minus its 9-line banner. A strip link
+                         loads that page into a frame under the strip, only
+                         when picked; a symbol in the summary opens the heat
+                         map at the function's first line. With `all`, the
+                         top-level index.html is the same kind of page over
+                         the tests ([overview] [all] [base64dec] ...,
+                         alphabetical), one row of native-run numbers per
+                         test ("all" has the summed Time only), and all/ is
+                         a full report over every test's profile merged.
 flame-graph/index.html   speedscope bundle; the profile picker switches
                          between Ir, D1mr+D1mw, DLmr+DLmw, I1mr, Bcm, Bim
 heat-map/index.html      per-line source heat map (event selector, miss columns)
@@ -179,13 +187,18 @@ perf-tool/index.html     native timing run output
 ```
 
 Raw data stays in `dev/trace/` (gitignored): `callgrind.out.<test>.<loops>.<ts>`,
-`valgrind.<test>.<loops>.<ts>.log` and the speedscope JSON.
+`valgrind.<test>.<loops>.<ts>.log` and the speedscope JSON (`all.<ts>.speedscope.json`
+for the merged one; there is no merged callgrind file, the generators take
+several and merge on read).
 
 Scripts (`dev/scripts/`):
 
 - `callgrind.py` — the one parser (per-line/per-function cost *vectors*
-  over all events, call graph, `desc:` lines, `totals_rows()`); every
-  other script imports it. Derived events `D1m`, `DLm`, `L1m`, `LLm`,
+  over all events, call graph, `desc:` lines); `load(paths)` parses one
+  or more files and `merge()`s them into one profile (every cost summed,
+  call graphs united, summaries added; the events must match). Every
+  other script imports it and takes one or more callgrind files on the
+  command line. Derived events `D1m`, `DLm`, `L1m`, `LLm`,
   `Bm`, `CEst` (= Ir + 10·L1m + 100·LLm, KCachegrind's cycle estimate)
   are added when their inputs exist. Functions are keyed by name, so a
   symbol callgrind saw in two objects (PLT stub + libc, a function linked
@@ -334,10 +347,9 @@ I1mr, D1mr, ...) or derived one (D1m, DLm, L1m, LLm, Bm, CEst);
 independent of that, every source line shows `D1m`, `DLm` and `Bcm`
 columns (share of that event's total, each heat-colored on its own scale)
 so a line that is cheap in Ir but hurts in misses is visible without
-switching. The home view carries the callgrind totals, where the event
-goes by top-level directory, the 60 hottest lines and the 60 hottest
-functions. Event, scale, tree order, tree width and column widths are
-remembered in localStorage. `dev/profile.sh` writes it to
+switching. The home view carries the 60 hottest lines and the 60 hottest
+functions; `[home]` in the header strip returns to it. Event, scale, tree
+order, tree width and column widths are remembered in localStorage. `dev/profile.sh` writes it to
 `OUTDIR/heat-map/index.html`. Standalone:
 
 ```sh
@@ -352,9 +364,8 @@ Only files that carry cost get their source embedded (~0.9 MB page);
 rules exactly (`fi=`/`fe=` switch the file for inlined lines, the cost line
 after `calls=` is inclusive and is charged to the call site separately,
 `calls=` targets decode relative to the last cost line) and prints the
-same self-check ratio as the speedscope converter, which must be 1.0000;
-its totals rows reproduce valgrind's own exit summary (refs, misses,
-miss rates, mispredict rate). There was no off-the-shelf tool for this:
+same self-check ratio as the speedscope converter, which must be 1.0000.
+There was no off-the-shelf tool for this:
 KCachegrind has per-line heat but is a desktop app with no directory view,
 pprof/Firefox Profiler have source views but no explorer and do not read
 callgrind, and coverage-style HTML (lcov, gcovr) has the explorer shape but
@@ -401,12 +412,34 @@ from `file://` and may not fetch anything. Rules the pages follow:
   loaded page does the same (it is another `file://` origin, so the frame
   cannot reach into it directly). A legend banner above the table spells
   out every abbreviated column; the banner and the header row stay put
-  while the table scrolls (`theme.js` stacks them, since two sticky
-  elements at `top: 0` overlap).
-- The index page is a frame: `[summary] [flame graph] [heat map] [native
-  timing] [reset columns]` on the left and `[curl.se/perf]` hugging the
-  right across the top, the summary centered under it, sub-pages loaded
-  into an iframe only when picked.
+  while the page scrolls past the table (`theme.js` stacks them, since
+  two sticky elements at `top: 0` overlap). A table box never scrolls on
+  its own: it is as long as its rows and as wide as its columns, or with
+  `fill` as wide as the page with the last column cut off at the edge
+  (the summary's callers column; hover for the whole text); the page is
+  what scrolls. `lines` underlines every row with the divider color (the
+  summary's functions table). The divider is the cells' 1px right border
+  in `--bar`; while the mouse is on it or dragging it is drawn 2px wide
+  in the same color, and nothing else changes (the heat map's splitter
+  does the same).
+- Numbers are written for reading: `theme.human()` and the heat map's
+  `fmtH()` give `2.1K`, `21K`, `210K`, `2.1M`, `2.0G` -- at least two
+  meaningful digits, never `200,000×` -- with the exact value as the
+  cell's tooltip; shares go through `theme.pct()` / `fmtP()`: `63.2%`,
+  `5.12%`, `<0.01%`.
+- The index page is a frame: a strip (`.strip`) with the title, then
+  `[summary] [flame graph] [heat map] [native timing] [reset columns]`,
+  and the summary under it, left-aligned and full width; sub-pages are
+  loaded into an iframe only when picked. The title is the picked view --
+  `urlparser`, `urlparser / heat map` -- in the accent color, and it is
+  the only title anywhere: the pages have no heading of their own, and a
+  frame page loaded inside another frame hides its title and posts it up
+  (a `{theme: "title"}` message; the parent asks with `theme:title?`
+  when it re-shows a frame it already loaded), so the top-level strip
+  reads `urlparser / heat map` while the nested strip shows only its
+  links. `[curl.se/perf]` is on the top-level (overview) strip only,
+  hugging the right. The heat map's header is the same kind of strip
+  with `[home]` in place of a title.
 
 ### Checking the pages
 
