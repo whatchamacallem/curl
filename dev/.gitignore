@@ -1,1 +1,3 @@
 trace/
+report/
+__pycache__/

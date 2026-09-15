@@ -22,9 +22,13 @@ the frame where recursion was detected so no cost is silently dropped.
 """
 import argparse
 import json
+import os
 import re
 import sys
 from collections import defaultdict
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import callgrind as cg  # noqa: E402  (event long names / derived-event labels only)
 
 MAX_STACK_DEPTH = 200
 
@@ -54,6 +58,7 @@ class Parser:
         self.frame_list = []
         self.events = []
         self.event_index = {}
+        self.event_long = {}      # from "event: Name : Long name" header lines
         self.self_cost = {}       # frame_index -> [cost,...] (own self cost only)
         # edges[caller_frame_index] -> list of (callee_frame_index, cost_vec)
         # cost_vec is the SUM of inclusive costs of all calls at this call
@@ -209,8 +214,13 @@ class Parser:
                     self.positions_has_instr = "instr" in parts
                     self.positions_has_line = ("line" in parts) or (not parts)
                     continue
+                if key == "event":
+                    ename, _, elong = cg._parse_event_header(val)
+                    if elong:
+                        self.event_long[ename] = elong
+                    continue
                 if key in ("version", "creator", "pid", "thread", "part",
-                           "cmd", "desc", "summary", "totals", "event"):
+                           "cmd", "desc", "summary", "totals"):
                     continue
 
             m = re.match(r"^(ob|fl|fi|fe|fn|cob|cfi|cfl|cfn)=(.*)$", stripped)
@@ -286,29 +296,58 @@ def compute_roots(parser: Parser):
     return roots
 
 
-def build_speedscope_json(parser: Parser, event_name: str, profile_name: str):
-    if event_name not in parser.event_index:
-        if not parser.events:
-            raise SystemExit("No 'events:' line found in callgrind file")
-        event_name = parser.events[0]
-    eidx = parser.event_index[event_name]
+def resolve_expr(parser: Parser, expr: str):
+    """'D1mr+D1mw' -> the cost-vector column indexes it sums, or None when
+    any named event is not in this file."""
+    idxs = []
+    for name in (t.strip() for t in expr.split("+")):
+        if name not in parser.event_index:
+            return None
+        idxs.append(parser.event_index[name])
+    return idxs
 
-    shared_frames = []
-    for f in parser.frame_list:
-        entry = {"name": f.name or "???"}
-        if f.file and f.file != "???":
-            entry["file"] = f.file
-        shared_frames.append(entry)
 
-    samples = []
-    weights = []
+def expr_label(parser: Parser, expr: str) -> str:
+    """Human label for a profile: the expression plus a long name (from the
+    file's own `event:` lines, or callgrind.py's tables)."""
+    names = [t.strip() for t in expr.split("+")]
+
+    def long_of(n):
+        return parser.event_long.get(n) or cg.EVENT_LONG.get(n, "")
+
+    long = ""
+    if len(names) == 1:
+        long = long_of(names[0])
+    else:
+        for _, terms, dlong in cg.DERIVED_DEFAULTS:
+            if all(c == 1 for c, _ in terms) and sorted(r for _, r in terms) == sorted(names):
+                long = dlong
+                break
+        if not long:
+            long = " + ".join(long_of(n) or n for n in names)
+    return f"{expr} — {long}" if long else expr
+
+
+def build_profile(parser: Parser, idxs, profile_name: str):
+    """One speedscope 'sampled' profile weighted by the sum of the given
+    event columns. Returns (profile, sum of emitted weights)."""
+
+    def value(vec):
+        return sum(vec[i] for i in idxs if i < len(vec))
 
     def self_cost_of(frame_idx):
         c = parser.self_cost.get(frame_idx)
-        return c[eidx] if c and eidx < len(c) else 0
+        return value(c) if c else 0
 
-    def edge_cost_of(vec):
-        return vec[eidx] if eidx < len(vec) else 0
+    # Sum of inclusive costs over all of each callee's incoming edges, so a
+    # callee with several callers is split across them proportionally.
+    incoming = defaultdict(float)
+    for caller_edges in parser.edges.values():
+        for c_idx, c_vec in caller_edges:
+            incoming[c_idx] += value(c_vec)
+
+    samples = []
+    weights = []
 
     # visiting set for cycle detection along the *current* stack path only
     def walk(frame_idx, stack, visiting, scale):
@@ -335,7 +374,7 @@ def build_speedscope_json(parser: Parser, event_name: str, profile_name: str):
 
         visiting = visiting | {frame_idx}
         for callee_idx, vec in out_edges:
-            ec = edge_cost_of(vec)
+            ec = value(vec)
             if ec <= 0:
                 continue
             # Share of this callee's total activity attributable to THIS
@@ -343,11 +382,7 @@ def build_speedscope_json(parser: Parser, event_name: str, profile_name: str):
             # sum of inclusive costs over all of the callee's incoming
             # edges (i.e. proportional attribution across multiple
             # callers).
-            total_incoming = 0
-            for caller_edges in parser.edges.values():
-                for c_idx, c_vec in caller_edges:
-                    if c_idx == callee_idx:
-                        total_incoming += edge_cost_of(c_vec)
+            total_incoming = incoming.get(callee_idx, 0)
             if total_incoming <= 0:
                 continue
             edge_scale = scale * (ec / total_incoming)
@@ -360,9 +395,7 @@ def build_speedscope_json(parser: Parser, event_name: str, profile_name: str):
     total = sum(weights)
 
     # weights may be non-integer due to proportional splitting; speedscope
-    # accepts floats for weights, but round for readability/stability.
-    weights = [w for w in weights]
-
+    # accepts floats for weights.
     profile = {
         "type": "sampled",
         "name": profile_name,
@@ -372,15 +405,54 @@ def build_speedscope_json(parser: Parser, event_name: str, profile_name: str):
         "samples": samples,
         "weights": weights,
     }
+    return profile, total
+
+
+def build_speedscope_json(parser: Parser, exprs, base_name: str):
+    """One speedscope document holding one profile per event expression
+    (speedscope shows a profile picker when there is more than one).
+    Expressions whose events are absent from the file, or whose total is
+    zero, are skipped with a note on stderr."""
+    if not parser.events:
+        raise SystemExit("No 'events:' line found in callgrind file")
+
+    shared_frames = []
+    for f in parser.frame_list:
+        entry = {"name": f.name or "???"}
+        if f.file and f.file != "???":
+            entry["file"] = f.file
+        shared_frames.append(entry)
+
+    profiles = []
+    for expr in exprs:
+        idxs = resolve_expr(parser, expr)
+        if idxs is None:
+            print(f"skipping --event {expr!r}: not all of its events are in this "
+                  f"file (events: {' '.join(parser.events)})", file=sys.stderr)
+            continue
+        true_self_total = sum(sum(c[i] for i in idxs if i < len(c))
+                              for c in parser.self_cost.values())
+        if true_self_total <= 0:
+            print(f"skipping --event {expr!r}: total is zero", file=sys.stderr)
+            continue
+        label = expr_label(parser, expr)
+        profile, total = build_profile(parser, idxs, label)
+        ratio = total / true_self_total
+        print(f"{label}: {len(profile['samples'])} stack samples; "
+              f"raw self total {true_self_total}, emitted {total:.0f}, "
+              f"ratio {ratio:.4f} (must be ~1.0)", file=sys.stderr)
+        profiles.append(profile)
+    if not profiles:
+        raise SystemExit("error: none of the requested --event expressions is usable")
 
     doc = {
         "$schema": "https://www.speedscope.app/file-format-schema.json",
         "shared": {"frames": shared_frames},
-        "profiles": [profile],
-        "name": profile_name,
+        "profiles": profiles,
+        "name": base_name,
         "exporter": "callgrind_to_speedscope.py (curl dev/scripts)",
     }
-    return doc, total
+    return doc
 
 
 def main():
@@ -388,10 +460,13 @@ def main():
     ap.add_argument("callgrind_file")
     ap.add_argument("-o", "--output", required=True,
                      help="output .speedscope.json path")
-    ap.add_argument("--event", default="Ir",
-                     help="event type to use as the cost weight (default: Ir)")
+    ap.add_argument("--event", action="append", default=None, metavar="EXPR",
+                     help="event to use as the cost weight; repeatable, each "
+                          "becomes one profile in the file (speedscope shows a "
+                          "picker); 'A+B' sums events, e.g. D1mr+D1mw "
+                          "(default: Ir)")
     ap.add_argument("--name", default=None,
-                     help="profile name (default: input file basename)")
+                     help="document name (default: input file basename)")
     args = ap.parse_args()
 
     with open(args.callgrind_file, "r", errors="replace") as f:
@@ -402,25 +477,9 @@ def main():
         sys.exit("error: could not find 'events:' line -- not a callgrind file?")
 
     name = args.name or args.callgrind_file.rsplit("/", 1)[-1]
-    doc, total = build_speedscope_json(parser, args.event, name)
-
-    true_self_total = sum(
-        c[parser.event_index.get(args.event, 0)]
-        for c in parser.self_cost.values()
-        if parser.event_index.get(args.event, 0) < len(c)
-    )
-
-    print(f"Parsed {len(parser.frame_list)} frames, "
-          f"{len(doc['profiles'][0]['samples'])} stack samples, "
-          f"event={args.event!r}", file=sys.stderr)
-    print(f"Sum of raw self-cost lines (ground truth): {true_self_total}",
+    print(f"Parsed {len(parser.frame_list)} frames; events: {' '.join(parser.events)}",
           file=sys.stderr)
-    print(f"Sum of weights in output flamegraph:        {total:.0f}",
-          file=sys.stderr)
-    if true_self_total:
-        ratio = total / true_self_total
-        print(f"Ratio (should be ~1.0):                      {ratio:.4f}",
-              file=sys.stderr)
+    doc = build_speedscope_json(parser, args.event or ["Ir"], name)
 
     with open(args.output, "w") as f:
         json.dump(doc, f)

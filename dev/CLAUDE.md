@@ -79,14 +79,75 @@ Ryzen AI 9 HX 370, WSL2) unpinned `-O2` runs vary **~106%** run to run
 taskset -c 3 ./build-relwithdebinfo/tests/perf/perf urlparser 10000
 ```
 
-`dev/callgrind-profile.sh [loops]` (default 200, `CALLGRIND_CPU` env var to
-change the pinned core from the default 3) automates this: builds the
-RelWithDebInfo tree, runs a pinned callgrind profile, converts it with
-`dev/scripts/callgrind_to_speedscope.py`, and drops a viewable bundle at
-`~/Downloads/curlscope/index.html` (override with `CURLSCOPE_DEST`).
-Callgrind's own wall-clock is never a valid perf number (30-50x slowdown
-from instruction simulation) — use it only for profile shape, and the
-pinned direct-binary run above for actual timing.
+`dev/profile.sh [OUTDIR] [PERFTEST|all] [CFLAGS...]` automates all of it:
+
+```sh
+dev/profile.sh                                   # -> dev/report, every perf test
+dev/profile.sh ~/artifacts urlparser             # one test
+dev/profile.sh ~/artifacts urlparser -DUSE_AVX512   # rebuild curl with that define first
+```
+
+- `OUTDIR` defaults to `dev/report` (gitignored); a relative path is
+  relative to the caller's cwd. `PERFTEST` is the perf binary's first
+  argument (a test name from `tests/perf/Makefile.inc`) or `all`, the
+  default, which writes one report per test into `OUTDIR/<test>/` plus a
+  top-level `OUTDIR/index.html`. Everything after that goes into
+  `CMAKE_C_FLAGS` for a fresh build; the flags are passed on *every* run
+  (empty when omitted) so a previous run's flags never linger in the cache.
+- Build: `build-relwithdebinfo`, `-O2 -g`, with `ccache` as
+  `CMAKE_C_COMPILER_LAUNCHER` when it is on PATH, so a flag change is a
+  ~1 min first rebuild and cached afterwards.
+- Profile: `valgrind --tool=callgrind --cache-sim=yes --branch-sim=yes`
+  (valgrind 3.26 spells it `--cache-sim`; `--simulate-cache` is the old
+  name), pinned with `taskset -c $CALLGRIND_CPU` (default 3), loop count
+  `CALLGRIND_LOOPS` (default 200 for urlparser, 200000 for the others —
+  callgrind is ~50x slower than native, so the tool's own 10M defaults
+  are not used). `CALLGRIND_OPTS` appends extra valgrind options
+  (`--simulate-hwpref=yes --simulate-wb=yes --cacheuse=yes` are the
+  useful ones). Events recorded: `Ir Dr Dw I1mr D1mr D1mw ILmr DLmr DLmw
+  Bc Bcm Bi Bim`. Callgrind auto-detects the cache geometry from cpuid;
+  on this machine that gives I1 32K/8-way and D1 48K/12-way (right for
+  Zen 5) but LL "16777216 B, direct-mapped" with a "L3 cache found, using
+  its data for the LL simulation" warning — the simulator fell back to
+  direct-mapped, which overstates LL conflict misses. The geometry used
+  is printed in the report's `simulation:` block; override with
+  `CALLGRIND_OPTS="--LL=16777216,16,64"` when LL numbers matter.
+- Timing: a second, native, pinned run of the same test (`perf <test>`,
+  default loops) — the only valid speed number in the report. Callgrind's
+  own wall-clock is never a perf number.
+
+Report layout (`OUTDIR/`, or `OUTDIR/<test>/` with `all`), all plain
+`file://`-openable:
+
+```text
+index.html               bare white-on-black directory page: meta, callgrind
+                         totals (refs/misses/miss rates/branch mispredicts,
+                         simulated cache geometry), links, top 20 functions
+                         by self Ir with call counts and callers by call
+                         count, the valgrind log
+flame-graph/index.html   speedscope bundle; the profile picker switches
+                         between Ir, D1mr+D1mw, DLmr+DLmw, I1mr, Bcm, Bim
+heat-map/index.html      per-line source heat map (event selector, miss columns)
+perf-tool/index.html     native timing run output
+```
+
+Raw data stays in `dev/trace/` (gitignored): `callgrind.out.<test>.<loops>.<ts>`,
+`valgrind.<test>.<loops>.<ts>.log`, the speedscope JSON and the two text
+blocks (`totals.*.txt`, `top20.*.txt`).
+
+Scripts (`dev/scripts/`):
+
+- `callgrind.py` — the shared parser (per-line/per-function cost *vectors*
+  over all events, call graph, `desc:` lines, `totals_report()`); the
+  heat map and the summary import it. Derived events `D1m`, `DLm`, `L1m`,
+  `LLm`, `Bm`, `CEst` (= Ir + 10·L1m + 100·LLm, KCachegrind's cycle
+  estimate) are added when their inputs exist.
+- `callgrind_to_heatmap.py`, `callgrind_summary.py` (`--part
+  totals|functions|all`, `--top`, `--callers`), `build_report_index.py`
+  (`--meta/--link/--section/--text`, emitted in command-line order),
+  `callgrind_to_speedscope.py` (`--event` repeatable; `A+B` sums columns;
+  one speedscope profile per expression), `build_curlscope_bundle.py`,
+  `hotlines.py`.
 
 Validated baseline (RelWithDebInfo, pinned, `loops=10000`, median of 7 runs):
 **137.66 ns/URL**, **~7.26M URLs/sec**, `Errors: 1240000` constant across
@@ -155,7 +216,10 @@ run):
 
 Validated end state: ratio 1.0000 exactly; converted JSON's
 `parseurl_and_replace` self-weight (37.82%) matches `callgrind_annotate`'s
-independent flat-profile number (37.57%) within rounding.
+independent flat-profile number (37.57%) within rounding. With several
+`--event` expressions the converter emits one profile per expression into
+the same document (same frames), printing that ratio for each; speedscope
+shows a profile picker in its toolbar when a file has more than one.
 
 `dev/scripts/build_curlscope_bundle.py` — speedscope's app only defines
 `window.speedscope.loadFileFromBase64` after seeing a truthy
@@ -172,14 +236,15 @@ no server.
 ### Reproducing a profile
 
 ```sh
-dev/callgrind-profile.sh 200          # regenerate everything
-xdg-open ~/Downloads/curlscope/index.html
+dev/profile.sh dev/report urlparser   # regenerate everything (native timing included)
+xdg-open dev/report/index.html
 taskset -c 3 ./build-relwithdebinfo/tests/perf/perf urlparser 10000   # manual timing
 ```
 
 ### Line-level view
 
-The speedscope bundle and `top20.md` are *function*-level, and under `-O2`
+The speedscope bundle and the top-20 block in the report index are
+*function*-level, and under `-O2`
 most of `urlapi.c` is inlined into `parseurl_and_replace` (only
 `curl_url_set`, `parseurl_and_replace`, `parse_authority`, `hostname_check`,
 `ipv6_parse`, `free_urlhandle` survive as symbols — check with `nm -C
@@ -202,29 +267,35 @@ from the line above, not source lines; `hotlines.py` skips them.
 
 `dev/scripts/callgrind_to_heatmap.py` renders the whole per-line profile as
 one self-contained explorer page (no server, no CDN, works from `file://`):
-directory tree on the left, colored and sorted by share of total Ir with
-files that have no samples folded away; per-line colored source on the
-right; click a line number to see what that line calls (inclusive cost,
-links to the callee) and, on a function's first line, who calls it.
-`dev/callgrind-profile.sh` writes it as step 5 to
-`~/Downloads/curlheat/index.html` (override with `CURLHEAT_DEST`; on this
-machine `~/Downloads` is the Windows Downloads folder, so it is also
-`C:\Users\ajohn\Downloads\curlheat\index.html`). Standalone:
+directory tree on the left, colored and sorted by share of the selected
+event with files that have no samples folded away; per-line colored source
+on the right; click a line number to see every event for that line, what
+it calls (inclusive cost, links to the callee) and, on a function's first
+line, who calls it. The header's *event* selector re-colors and re-sorts
+everything by any raw event (Ir, Dr, Dw, I1mr, D1mr, ...) or derived one
+(D1m, DLm, L1m, LLm, Bm, CEst); independent of that, every source line
+shows `D1m`, `DLm` and `Bcm` columns (share of that event's total, each
+heat-colored on its own scale) so a line that is cheap in Ir but hurts in
+misses is visible without switching. The home view carries the same
+callgrind totals block as the report index. `dev/profile.sh` writes it to
+`OUTDIR/heat-map/index.html`. Standalone:
 
 ```sh
 python3 dev/scripts/callgrind_to_heatmap.py \
-  dev/trace/callgrind.out.urlparser.200.<ts> -o ~/Downloads/curlheat/index.html
+  dev/trace/callgrind.out.urlparser.200.<ts> -o dev/report/heat-map/index.html
 ```
 
-Only files that carry cost get their source embedded (~0.8 MB page);
+Only files that carry cost get their source embedded (~0.9 MB page);
 `--all-sources` embeds every tracked `.c/.h` under the `--tree` dirs
-(default `lib include src tests/perf`) too. It follows
-`callgrind_annotate`'s attribution rules exactly (`fi=`/`fe=` switch the
-file for inlined lines, the cost line after `calls=` is inclusive and is
-charged to the call site separately, `calls=` targets decode relative to
-the last cost line) and prints the same self-check ratio as the speedscope
-converter, which must be 1.0000; its per-line numbers were verified to match
-`hotlines.py` line for line. There was no off-the-shelf tool for this:
+(default `lib include src tests/perf`) too. Parsing lives in
+`dev/scripts/callgrind.py` and follows `callgrind_annotate`'s attribution
+rules exactly (`fi=`/`fe=` switch the file for inlined lines, the cost line
+after `calls=` is inclusive and is charged to the call site separately,
+`calls=` targets decode relative to the last cost line) and prints the
+same self-check ratio as the speedscope converter, which must be 1.0000;
+its per-line numbers were verified to match `hotlines.py` line for line,
+and its totals block reproduces valgrind's own exit summary (refs, misses,
+miss rates, mispredict rate). There was no off-the-shelf tool for this:
 KCachegrind has per-line heat but is a desktop app with no directory view,
 pprof/Firefox Profiler have source views but no explorer and do not read
 callgrind, and coverage-style HTML (lcov, gcovr) has the explorer shape but
@@ -235,8 +306,8 @@ The 20 hottest lines are also marked in-source in `lib/urlapi.c` with
 total Ir). Those comments are dev annotations, not upstream material: drop
 them before submitting anything. Line numbers in profiles taken before the
 comments were added (`callgrind.out.urlparser.200.1789436338` and earlier)
-are offset from the current source; re-run `dev/callgrind-profile.sh` to
-get a profile whose line numbers match.
+are offset from the current source; re-run `dev/profile.sh` to get a
+profile whose line numbers match.
 
 ## Workflow
 
@@ -244,7 +315,7 @@ get a profile whose line numbers match.
    URLs/sec and ns/URL (some run-to-run noise is normal — prefer median of
    3-5 runs). For real timing numbers use the pinned RelWithDebInfo build
    above, not the plain `-O0` `./build` tree.
-2. Profile if needed (`perf record`/`perf report`, `dev/callgrind-profile.sh`,
+2. Profile if needed (`perf record`/`perf report`, `dev/profile.sh`,
    gdb, or just read the hot path) to find where time goes in
    `curl_url_set()` for `CURLUPART_URL`. Always profile the RelWithDebInfo
    tree — see "Profiling" above for why.

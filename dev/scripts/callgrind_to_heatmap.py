@@ -2,27 +2,26 @@
 """Turn a callgrind profile into a self-contained "source heatmap" web page.
 
 The page is a file explorer over the profiled source tree: directories and
-files are colored/sorted by how many instructions (or whatever event you pick)
-were executed inside them, and each file opens as a source listing with every
-line colored by its self cost. Call sites expand to show what they call (with
-inclusive cost) and function entry lines show who calls them, so you can click
-down or up the call graph across files. Everything is embedded in one HTML
-file (no server, no CDN), so it can be opened from file:// or mailed around.
+files are colored/sorted by how much of the selected event (instructions by
+default; any cache-miss or branch event callgrind recorded can be picked from
+the header) was spent inside them, and each file opens as a source listing
+with every line colored by its self cost. Beside the selected event, every
+line also shows its L1 data misses, LL data misses and conditional-branch
+mispredicts (when the profile was taken with --cache-sim / --branch-sim), so
+a line that is cheap in instructions but hurts in misses is visible without
+switching events. Clicking a line number shows every event for that line,
+what it calls (inclusive cost) and, on a function's first line, who calls it,
+so you can click down or up the call graph across files. Everything is
+embedded in one HTML file (no server, no CDN), so it can be opened from
+file:// or mailed around.
 
-Per-line attribution mirrors callgrind_annotate exactly:
-  * cost lines are charged to the *current* file, which `fl=` sets for a
-    function and `fi=`/`fe=` switch for inlined code, and to the current
-    line, decoded from callgrind's absolute/`+n`/`-n`/`*` subpositions;
-  * the cost line that follows a `calls=` record is the *inclusive* cost of
-    that call, charged to the call-site line separately (never as self cost);
-  * `calls=` target positions are decoded relative to the last cost line but
-    do not advance it.
-
-A self-check ratio (sum of self-cost lines / callgrind's own summary) is
-printed to stderr on every run and must be 1.0000.
+Parsing and per-line attribution live in callgrind.py (same directory) and
+mirror callgrind_annotate exactly; the self-check ratio it computes (sum of
+self-cost lines / callgrind's own summary) is printed to stderr on every run
+and must be 1.0000.
 
 Usage:
-  callgrind_to_heatmap.py callgrind.out.X -o ~/Downloads/curlheat/index.html \
+  callgrind_to_heatmap.py callgrind.out.X -o report/heat-map/index.html \
       [--event Ir] [--repo-root .] [--tree lib include src tests/perf] \
       [--all-sources] [--title "..."] [--bare]
 """
@@ -33,175 +32,11 @@ import datetime as _dt
 import json
 import os
 import posixpath
-import re
 import subprocess
 import sys
-from collections import defaultdict
 
-# --------------------------------------------------------------------------
-# Callgrind parsing
-# --------------------------------------------------------------------------
-
-_NAME_RE = re.compile(r"^\((\d+)\)(?: (.*))?$")
-
-
-class Profile:
-    def __init__(self) -> None:
-        self.events: list[str] = []
-        self.positions: list[str] = ["line"]
-        self.cmd = ""
-        self.summary = 0
-        # (file, line) -> cost
-        self.line_self: dict[tuple[str, int], int] = defaultdict(int)
-        self.line_calls: dict[tuple[str, int], int] = defaultdict(int)
-        self.line_callcount: dict[tuple[str, int], int] = defaultdict(int)
-        # (file, line) -> function name (first function that charged it)
-        self.line_fn: dict[tuple[str, int], str] = {}
-        # fn name -> home file (file active at its first fn= record)
-        self.fn_home: dict[str, str] = {}
-        self.fn_self: dict[str, int] = defaultdict(int)
-        self.fn_calls: dict[str, int] = defaultdict(int)
-        # callee fn -> (file, line) of its first executed line (calls= target)
-        self.fn_entry: dict[str, tuple[str, int]] = {}
-        # (caller file, caller line, callee fn) -> [count, cost]
-        self.callees: dict[tuple[str, int, str], list[int]] = defaultdict(lambda: [0, 0])
-        # callee fn -> {(caller fn, caller file, caller line): [count, cost]}
-        self.callers: dict[str, dict[tuple[str, str, int], list[int]]] = defaultdict(
-            lambda: defaultdict(lambda: [0, 0]))
-        # file -> object it was seen in (for grouping files without source)
-        self.file_ob: dict[str, str] = {}
-
-
-def parse_callgrind(text: str, event: str) -> Profile:
-    p = Profile()
-    names: dict[str, dict[str, str]] = {"fl": {}, "fn": {}, "ob": {}}
-
-    def unc(kind: str, val: str) -> str:
-        m = _NAME_RE.match(val)
-        if not m:
-            return val
-        ident, name = m.group(1), m.group(2)
-        if name is not None:
-            names[kind][ident] = name
-            return name
-        return names[kind].get(ident, f"({ident})")
-
-    ev_idx = 0
-    npos = 1
-    line_idx = 0
-    prev = [0]
-    cur_file = "???"
-    cur_fn = "???"
-    cur_ob = "???"
-    cur_cob: str | None = None
-    cur_cfile: str | None = None
-    cur_cfn: str | None = None
-    pending_call: tuple[int, int] | None = None
-    in_body = False
-
-    def decode(tok: str, k: int) -> int:
-        if tok == "*":
-            return prev[k]
-        if tok[0] == "+":
-            return prev[k] + int(tok[1:])
-        if tok[0] == "-":
-            return prev[k] - int(tok[1:])
-        if tok.startswith("0x") or tok.startswith("0X"):
-            return int(tok, 16)
-        return int(tok)
-
-    for raw in text.split("\n"):
-        if not raw or raw[0] == "#":
-            continue
-        c0 = raw[0]
-        if c0.isdigit() or c0 in "+-*":
-            toks = raw.split()
-            for k in range(npos):
-                prev[k] = decode(toks[k], k)
-            line = prev[line_idx]
-            costs = toks[npos:]
-            cost = int(costs[ev_idx]) if ev_idx < len(costs) else 0
-            if pending_call is not None:
-                count, target = pending_call
-                pending_call = None
-                callee = cur_cfn or "???"
-                callee_file = cur_cfile if cur_cfile is not None else cur_file
-                cur_cfile = None
-                key = (cur_file, line)
-                p.line_calls[key] += cost
-                p.line_callcount[key] += count
-                p.line_fn.setdefault(key, cur_fn)
-                p.fn_calls[cur_fn] += cost
-                e = p.callees[(cur_file, line, callee)]
-                e[0] += count
-                e[1] += cost
-                r = p.callers[callee][(cur_fn, cur_file, line)]
-                r[0] += count
-                r[1] += cost
-                if callee not in p.fn_entry:
-                    p.fn_entry[callee] = (callee_file, target)
-                p.fn_home.setdefault(callee, callee_file)
-                p.file_ob.setdefault(callee_file, cur_cob or cur_ob)
-                cur_cob = None
-            else:
-                key = (cur_file, line)
-                p.line_self[key] += cost
-                p.line_fn.setdefault(key, cur_fn)
-                p.fn_self[cur_fn] += cost
-                p.file_ob.setdefault(cur_file, cur_ob)
-            continue
-
-        key, sep, val = raw.partition("=")
-        if not sep:
-            key, sep, val = raw.partition(":")
-            if not sep:
-                continue
-            val = val.strip()
-            if key == "events":
-                p.events = val.split()
-                if event not in p.events:
-                    sys.exit(f"error: event {event!r} not in profile events {p.events}")
-                ev_idx = p.events.index(event)
-            elif key == "positions":
-                p.positions = val.split()
-                npos = len(p.positions)
-                line_idx = p.positions.index("line") if "line" in p.positions else npos - 1
-                prev = [0] * npos
-            elif key == "cmd":
-                p.cmd = val
-            elif key in ("summary", "totals"):
-                vals = val.split()
-                if ev_idx < len(vals):
-                    p.summary = int(vals[ev_idx])
-            continue
-
-        if key == "fl":
-            cur_file = unc("fl", val)
-            in_body = True
-        elif key in ("fi", "fe"):
-            cur_file = unc("fl", val)
-        elif key == "fn":
-            cur_fn = unc("fn", val)
-            p.fn_home.setdefault(cur_fn, cur_file)
-            cur_cfile = None
-        elif key == "ob":
-            cur_ob = unc("ob", val)
-        elif key == "cob":
-            cur_cob = unc("ob", val)
-        elif key in ("cfl", "cfi"):
-            cur_cfile = unc("fl", val)
-        elif key == "cfn":
-            cur_cfn = unc("fn", val)
-        elif key == "calls":
-            parts = val.split()
-            count = int(parts[0])
-            target = decode(parts[1 + line_idx], line_idx) if len(parts) > 1 + line_idx else 0
-            pending_call = (count, target)
-        elif key in ("jfi", "jfn"):
-            unc("fl" if key == "jfi" else "fn", val)
-        # jump=, jcnd=, and anything else: ignored
-    del in_body
-    return p
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import callgrind as cg  # noqa: E402
 
 
 # --------------------------------------------------------------------------
@@ -260,9 +95,17 @@ def tracked_files(repo_root: str, dirs: list[str]) -> list[str]:
 # --------------------------------------------------------------------------
 
 
-def build_model(p: Profile, args: argparse.Namespace, src_name: str) -> dict:
-    total = p.summary or sum(p.line_self.values())
+def trim(vec: list[int]) -> list[int]:
+    """Drop trailing zeros; the page pads on read. Keeps the model small."""
+    n = len(vec)
+    while n and vec[n - 1] == 0:
+        n -= 1
+    return vec[:n]
+
+
+def build_model(p: cg.Profile, args: argparse.Namespace, src_name: str) -> dict:
     repo_root = os.path.abspath(args.repo_root)
+    nev = len(p.events)
 
     fn_names = sorted(p.fn_home.keys())
     fn_index = {n: i for i, n in enumerate(fn_names)}
@@ -282,53 +125,60 @@ def build_model(p: Profile, args: argparse.Namespace, src_name: str) -> dict:
         local[raw] = loc
         group[raw] = g
 
+    def vadd(dst: list[int], src: list[int]) -> None:
+        for k, v in enumerate(src):
+            dst[k] += v
+
     files: dict[str, dict] = {}
     for raw in raw_files:
         d = disp[raw]
         entry = files.setdefault(d, {
-            "self": 0, "calls": 0, "src": None, "lines": {}, "lfn": {},
+            "self": [0] * nev, "calls": [0] * nev, "src": None, "lines": {}, "lfn": {},
             "callees": {}, "group": group[raw], "raw": raw,
         })
         if entry["src"] is None and local[raw]:
             entry["src"] = read_source(local[raw])
-    for (raw, ln), cost in p.line_self.items():
+    for (raw, ln), vec in p.line_self.items():
         e = files[disp[raw]]
-        e["self"] += cost
-        rec = e["lines"].setdefault(str(ln), [0, 0, 0])
-        rec[0] += cost
-    for (raw, ln), cost in p.line_calls.items():
+        vadd(e["self"], vec)
+        rec = e["lines"].setdefault(str(ln), [[0] * nev, [0] * nev, 0])
+        vadd(rec[0], vec)
+    for (raw, ln), vec in p.line_calls.items():
         e = files[disp[raw]]
-        e["calls"] += cost
-        rec = e["lines"].setdefault(str(ln), [0, 0, 0])
-        rec[1] += cost
+        vadd(e["calls"], vec)
+        rec = e["lines"].setdefault(str(ln), [[0] * nev, [0] * nev, 0])
+        vadd(rec[1], vec)
         rec[2] += p.line_callcount[(raw, ln)]
     for (raw, ln), fn in p.line_fn.items():
         files[disp[raw]]["lfn"][str(ln)] = fn_index[fn]
-    for (raw, ln, callee), (count, cost) in p.callees.items():
+    for (raw, ln, callee), (count, vec) in p.callees.items():
         e = files[disp[raw]]
         ef, el = p.fn_entry.get(callee, (p.fn_home.get(callee, "???"), 0))
         e["callees"].setdefault(str(ln), []).append(
-            [fn_index[callee], disp.get(ef, ef), el, cost, count])
+            [fn_index[callee], disp.get(ef, ef), el, trim(vec), count])
     for e in files.values():
         for lst in e["callees"].values():
-            lst.sort(key=lambda t: -t[3])
-        pcts = [rec[0] for rec in e["lines"].values()]
-        e["maxLine"] = max(pcts) if pcts else 0
+            lst.sort(key=lambda t: -(t[3][0] if t[3] else 0))
+        for rec in e["lines"].values():
+            rec[0] = trim(rec[0])
+            rec[1] = trim(rec[1])
+        e["self"] = trim(e["self"])
+        e["calls"] = trim(e["calls"])
 
     functions = []
     for name in fn_names:
         home = p.fn_home[name]
         ef, el = p.fn_entry.get(name, (home, 0))
         callers = sorted(
-            ([fn_index[cf], disp.get(cfile, cfile), cl, cost, count]
-             for (cf, cfile, cl), (count, cost) in p.callers[name].items()),
-            key=lambda t: -t[3])
+            ([fn_index[cf], disp.get(cfile, cfile), cl, trim(vec), count]
+             for (cf, cfile, cl), (count, vec) in p.callers[name].items()),
+            key=lambda t: -(t[3][0] if t[3] else 0))
         functions.append({
             "name": name,
             "file": disp.get(ef, ef),
             "line": el,
-            "self": p.fn_self.get(name, 0),
-            "calls": p.fn_calls.get(name, 0),
+            "self": trim(p.fn_self.get(name, [])),
+            "calls": trim(p.fn_calls.get(name, [])),
             "callers": callers,
         })
 
@@ -339,46 +189,32 @@ def build_model(p: Profile, args: argparse.Namespace, src_name: str) -> dict:
             continue
         if args.all_sources:
             src = read_source(os.path.join(repo_root, rel))
-            files[rel] = {"self": 0, "calls": 0, "src": src, "lines": {}, "lfn": {},
-                          "callees": {}, "group": "repo", "raw": rel, "maxLine": 0}
+            files[rel] = {"self": [], "calls": [], "src": src, "lines": {}, "lfn": {},
+                          "callees": {}, "group": "repo", "raw": rel}
         else:
             cold.append(rel)
 
-    top_lines = sorted(
-        ((d, int(ln), rec[0]) for d, e in files.items() for ln, rec in e["lines"].items()),
-        key=lambda t: -t[2])[:60]
-    top_lines_out = []
-    for d, ln, cost in top_lines:
-        e = files[d]
-        snippet = ""
-        if e["src"] is not None:
-            srcl = e["src"].split("\n")
-            if 1 <= ln <= len(srcl):
-                snippet = srcl[ln - 1].strip()[:110]
-        fnidx = e["lfn"].get(str(ln))
-        top_lines_out.append([d, ln, cost, fnidx, snippet])
-
-    top_functions = sorted(range(len(functions)),
-                           key=lambda i: -functions[i]["self"])[:60]
-
-    max_line = max((e["maxLine"] for e in files.values()), default=0)
+    derived = [[name, [[c, i] for c, i in terms], long] for name, terms, long in p.derived_terms()]
+    default_event = args.event if args.event in p.event_names() else (p.events[0] if p.events else "Ir")
     return {
         "meta": {
             "title": args.title,
-            "event": args.event,
-            "total": total,
+            "events": p.events,
+            "eventLong": {n: p.event_long.get(n, "") for n in p.event_names()},
+            "derived": derived,
+            "defaultEvent": default_event,
+            "totals": p.totals(),
+            "desc": p.desc,
+            "stats": cg.totals_report(p),
             "cmd": p.cmd,
             "source": src_name,
             "generated": _dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "maxLine": max_line,
             "repoRoot": repo_root,
             "allSources": bool(args.all_sources),
         },
         "files": files,
         "functions": functions,
         "cold": sorted(cold),
-        "topLines": top_lines_out,
-        "topFunctions": top_functions,
     }
 
 
@@ -447,7 +283,8 @@ a:hover { text-decoration: underline; }
   color: var(--muted); font-size: 11.5px; }
 .node.cold .pct { visibility: hidden; }
 .node.more .name { color: var(--muted); font-style: italic; font-size: 11.5px; }
-table.src tr.th td { color: var(--muted); font-size: 10.5px; padding-top: 4px; padding-bottom: 2px; }
+table.src tr.th td { color: var(--muted); font-size: 10.5px; padding-top: 4px; padding-bottom: 2px;
+  position: sticky; top: 0; background: var(--bg); z-index: 1; }
 .kids { display: none; }
 .kids.open { display: block; }
 #main .fhead { position: sticky; top: 0; z-index: 2; background: var(--panel);
@@ -465,8 +302,10 @@ table.src { border-collapse: collapse; width: 100%; font: 12px/1.42 var(--mono);
 table.src td { padding: 0 8px; vertical-align: top; white-space: pre; }
 td.ln { text-align: right; color: var(--muted); user-select: none; width: 1%; cursor: pointer; }
 td.ln:hover { color: var(--accent); }
-td.self, td.incl { text-align: right; width: 1%; font-variant-numeric: tabular-nums; color: var(--muted); }
+td.self, td.incl, td.x { text-align: right; width: 1%; font-variant-numeric: tabular-nums; color: var(--muted); }
 td.self.hot { color: var(--fg); font-weight: 600; }
+td.x { border-left: 1px dotted var(--border); }
+td.x.hot { color: var(--fg); }
 td.incl { border-right: 1px solid var(--border); }
 td.code { tab-size: 4; color: var(--code); }
 tr.hasc td.ln::before { content: "\\25B8 "; color: var(--accent); }
@@ -478,11 +317,15 @@ tr.detail td { white-space: normal; padding: 0; }
 .dbox table { border-collapse: collapse; }
 .dbox td { padding: 1px 10px 1px 0; white-space: nowrap; }
 .dbox td.n { text-align: right; font-variant-numeric: tabular-nums; }
+.dbox td.m { color: var(--muted); }
+.dbox .evs { display: flex; gap: 24px; flex-wrap: wrap; }
 .nosrc { padding: 8px 16px; color: var(--muted); }
 .home { padding: 14px 20px 40px; max-width: 1200px; }
 .home h2 { font-size: 14px; margin: 18px 0 6px; }
 .home h2:first-child { margin-top: 4px; }
 .home p { color: var(--muted); margin: 4px 0; max-width: 90ch; }
+.home pre { font: 12px/1.4 var(--mono); background: var(--panel); border: 1px solid var(--border);
+  border-radius: 6px; padding: 8px 12px; overflow-x: auto; margin: 4px 0; }
 .home table { border-collapse: collapse; width: 100%; font-size: 12.5px; }
 .home th { text-align: left; color: var(--muted); font-weight: 600; padding: 3px 10px 3px 0; border-bottom: 1px solid var(--border); }
 .home td { padding: 2px 10px 2px 0; vertical-align: top; border-bottom: 1px solid var(--border); }
@@ -503,6 +346,7 @@ tr.detail td { white-space: normal; padding: 0; }
 BODY = """<div id="hdr">
   <h1><a id="homelink">__TITLE__</a></h1>
   <span class="meta" id="hmeta"></span>
+  <label>event <select id="event"></select></label>
   <label>find <input id="q" type="search" placeholder="file name…"></label>
   <label>scale <select id="scale">
     <option value="global">log, global</option>
@@ -521,7 +365,6 @@ BODY = """<div id="hdr">
 (function () {
 "use strict";
 const D = JSON.parse(document.getElementById("heatdata").textContent);
-const TOTAL = D.meta.total || 1;
 const files = D.files, fns = D.functions;
 const treeEl = document.getElementById("tree"), mainEl = document.getElementById("main");
 let scale = "global", sortMode = "heat", curFile = null, query = "";
@@ -529,21 +372,57 @@ try { scale = localStorage.getItem("heat.scale") || scale; sortMode = localStora
 document.getElementById("scale").value = scale;
 document.getElementById("sort").value = sortMode;
 
+// ---------- events ----------
+// Every cost is a vector in D.meta.events order (trailing zeros dropped).
+// EVS lists the raw events that occurred plus the derived ones (sums of raw
+// columns) whose inputs exist; the selected one drives heat, sorting and the
+// self/calls columns. EXTRA are the always-visible miss columns.
+const at = (v, i) => (v && i < v.length) ? v[i] : 0;
+const EVS = [];
+D.meta.events.forEach((n, i) => { if (at(D.meta.totals, i) > 0) EVS.push({ key: n, long: D.meta.eventLong[n] || "", get: v => at(v, i) }); });
+for (const [n, terms, long] of D.meta.derived) {
+  const get = v => terms.reduce((s, t) => s + t[0] * at(v, t[1]), 0);
+  if (get(D.meta.totals) > 0) EVS.push({ key: n, long: long || D.meta.eventLong[n] || "", get, derived: true });
+}
+const evByKey = k => EVS.find(e => e.key === k);
+let ev = null;
+try { ev = evByKey(localStorage.getItem("heat.event")); } catch (e) {}
+ev = ev || evByKey(D.meta.defaultEvent) || EVS[0];
+const EXTRA = ["D1m", "DLm", "Bcm"].map(evByKey).filter(Boolean);
+const evSel = document.getElementById("event");
+for (const e of EVS) { const o = document.createElement("option"); o.value = e.key; o.textContent = e.key + (e.long ? " — " + e.long : ""); evSel.appendChild(o); }
+evSel.value = ev.key;
+let TOTAL = 1, MAXP = 1, MAXPX = {};
+const val = v => ev.get(v);
+
+function recomputeScale() {
+  TOTAL = ev.get(D.meta.totals) || 1;
+  let m = 0;
+  for (const f of Object.values(files)) for (const rec of Object.values(f.lines)) { const s = val(rec[0]); if (s > m) m = s; }
+  MAXP = Math.max(100 * m / TOTAL, 0.0001);
+  MAXPX = {};
+  for (const x of EXTRA) {
+    let mx = 0;
+    for (const f of Object.values(files)) for (const rec of Object.values(f.lines)) { const s = x.get(rec[0]); if (s > mx) mx = s; }
+    MAXPX[x.key] = { total: x.get(D.meta.totals) || 1, maxP: Math.max(100 * mx / (x.get(D.meta.totals) || 1), 0.0001) };
+  }
+}
+
 // ---------- helpers ----------
 const esc = s => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 const pct = v => 100 * v / TOTAL;
-const fmtPct = v => { const p = pct(v); return p >= 10 ? p.toFixed(1) + "%" : p >= 0.01 ? p.toFixed(2) + "%" : p > 0 ? "<0.01%" : ""; };
+const fmtP = p => p >= 10 ? p.toFixed(1) + "%" : p >= 0.01 ? p.toFixed(2) + "%" : p > 0 ? "<0.01%" : "";
+const fmtPct = v => fmtP(pct(v));
 const fmtN = v => v.toLocaleString("en-US");
 const fmtCount = v => v.toLocaleString("en-US") + "\\u00d7";
-const MAXP = Math.max(pct(D.meta.maxLine), 0.0001);
 const PMIN = 0.001; // lines below 0.001% of total stay uncolored in log mode
-function heatT(cost, maxP) {
-  const p = pct(cost);
+function heatP(p, maxP) {
   if (p <= 0) return 0;
   if (scale === "linear") return Math.min(1, p / maxP);
   if (p < PMIN) return 0;
   return Math.min(1, Math.log10(p / PMIN) / Math.log10(Math.max(maxP, PMIN * 10) / PMIN));
 }
+function heatT(cost, maxP) { return heatP(pct(cost), maxP); }
 function heatBg(t) {
   if (t <= 0) return "";
   const hue = 55 - 55 * t, a = 0.10 + 0.80 * t;
@@ -558,6 +437,7 @@ function hashFor(path, line) { return "#f=" + encodeURIComponent(path) + (line ?
 function fnName(i) { return (i != null && fns[i]) ? fns[i].name : "?"; }
 
 // ---------- tree ----------
+let TREE = null;
 function buildTree() {
   const root = { name: "", path: "", dirs: new Map(), files: [], self: 0 };
   function insert(path, self, cold) {
@@ -570,12 +450,11 @@ function buildTree() {
     }
     node.files.push({ name: parts[parts.length - 1], path, self, cold, zero: self === 0 });
   }
-  for (const p of Object.keys(files)) insert(p, files[p].self, false);
+  for (const p of Object.keys(files)) insert(p, val(files[p].self), false);
   for (const p of D.cold) insert(p, 0, true);
   (function sum(n) { let s = 0; for (const d of n.dirs.values()) s += sum(d); for (const f of n.files) s += f.self; n.self = s; return s; })(root);
   return root;
 }
-const TREE = buildTree();
 const openDirs = new Set(), coldOpen = new Set();
 function cmp(a, b) { return sortMode === "heat" ? (b.self - a.self) || a.name.localeCompare(b.name) : a.name.localeCompare(b.name); }
 function matches(path) { return !query || path.toLowerCase().includes(query); }
@@ -585,6 +464,7 @@ function subtreeMatches(n) {
   for (const d of n.dirs.values()) if (subtreeMatches(d)) return true;
   return false;
 }
+const MAXPDIR = 100;
 function renderTree() {
   const out = [];
   function rec(n, depth) {
@@ -605,16 +485,15 @@ function renderTree() {
     for (const f of fl) if (!f.zero) fileRow(f);
     if (zero.length) {
       const show = query ? true : coldOpen.has(n.path);
-      out.push(`<div class="node more" data-more="${esc(n.path)}" style="padding-left:${6 + depth * 14}px"><span class="caret">${show ? "\\u25BC" : "\\u25B6"}</span><span class="name">${zero.length} file${zero.length > 1 ? "s" : ""} without samples</span><span class="pct"></span></div>`);
+      out.push(`<div class="node more" data-more="${esc(n.path)}" style="padding-left:${6 + depth * 14}px"><span class="caret">${show ? "\\u25BC" : "\\u25B6"}</span><span class="name">${zero.length} file${zero.length > 1 ? "s" : ""} without ${esc(ev.key)}</span><span class="pct"></span></div>`);
       if (show) for (const f of zero) fileRow(f);
     }
   }
   rec(TREE, 0);
   treeEl.innerHTML = out.join("");
 }
-const MAXPDIR = 100;
-treeEl.addEventListener("click", ev => {
-  const n = ev.target.closest(".node");
+treeEl.addEventListener("click", ev2 => {
+  const n = ev2.target.closest(".node");
   if (!n) return;
   if (n.dataset.dir != null) {
     const p = n.dataset.dir;
@@ -640,25 +519,49 @@ const entryIdx = {};
 fns.forEach((f, i) => { if (f.line) { (entryIdx[f.file] = entryIdx[f.file] || {})[f.line] = i; } });
 
 // ---------- views ----------
+function topLines(n) {
+  const all = [];
+  for (const [d, e] of Object.entries(files)) for (const [ln, rec] of Object.entries(e.lines)) { const s = val(rec[0]); if (s > 0) all.push([d, +ln, s, e.lfn[ln]]); }
+  all.sort((a, b) => b[2] - a[2]);
+  return all.slice(0, n).map(t => {
+    const e = files[t[0]];
+    let snip = "";
+    if (e.src != null) { const srcl = e.src.split("\\n"); if (t[1] >= 1 && t[1] <= srcl.length) snip = srcl[t[1] - 1].trim().slice(0, 110); }
+    return [t[0], t[1], t[2], t[3], snip];
+  });
+}
+function extraCells(vec, hot) {
+  let h = "";
+  for (const x of EXTRA) {
+    const s = x.get(vec), m = MAXPX[x.key], p = 100 * s / m.total, t = heatP(p, m.maxP);
+    h += `<td class="x${t > 0.45 ? " hot" : ""}" style="${heatBg(t)}" title="${esc(x.key)}: ${fmtN(s)}">${s ? fmtP(p) : ""}</td>`;
+  }
+  return h;
+}
 function renderHome() {
   curFile = null;
   const groups = [...TREE.dirs.values()].sort((a, b) => b.self - a.self);
   let h = `<div class="home">`;
-  h += `<p>${esc(D.meta.event)} = instructions executed (callgrind). Every number is the share of the <b>${fmtN(TOTAL)}</b> total. Click a file in the tree, or a line below. In a listing, click a line number to see what that line calls (and, on a function's first line, who calls it).</p>`;
-  h += `<h2>Where the time goes</h2><table><tr><th>tree</th><th class="n">self</th><th class="n">${esc(D.meta.event)}</th></tr>`;
+  h += `<p><b>${esc(ev.key)}</b> = ${esc(ev.long || ev.key)}. Every percentage is the share of the <b>${fmtN(TOTAL)}</b> total for that event. Click a file in the tree, or a line below. In a listing, click a line number to see every event for that line, what it calls (and, on a function's first line, who calls it). Pick another event in the header to re-color everything by cache misses or branch mispredicts.</p>`;
+  h += `<h2>Callgrind totals</h2><pre>${esc(D.meta.stats)}</pre>`;
+  h += `<h2>Where ${esc(ev.key)} goes</h2><table><tr><th>tree</th><th class="n">self</th><th class="n">${esc(ev.key)}</th></tr>`;
   for (const g of groups) h += `<tr><td>${esc(g.name)}/</td><td class="n" style="${heatBg(heatT(g.self, 100))}">${fmtPct(g.self)}</td><td class="n">${fmtN(g.self)}</td></tr>`;
   h += `</table>`;
-  h += `<h2>Hottest lines</h2><table><tr><th class="n">#</th><th class="n">self</th><th class="n">${esc(D.meta.event)}</th><th>location</th><th>function</th><th>source</th></tr>`;
-  D.topLines.forEach((t, i) => {
+  const xh = EXTRA.map(x => `<th class="n" title="${esc(x.long)}">${esc(x.key)}</th>`).join("");
+  h += `<h2>Hottest lines by ${esc(ev.key)}</h2><table><tr><th class="n">#</th><th class="n">self</th><th class="n">${esc(ev.key)}</th>${xh}<th>location</th><th>function</th><th>source</th></tr>`;
+  topLines(60).forEach((t, i) => {
     const [path, ln, cost, fnidx, snip] = t;
-    h += `<tr><td class="n">${i + 1}</td><td class="n" style="${heatBg(heatT(cost, MAXP))}">${fmtPct(cost)}</td><td class="n">${fmtN(cost)}</td><td><a href="${hashFor(path, ln)}">${esc(path)}:${ln}</a></td><td>${esc(fnName(fnidx))}</td><td class="c">${esc(snip)}</td></tr>`;
+    const rec = files[path].lines[ln];
+    h += `<tr><td class="n">${i + 1}</td><td class="n" style="${heatBg(heatT(cost, MAXP))}">${fmtPct(cost)}</td><td class="n">${fmtN(cost)}</td>${extraCells(rec[0]).replace(/<td class="x/g, '<td class="n x')}<td><a href="${hashFor(path, ln)}">${esc(path)}:${ln}</a></td><td>${esc(fnName(fnidx))}</td><td class="c">${esc(snip)}</td></tr>`;
   });
   h += `</table>`;
-  h += `<h2>Hottest functions (self)</h2><table><tr><th class="n">#</th><th class="n">self</th><th class="n">incl</th><th>function</th><th>defined at</th></tr>`;
-  D.topFunctions.forEach((fi, i) => {
+  const topF = fns.map((f, i) => [i, val(f.self)]).filter(t => t[1] > 0).sort((a, b) => b[1] - a[1]).slice(0, 60);
+  h += `<h2>Hottest functions by self ${esc(ev.key)}</h2><table><tr><th class="n">#</th><th class="n">self</th><th class="n">incl</th>${xh}<th class="n">calls</th><th>function</th><th>defined at</th></tr>`;
+  topF.forEach(([fi, s], i) => {
     const f = fns[fi];
     const loc = f.line ? `<a href="${hashFor(f.file, f.line)}">${esc(f.file)}:${f.line}</a>` : esc(f.file);
-    h += `<tr><td class="n">${i + 1}</td><td class="n" style="${heatBg(heatT(f.self, MAXP))}">${fmtPct(f.self)}</td><td class="n">${fmtPct(f.self + f.calls)}</td><td>${esc(f.name)}</td><td>${loc}</td></tr>`;
+    const ncalls = f.callers.reduce((a, c) => a + c[4], 0);
+    h += `<tr><td class="n">${i + 1}</td><td class="n" style="${heatBg(heatT(s, MAXP))}">${fmtPct(s)}</td><td class="n">${fmtPct(s + val(f.calls))}</td>${extraCells(f.self).replace(/<td class="x/g, '<td class="n x')}<td class="n">${ncalls ? fmtCount(ncalls) : ""}</td><td>${esc(f.name)}</td><td>${loc}</td></tr>`;
   });
   h += `</table></div>`;
   mainEl.innerHTML = h;
@@ -672,13 +575,16 @@ function renderFile(path, line) {
   const first = curFile !== path;
   curFile = path;
   revealInTree(path);
-  const maxP = scale === "file" ? Math.max(pct(f.maxLine), 0.0001) : MAXP;
   const lines = f.lines;
+  let fmax = 0;
+  for (const rec of Object.values(lines)) { const s = val(rec[0]); if (s > fmax) fmax = s; }
+  const maxP = scale === "file" ? Math.max(pct(fmax), 0.0001) : MAXP;
   let h = `<div class="fhead"><span class="path">${esc(path)}</span>`;
-  h += `<span class="stat">self <b>${fmtPct(f.self) || "0%"}</b> (${fmtN(f.self)} ${esc(D.meta.event)})</span>`;
+  h += `<span class="stat">self <b>${fmtPct(val(f.self)) || "0%"}</b> (${fmtN(val(f.self))} ${esc(ev.key)})</span>`;
+  for (const x of EXTRA) { const s = x.get(f.self); if (s) h += `<span class="stat" title="${esc(x.long)}">${esc(x.key)} <b>${fmtP(100 * s / MAXPX[x.key].total)}</b> (${fmtN(s)})</span>`; }
   if (f.group === "external") h += `<span class="stat">not in this repo (${esc(f.raw)})</span>`;
   h += `</div>`;
-  const hot = Object.keys(lines).map(k => [+k, lines[k][0]]).filter(t => t[1] > 0).sort((a, b) => b[1] - a[1]).slice(0, 12);
+  const hot = Object.keys(lines).map(k => [+k, val(lines[k][0])]).filter(t => t[1] > 0).sort((a, b) => b[1] - a[1]).slice(0, 12);
   if (hot.length) {
     h += `<div class="chips"><span class="lbl">hottest lines</span>`;
     for (const [ln, cost] of hot) h += `<span class="chip" data-goto="${ln}" style="${heatBg(heatT(cost, maxP))}">${ln} · ${fmtPct(cost)}</span>`;
@@ -690,14 +596,15 @@ function renderFile(path, line) {
   const rows = [];
   const emitRow = (ln, text) => {
     const rec = lines[ln];
-    const self = rec ? rec[0] : 0, calls = rec ? rec[1] : 0;
+    const self = rec ? val(rec[0]) : 0, calls = rec ? val(rec[1]) : 0;
     const t = heatT(self, maxP);
     const hasc = f.callees[ln] ? " hasc" : "";
     const fnidx = f.lfn[ln];
-    const title = rec ? `${fmtN(self)} self, ${fmtN(calls)} in calls${rec[2] ? " (" + fmtCount(rec[2]) + ")" : ""}${fnidx != null ? " — in " + fnName(fnidx) : ""}` : "";
-    rows.push(`<tr id="L${ln}" class="${hasc}${line === ln ? " target" : ""}" style="${heatBg(t)}"${title ? ` title="${esc(title)}"` : ""}><td class="ln" data-ln="${ln}">${ln}</td><td class="self${t > 0.45 ? " hot" : ""}">${self ? fmtPct(self) : ""}</td><td class="incl">${calls ? fmtPct(calls) : ""}</td><td class="code">${text == null ? "" : esc(text)}</td></tr>`);
+    const title = rec ? `${fmtN(self)} ${ev.key} self, ${fmtN(calls)} in calls${rec[2] ? " (" + fmtCount(rec[2]) + ")" : ""}${fnidx != null ? " — in " + fnName(fnidx) : ""}` : "";
+    rows.push(`<tr id="L${ln}" class="${hasc}${line === ln ? " target" : ""}" style="${heatBg(t)}"${title ? ` title="${esc(title)}"` : ""}><td class="ln" data-ln="${ln}">${ln}</td><td class="self${t > 0.45 ? " hot" : ""}">${self ? fmtPct(self) : ""}</td><td class="incl">${calls ? fmtPct(calls) : ""}</td>${rec ? extraCells(rec[0]) : EXTRA.map(() => `<td class="x"></td>`).join("")}<td class="code">${text == null ? "" : esc(text)}</td></tr>`);
   };
-  h += `<table class="src"><tr class="th"><td class="ln">line</td><td class="self">self</td><td class="incl" title="inclusive cost of the calls made from this line">calls</td><td class="code"></td></tr>`;
+  const xh = EXTRA.map(x => `<td class="x" title="${esc(x.long)} (share of that event's total)">${esc(x.key)}</td>`).join("");
+  h += `<table class="src"><tr class="th"><td class="ln">line</td><td class="self">${esc(ev.key)}</td><td class="incl" title="inclusive cost of the calls made from this line">calls</td>${xh}<td class="code"></td></tr>`;
   if (f.src != null) {
     const srcl = f.src.split("\\n");
     if (srcl.length && srcl[srcl.length - 1] === "") srcl.pop();
@@ -715,6 +622,16 @@ function renderFile(path, line) {
   } else if (first) mainEl.scrollTop = 0;
 }
 
+function eventTable(selfv, callsv) {
+  let h = `<table><tr><td class="m">event</td><td class="n m">self</td><td class="n m">% of total</td><td class="n m">in calls</td><td class="m"></td></tr>`;
+  for (const e of EVS) {
+    const s = e.get(selfv), c = e.get(callsv), tot = e.get(D.meta.totals) || 1;
+    if (!s && !c) continue;
+    h += `<tr><td${e === ev ? ' style="font-weight:600"' : ""}>${esc(e.key)}</td><td class="n">${fmtN(s)}</td><td class="n">${fmtP(100 * s / tot) || "0%"}</td><td class="n">${c ? fmtN(c) : ""}</td><td class="m">${esc(e.long)}</td></tr>`;
+  }
+  return h + `</table>`;
+}
+
 function toggleDetail(path, ln, forceOpen) {
   const f = files[path];
   const row = document.getElementById("L" + ln);
@@ -722,26 +639,28 @@ function toggleDetail(path, ln, forceOpen) {
   const next = row.nextElementSibling;
   if (next && next.classList.contains("detail")) { if (!forceOpen) next.remove(); return; }
   document.querySelectorAll("tr.detail").forEach(e => e.remove());
-  const callees = f.callees[ln] || [];
+  const callees = (f.callees[ln] || []).slice().sort((a, b) => val(b[3]) - val(a[3]));
   const fi = (entryIdx[path] || {})[ln];
   const fnidx = f.lfn[ln];
-  const rec = f.lines[ln] || [0, 0, 0];
+  const rec = f.lines[ln] || [[], [], 0];
   let h = `<div class="dbox">`;
-  h += `<div>line ${ln}${fnidx != null ? " in <b>" + esc(fnName(fnidx)) + "</b>" : ""}: self ${fmtN(rec[0])} (${fmtPct(rec[0]) || "0%"})${rec[1] ? `, calls ${fmtN(rec[1])} (${fmtPct(rec[1])}) over ${fmtCount(rec[2])}` : ""}</div>`;
+  h += `<div>line ${ln}${fnidx != null ? " in <b>" + esc(fnName(fnidx)) + "</b>" : ""}: self ${fmtN(val(rec[0]))} ${esc(ev.key)} (${fmtPct(val(rec[0])) || "0%"})${val(rec[1]) ? `, calls ${fmtN(val(rec[1]))} (${fmtPct(val(rec[1]))}) over ${fmtCount(rec[2])}` : ""}</div>`;
+  h += `<h4>all events on this line</h4>` + eventTable(rec[0], rec[1]);
   if (callees.length) {
-    h += `<h4>calls from this line (inclusive)</h4><table>`;
-    for (const [ci, cf, cl, cost, count] of callees) {
+    h += `<h4>calls from this line (inclusive ${esc(ev.key)})</h4><table>`;
+    for (const [ci, cf, cl, vec, count] of callees) {
       const loc = files[cf] && cl ? `<a href="${hashFor(cf, cl)}">${esc(cf)}:${cl}</a>` : esc(cf);
-      h += `<tr><td class="n">${fmtPct(cost)}</td><td class="n">${fmtN(cost)}</td><td class="n">${fmtCount(count)}</td><td>${esc(fnName(ci))}</td><td>${loc}</td></tr>`;
+      h += `<tr><td class="n">${fmtPct(val(vec))}</td><td class="n">${fmtN(val(vec))}</td><td class="n">${fmtCount(count)}</td><td>${esc(fnName(ci))}</td><td>${loc}</td></tr>`;
     }
     h += `</table>`;
   }
   if (fi != null) {
     const fn = fns[fi];
-    h += `<h4>${esc(fn.name)} is entered here — self ${fmtPct(fn.self) || "0%"}, inclusive ${fmtPct(fn.self + fn.calls) || "0%"}. Called from:</h4><table>`;
-    for (const [ci, cf, cl, cost, count] of fn.callers) {
+    const callers = fn.callers.slice().sort((a, b) => b[4] - a[4]);
+    h += `<h4>${esc(fn.name)} is entered here — self ${fmtPct(val(fn.self)) || "0%"}, inclusive ${fmtPct(val(fn.self) + val(fn.calls)) || "0%"}. Called from (by call count):</h4><table>`;
+    for (const [ci, cf, cl, vec, count] of callers) {
       const loc = files[cf] && cl ? `<a href="${hashFor(cf, cl)}">${esc(cf)}:${cl}</a>` : esc(cf);
-      h += `<tr><td class="n">${fmtPct(cost)}</td><td class="n">${fmtN(cost)}</td><td class="n">${fmtCount(count)}</td><td>${esc(fnName(ci))}</td><td>${loc}</td></tr>`;
+      h += `<tr><td class="n">${fmtCount(count)}</td><td class="n">${fmtPct(val(vec))}</td><td class="n">${fmtN(val(vec))}</td><td>${esc(fnName(ci))}</td><td>${loc}</td></tr>`;
     }
     if (!fn.callers.length) h += `<tr><td>(no recorded caller — a root or a resolver stub)</td></tr>`;
     h += `</table>`;
@@ -750,14 +669,14 @@ function toggleDetail(path, ln, forceOpen) {
   h += `</div>`;
   const tr = document.createElement("tr");
   tr.className = "detail";
-  tr.innerHTML = `<td colspan="4">${h}</td>`;
+  tr.innerHTML = `<td colspan="${4 + EXTRA.length}">${h}</td>`;
   row.after(tr);
 }
 
-mainEl.addEventListener("click", ev => {
-  const chip = ev.target.closest(".chip");
+mainEl.addEventListener("click", ev2 => {
+  const chip = ev2.target.closest(".chip");
   if (chip) { location.hash = hashFor(curFile, +chip.dataset.goto); return; }
-  const ln = ev.target.closest("td.ln");
+  const ln = ev2.target.closest("td.ln");
   if (ln && curFile) { toggleDetail(curFile, +ln.dataset.ln, false); return; }
 });
 
@@ -767,14 +686,22 @@ function route() {
   if (m) renderFile(decodeURIComponent(m[1]), m[2] ? +m[2] : 0);
   else renderHome();
 }
+function setEvent(key) {
+  ev = evByKey(key) || EVS[0];
+  try { localStorage.setItem("heat.event", ev.key); } catch (e) {}
+  recomputeScale();
+  TREE = buildTree();
+  for (const d of TREE.dirs.values()) if (d.self / TOTAL > 0.05) openDirs.add(d.path);
+  document.getElementById("hmeta").textContent = `${D.meta.cmd || ""} · ${fmtN(TOTAL)} ${ev.key} · ${D.meta.source} · ${D.meta.generated}`;
+  route();
+}
 window.addEventListener("hashchange", route);
 document.getElementById("homelink").addEventListener("click", () => { location.hash = ""; });
-document.getElementById("scale").addEventListener("change", ev => { scale = ev.target.value; try { localStorage.setItem("heat.scale", scale); } catch (e) {} route(); });
-document.getElementById("sort").addEventListener("change", ev => { sortMode = ev.target.value; try { localStorage.setItem("heat.sort", sortMode); } catch (e) {} renderTree(); });
-document.getElementById("q").addEventListener("input", ev => { query = ev.target.value.trim().toLowerCase(); renderTree(); });
-document.getElementById("hmeta").textContent = `${D.meta.cmd || ""} · ${fmtN(TOTAL)} ${D.meta.event} · ${D.meta.source} · ${D.meta.generated}`;
-for (const d of TREE.dirs.values()) if (d.self / TOTAL > 0.05) openDirs.add(d.path);
-route();
+evSel.addEventListener("change", e => setEvent(e.target.value));
+document.getElementById("scale").addEventListener("change", e => { scale = e.target.value; try { localStorage.setItem("heat.scale", scale); } catch (x) {} route(); });
+document.getElementById("sort").addEventListener("change", e => { sortMode = e.target.value; try { localStorage.setItem("heat.sort", sortMode); } catch (x) {} renderTree(); });
+document.getElementById("q").addEventListener("input", e => { query = e.target.value.trim().toLowerCase(); renderTree(); });
+setEvent(ev.key);
 })();
 </script>
 """
@@ -797,7 +724,7 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("callgrind_file")
     ap.add_argument("-o", "--output", required=True, help="output .html path (directories are created)")
-    ap.add_argument("--event", default="Ir", help="callgrind event to visualise (default: Ir)")
+    ap.add_argument("--event", default="Ir", help="event selected when the page opens (default: Ir)")
     ap.add_argument("--repo-root", default=".", help="repository root the profile's paths are relative to")
     ap.add_argument("--tree", nargs="*", default=["lib", "include", "src", "tests/perf"],
                     help="directories whose tracked .c/.h files are listed in the tree even without samples")
@@ -810,16 +737,18 @@ def main() -> None:
 
     with open(args.callgrind_file, encoding="utf-8", errors="replace") as f:
         text = f.read()
-    prof = parse_callgrind(text, args.event)
+    prof = cg.parse_callgrind(text)
+    if not prof.events:
+        sys.exit("error: no 'events:' line -- not a callgrind file?")
     if args.title is None:
         args.title = f"heatmap: {prof.cmd or os.path.basename(args.callgrind_file)}"
 
-    self_sum = sum(prof.line_self.values())
-    ratio = self_sum / prof.summary if prof.summary else float("nan")
-    print(f"callgrind summary ({args.event}): {prof.summary:,}", file=sys.stderr)
+    self_sum, total, ratio = cg.self_check(prof)
+    print(f"events: {' '.join(prof.events)}", file=sys.stderr)
+    print(f"callgrind summary ({prof.events[0]}): {total:,}", file=sys.stderr)
     print(f"sum of self-cost lines:          {self_sum:,}", file=sys.stderr)
     print(f"ratio (must be 1.0000):          {ratio:.4f}", file=sys.stderr)
-    if prof.summary and abs(ratio - 1.0) > 1e-6:
+    if total and abs(ratio - 1.0) > 1e-6:
         print("error: per-line self cost does not add up to callgrind's summary; refusing to write", file=sys.stderr)
         sys.exit(2)
 
