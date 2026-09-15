@@ -78,8 +78,15 @@ python3 dev/scripts/build_curlscope_bundle.py \
   --profile-json "$JSON_OUT" \
   --profile-filename "$(basename "$JSON_OUT")"
 
+HEAT_DEST="${CURLHEAT_DEST:-$HOME/Downloads/curlheat}"
+echo "== 5/5: rendering per-line source heatmap at $HEAT_DEST =="
+python3 dev/scripts/callgrind_to_heatmap.py "$CG_OUT" \
+  -o "$HEAT_DEST/index.html" \
+  --title "curl urlparser heatmap"
+
 echo
 echo "Done."
 echo "  Callgrind data:    $CG_OUT"
 echo "  Speedscope JSON:   $JSON_OUT"
 echo "  Bundle:            $DEST_DIR/index.html  (double-click to open, auto-loads the profile)"
+echo "  Source heatmap:    $HEAT_DEST/index.html  (file explorer colored by per-line Ir)"

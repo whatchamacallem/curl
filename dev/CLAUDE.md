@@ -109,11 +109,13 @@ Full hot-spot breakdown as of the last profile (`loops=200` → 807,800
 ```
 
 The single hottest *line* in the whole benchmark is the inlined
-`badoctets()` control-char check at `lib/urlapi.c:263`
+`badoctets()` control-char check at `lib/urlapi.c:274`
 (`if(*p <= control || *p == 127)`) — **236,011,200 Ir, 11.94% of total
-instructions** on its own, a scalar byte-by-byte scan called on
+instructions** on its own (plus 95.4M for the `while(n--)` on line 272 and
+47.2M for the `p++` on 277, so the whole loop is ~19% of the program), a
+scalar byte-by-byte scan called on
 path/query/fragment/user/password/options for effectively every URL (call
-sites: `lib/urlapi.c:353,355,357,1136,1162,1195`). Most corpus paths/queries
+sites: `lib/urlapi.c:367,369,371,1157,1183,1216`). Most corpus paths/queries
 are "clean" and pay the full length for a boolean answer — a chunked/SIMD
 scan there is the obvious next thing to try and has not yet been attempted
 (no `lib/urlapi.c` changes made in the profiling session that produced these
@@ -121,7 +123,7 @@ numbers).
 
 `free`/`malloc` combined ~10%: every `curl_url_set(CURLUPART_URL,...)` call
 tears down and rebuilds the whole internal representation
-(`free_urlhandle`, `lib/urlapi.c:69-88`), so allocator overhead is a real
+(`free_urlhandle`, `lib/urlapi.c:74-93`), so allocator overhead is a real
 fraction of cost independent of parsing logic.
 
 ### Callgrind/speedscope tooling notes
@@ -174,6 +176,67 @@ dev/callgrind-profile.sh 200          # regenerate everything
 xdg-open ~/Downloads/curlscope/index.html
 taskset -c 3 ./build-relwithdebinfo/tests/perf/perf urlparser 10000   # manual timing
 ```
+
+### Line-level view
+
+The speedscope bundle and `top20.md` are *function*-level, and under `-O2`
+most of `urlapi.c` is inlined into `parseurl_and_replace` (only
+`curl_url_set`, `parseurl_and_replace`, `parse_authority`, `hostname_check`,
+`ipv6_parse`, `free_urlhandle` survive as symbols — check with `nm -C
+build-relwithdebinfo/lib/libcurl.so.4`). Callgrind charges inlined code to
+the enclosing symbol, so to see what is hot *inside* that 37.8% you need the
+per-source-line annotation:
+
+```sh
+# full per-line annotation of one file (saved copy: dev/callgrind-out/urlapi.c.annotated.txt)
+callgrind_annotate --show-percs=yes dev/callgrind-out/callgrind.out.urlparser.200.<ts> lib/urlapi.c \
+  > dev/callgrind-out/urlapi.c.annotated.txt
+# hottest N source lines of that file, sorted (parses the -- line N markers)
+python3 dev/scripts/hotlines.py dev/callgrind-out/urlapi.c.annotated.txt lib/urlapi.c 15
+```
+
+`=> file:func (Nx)` rows in the annotation are inclusive cost of calls made
+from the line above, not source lines; `hotlines.py` skips them.
+
+### Source heatmap (browser)
+
+`dev/scripts/callgrind_to_heatmap.py` renders the whole per-line profile as
+one self-contained explorer page (no server, no CDN, works from `file://`):
+directory tree on the left, colored and sorted by share of total Ir with
+files that have no samples folded away; per-line colored source on the
+right; click a line number to see what that line calls (inclusive cost,
+links to the callee) and, on a function's first line, who calls it.
+`dev/callgrind-profile.sh` writes it as step 5 to
+`~/Downloads/curlheat/index.html` (override with `CURLHEAT_DEST`; on this
+machine `~/Downloads` is the Windows Downloads folder, so it is also
+`C:\Users\ajohn\Downloads\curlheat\index.html`). Standalone:
+
+```sh
+python3 dev/scripts/callgrind_to_heatmap.py \
+  dev/callgrind-out/callgrind.out.urlparser.200.<ts> -o ~/Downloads/curlheat/index.html
+```
+
+Only files that carry cost get their source embedded (~0.8 MB page);
+`--all-sources` embeds every tracked `.c/.h` under the `--tree` dirs
+(default `lib include src tests/perf`) too. It follows
+`callgrind_annotate`'s attribution rules exactly (`fi=`/`fe=` switch the
+file for inlined lines, the cost line after `calls=` is inclusive and is
+charged to the call site separately, `calls=` targets decode relative to
+the last cost line) and prints the same self-check ratio as the speedscope
+converter, which must be 1.0000; its per-line numbers were verified to match
+`hotlines.py` line for line. There was no off-the-shelf tool for this:
+KCachegrind has per-line heat but is a desktop app with no directory view,
+pprof/Firefox Profiler have source views but no explorer and do not read
+callgrind, and coverage-style HTML (lcov, gcovr) has the explorer shape but
+only binary hit/miss coloring.
+
+The 20 hottest lines are also marked in-source in `lib/urlapi.c` with
+`/* perf #N: X.XX% */` comments on the line above each (rank, share of
+total Ir). Those comments are dev annotations, not upstream material: drop
+them before submitting anything. Line numbers in profiles taken before the
+comments were added (`callgrind.out.urlparser.200.1789436338` and earlier)
+are offset from the current source; re-run `dev/callgrind-profile.sh` to
+get a profile whose line numbers match.
 
 ## Workflow
 
