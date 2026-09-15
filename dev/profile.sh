@@ -16,7 +16,7 @@ REPO_ROOT="$(pwd)"
 LOOPS="${1:-200}"
 CPU="${CALLGRIND_CPU:-3}"
 BUILD_DIR="build-relwithdebinfo"
-OUT_DIR="dev/callgrind-out"
+OUT_DIR="dev/trace"
 if ! command -v speedscope >/dev/null 2>&1; then
   echo "error: speedscope not found on PATH (npm i -g speedscope)" >&2
   exit 1
@@ -50,10 +50,10 @@ echo "   perf number -- only use ./build-relwithdebinfo/tests/perf/perf directly
 echo "   (optionally under taskset) for timing. Callgrind is for the profile only."
 if command -v taskset >/dev/null 2>&1; then
   taskset -c "$CPU" valgrind --tool=callgrind \
-    --callgrind-out-file="$CG_OUT" \
+    --trace-file="$CG_OUT" \
     "$BIN" urlparser "$LOOPS"
 else
-  valgrind --tool=callgrind --callgrind-out-file="$CG_OUT" "$BIN" urlparser "$LOOPS"
+  valgrind --tool=callgrind --trace-file="$CG_OUT" "$BIN" urlparser "$LOOPS"
 fi
 
 echo "== 3/4: converting callgrind output to speedscope JSON =="

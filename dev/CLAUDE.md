@@ -188,11 +188,11 @@ the enclosing symbol, so to see what is hot *inside* that 37.8% you need the
 per-source-line annotation:
 
 ```sh
-# full per-line annotation of one file (saved copy: dev/callgrind-out/urlapi.c.annotated.txt)
-callgrind_annotate --show-percs=yes dev/callgrind-out/callgrind.out.urlparser.200.<ts> lib/urlapi.c \
-  > dev/callgrind-out/urlapi.c.annotated.txt
+# full per-line annotation of one file (saved copy: dev/trace/urlapi.c.annotated.txt)
+callgrind_annotate --show-percs=yes dev/trace/callgrind.out.urlparser.200.<ts> lib/urlapi.c \
+  > dev/trace/urlapi.c.annotated.txt
 # hottest N source lines of that file, sorted (parses the -- line N markers)
-python3 dev/scripts/hotlines.py dev/callgrind-out/urlapi.c.annotated.txt lib/urlapi.c 15
+python3 dev/scripts/hotlines.py dev/trace/urlapi.c.annotated.txt lib/urlapi.c 15
 ```
 
 `=> file:func (Nx)` rows in the annotation are inclusive cost of calls made
@@ -213,7 +213,7 @@ machine `~/Downloads` is the Windows Downloads folder, so it is also
 
 ```sh
 python3 dev/scripts/callgrind_to_heatmap.py \
-  dev/callgrind-out/callgrind.out.urlparser.200.<ts> -o ~/Downloads/curlheat/index.html
+  dev/trace/callgrind.out.urlparser.200.<ts> -o ~/Downloads/curlheat/index.html
 ```
 
 Only files that carry cost get their source embedded (~0.8 MB page);
