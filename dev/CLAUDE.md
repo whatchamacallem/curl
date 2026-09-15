@@ -1,5 +1,34 @@
 # curl urlparser perf work
 
+## User settings (Do not modify)
+
+Heatmap Colors = `["#3E4A89", "#31688E", "#26828E", "#1F9E89", "#35B779", "#6DCD59", "#B4DE2C", "#FDE725", "#FFC83B", "#FFA22C", "#FF7F21", "#F06142"]`
+
+Theme Colors.
+[
+  "#00A8FF",
+  "#0097E6",
+  "#E84118",
+  "#C23616",
+  "#9C88FF",
+  "#8C7AE6",
+  "#F5F6FA",
+  "#DCDDE1",
+  "#FBC531",
+  "#E1B12C",
+  "#7F8FA6",
+  "#718093",
+  "#4CD137",
+  "#44BD32",
+  "#273C75",
+  "#192A56",
+  "#487EB0",
+  "#40739E",
+  "#353B48",
+  "#2F3640"
+]
+
+
 ## Goal
 
 Optimize `tests/perf/urlparser.c` (and, as needed, the URL API code it

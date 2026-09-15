@@ -267,7 +267,7 @@ a:hover { text-decoration: underline; }
   border: 1px solid var(--border); border-radius: 4px; padding: 2px 6px; }
 #hdr input { width: 200px; }
 #layout { display: flex; flex: 1; min-height: 0; }
-#tree { width: 360px; min-width: 180px; max-width: 70vw; overflow: auto; resize: horizontal;
+#tree { width: 280px; min-width: 160px; max-width: 60vw; overflow: auto; resize: horizontal;
   border-right: 1px solid var(--border); padding: 4px 0 24px; font-size: 12.5px; }
 #main { flex: 1; min-width: 0; overflow: auto; }
 .node { display: flex; align-items: center; gap: 4px; padding: 1px 8px 1px 0;
@@ -326,14 +326,31 @@ tr.detail td { white-space: normal; padding: 0; }
 .home p { color: var(--muted); margin: 4px 0; max-width: 90ch; }
 .home pre { font: 12px/1.4 var(--mono); background: var(--panel); border: 1px solid var(--border);
   border-radius: 6px; padding: 8px 12px; overflow-x: auto; margin: 4px 0; }
+.tbl-wrap { position: relative; overflow: auto; max-height: 70vh; margin: 4px 0 8px;
+  border: 1px solid var(--border); border-radius: 6px; }
+.tbl-legend { display: flex; gap: 4px 14px; flex-wrap: wrap; align-items: baseline;
+  padding: 5px 10px; background: var(--panel); border-bottom: 1px solid var(--border);
+  color: var(--muted); font-size: 11.5px; position: sticky; top: 0; z-index: 2; }
+.tbl-legend b { color: var(--fg); font-weight: 600; font-family: var(--mono); }
 .home table { border-collapse: collapse; width: 100%; font-size: 12.5px; }
-.home th { text-align: left; color: var(--muted); font-weight: 600; padding: 3px 10px 3px 0; border-bottom: 1px solid var(--border); }
+.home th { text-align: left; color: var(--muted); font-weight: 600; padding: 3px 10px 3px 0;
+  border-bottom: 1px solid var(--border); background: var(--bg); position: sticky; z-index: 1;
+  white-space: nowrap; cursor: default; }
 .home td { padding: 2px 10px 2px 0; vertical-align: top; border-bottom: 1px solid var(--border); }
 .home td.n, .home th.n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.home td.c { font: 11.5px var(--mono); white-space: pre; overflow: hidden; text-overflow: ellipsis; max-width: 60ch; }
+.home td.c { font: 11.5px var(--mono); white-space: pre; overflow: hidden; text-overflow: ellipsis; max-width: 40ch; }
+.rcol { position: relative; }
+.rcol .rgrip { position: absolute; right: -4px; top: 0; bottom: 0; width: 8px; cursor: col-resize;
+  z-index: 2; touch-action: none; }
+.rcol .rgrip:hover, .rcol .rgrip.active { background: var(--accent); opacity: .35; }
 .legend { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; }
 .legend i { display: inline-block; width: 120px; height: 10px; border-radius: 2px;
   background: linear-gradient(90deg, hsla(55,100%,var(--heat-l),.12), hsla(35,100%,var(--heat-l),.55), hsla(0,100%,var(--heat-l),.9)); }
+@media (max-width: 1440px) {
+  #tree { width: 230px; }
+  .home { padding: 12px 14px 32px; }
+  #hdr { padding: 6px 10px; }
+}
 @media (max-width: 720px) {
   #layout { flex-direction: column; }
   #tree { width: auto !important; max-width: none; max-height: 38vh; resize: none;
@@ -530,6 +547,9 @@ function topLines(n) {
     return [t[0], t[1], t[2], t[3], snip];
   });
 }
+function rth(label, cls, title) {
+  return `<th class="rcol${cls ? " " + cls : ""}"${title ? ` title="${title}"` : ""}>${label}</th>`;
+}
 function extraCells(vec, hot) {
   let h = "";
   for (const x of EXTRA) {
@@ -538,35 +558,112 @@ function extraCells(vec, hot) {
   }
   return h;
 }
+// Column abbreviations used across the tables, spelled out once so a legend
+// banner can show them without requiring a hover.
+const GLOSS = {
+  "#": "rank", self: "self cost (time attributed to this line/function alone)",
+  incl: "inclusive cost (self + everything it calls)",
+  calls: "how many times this was called, or the inclusive cost of calls made from a line",
+  location: "file:line", "defined at": "file:line where the function starts",
+  tree: "directory or file", source: "source line, trimmed",
+};
+function legendBar(keys, extraStyle) {
+  const seen = new Set();
+  const parts = [];
+  for (const k of keys) {
+    const isEvent = k && typeof k === "object";
+    const label = isEvent ? k.key : k;
+    if (seen.has(label)) continue;
+    seen.add(label);
+    const desc = isEvent ? (k.long || "") : (GLOSS[label] || "");
+    if (!desc || desc === label) continue;
+    parts.push(`<span><b>${esc(label)}</b> ${esc(desc)}</span>`);
+  }
+  if (!parts.length) return "";
+  const style = extraStyle ? ` style="${extraStyle}"` : "";
+  return `<div class="tbl-legend"${style}>${parts.join("")}</div>`;
+}
+// Wrap a <table>...</table> string with a sticky-header scroll box and,
+// optionally, a plain-language legend banner above it.
+function wrapTable(tableHtml, legendKeys) {
+  const legend = legendKeys ? legendBar(legendKeys) : "";
+  return `<div class="tbl-wrap">${legend}${tableHtml}</div>`;
+}
+// Drag-to-resize for <th class="rcol"> columns: each such header gets a
+// grip on its right edge; dragging sets an explicit width on that <th> (and
+// its table switches to a fixed layout so the width sticks).
+// A sticky legend banner and a sticky <th> row can both be direct/nested
+// children of the same scrolling .tbl-wrap; the header's sticky offset must
+// equal the legend's rendered height (0 when there is no legend) or the two
+// overlap instead of stacking.
+function alignStickyHeaders(root) {
+  for (const wrap of root.querySelectorAll(".tbl-wrap")) {
+    const legend = wrap.querySelector(":scope > .tbl-legend");
+    const offset = legend ? legend.getBoundingClientRect().height : 0;
+    for (const th of wrap.querySelectorAll("th")) th.style.top = offset + "px";
+  }
+}
+function initResizableColumns(root) {
+  alignStickyHeaders(root);
+  for (const th of root.querySelectorAll(".rcol")) {
+    if (th.querySelector(".rgrip")) continue;
+    const grip = document.createElement("span");
+    grip.className = "rgrip";
+    th.appendChild(grip);
+  }
+  root.querySelectorAll(".rcol .rgrip").forEach(grip => {
+    grip.addEventListener("pointerdown", e => {
+      const th = grip.parentElement, table = th.closest("table");
+      const startX = e.clientX, startW = th.getBoundingClientRect().width;
+      table.style.tableLayout = "fixed";
+      if (grip.setPointerCapture) grip.setPointerCapture(e.pointerId);
+      grip.classList.add("active");
+      const onMove = e2 => { th.style.width = Math.max(32, startW + (e2.clientX - startX)) + "px"; };
+      const onUp = () => {
+        grip.classList.remove("active");
+        grip.removeEventListener("pointermove", onMove);
+        grip.removeEventListener("pointerup", onUp);
+      };
+      grip.addEventListener("pointermove", onMove);
+      grip.addEventListener("pointerup", onUp);
+      e.preventDefault();
+    });
+  });
+}
 function renderHome() {
   curFile = null;
   const groups = [...TREE.dirs.values()].sort((a, b) => b.self - a.self);
   let h = `<div class="home">`;
   h += `<p><b>${esc(ev.key)}</b> = ${esc(ev.long || ev.key)}. Every percentage is the share of the <b>${fmtN(TOTAL)}</b> total for that event. Click a file in the tree, or a line below. In a listing, click a line number to see every event for that line, what it calls (and, on a function's first line, who calls it). Pick another event in the header to re-color everything by cache misses or branch mispredicts.</p>`;
   h += `<h2>Callgrind totals</h2><pre>${esc(D.meta.stats)}</pre>`;
-  h += `<h2>Where ${esc(ev.key)} goes</h2><table><tr><th>tree</th><th class="n">self</th><th class="n">${esc(ev.key)}</th></tr>`;
-  for (const g of groups) h += `<tr><td>${esc(g.name)}/</td><td class="n" style="${heatBg(heatT(g.self, 100))}">${fmtPct(g.self)}</td><td class="n">${fmtN(g.self)}</td></tr>`;
-  h += `</table>`;
-  const xh = EXTRA.map(x => `<th class="n" title="${esc(x.long)}">${esc(x.key)}</th>`).join("");
-  h += `<h2>Hottest lines by ${esc(ev.key)}</h2><table><tr><th class="n">#</th><th class="n">self</th><th class="n">${esc(ev.key)}</th>${xh}<th>location</th><th>function</th><th>source</th></tr>`;
+  let t1 = `<table><tr>${rth("tree")}${rth("self", "n")}<th class="n">${esc(ev.key)}</th></tr>`;
+  for (const g of groups) t1 += `<tr><td>${esc(g.name)}/</td><td class="n" style="${heatBg(heatT(g.self, 100))}">${fmtPct(g.self)}</td><td class="n">${fmtN(g.self)}</td></tr>`;
+  t1 += `</table>`;
+  h += `<h2>Where ${esc(ev.key)} goes</h2>` + wrapTable(t1, ["tree", "self", ev]);
+  const xh = EXTRA.map(x => rth(esc(x.key), "n", esc(x.long))).join("");
+  let t2 = `<table><tr>${rth("#", "n")}${rth("self", "n")}${rth(esc(ev.key), "n")}${xh}${rth("location")}${rth("function")}<th>source</th></tr>`;
   topLines(60).forEach((t, i) => {
     const [path, ln, cost, fnidx, snip] = t;
     const rec = files[path].lines[ln];
-    h += `<tr><td class="n">${i + 1}</td><td class="n" style="${heatBg(heatT(cost, MAXP))}">${fmtPct(cost)}</td><td class="n">${fmtN(cost)}</td>${extraCells(rec[0]).replace(/<td class="x/g, '<td class="n x')}<td><a href="${hashFor(path, ln)}">${esc(path)}:${ln}</a></td><td>${esc(fnName(fnidx))}</td><td class="c">${esc(snip)}</td></tr>`;
+    t2 += `<tr><td class="n">${i + 1}</td><td class="n" style="${heatBg(heatT(cost, MAXP))}">${fmtPct(cost)}</td><td class="n">${fmtN(cost)}</td>${extraCells(rec[0]).replace(/<td class="x/g, '<td class="n x')}<td><a href="${hashFor(path, ln)}">${esc(path)}:${ln}</a></td><td>${esc(fnName(fnidx))}</td><td class="c">${esc(snip)}</td></tr>`;
   });
-  h += `</table>`;
+  t2 += `</table>`;
+  h += `<h2>Hottest lines by ${esc(ev.key)}</h2>` + wrapTable(t2, ["#", "self", ev, ...EXTRA, "location", "function", "source"]);
   const topF = fns.map((f, i) => [i, val(f.self)]).filter(t => t[1] > 0).sort((a, b) => b[1] - a[1]).slice(0, 60);
-  h += `<h2>Hottest functions by self ${esc(ev.key)}</h2><table><tr><th class="n">#</th><th class="n">self</th><th class="n">incl</th>${xh}<th class="n">calls</th><th>function</th><th>defined at</th></tr>`;
+  let t3 = `<table><tr>${rth("#", "n")}${rth("self", "n")}${rth("incl", "n")}${xh}${rth("calls", "n")}${rth("function")}<th>defined at</th></tr>`;
   topF.forEach(([fi, s], i) => {
     const f = fns[fi];
     const loc = f.line ? `<a href="${hashFor(f.file, f.line)}">${esc(f.file)}:${f.line}</a>` : esc(f.file);
     const ncalls = f.callers.reduce((a, c) => a + c[4], 0);
-    h += `<tr><td class="n">${i + 1}</td><td class="n" style="${heatBg(heatT(s, MAXP))}">${fmtPct(s)}</td><td class="n">${fmtPct(s + val(f.calls))}</td>${extraCells(f.self).replace(/<td class="x/g, '<td class="n x')}<td class="n">${ncalls ? fmtCount(ncalls) : ""}</td><td>${esc(f.name)}</td><td>${loc}</td></tr>`;
+    t3 += `<tr><td class="n">${i + 1}</td><td class="n" style="${heatBg(heatT(s, MAXP))}">${fmtPct(s)}</td><td class="n">${fmtPct(s + val(f.calls))}</td>${extraCells(f.self).replace(/<td class="x/g, '<td class="n x')}<td class="n">${ncalls ? fmtCount(ncalls) : ""}</td><td>${esc(f.name)}</td><td>${loc}</td></tr>`;
   });
-  h += `</table></div>`;
+  t3 += `</table>`;
+  h += `<h2>Hottest functions by self ${esc(ev.key)}</h2>` + wrapTable(t3, ["#", "self", "incl", ...EXTRA, "calls", "function", "defined at"]);
+  h += `</div>`;
   mainEl.innerHTML = h;
   mainEl.scrollTop = 0;
   renderTree();
+  initResizableColumns(mainEl);
 }
 
 function renderFile(path, line) {
@@ -584,6 +681,7 @@ function renderFile(path, line) {
   for (const x of EXTRA) { const s = x.get(f.self); if (s) h += `<span class="stat" title="${esc(x.long)}">${esc(x.key)} <b>${fmtP(100 * s / MAXPX[x.key].total)}</b> (${fmtN(s)})</span>`; }
   if (f.group === "external") h += `<span class="stat">not in this repo (${esc(f.raw)})</span>`;
   h += `</div>`;
+  h += legendBar(["self", "incl", ev, ...EXTRA], "position:sticky;top:0;z-index:2;border-top:1px solid var(--border)");
   const hot = Object.keys(lines).map(k => [+k, val(lines[k][0])]).filter(t => t[1] > 0).sort((a, b) => b[1] - a[1]).slice(0, 12);
   if (hot.length) {
     h += `<div class="chips"><span class="lbl">hottest lines</span>`;
@@ -603,8 +701,8 @@ function renderFile(path, line) {
     const title = rec ? `${fmtN(self)} ${ev.key} self, ${fmtN(calls)} in calls${rec[2] ? " (" + fmtCount(rec[2]) + ")" : ""}${fnidx != null ? " — in " + fnName(fnidx) : ""}` : "";
     rows.push(`<tr id="L${ln}" class="${hasc}${line === ln ? " target" : ""}" style="${heatBg(t)}"${title ? ` title="${esc(title)}"` : ""}><td class="ln" data-ln="${ln}">${ln}</td><td class="self${t > 0.45 ? " hot" : ""}">${self ? fmtPct(self) : ""}</td><td class="incl">${calls ? fmtPct(calls) : ""}</td>${rec ? extraCells(rec[0]) : EXTRA.map(() => `<td class="x"></td>`).join("")}<td class="code">${text == null ? "" : esc(text)}</td></tr>`);
   };
-  const xh = EXTRA.map(x => `<td class="x" title="${esc(x.long)} (share of that event's total)">${esc(x.key)}</td>`).join("");
-  h += `<table class="src"><tr class="th"><td class="ln">line</td><td class="self">${esc(ev.key)}</td><td class="incl" title="inclusive cost of the calls made from this line">calls</td>${xh}<td class="code"></td></tr>`;
+  const xh = EXTRA.map(x => `<td class="x rcol" title="${esc(x.long)} (share of that event's total)">${esc(x.key)}</td>`).join("");
+  h += `<table class="src"><tr class="th"><td class="ln rcol">line</td><td class="self rcol">${esc(ev.key)}</td><td class="incl rcol" title="inclusive cost of the calls made from this line">calls</td>${xh}<td class="code"></td></tr>`;
   if (f.src != null) {
     const srcl = f.src.split("\\n");
     if (srcl.length && srcl[srcl.length - 1] === "") srcl.pop();
@@ -616,6 +714,7 @@ function renderFile(path, line) {
   h += rows.join("") + `</table>`;
   mainEl.innerHTML = h;
   renderTree();
+  initResizableColumns(mainEl);
   if (line) {
     const el = document.getElementById("L" + line);
     if (el) { el.scrollIntoView({ block: "center" }); toggleDetail(path, line, true); }
@@ -647,7 +746,7 @@ function toggleDetail(path, ln, forceOpen) {
   h += `<div>line ${ln}${fnidx != null ? " in <b>" + esc(fnName(fnidx)) + "</b>" : ""}: self ${fmtN(val(rec[0]))} ${esc(ev.key)} (${fmtPct(val(rec[0])) || "0%"})${val(rec[1]) ? `, calls ${fmtN(val(rec[1]))} (${fmtPct(val(rec[1]))}) over ${fmtCount(rec[2])}` : ""}</div>`;
   h += `<h4>all events on this line</h4>` + eventTable(rec[0], rec[1]);
   if (callees.length) {
-    h += `<h4>calls from this line (inclusive ${esc(ev.key)})</h4><table>`;
+    h += `<h4>calls from this line (inclusive ${esc(ev.key)})</h4><table><tr><td class="n m">% of total</td><td class="n m">${esc(ev.key)}</td><td class="n m">call count</td><td class="m">callee</td><td class="m">defined at</td></tr>`;
     for (const [ci, cf, cl, vec, count] of callees) {
       const loc = files[cf] && cl ? `<a href="${hashFor(cf, cl)}">${esc(cf)}:${cl}</a>` : esc(cf);
       h += `<tr><td class="n">${fmtPct(val(vec))}</td><td class="n">${fmtN(val(vec))}</td><td class="n">${fmtCount(count)}</td><td>${esc(fnName(ci))}</td><td>${loc}</td></tr>`;
@@ -657,7 +756,7 @@ function toggleDetail(path, ln, forceOpen) {
   if (fi != null) {
     const fn = fns[fi];
     const callers = fn.callers.slice().sort((a, b) => b[4] - a[4]);
-    h += `<h4>${esc(fn.name)} is entered here — self ${fmtPct(val(fn.self)) || "0%"}, inclusive ${fmtPct(val(fn.self) + val(fn.calls)) || "0%"}. Called from (by call count):</h4><table>`;
+    h += `<h4>${esc(fn.name)} is entered here — self ${fmtPct(val(fn.self)) || "0%"}, inclusive ${fmtPct(val(fn.self) + val(fn.calls)) || "0%"}. Called from (by call count):</h4><table><tr><td class="n m">call count</td><td class="n m">% of total</td><td class="n m">${esc(ev.key)}</td><td class="m">caller</td><td class="m">defined at</td></tr>`;
     for (const [ci, cf, cl, vec, count] of callers) {
       const loc = files[cf] && cl ? `<a href="${hashFor(cf, cl)}">${esc(cf)}:${cl}</a>` : esc(cf);
       h += `<tr><td class="n">${fmtCount(count)}</td><td class="n">${fmtPct(val(vec))}</td><td class="n">${fmtN(val(vec))}</td><td>${esc(fnName(ci))}</td><td>${loc}</td></tr>`;
@@ -696,6 +795,11 @@ function setEvent(key) {
   route();
 }
 window.addEventListener("hashchange", route);
+let resizeT = null;
+window.addEventListener("resize", () => {
+  clearTimeout(resizeT);
+  resizeT = setTimeout(() => alignStickyHeaders(mainEl), 120);
+});
 document.getElementById("homelink").addEventListener("click", () => { location.hash = ""; });
 evSel.addEventListener("change", e => setEvent(e.target.value));
 document.getElementById("scale").addEventListener("change", e => { scale = e.target.value; try { localStorage.setItem("heat.scale", scale); } catch (x) {} route(); });
