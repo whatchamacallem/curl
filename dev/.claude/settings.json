@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(*)",
+      "Edit(*)",
+      "Glob(*)",
+      "Grep(*)",
+      "Read(*)",
+      "Skill(*)",
+      "WebFetch(*)",
+      "WebSearch(*)",
+      "Write(*)"
+    ],
+    "deny": [
+      "Edit(/mnt/**)",
+      "Read(/mnt/**)",
+      "Write(/mnt/**)"
+    ],
+    "defaultMode": "auto"
+  }
+}
