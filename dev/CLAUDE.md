@@ -28,6 +28,19 @@ Theme Colors.
   "#2F3640"
 ]
 
+## Working rules
+
+1. Whenever there is more than one question, concern or option, present
+   them as a terse numbered list, and proceed in that order.
+2. Keep this file current. Any change to the tooling, the report layout,
+   the theme or the findings updates CLAUDE.md in the same change.
+3. No source line numbers in this file. They break silently with the next
+   edit and churn every commit. Refer to a function, an identifier or a
+   grep-able snippet instead.
+4. Everything under `dev/` is throwaway profiling tooling, not upstream
+   material: one shared parser, one shared theme, no dead code, no
+   duplicate systems. Anything a script writes must open from `file://`
+   with nothing fetched at view time.
 
 ## Goal
 
@@ -139,21 +152,26 @@ dev/profile.sh ~/artifacts urlparser -DUSE_AVX512   # rebuild curl with that def
   Zen 5) but LL "16777216 B, direct-mapped" with a "L3 cache found, using
   its data for the LL simulation" warning — the simulator fell back to
   direct-mapped, which overstates LL conflict misses. The geometry used
-  is printed in the report's `simulation:` block; override with
+  is printed in the report's `simulation` rows; override with
   `CALLGRIND_OPTS="--LL=16777216,16,64"` when LL numbers matter.
 - Timing: a second, native, pinned run of the same test (`perf <test>`,
   default loops) — the only valid speed number in the report. Callgrind's
   own wall-clock is never a perf number.
 
 Report layout (`OUTDIR/`, or `OUTDIR/<test>/` with `all`), all plain
-`file://`-openable:
+`file://`-openable, nothing fetched at view time:
 
 ```text
-index.html               bare white-on-black directory page: meta, callgrind
-                         totals (refs/misses/miss rates/branch mispredicts,
-                         simulated cache geometry), links, top 20 functions
-                         by self Ir with call counts and callers by call
-                         count, the valgrind log
+index.html               "curl performance analyzer": a toolbar strip of
+                         [bracketed] links across the top, then the summary
+                         (meta, callgrind totals, top 20 functions by self
+                         Ir with call counts and callers, the valgrind log,
+                         folded) centered below it. A toolbar link loads
+                         that page into a frame under the strip, only when
+                         picked; a location in the summary opens the heat
+                         map at that line. With `all`, the top-level
+                         index.html is the same kind of page over the
+                         tests, one row of native-run numbers per test.
 flame-graph/index.html   speedscope bundle; the profile picker switches
                          between Ir, D1mr+D1mw, DLmr+DLmw, I1mr, Bcm, Bim
 heat-map/index.html      per-line source heat map (event selector, miss columns)
@@ -161,22 +179,26 @@ perf-tool/index.html     native timing run output
 ```
 
 Raw data stays in `dev/trace/` (gitignored): `callgrind.out.<test>.<loops>.<ts>`,
-`valgrind.<test>.<loops>.<ts>.log`, the speedscope JSON and the two text
-blocks (`totals.*.txt`, `top20.*.txt`).
+`valgrind.<test>.<loops>.<ts>.log` and the speedscope JSON.
 
 Scripts (`dev/scripts/`):
 
-- `callgrind.py` — the shared parser (per-line/per-function cost *vectors*
-  over all events, call graph, `desc:` lines, `totals_report()`); the
-  heat map and the summary import it. Derived events `D1m`, `DLm`, `L1m`,
-  `LLm`, `Bm`, `CEst` (= Ir + 10·L1m + 100·LLm, KCachegrind's cycle
-  estimate) are added when their inputs exist.
-- `callgrind_to_heatmap.py`, `callgrind_summary.py` (`--part
-  totals|functions|all`, `--top`, `--callers`), `build_report_index.py`
-  (`--meta/--link/--section/--text`, emitted in command-line order),
-  `callgrind_to_speedscope.py` (`--event` repeatable; `A+B` sums columns;
-  one speedscope profile per expression), `build_curlscope_bundle.py`,
-  `hotlines.py`.
+- `callgrind.py` — the one parser (per-line/per-function cost *vectors*
+  over all events, call graph, `desc:` lines, `totals_rows()`); every
+  other script imports it. Derived events `D1m`, `DLm`, `L1m`, `LLm`,
+  `Bm`, `CEst` (= Ir + 10·L1m + 100·LLm, KCachegrind's cycle estimate)
+  are added when their inputs exist. Functions are keyed by name, so a
+  symbol callgrind saw in two objects (PLT stub + libc, a function linked
+  into both libcurl and the test binary) is one function here.
+- `theme.py` + `theme.css` + `theme.js` — the shared look and behaviour
+  (see "Look and feel"); every generator inlines them.
+- `build_report.py` — `test` (a test's index.html), `timing`
+  (perf-tool/index.html), `overview` (the `all` index).
+- `callgrind_to_heatmap.py` — heat-map/index.html.
+- `callgrind_to_speedscope.py` (`--event` repeatable; `A+B` sums columns;
+  one speedscope profile per expression) and `build_flame_graph.py`
+  (patches a copy of speedscope's `dist/release` to auto-load it) —
+  flame-graph/.
 
 Validated baseline (RelWithDebInfo, pinned, `loops=10000`, median of 7 runs):
 **137.66 ns/URL**, **~7.26M URLs/sec**, `Errors: 1240000` constant across
@@ -199,32 +221,32 @@ Full hot-spot breakdown as of the last profile (`loops=200` → 807,800
 ```
 
 The single hottest *line* in the whole benchmark is the inlined
-`badoctets()` control-char check at `lib/urlapi.c:274`
+`badoctets()` control-character test in `lib/urlapi.c`
 (`if(*p <= control || *p == 127)`) — **236,011,200 Ir, 11.94% of total
-instructions** on its own (plus 95.4M for the `while(n--)` on line 272 and
-47.2M for the `p++` on 277, so the whole loop is ~19% of the program), a
-scalar byte-by-byte scan called on
-path/query/fragment/user/password/options for effectively every URL (call
-sites: `lib/urlapi.c:367,369,371,1157,1183,1216`). Most corpus paths/queries
-are "clean" and pay the full length for a boolean answer — a chunked/SIMD
-scan there is the obvious next thing to try and has not yet been attempted
-(no `lib/urlapi.c` changes made in the profiling session that produced these
-numbers).
+instructions** on its own (plus 95.4M for the loop's `while(n--)` and
+47.2M for its `p++`, so the whole loop is ~19% of the program), a scalar
+byte-by-byte scan called on path/query/fragment/user/password/options for
+effectively every URL (grep `badoctets(` in `lib/urlapi.c` for the call
+sites). Most corpus paths/queries are "clean" and pay the full length for a
+boolean answer — a chunked/SIMD scan there is the obvious next thing to try
+and has not yet been attempted (no `lib/urlapi.c` changes made in the
+profiling session that produced these numbers).
 
 `free`/`malloc` combined ~10%: every `curl_url_set(CURLUPART_URL,...)` call
 tears down and rebuilds the whole internal representation
-(`free_urlhandle`, `lib/urlapi.c:74-93`), so allocator overhead is a real
+(`free_urlhandle()` in `lib/urlapi.c`), so allocator overhead is a real
 fraction of cost independent of parsing logic.
 
 ### Callgrind/speedscope tooling notes
 
 No existing Callgrind→speedscope converter was available (pip blocked by
 PEP 668 externally-managed-environment; declined `--break-system-packages`),
-so `dev/scripts/callgrind_to_speedscope.py` is written from the Callgrind
-format spec directly. Two non-obvious correctness bugs it had to get past,
-both caught by a self-check ratio (`sum(emitted weights) / sum(raw
-self-cost lines)`, should be exactly 1.0000, printed to stderr on every
-run):
+so `dev/scripts/callgrind_to_speedscope.py` builds the flame graph from
+`callgrind.py`'s call graph. Three things it has to get right, each caught
+by a self-check ratio printed to stderr on every run (the parser's
+`sum(self-cost lines) / summary`, which must be exactly 1.0000 or nothing
+is written, and the walk's `emitted weight / raw self total` per profile,
+which must be ~1.0):
 
 1. Callgrind's `calls=` line inclusive cost is **not** additive on top of
    the callee's own `fn=` self-cost lines — it already covers them. Treating
@@ -232,35 +254,43 @@ run):
    `calls=` edges only to build the caller→callee graph structure; walk from
    root frames and distribute each frame's self-cost proportionally across
    its incoming edges by inclusive-cost share (KCachegrind's "callee map"
-   approach). Recursion cycles capped at depth 200, folded into the frame
-   where detected rather than dropped.
+   approach).
 2. Function identity in Callgrind is scoped to its **compressed-ID
    namespace** (`fn=`/`cfn=` share one ID space per the spec), not to
-   `(file, name)`. A function's cost-line block can reopen far later in the
+   `(file, name)`: a function's cost-line block can reopen far later in the
    file as a bare `fn=(ID)` while an unrelated `fl=` is "currently active"
-   from interleaved callee traversal — keying by `(file,name)` silently
-   created a duplicate zero-cost "ghost" frame for `parseurl_and_replace`
-   (ratio stuck at 0.9077, 0% self cost shown for the actual hottest
-   function). Fixed by keying frames by ID.
+   from interleaved callee traversal. `callgrind.py` resolves IDs to names
+   and keys by name, which is immune to that.
+3. Keying by name merges a symbol that lives in two objects, and the call
+   between the two halves then loops: `_start → (below main) →
+   __libc_start_main → (below main) → main` is a cycle once both
+   `(below main)` IDs are one frame, and proportional attribution hands
+   half of everything to the back edge (ratio 0.5003). Fix: collapse every
+   strongly connected component into one frame first (Tarjan; the frame is
+   named `A + B`), as KCachegrind's cycle detection does; the walk then
+   runs on a DAG and the ratio is exactly 1.0000. Direct recursion is
+   dropped the same way (the function's self cost already covers every
+   level). A depth limit remains only as the guarantee of termination.
 
-Validated end state: ratio 1.0000 exactly; converted JSON's
+Validated end state: both ratios 1.0000 exactly; converted JSON's
 `parseurl_and_replace` self-weight (37.82%) matches `callgrind_annotate`'s
 independent flat-profile number (37.57%) within rounding. With several
 `--event` expressions the converter emits one profile per expression into
-the same document (same frames), printing that ratio for each; speedscope
-shows a profile picker in its toolbar when a file has more than one.
+the same document (same frames), printing the walk ratio for each;
+speedscope shows a profile picker in its toolbar when a file has more than
+one.
 
-`dev/scripts/build_curlscope_bundle.py` — speedscope's app only defines
+`dev/scripts/build_flame_graph.py` — speedscope's app only defines
 `window.speedscope.loadFileFromBase64` after seeing a truthy
 `localProfilePath` in the URL hash (reverse-engineered from `bin/cli.mjs` +
 the minified bundle; the CLI's own mechanism injects
 `<script src="file:///<absolute-tmp-path>">`, which doesn't survive moving
 the bundle). Instead: set the hash to a harmless placeholder to trip the
-same gate, then a sibling `curlscope-profile.js` (relative path, portable)
-polls for `window.speedscope` and calls `loadFileFromBase64` directly with
-the profile embedded as base64. Verified against real Chrome (WSL2→Windows
-interop, headless screenshot) loading correctly via a plain `file://` path,
-no server.
+same gate, then a sibling `profile.js` (relative path, portable) polls for
+`window.speedscope` and calls `loadFileFromBase64` directly with the
+profile embedded as base64. Verified against real Chrome (see "Checking
+the pages") loading correctly via a plain `file://` path, no server.
+Speedscope keeps its own look; it is the one page the theme does not touch.
 
 ### Reproducing a profile
 
@@ -272,41 +302,42 @@ taskset -c 3 ./build-relwithdebinfo/tests/perf/perf urlparser 10000   # manual t
 
 ### Line-level view
 
-The speedscope bundle and the top-20 block in the report index are
+The speedscope bundle and the top-20 table in the report index are
 *function*-level, and under `-O2`
 most of `urlapi.c` is inlined into `parseurl_and_replace` (only
 `curl_url_set`, `parseurl_and_replace`, `parse_authority`, `hostname_check`,
 `ipv6_parse`, `free_urlhandle` survive as symbols — check with `nm -C
 build-relwithdebinfo/lib/libcurl.so.4`). Callgrind charges inlined code to
 the enclosing symbol, so to see what is hot *inside* that 37.8% you need the
-per-source-line annotation:
+per-source-line view: the heat map (below), or as an independent
+cross-check the same numbers from callgrind's own tool:
 
 ```sh
-# full per-line annotation of one file (saved copy: dev/trace/urlapi.c.annotated.txt)
-callgrind_annotate --show-percs=yes dev/trace/callgrind.out.urlparser.200.<ts> lib/urlapi.c \
-  > dev/trace/urlapi.c.annotated.txt
-# hottest N source lines of that file, sorted (parses the -- line N markers)
-python3 dev/scripts/hotlines.py dev/trace/urlapi.c.annotated.txt lib/urlapi.c 15
+callgrind_annotate --show-percs=yes dev/trace/callgrind.out.urlparser.200.<ts> lib/urlapi.c
 ```
 
-`=> file:func (Nx)` rows in the annotation are inclusive cost of calls made
-from the line above, not source lines; `hotlines.py` skips them.
+`=> file:func (Nx)` rows in that annotation are inclusive cost of calls made
+from the line above, not source lines. The heat map's per-line numbers were
+verified to match it line for line.
 
 ### Source heatmap (browser)
 
 `dev/scripts/callgrind_to_heatmap.py` renders the whole per-line profile as
 one self-contained explorer page (no server, no CDN, works from `file://`):
-directory tree on the left, colored and sorted by share of the selected
-event with files that have no samples folded away; per-line colored source
-on the right; click a line number to see every event for that line, what
-it calls (inclusive cost, links to the callee) and, on a function's first
-line, who calls it. The header's *event* selector re-colors and re-sorts
-everything by any raw event (Ir, Dr, Dw, I1mr, D1mr, ...) or derived one
-(D1m, DLm, L1m, LLm, Bm, CEst); independent of that, every source line
-shows `D1m`, `DLm` and `Bcm` columns (share of that event's total, each
-heat-colored on its own scale) so a line that is cheap in Ir but hurts in
-misses is visible without switching. The home view carries the same
-callgrind totals block as the report index. `dev/profile.sh` writes it to
+directory tree on the left (a draggable splitter sets its width), colored
+and sorted by share of the selected event with files that have no samples
+folded away; per-line colored source on the right; click a line number to
+see every event for that line, what it calls (inclusive cost, links to the
+callee) and, on a function's first line, who calls it. The header's *event*
+selector re-colors and re-sorts everything by any raw event (Ir, Dr, Dw,
+I1mr, D1mr, ...) or derived one (D1m, DLm, L1m, LLm, Bm, CEst);
+independent of that, every source line shows `D1m`, `DLm` and `Bcm`
+columns (share of that event's total, each heat-colored on its own scale)
+so a line that is cheap in Ir but hurts in misses is visible without
+switching. The home view carries the callgrind totals, where the event
+goes by top-level directory, the 60 hottest lines and the 60 hottest
+functions. Event, scale, tree order, tree width and column widths are
+remembered in localStorage. `dev/profile.sh` writes it to
 `OUTDIR/heat-map/index.html`. Standalone:
 
 ```sh
@@ -322,8 +353,7 @@ rules exactly (`fi=`/`fe=` switch the file for inlined lines, the cost line
 after `calls=` is inclusive and is charged to the call site separately,
 `calls=` targets decode relative to the last cost line) and prints the
 same self-check ratio as the speedscope converter, which must be 1.0000;
-its per-line numbers were verified to match `hotlines.py` line for line,
-and its totals block reproduces valgrind's own exit summary (refs, misses,
+its totals rows reproduce valgrind's own exit summary (refs, misses,
 miss rates, mispredict rate). There was no off-the-shelf tool for this:
 KCachegrind has per-line heat but is a desktop app with no directory view,
 pprof/Firefox Profiler have source views but no explorer and do not read
@@ -337,6 +367,63 @@ them before submitting anything. Line numbers in profiles taken before the
 comments were added (`callgrind.out.urlparser.200.1789436338` and earlier)
 are offset from the current source; re-run `dev/profile.sh` to get a
 profile whose line numbers match.
+
+### Look and feel
+
+`dev/scripts/theme.py` holds the two palettes from "User settings" above
+(keep them identical) and the semantic roles built on them; `theme.css`
+and `theme.js` are the shared stylesheet and script. Every generator
+inlines them (`theme.css()` / `theme.js()`), because the pages are opened
+from `file://` and may not fetch anything. Rules the pages follow:
+
+- One dark theme. The dark member of each theme pair is the default
+  (`--bg` `#2F3640`, toolbar and panels `#192A56`, divider bars `#40739E`);
+  the light member shades every other table column (`#353B48`) and is used
+  for text, links and the title where the dark member would not read on
+  the dark background (`#F5F6FA`, `#00A8FF`, `#FBC531`).
+- Monaco for everything (`--font`, with monospace fallbacks). Because every
+  glyph is one `ch` wide, table column widths are set in characters from
+  the longest cell (or a fixed 20 for function names, or a clip) and are
+  exact; `theme.PAD` adds 1ch padding each side plus 1ch of slack.
+- Heat colors are the 12-stop ramp, blended over `--bg` with an alpha that
+  grows with the share (log scale from 0.001% to the hottest line), and
+  the text on a colored cell is picked by the result's luminance
+  (`theme.heat_style()`, the same math in the heat map's `heatStyle()`).
+  Speedscope is the exception and keeps its own colors.
+- Every table is `theme.table()` (or the heat map's `table()`): no borders
+  except a full-height bar at each column boundary, which the mouse can
+  drag anywhere along its length to resize the column on its left
+  (double-click resets); widths are remembered in localStorage per table
+  and column label. A legend banner above the table spells out every
+  abbreviated column; the banner and the header row stay put while the
+  table scrolls (`theme.js` stacks them, since two sticky elements at
+  `top: 0` overlap).
+- The index page is a frame: `[summary] [flame graph] [heat map] [native
+  timing]` and `[curl.se/perf]` across the top, the summary centered under
+  it, sub-pages loaded into an iframe only when picked.
+
+### Checking the pages
+
+No browser runs inside WSL2, but the Windows Chrome does, through interop,
+and it reads `\\wsl.localhost\<distro>\...` paths (`$WSL_DISTRO_NAME`):
+
+```sh
+"/mnt/c/Program Files/Google/Chrome/Application/chrome.exe" --headless=new --disable-gpu \
+  --window-size=1366,768 --screenshot="\\\\wsl.localhost\\$WSL_DISTRO_NAME\\tmp\\x.png" \
+  "file://wsl.localhost/$WSL_DISTRO_NAME/home/t/curl/dev/report/index.html#heat-map"
+```
+
+`--dump-dom` instead of `--screenshot` prints the DOM after scripts ran,
+so a probe `<script>` appended to a copy of a page (run it on `load`, after
+`theme.js` has initialised) can report real layout numbers: divider bar
+positions against column edges, sticky offsets after scrolling, cells
+whose text is cut. Node + jsdom (`npm install jsdom` into a scratch dir;
+no system packages) runs the pages' scripts for interaction tests (click
+through the toolbar, open a line's detail, drag a bar) and catches runtime
+errors, but its layout is all zeros and its `localStorage` throws on
+`file://` origins — give it an `http://localhost/` URL, and use Chrome for
+anything geometric. Check at 1366×768: the target is a medium-sized
+laptop, and the pages must not assume more.
 
 ## Workflow
 

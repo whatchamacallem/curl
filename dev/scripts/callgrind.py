@@ -18,6 +18,11 @@ Per-line attribution mirrors callgrind_annotate exactly:
 
 `self_check(profile)` returns the ratio sum(self-cost lines)/summary for the
 first event; callers must refuse to proceed unless it is 1.0000.
+
+Functions are keyed by name: callgrind gives the same name several IDs when
+it lives in several objects (a PLT stub and the libc implementation, a
+function linked into both the library and the test binary), and those are
+merged here.
 """
 from __future__ import annotations
 
@@ -336,77 +341,64 @@ def self_check(p: Profile) -> tuple[int, int, float]:
 
 
 # ----------------------------------------------------------------------------
-# Totals report (the block valgrind prints at exit, recomputed from the file)
+# Totals (the block valgrind prints at exit, recomputed from the file)
 # ----------------------------------------------------------------------------
 
 
 def _rate(num: int, den: int) -> str:
-    return f"{100.0 * num / den:6.2f}%" if den else "   n/a "
+    return f"{100.0 * num / den:.2f}%" if den else "n/a"
 
 
-def totals_report(p: Profile) -> str:
-    """cg_annotate/callgrind-exit style summary: refs, misses and miss rates
-    for I1/D1/LL and the branch predictor, followed by every raw event total
-    and the simulated cache geometry. Fixed-width text."""
+def totals_rows(p: Profile) -> list[tuple[str, str, str, str]]:
+    """The callgrind exit summary as table rows (group, metric, value, detail):
+    refs, misses and miss rates for I1/D1/LL and the branch predictor, then
+    every raw and derived event total, then the simulated cache geometry."""
     t = p.totals()
     have = p.has
 
     def g(name: str) -> int:
         return t[p.events.index(name)]
 
-    w = max((len(f"{v:,}") for v in t), default=1)
-    w = max(w, 12)
-    out: list[str] = []
-
+    out: list[tuple[str, str, str, str]] = []
     if have("Ir"):
         ir = g("Ir")
-        out.append(f"I   refs:      {ir:>{w},}")
+        out.append(("I", "refs", f"{ir:,}", ""))
         if have("I1mr", "ILmr"):
-            out.append(f"I1  misses:    {g('I1mr'):>{w},}")
-            out.append(f"LLi misses:    {g('ILmr'):>{w},}")
-            out.append(f"I1  miss rate: {_rate(g('I1mr'), ir):>{w}}")
-            out.append(f"LLi miss rate: {_rate(g('ILmr'), ir):>{w}}")
+            out.append(("I", "I1 misses", f"{g('I1mr'):,}", ""))
+            out.append(("I", "LLi misses", f"{g('ILmr'):,}", ""))
+            out.append(("I", "I1 miss rate", _rate(g("I1mr"), ir), ""))
+            out.append(("I", "LLi miss rate", _rate(g("ILmr"), ir), ""))
     if have("Dr", "Dw"):
         dr, dw = g("Dr"), g("Dw")
-        out.append("")
-        out.append(f"D   refs:      {dr + dw:>{w},}  ({dr:,} rd + {dw:,} wr)")
+        out.append(("D", "refs", f"{dr + dw:,}", f"{dr:,} rd + {dw:,} wr"))
         if have("D1mr", "D1mw", "DLmr", "DLmw"):
             d1r, d1w, dlr, dlw = g("D1mr"), g("D1mw"), g("DLmr"), g("DLmw")
-            out.append(f"D1  misses:    {d1r + d1w:>{w},}  ({d1r:,} rd + {d1w:,} wr)")
-            out.append(f"LLd misses:    {dlr + dlw:>{w},}  ({dlr:,} rd + {dlw:,} wr)")
-            out.append(f"D1  miss rate: {_rate(d1r + d1w, dr + dw):>{w}}  ({_rate(d1r, dr).strip()} rd + {_rate(d1w, dw).strip()} wr)")
-            out.append(f"LLd miss rate: {_rate(dlr + dlw, dr + dw):>{w}}  ({_rate(dlr, dr).strip()} rd + {_rate(dlw, dw).strip()} wr)")
+            out.append(("D", "D1 misses", f"{d1r + d1w:,}", f"{d1r:,} rd + {d1w:,} wr"))
+            out.append(("D", "LLd misses", f"{dlr + dlw:,}", f"{dlr:,} rd + {dlw:,} wr"))
+            out.append(("D", "D1 miss rate", _rate(d1r + d1w, dr + dw), f"{_rate(d1r, dr)} rd + {_rate(d1w, dw)} wr"))
+            out.append(("D", "LLd miss rate", _rate(dlr + dlw, dr + dw), f"{_rate(dlr, dr)} rd + {_rate(dlw, dw)} wr"))
     if have("Ir", "Dr", "Dw", "I1mr", "D1mr", "D1mw", "ILmr", "DLmr", "DLmw"):
         ll_refs = g("I1mr") + g("D1mr") + g("D1mw")
         ll_miss = g("ILmr") + g("DLmr") + g("DLmw")
         all_refs = g("Ir") + g("Dr") + g("Dw")
-        out.append("")
-        out.append(f"LL  refs:      {ll_refs:>{w},}  ({g('I1mr') + g('D1mr'):,} rd + {g('D1mw'):,} wr)")
-        out.append(f"LL  misses:    {ll_miss:>{w},}  ({g('ILmr') + g('DLmr'):,} rd + {g('DLmw'):,} wr)")
-        out.append(f"LL  miss rate: {_rate(ll_miss, all_refs):>{w}}  ({_rate(g('ILmr') + g('DLmr'), g('Ir') + g('Dr')).strip()} rd + {_rate(g('DLmw'), g('Dw')).strip()} wr)")
+        out.append(("LL", "refs", f"{ll_refs:,}", f"{g('I1mr') + g('D1mr'):,} rd + {g('D1mw'):,} wr"))
+        out.append(("LL", "misses", f"{ll_miss:,}", f"{g('ILmr') + g('DLmr'):,} rd + {g('DLmw'):,} wr"))
+        out.append(("LL", "miss rate", _rate(ll_miss, all_refs),
+                    f"{_rate(g('ILmr') + g('DLmr'), g('Ir') + g('Dr'))} rd + {_rate(g('DLmw'), g('Dw'))} wr"))
     if have("Bc", "Bcm", "Bi", "Bim"):
         bc, bcm, bi, bim = g("Bc"), g("Bcm"), g("Bi"), g("Bim")
-        out.append("")
-        out.append(f"Branches:      {bc + bi:>{w},}  ({bc:,} cond + {bi:,} ind)")
-        out.append(f"Mispredicts:   {bcm + bim:>{w},}  ({bcm:,} cond + {bim:,} ind)")
-        out.append(f"Mispred rate:  {_rate(bcm + bim, bc + bi):>{w}}  ({_rate(bcm, bc).strip()} cond + {_rate(bim, bi).strip()} ind)")
+        out.append(("branches", "executed", f"{bc + bi:,}", f"{bc:,} cond + {bi:,} ind"))
+        out.append(("branches", "mispredicted", f"{bcm + bim:,}", f"{bcm:,} cond + {bim:,} ind"))
+        out.append(("branches", "mispredict rate", _rate(bcm + bim, bc + bi), f"{_rate(bcm, bc)} cond + {_rate(bim, bi)} ind"))
     if have("sysCount"):
-        out.append("")
-        out.append(f"System calls:  {g('sysCount'):>{w},}")
+        out.append(("system", "calls", f"{g('sysCount'):,}", ""))
         if have("sysTime"):
-            out.append(f"Syscall time:  {g('sysTime'):>{w},}")
-
-    out.append("")
-    out.append("event totals:")
-    nw = max(len(n) for n in p.event_names())
+            out.append(("system", "call time", f"{g('sysTime'):,}", ""))
     for name in p.events:
-        out.append(f"  {name:<{nw}}  {g(name):>{w},}  {p.event_long.get(name, '')}")
+        out.append(("events", name, f"{g(name):,}", p.event_long.get(name, "")))
     for name, terms, long in p.derived_terms():
-        v = sum(c * t[i] for c, i in terms)
-        out.append(f"  {name:<{nw}}  {v:>{w},}  {long}  [derived]")
-    if p.desc:
-        out.append("")
-        out.append("simulation:")
-        for d in p.desc:
-            out.append(f"  {d}")
-    return "\n".join(out) + "\n"
+        out.append(("events", name, f"{sum(c * t[i] for c, i in terms):,}", f"{long} [derived]"))
+    for d in p.desc:
+        metric, _, value = d.partition(":")
+        out.append(("simulation", metric.strip(), value.strip(), ""))
+    return out

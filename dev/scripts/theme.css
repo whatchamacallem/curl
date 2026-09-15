@@ -1,0 +1,65 @@
+/* Shared stylesheet for every page dev/profile.sh writes. theme.py prepends
+   the palette as :root variables (--bg, --fg, --link, --bar, ... and the raw
+   pairs --blue/--blue-l etc.) and inlines the result into each page. */
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { height: 100%; margin: 0; }
+body { background: var(--bg); color: var(--fg); font: 12px/1.5 var(--font); }
+a { color: var(--link); text-decoration: none; }
+a:hover { text-decoration: underline; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+h1 { font-size: 16px; font-weight: 600; color: var(--accent); margin: 0; }
+h2 { font-size: 12px; font-weight: 600; color: var(--fg-dim); margin: 22px 0 6px; }
+p { margin: 4px 0; color: var(--muted); max-width: 96ch; }
+b { color: var(--fg); font-weight: 600; }
+pre { font: inherit; margin: 0; white-space: pre; overflow-x: auto; }
+select, input { font: inherit; color: var(--fg); background: var(--bg);
+  border: 1px solid var(--bar); border-radius: 3px; padding: 2px 6px; }
+details > summary { cursor: pointer; color: var(--fg-dim); font-weight: 600; margin: 22px 0 6px; }
+
+/* toolbar strip: [links] the old-fashioned way; the current one is lit */
+#bar { display: flex; flex-wrap: wrap; gap: 2px 8px; align-items: center; flex: none;
+  padding: 5px 12px; background: var(--nav); border-bottom: 1px solid var(--bar); }
+#bar a { padding: 0 2px; white-space: nowrap; }
+#bar a:hover { background: var(--link); color: var(--nav); text-decoration: none; }
+#bar a.on { color: var(--accent); }
+#bar .sp { flex: 1; }
+
+/* frame: the toolbar over either the summary page (centered) or an iframe */
+body.frame { display: flex; flex-direction: column; height: 100vh; }
+body.frame > main { flex: 1; min-height: 0; overflow: auto; display: flex; }
+body.frame > main > .page { margin: auto; max-width: 100%; }
+body.frame > iframe { flex: 1; min-height: 0; width: 100%; border: 0; background: var(--bg); }
+.page { padding: 32px 36px 48px; }
+.page header { margin-bottom: 18px; }
+.page header a { display: block; margin-top: 2px; }
+
+/* tables: no borders except the column divider bars; alternate columns shaded;
+   a legend banner and the header row stay put while the box scrolls.
+   Column widths are set in ch by the generators: content + 1ch padding each
+   side + 1ch slack for the divider bar and fractional rounding. */
+.tbl { position: relative; overflow: auto; max-height: 70vh; width: fit-content; max-width: 100%;
+  margin: 4px 0 10px; border: 1px solid var(--bar); border-radius: 4px; }
+.tbl-legend { display: flex; flex-wrap: wrap; gap: 1px 18px; width: 0; min-width: 100%;
+  padding: 4px 10px; color: var(--muted); background: var(--panel); }
+.band { position: sticky; top: 0; z-index: 2; }
+.tbl-cols { position: relative; }
+table.cols { table-layout: fixed; border-collapse: separate; border-spacing: 0; width: 0; }
+table.cols.fill { width: 100%; }
+table.cols col.alt { background: var(--bg-alt); }
+table.cols th, table.cols td { padding: 1px 1ch; white-space: nowrap; overflow: hidden;
+  text-overflow: ellipsis; vertical-align: top; border: 0; border-right: 1px solid var(--bar); }
+table.cols tr > :last-child { border-right: 0; }
+table.cols th { position: sticky; top: 0; z-index: 1; text-align: left; font-weight: 600;
+  color: var(--fg-dim); background: var(--panel); }
+table.cols .n { text-align: right; font-variant-numeric: tabular-nums; }
+table.cols .dim { color: var(--muted); }
+.bar { position: absolute; top: 0; bottom: 0; width: 9px; margin-left: -5px; z-index: 1;
+  cursor: col-resize; touch-action: none; }
+.bar::before { content: ""; position: absolute; top: 0; bottom: 0; left: 3px; width: 3px; }
+.bar:hover::before, .bar.active::before { background: var(--bar-hot); }
+
+/* splitter between two panes (the heat map's tree and listing) */
+.split { flex: none; width: 7px; cursor: col-resize; touch-action: none;
+  background: linear-gradient(90deg, transparent 3px, var(--bar) 3px, var(--bar) 4px, transparent 4px); }
+.split:hover, .split.active { background: var(--bar-hot); }
