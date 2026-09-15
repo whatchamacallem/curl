@@ -1,23 +1,7 @@
-"""Shared look and feel for every page dev/profile.sh writes.
-
-The two palettes are the ones pinned in dev/CLAUDE.md under "User settings":
-
-* HEAT is the 12-stop cold-to-hot ramp used wherever a number is colored by
-  its share of a total (heat-map lines, the file tree, hottest-line and
-  hottest-function tables). Speedscope keeps its own colors.
-* THEME is the 20-color UI palette, ten light/dark pairs. The dark member
-  of each pair is the default; the light member shades alternating table
-  columns and lifts contrast where the dark one would be hard to read on
-  the dark background.
-
-theme.css and theme.js next to this file are the shared stylesheet and
-script. css() and js() return them (the palette expanded into CSS
-variables) so each generator can inline them into its page: reports are
-opened from file:// and nothing may be fetched at view time, so there is
-no shared file to link to. table() renders the one table markup every page
-uses (fixed layout, widths in characters, alternating column shading, a
-plain-language legend, draggable divider bars via theme.js).
-"""
+"""Shared look and feel for every page dev/profile.sh writes -- palettes
+pinned in CLAUDE.md under "User settings"; layout rules under "Look and
+feel". css()/js() return theme.css/theme.js for each generator to inline
+(pages open from file://, nothing may be fetched at view time)."""
 from __future__ import annotations
 
 import html

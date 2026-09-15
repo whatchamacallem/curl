@@ -1,26 +1,6 @@
 #!/usr/bin/env python3
 """Turn a callgrind profile into a self-contained "source heatmap" web page.
 
-The page is a file explorer over the profiled source tree: directories and
-files are colored/sorted by how much of the selected event (instructions by
-default; any cache-miss or branch event callgrind recorded can be picked from
-the header) was spent inside them, and each file opens as a source listing
-with every line colored by its self cost. Beside the selected event, every
-line also shows its L1 data misses, LL data misses and conditional-branch
-mispredicts (when the profile was taken with --cache-sim / --branch-sim), so
-a line that is cheap in instructions but hurts in misses is visible without
-switching events. Clicking a line number shows every event for that line,
-what it calls (inclusive cost) and, on a function's first line, who calls it,
-so you can click down or up the call graph across files. Everything is
-embedded in one HTML file (no server, no CDN), so it can be opened from
-file:// or mailed around.
-
-Parsing and per-line attribution live in callgrind.py (same directory) and
-mirror callgrind_annotate exactly; the self-check ratio it computes (sum of
-self-cost lines / callgrind's own summary) is printed to stderr on every run
-and must be 1.0000. Several callgrind files are merged into one profile.
-Colors, fonts and table behaviour come from theme.py.
-
 Usage:
   callgrind_to_heatmap.py callgrind.out.X [callgrind.out.Y ...] \
       -o report/heat-map/index.html [--event Ir] [--repo-root .] \
@@ -134,9 +114,12 @@ def build_model(p: cg.Profile, args: argparse.Namespace, src_name: str) -> dict:
     files: dict[str, dict] = {}
     for raw in raw_files:
         d = disp[raw]
+        # "raw" is shown only for group == "external" (see f.raw in the JS);
+        # for repo/system files it's the absolute source path and must not
+        # leak into the page, so it's dropped to the (already relative) d.
         entry = files.setdefault(d, {
             "self": [0] * nev, "calls": [0] * nev, "src": None, "lines": {}, "lfn": {},
-            "callees": {}, "group": group[raw], "raw": raw,
+            "callees": {}, "group": group[raw], "raw": raw if group[raw] == "external" else d,
         })
         if entry["src"] is None and local[raw]:
             entry["src"] = read_source(local[raw])
@@ -209,7 +192,6 @@ def build_model(p: cg.Profile, args: argparse.Namespace, src_name: str) -> dict:
             "cmd": p.cmd,
             "source": src_name,
             "generated": _dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "repoRoot": repo_root,
             "allSources": bool(args.all_sources),
         },
         "theme": theme.runtime(),

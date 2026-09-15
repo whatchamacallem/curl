@@ -1,12 +1,5 @@
 """Shared callgrind data-file parser for the dev/scripts profile tooling.
 
-Parses a `valgrind --tool=callgrind` output file into per-line, per-function
-and call-graph costs, keeping *every* event column (Ir, Dr, Dw, the cache
-simulator's I1mr/D1mr/D1mw/ILmr/DLmr/DLmw, the branch simulator's
-Bc/Bcm/Bi/Bim, ...) as one integer vector per record, so the same parse can
-drive an instruction heat map, a cache-miss heat map or a branch-mispredict
-listing.
-
 Per-line attribution mirrors callgrind_annotate exactly:
   * cost lines are charged to the *current* file, which `fl=` sets for a
     function and `fi=`/`fe=` switch for inlined code, and to the current
@@ -15,18 +8,6 @@ Per-line attribution mirrors callgrind_annotate exactly:
     that call, charged to the call-site line separately (never as self cost);
   * `calls=` target positions are decoded relative to the last cost line but
     do not advance it.
-
-`self_check(profile)` returns the ratio sum(self-cost lines)/summary for the
-first event; callers must refuse to proceed unless it is 1.0000.
-
-Functions are keyed by name: callgrind gives the same name several IDs when
-it lives in several objects (a PLT stub and the libc implementation, a
-function linked into both the library and the test binary), and those are
-merged here.
-
-`load(paths)` parses one or more files and `merge()`s them into a single
-profile (every cost summed, call graphs united) so that a run over several
-perf tests can be reported as one; the files must record the same events.
 """
 from __future__ import annotations
 

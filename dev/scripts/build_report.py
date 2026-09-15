@@ -2,13 +2,14 @@
 """The report pages around the flame graph and the heat map.
 
   build_report.py test CALLGRIND... -o OUT/index.html --test NAME [--log FILE ...]
-      [--meta LABEL=VALUE ...] [--top 20] [--repo-root .]
+      [--meta LABEL=VALUE ...] [--raw-data FILE ...] [--top 20] [--repo-root .]
       One perf test's index page: a strip with the page title and the links
       that switch between the summary and the sub-pages (loaded into a frame
-      only when picked), and the summary itself -- meta, the top-N functions
-      by self cost with their callers, the valgrind log(s). Several callgrind
-      files are merged into one profile (the "all" report).
-  build_report.py timing -o OUT/perf-tool/index.html --test NAME --output FILE
+      only when picked), and the summary itself -- meta, raw data (the
+      callgrind files as relative links), the top-N functions by self cost
+      with their callers, the valgrind log(s). Several callgrind files are
+      merged into one profile (the "all" report).
+  build_report.py timing -o OUT/perf-tool/index.html --test NAME --output-file FILE
       [--meta LABEL=VALUE ...]
       The native timing run: meta and the run's output.
   build_report.py overview -o OUT/index.html --test NAME[=DIR] ...
@@ -149,6 +150,15 @@ def meta_table(key: str, pairs: list[tuple[str, str]]) -> str:
     return theme.table(key, [Col("label"), Col("value", clip=100)], rows, header=False)
 
 
+def raw_data_list(paths: list[str], out_dir: str) -> str:
+    """The callgrind trace files as a plain list of links relative to the
+    generated page, so the report directory can be copied elsewhere."""
+    if not paths:
+        return ""
+    items = "".join(f'<li><a href="{esc(os.path.relpath(p, out_dir))}">{esc(os.path.basename(p))}</a></li>' for p in paths)
+    return f'<p class="dim">raw data</p><ul class="rawdata">{items}</ul>'
+
+
 def display_path(repo_root: str, path: str) -> str:
     root = os.path.abspath(repo_root).rstrip("/") + "/"
     if path == "???" or not path:
@@ -230,7 +240,9 @@ def cmd_test(args: argparse.Namespace) -> None:
 
     links = [("", "summary", "#", args.test)] + [(k, label, path, f"{args.test} / {label}") for k, label, path in VIEWS]
     body = strip(args.test, links)
+    out_dir = os.path.dirname(os.path.abspath(args.output))
     body += '<main id="home"><div class="page">' + meta_table("report.meta", meta_pairs(args.meta))
+    body += raw_data_list(args.raw_data, out_dir)
     body += f"<h2>top {args.top} functions by self</h2>" + functions_table(p, args.event, args.top, args.repo_root)
     if args.log:
         body += "<h2>valgrind log</h2>"
@@ -267,14 +279,14 @@ def cmd_overview(args: argparse.Namespace) -> None:
                 if m.group(1) not in keys:
                     keys.append(m.group(1))
         numbers[name] = vals
-    cols = [Col("test", "one report per test; the strip switches between them")]
+    cols = [Col("one report per test")]
     cols += [Col(k, num=True) for k in keys]
     rows = [[Cell(name, html=f'<a href="{esc(name)}/index.html">{esc(name)}</a>')] + [numbers[name].get(k, "") for k in keys]
             for name, _ in tests]
     links = [("", "overview", "#", "overview")] + [(name, name, f"{name}/index.html", name) for name, _ in tests]
     body = strip("overview", links, perf_link=True)
     body += '<main id="home"><div class="page">' + meta_table("overview.meta", meta_pairs(args.meta))
-    body += "<h2>native timing runs</h2>" + theme.table("overview.tests", cols, rows)
+    body += "<h2>test suites</h2>" + theme.table("overview.tests", cols, rows)
     body += '</div></main><iframe id="view" hidden title="report page"></iframe>'
     write(args.output, theme.document("overview", body, extra_js=FRAME_JS, body_class="frame"))
 
@@ -288,6 +300,8 @@ def main() -> None:
     t.add_argument("-o", "--output", required=True)
     t.add_argument("--test", required=True, help="perf test name")
     t.add_argument("--meta", action="append", metavar="LABEL=VALUE", default=[])
+    t.add_argument("--raw-data", action="append", default=[], metavar="FILE",
+                   help="callgrind trace file to link (repeatable); listed relative to -o")
     t.add_argument("--log", action="append", default=[], help="valgrind log to include (repeatable)")
     t.add_argument("--event", default="Ir", help="event that ranks the functions (default: Ir)")
     t.add_argument("--top", type=int, default=20)

@@ -138,8 +138,8 @@ GIT_DESC="$(git describe --always --dirty 2>/dev/null || echo unknown) on $(git 
 CG_FILES=()
 LOG_FILES=()
 build_pages() {
-  local name="$1" out="$2" json="$3" ss_name="$4" profiled="$5" timed="$6"
-  local ev_args=() log_args=() x
+  local name="$1" out="$2" json="$3" ss_name="$4"
+  local ev_args=() log_args=() raw_args=() x
 
   echo "== 4 [$name]: flame graph -> $out/flame-graph/index.html =="
   for x in "${SS_EVENTS[@]}"; do ev_args+=(--event "$x"); done
@@ -158,14 +158,14 @@ build_pages() {
     --output-file "$out/perf-tool/output.txt" \
     --meta "binary=$BIN" --meta "pinned to=CPU $CPU" --meta "build=$BUILD_DESC"
   for x in "${LOG_FILES[@]}"; do log_args+=(--log "$x"); done
-  python3 dev/scripts/build_report.py test "${CG_FILES[@]}" -o "$out/index.html" --test "$name" "${log_args[@]}" \
-    --meta "generated=$(date '+%Y-%m-%d %H:%M:%S %Z') on $(hostname)" \
-    --meta "source=$GIT_DESC" \
-    --meta "build=$BUILD_DESC" \
-    --meta "profiled=$profiled" \
-    --meta "timed=$timed" \
-    --meta "flame graph=one speedscope profile per event: ${SS_EVENTS[*]}" \
-    --meta "raw data=${CG_FILES[*]}"
+  
+  rm -rf "$out/raw"
+  mkdir -p "$out/raw"
+  cp "${CG_FILES[@]}" "$out/raw/"
+  sed -i "s#$REPO_ROOT/##g" "$out"/raw/*
+  for x in "${CG_FILES[@]}"; do raw_args+=(--raw-data "$out/raw/$(basename "$x")"); done
+  python3 dev/scripts/build_report.py test "${CG_FILES[@]}" -o "$out/index.html" --test "$name" "${log_args[@]}" "${raw_args[@]}" \
+    --meta "generated=$(date '+%Y-%m-%d %H:%M:%S %Z') on $(hostname)"
   echo "   raw data: ${CG_FILES[*]}"
 }
 
@@ -193,9 +193,7 @@ run_one() {
   CG_FILES=("$cg_out")
   LOG_FILES=("$log")
   build_pages "$test" "$out" "$TRACE_DIR/$test.$loops.$STAMP.speedscope.json" \
-    "curl perf $test (loops=$loops, $STAMP)" \
-    "$BIN $test $loops  (callgrind ${CG_FLAGS[*]} ${CG_EXTRA[*]:-}, pinned to CPU $CPU)" \
-    "$BIN $test  (native, pinned to CPU $CPU; the only valid speed number here)"
+    "curl perf $test (loops=$loops, $STAMP)"
 }
 
 # Every test's callgrind run merged into one profile, every native time
@@ -223,9 +221,7 @@ run_all() {
   } | tee "$out/perf-tool/output.txt"
 
   build_pages all "$out" "$TRACE_DIR/all.$STAMP.speedscope.json" \
-    "curl perf all ($STAMP)" \
-    "every test's callgrind run above, merged into one profile (${#CG_FILES[@]} files)" \
-    "every test's native run above, times summed"
+    "curl perf all ($STAMP)"
 }
 
 for t in "${TESTS[@]}"; do

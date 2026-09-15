@@ -2,22 +2,6 @@
 """Convert a callgrind profile into speedscope's JSON file format
 (https://www.speedscope.app/file-format-schema.json).
 
-Callgrind's body is a *call graph* (functions with self cost, plus
-caller->callee edges each carrying an inclusive cost), not a stack-trace
-log. A function can have many distinct callers (malloc, memcpy, ...), so
-there is no single "the" stack for its cost. To render it as a flame graph
-we first collapse every cycle (mutual recursion, and the loops that appear
-when callgrind.py merges same-named symbols) into one frame, then walk the
-resulting DAG from its root(s) and, at each edge, hand the callee's cost to
-that caller in proportion to the edge's share of the callee's incoming
-inclusive cost -- the same idea as KCachegrind's cycle detection and callee
-map. A depth limit remains as the guarantee of termination; cost cut off
-there is folded into the current stack so nothing is silently dropped.
-
-Parsing is callgrind.py's (shared with the heat map and the report);
-its self-check ratio must be 1.0000 or nothing is written. A second ratio,
-emitted weight / raw self cost, checks the walk and is printed per profile.
-
 Usage:
   callgrind_to_speedscope.py callgrind.out.X -o out.speedscope.json
       [--event Ir] [--event D1mr+D1mw ...] [--name "..."]
@@ -36,11 +20,22 @@ import callgrind as cg  # noqa: E402
 MAX_STACK_DEPTH = 200
 
 
+def display_path(repo_root: str, path: str) -> str:
+    """Path relative to repo_root when it's inside it; otherwise unchanged.
+    Keeps absolute host paths (callgrind records e.g. /home/user/curl/lib/x.c)
+    out of the emitted JSON so the bundle stays relocatable."""
+    if not path or path == "???":
+        return path
+    root = os.path.abspath(repo_root).rstrip("/") + "/"
+    norm = os.path.normpath(path) if os.path.isabs(path) else path
+    return norm[len(root):] if norm.startswith(root) else norm
+
+
 class Graph:
     """Frames (one per function name) with self cost and summed caller->callee
     edges, lifted from a parsed Profile."""
 
-    def __init__(self, p: cg.Profile) -> None:
+    def __init__(self, p: cg.Profile, repo_root: str = ".") -> None:
         names = set(p.fn_self) | set(p.fn_calls) | set(p.callers) | set(p.fn_home)
         for sites in p.callers.values():
             for cfn, _, _ in sites:
@@ -48,7 +43,7 @@ class Graph:
         self.nev = len(p.events)
         self.names = sorted(names)
         self.index = {n: i for i, n in enumerate(self.names)}
-        self.files = [p.fn_home.get(n, "") for n in self.names]
+        self.files = [display_path(repo_root, p.fn_home.get(n, "")) for n in self.names]
         self.self_cost = {self.index[n]: list(vec) for n, vec in p.fn_self.items()}
         # caller index -> {callee index: summed inclusive cost over all call sites}
         self.edges: dict[int, dict[int, list[int]]] = defaultdict(dict)
@@ -64,18 +59,8 @@ class Graph:
             acc[k] += v
 
     def _collapse_cycles(self) -> list[str]:
-        """Merge every strongly connected component into one frame, so the
-        graph is a DAG and each callee's incoming edges are exactly the
-        calls into it from outside.
-
-        A cycle's back edge carries inclusive cost that is already inside
-        the edge that entered the cycle; counting it as a second caller
-        would hand that share to a path the walk then cuts off as recursion.
-        Cycles come from genuine mutual recursion and from callgrind.py's
-        merging of same-named functions: `_start -> (below main) ->
-        __libc_start_main -> (below main) -> main` is a loop once both
-        `(below main)` symbols are one frame. Same approach as KCachegrind's
-        cycle detection. Returns the merged frames' names."""
+        """Merge every strongly connected component into one frame (see
+        CLAUDE.md's tooling notes for why). Returns the merged frames' names."""
         n = len(self.names)
         index, low, on = [-1] * n, [0] * n, [False] * n
         stack: list[int] = []
@@ -227,11 +212,11 @@ def build_profile(g: Graph, idxs: list[int], name: str) -> tuple[dict, float]:
             "samples": samples, "weights": weights}, total
 
 
-def build_document(p: cg.Profile, exprs: list[str], base_name: str) -> dict:
+def build_document(p: cg.Profile, exprs: list[str], base_name: str, repo_root: str = ".") -> dict:
     """One speedscope document with one profile per event expression
     (speedscope shows a picker when there is more than one). Expressions
     whose events are absent, or whose total is zero, are skipped."""
-    g = Graph(p)
+    g = Graph(p, repo_root)
     if g.cycles:
         print(f"collapsed {len(g.cycles)} cycle(s) into one frame each: {'; '.join(g.cycles)}", file=sys.stderr)
     frames = [{"name": n, **({"file": f} if f and f != "???" else {})} for n, f in zip(g.names, g.files)]
@@ -266,6 +251,7 @@ def main() -> None:
                     help="event to weight by; repeatable, each becomes one profile; 'A+B' sums "
                          "events, e.g. D1mr+D1mw (default: Ir)")
     ap.add_argument("--name", default=None, help="document name (default: input file basename)")
+    ap.add_argument("--repo-root", default=".", help="repository root the profile's paths are relative to")
     args = ap.parse_args()
 
     p = cg.load(args.callgrind_file)
@@ -276,7 +262,7 @@ def main() -> None:
     if total and abs(ratio - 1.0) > 1e-6:
         sys.exit("error: per-line self cost does not add up to callgrind's summary")
 
-    doc = build_document(p, args.event or ["Ir"], args.name or os.path.basename(args.callgrind_file[0]))
+    doc = build_document(p, args.event or ["Ir"], args.name or os.path.basename(args.callgrind_file[0]), args.repo_root)
     with open(args.output, "w", encoding="utf-8") as f:
         json.dump(doc, f)
     print(f"wrote {args.output} ({len(doc['shared']['frames'])} frames)", file=sys.stderr)

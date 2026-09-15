@@ -168,10 +168,13 @@ Report layout (`OUTDIR/`, or `OUTDIR/<test>/` with `all`), all plain
 
 ```text
 index.html               a strip across the top -- the page title, then
-                         [bracketed] links -- and the summary under it:
-                         meta, "top 20 functions by self" (% self, symbol,
-                         calls, callers; one line per function) and the
-                         valgrind log minus its 9-line banner. A strip link
+                         [bracketed] links -- and the summary under it: meta
+                         (just "generated"), the raw data (the callgrind
+                         trace file(s), as a plain list of links relative to
+                         this page, so OUTDIR can be copied elsewhere),
+                         "top 20 functions by self" (% self, symbol, calls,
+                         callers; one line per function) and the valgrind
+                         log minus its 9-line banner. A strip link
                          loads that page into a frame under the strip, only
                          when picked; a symbol in the summary opens the heat
                          map at the function's first line. With `all`, the
@@ -184,12 +187,23 @@ flame-graph/index.html   speedscope bundle; the profile picker switches
                          between Ir, D1mr+D1mw, DLmr+DLmw, I1mr, Bcm, Bim
 heat-map/index.html      per-line source heat map (event selector, miss columns)
 perf-tool/index.html     native timing run output
+raw/                     the callgrind file(s) this report was built from,
+                         copied in (see "raw data" above) with the repo
+                         root prefix stripped from every ob=/fl=/fi= line
+                         (callgrind records it as an absolute path; the
+                         original in dev/trace/ is untouched)
 ```
 
 Raw data stays in `dev/trace/` (gitignored): `callgrind.out.<test>.<loops>.<ts>`,
 `valgrind.<test>.<loops>.<ts>.log` and the speedscope JSON (`all.<ts>.speedscope.json`
 for the merged one; there is no merged callgrind file, the generators take
-several and merge on read).
+several and merge on read). The callgrind file(s) behind each report are
+also copied into `OUTDIR/<test>/raw/` and the summary's "raw data" list
+links to that local copy (path relative to the page), not to `dev/trace/`,
+so `OUTDIR` is a self-contained directory that can be copied elsewhere on
+its own and still open correctly from `file://` -- every file path embedded
+in a generated page (heat map, flame graph, raw data) is relative, never
+an absolute host path.
 
 Scripts (`dev/scripts/`):
 
@@ -209,9 +223,9 @@ Scripts (`dev/scripts/`):
   (perf-tool/index.html), `overview` (the `all` index).
 - `callgrind_to_heatmap.py` — heat-map/index.html.
 - `callgrind_to_speedscope.py` (`--event` repeatable; `A+B` sums columns;
-  one speedscope profile per expression) and `build_flame_graph.py`
-  (patches a copy of speedscope's `dist/release` to auto-load it) —
-  flame-graph/.
+  one speedscope profile per expression; `--repo-root` relativizes frame
+  file paths, same as the heat map) and `build_flame_graph.py` (patches a
+  copy of speedscope's `dist/release` to auto-load it) — flame-graph/.
 
 Validated baseline (RelWithDebInfo, pinned, `loops=10000`, median of 7 runs):
 **137.66 ns/URL**, **~7.26M URLs/sec**, `Errors: 1240000` constant across

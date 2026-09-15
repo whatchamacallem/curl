@@ -1,18 +1,8 @@
 #!/usr/bin/env python3
 """Turn a copy of speedscope's dist/release into a bundle that opens straight
-on an embedded profile instead of the drag-and-drop landing page.
-
-Speedscope's app only defines `window.speedscope.loadFileFromBase64` once it
-sees a truthy `localProfilePath` in the URL hash -- the mechanism its own
-`speedscope <file>` CLI uses, by writing a temp .js file and opening
-`index.html#localProfilePath=/tmp/...js`, which the app turns into a
-`<script src="file:///<absolute path>">`. That absolute path does not
-survive moving the bundle. So instead the hash is set to a harmless
-placeholder (any truthy value trips the gate; the injected placeholder
-script fails silently) and a sibling profile.js, referenced by relative
-path, waits for `window.speedscope` and calls loadFileFromBase64 with the
-profile embedded as base64. The raw JSON is copied alongside for re-import
-elsewhere.
+on an embedded profile instead of the drag-and-drop landing page. See
+CLAUDE.md's build_flame_graph.py note for why this hash/profile.js dance
+is needed instead of speedscope's own CLI mechanism.
 
 Usage:
   build_flame_graph.py --speedscope-dir OUT/flame-graph --profile-json X.speedscope.json
