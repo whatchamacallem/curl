@@ -121,12 +121,14 @@ Ryzen AI 9 HX 370, WSL2) unpinned `-O2` runs vary **~106%** run to run
 taskset -c 3 ./build-relwithdebinfo/tests/perf/perf urlparser 10000
 ```
 
-`dev/profile.sh [OUTDIR] [PERFTEST|all] [CFLAGS...]` automates all of it:
+`dev/profile.sh [--verbose] [OUTDIR] [PERFTEST|all] [CFLAGS...]` automates
+all of it:
 
 ```sh
 dev/profile.sh                                   # -> dev/report, every perf test
 dev/profile.sh ~/artifacts urlparser             # one test
 dev/profile.sh ~/artifacts urlparser -DUSE_AVX512   # rebuild curl with that define first
+dev/profile.sh --verbose ~/artifacts urlparser   # every tool's output, a banner per step
 ```
 
 - `OUTDIR` defaults to `dev/report` (gitignored); a relative path is
@@ -162,6 +164,21 @@ dev/profile.sh ~/artifacts urlparser -DUSE_AVX512   # rebuild curl with that def
 - Timing: a second, native, pinned run of the same test (`perf <test>`,
   default loops) — the only valid speed number in the report. Callgrind's
   own wall-clock is never a perf number.
+- Output: one status line per thing, built up as its steps finish -- the
+  build (`build  build-relwithdebinfo -O2 -g, ccache 3s | log
+  dev/trace/profile.<ts>.log`), each test (`urlparser  callgrind loops=200
+  2m14s | native Time/URL: 137.66 ns, Errors: 1240000 | pages 4s`) and,
+  with `all`, the merged report (`all  8 profiles merged | Time: ... usecs
+  | pages 14s`); the last line ends with `-> OUTDIR/index.html`. Ten lines
+  for `all`, two for one test. Everything the tools print (cmake, ninja,
+  the perf binary under callgrind and natively, the generators and their
+  self-check ratios) goes to `dev/trace/profile.<ts>.log`, each command
+  under a `$ ...` line, and a failing command's output (last 40 lines)
+  is shown with the error. `--verbose`, recognised as the first argument
+  only (it is shifted away), prints it all to the terminal instead under
+  a `== N [test]: ...` banner per step and writes no log. In the script:
+  `say` is verbose-only text, `status` is the quiet line, `run` and
+  `capture` route a command's output by mode.
 
 Report layout (`OUTDIR/`, or `OUTDIR/<test>/` with `all`), all plain
 `file://`-openable, nothing fetched at view time:
@@ -195,7 +212,9 @@ raw/                     the callgrind file(s) this report was built from,
 ```
 
 Raw data stays in `dev/trace/` (gitignored): `callgrind.out.<test>.<loops>.<ts>`,
-`valgrind.<test>.<loops>.<ts>.log` and the speedscope JSON (`all.<ts>.speedscope.json`
+`valgrind.<test>.<loops>.<ts>.log`, a run without `--verbose` adds
+`profile.<ts>.log` (everything the tools printed, same `<ts>` as its
+traces) and the speedscope JSON (`all.<ts>.speedscope.json`
 for the merged one; there is no merged callgrind file, the generators take
 several and merge on read). The callgrind file(s) behind each report are
 also copied into `OUTDIR/<test>/raw/` and the summary's "raw data" list
