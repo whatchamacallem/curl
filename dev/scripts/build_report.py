@@ -45,9 +45,16 @@ FRAME_JS = """\
 // picked, never up front); [summary] shows this page again. The choice lives
 // in the hash so it survives reload and can be linked to. Links inside the
 // summary that point at a sub-page (a location in the heat map) open there.
+// [reset columns] drops every saved column width, here and (by message, the
+// iframe is another file:// origin) in the page loaded into the frame.
 (function () {
   const bar = document.getElementById("bar"), home = document.getElementById("home"), view = document.getElementById("view");
   const links = [...bar.querySelectorAll("a[data-view]")];
+  bar.querySelector("a[data-reset]").addEventListener("click", e => {
+    e.preventDefault();
+    Theme.reset();
+    if (view.contentWindow) view.contentWindow.postMessage("theme:reset", "*");
+  });
   function show(hash) {
     const m = /^#([\\w-]+)(?:=(.*))?$/.exec(hash);
     const key = m ? m[1] : "", link = links.find(a => a.dataset.view === key);
@@ -102,8 +109,10 @@ def read_text(path: str) -> str:
 
 
 def toolbar(links: list[tuple[str, str, str]]) -> str:
-    """links: (view key or "" for the summary, label, href)."""
+    """links: (view key or "" for the summary, label, href). Then [reset columns],
+    and [curl.se/perf] pushed to the far right."""
     parts = [f'<a href="{esc(href)}" data-view="{esc(key)}">[{esc(label)}]</a>' for key, label, href in links]
+    parts.append('<a href="#" data-reset title="forget every saved column width">[reset columns]</a>')
     parts.append('<span class="sp"></span>')
     parts.append(f'<a href="{PERF_CHART}" target="_blank" rel="noopener">[curl.se/perf]</a>')
     return f'<nav id="bar">{"".join(parts)}</nav>'

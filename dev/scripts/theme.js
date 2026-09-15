@@ -2,21 +2,28 @@
 //
 //   table.cols   every column boundary gets a full-height divider bar that
 //                can be dragged to resize the column on its left; widths are
-//                remembered in localStorage under "cols.<data-key>" and a
-//                double-click on a bar restores the default.
+//                remembered in localStorage under "cols.<data-key>".
 //   .band + th   sticky elements inside one scroller are stacked in DOM
 //                order (a legend above a header row) instead of overlapping.
-//   splitter()   a draggable divider between two panes, width remembered.
+//   splitter()   a draggable divider between two panes, width remembered
+//                under "cols.<key>" as well.
+//   reset()      drops every saved width and puts every table and splitter
+//                on the page back to its default. The frame page's
+//                [reset columns] link calls it and posts "theme:reset" to
+//                the page in its iframe, which does the same for itself.
 //
 // Pages that render tables at runtime call Theme.init(container) after each
 // render; static pages are initialised on DOMContentLoaded.
 window.Theme = (function () {
   "use strict";
+  const PREFIX = "cols.";
   const store = {
     get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } },
     set(k, v) { try { if (v == null) localStorage.removeItem(k); else localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} },
+    keys() { try { return Object.keys(localStorage); } catch (e) { return []; } },
   };
   const MIN_COL = 24;
+  const splitters = [];  // {pane} for reset()
 
   function headerCells(table) {
     const row = table.tHead ? table.tHead.rows[0] : table.rows[0];
@@ -40,7 +47,7 @@ window.Theme = (function () {
     if (!table.dataset.key) return;
     const o = {};
     table.querySelectorAll("colgroup > col").forEach((c, i) => { if (c.style.width !== c.dataset.w) o[colKey(table, i)] = c.style.width; });
-    store.set("cols." + table.dataset.key, Object.keys(o).length ? o : null);
+    store.set(PREFIX + table.dataset.key, Object.keys(o).length ? o : null);
   }
   function drag(e, table, i, bar) {
     const col = table.querySelectorAll("colgroup > col")[i], cell = headerCells(table)[i];
@@ -63,15 +70,14 @@ window.Theme = (function () {
     if (!wrap.classList.contains("tbl-cols")) return;
     const cols = [...table.querySelectorAll("colgroup > col")];
     for (const c of cols) c.dataset.w = c.style.width;
-    const saved = table.dataset.key ? store.get("cols." + table.dataset.key) : null;
+    const saved = table.dataset.key ? store.get(PREFIX + table.dataset.key) : null;
     if (saved) cols.forEach((c, i) => { const w = saved[colKey(table, i)]; if (w) c.style.width = w; });
     table._bars = [];
     for (let i = 0; i < cols.length - 1; i++) {
       const bar = document.createElement("div");
       bar.className = "bar";
-      bar.title = "drag to resize, double-click to reset";
+      bar.title = "drag to resize";
       bar.addEventListener("pointerdown", e => drag(e, table, i, bar));
-      bar.addEventListener("dblclick", () => { cols[i].style.width = cols[i].dataset.w; layoutBars(table); saveWidths(table); });
       wrap.appendChild(bar);
       table._bars.push(bar);
     }
@@ -98,7 +104,18 @@ window.Theme = (function () {
     relayout(root);
   }
 
+  function reset() {
+    for (const k of store.keys()) if (k.startsWith(PREFIX)) store.set(k, null);
+    for (const t of document.querySelectorAll("table.cols")) if (t._bars) {
+      for (const c of t.querySelectorAll("colgroup > col")) c.style.width = c.dataset.w;
+    }
+    for (const s of splitters) s.pane.style.width = "";
+    relayout();
+  }
+
   function splitter(bar, pane, key, min) {
+    key = PREFIX + key;
+    splitters.push({ pane });
     const saved = store.get(key);
     if (saved) pane.style.width = saved + "px";
     bar.addEventListener("pointerdown", e => {
@@ -116,12 +133,12 @@ window.Theme = (function () {
       for (const [t, f] of [["pointermove", move], ["pointerup", up], ["pointercancel", up]]) bar.addEventListener(t, f);
       e.preventDefault();
     });
-    bar.addEventListener("dblclick", () => { pane.style.width = ""; store.set(key, null); });
   }
 
   let timer = null;
   window.addEventListener("resize", () => { clearTimeout(timer); timer = setTimeout(() => relayout(), 120); });
+  window.addEventListener("message", e => { if (e.data === "theme:reset") reset(); });
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", () => init());
   else init();
-  return { init, relayout, splitter, store };
+  return { init, relayout, reset, splitter, store };
 })();

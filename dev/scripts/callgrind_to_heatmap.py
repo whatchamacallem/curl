@@ -297,7 +297,7 @@ BODY = """<div id="hdr">
 </div>
 <div id="layout">
   <nav id="tree"></nav>
-  <div id="split" class="split" title="drag to resize, double-click to reset"></div>
+  <div id="split" class="split" title="drag to resize"></div>
   <section id="main"></section>
 </div>
 <script id="heatdata" type="application/json">__DATA__</script>

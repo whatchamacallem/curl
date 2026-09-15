@@ -392,15 +392,21 @@ from `file://` and may not fetch anything. Rules the pages follow:
   Speedscope is the exception and keeps its own colors.
 - Every table is `theme.table()` (or the heat map's `table()`): no borders
   except a full-height bar at each column boundary, which the mouse can
-  drag anywhere along its length to resize the column on its left
-  (double-click resets); widths are remembered in localStorage per table
-  and column label. A legend banner above the table spells out every
-  abbreviated column; the banner and the header row stay put while the
-  table scrolls (`theme.js` stacks them, since two sticky elements at
-  `top: 0` overlap).
+  drag anywhere along its length to resize the column on its left; widths
+  are remembered in localStorage per table and column label, under
+  `cols.*` keys, and so is the heat map's tree width. Nothing on a bar
+  resets it: the frame's `[reset columns]` link is the one way back,
+  `Theme.reset()` drops every `cols.*` key and re-applies the defaults on
+  the page, and the frame posts `theme:reset` into its iframe so the
+  loaded page does the same (it is another `file://` origin, so the frame
+  cannot reach into it directly). A legend banner above the table spells
+  out every abbreviated column; the banner and the header row stay put
+  while the table scrolls (`theme.js` stacks them, since two sticky
+  elements at `top: 0` overlap).
 - The index page is a frame: `[summary] [flame graph] [heat map] [native
-  timing]` and `[curl.se/perf]` across the top, the summary centered under
-  it, sub-pages loaded into an iframe only when picked.
+  timing] [reset columns]` on the left and `[curl.se/perf]` hugging the
+  right across the top, the summary centered under it, sub-pages loaded
+  into an iframe only when picked.
 
 ### Checking the pages
 
