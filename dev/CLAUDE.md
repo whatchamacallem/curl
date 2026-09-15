@@ -177,8 +177,32 @@ dev/profile.sh --verbose ~/artifacts urlparser   # every tool's output, a banner
   is shown with the error. `--verbose`, recognised as the first argument
   only (it is shifted away), prints it all to the terminal instead under
   a `== N [test]: ...` banner per step and writes no log. In the script:
-  `say` is verbose-only text, `status` is the quiet line, `run` and
-  `capture` route a command's output by mode.
+  `log_say` is verbose-only text, `log_status` is the quiet line, `log_run`
+  and `log_capture` route a command's output by mode.
+
+Functions across `dev/` follow an `object_method`-style naming scheme (a
+C-identifier form of an object hierarchy, lowercase): `profile.sh`'s
+`args_parse`, `toolchain_check`, `build_compile`, `report_render`,
+`usage_show`, `script_main`, the `log_*`/`test_*` helpers, and `run_one`/
+`run_all` (already fit unprefixed); `theme.py`'s `theme_css`/`theme_js`/
+`theme_runtime`, `html_esc`, `table_render`, `page_document`, `num_human`/
+`num_pct` (`heat_t`/`heat_style` already fit); `callgrind.py`'s `Profile`
+class keeps its own methods as-is and its module-level functions are
+`profile_parse`/`profile_self_check`/`profile_merge`/`profile_load`;
+`build_report.py`'s `report_test`/`report_timing`/`report_overview`/
+`report_main`, `strip_render`, `rawdata_list`, `path_display`,
+`meta_parse_pairs`, `file_read_text`, `page_write` (`functions_table`/
+`log_block` already fit); `callgrind_to_heatmap.py`'s `path_norm`,
+`source_read`, `repo_tracked_files`, `vec_trim`, `model_build`,
+`heatmap_render`, `heatmap_main`; `callgrind_to_speedscope.py`'s `Graph`
+class keeps its own methods and its free functions are `path_display`,
+`expr_resolve`, `graph_build_profile`, `document_build`,
+`speedscope_main` (`expr_label` already fits); `build_flame_graph.py`'s
+`index_patch`, `flamegraph_main`. Scope: top-level Python/shell function
+defs only -- `theme.js`'s `Theme.*` already fit the style and embedded JS
+inside the generators' HTML/BODY string templates is untouched (comments
+in that JS that name a Python function were kept in sync where they refer
+to one of the renamed names above).
 
 Report layout (`OUTDIR/`, or `OUTDIR/<test>/` with `all`), all plain
 `file://`-openable, nothing fetched at view time:

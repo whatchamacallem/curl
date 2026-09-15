@@ -26,7 +26,7 @@ import theme  # noqa: E402
 # --------------------------------------------------------------------------
 
 
-def norm_path(path: str, repo_root: str) -> tuple[str, str | None, str]:
+def path_norm(path: str, repo_root: str) -> tuple[str, str | None, str]:
     """Return (display path, local path to read source from or None, group).
 
     group is "repo" for files inside the repository, "system" for other
@@ -51,7 +51,7 @@ def norm_path(path: str, repo_root: str) -> tuple[str, str | None, str]:
     return posixpath.normpath(path), None, "external"
 
 
-def read_source(local: str) -> str | None:
+def source_read(local: str) -> str | None:
     try:
         with open(local, "rb") as f:
             data = f.read()
@@ -60,7 +60,7 @@ def read_source(local: str) -> str | None:
     return data.decode("utf-8", errors="replace")
 
 
-def tracked_files(repo_root: str, dirs: list[str]) -> list[str]:
+def repo_tracked_files(repo_root: str, dirs: list[str]) -> list[str]:
     if not dirs:
         return []
     try:
@@ -77,7 +77,7 @@ def tracked_files(repo_root: str, dirs: list[str]) -> list[str]:
 # --------------------------------------------------------------------------
 
 
-def trim(vec: list[int]) -> list[int]:
+def vec_trim(vec: list[int]) -> list[int]:
     """Drop trailing zeros; the page pads on read. Keeps the model small."""
     n = len(vec)
     while n and vec[n - 1] == 0:
@@ -85,7 +85,7 @@ def trim(vec: list[int]) -> list[int]:
     return vec[:n]
 
 
-def build_model(p: cg.Profile, args: argparse.Namespace, src_name: str) -> dict:
+def model_build(p: cg.Profile, args: argparse.Namespace, src_name: str) -> dict:
     repo_root = os.path.abspath(args.repo_root)
     nev = len(p.events)
 
@@ -99,7 +99,7 @@ def build_model(p: cg.Profile, args: argparse.Namespace, src_name: str) -> dict:
     raw_files = set(f for f, _ in p.line_self) | set(f for f, _ in p.line_calls) \
         | set(f for f, _ in p.fn_entry.values())
     for raw in raw_files:
-        d, loc, g = norm_path(raw, repo_root)
+        d, loc, g = path_norm(raw, repo_root)
         if g == "external":
             ob = os.path.basename(p.file_ob.get(raw, "")) or "(unknown object)"
             d = f"{ob}/{d}"
@@ -122,7 +122,7 @@ def build_model(p: cg.Profile, args: argparse.Namespace, src_name: str) -> dict:
             "callees": {}, "group": group[raw], "raw": raw if group[raw] == "external" else d,
         })
         if entry["src"] is None and local[raw]:
-            entry["src"] = read_source(local[raw])
+            entry["src"] = source_read(local[raw])
     for (raw, ln), vec in p.line_self.items():
         e = files[disp[raw]]
         vadd(e["self"], vec)
@@ -140,40 +140,40 @@ def build_model(p: cg.Profile, args: argparse.Namespace, src_name: str) -> dict:
         e = files[disp[raw]]
         ef, el = p.fn_entry.get(callee, (p.fn_home.get(callee, "???"), 0))
         e["callees"].setdefault(str(ln), []).append(
-            [fn_index[callee], disp.get(ef, ef), el, trim(vec), count])
+            [fn_index[callee], disp.get(ef, ef), el, vec_trim(vec), count])
     for e in files.values():
         for lst in e["callees"].values():
             lst.sort(key=lambda t: -(t[3][0] if t[3] else 0))
         for rec in e["lines"].values():
-            rec[0] = trim(rec[0])
-            rec[1] = trim(rec[1])
-        e["self"] = trim(e["self"])
-        e["calls"] = trim(e["calls"])
+            rec[0] = vec_trim(rec[0])
+            rec[1] = vec_trim(rec[1])
+        e["self"] = vec_trim(e["self"])
+        e["calls"] = vec_trim(e["calls"])
 
     functions = []
     for name in fn_names:
         home = p.fn_home[name]
         ef, el = p.fn_entry.get(name, (home, 0))
         callers = sorted(
-            ([fn_index[cf], disp.get(cfile, cfile), cl, trim(vec), count]
+            ([fn_index[cf], disp.get(cfile, cfile), cl, vec_trim(vec), count]
              for (cf, cfile, cl), (count, vec) in p.callers[name].items()),
             key=lambda t: -(t[3][0] if t[3] else 0))
         functions.append({
             "name": name,
             "file": disp.get(ef, ef),
             "line": el,
-            "self": trim(p.fn_self.get(name, [])),
-            "calls": trim(p.fn_calls.get(name, [])),
+            "self": vec_trim(p.fn_self.get(name, [])),
+            "calls": vec_trim(p.fn_calls.get(name, [])),
             "callers": callers,
         })
 
     # cold files: tracked sources in the requested dirs with no samples
     cold: list[str] = []
-    for rel in tracked_files(repo_root, args.tree):
+    for rel in repo_tracked_files(repo_root, args.tree):
         if rel in files:
             continue
         if args.all_sources:
-            src = read_source(os.path.join(repo_root, rel))
+            src = source_read(os.path.join(repo_root, rel))
             files[rel] = {"self": [], "calls": [], "src": src, "lines": {}, "lfn": {},
                           "callees": {}, "group": "repo", "raw": rel}
         else:
@@ -194,7 +194,7 @@ def build_model(p: cg.Profile, args: argparse.Namespace, src_name: str) -> dict:
             "generated": _dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "allSources": bool(args.all_sources),
         },
-        "theme": theme.runtime(),
+        "theme": theme.theme_runtime(),
         "files": files,
         "functions": functions,
         "cold": sorted(cold),
@@ -333,10 +333,10 @@ function recomputeScale() {
 // ---------- helpers ----------
 const esc = s => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 const pct = v => 100 * v / TOTAL;
-const fmtP = p => p >= 9.95 ? p.toFixed(1) + "%" : p >= 0.01 ? p.toFixed(2) + "%" : p > 0 ? "<0.01%" : ""; // theme.pct()
+const fmtP = p => p >= 9.95 ? p.toFixed(1) + "%" : p >= 0.01 ? p.toFixed(2) + "%" : p > 0 ? "<0.01%" : ""; // theme.num_pct()
 const fmtPct = v => fmtP(pct(v));
 const fmtN = v => v.toLocaleString("en-US"); // exact; tooltips only
-// 2.1K, 21K, 210K, 2.1M, 2.0G: at least two meaningful digits (theme.human() in theme.py)
+// 2.1K, 21K, 210K, 2.1M, 2.0G: at least two meaningful digits (theme.num_human() in theme.py)
 function fmtH(v) {
   let unit = "";
   for (const u of ["K", "M", "G", "T"]) { if (v < 999.5) break; v /= 1000; unit = u; }
@@ -372,7 +372,7 @@ const SYMBOL_CHARS = 20; // visible characters of a function name before it is c
 
 // A .tbl box: legend banner from the columns' titles, then a fixed-layout
 // table with widths in characters (everything is monospace). Mirrors
-// theme.table() in theme.py. cols: {label, title, num, width, clip, cls};
+// theme.table_render() in theme.py. cols: {label, title, num, width, clip, cls};
 // cells: a string, or {text, html, style, cls, title}.
 const PAD = 3; // 1ch padding each side + 1ch slack for the divider bar and ch rounding
 function table(key, cols, rows, opts) {
@@ -699,20 +699,20 @@ setEvent(ev.key);
 """
 
 
-def render_html(model: dict, title: str) -> str:
+def heatmap_render(model: dict, title: str) -> str:
     data = json.dumps(model, separators=(",", ":"), ensure_ascii=False)
     data = data.replace("</", "<\\/")  # never close our own <script>
-    body = BODY.replace("__THEME_JS__", theme.js()).replace("__DATA__", data)
+    body = BODY.replace("__THEME_JS__", theme.theme_js()).replace("__DATA__", data)
     return ("<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n"
             "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n"
-            f"<title>{theme.esc(title)}</title>\n<style>\n{theme.css()}{CSS}</style>\n</head>\n<body>\n"
+            f"<title>{theme.html_esc(title)}</title>\n<style>\n{theme.theme_css()}{CSS}</style>\n</head>\n<body>\n"
             + body + "</body>\n</html>\n")
 
 
 # --------------------------------------------------------------------------
 
 
-def main() -> None:
+def heatmap_main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("callgrind_file", nargs="+", help="callgrind output file(s); several are merged into one profile")
     ap.add_argument("-o", "--output", required=True, help="output .html path (directories are created)")
@@ -725,7 +725,7 @@ def main() -> None:
     ap.add_argument("--title", default=None)
     args = ap.parse_args()
 
-    prof = cg.load(args.callgrind_file)
+    prof = cg.profile_load(args.callgrind_file)
     if not prof.events:
         sys.exit("error: no 'events:' line -- not a callgrind file?")
     src_name = os.path.basename(args.callgrind_file[0])
@@ -734,7 +734,7 @@ def main() -> None:
     if args.title is None:
         args.title = f"heat map: {prof.cmd or src_name}"
 
-    self_sum, total, ratio = cg.self_check(prof)
+    self_sum, total, ratio = cg.profile_self_check(prof)
     print(f"events: {' '.join(prof.events)}", file=sys.stderr)
     print(f"callgrind summary ({prof.events[0]}): {total:,}", file=sys.stderr)
     print(f"sum of self-cost lines:          {self_sum:,}", file=sys.stderr)
@@ -743,8 +743,8 @@ def main() -> None:
         print("error: per-line self cost does not add up to callgrind's summary; refusing to write", file=sys.stderr)
         sys.exit(2)
 
-    model = build_model(prof, args, src_name)
-    html = render_html(model, args.title)
+    model = model_build(prof, args, src_name)
+    html = heatmap_render(model, args.title)
     out_dir = os.path.dirname(os.path.abspath(args.output))
     os.makedirs(out_dir, exist_ok=True)
     with open(args.output, "w", encoding="utf-8") as f:
@@ -756,4 +756,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    heatmap_main()

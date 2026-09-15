@@ -43,7 +43,7 @@ BOOTSTRAP = """\
 """
 
 
-def patch_index(index_html: Path) -> None:
+def index_patch(index_html: Path) -> None:
     html = index_html.read_text()
     html = re.sub(rf"\s*{re.escape(MARK_START)}.*?{re.escape(MARK_END)}\n?", "\n", html, flags=re.DOTALL)
     injection = (f"\n    {MARK_START}\n"
@@ -58,7 +58,7 @@ def patch_index(index_html: Path) -> None:
     index_html.write_text(html)
 
 
-def main() -> None:
+def flamegraph_main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--speedscope-dir", required=True,
                     help="the copy of speedscope's dist/release to patch in place")
@@ -84,7 +84,7 @@ def main() -> None:
                   .replace("{data}", json.dumps(base64.b64encode(raw).decode("ascii")))
     (out / PROFILE_JS).write_text(js)
     (out / "profile.speedscope.json").write_bytes(raw)
-    patch_index(index_html)
+    index_patch(index_html)
     nframes = len(doc["shared"].get("frames", []))
     nsamples = sum(len(p.get("samples", [])) for p in doc["profiles"])
     print(f"wrote {out / PROFILE_JS} ({nframes} frames, {nsamples} stack samples, "
@@ -92,4 +92,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    flamegraph_main()

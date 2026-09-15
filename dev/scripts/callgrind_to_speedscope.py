@@ -20,7 +20,7 @@ import callgrind as cg  # noqa: E402
 MAX_STACK_DEPTH = 200
 
 
-def display_path(repo_root: str, path: str) -> str:
+def path_display(repo_root: str, path: str) -> str:
     """Path relative to repo_root when it's inside it; otherwise unchanged.
     Keeps absolute host paths (callgrind records e.g. /home/user/curl/lib/x.c)
     out of the emitted JSON so the bundle stays relocatable."""
@@ -43,7 +43,7 @@ class Graph:
         self.nev = len(p.events)
         self.names = sorted(names)
         self.index = {n: i for i, n in enumerate(self.names)}
-        self.files = [display_path(repo_root, p.fn_home.get(n, "")) for n in self.names]
+        self.files = [path_display(repo_root, p.fn_home.get(n, "")) for n in self.names]
         self.self_cost = {self.index[n]: list(vec) for n, vec in p.fn_self.items()}
         # caller index -> {callee index: summed inclusive cost over all call sites}
         self.edges: dict[int, dict[int, list[int]]] = defaultdict(dict)
@@ -137,7 +137,7 @@ class Graph:
         return roots or list(range(len(self.names)))
 
 
-def resolve_expr(p: cg.Profile, expr: str) -> list[int] | None:
+def expr_resolve(p: cg.Profile, expr: str) -> list[int] | None:
     """'D1mr+D1mw' -> the raw event columns it sums; None if one is missing."""
     idxs = []
     for name in (t.strip() for t in expr.split("+")):
@@ -162,7 +162,7 @@ def expr_label(p: cg.Profile, expr: str) -> str:
     return f"{expr} — {long}" if long else expr
 
 
-def build_profile(g: Graph, idxs: list[int], name: str) -> tuple[dict, float]:
+def graph_build_profile(g: Graph, idxs: list[int], name: str) -> tuple[dict, float]:
     """One speedscope 'sampled' profile weighted by the sum of the given
     event columns. Returns (profile, sum of emitted weights)."""
 
@@ -212,7 +212,7 @@ def build_profile(g: Graph, idxs: list[int], name: str) -> tuple[dict, float]:
             "samples": samples, "weights": weights}, total
 
 
-def build_document(p: cg.Profile, exprs: list[str], base_name: str, repo_root: str = ".") -> dict:
+def document_build(p: cg.Profile, exprs: list[str], base_name: str, repo_root: str = ".") -> dict:
     """One speedscope document with one profile per event expression
     (speedscope shows a picker when there is more than one). Expressions
     whose events are absent, or whose total is zero, are skipped."""
@@ -222,7 +222,7 @@ def build_document(p: cg.Profile, exprs: list[str], base_name: str, repo_root: s
     frames = [{"name": n, **({"file": f} if f and f != "???" else {})} for n, f in zip(g.names, g.files)]
     profiles = []
     for expr in exprs:
-        idxs = resolve_expr(p, expr)
+        idxs = expr_resolve(p, expr)
         if idxs is None:
             print(f"skipping --event {expr!r}: not all of its events are in this file "
                   f"(events: {' '.join(p.events)})", file=sys.stderr)
@@ -232,7 +232,7 @@ def build_document(p: cg.Profile, exprs: list[str], base_name: str, repo_root: s
             print(f"skipping --event {expr!r}: total is zero", file=sys.stderr)
             continue
         label = expr_label(p, expr)
-        profile, total = build_profile(g, idxs, label)
+        profile, total = graph_build_profile(g, idxs, label)
         print(f"{label}: {len(profile['samples'])} stack samples; raw self total {raw_total:,}, "
               f"emitted {total:,.0f}, ratio {total / raw_total:.4f} (must be ~1.0)", file=sys.stderr)
         profiles.append(profile)
@@ -243,7 +243,7 @@ def build_document(p: cg.Profile, exprs: list[str], base_name: str, repo_root: s
             "exporter": "callgrind_to_speedscope.py (curl dev/scripts)"}
 
 
-def main() -> None:
+def speedscope_main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("callgrind_file", nargs="+", help="callgrind output file(s); several are merged into one profile")
     ap.add_argument("-o", "--output", required=True, help="output .speedscope.json path")
@@ -254,19 +254,19 @@ def main() -> None:
     ap.add_argument("--repo-root", default=".", help="repository root the profile's paths are relative to")
     args = ap.parse_args()
 
-    p = cg.load(args.callgrind_file)
+    p = cg.profile_load(args.callgrind_file)
     if not p.events:
         sys.exit("error: no 'events:' line -- not a callgrind file?")
-    self_sum, total, ratio = cg.self_check(p)
+    self_sum, total, ratio = cg.profile_self_check(p)
     print(f"events: {' '.join(p.events)}; ratio (must be 1.0000): {ratio:.4f}", file=sys.stderr)
     if total and abs(ratio - 1.0) > 1e-6:
         sys.exit("error: per-line self cost does not add up to callgrind's summary")
 
-    doc = build_document(p, args.event or ["Ir"], args.name or os.path.basename(args.callgrind_file[0]), args.repo_root)
+    doc = document_build(p, args.event or ["Ir"], args.name or os.path.basename(args.callgrind_file[0]), args.repo_root)
     with open(args.output, "w", encoding="utf-8") as f:
         json.dump(doc, f)
     print(f"wrote {args.output} ({len(doc['shared']['frames'])} frames)", file=sys.stderr)
 
 
 if __name__ == "__main__":
-    main()
+    speedscope_main()

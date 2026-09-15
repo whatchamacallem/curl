@@ -49,7 +49,7 @@ def _read(name: str) -> str:
         return f.read()
 
 
-def css() -> str:
+def theme_css() -> str:
     """The :root palette plus theme.css, ready to inline in a <style>."""
     lines = [":root {"]
     for name, (light, dark) in PAIR.items():
@@ -62,12 +62,12 @@ def css() -> str:
     return "\n".join(lines) + "\n" + _read("theme.css")
 
 
-def js() -> str:
+def theme_js() -> str:
     """theme.js, ready to inline in a <script>."""
     return _read("theme.js")
 
 
-def runtime() -> dict:
+def theme_runtime() -> dict:
     """What a page that colors at runtime needs (see heatStyle in theme.js)."""
     return {"heat": HEAT, "bg": ROLE["bg"], "fgLight": ROLE["fg"], "fgDark": ROLE["bg"]}
 
@@ -118,7 +118,7 @@ def heat_style(t: float, alpha: tuple[float, float] = (0.18, 0.92)) -> str:
 # --------------------------------------------------------------------------
 
 
-def human(n: float) -> str:
+def num_human(n: float) -> str:
     """A count for reading, not for arithmetic: 2.1K, 21K, 210K, 2.1M, 2.0G --
     always at least two meaningful digits, never a thousands separator."""
     v, unit = float(n), ""
@@ -130,7 +130,7 @@ def human(n: float) -> str:
     return f"{v:.1f}{unit}" if unit and v < 9.95 else f"{v:.0f}{unit}"
 
 
-def pct(p: float) -> str:
+def num_pct(p: float) -> str:
     """A share of a total: 63.2%, 5.12%, <0.01%, or "" for zero."""
     if p >= 9.95:
         return f"{p:.1f}%"
@@ -144,7 +144,7 @@ def pct(p: float) -> str:
 # --------------------------------------------------------------------------
 
 
-def esc(s: object) -> str:
+def html_esc(s: object) -> str:
     return html.escape(str(s), quote=True)
 
 
@@ -176,8 +176,8 @@ def _cell(c: object) -> Cell:
 PAD = 3
 
 
-def table(key: str, cols: list[Col], rows: list[list[object]], fill: bool = False,
-          header: bool = True, legend: bool = True, lines: bool = False) -> str:
+def table_render(key: str, cols: list[Col], rows: list[list[object]], fill: bool = False,
+                  header: bool = True, legend: bool = True, lines: bool = False) -> str:
     """A .tbl box: legend banner (from the columns' titles), then the table.
 
     Column widths are derived from the longest text in each column, in
@@ -202,11 +202,11 @@ def table(key: str, cols: list[Col], rows: list[list[object]], fill: bool = Fals
             n = min(n, col.clip)
         widths.append(n + PAD)
     out = [f'<div class="tbl{" fill" if fill else ""}">']
-    entries = [f"<span><b>{esc(c.label)}</b> {esc(c.title)}</span>" for c in cols if c.title]
+    entries = [f"<span><b>{html_esc(c.label)}</b> {html_esc(c.title)}</span>" for c in cols if c.title]
     if legend and entries:
         out.append(f'<div class="tbl-legend band">{"".join(entries)}</div>')
     classes = "cols" + (" fill" if fill else "") + (" lines" if lines else "")
-    out.append(f'<div class="tbl-cols"><table class="{classes}" data-key="{esc(key)}"><colgroup>')
+    out.append(f'<div class="tbl-cols"><table class="{classes}" data-key="{html_esc(key)}"><colgroup>')
     for i, w in enumerate(widths):
         alt = ' class="alt"' if i % 2 else ""
         style = "" if fill and i == len(widths) - 1 else f' style="width:{w}ch"'
@@ -215,8 +215,8 @@ def table(key: str, cols: list[Col], rows: list[list[object]], fill: bool = Fals
     if header:
         out.append("<thead><tr>")
         for c in cols:
-            attrs = (' class="n"' if c.num else "") + (f' title="{esc(c.title)}"' if c.title else "")
-            out.append(f"<th{attrs}>{esc(c.label)}</th>")
+            attrs = (' class="n"' if c.num else "") + (f' title="{html_esc(c.title)}"' if c.title else "")
+            out.append(f"<th{attrs}>{html_esc(c.label)}</th>")
         out.append("</tr></thead>")
     out.append("<tbody>")
     for r in cells:
@@ -226,20 +226,20 @@ def table(key: str, cols: list[Col], rows: list[list[object]], fill: bool = Fals
             cls = " ".join(x for x in ("n" if col.num else "", col.cls, c.cls) if x)
             title = c.title or (c.text if len(c.text) + PAD > widths[i] else "")
             attrs = (f' class="{cls}"' if cls else "") + (f' style="{c.style}"' if c.style else "") \
-                + (f' title="{esc(title)}"' if title else "")
-            out.append(f"<td{attrs}>{c.html if c.html is not None else esc(c.text)}</td>")
+                + (f' title="{html_esc(title)}"' if title else "")
+            out.append(f"<td{attrs}>{c.html if c.html is not None else html_esc(c.text)}</td>")
         out.append("</tr>")
     out.append("</tbody></table></div></div>")
     return "".join(out)
 
 
-def document(title: str, body: str, extra_css: str = "", extra_js: str = "", body_class: str = "") -> str:
+def page_document(title: str, body: str, extra_css: str = "", extra_js: str = "", body_class: str = "") -> str:
     """A complete page: shared style and script inlined, then `body`."""
     body_attr = f' class="{body_class}"' if body_class else ""
     return ("<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n"
             "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n"
-            f"<title>{esc(title)}</title>\n<style>\n{css()}{extra_css}</style>\n</head>\n"
+            f"<title>{html_esc(title)}</title>\n<style>\n{theme_css()}{extra_css}</style>\n</head>\n"
             f"<body{body_attr}>\n{body}\n"
-            f"<script>\n{js()}</script>\n"
+            f"<script>\n{theme_js()}</script>\n"
             + (f"<script>\n{extra_js}</script>\n" if extra_js else "")
             + "</body>\n</html>\n")

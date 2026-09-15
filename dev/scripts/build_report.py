@@ -30,7 +30,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import callgrind as cg  # noqa: E402
 import theme  # noqa: E402
-from theme import Cell, Col, esc  # noqa: E402
+from theme import Cell, Col, html_esc  # noqa: E402
 
 PERF_CHART = "https://curl.se/perf/index.html"
 VIEWS = [  # (key, strip label, path relative to the test's index.html)
@@ -109,7 +109,7 @@ FRAME_JS = """\
 """
 
 
-def meta_pairs(items: list[str]) -> list[tuple[str, str]]:
+def meta_parse_pairs(items: list[str]) -> list[tuple[str, str]]:
     out = []
     for item in items or []:
         if "=" not in item:
@@ -119,7 +119,7 @@ def meta_pairs(items: list[str]) -> list[tuple[str, str]]:
     return out
 
 
-def read_text(path: str) -> str:
+def file_read_text(path: str) -> str:
     try:
         with open(path, encoding="utf-8", errors="replace") as f:
             return f.read()
@@ -128,13 +128,13 @@ def read_text(path: str) -> str:
         return f"(missing: {path})"
 
 
-def strip(title: str, links: list[tuple[str, str, str, str]], perf_link: bool = False) -> str:
+def strip_render(title: str, links: list[tuple[str, str, str, str]], perf_link: bool = False) -> str:
     """The strip across the top: the title, then the links -- (view key or ""
     for the page itself, label, href, title to show when picked) -- then
     [reset columns] and, on the top-level page only, [curl.se/perf] pushed
     to the far right."""
-    parts = [f'<b class="title" id="title">{esc(title)}</b>']
-    parts += [f'<a href="{esc(href)}" data-view="{esc(key)}" data-title="{esc(t)}">[{esc(label)}]</a>'
+    parts = [f'<b class="title" id="title">{html_esc(title)}</b>']
+    parts += [f'<a href="{html_esc(href)}" data-view="{html_esc(key)}" data-title="{html_esc(t)}">[{html_esc(label)}]</a>'
               for key, label, href, t in links]
     parts.append('<a href="#" data-reset title="forget every saved column width">[reset columns]</a>')
     if perf_link:
@@ -147,19 +147,19 @@ def meta_table(key: str, pairs: list[tuple[str, str]]) -> str:
     if not pairs:
         return ""
     rows = [[Cell(label, cls="dim"), value] for label, value in pairs]
-    return theme.table(key, [Col("label"), Col("value", clip=100)], rows, header=False)
+    return theme.table_render(key, [Col("label"), Col("value", clip=100)], rows, header=False)
 
 
-def raw_data_list(paths: list[str], out_dir: str) -> str:
+def rawdata_list(paths: list[str], out_dir: str) -> str:
     """The callgrind trace files as a plain list of links relative to the
     generated page, so the report directory can be copied elsewhere."""
     if not paths:
         return ""
-    items = "".join(f'<li><a href="{esc(os.path.relpath(p, out_dir))}">{esc(os.path.basename(p))}</a></li>' for p in paths)
+    items = "".join(f'<li><a href="{html_esc(os.path.relpath(p, out_dir))}">{html_esc(os.path.basename(p))}</a></li>' for p in paths)
     return f'<p class="dim">raw data</p><ul class="rawdata">{items}</ul>'
 
 
-def display_path(repo_root: str, path: str) -> str:
+def path_display(repo_root: str, path: str) -> str:
     root = os.path.abspath(repo_root).rstrip("/") + "/"
     if path == "???" or not path:
         return ""
@@ -181,10 +181,10 @@ def functions_table(p: cg.Profile, event: str, top: int, repo_root: str) -> str:
     def entry_link(fn: str) -> str:
         """Heat-map link to the function's first executed line, if the file is here."""
         ef, el = p.fn_entry.get(fn, (p.fn_home.get(fn, "???"), 0))
-        f = display_path(repo_root, ef)
+        f = path_display(repo_root, ef)
         if not f or not el or not (os.path.isfile(os.path.join(repo_root, f)) or os.path.isfile(f)):
             return ""
-        return f"heat-map/index.html#f={esc(f)}&l={el}"
+        return f"heat-map/index.html#f={html_esc(f)}&l={el}"
 
     ranked = sorted(((p.value(vec, event), fn) for fn, vec in p.fn_self.items() if p.value(vec, event) > 0),
                     key=lambda t: (-t[0], t[1]))[:top]
@@ -202,22 +202,22 @@ def functions_table(p: cg.Profile, event: str, top: int, repo_root: str) -> str:
         ncalls = sum(by_caller.values())
         share = 100.0 * s / total
         href = entry_link(fn)
-        who = ", ".join(f"{cfn} ({theme.pct(100.0 * n / ncalls)})"
+        who = ", ".join(f"{cfn} ({theme.num_pct(100.0 * n / ncalls)})"
                         for cfn, n in sorted(by_caller.items(), key=lambda kv: (-kv[1], kv[0])))
-        rows.append([Cell(theme.pct(share), style=theme.heat_style(theme.heat_t(share, max_pct))),
-                     Cell(fn, title=fn, html=f'<a href="{href}">{esc(fn)}</a>' if href else None),
-                     theme.human(ncalls) if ncalls else "",
+        rows.append([Cell(theme.num_pct(share), style=theme.heat_style(theme.heat_t(share, max_pct))),
+                     Cell(fn, title=fn, html=f'<a href="{href}">{html_esc(fn)}</a>' if href else None),
+                     theme.num_human(ncalls) if ncalls else "",
                      Cell(who, title=who) if who else Cell("(no recorded caller)", cls="dim")])
-    return theme.table("report.functions", cols, rows, fill=True, lines=True)
+    return theme.table_render("report.functions", cols, rows, fill=True, lines=True)
 
 
 def log_block(path: str) -> str:
     """The valgrind log without its LOG_SKIP-line banner."""
-    lines = read_text(path).rstrip().split("\n")[LOG_SKIP:]
-    return f"<pre>{esc(chr(10).join(lines))}</pre>"
+    lines = file_read_text(path).rstrip().split("\n")[LOG_SKIP:]
+    return f"<pre>{html_esc(chr(10).join(lines))}</pre>"
 
 
-def write(path: str, page: str) -> None:
+def page_write(path: str, page: str) -> None:
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         f.write(page)
@@ -227,40 +227,40 @@ def write(path: str, page: str) -> None:
 # --------------------------------------------------------------------------
 
 
-def cmd_test(args: argparse.Namespace) -> None:
-    p = cg.load(args.callgrind_file)
+def report_test(args: argparse.Namespace) -> None:
+    p = cg.profile_load(args.callgrind_file)
     if not p.events:
         sys.exit("error: no 'events:' line -- not a callgrind file?")
     if args.event not in p.event_names():
         sys.exit(f"error: event {args.event!r} not in this profile ({' '.join(p.event_names())})")
-    self_sum, total, ratio = cg.self_check(p)
+    self_sum, total, ratio = cg.profile_self_check(p)
     print(f"ratio (must be 1.0000): {ratio:.4f}", file=sys.stderr)
     if total and abs(ratio - 1.0) > 1e-6:
         sys.exit("error: per-line self cost does not add up to callgrind's summary")
 
     links = [("", "summary", "#", args.test)] + [(k, label, path, f"{args.test} / {label}") for k, label, path in VIEWS]
-    body = strip(args.test, links)
+    body = strip_render(args.test, links)
     out_dir = os.path.dirname(os.path.abspath(args.output))
-    body += '<main id="home"><div class="page">' + meta_table("report.meta", meta_pairs(args.meta))
-    body += raw_data_list(args.raw_data, out_dir)
+    body += '<main id="home"><div class="page">' + meta_table("report.meta", meta_parse_pairs(args.meta))
+    body += rawdata_list(args.raw_data, out_dir)
     body += f"<h2>top {args.top} functions by self</h2>" + functions_table(p, args.event, args.top, args.repo_root)
     if args.log:
         body += "<h2>valgrind log</h2>"
         for log in args.log:
             if len(args.log) > 1:
-                body += f"<p>{esc(os.path.basename(log))}</p>"
+                body += f"<p>{html_esc(os.path.basename(log))}</p>"
             body += log_block(log)
     body += '</div></main><iframe id="view" hidden title="report page"></iframe>'
-    write(args.output, theme.document(args.test, body, extra_js=FRAME_JS, body_class="frame"))
+    page_write(args.output, theme.page_document(args.test, body, extra_js=FRAME_JS, body_class="frame"))
 
 
-def cmd_timing(args: argparse.Namespace) -> None:
-    body = '<div class="page">' + meta_table("timing.meta", meta_pairs(args.meta))
-    body += f"<h2>output</h2><pre>{esc(read_text(args.output_file).rstrip())}</pre></div>"
-    write(args.output, theme.document(f"{args.test} / native timing", body))
+def report_timing(args: argparse.Namespace) -> None:
+    body = '<div class="page">' + meta_table("timing.meta", meta_parse_pairs(args.meta))
+    body += f"<h2>output</h2><pre>{html_esc(file_read_text(args.output_file).rstrip())}</pre></div>"
+    page_write(args.output, theme.page_document(f"{args.test} / native timing", body))
 
 
-def cmd_overview(args: argparse.Namespace) -> None:
+def report_overview(args: argparse.Namespace) -> None:
     out_dir = os.path.dirname(os.path.abspath(args.output))
     tests: list[tuple[str, str]] = []
     for item in args.test:
@@ -272,7 +272,7 @@ def cmd_overview(args: argparse.Namespace) -> None:
     numbers: dict[str, dict[str, str]] = {}
     for name, d in tests:
         vals: dict[str, str] = {}
-        for line in read_text(os.path.join(d, "perf-tool", "output.txt")).splitlines():
+        for line in file_read_text(os.path.join(d, "perf-tool", "output.txt")).splitlines():
             m = re.match(r"^([A-Za-z][^:]{0,30}):\s+(.+?)\s*$", line)
             if m:
                 vals[m.group(1)] = m.group(2)
@@ -281,17 +281,17 @@ def cmd_overview(args: argparse.Namespace) -> None:
         numbers[name] = vals
     cols = [Col("one report per test")]
     cols += [Col(k, num=True) for k in keys]
-    rows = [[Cell(name, html=f'<a href="{esc(name)}/index.html">{esc(name)}</a>')] + [numbers[name].get(k, "") for k in keys]
+    rows = [[Cell(name, html=f'<a href="{html_esc(name)}/index.html">{html_esc(name)}</a>')] + [numbers[name].get(k, "") for k in keys]
             for name, _ in tests]
     links = [("", "overview", "#", "overview")] + [(name, name, f"{name}/index.html", name) for name, _ in tests]
-    body = strip("overview", links, perf_link=True)
-    body += '<main id="home"><div class="page">' + meta_table("overview.meta", meta_pairs(args.meta))
-    body += "<h2>test suites</h2>" + theme.table("overview.tests", cols, rows)
+    body = strip_render("overview", links, perf_link=True)
+    body += '<main id="home"><div class="page">' + meta_table("overview.meta", meta_parse_pairs(args.meta))
+    body += "<h2>test suites</h2>" + theme.table_render("overview.tests", cols, rows)
     body += '</div></main><iframe id="view" hidden title="report page"></iframe>'
-    write(args.output, theme.document("overview", body, extra_js=FRAME_JS, body_class="frame"))
+    page_write(args.output, theme.page_document("overview", body, extra_js=FRAME_JS, body_class="frame"))
 
 
-def main() -> None:
+def report_main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
 
@@ -306,25 +306,25 @@ def main() -> None:
     t.add_argument("--event", default="Ir", help="event that ranks the functions (default: Ir)")
     t.add_argument("--top", type=int, default=20)
     t.add_argument("--repo-root", default=".")
-    t.set_defaults(run=cmd_test)
+    t.set_defaults(run=report_test)
 
     n = sub.add_parser("timing", help="the native timing run page")
     n.add_argument("-o", "--output", required=True)
     n.add_argument("--test", required=True)
     n.add_argument("--output-file", required=True, help="the run's captured output")
     n.add_argument("--meta", action="append", metavar="LABEL=VALUE", default=[])
-    n.set_defaults(run=cmd_timing)
+    n.set_defaults(run=report_timing)
 
     o = sub.add_parser("overview", help="the page over several tests")
     o.add_argument("-o", "--output", required=True)
     o.add_argument("--test", action="append", metavar="NAME[=DIR]", required=True,
                    help="a test and its report directory (default: NAME next to the output)")
     o.add_argument("--meta", action="append", metavar="LABEL=VALUE", default=[])
-    o.set_defaults(run=cmd_overview)
+    o.set_defaults(run=report_overview)
 
     args = ap.parse_args()
     args.run(args)
 
 
 if __name__ == "__main__":
-    main()
+    report_main()

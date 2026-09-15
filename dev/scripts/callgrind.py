@@ -172,7 +172,7 @@ def _parse_event_header(val: str) -> tuple[str, list[tuple[int, str]] | None, st
     return name.strip(), terms, long.strip()
 
 
-def parse_callgrind(text: str) -> Profile:
+def profile_parse(text: str) -> Profile:
     p = Profile()
     names: dict[str, dict[str, str]] = {"fl": {}, "fn": {}, "ob": {}}
 
@@ -317,7 +317,7 @@ def parse_callgrind(text: str) -> Profile:
     return p
 
 
-def self_check(p: Profile) -> tuple[int, int, float]:
+def profile_self_check(p: Profile) -> tuple[int, int, float]:
     """(sum of self-cost lines, summary, ratio) for the first event."""
     self_sum = sum(vec[0] for vec in p.line_self.values() if vec)
     total = p.summary[0] if p.summary else self_sum
@@ -330,7 +330,7 @@ def self_check(p: Profile) -> tuple[int, int, float]:
 # ----------------------------------------------------------------------------
 
 
-def merge(profiles: list[Profile]) -> Profile:
+def profile_merge(profiles: list[Profile]) -> Profile:
     """One profile over several: every per-line, per-function and call-graph
     cost summed, first-seen entries (home file, entry line) kept, summaries
     added. Each file must record the same events in the same order; the
@@ -383,10 +383,10 @@ def merge(profiles: list[Profile]) -> Profile:
     return p
 
 
-def load(paths: list[str]) -> Profile:
+def profile_load(paths: list[str]) -> Profile:
     """Parse every file and merge them into one profile."""
     profiles = []
     for path in paths:
         with open(path, encoding="utf-8", errors="replace") as f:
-            profiles.append(parse_callgrind(f.read()))
-    return merge(profiles)
+            profiles.append(profile_parse(f.read()))
+    return profile_merge(profiles)
