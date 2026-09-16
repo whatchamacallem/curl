@@ -52,6 +52,9 @@ FRAME_JS = """\
 // title up and hides it, so the outermost strip carries the one title.
 // [reset columns] drops every saved column width, here and (by message, the
 // iframe is another file:// origin) in the page loaded into the frame.
+// Re-clicking the strip link for the view already showing posts "theme:home"
+// into the frame instead of reloading it, so a page with its own internal
+// navigation (the heat map's file listings) can jump back to its start.
 (function () {
   const bar = document.getElementById("bar"), home = document.getElementById("home"), view = document.getElementById("view");
   const titleEl = document.getElementById("title"), links = [...bar.querySelectorAll("a[data-view]")];
@@ -98,7 +101,10 @@ FRAME_JS = """\
     const hash = a.dataset.view != null ? (a.dataset.view ? "#" + a.dataset.view : "") : hashFor(href);
     if (hash == null) return;
     e.preventDefault();
-    if (hash === (location.hash || "")) show(hash); else location.hash = hash;
+    if (hash === (location.hash || "")) {
+      if (a.dataset.view && view.contentWindow) view.contentWindow.postMessage("theme:home", "*");
+      show(hash);
+    } else location.hash = hash;
   });
   window.addEventListener("message", e => {
     if (e.data === "theme:title?") setTitle(title);
@@ -147,10 +153,10 @@ def strip_render(title: str, links: list[tuple[str, str, str, str]], perf_link: 
               for key, label, href, t in links]
     if reset or perf_link:
         parts.append('<span class="sp"></span>')
-    if reset:
-        parts.append('<a href="#" data-reset title="forget every saved column width">[reset columns]</a>')
     if perf_link:
         parts.append(f'<a href="{PERF_CHART}" target="_blank" rel="noopener">[curl.se/perf]</a>')
+    if reset:
+        parts.append('<a href="#" data-reset title="forget every saved column width">[reset columns]</a>')
     return f'<nav id="bar" class="strip">{"".join(parts)}</nav>'
 
 
@@ -324,7 +330,7 @@ def report_main() -> None:
     t.add_argument("--log", action="append", default=[], help="valgrind log to include (repeatable)")
     t.add_argument("--no-log", action="store_true", help="omit the valgrind log section even if --log was given")
     t.add_argument("--event", default="Ir", help="event that ranks the functions (default: Ir)")
-    t.add_argument("--top", type=int, default=60)
+    t.add_argument("--top", type=int, default=50)
     t.add_argument("--repo-root", default=".")
     t.set_defaults(run=report_test)
 

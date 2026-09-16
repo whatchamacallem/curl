@@ -72,9 +72,9 @@ ul.rawdata { margin: 4px 0 10px; padding-left: 20px; }
 /* .sec: a collapsible section (raw data, valgrind log), collapsed by default.
    The <summary> carries the h2 so the chevron sits right before the heading
    text; ::marker is themed so the chevron doesn't default to black. */
-details.sec summary { cursor: pointer; }
+details.sec summary { cursor: pointer; color: var(--fg-dim); }
 details.sec summary::marker { color: var(--fg-dim); }
-details.sec summary h2 { display: inline; margin: 22px 0 6px; }
+details.sec summary h2 { display: inline; margin: 22px 0 6px; color: inherit; }
 details.sec[open] summary { margin-bottom: 2px; }
 pre.logbox { padding: 8px 12px; background: var(--panel); max-height: 60vh; overflow: auto; }
 

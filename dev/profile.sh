@@ -1,17 +1,20 @@
 #!/usr/bin/env bash
 # curl perf profiling pipeline.
 #
-#   dev/profile.sh [--verbose] [OUTDIR] [PERFTEST|all] [COMPILER FLAGS...]
+#   dev/profile.sh [--verbose] [--top N] [OUTDIR] [PERFTEST|all] [COMPILER FLAGS...]
 #
 #   --verbose  show everything the tools print (cmake, ninja, valgrind, the
 #              perf binary, the page generators) under a "== N: ..." banner
-#              per step. Recognized as the first argument only. Without it
-#              the run is one status line per thing -- the build, each test,
-#              with "all" the merged report -- built up as its steps finish
-#              (ten lines for "all"), the last one ending in the report to
-#              open; everything the tools print goes to
-#              dev/trace/profile.<ts>.log instead and a failing command's
+#              per step. Without it the run is one status line per thing --
+#              the build, each test, with "all" the merged report -- built
+#              up as its steps finish (ten lines for "all"), the last one
+#              ending in the report to open; everything the tools print goes
+#              to dev/trace/profile.<ts>.log instead and a failing command's
 #              output is shown with the error.
+#   --top N    functions listed in each summary's "top N functions by self"
+#              table (default: 50).
+#   --verbose and --top are recognized only before OUTDIR/PERFTEST, in
+#   either order.
 #   OUTDIR     where the HTML report goes (mkdir -p). Default: dev/report.
 #              A relative path is taken relative to the caller's cwd.
 #   PERFTEST   first argument to the perf binary: one of the tests in
@@ -31,7 +34,7 @@
 #      pinned to one core (unpinned runs on WSL2 vary ~2x)
 #   3. run the test natively, pinned, for the real timing numbers
 #   4. convert: speedscope flame graph (one profile per event), per-line
-#      source heat map, the index page with the top-20 functions
+#      source heat map, the index page with the top-N functions (--top)
 # With "all", the same pages are then built once more over every test's
 # callgrind file merged into one profile (the perf binary runs one test per
 # process, so the combined profile is the sum of the runs above) and the
@@ -39,9 +42,9 @@
 #
 # Layout of OUTDIR (or OUTDIR/<test>/ with "all"):
 #   index.html            strip (title, [summary] [flame graph] [heat map]
-#                         [native timing] [reset columns]) over the summary
-#                         (meta, top 20 functions with callers, valgrind
-#                         log); the strip loads the pages below into a frame
+#                         [native timing]) over the summary (raw data, top-N
+#                         functions with callers, valgrind log); the strip
+#                         loads the pages below into a frame
 #   flame-graph/index.html  speedscope, auto-loads the profile
 #   heat-map/index.html   per-line heat map with cache-miss columns
 #   perf-tool/index.html  native timing run output
@@ -80,8 +83,15 @@ test_run() {
 
 args_parse() {
   VERBOSE=0
-  case "${1:-}" in --verbose) VERBOSE=1; shift;; esac
+  TOP=50
   case "${1:-}" in -h|--help) usage_show; exit 0;; esac
+  while true; do
+    case "${1:-}" in
+      --verbose) VERBOSE=1; shift;;
+      --top) TOP="$2"; shift 2;;
+      *) break;;
+    esac
+  done
 
   INVOKE_DIR="$(pwd)"
   cd "$(dirname "$0")/.."
@@ -194,8 +204,7 @@ report_render() {
   sed -i "s#$REPO_ROOT/##g" "$out"/raw/*
   for x in "${CG_FILES[@]}"; do raw_args+=(--raw-data "$out/raw/$(basename "$x")"); done
   [ "$name" = all ] && log_args+=(--no-log)
-  test_run python3 dev/scripts/build_report.py test "${CG_FILES[@]}" -o "$out/index.html" --test "$name" "${log_args[@]}" "${raw_args[@]}" \
-    --meta "generated=$(date '+%Y-%m-%d %H:%M:%S %Z') on $(hostname)"
+  test_run python3 dev/scripts/build_report.py test "${CG_FILES[@]}" -o "$out/index.html" --test "$name" --top "$TOP" "${log_args[@]}" "${raw_args[@]}"
   log_say "   raw data: ${CG_FILES[*]}"
 }
 

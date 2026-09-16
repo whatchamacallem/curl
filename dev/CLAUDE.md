@@ -181,8 +181,10 @@ dev/profile.sh --verbose ~/artifacts urlparser   # every tool's output, a banner
   the perf binary under callgrind and natively, the generators and their
   self-check ratios) goes to `dev/trace/profile.<ts>.log`, each command
   under a `$ ...` line, and a failing command's output (last 40 lines)
-  is shown with the error. `--verbose`, recognised as the first argument
-  only (it is shifted away), prints it all to the terminal instead under
+  is shown with the error. `--verbose` and `--top N` (top-N functions in
+  each summary's table, default 50), recognised only before OUTDIR/PERFTEST
+  and in either order, are shifted away by `args_parse` before the
+  positional args; `--verbose` prints it all to the terminal instead under
   a `== N [test]: ...` banner per step and writes no log. In the script:
   `log_say` is verbose-only text; `test_run` routes a command's output by
   mode; each quiet-mode status fragment is its own inline
@@ -233,7 +235,8 @@ index.html               a strip across the top -- the page title, then
                          raw data (the callgrind trace file(s), as a plain
                          list of links relative to this page so OUTDIR can be
                          copied elsewhere) collapsed under a chevron,
-                         "top 60 functions by self" (% self, symbol, calls,
+                         "top N functions by self" (N is 50 by default,
+                         `dev/profile.sh --top N`; % self, symbol, calls,
                          callers; one line per function, full page width,
                          its callers column resizable at the right edge) and
                          the valgrind log (minus its 9-line banner and each
@@ -415,7 +418,7 @@ taskset -c 3 ./build-relwithdebinfo/tests/perf/perf urlparser 10000   # manual t
 
 ### Line-level view
 
-The speedscope bundle and the top-20 table in the report index are
+The speedscope bundle and the top-N table in the report index are
 *function*-level, and under `-O2`
 most of `urlapi.c` is inlined into `parseurl_and_replace` (only
 `curl_url_set`, `parseurl_and_replace`, `parse_authority`, `hostname_check`,
@@ -465,9 +468,17 @@ instead of restating every event's description in-page (`MANUAL_LINK` in
 between `[home]` and the event dropdown) -- it was metadata nobody read
 inline, not documentation, so it was dropped outright rather than moved.
 The home view carries the 60 hottest lines and the 60 hottest
-functions; `[home]` in the header strip returns to it. Event, scale, tree
-order, tree width and column widths are remembered in localStorage. `dev/profile.sh` writes it to
-`OUTDIR/heat-map/index.html`. Standalone:
+functions, each table's column meanings collapsed under its own `[legend]`
+link below it, same as every other `theme.table()`. There is no `[home]`
+button and no permanent "cold ... hot" gradient swatch in the header (the
+per-cell heat coloring speaks for itself); the header strip is just the
+event/find/scale/tree controls. Getting back to the home view from a file
+listing is the outer strip's job: re-picking the already-active
+`[heat map]` link there posts a `theme:home` message into the iframe
+(`FRAME_JS` in `build_report.py`) instead of reloading it, and the heat
+map resets its own `location.hash` on receiving it. Event, scale, tree
+order, tree width and column widths are remembered in localStorage.
+`dev/profile.sh` writes it to `OUTDIR/heat-map/index.html`. Standalone:
 
 ```sh
 python3 dev/scripts/callgrind_to_heatmap.py \
@@ -565,10 +576,12 @@ from `file://` and may not fetch anything. Rules the pages follow:
   re-shows a frame it already loaded), so the top-level strip reads
   `urlparser / heat map` while the nested strip shows only its links.
   `[curl.se/perf]` and `[reset columns]` are on the top-level (overview)
-  strip only, hugging the right (`[reset columns]` directly left of
-  `[curl.se/perf]`; see the `[reset columns]` bullet above for why a
-  nested per-test strip has neither). The heat map's header is the same kind of strip
-  with `[home]` in place of a title.
+  strip only, both hugging the right with `[reset columns]` last, so it is
+  the rightmost thing on the strip (`[curl.se/perf]` directly left of it;
+  see the `[reset columns]` bullet above for why a nested per-test strip
+  has neither). The heat map's header is the same kind of strip, minus a
+  title -- see "Source heatmap (browser)" above for how it gets back to
+  its home view without a `[home]` button.
 
 ### Checking the pages
 

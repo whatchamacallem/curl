@@ -204,8 +204,6 @@ body { display: flex; flex-direction: column; height: 100vh; }
 #hdr { gap: 4px 14px; }
 #hdr label { color: var(--muted); white-space: nowrap; }
 #hdr input { width: 18ch; }
-.legend { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); }
-.legend i { display: inline-block; width: 96px; height: 10px; border-radius: 2px; background: var(--heat); }
 #layout { display: flex; flex: 1; min-height: 0; }
 #tree { width: 280px; min-width: 120px; flex: none; overflow: auto; padding: 4px 0 24px; }
 #main { flex: 1; min-width: 0; overflow: auto; }
@@ -256,7 +254,6 @@ table.src tr.detail td { white-space: normal; overflow: visible; padding: 0; }
 """
 
 BODY = """<div id="hdr" class="strip">
-  <a id="homelink" href="#" title="the hottest lines and functions">[home]</a>
   <label>event <select id="event"></select></label>
   <label>find <input id="q" type="search" placeholder="file name\u2026"></label>
   <label>scale <select id="scale">
@@ -265,7 +262,6 @@ BODY = """<div id="hdr" class="strip">
     <option value="linear">linear, global</option>
   </select></label>
   <label>tree <select id="sort"><option value="heat">by heat</option><option value="name">by name</option></select></label>
-  <span class="legend">cold <i></i> hot</span>
 </div>
 <div id="layout">
   <nav id="tree"></nav>
@@ -687,7 +683,6 @@ mainEl.addEventListener("click", ev2 => {
 // ---------- routing ----------
 function route() {
   const m = /^#f=([^&]*)(?:&l=(\\d+))?/.exec(location.hash);
-  document.getElementById("homelink").classList.toggle("on", !m);
   if (m) renderFile(decodeURIComponent(m[1]), m[2] ? +m[2] : 0);
   else renderHome();
 }
@@ -700,7 +695,10 @@ function setEvent(key) {
   route();
 }
 window.addEventListener("hashchange", route);
-document.getElementById("homelink").addEventListener("click", e => { e.preventDefault(); location.hash = ""; });
+// Re-picking [heat map] in an outer strip while already showing this page
+// (see FRAME_JS in build_report.py) posts this instead of reloading the
+// iframe, so it jumps back to the hottest-lines/functions overview.
+window.addEventListener("message", e => { if (e.data === "theme:home") location.hash = ""; });
 evSel.addEventListener("change", e => setEvent(e.target.value));
 document.getElementById("scale").addEventListener("change", e => { scale = e.target.value; store.set("heat.scale", scale); route(); });
 document.getElementById("sort").addEventListener("change", e => { sortMode = e.target.value; store.set("heat.sort", sortMode); renderTree(); });
