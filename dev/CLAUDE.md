@@ -229,13 +229,20 @@ Report layout (`OUTDIR/`, or `OUTDIR/<test>/` with `all`), all plain
 
 ```text
 index.html               a strip across the top -- the page title, then
-                         [bracketed] links -- and the summary under it: meta
-                         (just "generated"), the raw data (the callgrind
-                         trace file(s), as a plain list of links relative to
-                         this page, so OUTDIR can be copied elsewhere),
-                         "top 20 functions by self" (% self, symbol, calls,
-                         callers; one line per function) and the valgrind
-                         log minus its 9-line banner. A strip link
+                         [bracketed] links -- and the summary under it: the
+                         raw data (the callgrind trace file(s), as a plain
+                         list of links relative to this page so OUTDIR can be
+                         copied elsewhere) collapsed under a chevron,
+                         "top 60 functions by self" (% self, symbol, calls,
+                         callers; one line per function, full page width,
+                         its callers column resizable at the right edge) and
+                         the valgrind log (minus its 9-line banner and each
+                         line's "==PID==" prefix, in a bordered box) also
+                         collapsed under a chevron -- omitted entirely on the
+                         `all` page, since every test's log would otherwise
+                         be concatenated there (build_report.py test's
+                         `--no-log`, passed by profile.sh's report_render
+                         only when rendering "all"). A strip link
                          loads that page into a frame under the strip, only
                          when picked; a symbol in the summary opens the heat
                          map at the function's first line. With `all`, the
@@ -446,11 +453,18 @@ functions by ..." headings, the per-file stat line, the per-line detail
 summary and its "calls from this line" heading) is written `short / KEY`
 via `evLabel()`/`EVENT_SHORT` in `callgrind_to_heatmap.py`, one short name
 per event callgrind can emit (mirrors `callgrind.py`'s `EVENT_LONG` /
-`DERIVED_DEFAULTS`), so the meaning never has to be looked up. Two spots
-are left as the bare key on purpose, since both already carry the long
-name right next to it: the event picker's own dropdown text, and the
-per-line detail popup's "all events on this line" table, which has a
-separate "meaning" column. The home view carries the 60 hottest lines and the 60 hottest
+`DERIVED_DEFAULTS`), so the meaning never has to be looked up. One spot is
+left as the bare key on purpose, since it already carries the long name
+right next to it: the event picker's own dropdown text. The per-line
+detail popup's "all events on this line" table dropped its old per-row
+"meaning" column entirely -- it links `[manual]` to the official callgrind
+docs (`https://valgrind.org/docs/manual/cl-manual.html`) above the table
+instead of restating every event's description in-page (`MANUAL_LINK` in
+`callgrind_to_heatmap.py`). The header strip no longer shows the old
+`#hmeta` line (the merged command/loop counts/generated timestamp that sat
+between `[home]` and the event dropdown) -- it was metadata nobody read
+inline, not documentation, so it was dropped outright rather than moved.
+The home view carries the 60 hottest lines and the 60 hottest
 functions; `[home]` in the header strip returns to it. Event, scale, tree
 order, tree width and column widths are remembered in localStorage. `dev/profile.sh` writes it to
 `OUTDIR/heat-map/index.html`. Standalone:
@@ -519,10 +533,14 @@ from `file://` and may not fetch anything. Rules the pages follow:
   `Theme.reset()` drops every `cols.*` key and re-applies the defaults on
   the clicking page, and posts `theme:reset` into its iframe so the loaded
   page does the same, which repeats at each level (it is another `file://`
-  origin, so a frame cannot reach into the next one directly). A legend banner above the table spells
-  out every abbreviated column; the banner and the header row stay put
-  while the page scrolls past the table (`theme.js` stacks them, since
-  two sticky elements at `top: 0` overlap). A table box never scrolls on
+  origin, so a frame cannot reach into the next one directly). Each column's
+  full meaning is a tooltip on its header cell, and a `[legend]` link below
+  the table reveals a banner spelling every abbreviated column out at once
+  (hidden by default; click again to hide); `theme.js`'s document-level
+  `data-legend` click handler toggles it, so it works the same in every
+  generator (`theme.table_render()` and the heat map's own `table()` build
+  the same markup, `noLegend` in the latter suppressing it for the small
+  detail-popup tables that don't need it). A table box never scrolls on
   its own: it is as long as its rows and as wide as its columns, or with
   `fill` as wide as the page with the last column cut off at the edge
   (the summary's callers column; hover for the whole text); the page is

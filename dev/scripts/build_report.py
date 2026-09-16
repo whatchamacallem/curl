@@ -145,10 +145,11 @@ def strip_render(title: str, links: list[tuple[str, str, str, str]], perf_link: 
     parts = [f'<b class="title" id="title">{html_esc(title)}</b>']
     parts += [f'<a href="{html_esc(href)}" data-view="{html_esc(key)}" data-title="{html_esc(t)}">[{html_esc(label)}]</a>'
               for key, label, href, t in links]
+    if reset or perf_link:
+        parts.append('<span class="sp"></span>')
     if reset:
         parts.append('<a href="#" data-reset title="forget every saved column width">[reset columns]</a>')
     if perf_link:
-        parts.append('<span class="sp"></span>')
         parts.append(f'<a href="{PERF_CHART}" target="_blank" rel="noopener">[curl.se/perf]</a>')
     return f'<nav id="bar" class="strip">{"".join(parts)}</nav>'
 
@@ -162,11 +163,13 @@ def meta_table(key: str, pairs: list[tuple[str, str]]) -> str:
 
 def rawdata_list(paths: list[str], out_dir: str) -> str:
     """The callgrind trace files as a plain list of links relative to the
-    generated page, so the report directory can be copied elsewhere."""
+    generated page, so the report directory can be copied elsewhere.
+    Collapsed under a <details> by default, matching "top N functions"'
+    header color instead of a muted <p>."""
     if not paths:
         return ""
     items = "".join(f'<li><a href="{html_esc(os.path.relpath(p, out_dir))}">{html_esc(os.path.basename(p))}</a></li>' for p in paths)
-    return f'<p class="dim">raw data</p><ul class="rawdata">{items}</ul>'
+    return f'<details class="sec"><summary><h2>raw data</h2></summary><ul class="rawdata">{items}</ul></details>'
 
 
 def path_display(repo_root: str, path: str) -> str:
@@ -221,10 +224,15 @@ def functions_table(p: cg.Profile, event: str, top: int, repo_root: str) -> str:
     return theme.table_render("report.functions", cols, rows, fill=True, lines=True)
 
 
+PID_PREFIX = re.compile(r"^==\d+==\s?")
+
+
 def log_block(path: str) -> str:
-    """The valgrind log without its LOG_SKIP-line banner."""
+    """The valgrind log without its LOG_SKIP-line banner or each line's
+    "==PID==" prefix, in a single-cell box styled like the functions table."""
     lines = file_read_text(path).rstrip().split("\n")[LOG_SKIP:]
-    return f"<pre>{html_esc(chr(10).join(lines))}</pre>"
+    text = "\n".join(PID_PREFIX.sub("", ln) for ln in lines)
+    return f'<div class="tbl"><pre class="logbox">{html_esc(text)}</pre></div>'
 
 
 def page_write(path: str, page: str) -> None:
@@ -251,15 +259,16 @@ def report_test(args: argparse.Namespace) -> None:
     links = [("", "summary", "#", args.test)] + [(k, label, path, f"{args.test} / {label}") for k, label, path in VIEWS]
     body = strip_render(args.test, links, reset=False)
     out_dir = os.path.dirname(os.path.abspath(args.output))
-    body += '<main id="home"><div class="page">' + meta_table("report.meta", meta_parse_pairs(args.meta))
+    body += '<main id="home"><div class="page">'
     body += rawdata_list(args.raw_data, out_dir)
     body += f"<h2>top {args.top} functions by self</h2>" + functions_table(p, args.event, args.top, args.repo_root)
-    if args.log:
-        body += "<h2>valgrind log</h2>"
+    if args.log and not args.no_log:
+        body += '<details class="sec"><summary><h2>valgrind log</h2></summary>'
         for log in args.log:
             if len(args.log) > 1:
                 body += f"<p>{html_esc(os.path.basename(log))}</p>"
             body += log_block(log)
+        body += "</details>"
     body += '</div></main><iframe id="view" hidden title="report page"></iframe>'
     page_write(args.output, theme.page_document(args.test, body, extra_js=FRAME_JS, body_class="frame"))
 
@@ -313,8 +322,9 @@ def report_main() -> None:
     t.add_argument("--raw-data", action="append", default=[], metavar="FILE",
                    help="callgrind trace file to link (repeatable); listed relative to -o")
     t.add_argument("--log", action="append", default=[], help="valgrind log to include (repeatable)")
+    t.add_argument("--no-log", action="store_true", help="omit the valgrind log section even if --log was given")
     t.add_argument("--event", default="Ir", help="event that ranks the functions (default: Ir)")
-    t.add_argument("--top", type=int, default=20)
+    t.add_argument("--top", type=int, default=60)
     t.add_argument("--repo-root", default=".")
     t.set_defaults(run=report_test)
 

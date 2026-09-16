@@ -193,6 +193,7 @@ report_render() {
   cp "${CG_FILES[@]}" "$out/raw/"
   sed -i "s#$REPO_ROOT/##g" "$out"/raw/*
   for x in "${CG_FILES[@]}"; do raw_args+=(--raw-data "$out/raw/$(basename "$x")"); done
+  [ "$name" = all ] && log_args+=(--no-log)
   test_run python3 dev/scripts/build_report.py test "${CG_FILES[@]}" -o "$out/index.html" --test "$name" "${log_args[@]}" "${raw_args[@]}" \
     --meta "generated=$(date '+%Y-%m-%d %H:%M:%S %Z') on $(hostname)"
   log_say "   raw data: ${CG_FILES[*]}"
@@ -280,7 +281,7 @@ run_all() {
   test_run python3 dev/scripts/build_report.py overview "${args[@]}"
 }
 
-script_main() {
+main() {
   args_parse "$@"
   toolchain_check
 
@@ -304,4 +305,4 @@ script_main() {
   log_say "Done: $OUT_DIR/index.html"
 }
 
-script_main "$@"
+main "$@"

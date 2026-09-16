@@ -178,7 +178,8 @@ PAD = 3
 
 def table_render(key: str, cols: list[Col], rows: list[list[object]], fill: bool = False,
                   header: bool = True, legend: bool = True, lines: bool = False) -> str:
-    """A .tbl box: legend banner (from the columns' titles), then the table.
+    """A .tbl box: the table, then (from the columns' titles) a [legend] link
+    that reveals a banner spelling out the abbreviated columns.
 
     Column widths are derived from the longest text in each column, in
     characters (everything is monospace, so this is exact), unless the
@@ -203,8 +204,6 @@ def table_render(key: str, cols: list[Col], rows: list[list[object]], fill: bool
         widths.append(n + PAD)
     out = [f'<div class="tbl{" fill" if fill else ""}">']
     entries = [f"<span><b>{html_esc(c.label)}</b> {html_esc(c.title)}</span>" for c in cols if c.title]
-    if legend and entries:
-        out.append(f'<div class="tbl-legend band">{"".join(entries)}</div>')
     classes = "cols" + (" fill" if fill else "") + (" lines" if lines else "")
     out.append(f'<div class="tbl-cols"><table class="{classes}" data-key="{html_esc(key)}"><colgroup>')
     for i, w in enumerate(widths):
@@ -229,7 +228,11 @@ def table_render(key: str, cols: list[Col], rows: list[list[object]], fill: bool
                 + (f' title="{html_esc(title)}"' if title else "")
             out.append(f"<td{attrs}>{c.html if c.html is not None else html_esc(c.text)}</td>")
         out.append("</tr>")
-    out.append("</tbody></table></div></div>")
+    out.append("</tbody></table></div>")
+    if legend and entries:
+        out.append(f'<a href="#" class="tbl-legend-toggle" data-legend>[legend]</a>'
+                    f'<div class="tbl-legend" hidden>{"".join(entries)}</div>')
+    out.append("</div>")
     return "".join(out)
 
 

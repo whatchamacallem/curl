@@ -135,6 +135,14 @@ window.Theme = (function () {
     });
   }
 
+  document.addEventListener("click", e => {
+    const a = e.target.closest("a[data-legend]");
+    if (!a) return;
+    e.preventDefault();
+    const leg = a.nextElementSibling;
+    if (leg) leg.hidden = !leg.hidden;
+  });
+
   let timer = null;
   window.addEventListener("resize", () => { clearTimeout(timer); timer = setTimeout(() => relayout(), 120); });
   window.addEventListener("message", e => { if (e.data === "theme:reset") reset(); });

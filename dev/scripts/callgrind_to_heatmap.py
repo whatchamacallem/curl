@@ -9,7 +9,6 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import datetime as _dt
 import json
 import os
 import posixpath
@@ -85,7 +84,7 @@ def vec_trim(vec: list[int]) -> list[int]:
     return vec[:n]
 
 
-def model_build(p: cg.Profile, args: argparse.Namespace, src_name: str) -> dict:
+def model_build(p: cg.Profile, args: argparse.Namespace) -> dict:
     repo_root = os.path.abspath(args.repo_root)
     nev = len(p.events)
 
@@ -183,16 +182,11 @@ def model_build(p: cg.Profile, args: argparse.Namespace, src_name: str) -> dict:
     default_event = args.event if args.event in p.event_names() else (p.events[0] if p.events else "Ir")
     return {
         "meta": {
-            "title": args.title,
             "events": p.events,
             "eventLong": {n: p.event_long.get(n, "") for n in p.event_names()},
             "derived": derived,
             "defaultEvent": default_event,
             "totals": p.totals(),
-            "cmd": p.cmd,
-            "source": src_name,
-            "generated": _dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "allSources": bool(args.all_sources),
         },
         "theme": theme.theme_runtime(),
         "files": files,
@@ -208,7 +202,6 @@ def model_build(p: cg.Profile, args: argparse.Namespace, src_name: str) -> dict:
 CSS = """\
 body { display: flex; flex-direction: column; height: 100vh; }
 #hdr { gap: 4px 14px; }
-#hdr .meta { color: var(--muted); }
 #hdr label { color: var(--muted); white-space: nowrap; }
 #hdr input { width: 18ch; }
 .legend { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); }
@@ -264,7 +257,6 @@ table.src tr.detail td { white-space: normal; overflow: visible; padding: 0; }
 
 BODY = """<div id="hdr" class="strip">
   <a id="homelink" href="#" title="the hottest lines and functions">[home]</a>
-  <span class="meta" id="hmeta"></span>
   <label>event <select id="event"></select></label>
   <label>find <input id="q" type="search" placeholder="file name\u2026"></label>
   <label>scale <select id="scale">
@@ -404,7 +396,6 @@ function table(key, cols, rows, opts) {
   });
   let h = `<div class="tbl">`;
   const leg = cols.filter(c => c.title).map(c => `<span><b>${esc(c.label)}</b> ${esc(c.title)}</span>`);
-  if (leg.length && !opts.noLegend) h += `<div class="tbl-legend band">${leg.join("")}</div>`;
   h += `<div class="tbl-cols"><table class="cols${opts.fill ? " fill" : ""}" data-key="${esc(key)}"><colgroup>`;
   cols.forEach((c, i) => { h += `<col${i % 2 ? ' class="alt"' : ""}${(opts.fill && i === cols.length - 1) ? "" : ` style="width:${widths[i]}ch"`}>`; });
   h += `</colgroup><thead><tr>`;
@@ -420,7 +411,9 @@ function table(key, cols, rows, opts) {
     });
     h += "</tr>";
   }
-  return h + `</tbody></table></div></div>`;
+  h += `</tbody></table></div>`;
+  if (leg.length && !opts.noLegend) h += `<a href="#" class="tbl-legend-toggle" data-legend>[legend]</a><div class="tbl-legend" hidden>${leg.join("")}</div>`;
+  return h + `</div>`;
 }
 const evCol = (e, extra) => Object.assign({ label: e.key, title: e.long, num: true }, extra || {});
 const extraCols = () => EXTRA.map(x => evCol(x, {
@@ -626,16 +619,17 @@ function renderFile(path, line) {
   } else if (first) mainEl.scrollTop = 0;
 }
 
+const MANUAL_LINK = `<a href="https://valgrind.org/docs/manual/cl-manual.html" target="_blank" rel="noopener">[manual]</a>`;
 function eventTable(selfv, callsv) {
   const rows = [];
   for (const e of EVS) {
     const s = e.get(selfv), c = e.get(callsv), tot = e.get(D.meta.totals) || 1;
     if (!s && !c) continue;
-    rows.push([{ text: e.key, style: e === ev ? "font-weight:600" : "" }, num(s), fmtP(100 * s / tot) || "0%", c ? num(c) : "", { text: e.long, cls: "dim" }]);
+    rows.push([{ text: e.key, style: e === ev ? "font-weight:600" : "" }, num(s), fmtP(100 * s / tot) || "0%", c ? num(c) : ""]);
   }
-  return table("heat.detail.events",
+  return `<p>${MANUAL_LINK} for what each event means.</p>` + table("heat.detail.events",
     [{ label: "event" }, { label: "self", num: true }, { label: "% of total", num: true },
-     { label: "in calls", title: "inclusive cost of the calls made from this line", num: true }, { label: "meaning", clip: 60 }],
+     { label: "in calls", title: "inclusive cost of the calls made from this line", num: true }],
     rows, { noLegend: true });
 }
 
@@ -703,7 +697,6 @@ function setEvent(key) {
   recomputeScale();
   TREE = buildTree();
   for (const d of TREE.dirs.values()) if (d.self / TOTAL > 0.05) openDirs.add(d.path);
-  document.getElementById("hmeta").textContent = `${D.meta.cmd || ""} \\u00b7 ${fmtH(TOTAL)} ${ev.key} \\u00b7 ${D.meta.source} \\u00b7 ${D.meta.generated}`;
   route();
 }
 window.addEventListener("hashchange", route);
@@ -762,7 +755,7 @@ def heatmap_main() -> None:
         print("error: per-line self cost does not add up to callgrind's summary; refusing to write", file=sys.stderr)
         sys.exit(2)
 
-    model = model_build(prof, args, src_name)
+    model = model_build(prof, args)
     html = heatmap_render(model, args.title)
     out_dir = os.path.dirname(os.path.abspath(args.output))
     os.makedirs(out_dir, exist_ok=True)

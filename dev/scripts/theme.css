@@ -32,16 +32,19 @@ body.frame > iframe { flex: 1; min-height: 0; width: 100%; border: 0; background
 .page { padding: 24px 36px 48px; }
 
 /* tables: no borders except the column divider bars; alternate columns shaded;
-   a legend banner and the header row stay put while the page scrolls past
-   the table. The box never scrolls on its own: it is as long as the table,
-   and as wide (or, with .fill, as wide as the page, the last column cut off
-   at the edge). Column widths are set in ch by the generators: content +
-   1ch padding each side + 1ch slack for the divider bar and fractional
-   rounding. */
+   the header row stays put while the page scrolls past the table. The box
+   never scrolls on its own: it is as long as the table, and as wide (or,
+   with .fill, as wide as the page, the last column cut off at the edge).
+   Column widths are set in ch by the generators: content + 1ch padding each
+   side + 1ch slack for the divider bar and fractional rounding. Each
+   column's full meaning is still a tooltip on its header cell; the legend
+   spelling every column out is collapsed below the table behind [legend]
+   so it doesn't compete for space above. */
 .tbl { position: relative; width: fit-content; margin: 4px 0 10px; border: 1px solid var(--bar); border-radius: 4px; }
 .tbl.fill { width: 100%; }
+.tbl-legend-toggle { display: block; padding: 4px 10px; color: var(--muted); background: var(--panel); }
 .tbl-legend { display: flex; flex-wrap: wrap; gap: 1px 18px; width: 0; min-width: 100%;
-  padding: 4px 10px; color: var(--muted); background: var(--panel); }
+  padding: 4px 10px; color: var(--muted); background: var(--panel); border-top: 1px solid var(--bar); }
 .band { position: sticky; top: 0; z-index: 2; }
 .tbl-cols { position: relative; }
 table.cols { table-layout: fixed; border-collapse: separate; border-spacing: 0; width: 0; }
@@ -65,6 +68,15 @@ table.cols.lines tbody > tr:last-child > td { border-bottom: 0; }
 .bar:hover::before, .bar.active::before { background: var(--bar); }
 
 ul.rawdata { margin: 4px 0 10px; padding-left: 20px; }
+
+/* .sec: a collapsible section (raw data, valgrind log), collapsed by default.
+   The <summary> carries the h2 so the chevron sits right before the heading
+   text; ::marker is themed so the chevron doesn't default to black. */
+details.sec summary { cursor: pointer; }
+details.sec summary::marker { color: var(--fg-dim); }
+details.sec summary h2 { display: inline; margin: 22px 0 6px; }
+details.sec[open] summary { margin-bottom: 2px; }
+pre.logbox { padding: 8px 12px; background: var(--panel); max-height: 60vh; overflow: auto; }
 
 /* splitter between two panes (the heat map's tree and listing): a 1px line
    in a 7px grab area, 2px wide while the mouse is on it */
