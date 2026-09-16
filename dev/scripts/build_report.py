@@ -56,6 +56,13 @@ FRAME_JS = """\
 // "reset columns" resets every table on this page directly and posts
 // "theme:reset-cols" into the frame for its own tables (the heat map's
 // home/file tables, an overview's nested per-test strip and its own frame).
+// A page in the frame that navigates internally (the heat map's file/line/
+// event picks) posts its own hash up via {theme:"hash", hash}; this mirrors
+// it into the outer URL with history.replaceState -- not location.hash=,
+// which would re-run show() and re-post "theme:title?" into the frame on
+// every keystroke for no reason, since the view itself never changes, only
+// the deep-link portion after "=". That keeps the address bar always equal
+// to "reopen this exact page in this exact state", copy-paste ready.
 (function () {
   const bar = document.getElementById("bar"), home = document.getElementById("home"), view = document.getElementById("view");
   const titleEl = document.getElementById("title"), links = [...bar.querySelectorAll("a[data-view]")];
@@ -114,6 +121,12 @@ FRAME_JS = """\
       if (view.contentWindow) view.contentWindow.postMessage("theme:reset-cols", "*");
     }
     else if (e.data && e.data.theme === "title" && e.source === view.contentWindow) setTitle(e.data.title);
+    else if (e.data && e.data.theme === "hash" && e.source === view.contentWindow) {
+      const cur = links.find(a => a.classList.contains("on"));
+      if (!cur || !cur.dataset.view) return;
+      const hash = "#" + cur.dataset.view + (e.data.hash ? "=" + encodeURIComponent(e.data.hash.slice(1)) : "");
+      if (hash !== location.hash) history.replaceState(null, "", hash);
+    }
   });
   window.addEventListener("hashchange", () => show(location.hash));
   show(location.hash);

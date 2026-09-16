@@ -419,7 +419,12 @@ function heatStyle(t, aMin, aMax) {
 }
 const heatBg = t => heatStyle(t, 0.18, 0.92);
 const heatBgSoft = t => heatStyle(t, 0.12, 0.55); // tree rows: keep names readable
-function hashFor(path, line) { return "#f=" + encodeURIComponent(path) + (line ? "&l=" + line : ""); }
+function hashFor(path, line) {
+  const parts = ["f=" + encodeURIComponent(path)];
+  if (line) parts.push("l=" + line);
+  if (EVS.length > 1) parts.push("e=" + encodeURIComponent(ev.key));
+  return "#" + parts.join("&");
+}
 function fnName(i) { return (i != null && fns[i]) ? fns[i].name : "?"; }
 function link(path, line, text) { return files[path] && line ? `<a href="${hashFor(path, line)}">${esc(text)}</a>` : esc(text); }
 const SYMBOL_CHARS = 20; // visible characters of a function name before it is cut off
@@ -931,18 +936,53 @@ mainEl.addEventListener("click", ev2 => {
 });
 
 // ---------- routing ----------
-function route() {
-  const m = /^#f=([^&]*)(?:&l=(\\d+))?/.exec(location.hash);
-  if (m) renderFile(decodeURIComponent(m[1]), m[2] ? +m[2] : 0);
-  else renderHome();
-}
-function setEvent(key) {
+// The hash is the one source of truth for "what's on screen" (file, line,
+// event) so a link into this page -- including one relayed through the
+// outer frame's own hash, see syncHash()/FRAME_JS -- reopens the same view.
+// applyEvent() only updates state (no navigation); setEvent() is the
+// user-facing entry point (select box) that also rewrites the hash.
+function applyEvent(key) {
   ev = evByKey(key) || EVS[0];
   store.set("heat.event", ev.key);
   recomputeScale();
   TREE = buildTree();
   for (const d of TREE.dirs.values()) if (d.self / TOTAL > 0.05) openDirs.add(d.path);
-  route();
+}
+function curLine() {
+  const d = mainEl.querySelector("tr.detail");
+  const id = d && d.previousElementSibling && d.previousElementSibling.id;
+  return id && id[0] === "L" ? +id.slice(1) : 0;
+}
+// Rewrites location.hash to match what's actually rendered right now
+// (replaceState: a view refinement of the same page, not a new history
+// entry) and relays it to the outer frame page, if any, so FRAME_JS can
+// mirror it into the top-level URL -- see the "message" listener there.
+function syncHash() {
+  const hash = curFile ? hashFor(curFile, curLine()) : (EVS.length > 1 ? "#e=" + encodeURIComponent(ev.key) : "#");
+  if (hash !== location.hash) history.replaceState(null, "", hash || "#");
+  if (window.parent !== window) window.parent.postMessage({ theme: "hash", hash: hash || "" }, "*");
+}
+// Renders whatever the hash currently names (file+line, if any) using
+// whatever event is currently applied, then syncs the hash to match --
+// shared by route() (hash changed elsewhere: parse it first) and setEvent()
+// (event changed here: ev is already right, no re-parse wanted, or a stale
+// e= still in the hash would immediately override the just-applied value).
+function renderFromHash() {
+  const m = /^#(?:f=([^&]*))?(?:&?l=(\\d+))?/.exec(location.hash);
+  evSel.value = ev.key;
+  if (m && m[1]) renderFile(decodeURIComponent(m[1]), m[2] ? +m[2] : 0);
+  else renderHome();
+  syncHash();
+}
+function route() {
+  const m = /^#(?:f=[^&]*)?(?:&?l=\\d+)?(?:&?e=([^&]*))?/.exec(location.hash);
+  const key = m && m[1] ? decodeURIComponent(m[1]) : null;
+  if (key && evByKey(key) && key !== ev.key) applyEvent(key);
+  renderFromHash();
+}
+function setEvent(key) {
+  applyEvent(key);
+  renderFromHash();
 }
 window.addEventListener("hashchange", route);
 // Re-picking [heat map] in an outer strip while already showing this page
@@ -961,7 +1001,8 @@ evSel.addEventListener("change", e => setEvent(e.target.value));
 document.getElementById("scale").addEventListener("change", e => { scale = e.target.value; store.set("heat.scale", scale); route(); });
 document.getElementById("sort").addEventListener("change", e => { sortMode = e.target.value; store.set("heat.sort", sortMode); renderTree(); });
 document.getElementById("q").addEventListener("input", e => { query = e.target.value.trim().toLowerCase(); renderTree(); });
-setEvent(ev.key);
+applyEvent(ev.key);
+route();
 })();
 </script>
 """
