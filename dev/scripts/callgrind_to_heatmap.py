@@ -621,7 +621,7 @@ function renderFile(path, line) {
     h += `</div>`;
   }
   if (f.src == null) {
-    h += `<div class="nosrc">Source not available on this machine; showing only the lines that carry cost.</div>`;
+    h += `<div class="nosrc">Source not available it carries no cost.</div>`;
   }
   const rows = [];
   const emitRow = (ln, text) => {
