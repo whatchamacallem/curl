@@ -354,6 +354,7 @@ const EVENT_SHORT = {
   Bm: "misprediction, all", CEst: "cycle estimate",
 };
 const evLabel = e => EVENT_SHORT[e.key] ? EVENT_SHORT[e.key] + " / " + e.key : e.key;
+const evLong = e => EVENT_SHORT[e.key] || e.long || e.key;
 const evSel = document.getElementById("event");
 let evMaxLen = 0;
 for (const e of EVS) {
@@ -861,10 +862,17 @@ function toggleDetail(path, ln, forceOpen) {
   const rec = f.lines[ln] || [[], [], 0];
   const fnCol = label => ({ label, title: `first ${SYMBOL_CHARS} characters; drag the bar for more`, width: SYMBOL_CHARS });
   const locCol = { label: "defined at", title: "file:line of the function's first executed line", clip: 48 };
-  const headLine = `line ${ln}${fnidx != null ? " in " + fnName(fnidx) : ""}: self ${fmtH(val(rec[0]))} ${evLabel(ev)} (${fmtPct(val(rec[0])) || "0%"})${val(rec[1]) ? `, calls ${fmtH(val(rec[1]))} (${fmtPct(val(rec[1]))}) over ${fmtH(rec[2])} calls` : ""}`;
+  const callsClause = val(rec[1]) ? `, calls ${fmtH(val(rec[1]))} (${fmtPct(val(rec[1]))}) over ${fmtH(rec[2])} calls` : "";
+  const extraStats = xs => xs.map(x => { const s = x.get(rec[0]); return s ? `, ${evLabel(x)} ${fmtP(100 * s / MAXPX[x.key].total)} (${fmtH(s)})` : ""; }).join("");
+  // Entry lines skip "in fnName" and "line": the "entered here" heading right below already names the function.
+  const headLine = (fi != null)
+    ? `${path}:${ln} self ${fmtPct(val(rec[0])) || "0%"} by ${evLong(ev)}, ${fmtH(val(rec[0]))} ${ev.key}.${callsClause}${extraStats(EXTRA)}`
+    : `${path}:${ln}${fnidx != null ? " in " + fnName(fnidx) : ""}: line self ${fmtPct(val(rec[0])) || "0%"} ${evLong(ev)}, ${fmtH(val(rec[0]))} ${ev.key}${callsClause}${extraStats(EXTRA)}`;
   let h = `<div class="dbox">`;
   h += `<a href="#" class="dclose" title="close">[X]</a>`;
-  h += `<div>line ${ln}${fnidx != null ? " in <b>" + esc(fnName(fnidx)) + "</b>" : ""}: self ${fmtH(val(rec[0]))} ${esc(evLabel(ev))} (${fmtPct(val(rec[0])) || "0%"})${val(rec[1]) ? `, calls ${fmtH(val(rec[1]))} (${fmtPct(val(rec[1]))}) over ${fmtH(rec[2])} calls` : ""}</div>`;
+  h += (fi != null)
+    ? `<div>${esc(path)}:${ln} self ${fmtPct(val(rec[0])) || "0%"} by ${esc(evLong(ev))}, ${fmtH(val(rec[0]))} ${esc(ev.key)}.${esc(callsClause)}${esc(extraStats(EXTRA))}</div>`
+    : `<div>${esc(path)}:${ln}${fnidx != null ? " in <b>" + esc(fnName(fnidx)) + "</b>" : ""}: line self ${fmtPct(val(rec[0])) || "0%"} ${esc(evLong(ev))}, ${fmtH(val(rec[0]))} ${esc(ev.key)}${esc(callsClause)}${esc(extraStats(EXTRA))}</div>`;
   const textParts = [headLine];
   if (callees.length) {
     const cols = [{ label: "% of total", num: true }, evCol(ev), { label: "call count", num: true }, fnCol("callee"), locCol];
@@ -879,8 +887,8 @@ function toggleDetail(path, ln, forceOpen) {
   if (fi != null) {
     const fn = fns[fi];
     const callers = fn.callers.slice().sort((a, b) => b[4] - a[4]);
-    const heading = `${fn.name} is entered here \\u2014 self ${fmtPct(val(fn.self)) || "0%"}, total ${fmtPct(val(fn.self) + val(fn.calls)) || "0%"}. Called from (by call count):`;
-    h += `<h4>${esc(fn.name)} is entered here \\u2014 self ${fmtPct(val(fn.self)) || "0%"}, total ${fmtPct(val(fn.self) + val(fn.calls)) || "0%"}. Called from (by call count):</h4>`;
+    const heading = `${fn.name} by call count: self ${fmtPct(val(fn.self)) || "0%"}, total ${fmtPct(val(fn.self) + val(fn.calls)) || "0%"}.`;
+    h += `<h4>${esc(fn.name)} by call count: self ${fmtPct(val(fn.self)) || "0%"}, total ${fmtPct(val(fn.self) + val(fn.calls)) || "0%"}.</h4>`;
     if (callers.length) {
       const cols = [{ label: "call count", num: true }, { label: "% of total", num: true }, evCol(ev), fnCol("caller"), { label: "called at", title: "file:line of the call", clip: 48 }];
       const rows = callers.map(([ci, cf, cl, vec, count]) => {
