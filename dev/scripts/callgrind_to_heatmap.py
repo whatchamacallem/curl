@@ -311,6 +311,22 @@ for (const [n, terms, long] of D.meta.derived) {
 const evByKey = k => EVS.find(e => e.key === k);
 let ev = evByKey(store.get("heat.event")) || evByKey(D.meta.defaultEvent) || EVS[0];
 const EXTRA = ["D1m", "DLm", "Bcm"].map(evByKey).filter(Boolean);
+// Short plain-language name for every event key callgrind can emit plus the
+// derived ones (mirrors callgrind.py's EVENT_LONG / DERIVED_DEFAULTS, kept
+// short enough for an inline label). evLabel() is "short / KEY" wherever a
+// key would otherwise stand alone with no long name next to it.
+const EVENT_SHORT = {
+  Ir: "instructions", Dr: "data reads", Dw: "data writes",
+  I1mr: "L1 icache miss", D1mr: "L1 dcache read miss", D1mw: "L1 dcache write miss",
+  ILmr: "L3 icache miss", DLmr: "L3 dcache read miss", DLmw: "L3 dcache write miss",
+  Bc: "branches", Bcm: "misprediction", Bi: "indirect branches", Bim: "indirect misprediction",
+  Ge: "bus events", sysCount: "syscalls", sysTime: "syscall time", sysCpuTime: "syscall cpu time",
+  AcCost1: "L1 access cost", SpLoss1: "L1 spatial loss", AcCost2: "L3 access cost", SpLoss2: "L3 spatial loss",
+  ILdmr: "L3 insn write-back", DLdmr: "L3 read write-back", DLdmw: "L3 write write-back",
+  D1m: "L1 cache", DLm: "L3 cache", L1m: "L1 cache, all", LLm: "L3 cache, all",
+  Bm: "misprediction, all", CEst: "cycle estimate",
+};
+const evLabel = e => EVENT_SHORT[e.key] ? EVENT_SHORT[e.key] + " / " + e.key : e.key;
 const evSel = document.getElementById("event");
 for (const e of EVS) { const o = document.createElement("option"); o.value = e.key; o.textContent = e.key + (e.long ? " \\u2014 " + e.long : ""); evSel.appendChild(o); }
 evSel.value = ev.key;
@@ -407,7 +423,10 @@ function table(key, cols, rows, opts) {
   return h + `</tbody></table></div></div>`;
 }
 const evCol = (e, extra) => Object.assign({ label: e.key, title: e.long, num: true }, extra || {});
-const extraCols = () => EXTRA.map(x => evCol(x, { title: x.long + " (share of that event's total)", cls: "x" }));
+const extraCols = () => EXTRA.map(x => evCol(x, {
+  label: evLabel(x),
+  title: x.long + " (share of that event's total)", cls: "x",
+}));
 function extraCells(vec) {
   return EXTRA.map(x => {
     const s = x.get(vec), m = MAXPX[x.key], p = 100 * s / m.total, t = heatP(p, m.maxP);
@@ -464,7 +483,7 @@ function renderTree() {
     for (const f of fl) if (!f.zero) fileRow(f);
     if (zero.length) {
       const show = query ? true : coldOpen.has(n.path);
-      out.push(`<div class="node more" data-more="${esc(n.path)}" style="padding-left:${6 + depth * 14}px"><span class="caret">${show ? "\\u25BC" : "\\u25B6"}</span><span class="name">${zero.length} file${zero.length > 1 ? "s" : ""} without ${esc(ev.key)}</span><span class="pct"></span></div>`);
+      out.push(`<div class="node more" data-more="${esc(n.path)}" style="padding-left:${6 + depth * 14}px"><span class="caret">${show ? "\\u25BC" : "\\u25B6"}</span><span class="name">${zero.length} file${zero.length > 1 ? "s" : ""} without ${esc(evLabel(ev))}</span><span class="pct"></span></div>`);
       if (show) for (const f of zero) fileRow(f);
     }
   }
@@ -514,7 +533,7 @@ function renderHome() {
   curFile = null;
   let h = `<div class="home">`;
   h += `<p><b>${esc(ev.key)}</b> = ${esc(ev.long || ev.key)}. Every percentage is the share of the <b title="${fmtN(TOTAL)}">${fmtH(TOTAL)}</b> total for that event. Click a file in the tree, or a line below. In a listing, click a line number to see every event for that line, what it calls (and, on a function's first line, who calls it). Pick another event in the header to re-color everything by cache misses or branch mispredicts.</p>`;
-  h += `<h2>Hottest lines by ${esc(ev.key)}</h2>` + table("heat.home.lines",
+  h += `<h2>Hottest lines by ${esc(evLabel(ev))}</h2>` + table("heat.home.lines",
     [{ label: "#", title: "rank", num: true }, SELF, evCol(ev), ...extraCols(),
      { label: "location", title: "file:line; opens the listing there", clip: 28 },
      { label: "function", title: `the function the line belongs to (first ${SYMBOL_CHARS} characters; drag the bar for more)`, width: SYMBOL_CHARS },
@@ -525,7 +544,7 @@ function renderHome() {
               { text: path + ":" + ln, html: link(path, ln, path + ":" + ln) }, { text: fnName(fnidx), title: fnName(fnidx) }, snip];
     }));
   const topF = fns.map((f, i) => [i, val(f.self)]).filter(t => t[1] > 0).sort((a, b) => b[1] - a[1]).slice(0, 60);
-  h += `<h2>Hottest functions by self ${esc(ev.key)}</h2>` + table("heat.home.functions",
+  h += `<h2>Hottest functions by self ${esc(evLabel(ev))}</h2>` + table("heat.home.functions",
     [{ label: "#", title: "rank", num: true }, SELF, { label: "incl", title: "inclusive: self plus everything it calls", num: true },
      ...extraCols(), { label: "calls", title: "times the function was entered", num: true },
      { label: "function", title: `first ${SYMBOL_CHARS} characters; drag the bar for more`, width: SYMBOL_CHARS },
@@ -553,8 +572,8 @@ function renderFile(path, line) {
   for (const rec of Object.values(lines)) { const s = val(rec[0]); if (s > fmax) fmax = s; }
   const maxP = scale === "file" ? Math.max(pct(fmax), 0.0001) : MAXP;
   let h = `<div class="fhead band"><span class="path">${esc(path)}</span>`;
-  h += `<span class="stat" title="${fmtN(val(f.self))}">self <b>${fmtPct(val(f.self)) || "0%"}</b> (${fmtH(val(f.self))} ${esc(ev.key)})</span>`;
-  for (const x of EXTRA) { const s = x.get(f.self); if (s) h += `<span class="stat" title="${esc(x.long)}: ${fmtN(s)}">${esc(x.key)} <b>${fmtP(100 * s / MAXPX[x.key].total)}</b> (${fmtH(s)})</span>`; }
+  h += `<span class="stat" title="${fmtN(val(f.self))}">self <b>${fmtPct(val(f.self)) || "0%"}</b> (${fmtH(val(f.self))} ${esc(evLabel(ev))})</span>`;
+  for (const x of EXTRA) { const s = x.get(f.self); if (s) h += `<span class="stat" title="${esc(x.long)}: ${fmtN(s)}">${esc(evLabel(x))} <b>${fmtP(100 * s / MAXPX[x.key].total)}</b> (${fmtH(s)})</span>`; }
   if (f.group === "external") h += `<span class="stat">not in this repo (${esc(f.raw)})</span>`;
   h += `</div>`;
   const cols = [{ label: "line", num: true }, evCol(ev, { title: ev.long + ", share of total, spent on the line itself" }),
@@ -634,10 +653,10 @@ function toggleDetail(path, ln, forceOpen) {
   const fnCol = label => ({ label, title: `first ${SYMBOL_CHARS} characters; drag the bar for more`, width: SYMBOL_CHARS });
   const locCol = { label: "defined at", title: "file:line of the function's first executed line", clip: 48 };
   let h = `<div class="dbox">`;
-  h += `<div>line ${ln}${fnidx != null ? " in <b>" + esc(fnName(fnidx)) + "</b>" : ""}: self ${fmtH(val(rec[0]))} ${esc(ev.key)} (${fmtPct(val(rec[0])) || "0%"})${val(rec[1]) ? `, calls ${fmtH(val(rec[1]))} (${fmtPct(val(rec[1]))}) over ${fmtH(rec[2])} calls` : ""}</div>`;
+  h += `<div>line ${ln}${fnidx != null ? " in <b>" + esc(fnName(fnidx)) + "</b>" : ""}: self ${fmtH(val(rec[0]))} ${esc(evLabel(ev))} (${fmtPct(val(rec[0])) || "0%"})${val(rec[1]) ? `, calls ${fmtH(val(rec[1]))} (${fmtPct(val(rec[1]))}) over ${fmtH(rec[2])} calls` : ""}</div>`;
   h += `<h4>all events on this line</h4>` + eventTable(rec[0], rec[1]);
   if (callees.length) {
-    h += `<h4>calls from this line (inclusive ${esc(ev.key)})</h4>` + table("heat.detail.callees",
+    h += `<h4>calls from this line (inclusive ${esc(evLabel(ev))})</h4>` + table("heat.detail.callees",
       [{ label: "% of total", num: true }, evCol(ev), { label: "call count", num: true }, fnCol("callee"), locCol],
       callees.map(([ci, cf, cl, vec, count]) => {
         const loc = cl ? cf + ":" + cl : cf;

@@ -437,10 +437,20 @@ see every event for that line, what it calls (inclusive cost, links to the
 callee) and, on a function's first line, who calls it. The header's *event*
 selector re-colors and re-sorts everything by any raw event (Ir, Dr, Dw,
 I1mr, D1mr, ...) or derived one (D1m, DLm, L1m, LLm, Bm, CEst);
-independent of that, every source line shows `D1m`, `DLm` and `Bcm`
-columns (share of that event's total, each heat-colored on its own scale)
-so a line that is cheap in Ir but hurts in misses is visible without
-switching. The home view carries the 60 hottest lines and the 60 hottest
+independent of that, every source line shows `L1 cache / D1m`,
+`L3 cache / DLm` and `misprediction / Bcm` columns (share of that event's
+total, each heat-colored on its own scale) so a line that is cheap in Ir
+but hurts in misses is visible without switching. Every bare event-key
+label across the page (these three miss columns, the "Hottest lines/
+functions by ..." headings, the per-file stat line, the per-line detail
+summary and its "calls from this line" heading) is written `short / KEY`
+via `evLabel()`/`EVENT_SHORT` in `callgrind_to_heatmap.py`, one short name
+per event callgrind can emit (mirrors `callgrind.py`'s `EVENT_LONG` /
+`DERIVED_DEFAULTS`), so the meaning never has to be looked up. Two spots
+are left as the bare key on purpose, since both already carry the long
+name right next to it: the event picker's own dropdown text, and the
+per-line detail popup's "all events on this line" table, which has a
+separate "meaning" column. The home view carries the 60 hottest lines and the 60 hottest
 functions; `[home]` in the header strip returns to it. Event, scale, tree
 order, tree width and column widths are remembered in localStorage. `dev/profile.sh` writes it to
 `OUTDIR/heat-map/index.html`. Standalone:
@@ -499,11 +509,17 @@ from `file://` and may not fetch anything. Rules the pages follow:
   drag anywhere along its length to resize the column on its left; widths
   are remembered in localStorage per table and column label, under
   `cols.*` keys, and so is the heat map's tree width. Nothing on a bar
-  resets it: the frame's `[reset columns]` link is the one way back,
+  resets it: `[reset columns]` is the one way back, and it lives on the
+  outermost strip only -- the overview page's (`report_overview`'s
+  `strip_render` call, `reset` left at its default `True`), which is also
+  the only strip when a single test's report is opened on its own. A
+  per-test strip nested in the overview's iframe (`report_test`'s own
+  strip, `strip_render(..., reset=False)`) omits the link, since clicking
+  it on the strip above already reaches down through every nested frame:
   `Theme.reset()` drops every `cols.*` key and re-applies the defaults on
-  the page, and the frame posts `theme:reset` into its iframe so the
-  loaded page does the same (it is another `file://` origin, so the frame
-  cannot reach into it directly). A legend banner above the table spells
+  the clicking page, and posts `theme:reset` into its iframe so the loaded
+  page does the same, which repeats at each level (it is another `file://`
+  origin, so a frame cannot reach into the next one directly). A legend banner above the table spells
   out every abbreviated column; the banner and the header row stay put
   while the page scrolls past the table (`theme.js` stacks them, since
   two sticky elements at `top: 0` overlap). A table box never scrolls on
@@ -521,17 +537,19 @@ from `file://` and may not fetch anything. Rules the pages follow:
   cell's tooltip; shares go through `theme.pct()` / `fmtP()`: `63.2%`,
   `5.12%`, `<0.01%`.
 - The index page is a frame: a strip (`.strip`) with the title, then
-  `[summary] [flame graph] [heat map] [native timing] [reset columns]`,
-  and the summary under it, left-aligned and full width; sub-pages are
-  loaded into an iframe only when picked. The title is the picked view --
-  `urlparser`, `urlparser / heat map` -- in the accent color, and it is
-  the only title anywhere: the pages have no heading of their own, and a
-  frame page loaded inside another frame hides its title and posts it up
-  (a `{theme: "title"}` message; the parent asks with `theme:title?`
-  when it re-shows a frame it already loaded), so the top-level strip
-  reads `urlparser / heat map` while the nested strip shows only its
-  links. `[curl.se/perf]` is on the top-level (overview) strip only,
-  hugging the right. The heat map's header is the same kind of strip
+  `[summary] [flame graph] [heat map] [native timing]`, and the summary
+  under it, left-aligned and full width; sub-pages are loaded into an
+  iframe only when picked. The title is the picked view -- `urlparser`,
+  `urlparser / heat map` -- in the accent color, and it is the only title
+  anywhere: the pages have no heading of their own, and a frame page
+  loaded inside another frame hides its title and posts it up (a
+  `{theme: "title"}` message; the parent asks with `theme:title?` when it
+  re-shows a frame it already loaded), so the top-level strip reads
+  `urlparser / heat map` while the nested strip shows only its links.
+  `[curl.se/perf]` and `[reset columns]` are on the top-level (overview)
+  strip only, hugging the right (`[reset columns]` directly left of
+  `[curl.se/perf]`; see the `[reset columns]` bullet above for why a
+  nested per-test strip has neither). The heat map's header is the same kind of strip
   with `[home]` in place of a title.
 
 ### Checking the pages
