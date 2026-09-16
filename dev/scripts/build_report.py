@@ -50,8 +50,6 @@ FRAME_JS = """\
 // there. The title is the picked link's data-title ("urlparser / heat map");
 // a page loaded into the frame that is itself a frame page sends its own
 // title up and hides it, so the outermost strip carries the one title.
-// [reset columns] drops every saved column width, here and (by message, the
-// iframe is another file:// origin) in the page loaded into the frame.
 // Re-clicking the strip link for the view already showing posts "theme:home"
 // into the frame instead of reloading it, so a page with its own internal
 // navigation (the heat map's file listings) can jump back to its start.
@@ -67,12 +65,6 @@ FRAME_JS = """\
     document.title = t;
     if (framed) window.parent.postMessage({ theme: "title", title: t }, "*");
   }
-  const resetLink = bar.querySelector("a[data-reset]");
-  if (resetLink) resetLink.addEventListener("click", e => {
-    e.preventDefault();
-    Theme.reset();
-    if (view.contentWindow) view.contentWindow.postMessage("theme:reset", "*");
-  });
   function show(hash) {
     const m = /^#([\\w-]+)(?:=(.*))?$/.exec(hash);
     const key = m ? m[1] : "", link = links.find(a => a.dataset.view === key), cur = link || links[0];
@@ -135,31 +127,20 @@ def file_read_text(path: str) -> str:
         return f"(missing: {path})"
 
 
-def strip_render(title: str, links: list[tuple[str, str, str, str]], perf_link: bool = False, reset: bool = True) -> str:
+def strip_render(title: str, links: list[tuple[str, str, str, str]], perf_link: bool = False) -> str:
     """The strip across the top: the title, then the links -- (view key or ""
     for the page itself, label, href, title to show when picked) -- then,
-    on the top-level page only, [help], [curl.se/perf] and, unless `reset`
-    is false, [reset columns], in that order, pushed to the far right.
-
-    Only one strip on screen at a time needs [reset columns] -- clicking it
-    resets every table in the document plus, by posted message, every framed
-    page below it, so it belongs on the outermost strip only: the overview
-    page's (which is also the only strip when a single test's report is
-    opened on its own). A per-test strip nested in the overview's iframe
-    (report_test's own strip) omits it, since the overview strip above it
-    already reaches down into that frame. [help] follows perf_link for the
-    same reason and points at README.md, which perf2html.sh copies next to
-    this page."""
+    on the top-level page only, "help" and "curl.se/perf", pushed to the far
+    right. A per-test strip nested in the overview's iframe (report_test's
+    own strip) has neither, since the overview strip above it already
+    carries them."""
     parts = [f'<b class="title" id="title">{html_esc(title)}</b>']
-    parts += [f'<a href="{html_esc(href)}" data-view="{html_esc(key)}" data-title="{html_esc(t)}">[{html_esc(label)}]</a>'
+    parts += [f'<a href="{html_esc(href)}" data-view="{html_esc(key)}" data-title="{html_esc(t)}">{html_esc(label)}</a>'
               for key, label, href, t in links]
-    if reset or perf_link:
-        parts.append('<span class="sp"></span>')
     if perf_link:
-        parts.append('<a href="README.md" target="_blank">[help]</a>')
-        parts.append(f'<a href="{PERF_CHART}" target="_blank" rel="noopener">[curl.se/perf]</a>')
-    if reset:
-        parts.append('<a href="#" data-reset title="forget every saved column width">[reset columns]</a>')
+        parts.append('<span class="sp"></span>')
+        parts.append('<a href="README.md" target="_blank">help</a>')
+        parts.append(f'<a href="{PERF_CHART}" target="_blank" rel="noopener">curl.se/perf</a>')
     return f'<nav id="bar" class="strip">{"".join(parts)}</nav>'
 
 
@@ -275,7 +256,7 @@ def report_test(args: argparse.Namespace) -> None:
         sys.exit("error: per-line self cost does not add up to callgrind's summary")
 
     links = [("", "summary", "#", args.test)] + [(k, label, path, f"{args.test} / {label}") for k, label, path in VIEWS]
-    body = strip_render(args.test, links, reset=False)
+    body = strip_render(args.test, links)
     out_dir = os.path.dirname(os.path.abspath(args.output))
     body += '<main id="home"><div class="page">'
     if args.log and not args.no_log:

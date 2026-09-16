@@ -75,6 +75,10 @@ def theme_css() -> str:
     for role, color in ROLE.items():
         lines.append(f"  --{role}: {color};")
     lines.append(f"  --heat: linear-gradient(90deg, {', '.join(HEAT)});")
+    hot = _rgb(HEAT[-1])
+    lum = (0.2126 * hot[0] + 0.7152 * hot[1] + 0.0722 * hot[2]) / 255
+    lines.append(f"  --hot: {HEAT[-1]};")
+    lines.append(f"  --hot-fg: {ROLE['bg'] if lum > 0.5 else ROLE['fg']};")
     lines.append(f"  --font: {FONT};")
     lines.append("}")
     return "\n".join(lines) + "\n" + _read("theme.css")

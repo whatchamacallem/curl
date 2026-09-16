@@ -250,7 +250,7 @@ body { display: flex; flex-direction: column; height: 100vh; }
 .chip { padding: 0 7px; background: var(--bg-alt); cursor: pointer; }
 .chip:hover { outline: 1px solid var(--link); outline-offset: -1px; }
 .nosrc { padding: 8px 14px; color: var(--muted); }
-table.src td { padding-top: 0; padding-bottom: 0; }
+table.src > tbody > tr > td { padding-top: 0; padding-bottom: 0; }
 table.src td.ln { color: var(--muted); user-select: none; }
 tr.rowlink { cursor: pointer; }
 table.src tr.clickable { cursor: pointer; }
@@ -261,12 +261,20 @@ table.src td.hot { font-weight: 600; }
 table.src td.code { overflow: visible; text-overflow: clip; white-space: pre; tab-size: 4; }
 table.src tr.hasc td.ln::before { content: "\\25B8 "; color: var(--link); }
 table.src tr.target td { box-shadow: inset 0 0 0 2px var(--accent); }
-table.src tr.detail td { white-space: normal; overflow: visible; padding: 0; }
+/* the direct-child combinator matters here: "tr.detail td" (no >) would also
+   match every <td> inside the popup's own nested tables (.dbox's callee/
+   caller tables), overriding their table.cols overflow:hidden/nowrap with
+   higher specificity than that rule (three classes+types beats table.cols
+   td's two) and letting long function names visibly overlap the next
+   column instead of being clipped with an ellipsis. */
+table.src tr.detail > td { white-space: normal; overflow: visible; padding: 0; }
 .dbox { position: relative; margin: 3px 12px 8px; padding: 6px 12px; background: var(--panel); }
 .dbox h4 { margin: 6px 0 2px; font-size: 12px; color: var(--muted); font-weight: 600; }
 .dbox .dclose { position: absolute; top: 6px; right: 10px; color: var(--muted); }
 .dbox .dclose:hover { color: var(--link); text-decoration: none; }
 .dbox .tbl { background: var(--bg); }
+.dactions { margin-top: 8px; }
+.dactions a { color: var(--link); margin-right: 14px; }
 .home { padding: 12px 14px 40px; }
 .home h2:first-of-type { margin-top: 10px; }
 @media (max-width: 720px) {
@@ -669,9 +677,9 @@ function renderFile(path, line) {
 // scale() then shrinks the clone to fit; the clone itself is never
 // rebuilt except by the next renderFile, so resize only has to reposition
 // and rescale the existing DOM (minimapLayout), not re-snapshot it.
-const MM_MIN_COLS = 80; // never zoom in tighter than 80 source columns wide
+const MM_MIN_COLS = 80; // never zoom in tighter (wider effective scale) than 80 source columns
 const MM_MIN_LINES = 40; // below this the file can't scroll off-screen; omit the minimap
-let mmChPx = 0, mmLineH = 0, mmScale = 1, mmNaturalH = 0;
+let mmChPx = 0, mmLineH = 0, mmScale = 1, mmNaturalH = 0, mmMaxCols = MM_MIN_COLS;
 function minimapClear() {
   minimapEl.classList.add("empty");
   mmBox.innerHTML = "";
@@ -696,10 +704,12 @@ function minimapBuild(nlines) {
   const clone = document.createElement("table");
   clone.className = "src";
   const tbody = document.createElement("tbody");
+  let maxCols = 0;
   for (const row of table.tBodies[0].rows) {
     if (row.classList.contains("detail")) continue; // never open at build time, but be safe
     const code = row.querySelector("td.code");
     if (!code) continue;
+    maxCols = Math.max(maxCols, code.textContent.length);
     const tr = document.createElement("tr");
     tr.className = row.className;
     tr.style.cssText = row.style.cssText;
@@ -710,30 +720,52 @@ function minimapBuild(nlines) {
   mmBox.innerHTML = "";
   mmBox.appendChild(clone);
   mmNaturalH = nlines * mmLineH;
+  mmMaxCols = Math.max(MM_MIN_COLS, maxCols);
   minimapEl.classList.remove("empty");
   mmViewport.hidden = false;
   minimapLayout();
 }
+// The true band height comes from #minimap's own flex-stretched layout size
+// (#layout's align-items: stretch, unset anywhere in CSS) and must never be
+// read back off #minimap after minimapLayout has touched it -- earlier this
+// function shortened #minimap itself to the scaled content height, so a
+// later call (e.g. on window resize, or the next file's minimapBuild) read
+// clientHeight off a band that was still shrunk from a previous short file,
+// permanently capping it below the real available height. Fixed here by
+// never resizing #minimap: it always stays the full band, and "shorter than
+// the content" is represented purely by mmBox not filling the space below
+// -- clicks past the end of the actual (unscaled) content are already
+// no-ops via the scaledH clamp in the click/drag handlers below.
 function minimapLayout() {
   if (minimapEl.classList.contains("empty")) return;
-  const bandW = minimapEl.clientWidth, bandH = minimapEl.clientHeight;
-  mmScale = Math.min(1, bandW / (MM_MIN_COLS * mmChPx));
+  const bandW = minimapEl.clientWidth;
+  // The real content width, not an assumed minimum: mmMaxCols (measured in
+  // minimapBuild from the actual longest source line, floored at
+  // MM_MIN_COLS) sets how many characters must fit. Without this, mmBox was
+  // always sized to a fixed MM_MIN_COLS-wide assumption regardless of the
+  // file's real width, leaving inconsistent right-side padding inside the
+  // band (the gap between actual scaled content and the band edge) that
+  // varied with mmScale, i.e. with window width, instead of always being
+  // zero.
+  mmScale = Math.min(1, bandW / (mmMaxCols * mmChPx));
   mmBox.style.transform = `scale(${mmScale})`;
   mmBox.style.transformOrigin = "top left";
-  const scaledH = mmNaturalH * mmScale;
-  // Shorter than the band: shorten the box itself (top-aligned) rather than
-  // stretching the content or leaving dead, look-clickable space below it.
   mmBox.style.width = (bandW / mmScale) + "px";
-  minimapEl.style.height = Math.min(scaledH, bandH) + "px";
   minimapSync();
 }
 function minimapSync() {
   if (minimapEl.classList.contains("empty")) return;
   const bandH = minimapEl.clientHeight;
-  const scaledH = mmNaturalH * mmScale;
+  const scaledH = Math.min(mmNaturalH * mmScale, bandH);
   const scrollable = mainEl.scrollHeight - mainEl.clientHeight;
-  const vh = scrollable > 0 ? Math.max(8, bandH * (mainEl.clientHeight / mainEl.scrollHeight)) : bandH;
-  const maxTop = Math.max(0, Math.min(bandH, scaledH) - vh);
+  // The viewport box's height/aspect ratio must mirror the real fraction of
+  // the file #main can show at once (clientHeight / scrollHeight), applied
+  // against the *content* height (scaledH), not the full band -- using the
+  // full band here (when the file is shorter than the band, scaledH <
+  // bandH) previously made the box taller than the content it was meant to
+  // overlay, i.e. the wrong aspect ratio.
+  const vh = scrollable > 0 ? Math.max(8, scaledH * (mainEl.clientHeight / mainEl.scrollHeight)) : scaledH;
+  const maxTop = Math.max(0, scaledH - vh);
   const vy = scrollable > 0 ? (mainEl.scrollTop / scrollable) * maxTop : 0;
   mmViewport.style.top = vy + "px";
   mmViewport.style.height = vh + "px";
@@ -805,6 +837,7 @@ function toggleDetail(path, ln, forceOpen) {
         return [num(count), fmtPct(val(vec)), num(val(vec)), { text: fnName(ci), title: fnName(ci) }, { text: loc, html: link(cf, cl, loc) }];
       })) : `<div class="dim">(no recorded caller \\u2014 a root or a resolver stub)</div>`;
   }
+  h += `<div class="dactions"><a href="#" class="dcopy">copy</a> <a href="#" class="dclose2">close</a></div>`;
   h += `</div>`;
   const tr = document.createElement("tr");
   tr.className = "detail";
@@ -816,7 +849,16 @@ function toggleDetail(path, ln, forceOpen) {
 mainEl.addEventListener("click", ev2 => {
   const chip = ev2.target.closest(".chip");
   if (chip) { location.hash = hashFor(curFile, +chip.dataset.goto); return; }
-  const close = ev2.target.closest(".dclose");
+  const copy = ev2.target.closest(".dcopy");
+  if (copy) {
+    ev2.preventDefault();
+    const box = copy.closest(".dbox");
+    const skip = new Set(["dclose", "dactions"]);
+    const text = [...box.children].filter(n => ![...n.classList].some(c => skip.has(c))).map(n => n.textContent).join("\\n").trim();
+    navigator.clipboard.writeText(text);
+    return;
+  }
+  const close = ev2.target.closest(".dclose, .dclose2");
   if (close) { ev2.preventDefault(); close.closest("tr.detail").remove(); return; }
   if (ev2.target.closest("a")) return; // let the row's own link (e.g. "defined at") handle its own click
   const linkRow = ev2.target.closest("tr.rowlink");

@@ -21,16 +21,23 @@ pre { font: inherit; margin: 0; white-space: pre; overflow-x: auto; }
 select, input { font: inherit; color: var(--fg); background: var(--bg); padding: 2px 6px;
   border: 0; border-radius: 0; }
 
-/* strip: the page's title, then [links] the old-fashioned way; the current
-   one is lit. The frame pages' toolbar and the heat map's header are strips. */
-.strip { display: flex; flex-wrap: wrap; gap: 2px 8px; align-items: center; flex: none;
-  padding: 5px 12px; background: var(--nav); }
-.strip a { padding: 0 2px; white-space: nowrap; }
+/* strip: the page's title, then its links, plain words separated by extra
+   space rather than bracketed -- "heat map  |  native timing" -- and the
+   current one lit. The frame pages' toolbar and the heat map's header are
+   strips. Every strip row is a single line: it never wraps to a second row,
+   an overflowing link cuts off with an ellipsis like any other clipped text
+   in this UI instead of spilling the strip onto multiple lines. */
+.strip { display: flex; flex-wrap: nowrap; align-items: center; flex: none;
+  padding: 5px 12px; background: var(--nav); overflow: hidden; }
+.strip a { padding: 2px 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  max-width: 40ch; flex: none; }
+.strip a + a { margin-left: 8px; }
+.strip a + a::before { content: "|"; margin-right: 8px; color: var(--muted); }
 .strip a:hover { background: var(--link); color: var(--nav); text-decoration: none; }
-.strip a.on { color: var(--accent); }
+.strip a.on { background: var(--hot); color: var(--hot-fg); }
 .strip .title { font-size: 13px; font-weight: 600; color: var(--bg); background: var(--good); white-space: nowrap;
-  padding: 3px 8px; margin: -5px 6px -5px -12px; align-self: stretch; display: flex; align-items: center; }
-.strip .sp { flex: 1; }
+  padding: 3px 8px; margin: -5px 6px -5px -12px; align-self: stretch; display: flex; align-items: center; flex: none; }
+.strip .sp { flex: 1 0 0; min-width: 0; }
 
 /* frame: the toolbar over either the summary page or an iframe. The outer
    document itself never scrolls -- body.frame > main and the iframe (which

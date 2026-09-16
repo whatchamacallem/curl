@@ -68,8 +68,8 @@ either order.
 Layout of *OUTDIR* (or *OUTDIR*/*test*/ with `all`):
 
 ```
-index.html              strip (title, [summary] [flame graph] [heat map]
-                        [native timing]) over the summary (raw data, top-N
+index.html              strip (title, summary | flame graph | heat map |
+                        native timing) over the summary (raw data, top-N
                         functions with callers, valgrind log); the strip
                         loads the pages below into a frame
 flame-graph/index.html  speedscope, auto-loads the profile
@@ -78,10 +78,10 @@ perf-tool/index.html    native timing run output
 ```
 
 With `all`, *OUTDIR*/index.html is the same kind of page over the tests
-(`[overview] [all] [base64dec] ...` alphabetical, `[curl.se/perf] [help]
-[reset columns]` far right). README.md (a help screen for the callgrind
-event columns and the flame graph/heat map, copied from `dev/README.md`)
-sits next to that top-level index.html; `[help]` opens it.
+(`overview | all | base64dec | ...` alphabetical, `help | curl.se/perf` far
+right). README.md (a help screen for the callgrind event columns and the
+flame graph/heat map, copied from `dev/README.md`) sits next to that
+top-level index.html; `help` opens it.
 
 Raw callgrind data, the valgrind log and the speedscope JSON stay in
 `dev/trace/`, with the quiet run's `profile.<ts>.log` next to them (same

@@ -41,6 +41,11 @@ Theme Colors.
    material: one shared parser, one shared theme, no dead code, no
    duplicate systems. Anything a script writes must open from `file://`
    with nothing fetched at view time.
+5. When a single request bundles several distinct changes, track them as an
+   explicit checklist for that turn (state it up front, work it in order)
+   and close with a short report of what happened to each item -- done,
+   changed from the ask, or found not to apply -- rather than a running
+   narration of the work.
 
 ## Goal
 
@@ -236,7 +241,9 @@ Report layout (`OUTDIR/`, or `OUTDIR/<test>/` with `all`), all plain
 
 ```text
 index.html               a strip across the top -- the page title as a
-                         green badge cell, then [bracketed] links -- and
+                         green badge cell, then its links as plain words
+                         separated by extra space, "|"-delimited (see "Look
+                         and feel") -- and
                          the summary under it: the valgrind log (minus its
                          9-line banner and each line's "==PID==" prefix, in
                          a panel-shaded box, no border) collapsed under a
@@ -264,7 +271,7 @@ index.html               a strip across the top -- the page title as a
                          when picked; a symbol in the summary opens the heat
                          map at the function's first line. With `all`, the
                          top-level index.html is the same kind of page over
-                         the tests ([overview] [all] [base64dec] ...,
+                         the tests (overview | all | base64dec | ...,
                          alphabetical), one row of native-run numbers per
                          test ("all" has the summed Time only), and all/ is
                          a full report over every test's profile merged.
@@ -276,7 +283,7 @@ README.md                a help screen, not a manual: the callgrind event
                          columns (Ir, Dr, Dw, D1mr, ...) and a couple of
                          sentences each on the flame graph and the heat map.
                          Copied from dev/README.md by perf2html.sh on every
-                         run; opened by the top-level strip's `[help]` link,
+                         run; opened by the top-level strip's "help" link,
                          plain (un-rendered, since there is no server)
 raw/                     the callgrind file(s) this report was built from,
                          copied in (see "raw data" above) with the repo
@@ -514,7 +521,40 @@ get the click affordance (`tr.clickable` in `callgrind_to_heatmap.py`'s
 a row with no events neither highlights nor opens anything). The detail
 popup has a `[X]` close link at its top right (`.dclose`, absolutely
 positioned in `.dbox`) alongside the existing toggle-by-reclicking-the-row
-behavior. The header's *event* selector re-colors and re-sorts everything
+behavior, and, styled as plain links at the bottom of the popup's own text
+(`.dactions`, below the callees/callers tables), "copy" (`.dcopy`, copies
+the popup's own text -- summary line plus any callees/callers headings --
+to the clipboard via `navigator.clipboard.writeText`, skipping the `.dclose`
+link and the `.dactions` row itself so neither "close" nor a stray button
+label ends up in the copied text) and a second "close" (`.dclose2`, same
+effect as `.dclose`, just reachable without moving back up to the top-right
+corner).
+
+The popup's own callees/caller tables (built by the page's local `table()`
+helper, not `theme.table_render()`) are nested `table.cols` elements inside
+the source table's `tr.detail > td`. A real bug lived here: the CSS rule
+meant to relax that one wrapper `<td>` (`white-space: normal; overflow:
+visible; padding: 0`, needed so the popup's own boxes aren't forced onto
+one `nowrap` line) was written as the descendant selector `table.src
+tr.detail td` with no `>`, so it also matched every `<td>` *inside* the
+popup's own nested tables -- and at three classes+types it out-specifies
+`table.cols th, table.cols td`'s two, so it silently won over the nested
+table's own `overflow: hidden; text-overflow: ellipsis; white-space:
+nowrap`. Symptom: a long "callee"/"caller" function name (e.g.
+`base64_encode.part.0.constprop.0`) rendered at full width and visibly
+overlapped the "defined at" column's link text instead of clipping with an
+ellipsis -- confirmed with a byte-for-byte minimal repro (same markup, same
+two rules, nothing else) before the fix, and gone after. Fixed by scoping
+the selector to `table.src tr.detail > td` (direct child only); the same
+tightening was applied to the neighboring `table.src td { padding-top: 0;
+padding-bottom: 0 }` (now `table.src > tbody > tr > td`), which had the
+same descendant-selector shape and was compressing the popup's own row
+padding, though it never broke layout the way the unscoped `overflow`
+override did. General lesson for anything nested inside `table.src`: a
+bare `table.src ... td` selector reaches into whatever table is nested
+inside that cell too, not just the outer row it was written for.
+
+The header's *event* selector re-colors and re-sorts everything
 by any raw event (Ir, Dr, Dw, I1mr, D1mr, ...) or derived one (D1m, DLm,
 L1m, LLm, Bm, CEst); it opens on CEst (cycle estimate) by default, not Ir
 (`--event CEst` in `callgrind_to_heatmap.py`'s argparse default and
@@ -562,18 +602,19 @@ that jumps straight to the line/function in the file view -- only the
 "defined at" cell visibly reacts to hover (its own `<a>`), since a plain
 data cell has nothing else to click on and repeating link styling on every
 cell in the row would wrongly suggest each one opens something different.
-There is no `[home]`
+There is no "home"
 button and no permanent "cold ... hot" gradient swatch in the header (the
 per-cell heat coloring speaks for itself); the header strip is just the
 event/scale/tree/search controls. Getting back to the home view from a file
 listing is the outer strip's job: re-picking the already-active
-`[heat map]` link there posts a `theme:home` message into the iframe
+"heat map" link there posts a `theme:home` message into the iframe
 (`FRAME_JS` in `build_report.py`) instead of reloading it, and the heat
 map resets its own `location.hash` on receiving it. Event, scale, tree
-order, tree width and column widths are remembered in localStorage (see
-"Look and feel" for when a saved column width is dropped instead of kept).
-Clicking a filename in the tree jumps the newly opened file view straight
-to its hottest line, vertically centered, rather than opening at the top
+order and tree width are remembered in localStorage; table column widths
+are not (see "Look and feel" -- dragging a column is a one-visit
+convenience only, it never persists). Clicking a filename in the tree
+jumps the newly opened file view straight to its hottest line, vertically
+centered, rather than opening at the top
 of the file (`renderFile`'s `first`-render branch, reusing the same
 already-computed hottest-line list the chips row shows).
 
@@ -601,22 +642,52 @@ rather than re-laying out text at a smaller font, and is also what a
 (mirroring theme.js's own debounced `relayout()` pattern, kept as its own
 listener since the minimap only needs to reposition/rescale existing DOM,
 never re-snapshot it) -- so a resize never re-clones the source, only the
-next `renderFile` does. The scale factor is fixed, not content-dependent:
-`bandWidth / (80 * chPx)`, i.e. 80 source columns is the narrowest the
-minimap ever zooms to (`MM_MIN_COLS`); a file with shorter lines just
-renders narrower than the band instead of being stretched to fill it, and a
-file with longer lines is clipped at the band edge rather than zoomed out
-further. Files under `MM_MIN_LINES` (40) lines omit the minimap entirely --
+next `renderFile` does. The scale factor is `bandWidth / (mmMaxCols *
+chPx)`, where `mmMaxCols` is the actual longest source line in the file
+(measured character count, from the same clone loop in `minimapBuild()`),
+floored at `MM_MIN_COLS` (80) so a file of only short lines still zooms no
+closer than that. This used to be a flat `80 * chPx` regardless of the
+real file width, which left `mmBox` sized wider than its actual content
+for any file with lines shorter than 80 columns -- that leftover space
+inside the scaled box showed up as right-side padding whose size tracked
+`mmScale`, and therefore the window width, instead of always being zero;
+narrow windows (large `mmScale`, close to the `Math.min(1, ...)` clamp)
+showed little to none, wide windows showed a visibly uneven gap. Measuring
+the real content width and using that for both the scale factor and
+`mmBox`'s own explicit width fixes it at every window size. Files under
+`MM_MIN_LINES` (40) lines omit the minimap entirely --
 `minimapBuild()` checks the line count itself and calls `minimapClear()`
 instead (the same function `renderHome` calls, to hide the minimap for the
 overview page, which has no single file/`table.src` to snapshot) -- since a
 file that short can't have content scrolled off-screen for the minimap to
-navigate to. When the scaled content
-is shorter than the band's available height, `minimapLayout()` shortens
-`#minimap` itself to match (top-aligned) rather than stretching the content
-or leaving dead space below it that looks clickable but isn't -- the region
-below a shortened band is simply outside the element, not a dead zone
-inside it. A translucent `#mmViewport` box overlays the portion of the
+navigate to.
+
+`#minimap`'s own height is never touched by script -- it is always the
+full band the flex layout (`#layout`'s default `align-items: stretch`)
+gives it, and that is deliberate: an earlier version had
+`minimapLayout()` shorten `#minimap` itself (top-aligned) whenever the
+scaled content was shorter than the band, to avoid dead space below the
+content that looked clickable but wasn't. That broke two things at once,
+both from the same cause -- every later read of "the band height"
+(`minimapEl.clientHeight`, used by both `minimapLayout()` on the next call
+and by `minimapSync()`) was reading back a value `minimapLayout()` had
+itself just shrunk, not the true available height: (1) after viewing one
+short file, the band stayed capped at that file's shorter height even
+after a resize or switching to a longer file, i.e. the minimap stopped
+reaching the bottom of the pane; (2) `minimapSync()`'s viewport-box height
+is `bandH * (visible fraction of the document)` -- computed against that
+same corrupted `bandH` instead of the actual scaled content height, so the
+box's proportions (and therefore its aspect ratio relative to the content
+it overlays) were wrong too, most visibly on short files where the true
+content height and the corrupted band height differed most. Fixed by
+leaving `#minimap` alone and doing the "shorter than the band" case
+differently: `mmBox` simply doesn't fill the space below it (nothing
+stretches to cover that area), and every place that used to reason about
+"the band" -- the click-to-jump math, the drag math, `minimapSync()`'s
+viewport-box sizing -- was changed to reason about `min(scaledContentHeight,
+bandHeight)` instead, so a click or the viewport box's own proportions
+are always relative to the real content, never to a self-mutated element
+size. A translucent `#mmViewport` box overlays the portion of the
 source currently visible in `#main`'s scroll viewport, exactly like VS
 Code's minimap; `minimapSync()` repositions it on every `#main` scroll
 event (and after every `minimapLayout()`), moving only the overlay element,
@@ -713,46 +784,32 @@ from `file://` and may not fetch anything. Rules the pages follow:
   row would be in a striped table.
 - Every table is `theme.table()` (or the heat map's `table()`): a
   full-height bar at each column boundary, which the mouse can drag
-  anywhere along its length to resize the column on its left; widths are
-  remembered in localStorage per table and column label, under `cols.*`
-  keys, and so is the heat map's tree width. A `fill` table (the summary's
+  anywhere along its length to resize the column on its left. Column
+  widths are **not** persisted -- dragging a bar is a one-visit
+  convenience only, and every table opens at its default width on the
+  next load or reload. (This used to be backed by a per-table,
+  per-column-label localStorage scheme under `cols.*` keys, with its own
+  viewport-width bookkeeping (`_vw`) to decide when a saved width still
+  applied, a `resize`-triggered purge of stale entries, and a
+  `[reset columns]` strip link to force every table back to default. That
+  whole mechanism turned out broken in practice and was removed outright
+  rather than debugged further -- simpler and more predictable for a
+  throwaway profiling tool to just never remember a dragged width than to
+  keep chasing edge cases in when a remembered one should still apply.
+  `theme.js`'s `store` object survives -- it is the generic localStorage
+  wrapper the heat map's own preferences (`heat.event`, `heat.scale`,
+  `heat.sort`) and the tree-pane splitter width (`split.<key>`, see
+  `Theme.splitter()`) still use; only the table-column-width layer on top
+  of it is gone.) A `fill` table (the summary's
   functions table, the heat map's two home tables, `cgdiff.table`) starts
   at exactly 90% of the viewport width, computed once at first render by
   giving the open-ended trailing column an explicit pixel width
-  (`theme.js`'s `initTable`/`fillBaseline`) -- *before* any saved width is
-  applied, so that 90% figure is always the column's real default
-  (`dataset.w`), never skipped just because some other column in the same
-  table has a saved width from a previous visit. After that first render
-  the table never re-consults the viewport again: dragging any bar,
-  including the trailing one, only ever changes that one column's own
-  width, growing or shrinking the table's total width with it, and the
-  page (or the nearest scrolling ancestor) picks up a scrollbar rather
-  than the table clipping itself. A saved column width also carries the
-  viewport width (`_vw`) it was dragged at and is only honoured while the
-  window is still that width (`getSaved`); an actual `resize` event (not
-  just a reload at a different size) additionally purges every saved
-  width outright (`purgeStaleWidths`, run from the same debounced listener
-  that already re-lays-out the drag bars on resize) -- so column widths
-  survive clicking around a fixed-size window but never linger, stale,
-  across an actual resize. `[reset columns]` is the one way to put every
-  table back to its default: it restores each column's `dataset.w` (the
-  90% baseline for a `fill` table, or its natural content width otherwise)
-  rather than replaying a possibly-never-computed value, which is what
-  used to make a `fill` table's last column collapse to zero/auto on reset
-  after a saved width from a different column existed -- `dataset.w` is
-  now always established before any saved width is looked at, so this
-  can't happen regardless of what is or isn't saved. `[reset columns]`
-  lives on the
-  outermost strip only -- the overview page's (`report_overview`'s
-  `strip_render` call, `reset` left at its default `True`), which is also
-  the only strip when a single test's report is opened on its own. A
-  per-test strip nested in the overview's iframe (`report_test`'s own
-  strip, `strip_render(..., reset=False)`) omits the link, since clicking
-  it on the strip above already reaches down through every nested frame:
-  `Theme.reset()` drops every `cols.*` key and re-applies the defaults on
-  the clicking page, and posts `theme:reset` into its iframe so the loaded
-  page does the same, which repeats at each level (it is another `file://`
-  origin, so a frame cannot reach into the next one directly). Every
+  (`theme.js`'s `initTable`/`fillBaseline`) and is never revisited after
+  that: dragging any bar, including the trailing one, only ever changes
+  that one column's own width for the rest of that page view, growing or
+  shrinking the table's total width with it, and the page (or the nearest
+  scrolling ancestor) picks up a scrollbar rather than the table clipping
+  itself. Every
   column boundary gets a drag bar, including the last column's trailing
   edge (`theme.js`'s `initTable` puts a bar after every column, not just
   `cols.length - 1` of them) -- dragging a `fill` table's last column
@@ -764,11 +821,11 @@ from `file://` and may not fetch anything. Rules the pages follow:
   it -- this is margin outside the table box, not padding inside it, so
   it doesn't count as part of the table's own 90%-of-viewport width.
   Each column's
-  full meaning is a tooltip on its header cell; there is no `[legend]`
+  full meaning is a tooltip on its header cell; there is no "legend"
   link anywhere any more (dropped from `theme.table_render()`, the heat
   map's own `table()`, and the always-visible banner `renderFile()` used
   to print above the per-line source table) -- the callgrind event
-  glossary lives once, in `README.md` behind `[help]`, rather than being
+  glossary lives once, in `README.md` behind "help", rather than being
   restated per table. A table box never scrolls on
   its own: it is as long as its rows and as wide as its columns, or with
   `fill` 90% of the viewport at first render and then whatever dragging
@@ -793,10 +850,28 @@ from `file://` and may not fetch anything. Rules the pages follow:
   meaningful digits, never `200,000×` -- with the exact value as the
   cell's tooltip; shares go through `theme.pct()` / `fmtP()`: `63.2%`,
   `5.12%`, `<0.01%`.
-- The index page is a frame: a strip (`.strip`) with the title, then
-  `[summary] [flame graph] [heat map] [native timing]`, and the summary
-  under it, left-aligned and full width; sub-pages are loaded into an
-  iframe only when picked. The title is the picked view -- `urlparser`,
+- The index page is a frame: a strip (`.strip`) with the title, then its
+  links as plain words -- no brackets -- generously spaced and
+  `|`-separated ("summary  |  flame graph  |  heat map  |  native timing",
+  `.strip a + a::before { content: "|" }` with margin on both sides rather
+  than a literal space character in the markup), and the summary under it,
+  left-aligned and full width; sub-pages are loaded into an iframe only
+  when picked. A strip never wraps to a second row: `.strip` is
+  `flex-wrap: nowrap` with `overflow: hidden`, each link is `flex: none`
+  (its own natural width, never squeezed to make room for a neighbor) with
+  its own `max-width: 40ch` and `text-overflow: ellipsis` in case a single
+  label is ever pathologically long, and if the full row still doesn't fit
+  the trailing links are clipped off at the strip's edge -- the same
+  "cut off cleanly, don't wrap" behavior as any overflowing cell in this
+  UI, just applied to a whole link instead of to text inside one. The
+  currently-picked link (and the picked view generally -- the title badge,
+  a strip's "on" link) is highlighted at 100% of the hottest heat-ramp
+  color as its background (`--hot`, the last stop in the `HEAT` list) with
+  a matching high-contrast foreground (`--hot-fg`, `theme.py` picks
+  `--bg` or `--fg` by the same luminance test `heat_style()` uses)
+  computed once in `theme.theme_css()` and exposed as those two CSS
+  variables, rather than the old plain `color: var(--accent)` treatment.
+  The title is the picked view -- `urlparser`,
   `urlparser / heat map` -- and it is the only title anywhere: the pages
   have no heading of their own, and a frame page loaded inside another
   frame hides its title and posts it up (a `{theme: "title"}` message;
@@ -807,12 +882,14 @@ from `file://` and may not fetch anything. Rules the pages follow:
   own cell, flush with the strip's edges (a negative margin cancels the
   strip's own padding on that side) with a `--good` (green) background and
   `--bg` (dark) text for contrast, so the current navigation choice reads
-  as a badge rather than blending into the link row. `[help]`,
-  `[curl.se/perf]` and `[reset columns]` are on the top-level (overview)
-  strip only, all hugging the right in that order, so `[reset columns]` is
-  the rightmost thing on the strip and `[curl.se/perf]` sits between it
-  and `[help]`; see the `[reset columns]` bullet above for why a nested
-  per-test strip has none of the three. `[help]` opens
+  as a badge rather than blending into the link row. "help" and
+  "curl.se/perf" are on the top-level (overview)
+  strip only, in that order, pushed to the far right by `.strip .sp`'s
+  flex spacer; see "Every table is `theme.table()`" above for why table
+  column widths (and, with them, the old `[reset columns]` link that used
+  to sit here) are no longer a thing at all -- there is nothing left on
+  this strip for a nested per-test strip to omit other than help/perf,
+  so it omits just those two. "help" opens
   `README.md` (plain, un-rendered markdown -- no server, so no renderer)
   in a new tab; `dev/perf2html.sh` copies `dev/README.md` to `OUTDIR/README.md`
   on every run, next to the overview `index.html`. The file is a short
@@ -821,7 +898,7 @@ from `file://` and may not fetch anything. Rules the pages follow:
   Order" view is the one worth pointing at) and the heat map -- a help
   screen, not a manual. The heat map's header is the same kind of strip,
   minus a title -- see "Source heatmap (browser)" above for how it gets
-  back to its home view without a `[home]` button.
+  back to its home view without a "home" button.
 - The outer frame page itself (`body.frame`) never scrolls -- only its
   `main`/`iframe` children do, each owning its own inner scrolling --
   which is enforced explicitly (`html:has(body.frame), body.frame {
