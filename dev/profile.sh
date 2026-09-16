@@ -49,7 +49,10 @@
 #   heat-map/index.html   per-line heat map with cache-miss columns
 #   perf-tool/index.html  native timing run output
 # With "all", OUTDIR/index.html is the same kind of page over the tests
-# ([overview] [all] [base64dec] ... alphabetical, [curl.se/perf] far right).
+# ([overview] [all] [base64dec] ... alphabetical, [curl.se/perf] [help]
+# [reset columns] far right). README.md (a help screen for the callgrind
+# event columns and the flame graph/heat map, copied from dev/README.md)
+# sits next to that top-level index.html; [help] opens it.
 # Raw callgrind data, valgrind log and speedscope JSON stay in dev/trace/,
 # with the quiet run's profile.<ts>.log next to them (same <ts>).
 #
@@ -295,6 +298,7 @@ main() {
   toolchain_check
 
   mkdir -p "$OUT_DIR" "$TRACE_DIR"
+  cp "$DEV_DIR/README.md" "$OUT_DIR/README.md"
   [ "$VERBOSE" = 1 ] || echo "dev/profile.sh $STAMP: OUTDIR=$OUT_DIR PERFTEST=$TEST${CFLAGS_EXTRA[*]:+ CFLAGS=${CFLAGS_EXTRA[*]}}" >"$RUN_LOG"
 
   build_compile

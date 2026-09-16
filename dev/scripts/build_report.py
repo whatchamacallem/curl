@@ -138,8 +138,8 @@ def file_read_text(path: str) -> str:
 def strip_render(title: str, links: list[tuple[str, str, str, str]], perf_link: bool = False, reset: bool = True) -> str:
     """The strip across the top: the title, then the links -- (view key or ""
     for the page itself, label, href, title to show when picked) -- then,
-    unless `reset` is false, [reset columns], and on the top-level page only
-    [curl.se/perf] pushed to the far right.
+    on the top-level page only, [curl.se/perf], [help] and, unless `reset`
+    is false, [reset columns], in that order, pushed to the far right.
 
     Only one strip on screen at a time needs [reset columns] -- clicking it
     resets every table in the document plus, by posted message, every framed
@@ -147,7 +147,9 @@ def strip_render(title: str, links: list[tuple[str, str, str, str]], perf_link: 
     page's (which is also the only strip when a single test's report is
     opened on its own). A per-test strip nested in the overview's iframe
     (report_test's own strip) omits it, since the overview strip above it
-    already reaches down into that frame."""
+    already reaches down into that frame. [help] follows perf_link for the
+    same reason and points at README.md, which profile.sh copies next to
+    this page."""
     parts = [f'<b class="title" id="title">{html_esc(title)}</b>']
     parts += [f'<a href="{html_esc(href)}" data-view="{html_esc(key)}" data-title="{html_esc(t)}">[{html_esc(label)}]</a>'
               for key, label, href, t in links]
@@ -155,6 +157,7 @@ def strip_render(title: str, links: list[tuple[str, str, str, str]], perf_link: 
         parts.append('<span class="sp"></span>')
     if perf_link:
         parts.append(f'<a href="{PERF_CHART}" target="_blank" rel="noopener">[curl.se/perf]</a>')
+        parts.append('<a href="README.md" target="_blank">[help]</a>')
     if reset:
         parts.append('<a href="#" data-reset title="forget every saved column width">[reset columns]</a>')
     return f'<nav id="bar" class="strip">{"".join(parts)}</nav>'

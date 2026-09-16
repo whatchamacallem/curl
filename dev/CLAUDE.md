@@ -258,6 +258,12 @@ flame-graph/index.html   speedscope bundle; the profile picker switches
                          between Ir, D1mr+D1mw, DLmr+DLmw, I1mr, Bcm, Bim
 heat-map/index.html      per-line source heat map (event selector, miss columns)
 perf-tool/index.html     native timing run output
+README.md                a help screen, not a manual: the callgrind event
+                         columns (Ir, Dr, Dw, D1mr, ...) and a couple of
+                         sentences each on the flame graph and the heat map.
+                         Copied from dev/README.md by profile.sh on every
+                         run; opened by the top-level strip's `[help]` link,
+                         plain (un-rendered, since there is no server)
 raw/                     the callgrind file(s) this report was built from,
                          copied in (see "raw data" above) with the repo
                          root prefix stripped from every ob=/fl=/fi= line
@@ -575,13 +581,20 @@ from `file://` and may not fetch anything. Rules the pages follow:
   `{theme: "title"}` message; the parent asks with `theme:title?` when it
   re-shows a frame it already loaded), so the top-level strip reads
   `urlparser / heat map` while the nested strip shows only its links.
-  `[curl.se/perf]` and `[reset columns]` are on the top-level (overview)
-  strip only, both hugging the right with `[reset columns]` last, so it is
-  the rightmost thing on the strip (`[curl.se/perf]` directly left of it;
-  see the `[reset columns]` bullet above for why a nested per-test strip
-  has neither). The heat map's header is the same kind of strip, minus a
-  title -- see "Source heatmap (browser)" above for how it gets back to
-  its home view without a `[home]` button.
+  `[curl.se/perf]`, `[help]` and `[reset columns]` are on the top-level
+  (overview) strip only, all hugging the right in that order, so
+  `[reset columns]` is the rightmost thing on the strip and `[help]` sits
+  between it and `[curl.se/perf]`; see the `[reset columns]` bullet above
+  for why a nested per-test strip has none of the three. `[help]` opens
+  `README.md` (plain, un-rendered markdown -- no server, so no renderer)
+  in a new tab; `dev/profile.sh` copies `dev/README.md` to `OUTDIR/README.md`
+  on every run, next to the overview `index.html`. The file is a short
+  glossary of the callgrind event columns (Ir, Dr, Dw, D1mr, ...) plus a
+  couple of sentences each on using the flame graph (speedscope's "Time
+  Order" view is the one worth pointing at) and the heat map -- a help
+  screen, not a manual. The heat map's header is the same kind of strip,
+  minus a title -- see "Source heatmap (browser)" above for how it gets
+  back to its home view without a `[home]` button.
 
 ### Checking the pages
 
