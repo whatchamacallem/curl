@@ -782,6 +782,20 @@ from `file://` and may not fetch anything. Rules the pages follow:
   A column boundary that is not being dragged has *no* line at all --
   neighboring columns are told apart only by `col.alt` shading, same as a
   row would be in a striped table.
+- Scrollbars are themed the same way, everywhere (`theme.css`, a plain `*`
+  selector plus `::-webkit-scrollbar*`, since Firefox's `scrollbar-color`
+  and Chromium's `::-webkit-scrollbar` are the only two mechanisms and
+  they don't overlap): a square, unrounded thumb in `--blue` (the darker
+  of the two "blue" pair members) over a `--gray-l` (the lighter of the
+  two "gray" pair members) track, old-fashioned classic-scrollbar sizing
+  (14px), no arrow buttons or corner piece drawn beyond the plain
+  `::-webkit-scrollbar-corner` fill. It hides entirely when a pane has
+  nothing to scroll (native overlay behavior on this size scrollbar, not
+  scripted). Hovering the thumb without dragging it lightens it to
+  `--blue-l`; starting a drag reverts it to `--blue` -- the same
+  resting/active contrast idea as `.bar`/`.split`, just with hover and
+  drag swapped, since a thumb mid-drag is already unambiguous from the
+  cursor without also needing the lighter color.
 - Every table is `theme.table()` (or the heat map's `table()`): a
   full-height bar at each column boundary, which the mouse can drag
   anywhere along its length to resize the column on its left. Column

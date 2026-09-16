@@ -109,3 +109,19 @@ pre.logbox { padding: 8px 12px; background: var(--panel); max-height: 60vh; over
   background: linear-gradient(90deg, transparent 2.5px, var(--bar) 2.5px, var(--bar) 4.5px, transparent 4.5px); }
 .split:hover, .split.active {
   background: linear-gradient(90deg, transparent 1.5px, var(--bar) 1.5px, var(--bar) 5.5px, transparent 5.5px); }
+
+/* scrollbars: a plain square thumb (no rounding, no arrows/corner-piece) in
+   the darker of the two "blue" theme pair members over the lighter of the
+   two "gray" pair members as the track; hidden entirely until the content
+   actually scrolls. The thumb lightens to --blue-l only on a plain hover
+   (mouse over the bar, not dragging) and reverts to --blue while the drag
+   is active -- same "resting vs. active" contrast idea as .bar/.split, just
+   with the two states swapped (hover lighter, drag darker) since a
+   scrollbar thumb being dragged is already unambiguous from the cursor. */
+* { scrollbar-color: var(--blue) var(--gray-l); }
+::-webkit-scrollbar { width: 14px; height: 14px; }
+::-webkit-scrollbar-track { background: var(--gray-l); }
+::-webkit-scrollbar-thumb { background: var(--blue); border-radius: 0; }
+::-webkit-scrollbar-thumb:hover { background: var(--blue-l); }
+::-webkit-scrollbar-thumb:active { background: var(--blue); }
+::-webkit-scrollbar-corner { background: var(--gray-l); }
