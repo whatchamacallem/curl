@@ -228,16 +228,12 @@ run_one() {
   } | { if [ "$VERBOSE" = 1 ]; then tee "$perf_out"; else tee "$perf_out" >>"$RUN_LOG"; fi; } \
     || { { [ "$VERBOSE" = 1 ] || echo; echo "error: $BIN $test failed; its output is in $perf_out"; } >&2; exit 1; }
   # a native run's lines worth a status line, as "Time/URL: 137.66 ns, Errors: 1240000"
-  [ "$VERBOSE" = 1 ] || printf ' %s | pages' "$(awk '/^(Time\/[A-Za-z]+|Errors):/ { $1 = $1; s = s (s ? ", " : "") $0 } END { print s }' "$perf_out")"
+  [ "$VERBOSE" = 1 ] || printf ' %s' "$(awk '/^(Time\/[A-Za-z]+|Errors):/ { $1 = $1; s = s (s ? ", " : "") $0 } END { print s }' "$perf_out")"
 
   CG_FILES=("$cg_out")
   LOG_FILES=("$log")
-  t0=$SECONDS
   report_render "$test" "$out" "$TRACE_DIR/$test.$loops.$STAMP.speedscope.json" \
     "curl perf $test (loops=$loops, $STAMP)"
-  elapsed=$(( SECONDS - t0 ))
-  if [ "$elapsed" -ge 60 ]; then took="$((elapsed / 60))m$((elapsed % 60))s"; else took="${elapsed}s"; fi
-  [ "$VERBOSE" = 1 ] || printf ' %s' "$took"
 }
 
 # Every test's callgrind run merged into one profile, every native time

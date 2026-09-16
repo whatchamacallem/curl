@@ -167,10 +167,11 @@ dev/profile.sh --verbose ~/artifacts urlparser   # every tool's output, a banner
 - Output: one status line per thing, built up as its steps finish -- the
   build (`build  build-relwithdebinfo -O2 -g, ccache 3s | log
   dev/trace/profile.<ts>.log`), each test (`urlparser  callgrind loops=200
-  2m14s | native Time/URL: 137.66 ns, Errors: 1240000 | pages 4s`) and,
-  with `all`, the merged report (`all  8 profiles merged | Time: ... usecs`,
-  no per-page timing -- building the overview from already-rendered
-  per-test pages is fast enough not to warrant one); the last line ends
+  2m14s | native Time/URL: 137.66 ns, Errors: 1240000`) and, with `all`,
+  the merged report (`all  8 profiles merged | Time: ... usecs`); no
+  per-test or per-page timing beyond the native run's own numbers --
+  page rendering (flame graph, heat map, index) is fast enough not to
+  warrant its own status fragment; the last line ends
   with `-> OUTDIR/index.html`. After that, `validate_report.py OUTDIR`
   runs as the final step and, in quiet mode, prints nothing on success --
   a broken report is a `test_run` failure like any other (nonzero exit,
