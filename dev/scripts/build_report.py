@@ -53,6 +53,9 @@ FRAME_JS = """\
 // Re-clicking the strip link for the view already showing posts "theme:home"
 // into the frame instead of reloading it, so a page with its own internal
 // navigation (the heat map's file listings) can jump back to its start.
+// "reset columns" resets every table on this page directly and posts
+// "theme:reset-cols" into the frame for its own tables (the heat map's
+// home/file tables, an overview's nested per-test strip and its own frame).
 (function () {
   const bar = document.getElementById("bar"), home = document.getElementById("home"), view = document.getElementById("view");
   const titleEl = document.getElementById("title"), links = [...bar.querySelectorAll("a[data-view]")];
@@ -86,9 +89,15 @@ FRAME_JS = """\
     }
     return null;
   }
+  const resetCols = document.getElementById("reset-cols");
+  if (resetCols) resetCols.addEventListener("click", e => {
+    e.preventDefault();
+    window.Theme.resetCols(home);
+    if (view.contentWindow) view.contentWindow.postMessage("theme:reset-cols", "*");
+  });
   document.addEventListener("click", e => {
     const a = e.target.closest("a[href]");
-    if (!a || a.target || e.ctrlKey || e.metaKey || e.shiftKey || e.button) return;
+    if (!a || a === resetCols || a.target || e.ctrlKey || e.metaKey || e.shiftKey || e.button) return;
     const href = a.getAttribute("href");
     const hash = a.dataset.view != null ? (a.dataset.view ? "#" + a.dataset.view : "") : hashFor(href);
     if (hash == null) return;
@@ -100,6 +109,10 @@ FRAME_JS = """\
   });
   window.addEventListener("message", e => {
     if (e.data === "theme:title?") setTitle(title);
+    else if (e.data === "theme:reset-cols") {
+      window.Theme.resetCols(home);
+      if (view.contentWindow) view.contentWindow.postMessage("theme:reset-cols", "*");
+    }
     else if (e.data && e.data.theme === "title" && e.source === view.contentWindow) setTitle(e.data.title);
   });
   window.addEventListener("hashchange", () => show(location.hash));
@@ -129,17 +142,27 @@ def file_read_text(path: str) -> str:
 
 def strip_render(title: str, links: list[tuple[str, str, str, str]], perf_link: bool = False) -> str:
     """The strip across the top: the title, then the links -- (view key or ""
-    for the page itself, label, href, title to show when picked) -- then,
-    on the top-level page only, "help" and "curl.se/perf", pushed to the far
+    for the page itself, label, href, title to show when picked), each pair
+    separated by its own "|" cell so highlighting a link's background never
+    bleeds into the divider -- then, on the top-level page only, "reset
+    columns" (restores every table on the page to its default widths;
+    dragged widths themselves are still not persisted across reloads, only
+    resettable within one), "help" and "curl.se/perf", pushed to the far
     right. A per-test strip nested in the overview's iframe (report_test's
-    own strip) has neither, since the overview strip above it already
-    carries them."""
+    own strip) has none of those three, since the overview strip above it
+    already carries them."""
+    def sep() -> str:
+        return '<span class="sep">|</span>'
     parts = [f'<b class="title" id="title">{html_esc(title)}</b>']
-    parts += [f'<a href="{html_esc(href)}" data-view="{html_esc(key)}" data-title="{html_esc(t)}">{html_esc(label)}</a>'
-              for key, label, href, t in links]
+    for key, label, href, t in links:
+        parts.append(sep())
+        parts.append(f'<a href="{html_esc(href)}" data-view="{html_esc(key)}" data-title="{html_esc(t)}">{html_esc(label)}</a>')
     if perf_link:
         parts.append('<span class="sp"></span>')
+        parts.append('<a href="#" id="reset-cols">reset columns</a>')
+        parts.append(sep())
         parts.append('<a href="README.md" target="_blank">help</a>')
+        parts.append(sep())
         parts.append(f'<a href="{PERF_CHART}" target="_blank" rel="noopener">curl.se/perf</a>')
     return f'<nav id="bar" class="strip">{"".join(parts)}</nav>'
 

@@ -2,7 +2,10 @@
 //
 //   table.cols   every column boundary gets a full-height divider bar that
 //                can be dragged to resize the column on its left. Widths
-//                are not persisted -- a table always opens at its default.
+//                are not persisted -- a table always opens at its default,
+//                and resetCols() puts every dragged column back to that
+//                default within the same page view (the strip's "reset
+//                columns" link).
 //   .band + th   sticky elements inside one scroller are stacked in DOM
 //                order (a legend above a header row) instead of overlapping.
 //   splitter()   a draggable divider between two panes.
@@ -68,6 +71,25 @@ window.Theme = (function () {
     layoutBars(table);
   }
 
+  // Puts every already-initialised table's columns back to the width
+  // initTable() gave them at first render (dataset.w, set once and never
+  // updated by a drag) -- a `fill` table's open-ended last column is
+  // recomputed against the current viewport rather than replayed from
+  // dataset.w, same as a fresh first render would do.
+  function resetCols(root) {
+    root = root || document.body;
+    for (const t of root.querySelectorAll("table.cols")) {
+      if (!t._bars) continue;
+      const cols = [...t.querySelectorAll("colgroup > col")];
+      for (const c of cols) c.style.width = c.dataset.w;
+      if (t.classList.contains("fill") && cols.length) {
+        cols[cols.length - 1].style.width = fillBaseline(t, cols);
+        cols[cols.length - 1].dataset.w = cols[cols.length - 1].style.width;
+      }
+      layoutBars(t);
+    }
+  }
+
   function alignSticky(scroller) {
     let y = 0;
     for (const band of scroller.querySelectorAll(":scope > .band")) {
@@ -123,5 +145,5 @@ window.Theme = (function () {
   });
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", () => init());
   else init();
-  return { init, relayout, splitter, store };
+  return { init, relayout, resetCols, splitter, store };
 })();

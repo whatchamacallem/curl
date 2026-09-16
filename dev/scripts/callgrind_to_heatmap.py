@@ -885,7 +885,10 @@ window.addEventListener("hashchange", route);
 // Re-picking [heat map] in an outer strip while already showing this page
 // (see FRAME_JS in build_report.py) posts this instead of reloading the
 // iframe, so it jumps back to the hottest-lines/functions overview.
-window.addEventListener("message", e => { if (e.data === "theme:home") location.hash = ""; });
+window.addEventListener("message", e => {
+  if (e.data === "theme:home") location.hash = "";
+  else if (e.data === "theme:reset-cols") Theme.resetCols(mainEl);
+});
 // Same 120ms-debounced resize pattern as theme.js's own relayout() listener
 // (kept separate rather than folded into Theme.relayout: the minimap only
 // needs to reposition/rescale existing DOM, never re-snapshot it).

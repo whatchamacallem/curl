@@ -786,16 +786,20 @@ from `file://` and may not fetch anything. Rules the pages follow:
   selector plus `::-webkit-scrollbar*`, since Firefox's `scrollbar-color`
   and Chromium's `::-webkit-scrollbar` are the only two mechanisms and
   they don't overlap): a square, unrounded thumb in `--blue` (the darker
-  of the two "blue" pair members) over a `--gray-l` (the lighter of the
-  two "gray" pair members) track, old-fashioned classic-scrollbar sizing
+  of the two "blue" pair members), old-fashioned classic-scrollbar sizing
   (14px), no arrow buttons or corner piece drawn beyond the plain
-  `::-webkit-scrollbar-corner` fill. It hides entirely when a pane has
-  nothing to scroll (native overlay behavior on this size scrollbar, not
-  scripted). Hovering the thumb without dragging it lightens it to
-  `--blue-l`; starting a drag reverts it to `--blue` -- the same
-  resting/active contrast idea as `.bar`/`.split`, just with hover and
-  drag swapped, since a thumb mid-drag is already unambiguous from the
-  cursor without also needing the lighter color.
+  `::-webkit-scrollbar-corner` fill. The track (and corner) is `--bg` --
+  the same background as the pane the scrollbar belongs to, not a separate
+  track color -- so the thumb reads as floating in the pane rather than
+  sitting in its own lane; the one exception is the valgrind-log box
+  (`pre.logbox`, on `--panel`), which gets its own `scrollbar-color`/
+  `::-webkit-scrollbar-track` override to match. It hides entirely when a
+  pane has nothing to scroll (native overlay behavior on this size
+  scrollbar, not scripted). The thumb is stoic: unlike `.bar`/`.split`, it
+  does not react to hover or an active drag (no `:hover`/`:active` rule at
+  all) -- it is a plain scrollbar, not itself a drag target for anything
+  but native scrolling, so it does not need the resting/active contrast
+  language those actually-draggable elements use.
 - Every table is `theme.table()` (or the heat map's `table()`): a
   full-height bar at each column boundary, which the mouse can drag
   anywhere along its length to resize the column on its left. Column
@@ -804,17 +808,25 @@ from `file://` and may not fetch anything. Rules the pages follow:
   next load or reload. (This used to be backed by a per-table,
   per-column-label localStorage scheme under `cols.*` keys, with its own
   viewport-width bookkeeping (`_vw`) to decide when a saved width still
-  applied, a `resize`-triggered purge of stale entries, and a
-  `[reset columns]` strip link to force every table back to default. That
-  whole mechanism turned out broken in practice and was removed outright
-  rather than debugged further -- simpler and more predictable for a
-  throwaway profiling tool to just never remember a dragged width than to
-  keep chasing edge cases in when a remembered one should still apply.
-  `theme.js`'s `store` object survives -- it is the generic localStorage
-  wrapper the heat map's own preferences (`heat.event`, `heat.scale`,
-  `heat.sort`) and the tree-pane splitter width (`split.<key>`, see
-  `Theme.splitter()`) still use; only the table-column-width layer on top
-  of it is gone.) A `fill` table (the summary's
+  applied and a `resize`-triggered purge of stale entries. That whole
+  persistence mechanism turned out broken in practice and was removed
+  outright rather than debugged further -- simpler and more predictable
+  for a throwaway profiling tool to just never remember a dragged width
+  across reloads than to keep chasing edge cases in when a remembered one
+  should still apply. `theme.js`'s `store` object survives -- it is the
+  generic localStorage wrapper the heat map's own preferences
+  (`heat.event`, `heat.scale`, `heat.sort`) and the tree-pane splitter
+  width (`split.<key>`, see `Theme.splitter()`) still use; only the
+  table-column-width persistence layer on top of it is gone.) The
+  top-level strip's "reset columns" link (see "The index page is a
+  frame" below) puts every table on the page back to its default widths
+  for the rest of that page view -- `theme.js`'s `resetCols()` restores
+  each column's `dataset.w` (the width `initTable` computed at first
+  render, before any drag) and recomputes a `fill` table's trailing
+  column against the current viewport, same as first render would.
+  Nothing about this is persisted either: it is a same-visit undo for
+  dragging, not a saved layout, and a reload still opens every table at
+  its default without needing the link. A `fill` table (the summary's
   functions table, the heat map's two home tables, `cgdiff.table`) starts
   at exactly 90% of the viewport width, computed once at first render by
   giving the open-ended trailing column an explicit pixel width
@@ -866,9 +878,11 @@ from `file://` and may not fetch anything. Rules the pages follow:
   `5.12%`, `<0.01%`.
 - The index page is a frame: a strip (`.strip`) with the title, then its
   links as plain words -- no brackets -- generously spaced and
-  `|`-separated ("summary  |  flame graph  |  heat map  |  native timing",
-  `.strip a + a::before { content: "|" }` with margin on both sides rather
-  than a literal space character in the markup), and the summary under it,
+  `|`-separated ("summary  |  flame graph  |  heat map  |  native timing").
+  The `|` is its own `span.sep` cell between each pair of links (not a
+  `::before` on the following link) so that hovering or highlighting a
+  link never colors the divider next to it and the gap on both sides of
+  a `|` stays visually even, and the summary under it,
   left-aligned and full width; sub-pages are loaded into an iframe only
   when picked. A strip never wraps to a second row: `.strip` is
   `flex-wrap: nowrap` with `overflow: hidden`, each link is `flex: none`
@@ -894,16 +908,22 @@ from `file://` and may not fetch anything. Rules the pages follow:
   nested strip shows only its links. Unlike every other strip entry, the
   title is not an inline colored word: `.strip .title` renders it as its
   own cell, flush with the strip's edges (a negative margin cancels the
-  strip's own padding on that side) with a `--good` (green) background and
-  `--bg` (dark) text for contrast, so the current navigation choice reads
-  as a badge rather than blending into the link row. "help" and
-  "curl.se/perf" are on the top-level (overview)
+  strip's own padding on that side) with `--title-bg` (the 3rd heatmap
+  ramp stop, `#26828E`, per the "User settings" heatmap colors) and
+  `--title-fg` (`theme.py` picks `--bg` or `--fg` by the same luminance
+  test `heat_style()` uses) for contrast, so the current navigation choice
+  reads as a badge rather than blending into the link row. "reset
+  columns", "help" and "curl.se/perf" are on the top-level (overview)
   strip only, in that order, pushed to the far right by `.strip .sp`'s
-  flex spacer; see "Every table is `theme.table()`" above for why table
-  column widths (and, with them, the old `[reset columns]` link that used
-  to sit here) are no longer a thing at all -- there is nothing left on
-  this strip for a nested per-test strip to omit other than help/perf,
-  so it omits just those two. "help" opens
+  flex spacer -- there is nothing left on
+  this strip for a nested per-test strip to omit other than those three,
+  so it omits just them. "reset columns" is a plain link (`#reset-cols`,
+  no `data-view`, so the strip's view-switching click handler ignores it)
+  that calls `theme.js`'s `resetCols()` on this page's own tables and
+  posts a `theme:reset-cols` message into the loaded frame, which either a
+  per-test strip (relays it again into its own nested frame) or the heat
+  map (resets its own `#main` tables) picks up -- see "Every table is
+  `theme.table()`" above for what resetting actually restores. "help" opens
   `README.md` (plain, un-rendered markdown -- no server, so no renderer)
   in a new tab; `dev/perf2html.sh` copies `dev/README.md` to `OUTDIR/README.md`
   on every run, next to the overview `index.html`. The file is a short

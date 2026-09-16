@@ -31,11 +31,10 @@ select, input { font: inherit; color: var(--fg); background: var(--bg); padding:
   padding: 5px 12px; background: var(--nav); overflow: hidden; }
 .strip a { padding: 2px 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   max-width: 40ch; flex: none; }
-.strip a + a { margin-left: 8px; }
-.strip a + a::before { content: "|"; margin-right: 8px; color: var(--muted); }
+.strip .sep { flex: none; margin: 0 8px; color: var(--muted); }
 .strip a:hover { background: var(--link); color: var(--nav); text-decoration: none; }
 .strip a.on { background: var(--hot); color: var(--hot-fg); }
-.strip .title { font-size: 13px; font-weight: 600; color: var(--bg); background: var(--good); white-space: nowrap;
+.strip .title { font-size: 13px; font-weight: 600; color: var(--title-fg); background: var(--title-bg); white-space: nowrap;
   padding: 3px 8px; margin: -5px 6px -5px -12px; align-self: stretch; display: flex; align-items: center; flex: none; }
 .strip .sp { flex: 1 0 0; min-width: 0; }
 
@@ -111,17 +110,19 @@ pre.logbox { padding: 8px 12px; background: var(--panel); max-height: 60vh; over
   background: linear-gradient(90deg, transparent 1.5px, var(--bar) 1.5px, var(--bar) 5.5px, transparent 5.5px); }
 
 /* scrollbars: a plain square thumb (no rounding, no arrows/corner-piece) in
-   the darker of the two "blue" theme pair members over the lighter of the
-   two "gray" pair members as the track; hidden entirely until the content
-   actually scrolls. The thumb lightens to --blue-l only on a plain hover
-   (mouse over the bar, not dragging) and reverts to --blue while the drag
-   is active -- same "resting vs. active" contrast idea as .bar/.split, just
-   with the two states swapped (hover lighter, drag darker) since a
-   scrollbar thumb being dragged is already unambiguous from the cursor. */
-* { scrollbar-color: var(--blue) var(--gray-l); }
+   the darker of the two "blue" theme pair members, stoic -- it never reacts
+   to hover or an active drag, unlike .bar/.split/the resize bars, since it
+   is not itself a drag target for anything but native scrolling. The track
+   is the same background as the pane it scrolls (--bg), not a separate
+   track color, so the thumb reads as floating in the pane rather than
+   sitting in its own lane; hidden entirely until the content actually
+   scrolls. */
+* { scrollbar-color: var(--blue) var(--bg); }
 ::-webkit-scrollbar { width: 14px; height: 14px; }
-::-webkit-scrollbar-track { background: var(--gray-l); }
+::-webkit-scrollbar-track { background: var(--bg); }
 ::-webkit-scrollbar-thumb { background: var(--blue); border-radius: 0; }
-::-webkit-scrollbar-thumb:hover { background: var(--blue-l); }
-::-webkit-scrollbar-thumb:active { background: var(--blue); }
-::-webkit-scrollbar-corner { background: var(--gray-l); }
+::-webkit-scrollbar-corner { background: var(--bg); }
+/* the one scrolling pane on a --panel background (the valgrind log box) --
+   everywhere else scrolls on the plain --bg the rule above already covers */
+pre.logbox { scrollbar-color: var(--blue) var(--panel); }
+pre.logbox::-webkit-scrollbar-track, pre.logbox::-webkit-scrollbar-corner { background: var(--panel); }

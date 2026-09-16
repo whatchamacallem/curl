@@ -79,6 +79,10 @@ def theme_css() -> str:
     lum = (0.2126 * hot[0] + 0.7152 * hot[1] + 0.0722 * hot[2]) / 255
     lines.append(f"  --hot: {HEAT[-1]};")
     lines.append(f"  --hot-fg: {ROLE['bg'] if lum > 0.5 else ROLE['fg']};")
+    title_bg = _rgb(HEAT[2])  # 3rd heatmap stop: the strip title badge's background
+    title_lum = (0.2126 * title_bg[0] + 0.7152 * title_bg[1] + 0.0722 * title_bg[2]) / 255
+    lines.append(f"  --title-bg: {HEAT[2]};")
+    lines.append(f"  --title-fg: {ROLE['bg'] if title_lum > 0.5 else ROLE['fg']};")
     lines.append(f"  --font: {FONT};")
     lines.append("}")
     return "\n".join(lines) + "\n" + _read("theme.css")
