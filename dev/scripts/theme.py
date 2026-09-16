@@ -1,4 +1,4 @@
-"""Shared look and feel for every page dev/profile.sh writes -- palettes
+"""Shared look and feel for every page dev/perf2html.sh writes -- palettes
 pinned in CLAUDE.md under "User settings"; layout rules under "Look and
 feel". css()/js() return theme.css/theme.js for each generator to inline
 (pages open from file://, nothing may be fetched at view time)."""

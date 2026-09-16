@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Smoke test over a dev/profile.sh report directory: cheap structural and
+"""Smoke test over a dev/perf2html.sh report directory: cheap structural and
 content checks, not a re-parse of the profile data. Catches the failure mode
 of a page silently missing (a step failed but the script kept going),
 existing but truncated/empty, or leaking an absolute host path -- not
@@ -8,7 +8,7 @@ whether the numbers in it are correct.
 Usage:
   validate_report.py OUTDIR [--test NAME ...]
 
-  OUTDIR    a report directory written by dev/profile.sh: either one test's
+  OUTDIR    a report directory written by dev/perf2html.sh: either one test's
             report (OUTDIR/index.html is a test page) or an "all" run
             (OUTDIR/index.html is the overview, OUTDIR/<test>/ and
             OUTDIR/all/ each hold a test page).
@@ -205,7 +205,7 @@ def repo_root_guess(out_dir: str) -> str:
 
 def validate_main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("out_dir", help="report directory (dev/profile.sh's OUTDIR)")
+    ap.add_argument("out_dir", help="report directory (dev/perf2html.sh's OUTDIR)")
     ap.add_argument("--test", action="append", default=None, metavar="NAME",
                      help="check only this test under an overview OUTDIR (repeatable; default: every linked test)")
     args = ap.parse_args()

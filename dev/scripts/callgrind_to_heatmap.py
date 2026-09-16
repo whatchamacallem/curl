@@ -203,10 +203,30 @@ CSS = """\
 body { display: flex; flex-direction: column; height: 100vh; }
 #hdr { gap: 4px 14px; }
 #hdr label { color: var(--muted); white-space: nowrap; }
-#hdr input { width: 18ch; }
+#hdr input { width: 36ch; }
 #layout { display: flex; flex: 1; min-height: 0; }
 #tree { width: 280px; min-width: 120px; flex: none; overflow: auto; padding: 4px 0 24px; }
-#main { flex: 1; min-width: 0; overflow: auto; }
+#main { flex: 1; min-width: 0; overflow: auto; background: var(--bg); }
+/* minimap: fixed-width band after #main, VS-Code style -- a scaled clone of
+   table.src's code column only, drawn once per renderFile (minimapBuild)
+   and reflowed (never re-cloned) on resize (minimapLayout, which is also
+   what shortens #minimap -- not #mmBox -- top-aligned, when the scaled
+   content is shorter than the band). It never scrolls on its own.
+   background matches #main's (var(--bg), the page background -- not
+   var(--panel), which reads as a visibly different, bluer panel) since an
+   unheated row's cell has no background of its own and otherwise falls
+   back to whatever #minimap itself is painted, same as the real source --
+   this is also why there is no border between it and #main: the two are
+   meant to blend together tonally, same as VS Code's own minimap. */
+#minimap { width: 110px; flex: none; overflow: hidden; position: relative;
+  background: var(--bg); cursor: pointer; }
+#minimap.empty { display: none; }
+#mmBox { position: absolute; top: 0; left: 0; }
+#mmBox table.src { border-collapse: collapse; }
+#mmBox table.src td { padding: 0; border: 0; white-space: pre; }
+#mmViewport { position: absolute; left: 0; right: 0; background: rgba(245, 246, 250, 0.18);
+  border: 1px solid rgba(245, 246, 250, 0.55); cursor: grab; }
+#mmViewport.drag { cursor: grabbing; }
 .node { display: flex; align-items: center; gap: 4px; padding-right: 8px; cursor: pointer; white-space: nowrap; }
 .node:hover { outline: 1px solid var(--link); outline-offset: -1px; }
 .node.sel { background: var(--sel); }
@@ -221,17 +241,18 @@ body { display: flex; flex-direction: column; height: 100vh; }
 .node.more .name { color: var(--muted); font-style: italic; }
 .kids { display: none; }
 .kids.open { display: block; }
-.fhead { background: var(--panel); border-bottom: 1px solid var(--bar); padding: 5px 14px;
+.fhead { background: var(--panel); padding: 5px 14px;
   display: flex; gap: 4px 18px; align-items: baseline; flex-wrap: wrap; }
 .fhead .path { font-weight: 600; }
 .fhead .stat { color: var(--muted); }
-.chips { display: flex; gap: 4px; flex-wrap: wrap; padding: 5px 14px; border-bottom: 1px solid var(--bar); }
+.chips { display: flex; gap: 4px; flex-wrap: wrap; padding: 5px 14px; background: var(--panel); }
 .chips .lbl { color: var(--muted); align-self: center; margin-right: 4px; }
-.chip { padding: 0 7px; border-radius: 10px; border: 1px solid var(--bar); cursor: pointer; }
-.chip:hover { outline: 1px solid var(--link); }
+.chip { padding: 0 7px; background: var(--bg-alt); cursor: pointer; }
+.chip:hover { outline: 1px solid var(--link); outline-offset: -1px; }
 .nosrc { padding: 8px 14px; color: var(--muted); }
 table.src td { padding-top: 0; padding-bottom: 0; }
 table.src td.ln { color: var(--muted); user-select: none; }
+tr.rowlink { cursor: pointer; }
 table.src tr.clickable { cursor: pointer; }
 table.src tr.clickable:hover td.ln { color: var(--link); }
 table.src td.self, table.src td.incl, table.src td.x { color: var(--muted); }
@@ -241,7 +262,7 @@ table.src td.code { overflow: visible; text-overflow: clip; white-space: pre; ta
 table.src tr.hasc td.ln::before { content: "\\25B8 "; color: var(--link); }
 table.src tr.target td { box-shadow: inset 0 0 0 2px var(--accent); }
 table.src tr.detail td { white-space: normal; overflow: visible; padding: 0; }
-.dbox { position: relative; margin: 3px 12px 8px; padding: 6px 12px; background: var(--panel); border: 1px solid var(--bar); border-radius: 4px; }
+.dbox { position: relative; margin: 3px 12px 8px; padding: 6px 12px; background: var(--panel); }
 .dbox h4 { margin: 6px 0 2px; font-size: 12px; color: var(--muted); font-weight: 600; }
 .dbox .dclose { position: absolute; top: 6px; right: 10px; color: var(--muted); }
 .dbox .dclose:hover { color: var(--link); text-decoration: none; }
@@ -250,8 +271,8 @@ table.src tr.detail td { white-space: normal; overflow: visible; padding: 0; }
 .home h2:first-of-type { margin-top: 10px; }
 @media (max-width: 720px) {
   #layout { flex-direction: column; }
-  #tree { width: auto !important; max-height: 38vh; border-bottom: 1px solid var(--bar); }
-  .split { display: none; }
+  #tree { width: auto !important; max-height: 38vh; background: var(--panel); }
+  .split, #minimap { display: none; }
   #hdr input { width: 12ch; }
 }
 """
@@ -270,6 +291,7 @@ BODY = """<div id="hdr" class="strip">
   <nav id="tree"></nav>
   <div id="split" class="split" title="drag to resize"></div>
   <section id="main"></section>
+  <div id="minimap" class="empty"><div id="mmBox"></div><div id="mmViewport" hidden></div></div>
 </div>
 <script id="heatdata" type="application/json">__DATA__</script>
 <script>
@@ -281,6 +303,7 @@ __THEME_JS__
 const D = JSON.parse(document.getElementById("heatdata").textContent);
 const files = D.files, fns = D.functions;
 const treeEl = document.getElementById("tree"), mainEl = document.getElementById("main");
+const minimapEl = document.getElementById("minimap"), mmBox = document.getElementById("mmBox"), mmViewport = document.getElementById("mmViewport");
 const store = Theme.store;
 let scale = store.get("heat.scale") || "global", sortMode = store.get("heat.sort") || "heat", curFile = null, query = "";
 document.getElementById("scale").value = scale;
@@ -380,6 +403,11 @@ const SYMBOL_CHARS = 20; // visible characters of a function name before it is c
 // A .tbl box: a fixed-layout table with widths in characters (everything is
 // monospace). Mirrors theme.table_render() in theme.py. cols: {label, title,
 // num, width, clip, cls}; cells: a string, or {text, html, style, cls, title}.
+// opts.rowHref: one hash per row (or "" to skip) makes the whole row a click
+// target (see the delegated click handler below, "row-click"), even though
+// only the "defined at" cell's own <a> visibly reacts to hover -- a plain
+// row has nothing else to click on, and repeating the link's hover style
+// on every cell would suggest each cell opens something different.
 const PAD = 3; // 1ch padding each side + 1ch slack for the divider bar and ch rounding
 function table(key, cols, rows, opts) {
   opts = opts || {};
@@ -398,8 +426,9 @@ function table(key, cols, rows, opts) {
   h += `</colgroup><thead><tr>`;
   for (const c of cols) h += `<th${c.num ? ' class="n"' : ""}${c.title ? ` title="${esc(c.title)}"` : ""}>${esc(c.label)}</th>`;
   h += `</tr></thead><tbody>`;
-  for (const r of rc) {
-    h += "<tr>";
+  rc.forEach((r, ri) => {
+    const href = opts.rowHref && opts.rowHref[ri];
+    h += href ? `<tr class="rowlink" data-href="${esc(href)}">` : "<tr>";
     r.forEach((c, i) => {
       const col = cols[i] || {};
       const cls = [col.num ? "n" : "", col.cls || "", c.cls || ""].filter(Boolean).join(" ");
@@ -407,7 +436,7 @@ function table(key, cols, rows, opts) {
       h += `<td${cls ? ` class="${cls}"` : ""}${c.style ? ` style="${c.style}"` : ""}${title ? ` title="${esc(title)}"` : ""}>${c.html != null ? c.html : esc(text)}</td>`;
     });
     h += "</tr>";
-  }
+  });
   h += `</tbody></table></div>`;
   return h + `</div>`;
 }
@@ -521,34 +550,42 @@ const SELF = { label: "self", title: "share of the total spent on this line/func
 function renderHome() {
   curFile = null;
   let h = `<div class="home">`;
-  h += `<p><b>${esc(ev.key)}</b> = ${esc(ev.long || ev.key)}. Every percentage is the share of the <b title="${fmtN(TOTAL)}">${fmtH(TOTAL)}</b> total for that event. Click a file in the tree, or a line below. In a listing, click a line number to see every event for that line, what it calls (and, on a function's first line, who calls it). Pick another event in the header to re-color everything by cache misses or branch mispredicts.</p>`;
+  const lineRows = topLines(60);
   h += `<h2>Hottest lines by ${esc(evLabel(ev))}</h2>` + table("heat.home.lines",
-    [{ label: "#", title: "rank", num: true }, SELF, evCol(ev), ...extraCols(),
+    [{ label: "#", title: "rank", num: true }, SELF,
      { label: "function", title: `the function the line belongs to (first ${SYMBOL_CHARS} characters; drag the bar for more)`, width: SYMBOL_CHARS },
+     { label: "defined at", title: "file:line; opens the listing there", clip: 28 },
      { label: "source", title: "the source line, trimmed; drag the bar for more", clip: 36 },
-     { label: "defined at", title: "file:line; opens the listing there", clip: 28 }],
-    topLines(60).map((t, i) => {
+     evCol(ev), ...extraCols()],
+    lineRows.map((t, i) => {
       const [path, ln, cost, fnidx, snip] = t, rec = files[path].lines[ln];
-      return [String(i + 1), { text: fmtPct(cost), style: heatBg(heatT(cost, MAXP)) }, num(cost), ...extraCells(rec[0]),
-              { text: fnName(fnidx), title: fnName(fnidx) }, snip,
-              { text: path + ":" + ln, html: link(path, ln, path + ":" + ln) }];
-    }));
+      return [String(i + 1),
+              { text: fmtPct(cost), style: heatBg(heatT(cost, MAXP)) },
+              { text: fnName(fnidx), title: fnName(fnidx) },
+              { text: path + ":" + ln, html: link(path, ln, path + ":" + ln) },
+              snip, num(cost), ...extraCells(rec[0])];
+    }), { fill: true, rowHref: lineRows.map(t => hashFor(t[0], t[1])) });
   const topF = fns.map((f, i) => [i, val(f.self)]).filter(t => t[1] > 0).sort((a, b) => b[1] - a[1]).slice(0, 60);
   h += `<h2>Hottest functions by self ${esc(evLabel(ev))}</h2>` + table("heat.home.functions",
-    [{ label: "#", title: "rank", num: true }, SELF, { label: "incl", title: "inclusive: self plus everything it calls", num: true },
-     ...extraCols(), { label: "calls", title: "times the function was entered", num: true },
+    [{ label: "#", title: "rank", num: true }, SELF,
      { label: "function", title: `first ${SYMBOL_CHARS} characters; drag the bar for more`, width: SYMBOL_CHARS },
-     { label: "defined at", title: "file:line of the function's first executed line", clip: 48 }],
+     { label: "defined at", title: "file:line of the function's first executed line", clip: 48 },
+     { label: "calls", title: "times the function was entered", num: true },
+     { label: "incl", title: "inclusive: self plus everything it calls", num: true }, ...extraCols()],
     topF.map(([fi, s], i) => {
       const f = fns[fi], loc = f.line ? f.file + ":" + f.line : f.file, ncalls = f.callers.reduce((a, c) => a + c[4], 0);
-      return [String(i + 1), { text: fmtPct(s), style: heatBg(heatT(s, MAXP)) }, fmtPct(s + val(f.calls)), ...extraCells(f.self),
-              ncalls ? num(ncalls) : "", { text: f.name, title: f.name }, { text: loc, html: link(f.file, f.line, loc) }];
-    }));
+      return [String(i + 1),
+              { text: fmtPct(s), style: heatBg(heatT(s, MAXP)) },
+              { text: f.name, title: f.name },
+              { text: loc, html: link(f.file, f.line, loc) },
+              ncalls ? num(ncalls) : "", fmtPct(s + val(f.calls)), ...extraCells(f.self)];
+    }), { fill: true, rowHref: topF.map(([fi]) => hashFor(fns[fi].file, fns[fi].line)) });
   h += `</div>`;
   mainEl.innerHTML = h;
   mainEl.scrollTop = 0;
   renderTree();
   Theme.init(mainEl);
+  minimapClear();
 }
 
 function renderFile(path, line) {
@@ -610,11 +647,128 @@ function renderFile(path, line) {
   mainEl.innerHTML = h;
   renderTree();
   Theme.init(mainEl);
+  minimapBuild(nlines);
   if (line) {
     const el = document.getElementById("L" + line);
     if (el) { el.scrollIntoView({ block: "center" }); toggleDetail(path, line, true); }
-  } else if (first) mainEl.scrollTop = 0;
+  } else if (first) {
+    const hottest = hot.length ? hot[0][0] : 0;
+    const el = hottest ? document.getElementById("L" + hottest) : null;
+    if (el) el.scrollIntoView({ block: "center" }); else mainEl.scrollTop = 0;
+  }
+  minimapSync();
 }
+
+// ---------- minimap ----------
+// A VS-Code-style scaled thumbnail of the current file's source column,
+// between #split and #main. Built once per renderFile call by cloning the
+// live table.src rows (dropping every column but .code, since only the
+// source's own coloring is wanted, not line/self/calls/event) rather than
+// re-rendering from the model a second time -- this way it can never drift
+// out of sync with what the source table actually shows. CSS transform:
+// scale() then shrinks the clone to fit; the clone itself is never
+// rebuilt except by the next renderFile, so resize only has to reposition
+// and rescale the existing DOM (minimapLayout), not re-snapshot it.
+const MM_MIN_COLS = 80; // never zoom in tighter than 80 source columns wide
+const MM_MIN_LINES = 40; // below this the file can't scroll off-screen; omit the minimap
+let mmChPx = 0, mmLineH = 0, mmScale = 1, mmNaturalH = 0;
+function minimapClear() {
+  minimapEl.classList.add("empty");
+  mmBox.innerHTML = "";
+  mmViewport.hidden = true;
+}
+function minimapBuild(nlines) {
+  const table = mainEl.querySelector("table.src");
+  if (!table || nlines < MM_MIN_LINES) { minimapClear(); return; }
+  // Measure the monospace cell size straight from the live table so the
+  // clone's scale is exact regardless of font metrics.
+  const probeRow = table.tBodies[0] && table.tBodies[0].rows[0];
+  const probeCell = probeRow && probeRow.querySelector("td.code");
+  if (!probeCell) { minimapClear(); return; }
+  mmLineH = probeRow.getBoundingClientRect().height || 15;
+  const span = document.createElement("span");
+  span.textContent = "0123456789";
+  span.style.cssText = "position:absolute;visibility:hidden;white-space:pre;font:inherit";
+  probeCell.appendChild(span);
+  mmChPx = span.getBoundingClientRect().width / 10 || 7.2;
+  probeCell.removeChild(span);
+
+  const clone = document.createElement("table");
+  clone.className = "src";
+  const tbody = document.createElement("tbody");
+  for (const row of table.tBodies[0].rows) {
+    if (row.classList.contains("detail")) continue; // never open at build time, but be safe
+    const code = row.querySelector("td.code");
+    if (!code) continue;
+    const tr = document.createElement("tr");
+    tr.className = row.className;
+    tr.style.cssText = row.style.cssText;
+    tr.appendChild(code.cloneNode(true));
+    tbody.appendChild(tr);
+  }
+  clone.appendChild(tbody);
+  mmBox.innerHTML = "";
+  mmBox.appendChild(clone);
+  mmNaturalH = nlines * mmLineH;
+  minimapEl.classList.remove("empty");
+  mmViewport.hidden = false;
+  minimapLayout();
+}
+function minimapLayout() {
+  if (minimapEl.classList.contains("empty")) return;
+  const bandW = minimapEl.clientWidth, bandH = minimapEl.clientHeight;
+  mmScale = Math.min(1, bandW / (MM_MIN_COLS * mmChPx));
+  mmBox.style.transform = `scale(${mmScale})`;
+  mmBox.style.transformOrigin = "top left";
+  const scaledH = mmNaturalH * mmScale;
+  // Shorter than the band: shorten the box itself (top-aligned) rather than
+  // stretching the content or leaving dead, look-clickable space below it.
+  mmBox.style.width = (bandW / mmScale) + "px";
+  minimapEl.style.height = Math.min(scaledH, bandH) + "px";
+  minimapSync();
+}
+function minimapSync() {
+  if (minimapEl.classList.contains("empty")) return;
+  const bandH = minimapEl.clientHeight;
+  const scaledH = mmNaturalH * mmScale;
+  const scrollable = mainEl.scrollHeight - mainEl.clientHeight;
+  const vh = scrollable > 0 ? Math.max(8, bandH * (mainEl.clientHeight / mainEl.scrollHeight)) : bandH;
+  const maxTop = Math.max(0, Math.min(bandH, scaledH) - vh);
+  const vy = scrollable > 0 ? (mainEl.scrollTop / scrollable) * maxTop : 0;
+  mmViewport.style.top = vy + "px";
+  mmViewport.style.height = vh + "px";
+}
+mainEl.addEventListener("scroll", minimapSync);
+minimapEl.addEventListener("click", e => {
+  if (e.target.closest("#mmViewport")) return; // the viewport box has its own drag handler
+  const rect = minimapEl.getBoundingClientRect();
+  const scaledH = Math.min(mmNaturalH * mmScale, rect.height);
+  const scrollable = mainEl.scrollHeight - mainEl.clientHeight;
+  if (scrollable <= 0) return;
+  const frac = Math.max(0, Math.min(1, (e.clientY - rect.top) / scaledH));
+  mainEl.scrollTop = frac * scrollable;
+});
+mmViewport.addEventListener("pointerdown", e => {
+  const rect = minimapEl.getBoundingClientRect();
+  const y0 = e.clientY, top0 = mmViewport.offsetTop;
+  const scaledH = Math.min(mmNaturalH * mmScale, rect.height);
+  const vh = mmViewport.getBoundingClientRect().height;
+  const scrollable = mainEl.scrollHeight - mainEl.clientHeight;
+  mmViewport.classList.add("drag");
+  if (mmViewport.setPointerCapture) mmViewport.setPointerCapture(e.pointerId);
+  const move = ev => {
+    const maxTop = Math.max(0, scaledH - vh);
+    const top = Math.max(0, Math.min(maxTop, top0 + (ev.clientY - y0)));
+    if (scrollable > 0) mainEl.scrollTop = (top / maxTop || 0) * scrollable;
+  };
+  const up = () => {
+    mmViewport.classList.remove("drag");
+    for (const [t, f] of [["pointermove", move], ["pointerup", up], ["pointercancel", up]]) mmViewport.removeEventListener(t, f);
+  };
+  for (const [t, f] of [["pointermove", move], ["pointerup", up], ["pointercancel", up]]) mmViewport.addEventListener(t, f);
+  e.preventDefault();
+  e.stopPropagation(); // don't also trigger the bare-background click-to-jump
+});
 
 function toggleDetail(path, ln, forceOpen) {
   const f = files[path];
@@ -664,6 +818,9 @@ mainEl.addEventListener("click", ev2 => {
   if (chip) { location.hash = hashFor(curFile, +chip.dataset.goto); return; }
   const close = ev2.target.closest(".dclose");
   if (close) { ev2.preventDefault(); close.closest("tr.detail").remove(); return; }
+  if (ev2.target.closest("a")) return; // let the row's own link (e.g. "defined at") handle its own click
+  const linkRow = ev2.target.closest("tr.rowlink");
+  if (linkRow) { location.hash = linkRow.dataset.href; return; }
   const row = ev2.target.closest("tr.clickable");
   if (row && curFile) { toggleDetail(curFile, +row.querySelector("td.ln").dataset.ln, false); return; }
 });
@@ -687,6 +844,11 @@ window.addEventListener("hashchange", route);
 // (see FRAME_JS in build_report.py) posts this instead of reloading the
 // iframe, so it jumps back to the hottest-lines/functions overview.
 window.addEventListener("message", e => { if (e.data === "theme:home") location.hash = ""; });
+// Same 120ms-debounced resize pattern as theme.js's own relayout() listener
+// (kept separate rather than folded into Theme.relayout: the minimap only
+// needs to reposition/rescale existing DOM, never re-snapshot it).
+let mmResizeTimer = null;
+window.addEventListener("resize", () => { clearTimeout(mmResizeTimer); mmResizeTimer = setTimeout(minimapLayout, 120); });
 evSel.addEventListener("change", e => setEvent(e.target.value));
 document.getElementById("scale").addEventListener("change", e => { scale = e.target.value; store.set("heat.scale", scale); route(); });
 document.getElementById("sort").addEventListener("change", e => { sortMode = e.target.value; store.set("heat.sort", sortMode); renderTree(); });

@@ -1,72 +1,9 @@
 #!/usr/bin/env bash
-# curl perf profiling pipeline.
-#
-#   dev/profile.sh [--verbose] [--top N] [OUTDIR] [PERFTEST|all] [COMPILER FLAGS...]
-#
-#   --verbose  show everything the tools print (cmake, ninja, valgrind, the
-#              perf binary, the page generators) under a "== N: ..." banner
-#              per step. Without it the run is one status line per thing --
-#              the build, each test, with "all" the merged report -- built
-#              up as its steps finish (ten lines for "all"), the last one
-#              ending in the report to open; everything the tools print goes
-#              to dev/trace/profile.<ts>.log instead and a failing command's
-#              output is shown with the error.
-#   --top N    functions listed in each summary's "top N functions by self"
-#              table (default: 50).
-#   --verbose and --top are recognized only before OUTDIR/PERFTEST, in
-#   either order.
-#   OUTDIR     where the HTML report goes (mkdir -p). Default: dev/report.
-#              A relative path is taken relative to the caller's cwd.
-#   PERFTEST   first argument to the perf binary: one of the tests in
-#              tests/perf/Makefile.inc (urlparser, base64enc, ...), or "all"
-#              to run every test into OUTDIR/<test>/ plus a combined report
-#              over all of them into OUTDIR/all/. Default: all.
-#   FLAGS...   everything else is passed to the compiler for a fresh curl
-#              build (CMAKE_C_FLAGS), e.g. -DUSE_AVX512. The flags are
-#              *reset* on every run, so omitting them builds plain again.
-#
-#   dev/profile.sh ~/artifacts urlparser -DUSE_AVX512
-#   dev/profile.sh --verbose
-#
-# For each test:
-#   1. configure + build the RelWithDebInfo tree (-O2 -g; ccache when found)
-#   2. run the test under callgrind with --cache-sim=yes --branch-sim=yes,
-#      pinned to one core (unpinned runs on WSL2 vary ~2x)
-#   3. run the test natively, pinned, for the real timing numbers
-#   4. convert: speedscope flame graph (one profile per event), per-line
-#      source heat map, the index page with the top-N functions (--top)
-# With "all", the same pages are then built once more over every test's
-# callgrind file merged into one profile (the perf binary runs one test per
-# process, so the combined profile is the sum of the runs above) and the
-# native times summed, into OUTDIR/all/.
-#
-# Layout of OUTDIR (or OUTDIR/<test>/ with "all"):
-#   index.html            strip (title, [summary] [flame graph] [heat map]
-#                         [native timing]) over the summary (raw data, top-N
-#                         functions with callers, valgrind log); the strip
-#                         loads the pages below into a frame
-#   flame-graph/index.html  speedscope, auto-loads the profile
-#   heat-map/index.html   per-line heat map with cache-miss columns
-#   perf-tool/index.html  native timing run output
-# With "all", OUTDIR/index.html is the same kind of page over the tests
-# ([overview] [all] [base64dec] ... alphabetical, [curl.se/perf] [help]
-# [reset columns] far right). README.md (a help screen for the callgrind
-# event columns and the flame graph/heat map, copied from dev/README.md)
-# sits next to that top-level index.html; [help] opens it.
-# Raw callgrind data, valgrind log and speedscope JSON stay in dev/trace/,
-# with the quiet run's profile.<ts>.log next to them (same <ts>).
-#
-# Environment:
-#   CALLGRIND_CPU    core to pin to (default 3)
-#   CALLGRIND_LOOPS  loop count for the callgrind run (default: 200 for
-#                    urlparser, 200000 for the others; callgrind is ~50x
-#                    slower than native, so this is not the tool's default)
-#   CALLGRIND_OPTS   extra valgrind options, e.g. "--simulate-hwpref=yes
-#                    --simulate-wb=yes --cacheuse=yes"
-#   PROFILE_BUILD_DIR  build tree (default build-relwithdebinfo)
+# curl perf profiling pipeline. Full docs: dev/perf2html.md (man dev/perf2html.md,
+# or dev/perf2html.sh --help for a plain-text dump of the same file).
 set -euo pipefail
 
-usage_show() { awk 'NR > 1 && !/^#/ { exit } NR > 1 { sub(/^# ?/, ""); print }' "$0"; }
+usage_show() { cat "$(dirname "$0")/perf2html.md"; }
 
 log_say() { if [ "$VERBOSE" = 1 ]; then echo "$@"; fi; }
 
@@ -232,7 +169,7 @@ run_one() {
     "$BIN" "$test" "$loops"
   elapsed=$(( SECONDS - t0 ))
   if [ "$elapsed" -ge 60 ]; then took="$((elapsed / 60))m$((elapsed % 60))s"; else took="${elapsed}s"; fi
-  [ "$VERBOSE" = 1 ] || printf ' %s | native' "$took"
+  [ "$VERBOSE" = 1 ] || printf ' %s' "$took"
 
   log_say "== 3 [$test]: native timing run (pinned to CPU $CPU) =="
   {
@@ -240,8 +177,12 @@ run_one() {
     "${TASKSET[@]}" "$BIN" "$test" 2>&1
   } | { if [ "$VERBOSE" = 1 ]; then tee "$perf_out"; else tee "$perf_out" >>"$RUN_LOG"; fi; } \
     || { { [ "$VERBOSE" = 1 ] || echo; echo "error: $BIN $test failed; its output is in $perf_out"; } >&2; exit 1; }
-  # a native run's lines worth a status line, as "Time/URL: 137.66 ns, Errors: 1240000"
-  [ "$VERBOSE" = 1 ] || printf ' %s' "$(awk '/^(Time\/[A-Za-z]+|Errors):/ { $1 = $1; s = s (s ? ", " : "") $0 } END { print s }' "$perf_out")"
+  # a native run's Time/<unit> line collapsed to "133.94ns/loop" (or "/URL"),
+  # with any Errors: line (urlparser only) appended as ", Errors: 1240000"
+  [ "$VERBOSE" = 1 ] || printf ' %s' "$(awk '
+    /^Time\/[A-Za-z]+:/ { unit = $1; sub(/^Time\//, "", unit); sub(/:$/, "", unit); t = $2 " " $3; sub(/ /, "", t); s = t "/" unit }
+    /^Errors:/ { $1 = $1; s = s (s ? ", " : "") $0 }
+    END { print s }' "$perf_out")"
 
   CG_FILES=("$cg_out")
   LOG_FILES=("$log")
@@ -254,7 +195,8 @@ run_one() {
 # index over every test.
 run_all() {
   local out="$1"
-  local t loops usecs total=0 rows="" args perf_out="$out/perf-tool/output.txt"
+  local t loops usecs total=0 rows="" args perf_out="$out/perf-tool/output.txt" t0 elapsed took
+  t0=$SECONDS
   mkdir -p "$out/perf-tool"
   CG_FILES=()
   LOG_FILES=()
@@ -278,7 +220,6 @@ run_all() {
     printf '%s' "$rows"
     echo "Time:     $total usecs"
   } | { if [ "$VERBOSE" = 1 ]; then tee "$perf_out"; else tee "$perf_out" >>"$RUN_LOG"; fi; }
-  [ "$VERBOSE" = 1 ] || printf '%-13s%d profiles merged | Time: %s usecs' all "${#TESTS[@]}" "$total"
 
   report_render all "$out" "$TRACE_DIR/all.$STAMP.speedscope.json" \
     "curl perf all ($STAMP)"
@@ -291,6 +232,9 @@ run_all() {
         --test all)
   for t in "${TESTS[@]}"; do args+=(--test "$t"); done
   test_run python3 dev/scripts/build_report.py overview "${args[@]}"
+  elapsed=$(( SECONDS - t0 ))
+  if [ "$elapsed" -ge 60 ]; then took="$((elapsed / 60))m$((elapsed % 60))s"; else took="${elapsed}s"; fi
+  [ "$VERBOSE" = 1 ] || printf '%-13s%d profiles merged | %s wrote %s' all "${#TESTS[@]}" "$took" "$OUT_DIR/index.html"
 }
 
 main() {
@@ -299,7 +243,7 @@ main() {
 
   mkdir -p "$OUT_DIR" "$TRACE_DIR"
   cp "$DEV_DIR/README.md" "$OUT_DIR/README.md"
-  [ "$VERBOSE" = 1 ] || echo "dev/profile.sh $STAMP: OUTDIR=$OUT_DIR PERFTEST=$TEST${CFLAGS_EXTRA[*]:+ CFLAGS=${CFLAGS_EXTRA[*]}}" >"$RUN_LOG"
+  [ "$VERBOSE" = 1 ] || echo "dev/perf2html.sh $STAMP: OUTDIR=$OUT_DIR PERFTEST=$TEST${CFLAGS_EXTRA[*]:+ CFLAGS=${CFLAGS_EXTRA[*]}}" >"$RUN_LOG"
 
   build_compile
 
@@ -308,8 +252,12 @@ main() {
     if [ "$TEST" = all ]; then run_one "$t" "$OUT_DIR/$t"; [ "$VERBOSE" = 1 ] || printf '\n'
     else run_one "$t" "$OUT_DIR"; fi
   done
-  if [ "$TEST" = all ]; then run_all "$OUT_DIR/all"; fi
-  [ "$VERBOSE" = 1 ] || printf ' -> %s\n' "$OUT_DIR/index.html"
+  if [ "$TEST" = all ]; then
+    run_all "$OUT_DIR/all"
+    [ "$VERBOSE" = 1 ] || printf '\n'
+  else
+    [ "$VERBOSE" = 1 ] || printf ' -> %s\n' "$OUT_DIR/index.html"
+  fi
 
   log_say "== 8: validate -> $OUT_DIR =="
   test_run python3 dev/scripts/validate_report.py "$OUT_DIR"

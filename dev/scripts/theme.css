@@ -1,4 +1,4 @@
-/* Shared stylesheet for every page dev/profile.sh writes. theme.py prepends
+/* Shared stylesheet for every page dev/perf2html.sh writes. theme.py prepends
    the palette as :root variables (--bg, --fg, --link, --bar, ... and the raw
    pairs --blue/--blue-l etc.) and inlines the result into each page. */
 * { box-sizing: border-box; }
@@ -12,13 +12,19 @@ h2 { font-size: 12px; font-weight: 600; color: var(--fg-dim); margin: 22px 0 6px
 p { margin: 4px 0; color: var(--muted); max-width: 96ch; }
 b { color: var(--fg); font-weight: 600; }
 pre { font: inherit; margin: 0; white-space: pre; overflow-x: auto; }
-select, input { font: inherit; color: var(--fg); background: var(--bg);
-  border: 1px solid var(--bar); border-radius: 3px; padding: 2px 6px; }
+/* The only lines anywhere in this UI, doubled in width, sit on elements the
+   mouse can actually drag: a column-resize bar (.bar::before) and a pane
+   splitter (.split). Everything else that used to be a 1px --bar border --
+   strips, table/box outlines, column and row dividers, control outlines --
+   is drawn with no border at all; adjacent panels, panes and table columns
+   are told apart by --panel/--bg-alt/--nav background shading instead. */
+select, input { font: inherit; color: var(--fg); background: var(--bg); padding: 2px 6px;
+  border: 0; border-radius: 0; }
 
 /* strip: the page's title, then [links] the old-fashioned way; the current
    one is lit. The frame pages' toolbar and the heat map's header are strips. */
 .strip { display: flex; flex-wrap: wrap; gap: 2px 8px; align-items: center; flex: none;
-  padding: 5px 12px; background: var(--nav); border-bottom: 1px solid var(--bar); }
+  padding: 5px 12px; background: var(--nav); }
 .strip a { padding: 0 2px; white-space: nowrap; }
 .strip a:hover { background: var(--link); color: var(--nav); text-decoration: none; }
 .strip a.on { color: var(--accent); }
@@ -26,42 +32,55 @@ select, input { font: inherit; color: var(--fg); background: var(--bg);
   padding: 3px 8px; margin: -5px 6px -5px -12px; align-self: stretch; display: flex; align-items: center; }
 .strip .sp { flex: 1; }
 
-/* frame: the toolbar over either the summary page or an iframe */
+/* frame: the toolbar over either the summary page or an iframe. The outer
+   document itself never scrolls -- body.frame > main and the iframe (which
+   owns its own inner document's scrolling) are the only things that do --
+   so a sub-pixel rounding mismatch between 100vh and the two flex
+   children's own heights (seen with real, non-overlay scrollbars; not
+   reproducible headless) can never manifest as a spurious near-zero-range
+   scrollbar on the frame page itself. */
+html:has(body.frame), body.frame { overflow: hidden; }
 body.frame { display: flex; flex-direction: column; height: 100vh; }
 body.frame > main { flex: 1; min-height: 0; overflow: auto; }
 body.frame > iframe { flex: 1; min-height: 0; width: 100%; border: 0; background: var(--bg); }
 .page { padding: 24px 36px 48px; }
 
-/* tables: no borders except the column divider bars; alternate columns shaded;
-   the header row stays put while the page scrolls past the table. The box
-   never scrolls on its own: it is as long as the table, and as wide (or,
-   with .fill, as wide as the page, the last column cut off at the edge).
-   Column widths are set in ch by the generators: content + 1ch padding each
-   side + 1ch slack for the divider bar and fractional rounding. Each
+/* tables: no borders anywhere on the box or its columns/rows -- alternate
+   columns are shaded (--bg-alt) instead, and the header row (--panel) reads
+   as a header by its own background, not a rule under it. The header row
+   stays put while the page scrolls past the table. The box never scrolls
+   on its own: it is as long and as wide as its columns -- with .fill that
+   starts at 90% of the viewport (initTable in theme.js bakes that in as an
+   explicit width on the last column, once, at first render) and never
+   re-consults the viewport again; dragging any bar, including the trailing
+   one, only ever changes the one column's own width, growing or shrinking
+   the table's total width with it, and the page (or the nearest scrolling
+   ancestor) picks up a scrollbar rather than the table clipping itself.
+   The 14px margin sits outside the box on every side but the top, so the
+   trailing bar's grab area always has clear space next to it, including
+   against the page's own edge once a table has grown past its container.
+   Column widths are set in ch by the generators: content + 1ch padding
+   each side + 1ch slack for the divider bar and fractional rounding. Each
    column's full meaning is a tooltip on its header cell; see README.md
    (the [help] link) for the event glossary. */
-.tbl { position: relative; width: fit-content; margin: 4px 0 10px; border: 1px solid var(--bar); border-radius: 4px; }
-.tbl.fill { width: 100%; }
+.tbl { position: relative; width: fit-content; margin: 4px 14px 14px 0; }
 .band { position: sticky; top: 0; z-index: 2; }
-.tbl-cols { position: relative; }
+.tbl-cols { position: relative; width: fit-content; }
 table.cols { table-layout: fixed; border-collapse: separate; border-spacing: 0; width: 0; }
-table.cols.fill { width: 100%; }
 table.cols col.alt { background: var(--bg-alt); }
 table.cols th, table.cols td { padding: 1px 1ch; white-space: nowrap; overflow: hidden;
-  text-overflow: ellipsis; vertical-align: top; border: 0; border-right: 1px solid var(--bar); }
-table.cols tr > :last-child { border-right: 0; }
+  text-overflow: ellipsis; vertical-align: top; border: 0; }
 table.cols th { position: sticky; top: 0; z-index: 1; text-align: left; font-weight: 600;
   color: var(--fg-dim); background: var(--panel); }
 table.cols .n { text-align: right; font-variant-numeric: tabular-nums; }
 table.cols .dim { color: var(--muted); }
-table.cols.lines th, table.cols.lines td { border-bottom: 1px solid var(--bar); }
-table.cols.lines tbody > tr:last-child > td { border-bottom: 0; }
-/* the divider bar is the cells' 1px right border; the .bar overlay is the
-   9px grab area around it, and while the mouse is on it (or dragging) the
-   line is drawn 2px wide, one pixel further left, in the same color */
+/* the only line a column boundary draws is the drag bar's own, on hover or
+   while active (.bar overlays a 9px grab area on a 4px-wide visible line,
+   centered on the boundary); at rest a column is told apart from its
+   neighbor only by the alternating background, same as a row in .lines */
 .bar { position: absolute; top: 0; bottom: 0; width: 9px; margin-left: -5px; z-index: 1;
   cursor: col-resize; touch-action: none; }
-.bar::before { content: ""; position: absolute; top: 0; bottom: 0; left: 3px; width: 2px; }
+.bar::before { content: ""; position: absolute; top: 0; bottom: 0; left: 2.5px; width: 4px; }
 .bar:hover::before, .bar.active::before { background: var(--bar); }
 
 ul.rawdata { margin: 4px 0 10px; padding-left: 20px; }
@@ -75,9 +94,11 @@ details.sec summary h2 { display: inline; margin: 22px 0 6px; color: inherit; }
 details.sec[open] summary { margin-bottom: 2px; }
 pre.logbox { padding: 8px 12px; background: var(--panel); max-height: 60vh; overflow: auto; }
 
-/* splitter between two panes (the heat map's tree and listing): a 1px line
-   in a 7px grab area, 2px wide while the mouse is on it */
+/* splitter between two panes (the heat map's tree and listing): a 2px line
+   in a 7px grab area, 4px wide while the mouse is on it -- the pane's own
+   background is what reads as its edge otherwise; this line exists because
+   the splitter is draggable, not as plain decoration. */
 .split { flex: none; width: 7px; cursor: col-resize; touch-action: none;
-  background: linear-gradient(90deg, transparent 3px, var(--bar) 3px, var(--bar) 4px, transparent 4px); }
+  background: linear-gradient(90deg, transparent 2.5px, var(--bar) 2.5px, var(--bar) 4.5px, transparent 4.5px); }
 .split:hover, .split.active {
-  background: linear-gradient(90deg, transparent 2px, var(--bar) 2px, var(--bar) 4px, transparent 4px); }
+  background: linear-gradient(90deg, transparent 1.5px, var(--bar) 1.5px, var(--bar) 5.5px, transparent 5.5px); }

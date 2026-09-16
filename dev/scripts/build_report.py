@@ -148,7 +148,7 @@ def strip_render(title: str, links: list[tuple[str, str, str, str]], perf_link: 
     opened on its own). A per-test strip nested in the overview's iframe
     (report_test's own strip) omits it, since the overview strip above it
     already reaches down into that frame. [help] follows perf_link for the
-    same reason and points at README.md, which profile.sh copies next to
+    same reason and points at README.md, which perf2html.sh copies next to
     this page."""
     parts = [f'<b class="title" id="title">{html_esc(title)}</b>']
     parts += [f'<a href="{html_esc(href)}" data-view="{html_esc(key)}" data-title="{html_esc(t)}">[{html_esc(label)}]</a>'
@@ -211,13 +211,14 @@ def functions_table(p: cg.Profile, event: str, top: int, repo_root: str) -> str:
     ranked = sorted(((p.value(vec, event), fn) for fn, vec in p.fn_self.items() if p.value(vec, event) > 0),
                     key=lambda t: (-t[0], t[1]))[:top]
     max_pct = 100.0 * ranked[0][0] / total if ranked else 1.0
-    cols = [Col("% self", f"share of all {event} spent in the function itself, not in what it calls", num=True),
+    cols = [Col("#", "rank", num=True),
+            Col("% self", f"share of all {event} spent in the function itself, not in what it calls", num=True),
             Col("symbol", f"the function, first {SYMBOL_CHARS} characters (drag the bar for more); "
                           "opens the heat map at its first line", width=SYMBOL_CHARS),
             Col("calls", "times the function was entered", num=True),
             Col("callers", "who called it, with the share of those calls; cut off at the edge, hover for all")]
     rows: list[list[object]] = []
-    for s, fn in ranked:
+    for rank, (s, fn) in enumerate(ranked, 1):
         by_caller: dict[str, int] = {}
         for (cfn, _, _), (count, _) in p.callers.get(fn, {}).items():
             by_caller[cfn] = by_caller.get(cfn, 0) + count
@@ -233,7 +234,8 @@ def functions_table(p: cg.Profile, event: str, top: int, repo_root: str) -> str:
             return f'<a href="{chref}">{label}</a>' if chref else label
 
         who_html = ", ".join(caller_html(cfn, n) for cfn, n in by_caller_sorted)
-        rows.append([Cell(theme.num_pct(share), style=theme.heat_style(theme.heat_t(share, max_pct))),
+        rows.append([str(rank),
+                     Cell(theme.num_pct(share), style=theme.heat_style(theme.heat_t(share, max_pct))),
                      Cell(fn, title=fn, html=f'<a href="{href}">{html_esc(fn)}</a>' if href else None),
                      theme.num_human(ncalls) if ncalls else "",
                      Cell(who, title=who, html=who_html) if who else Cell("(no recorded caller)", cls="dim")])

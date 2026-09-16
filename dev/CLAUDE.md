@@ -121,14 +121,16 @@ Ryzen AI 9 HX 370, WSL2) unpinned `-O2` runs vary **~106%** run to run
 taskset -c 3 ./build-relwithdebinfo/tests/perf/perf urlparser 10000
 ```
 
-`dev/profile.sh [--verbose] [OUTDIR] [PERFTEST|all] [CFLAGS...]` automates
-all of it:
+`dev/perf2html.sh [--verbose] [OUTDIR] [PERFTEST|all] [CFLAGS...]` automates
+all of it; full option/output/environment reference lives in
+`dev/perf2html.md` (a man-page-style doc, `dev/perf2html.sh --help` dumps
+it), not repeated here:
 
 ```sh
-dev/profile.sh                                   # -> dev/report, every perf test
-dev/profile.sh ~/artifacts urlparser             # one test
-dev/profile.sh ~/artifacts urlparser -DUSE_AVX512   # rebuild curl with that define first
-dev/profile.sh --verbose ~/artifacts urlparser   # every tool's output, a banner per step
+dev/perf2html.sh                                   # -> dev/report, every perf test
+dev/perf2html.sh ~/artifacts urlparser             # one test
+dev/perf2html.sh ~/artifacts urlparser -DUSE_AVX512   # rebuild curl with that define first
+dev/perf2html.sh --verbose ~/artifacts urlparser   # every tool's output, a banner per step
 ```
 
 - `OUTDIR` defaults to `dev/report` (gitignored); a relative path is
@@ -166,14 +168,17 @@ dev/profile.sh --verbose ~/artifacts urlparser   # every tool's output, a banner
   own wall-clock is never a perf number.
 - Output: one status line per thing, built up as its steps finish -- the
   build (`build  build-relwithdebinfo -O2 -g, ccache 3s | log
-  dev/trace/profile.<ts>.log`), each test (`urlparser  callgrind loops=200
-  2m14s | native Time/URL: 137.66 ns, Errors: 1240000`) and, with `all`,
-  the merged report (`all  8 profiles merged | Time: ... usecs`); no
+  dev/trace/profile.<ts>.log`), each test (`urlparser  callgrind loops=200000
+  5s 133.94ns/loop`, or `urlparser  callgrind loops=200 2m14s 137.66ns/URL,
+  Errors: 1240000` for urlparser specifically) and, with `all`, the merged
+  report (`all  8 profiles merged | 63s wrote OUTDIR/index.html`); no
   per-test or per-page timing beyond the native run's own numbers --
   page rendering (flame graph, heat map, index) is fast enough not to
-  warrant its own status fragment; the last line ends
-  with `-> OUTDIR/index.html`. After that, `validate_report.py OUTDIR`
-  runs as the final step and, in quiet mode, prints nothing on success --
+  warrant its own status fragment; a single-test run's last line ends
+  with `-> OUTDIR/index.html`, "all"'s merged line already ends in
+  `wrote OUTDIR/index.html` so nothing is appended after it. After that,
+  `validate_report.py OUTDIR` runs as the final step and, in quiet mode,
+  prints nothing on success --
   a broken report is a `test_run` failure like any other (nonzero exit,
   last 40 lines of its output shown) rather than a separate status line,
   since there is nothing to report when it passes. Ten lines
@@ -201,7 +206,7 @@ dev/profile.sh --verbose ~/artifacts urlparser   # every tool's output, a banner
   their call site they read as spooky action at a distance.
 
 Functions across `dev/` follow an `object_method`-style naming scheme (a
-C-identifier form of an object hierarchy, lowercase): `profile.sh`'s
+C-identifier form of an object hierarchy, lowercase): `perf2html.sh`'s
 `args_parse`, `toolchain_check`, `build_compile`, `report_render`,
 `usage_show`, `script_main`, the `log_*`/`test_*` helpers, and `run_one`/
 `run_all` (already fit unprefixed); `theme.py`'s `theme_css`/`theme_js`/
@@ -234,13 +239,16 @@ index.html               a strip across the top -- the page title as a
                          green badge cell, then [bracketed] links -- and
                          the summary under it: the valgrind log (minus its
                          9-line banner and each line's "==PID==" prefix, in
-                         a bordered box) collapsed under a chevron, then the
+                         a panel-shaded box, no border) collapsed under a
+                         chevron, then the
                          raw data (the callgrind trace file(s), as a plain
                          list of links relative to this page so OUTDIR can be
                          copied elsewhere) also collapsed under a chevron,
                          then "top N functions by self" (N is 50 by default,
-                         `dev/profile.sh --top N`; % self, symbol, calls,
-                         callers; one line per function, full page width,
+                         `dev/perf2html.sh --top N`; #, % self, symbol, calls,
+                         callers, in that column order; one line per
+                         function, full page width (90% of the viewport at
+                         first render, see "Look and feel"),
                          its callers column resizable at the right edge --
                          both the symbol and, now, each individual name in
                          the callers list link to the heat map at that
@@ -250,7 +258,7 @@ index.html               a strip across the top -- the page title as a
                          valgrind log is omitted entirely on the
                          `all` page, since every test's log would otherwise
                          be concatenated there (build_report.py test's
-                         `--no-log`, passed by profile.sh's report_render
+                         `--no-log`, passed by perf2html.sh's report_render
                          only when rendering "all"). A strip link
                          loads that page into a frame under the strip, only
                          when picked; a symbol in the summary opens the heat
@@ -267,7 +275,7 @@ perf-tool/index.html     native timing run output
 README.md                a help screen, not a manual: the callgrind event
                          columns (Ir, Dr, Dw, D1mr, ...) and a couple of
                          sentences each on the flame graph and the heat map.
-                         Copied from dev/README.md by profile.sh on every
+                         Copied from dev/README.md by perf2html.sh on every
                          run; opened by the top-level strip's `[help]` link,
                          plain (un-rendered, since there is no server)
 raw/                     the callgrind file(s) this report was built from,
@@ -311,6 +319,9 @@ Scripts (`dev/scripts/`):
   one speedscope profile per expression; `--repo-root` relativizes frame
   file paths, same as the heat map) and `build_flame_graph.py` (patches a
   copy of speedscope's `dist/release` to auto-load it) — flame-graph/.
+- `callgrind_to_cgdiff.py BEFORE... -- AFTER... -o OUT.html` — a two-run
+  regression diff, rendered as one `theme.table_render()` page (`cgdiff_render`),
+  driven by `dev/profile_diff.sh` (see "Comparing two runs" below).
 - `validate_report.py OUTDIR` — smoke test over a finished report
   directory: every expected page exists, isn't suspiciously small or a
   truncated/errored HTML document, the strip links and "top N functions"/
@@ -323,7 +334,7 @@ Scripts (`dev/scripts/`):
   the numbers are *correct*, only that the pipeline didn't silently drop
   a step. Handles both a single-test OUTDIR and an `all`/overview OUTDIR
   (detected from `index.html`'s content); `--test NAME` narrows an
-  overview check to specific tests. `dev/profile.sh` runs it as the last
+  overview check to specific tests. `dev/perf2html.sh` runs it as the last
   step against the whole `OUTDIR` it just wrote, non-verbose failures
   going through the normal `test_run` error path (nonzero exit, last 40
   log lines shown).
@@ -423,9 +434,48 @@ Speedscope keeps its own look; it is the one page the theme does not touch.
 ### Reproducing a profile
 
 ```sh
-dev/profile.sh dev/report urlparser   # regenerate everything (native timing included)
+dev/perf2html.sh dev/report urlparser   # regenerate everything (native timing included)
 xdg-open dev/report/index.html
 taskset -c 3 ./build-relwithdebinfo/tests/perf/perf urlparser 10000   # manual timing
+```
+
+### Comparing two runs
+
+`dev/profile_diff.sh BEFORE_DIR AFTER_DIR [TEST] [OUTPUT.html]` diffs two
+`dev/perf2html.sh` report directories using valgrind's own `cg_diff` (part of
+the valgrind install; not this repo's tooling) and renders the result as one
+page (`dev/scripts/callgrind_to_cgdiff.py`, same `theme.py` look as every
+other report page). `TEST` picks which test to compare when a directory
+covers more than one (an `all` overview OUTDIR); a single-test OUTDIR
+(`raw/` directly under it) doesn't need it. `raw_dir_find` in the shell
+script checks for a `*/raw` subdirectory shape before falling back to a bare
+`raw/`, so an overview OUTDIR is never confused for a single-test one even
+if the same path was previously used as one (a stale top-level `raw/` left
+over from an earlier run at that path is not picked silently).
+
+`cg_diff` only understands plain Cachegrind-format text -- no compressed
+`fn=`/`fl=` IDs, no call graph, no `ob=`, and its own header parser is
+strict about line order (`desc:`* lines, then exactly one `cmd:` line, then
+exactly one `events:` line, nothing else interleaved) -- so raw callgrind
+files can't be handed to it directly (attempted; `cg_diff` rejects them,
+first on the header shape and then, past that, on the first `ob=`/compressed
+`fn=(N)` line in the body: "malformed line"). `cgdump_write` in
+`callgrind_to_cgdiff.py` reduces each side to that minimal shape from the
+already-parsed `callgrind.py` `Profile` (`fn_self`/`fn_home`, one `fl=`/
+`fn=`/cost-line triple per function, no call graph) before handing both to
+the real `cg_diff` binary via `subprocess`, and parses its output back
+(`cgdiff_run`). This also means the diff is at **function**, not line,
+granularity: `cg_diff` always emits line `0` for every row ("we don't try to
+give line-level CCs, due to the possibility of code changes causing line
+numbers to move around" -- its own comment), so a line-level regression diff
+isn't something `cg_diff` itself can produce; `cgdiff_render` sorts the
+result by `|Δ event|` descending and heat-colors growth (`--bad`) separately
+from shrinkage (`--good`).
+
+```sh
+dev/profile_diff.sh dev/report-before dev/report-after urlparser
+# or, from two single-test OUTDIRs:
+dev/profile_diff.sh ~/before ~/after
 ```
 
 ### Line-level view
@@ -494,12 +544,25 @@ reads fine without a placeholder. The header strip no longer shows the old
 `#hmeta` line (the merged command/loop counts/generated timestamp that sat
 between `[home]` and the event dropdown) -- it was metadata nobody read
 inline, not documentation, so it was dropped outright rather than moved.
-The header's search box is labelled "search", not "find", and sits last
-in the header row (event, scale, tree, search) rather than second. The
-home view carries the 60 hottest lines (its "location" column is renamed
-"defined at" and moved to the end, after "function" and "source", instead
-of before them -- `callgrind_to_heatmap.py`'s `renderHome`) and the 60
-hottest functions. There is no `[home]`
+The header's search box is labelled "search", not "find", sits last
+in the header row (event, scale, tree, search) rather than second, and is
+36ch wide (double the original 18ch -- `#hdr input` in
+`callgrind_to_heatmap.py`'s CSS). The
+home view carries the 60 hottest lines and the 60 hottest functions, both
+tables led by `#, self, function, defined at, source/calls`, then whatever
+event/miss columns follow (`callgrind_to_heatmap.py`'s `renderHome`; the
+"location" column was renamed "defined at" and moved up front along with
+`#`, not appended after it as in an earlier pass -- there is no cols-added-
+or-removed rule broken here since `#` was already a column, just not the
+first one). Both tables are `fill: true` (see "Look and feel" for what
+that does to their width) and every row is a click target
+(`table()`'s `opts.rowHref`, and the delegated click handler on `#main`
+that checks `tr.rowlink` before the older `tr.clickable` per-line handler)
+that jumps straight to the line/function in the file view -- only the
+"defined at" cell visibly reacts to hover (its own `<a>`), since a plain
+data cell has nothing else to click on and repeating link styling on every
+cell in the row would wrongly suggest each one opens something different.
+There is no `[home]`
 button and no permanent "cold ... hot" gradient swatch in the header (the
 per-cell heat coloring speaks for itself); the header strip is just the
 event/scale/tree/search controls. Getting back to the home view from a file
@@ -507,8 +570,66 @@ listing is the outer strip's job: re-picking the already-active
 `[heat map]` link there posts a `theme:home` message into the iframe
 (`FRAME_JS` in `build_report.py`) instead of reloading it, and the heat
 map resets its own `location.hash` on receiving it. Event, scale, tree
-order, tree width and column widths are remembered in localStorage.
-`dev/profile.sh` writes it to `OUTDIR/heat-map/index.html`. Standalone:
+order, tree width and column widths are remembered in localStorage (see
+"Look and feel" for when a saved column width is dropped instead of kept).
+Clicking a filename in the tree jumps the newly opened file view straight
+to its hottest line, vertically centered, rather than opening at the top
+of the file (`renderFile`'s `first`-render branch, reusing the same
+already-computed hottest-line list the chips row shows).
+
+A file listing also gets a minimap (`#minimap`, VS Code style) after
+`#main`, at the far right of the layout (not between the splitter and
+`#main` as in an earlier pass -- VS Code's own minimap sits to the right
+of the editor, not between a file tree and the editor): a fixed 110px-wide
+band, never user-resizable, that
+gives a bird's-eye view of the whole current file so the viewer can jump
+around without repeated scrolling. Its background is `--bg`, the same
+variable `#main` itself is now explicitly given (rather than left to
+inherit from `body`), so the two are indistinguishable outside the heat
+coloring -- deliberately: like VS Code's own minimap, it should blend into
+the editor tonally, and there is no border between them (see "Look and
+feel" for why there are no decorative borders anywhere on this page).
+`minimapBuild()` (called once per
+`renderFile`, same lifecycle as the rest of that function's DOM) clones
+each row of the live `table.src`, keeping only its `td.code` cell -- per-line
+heat coloring lives on the `<tr>` itself (`tr.heat td { color: inherit }`),
+so cloning the row's `style`/`class` with just that one cell reproduces the
+coloring exactly with no second, independent render to drift out of sync.
+`minimapLayout()` then fits the clone with a plain CSS `transform: scale()`
+rather than re-laying out text at a smaller font, and is also what a
+120ms-debounced `resize` listener calls to reflow on window resize
+(mirroring theme.js's own debounced `relayout()` pattern, kept as its own
+listener since the minimap only needs to reposition/rescale existing DOM,
+never re-snapshot it) -- so a resize never re-clones the source, only the
+next `renderFile` does. The scale factor is fixed, not content-dependent:
+`bandWidth / (80 * chPx)`, i.e. 80 source columns is the narrowest the
+minimap ever zooms to (`MM_MIN_COLS`); a file with shorter lines just
+renders narrower than the band instead of being stretched to fill it, and a
+file with longer lines is clipped at the band edge rather than zoomed out
+further. Files under `MM_MIN_LINES` (40) lines omit the minimap entirely --
+`minimapBuild()` checks the line count itself and calls `minimapClear()`
+instead (the same function `renderHome` calls, to hide the minimap for the
+overview page, which has no single file/`table.src` to snapshot) -- since a
+file that short can't have content scrolled off-screen for the minimap to
+navigate to. When the scaled content
+is shorter than the band's available height, `minimapLayout()` shortens
+`#minimap` itself to match (top-aligned) rather than stretching the content
+or leaving dead space below it that looks clickable but isn't -- the region
+below a shortened band is simply outside the element, not a dead zone
+inside it. A translucent `#mmViewport` box overlays the portion of the
+source currently visible in `#main`'s scroll viewport, exactly like VS
+Code's minimap; `minimapSync()` repositions it on every `#main` scroll
+event (and after every `minimapLayout()`), moving only the overlay element,
+never touching the cloned content. Two independent interaction paths both
+end up scrolling `#main`: clicking the bare minimap background computes the
+parametric vertical offset and jumps `#main` straight there (guarded so a
+click that lands on `#mmViewport` itself is a no-op here); dragging
+`#mmViewport` (pointerdown/move/up, the same capture pattern as
+`theme.js`'s `splitter()`/column-resize drag) scrubs `#main`'s scroll
+position to match the drag instead, and does not touch the snapshotted
+content underneath.
+
+`dev/perf2html.sh` writes it to `OUTDIR/heat-map/index.html`. Standalone:
 
 ```sh
 python3 dev/scripts/callgrind_to_heatmap.py \
@@ -534,7 +655,7 @@ The 20 hottest lines are also marked in-source in `lib/urlapi.c` with
 total Ir). Those comments are dev annotations, not upstream material: drop
 them before submitting anything. Line numbers in profiles taken before the
 comments were added (`callgrind.out.urlparser.200.1789436338` and earlier)
-are offset from the current source; re-run `dev/profile.sh` to get a
+are offset from the current source; re-run `dev/perf2html.sh` to get a
 profile whose line numbers match.
 
 ### Look and feel
@@ -572,12 +693,56 @@ from `file://` and may not fetch anything. Rules the pages follow:
   the text on a colored cell is picked by the result's luminance
   (`theme.heat_style()`, the same math in the heat map's `heatStyle()`).
   Speedscope is the exception and keeps its own colors.
-- Every table is `theme.table()` (or the heat map's `table()`): no borders
-  except a full-height bar at each column boundary, which the mouse can
-  drag anywhere along its length to resize the column on its left; widths
-  are remembered in localStorage per table and column label, under
-  `cols.*` keys, and so is the heat map's tree width. Nothing on a bar
-  resets it: `[reset columns]` is the one way back, and it lives on the
+- No decorative borders anywhere in this UI -- not on tables, boxes, strips,
+  form controls, chips or panes. The *only* lines drawn anywhere are on
+  elements the mouse can actually drag: a column-resize bar (`.bar`) and a
+  pane splitter (`.split`), both double the width they were originally
+  (`.bar::before` 4px, `.split`'s resting/active line 2px/4px) so they read
+  clearly as interactive, not as page furniture. Everywhere else, adjacent
+  panels/panes/columns are told apart purely by background shading
+  (`--panel` vs `--bg` vs `--bg-alt` vs `--nav`) -- the strip's own
+  `--nav` background, a table's alternating `col.alt` columns, a chip's
+  `--bg-alt` fill, `.dbox`/`.fhead`/`.chips`' `--panel` fill. `select`/
+  `input` lose their native browser border the same way (`border: 0`, with
+  `border-radius: 0` to also drop a native rounded corner) and get an
+  explicit `--bg` background instead so they still read as controls
+  against a `--nav`/`--panel` strip (`--panel` and `--nav` are the same
+  color, so a control drawn in `--panel` on a strip would be invisible).
+  A column boundary that is not being dragged has *no* line at all --
+  neighboring columns are told apart only by `col.alt` shading, same as a
+  row would be in a striped table.
+- Every table is `theme.table()` (or the heat map's `table()`): a
+  full-height bar at each column boundary, which the mouse can drag
+  anywhere along its length to resize the column on its left; widths are
+  remembered in localStorage per table and column label, under `cols.*`
+  keys, and so is the heat map's tree width. A `fill` table (the summary's
+  functions table, the heat map's two home tables, `cgdiff.table`) starts
+  at exactly 90% of the viewport width, computed once at first render by
+  giving the open-ended trailing column an explicit pixel width
+  (`theme.js`'s `initTable`/`fillBaseline`) -- *before* any saved width is
+  applied, so that 90% figure is always the column's real default
+  (`dataset.w`), never skipped just because some other column in the same
+  table has a saved width from a previous visit. After that first render
+  the table never re-consults the viewport again: dragging any bar,
+  including the trailing one, only ever changes that one column's own
+  width, growing or shrinking the table's total width with it, and the
+  page (or the nearest scrolling ancestor) picks up a scrollbar rather
+  than the table clipping itself. A saved column width also carries the
+  viewport width (`_vw`) it was dragged at and is only honoured while the
+  window is still that width (`getSaved`); an actual `resize` event (not
+  just a reload at a different size) additionally purges every saved
+  width outright (`purgeStaleWidths`, run from the same debounced listener
+  that already re-lays-out the drag bars on resize) -- so column widths
+  survive clicking around a fixed-size window but never linger, stale,
+  across an actual resize. `[reset columns]` is the one way to put every
+  table back to its default: it restores each column's `dataset.w` (the
+  90% baseline for a `fill` table, or its natural content width otherwise)
+  rather than replaying a possibly-never-computed value, which is what
+  used to make a `fill` table's last column collapse to zero/auto on reset
+  after a saved width from a different column existed -- `dataset.w` is
+  now always established before any saved width is looked at, so this
+  can't happen regardless of what is or isn't saved. `[reset columns]`
+  lives on the
   outermost strip only -- the overview page's (`report_overview`'s
   `strip_render` call, `reset` left at its default `True`), which is also
   the only strip when a single test's report is opened on its own. A
@@ -593,7 +758,12 @@ from `file://` and may not fetch anything. Rules the pages follow:
   `cols.length - 1` of them) -- dragging a `fill` table's last column
   (the summary's callers column, the heat map's per-line detail tables)
   gives that column an explicit width same as any other, so the table may
-  stop exactly filling the page width, which is expected. Each column's
+  stop exactly filling the page width, which is expected. `.tbl`'s own
+  14px margin (every side but the top) keeps the trailing bar's grab area
+  reachable even against the page's own edge, rather than flush against
+  it -- this is margin outside the table box, not padding inside it, so
+  it doesn't count as part of the table's own 90%-of-viewport width.
+  Each column's
   full meaning is a tooltip on its header cell; there is no `[legend]`
   link anywhere any more (dropped from `theme.table_render()`, the heat
   map's own `table()`, and the always-visible banner `renderFile()` used
@@ -601,13 +771,23 @@ from `file://` and may not fetch anything. Rules the pages follow:
   glossary lives once, in `README.md` behind `[help]`, rather than being
   restated per table. A table box never scrolls on
   its own: it is as long as its rows and as wide as its columns, or with
-  `fill` as wide as the page with the last column cut off at the edge
-  (the summary's callers column; hover for the whole text); the page is
-  what scrolls. `lines` underlines every row with the divider color (the
-  summary's functions table). The divider is the cells' 1px right border
-  in `--bar`; while the mouse is on it or dragging it is drawn 2px wide
-  in the same color, and nothing else changes (the heat map's splitter
-  does the same).
+  `fill` 90% of the viewport at first render and then whatever dragging
+  has made it since (see above); the page (or the nearest scrolling
+  ancestor, e.g. the heat map's `#main`) is what scrolls once a table
+  grows past its container, never the table itself. In the heat map's two
+  home tables and the summary's functions table, the *entire row* is a
+  click target, not just the "defined at"/symbol link in it
+  (`table()`'s `opts.rowHref` in `callgrind_to_heatmap.py`, wired through
+  a `tr.rowlink` delegated click handler on `#main` that defers to a real
+  `<a>` inside the row first) -- only that one cell's own link visibly
+  reacts to hover, since a plain data cell has nothing else to click and
+  giving every cell the same hover style would wrongly suggest each one
+  opens something different. `lines` (the summary's functions table,
+  `cgdiff.table`) no longer underlines rows with a divider line (see the
+  no-decorative-borders rule above); rows are told apart the same way
+  columns are, by `col.alt` shading, and `lines` today only affects
+  whether the class is present for future styling, not whether a line is
+  drawn.
 - Numbers are written for reading: `theme.human()` and the heat map's
   `fmtH()` give `2.1K`, `21K`, `210K`, `2.1M`, `2.0G` -- at least two
   meaningful digits, never `200,000×` -- with the exact value as the
@@ -634,7 +814,7 @@ from `file://` and may not fetch anything. Rules the pages follow:
   and `[help]`; see the `[reset columns]` bullet above for why a nested
   per-test strip has none of the three. `[help]` opens
   `README.md` (plain, un-rendered markdown -- no server, so no renderer)
-  in a new tab; `dev/profile.sh` copies `dev/README.md` to `OUTDIR/README.md`
+  in a new tab; `dev/perf2html.sh` copies `dev/README.md` to `OUTDIR/README.md`
   on every run, next to the overview `index.html`. The file is a short
   glossary of the callgrind event columns (Ir, Dr, Dw, D1mr, ...) plus a
   couple of sentences each on using the flame graph (speedscope's "Time
@@ -642,6 +822,15 @@ from `file://` and may not fetch anything. Rules the pages follow:
   screen, not a manual. The heat map's header is the same kind of strip,
   minus a title -- see "Source heatmap (browser)" above for how it gets
   back to its home view without a `[home]` button.
+- The outer frame page itself (`body.frame`) never scrolls -- only its
+  `main`/`iframe` children do, each owning its own inner scrolling --
+  which is enforced explicitly (`html:has(body.frame), body.frame {
+  overflow: hidden }` in `theme.css`) rather than left implicit, because a
+  sub-pixel rounding gap between `100vh` and the sum of the strip's and
+  the main/iframe's own heights is real under a real (non-overlay)
+  scrollbar even though it never reproduces in headless Chrome, and used
+  to surface as a spurious near-zero-range vertical scrollbar on the
+  frame page on top of the iframe's own legitimate one.
 
 ### Checking the pages
 
@@ -672,10 +861,10 @@ laptop, and the pages must not assume more.
    URLs/sec and ns/URL (some run-to-run noise is normal — prefer median of
    3-5 runs). For real timing numbers use the pinned RelWithDebInfo build
    above, not the plain `-O0` `./build` tree.
-2. Profile if needed (`perf record`/`perf report`, `dev/profile.sh`,
+2. Profile if needed (`perf record`/`perf report`, `dev/perf2html.sh`,
    gdb, or just read the hot path) to find where time goes in
    `curl_url_set()` for `CURLUPART_URL`. Always profile the RelWithDebInfo
-   tree — see "Profiling" above for why. `dev/profile.sh` runs
+   tree — see "Profiling" above for why. `dev/perf2html.sh` runs
    `dev/scripts/validate_report.py` on its own output as its last step, so
    a report that finishes without error is already known to have every
    expected page.
