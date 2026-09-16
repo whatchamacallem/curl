@@ -22,7 +22,8 @@ select, input { font: inherit; color: var(--fg); background: var(--bg);
 .strip a { padding: 0 2px; white-space: nowrap; }
 .strip a:hover { background: var(--link); color: var(--nav); text-decoration: none; }
 .strip a.on { color: var(--accent); }
-.strip .title { font-size: 13px; font-weight: 600; color: var(--accent); margin-right: 6px; white-space: nowrap; }
+.strip .title { font-size: 13px; font-weight: 600; color: var(--bg); background: var(--good); white-space: nowrap;
+  padding: 3px 8px; margin: -5px 6px -5px -12px; align-self: stretch; display: flex; align-items: center; }
 .strip .sp { flex: 1; }
 
 /* frame: the toolbar over either the summary page or an iframe */
@@ -37,14 +38,10 @@ body.frame > iframe { flex: 1; min-height: 0; width: 100%; border: 0; background
    with .fill, as wide as the page, the last column cut off at the edge).
    Column widths are set in ch by the generators: content + 1ch padding each
    side + 1ch slack for the divider bar and fractional rounding. Each
-   column's full meaning is still a tooltip on its header cell; the legend
-   spelling every column out is collapsed below the table behind [legend]
-   so it doesn't compete for space above. */
+   column's full meaning is a tooltip on its header cell; see README.md
+   (the [help] link) for the event glossary. */
 .tbl { position: relative; width: fit-content; margin: 4px 0 10px; border: 1px solid var(--bar); border-radius: 4px; }
 .tbl.fill { width: 100%; }
-.tbl-legend-toggle { display: block; padding: 4px 10px; color: var(--muted); background: var(--panel); }
-.tbl-legend { display: flex; flex-wrap: wrap; gap: 1px 18px; width: 0; min-width: 100%;
-  padding: 4px 10px; color: var(--muted); background: var(--panel); border-top: 1px solid var(--bar); }
 .band { position: sticky; top: 0; z-index: 2; }
 .tbl-cols { position: relative; }
 table.cols { table-layout: fixed; border-collapse: separate; border-spacing: 0; width: 0; }

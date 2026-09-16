@@ -138,7 +138,7 @@ def file_read_text(path: str) -> str:
 def strip_render(title: str, links: list[tuple[str, str, str, str]], perf_link: bool = False, reset: bool = True) -> str:
     """The strip across the top: the title, then the links -- (view key or ""
     for the page itself, label, href, title to show when picked) -- then,
-    on the top-level page only, [curl.se/perf], [help] and, unless `reset`
+    on the top-level page only, [help], [curl.se/perf] and, unless `reset`
     is false, [reset columns], in that order, pushed to the far right.
 
     Only one strip on screen at a time needs [reset columns] -- clicking it
@@ -156,8 +156,8 @@ def strip_render(title: str, links: list[tuple[str, str, str, str]], perf_link: 
     if reset or perf_link:
         parts.append('<span class="sp"></span>')
     if perf_link:
-        parts.append(f'<a href="{PERF_CHART}" target="_blank" rel="noopener">[curl.se/perf]</a>')
         parts.append('<a href="README.md" target="_blank">[help]</a>')
+        parts.append(f'<a href="{PERF_CHART}" target="_blank" rel="noopener">[curl.se/perf]</a>')
     if reset:
         parts.append('<a href="#" data-reset title="forget every saved column width">[reset columns]</a>')
     return f'<nav id="bar" class="strip">{"".join(parts)}</nav>'
@@ -224,12 +224,19 @@ def functions_table(p: cg.Profile, event: str, top: int, repo_root: str) -> str:
         ncalls = sum(by_caller.values())
         share = 100.0 * s / total
         href = entry_link(fn)
-        who = ", ".join(f"{cfn} ({theme.num_pct(100.0 * n / ncalls)})"
-                        for cfn, n in sorted(by_caller.items(), key=lambda kv: (-kv[1], kv[0])))
+        by_caller_sorted = sorted(by_caller.items(), key=lambda kv: (-kv[1], kv[0]))
+        who = ", ".join(f"{cfn} ({theme.num_pct(100.0 * n / ncalls)})" for cfn, n in by_caller_sorted)
+
+        def caller_html(cfn: str, n: int) -> str:
+            chref = entry_link(cfn)
+            label = f"{html_esc(cfn)} ({theme.num_pct(100.0 * n / ncalls)})"
+            return f'<a href="{chref}">{label}</a>' if chref else label
+
+        who_html = ", ".join(caller_html(cfn, n) for cfn, n in by_caller_sorted)
         rows.append([Cell(theme.num_pct(share), style=theme.heat_style(theme.heat_t(share, max_pct))),
                      Cell(fn, title=fn, html=f'<a href="{href}">{html_esc(fn)}</a>' if href else None),
                      theme.num_human(ncalls) if ncalls else "",
-                     Cell(who, title=who) if who else Cell("(no recorded caller)", cls="dim")])
+                     Cell(who, title=who, html=who_html) if who else Cell("(no recorded caller)", cls="dim")])
     return theme.table_render("report.functions", cols, rows, fill=True, lines=True)
 
 
@@ -269,8 +276,6 @@ def report_test(args: argparse.Namespace) -> None:
     body = strip_render(args.test, links, reset=False)
     out_dir = os.path.dirname(os.path.abspath(args.output))
     body += '<main id="home"><div class="page">'
-    body += rawdata_list(args.raw_data, out_dir)
-    body += f"<h2>top {args.top} functions by self</h2>" + functions_table(p, args.event, args.top, args.repo_root)
     if args.log and not args.no_log:
         body += '<details class="sec"><summary><h2>valgrind log</h2></summary>'
         for log in args.log:
@@ -278,6 +283,8 @@ def report_test(args: argparse.Namespace) -> None:
                 body += f"<p>{html_esc(os.path.basename(log))}</p>"
             body += log_block(log)
         body += "</details>"
+    body += rawdata_list(args.raw_data, out_dir)
+    body += f"<h2>top {args.top} functions by self</h2>" + functions_table(p, args.event, args.top, args.repo_root)
     body += '</div></main><iframe id="view" hidden title="report page"></iframe>'
     page_write(args.output, theme.page_document(args.test, body, extra_js=FRAME_JS, body_class="frame"))
 

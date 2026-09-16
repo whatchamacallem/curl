@@ -230,18 +230,24 @@ Report layout (`OUTDIR/`, or `OUTDIR/<test>/` with `all`), all plain
 `file://`-openable, nothing fetched at view time:
 
 ```text
-index.html               a strip across the top -- the page title, then
-                         [bracketed] links -- and the summary under it: the
+index.html               a strip across the top -- the page title as a
+                         green badge cell, then [bracketed] links -- and
+                         the summary under it: the valgrind log (minus its
+                         9-line banner and each line's "==PID==" prefix, in
+                         a bordered box) collapsed under a chevron, then the
                          raw data (the callgrind trace file(s), as a plain
                          list of links relative to this page so OUTDIR can be
-                         copied elsewhere) collapsed under a chevron,
-                         "top N functions by self" (N is 50 by default,
+                         copied elsewhere) also collapsed under a chevron,
+                         then "top N functions by self" (N is 50 by default,
                          `dev/profile.sh --top N`; % self, symbol, calls,
                          callers; one line per function, full page width,
-                         its callers column resizable at the right edge) and
-                         the valgrind log (minus its 9-line banner and each
-                         line's "==PID==" prefix, in a bordered box) also
-                         collapsed under a chevron -- omitted entirely on the
+                         its callers column resizable at the right edge --
+                         both the symbol and, now, each individual name in
+                         the callers list link to the heat map at that
+                         function's first line when the file is known, via
+                         the same `entry_link()` helper in
+                         `build_report.py`'s `functions_table`). The
+                         valgrind log is omitted entirely on the
                          `all` page, since every test's log would otherwise
                          be concatenated there (build_report.py test's
                          `--no-log`, passed by profile.sh's report_render
@@ -448,37 +454,55 @@ verified to match it line for line.
 one self-contained explorer page (no server, no CDN, works from `file://`):
 directory tree on the left (a draggable splitter sets its width), colored
 and sorted by share of the selected event with files that have no samples
-folded away; per-line colored source on the right; click a line number to
-see every event for that line, what it calls (inclusive cost, links to the
-callee) and, on a function's first line, who calls it. The header's *event*
-selector re-colors and re-sorts everything by any raw event (Ir, Dr, Dw,
-I1mr, D1mr, ...) or derived one (D1m, DLm, L1m, LLm, Bm, CEst);
-independent of that, every source line shows `L1 cache / D1m`,
-`L3 cache / DLm` and `misprediction / Bcm` columns (share of that event's
-total, each heat-colored on its own scale) so a line that is cheap in Ir
-but hurts in misses is visible without switching. Every bare event-key
-label across the page (these three miss columns, the "Hottest lines/
-functions by ..." headings, the per-file stat line, the per-line detail
-summary and its "calls from this line" heading) is written `short / KEY`
-via `evLabel()`/`EVENT_SHORT` in `callgrind_to_heatmap.py`, one short name
-per event callgrind can emit (mirrors `callgrind.py`'s `EVENT_LONG` /
-`DERIVED_DEFAULTS`), so the meaning never has to be looked up. One spot is
-left as the bare key on purpose, since it already carries the long name
-right next to it: the event picker's own dropdown text. The per-line
-detail popup's "all events on this line" table dropped its old per-row
-"meaning" column entirely -- it links `[manual]` to the official callgrind
-docs (`https://valgrind.org/docs/manual/cl-manual.html`) above the table
-instead of restating every event's description in-page (`MANUAL_LINK` in
-`callgrind_to_heatmap.py`). The header strip no longer shows the old
+folded away; per-line colored source on the right; click anywhere on a
+line's row (not just the line number) to see every event for that line,
+what it calls (inclusive cost, links to the callee) and, on a function's
+first line, who calls it -- only rows that actually carry a recorded event
+get the click affordance (`tr.clickable` in `callgrind_to_heatmap.py`'s
+`emitRow`; hovering one of those rows turns just its line number blue via
+`table.src tr.clickable:hover td.ln`, nothing else in the row changes, and
+a row with no events neither highlights nor opens anything). The detail
+popup has a `[X]` close link at its top right (`.dclose`, absolutely
+positioned in `.dbox`) alongside the existing toggle-by-reclicking-the-row
+behavior. The header's *event* selector re-colors and re-sorts everything
+by any raw event (Ir, Dr, Dw, I1mr, D1mr, ...) or derived one (D1m, DLm,
+L1m, LLm, Bm, CEst); it opens on CEst (cycle estimate) by default, not Ir
+(`--event CEst` in `callgrind_to_heatmap.py`'s argparse default and
+`model_build`'s `default_event`), since CEst is the more actionable
+single number. Independent of the selected event, every source line shows
+`L1 cache / D1m`, `L3 cache / DLm` and `misprediction / Bcm` columns
+(share of that event's total, each heat-colored on its own scale) so a
+line that is cheap in Ir but hurts in misses is visible without switching.
+Every bare event-key label across the page (these three miss columns, the
+"Hottest lines/functions by ..." headings, the per-file stat line, the
+per-line detail summary and its "calls from this line" heading) is written
+`short / KEY` via `evLabel()`/`EVENT_SHORT` in `callgrind_to_heatmap.py`,
+one short name per event callgrind can emit (mirrors `callgrind.py`'s
+`EVENT_LONG` / `DERIVED_DEFAULTS`), so the meaning never has to be looked
+up. One spot is left as the bare key on purpose, since it already carries
+the long name right next to it: the event picker's own dropdown text.
+There is no more `[legend]` toggle anywhere on this page or any other
+report page (see "Look and feel" below) -- each column's meaning is still
+a header tooltip, and the callgrind event glossary lives in `README.md`
+behind the top-level `[help]` link instead of being restated per table.
+The per-line detail popup dropped its old "all events on this line" table
+and its `[manual]` link entirely (not just the per-row "meaning" column),
+along with the "no calls recorded from this line" fallback message -- a
+line's self/calls numbers are already on the summary line above the
+popup's tables, so a popup with only callees and/or callers, or neither,
+reads fine without a placeholder. The header strip no longer shows the old
 `#hmeta` line (the merged command/loop counts/generated timestamp that sat
 between `[home]` and the event dropdown) -- it was metadata nobody read
 inline, not documentation, so it was dropped outright rather than moved.
-The home view carries the 60 hottest lines and the 60 hottest
-functions, each table's column meanings collapsed under its own `[legend]`
-link below it, same as every other `theme.table()`. There is no `[home]`
+The header's search box is labelled "search", not "find", and sits last
+in the header row (event, scale, tree, search) rather than second. The
+home view carries the 60 hottest lines (its "location" column is renamed
+"defined at" and moved to the end, after "function" and "source", instead
+of before them -- `callgrind_to_heatmap.py`'s `renderHome`) and the 60
+hottest functions. There is no `[home]`
 button and no permanent "cold ... hot" gradient swatch in the header (the
 per-cell heat coloring speaks for itself); the header strip is just the
-event/find/scale/tree controls. Getting back to the home view from a file
+event/scale/tree/search controls. Getting back to the home view from a file
 listing is the outer strip's job: re-picking the already-active
 `[heat map]` link there posts a `theme:home` message into the iframe
 (`FRAME_JS` in `build_report.py`) instead of reloading it, and the heat
@@ -525,7 +549,20 @@ from `file://` and may not fetch anything. Rules the pages follow:
   (`--bg` `#2F3640`, toolbar and panels `#192A56`, divider bars `#40739E`);
   the light member shades every other table column (`#353B48`) and is used
   for text, links and the title where the dark member would not read on
-  the dark background (`#F5F6FA`, `#00A8FF`, `#FBC531`).
+  the dark background (`#F5F6FA`, `#00A8FF`, `#FBC531`). The raw pair
+  values above are the literal "User settings" ones and are what
+  `--<name>-l` (the light member) still resolves to; `--<name>` (the dark
+  member) is *not* the raw value used directly -- `theme.py`'s `_pair_darken`
+  subtracts a fixed amount (`_DARKEN = 0.08`) from its HSL lightness before
+  `PAIR` is built, because at the raw values every pair's light/dark
+  contrast was barely visible (a relative-luminance ratio of ~1.1-1.35
+  across the board) and alternating table columns / panel-vs-background
+  read as nearly flat. A multiplicative darken was tried first and
+  rejected: navy and slate are already near-black, so a multiplier leaves
+  them almost unchanged while blowing out the lighter pairs; a flat HSL
+  subtraction moves every pair by roughly the same visible amount. This
+  touches every `--<name>` role (`--bg`, `--panel`, `--bar`, `--good`,
+  `--bad`, ...) but not the `HEAT` ramp, which is unrelated and untouched.
 - Monaco for everything (`--font`, with monospace fallbacks). Because every
   glyph is one `ch` wide, table column widths are set in characters from
   the longest cell (or a fixed 20 for function names, or a clip) and are
@@ -550,14 +587,19 @@ from `file://` and may not fetch anything. Rules the pages follow:
   `Theme.reset()` drops every `cols.*` key and re-applies the defaults on
   the clicking page, and posts `theme:reset` into its iframe so the loaded
   page does the same, which repeats at each level (it is another `file://`
-  origin, so a frame cannot reach into the next one directly). Each column's
-  full meaning is a tooltip on its header cell, and a `[legend]` link below
-  the table reveals a banner spelling every abbreviated column out at once
-  (hidden by default; click again to hide); `theme.js`'s document-level
-  `data-legend` click handler toggles it, so it works the same in every
-  generator (`theme.table_render()` and the heat map's own `table()` build
-  the same markup, `noLegend` in the latter suppressing it for the small
-  detail-popup tables that don't need it). A table box never scrolls on
+  origin, so a frame cannot reach into the next one directly). Every
+  column boundary gets a drag bar, including the last column's trailing
+  edge (`theme.js`'s `initTable` puts a bar after every column, not just
+  `cols.length - 1` of them) -- dragging a `fill` table's last column
+  (the summary's callers column, the heat map's per-line detail tables)
+  gives that column an explicit width same as any other, so the table may
+  stop exactly filling the page width, which is expected. Each column's
+  full meaning is a tooltip on its header cell; there is no `[legend]`
+  link anywhere any more (dropped from `theme.table_render()`, the heat
+  map's own `table()`, and the always-visible banner `renderFile()` used
+  to print above the per-line source table) -- the callgrind event
+  glossary lives once, in `README.md` behind `[help]`, rather than being
+  restated per table. A table box never scrolls on
   its own: it is as long as its rows and as wide as its columns, or with
   `fill` as wide as the page with the last column cut off at the edge
   (the summary's callers column; hover for the whole text); the page is
@@ -575,17 +617,22 @@ from `file://` and may not fetch anything. Rules the pages follow:
   `[summary] [flame graph] [heat map] [native timing]`, and the summary
   under it, left-aligned and full width; sub-pages are loaded into an
   iframe only when picked. The title is the picked view -- `urlparser`,
-  `urlparser / heat map` -- in the accent color, and it is the only title
-  anywhere: the pages have no heading of their own, and a frame page
-  loaded inside another frame hides its title and posts it up (a
-  `{theme: "title"}` message; the parent asks with `theme:title?` when it
-  re-shows a frame it already loaded), so the top-level strip reads
-  `urlparser / heat map` while the nested strip shows only its links.
-  `[curl.se/perf]`, `[help]` and `[reset columns]` are on the top-level
-  (overview) strip only, all hugging the right in that order, so
-  `[reset columns]` is the rightmost thing on the strip and `[help]` sits
-  between it and `[curl.se/perf]`; see the `[reset columns]` bullet above
-  for why a nested per-test strip has none of the three. `[help]` opens
+  `urlparser / heat map` -- and it is the only title anywhere: the pages
+  have no heading of their own, and a frame page loaded inside another
+  frame hides its title and posts it up (a `{theme: "title"}` message;
+  the parent asks with `theme:title?` when it re-shows a frame it already
+  loaded), so the top-level strip reads `urlparser / heat map` while the
+  nested strip shows only its links. Unlike every other strip entry, the
+  title is not an inline colored word: `.strip .title` renders it as its
+  own cell, flush with the strip's edges (a negative margin cancels the
+  strip's own padding on that side) with a `--good` (green) background and
+  `--bg` (dark) text for contrast, so the current navigation choice reads
+  as a badge rather than blending into the link row. `[help]`,
+  `[curl.se/perf]` and `[reset columns]` are on the top-level (overview)
+  strip only, all hugging the right in that order, so `[reset columns]` is
+  the rightmost thing on the strip and `[curl.se/perf]` sits between it
+  and `[help]`; see the `[reset columns]` bullet above for why a nested
+  per-test strip has none of the three. `[help]` opens
   `README.md` (plain, un-rendered markdown -- no server, so no renderer)
   in a new tab; `dev/profile.sh` copies `dev/README.md` to `OUTDIR/README.md`
   on every run, next to the overview `index.html`. The file is a short

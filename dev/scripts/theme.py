@@ -4,6 +4,7 @@ feel". css()/js() return theme.css/theme.js for each generator to inline
 (pages open from file://, nothing may be fetched at view time)."""
 from __future__ import annotations
 
+import colorsys
 import html
 import math
 import os
@@ -17,15 +18,32 @@ THEME = ["#00A8FF", "#0097E6", "#E84118", "#C23616", "#9C88FF", "#8C7AE6",
          "#4CD137", "#44BD32", "#273C75", "#192A56", "#487EB0", "#40739E",
          "#353B48", "#2F3640"]
 
-# (light, dark) pairs, in THEME order
-PAIR = {name: (THEME[2 * i], THEME[2 * i + 1]) for i, name in enumerate(
+# Table rendering (alternating columns, panels vs. bg, ...) leans on each
+# pair's light/dark contrast, and at the raw THEME values that contrast is
+# barely visible (relative luminance ratio ~1.1-1.35 for every pair). The
+# dark member of each pair is darkened by a fixed HSL-lightness subtraction
+# (not a multiplier: navy/slate are already near-black, so a multiplier
+# leaves them almost unchanged) before anything else derives from it; the
+# light member and the HEAT ramp are untouched.
+_DARKEN = 0.08
+
+
+def _pair_darken(hexcolor: str) -> str:
+    r, g, b = (int(hexcolor[i:i + 2], 16) / 255 for i in (1, 3, 5))
+    h, l, s = colorsys.rgb_to_hls(r, g, b)
+    r, g, b = colorsys.hls_to_rgb(h, max(0.0, l - _DARKEN), s)
+    return "#{:02X}{:02X}{:02X}".format(round(r * 255), round(g * 255), round(b * 255))
+
+
+# (light, dark) pairs, in THEME order; the dark member is darkened for contrast (see _DARKEN)
+PAIR = {name: (THEME[2 * i], _pair_darken(THEME[2 * i + 1])) for i, name in enumerate(
     ["blue", "red", "purple", "white", "yellow", "gray", "green", "navy", "steel", "slate"])}
 
 # semantic roles -> palette member
 ROLE = {
     "bg": PAIR["slate"][1],       # page background
     "bg-alt": PAIR["slate"][0],   # alternating table columns
-    "panel": PAIR["navy"][1],     # table headers, legends, header bars
+    "panel": PAIR["navy"][1],     # table headers, header bars
     "nav": PAIR["navy"][1],       # toolbar strip
     "sel": PAIR["navy"][0],       # selected row
     "fg": PAIR["white"][0],       # body text (light member: contrast on the dark background)
@@ -151,7 +169,7 @@ def html_esc(s: object) -> str:
 @dataclass
 class Col:
     label: str
-    title: str = ""            # plain-language meaning; shown in the legend
+    title: str = ""            # plain-language meaning; shown as a header tooltip
     num: bool = False          # right-aligned
     width: int | None = None   # visible characters (cell padding is added)
     clip: int | None = None    # cap the content-derived width at this many characters
@@ -177,9 +195,9 @@ PAD = 3
 
 
 def table_render(key: str, cols: list[Col], rows: list[list[object]], fill: bool = False,
-                  header: bool = True, legend: bool = True, lines: bool = False) -> str:
-    """A .tbl box: the table, then (from the columns' titles) a [legend] link
-    that reveals a banner spelling out the abbreviated columns.
+                  header: bool = True, lines: bool = False) -> str:
+    """A .tbl box: the table. Each column's full meaning is still a tooltip
+    on its header cell (see README.md for the glossary).
 
     Column widths are derived from the longest text in each column, in
     characters (everything is monospace, so this is exact), unless the
@@ -203,7 +221,6 @@ def table_render(key: str, cols: list[Col], rows: list[list[object]], fill: bool
             n = min(n, col.clip)
         widths.append(n + PAD)
     out = [f'<div class="tbl{" fill" if fill else ""}">']
-    entries = [f"<span><b>{html_esc(c.label)}</b> {html_esc(c.title)}</span>" for c in cols if c.title]
     classes = "cols" + (" fill" if fill else "") + (" lines" if lines else "")
     out.append(f'<div class="tbl-cols"><table class="{classes}" data-key="{html_esc(key)}"><colgroup>')
     for i, w in enumerate(widths):
@@ -229,9 +246,6 @@ def table_render(key: str, cols: list[Col], rows: list[list[object]], fill: bool
             out.append(f"<td{attrs}>{c.html if c.html is not None else html_esc(c.text)}</td>")
         out.append("</tr>")
     out.append("</tbody></table></div>")
-    if legend and entries:
-        out.append(f'<a href="#" class="tbl-legend-toggle" data-legend>[legend]</a>'
-                    f'<div class="tbl-legend" hidden>{"".join(entries)}</div>')
     out.append("</div>")
     return "".join(out)
 

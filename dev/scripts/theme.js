@@ -73,7 +73,7 @@ window.Theme = (function () {
     const saved = table.dataset.key ? store.get(PREFIX + table.dataset.key) : null;
     if (saved) cols.forEach((c, i) => { const w = saved[colKey(table, i)]; if (w) c.style.width = w; });
     table._bars = [];
-    for (let i = 0; i < cols.length - 1; i++) {
+    for (let i = 0; i < cols.length; i++) {
       const bar = document.createElement("div");
       bar.className = "bar";
       bar.title = "drag to resize";
@@ -134,14 +134,6 @@ window.Theme = (function () {
       e.preventDefault();
     });
   }
-
-  document.addEventListener("click", e => {
-    const a = e.target.closest("a[data-legend]");
-    if (!a) return;
-    e.preventDefault();
-    const leg = a.nextElementSibling;
-    if (leg) leg.hidden = !leg.hidden;
-  });
 
   let timer = null;
   window.addEventListener("resize", () => { clearTimeout(timer); timer = setTimeout(() => relayout(), 120); });

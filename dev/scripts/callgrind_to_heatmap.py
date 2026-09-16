@@ -3,7 +3,7 @@
 
 Usage:
   callgrind_to_heatmap.py callgrind.out.X [callgrind.out.Y ...] \
-      -o report/heat-map/index.html [--event Ir] [--repo-root .] \
+      -o report/heat-map/index.html [--event CEst] [--repo-root .] \
       [--tree lib include src tests/perf] [--all-sources] [--title "..."]
 """
 from __future__ import annotations
@@ -231,8 +231,9 @@ body { display: flex; flex-direction: column; height: 100vh; }
 .chip:hover { outline: 1px solid var(--link); }
 .nosrc { padding: 8px 14px; color: var(--muted); }
 table.src td { padding-top: 0; padding-bottom: 0; }
-table.src td.ln { color: var(--muted); user-select: none; cursor: pointer; }
-table.src td.ln:hover { color: var(--link); }
+table.src td.ln { color: var(--muted); user-select: none; }
+table.src tr.clickable { cursor: pointer; }
+table.src tr.clickable:hover td.ln { color: var(--link); }
 table.src td.self, table.src td.incl, table.src td.x { color: var(--muted); }
 table.src tr.heat td { color: inherit; }
 table.src td.hot { font-weight: 600; }
@@ -240,8 +241,10 @@ table.src td.code { overflow: visible; text-overflow: clip; white-space: pre; ta
 table.src tr.hasc td.ln::before { content: "\\25B8 "; color: var(--link); }
 table.src tr.target td { box-shadow: inset 0 0 0 2px var(--accent); }
 table.src tr.detail td { white-space: normal; overflow: visible; padding: 0; }
-.dbox { margin: 3px 12px 8px; padding: 6px 12px; background: var(--panel); border: 1px solid var(--bar); border-radius: 4px; }
+.dbox { position: relative; margin: 3px 12px 8px; padding: 6px 12px; background: var(--panel); border: 1px solid var(--bar); border-radius: 4px; }
 .dbox h4 { margin: 6px 0 2px; font-size: 12px; color: var(--muted); font-weight: 600; }
+.dbox .dclose { position: absolute; top: 6px; right: 10px; color: var(--muted); }
+.dbox .dclose:hover { color: var(--link); text-decoration: none; }
 .dbox .tbl { background: var(--bg); }
 .home { padding: 12px 14px 40px; }
 .home h2:first-of-type { margin-top: 10px; }
@@ -255,13 +258,13 @@ table.src tr.detail td { white-space: normal; overflow: visible; padding: 0; }
 
 BODY = """<div id="hdr" class="strip">
   <label>event <select id="event"></select></label>
-  <label>find <input id="q" type="search" placeholder="file name\u2026"></label>
   <label>scale <select id="scale">
     <option value="global">log, global</option>
     <option value="file">log, per file</option>
     <option value="linear">linear, global</option>
   </select></label>
   <label>tree <select id="sort"><option value="heat">by heat</option><option value="name">by name</option></select></label>
+  <label>search <input id="q" type="search" placeholder="file name\u2026"></label>
 </div>
 <div id="layout">
   <nav id="tree"></nav>
@@ -374,10 +377,9 @@ function fnName(i) { return (i != null && fns[i]) ? fns[i].name : "?"; }
 function link(path, line, text) { return files[path] && line ? `<a href="${hashFor(path, line)}">${esc(text)}</a>` : esc(text); }
 const SYMBOL_CHARS = 20; // visible characters of a function name before it is cut off
 
-// A .tbl box: legend banner from the columns' titles, then a fixed-layout
-// table with widths in characters (everything is monospace). Mirrors
-// theme.table_render() in theme.py. cols: {label, title, num, width, clip, cls};
-// cells: a string, or {text, html, style, cls, title}.
+// A .tbl box: a fixed-layout table with widths in characters (everything is
+// monospace). Mirrors theme.table_render() in theme.py. cols: {label, title,
+// num, width, clip, cls}; cells: a string, or {text, html, style, cls, title}.
 const PAD = 3; // 1ch padding each side + 1ch slack for the divider bar and ch rounding
 function table(key, cols, rows, opts) {
   opts = opts || {};
@@ -391,7 +393,6 @@ function table(key, cols, rows, opts) {
     return n + PAD;
   });
   let h = `<div class="tbl">`;
-  const leg = cols.filter(c => c.title).map(c => `<span><b>${esc(c.label)}</b> ${esc(c.title)}</span>`);
   h += `<div class="tbl-cols"><table class="cols${opts.fill ? " fill" : ""}" data-key="${esc(key)}"><colgroup>`;
   cols.forEach((c, i) => { h += `<col${i % 2 ? ' class="alt"' : ""}${(opts.fill && i === cols.length - 1) ? "" : ` style="width:${widths[i]}ch"`}>`; });
   h += `</colgroup><thead><tr>`;
@@ -408,7 +409,6 @@ function table(key, cols, rows, opts) {
     h += "</tr>";
   }
   h += `</tbody></table></div>`;
-  if (leg.length && !opts.noLegend) h += `<a href="#" class="tbl-legend-toggle" data-legend>[legend]</a><div class="tbl-legend" hidden>${leg.join("")}</div>`;
   return h + `</div>`;
 }
 const evCol = (e, extra) => Object.assign({ label: e.key, title: e.long, num: true }, extra || {});
@@ -524,13 +524,14 @@ function renderHome() {
   h += `<p><b>${esc(ev.key)}</b> = ${esc(ev.long || ev.key)}. Every percentage is the share of the <b title="${fmtN(TOTAL)}">${fmtH(TOTAL)}</b> total for that event. Click a file in the tree, or a line below. In a listing, click a line number to see every event for that line, what it calls (and, on a function's first line, who calls it). Pick another event in the header to re-color everything by cache misses or branch mispredicts.</p>`;
   h += `<h2>Hottest lines by ${esc(evLabel(ev))}</h2>` + table("heat.home.lines",
     [{ label: "#", title: "rank", num: true }, SELF, evCol(ev), ...extraCols(),
-     { label: "location", title: "file:line; opens the listing there", clip: 28 },
      { label: "function", title: `the function the line belongs to (first ${SYMBOL_CHARS} characters; drag the bar for more)`, width: SYMBOL_CHARS },
-     { label: "source", title: "the source line, trimmed; drag the bar for more", clip: 36 }],
+     { label: "source", title: "the source line, trimmed; drag the bar for more", clip: 36 },
+     { label: "defined at", title: "file:line; opens the listing there", clip: 28 }],
     topLines(60).map((t, i) => {
       const [path, ln, cost, fnidx, snip] = t, rec = files[path].lines[ln];
       return [String(i + 1), { text: fmtPct(cost), style: heatBg(heatT(cost, MAXP)) }, num(cost), ...extraCells(rec[0]),
-              { text: path + ":" + ln, html: link(path, ln, path + ":" + ln) }, { text: fnName(fnidx), title: fnName(fnidx) }, snip];
+              { text: fnName(fnidx), title: fnName(fnidx) }, snip,
+              { text: path + ":" + ln, html: link(path, ln, path + ":" + ln) }];
     }));
   const topF = fns.map((f, i) => [i, val(f.self)]).filter(t => t[1] > 0).sort((a, b) => b[1] - a[1]).slice(0, 60);
   h += `<h2>Hottest functions by self ${esc(evLabel(ev))}</h2>` + table("heat.home.functions",
@@ -568,7 +569,6 @@ function renderFile(path, line) {
   const cols = [{ label: "line", num: true }, evCol(ev, { title: ev.long + ", share of total, spent on the line itself" }),
                 { label: "calls", title: "inclusive cost of the calls made from the line, share of total", num: true },
                 ...extraCols(), { label: "source" }];
-  h += `<div class="tbl-legend band">${cols.filter(c => c.title).map(c => `<span><b>${esc(c.label)}</b> ${esc(c.title)}</span>`).join("")}</div>`;
   const hot = Object.keys(lines).map(k => [+k, val(lines[k][0])]).filter(t => t[1] > 0).sort((a, b) => b[1] - a[1]).slice(0, 12);
   if (hot.length) {
     h += `<div class="chips"><span class="lbl">hottest lines</span>`;
@@ -586,7 +586,8 @@ function renderFile(path, line) {
     const fnidx = f.lfn[ln];
     const title = rec ? `${fmtN(self)} ${ev.key} self, ${fmtN(calls)} in calls${rec[2] ? " over " + fmtH(rec[2]) + " calls" : ""}${fnidx != null ? " \\u2014 in " + fnName(fnidx) : ""}` : "";
     const xs = rec ? extraCells(rec[0]).map(c => `<td class="n x${c.cls ? " " + c.cls : ""}" style="${c.style}" title="${esc(c.title)}">${esc(c.text)}</td>`).join("") : EXTRA.map(() => `<td class="n x"></td>`).join("");
-    rows.push(`<tr id="L${ln}" class="${f.callees[ln] ? "hasc" : ""}${line === ln ? " target" : ""}${hs ? " heat" : ""}" style="${hs}"${title ? ` title="${esc(title)}"` : ""}><td class="n ln" data-ln="${ln}">${ln}</td><td class="n self${t > 0.45 ? " hot" : ""}">${self ? fmtPct(self) : ""}</td><td class="n incl">${calls ? fmtPct(calls) : ""}</td>${xs}<td class="code">${text == null ? "" : esc(text)}</td></tr>`);
+    const cls = [rec ? "clickable" : "", f.callees[ln] ? "hasc" : "", line === ln ? "target" : "", hs ? "heat" : ""].filter(Boolean).join(" ");
+    rows.push(`<tr id="L${ln}" class="${cls}" style="${hs}"${title ? ` title="${esc(title)}"` : ""}><td class="n ln" data-ln="${ln}">${ln}</td><td class="n self${t > 0.45 ? " hot" : ""}">${self ? fmtPct(self) : ""}</td><td class="n incl">${calls ? fmtPct(calls) : ""}</td>${xs}<td class="code">${text == null ? "" : esc(text)}</td></tr>`);
   };
   let nlines = 0;
   if (f.src != null) {
@@ -615,20 +616,6 @@ function renderFile(path, line) {
   } else if (first) mainEl.scrollTop = 0;
 }
 
-const MANUAL_LINK = `<a href="https://valgrind.org/docs/manual/cl-manual.html" target="_blank" rel="noopener">[manual]</a>`;
-function eventTable(selfv, callsv) {
-  const rows = [];
-  for (const e of EVS) {
-    const s = e.get(selfv), c = e.get(callsv), tot = e.get(D.meta.totals) || 1;
-    if (!s && !c) continue;
-    rows.push([{ text: e.key, style: e === ev ? "font-weight:600" : "" }, num(s), fmtP(100 * s / tot) || "0%", c ? num(c) : ""]);
-  }
-  return `<p>${MANUAL_LINK} for what each event means.</p>` + table("heat.detail.events",
-    [{ label: "event" }, { label: "self", num: true }, { label: "% of total", num: true },
-     { label: "in calls", title: "inclusive cost of the calls made from this line", num: true }],
-    rows, { noLegend: true });
-}
-
 function toggleDetail(path, ln, forceOpen) {
   const f = files[path];
   const row = document.getElementById("L" + ln);
@@ -643,15 +630,15 @@ function toggleDetail(path, ln, forceOpen) {
   const fnCol = label => ({ label, title: `first ${SYMBOL_CHARS} characters; drag the bar for more`, width: SYMBOL_CHARS });
   const locCol = { label: "defined at", title: "file:line of the function's first executed line", clip: 48 };
   let h = `<div class="dbox">`;
+  h += `<a href="#" class="dclose" title="close">[X]</a>`;
   h += `<div>line ${ln}${fnidx != null ? " in <b>" + esc(fnName(fnidx)) + "</b>" : ""}: self ${fmtH(val(rec[0]))} ${esc(evLabel(ev))} (${fmtPct(val(rec[0])) || "0%"})${val(rec[1]) ? `, calls ${fmtH(val(rec[1]))} (${fmtPct(val(rec[1]))}) over ${fmtH(rec[2])} calls` : ""}</div>`;
-  h += `<h4>all events on this line</h4>` + eventTable(rec[0], rec[1]);
   if (callees.length) {
     h += `<h4>calls from this line (inclusive ${esc(evLabel(ev))})</h4>` + table("heat.detail.callees",
       [{ label: "% of total", num: true }, evCol(ev), { label: "call count", num: true }, fnCol("callee"), locCol],
       callees.map(([ci, cf, cl, vec, count]) => {
         const loc = cl ? cf + ":" + cl : cf;
         return [fmtPct(val(vec)), num(val(vec)), num(count), { text: fnName(ci), title: fnName(ci) }, { text: loc, html: link(cf, cl, loc) }];
-      }), { noLegend: true });
+      }));
   }
   if (fi != null) {
     const fn = fns[fi];
@@ -662,9 +649,8 @@ function toggleDetail(path, ln, forceOpen) {
       callers.map(([ci, cf, cl, vec, count]) => {
         const loc = cl ? cf + ":" + cl : cf;
         return [num(count), fmtPct(val(vec)), num(val(vec)), { text: fnName(ci), title: fnName(ci) }, { text: loc, html: link(cf, cl, loc) }];
-      }), { noLegend: true }) : `<div class="dim">(no recorded caller \\u2014 a root or a resolver stub)</div>`;
+      })) : `<div class="dim">(no recorded caller \\u2014 a root or a resolver stub)</div>`;
   }
-  if (!callees.length && fi == null) h += `<div class="dim">no calls recorded from this line</div>`;
   h += `</div>`;
   const tr = document.createElement("tr");
   tr.className = "detail";
@@ -676,8 +662,10 @@ function toggleDetail(path, ln, forceOpen) {
 mainEl.addEventListener("click", ev2 => {
   const chip = ev2.target.closest(".chip");
   if (chip) { location.hash = hashFor(curFile, +chip.dataset.goto); return; }
-  const ln = ev2.target.closest("td.ln");
-  if (ln && curFile) { toggleDetail(curFile, +ln.dataset.ln, false); return; }
+  const close = ev2.target.closest(".dclose");
+  if (close) { ev2.preventDefault(); close.closest("tr.detail").remove(); return; }
+  const row = ev2.target.closest("tr.clickable");
+  if (row && curFile) { toggleDetail(curFile, +row.querySelector("td.ln").dataset.ln, false); return; }
 });
 
 // ---------- routing ----------
@@ -726,7 +714,7 @@ def heatmap_main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("callgrind_file", nargs="+", help="callgrind output file(s); several are merged into one profile")
     ap.add_argument("-o", "--output", required=True, help="output .html path (directories are created)")
-    ap.add_argument("--event", default="Ir", help="event selected when the page opens (default: Ir)")
+    ap.add_argument("--event", default="CEst", help="event selected when the page opens (default: CEst, KCachegrind's cycle estimate)")
     ap.add_argument("--repo-root", default=".", help="repository root the profile's paths are relative to")
     ap.add_argument("--tree", nargs="*", default=["lib", "include", "src", "tests/perf"],
                     help="directories whose tracked .c/.h files are listed in the tree even without samples")
