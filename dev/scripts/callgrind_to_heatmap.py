@@ -256,7 +256,12 @@ tr.rowlink { cursor: pointer; }
 table.src tr.clickable { cursor: pointer; }
 table.src tr.clickable:hover td.ln { color: var(--link); }
 table.src td.self, table.src td.incl, table.src td.x { color: var(--muted); }
-table.src tr.heat td { color: inherit; }
+/* the row's self-cost heat (tr[style]) only colors .ln/.self/.code -- .incl
+   ("calls") and .x (D1m/DLm/Bcm) carry their own independent cost and, for
+   .x, their own inline heat background (extraCells' style=), so they must
+   never inherit the row's text color: that would recolor text sitting on
+   one background (or none) using contrast computed for a different one. */
+table.src tr.heat td.ln, table.src tr.heat td.self, table.src tr.heat td.code { color: inherit; }
 table.src td.hot { font-weight: 600; }
 table.src td.code { overflow: visible; text-overflow: clip; white-space: pre; tab-size: 4; }
 table.src tr.hasc td.ln::before { content: "\\25B8 "; color: var(--link); }
@@ -350,8 +355,18 @@ const EVENT_SHORT = {
 };
 const evLabel = e => EVENT_SHORT[e.key] ? EVENT_SHORT[e.key] + " / " + e.key : e.key;
 const evSel = document.getElementById("event");
-for (const e of EVS) { const o = document.createElement("option"); o.value = e.key; o.textContent = e.key + (e.long ? " \\u2014 " + e.long : ""); evSel.appendChild(o); }
+let evMaxLen = 0;
+for (const e of EVS) {
+  const o = document.createElement("option");
+  o.value = e.key;
+  o.textContent = e.key + (e.long ? " \\u2014 " + e.long : "");
+  evMaxLen = Math.max(evMaxLen, o.textContent.length);
+  evSel.appendChild(o);
+}
 evSel.value = ev.key;
+// Fixed to the longest option's width (+ slack for the native dropdown
+// arrow) so picking a shorter/longer event never reflows the header row.
+evSel.style.width = (evMaxLen + 4) + "ch";
 let TOTAL = 1, MAXP = 1, MAXPX = {};
 const val = v => ev.get(v);
 
@@ -447,6 +462,24 @@ function table(key, cols, rows, opts) {
   });
   h += `</tbody></table></div>`;
   return h + `</div>`;
+}
+// Plain-text twin of table(): a GFM pipe table, space-padded so the columns
+// line up whether it's pasted raw or rendered as markdown -- same cols/rows
+// inputs, so it can never drift out of sync with what the box shows.
+function tableText(cols, rows) {
+  const cell = c => (c && typeof c === "object") ? c : { text: c == null ? "" : String(c) };
+  const rc = rows.map(r => r.map(cell));
+  const widths = cols.map((col, i) => {
+    let n = col.label.length;
+    for (const r of rc) if (r[i]) n = Math.max(n, (r[i].text || "").length);
+    return n;
+  });
+  const pad = (s, w, num) => num ? s.padStart(w) : s.padEnd(w);
+  const line = cells => "| " + cells.map((s, i) => pad(s, widths[i], cols[i].num)).join(" | ") + " |";
+  const out = [line(cols.map(c => c.label))];
+  out.push("| " + cols.map((c, i) => (c.num ? "-".repeat(widths[i] - 1) + ":" : "-".repeat(widths[i]))).join(" | ") + " |");
+  for (const r of rc) out.push(line(cols.map((c, i) => (r[i] && r[i].text) || "")));
+  return out.join("\\n");
 }
 const evCol = (e, extra) => Object.assign({ label: e.key, title: e.long, num: true }, extra || {});
 const extraCols = () => EXTRA.map(x => evCol(x, {
@@ -579,7 +612,7 @@ function renderHome() {
      { label: "function", title: `first ${SYMBOL_CHARS} characters; drag the bar for more`, width: SYMBOL_CHARS },
      { label: "defined at", title: "file:line of the function's first executed line", clip: 48 },
      { label: "calls", title: "times the function was entered", num: true },
-     { label: "incl", title: "inclusive: self plus everything it calls", num: true }, ...extraCols()],
+     { label: "incl", title: "total: self plus everything it calls", num: true }, ...extraCols()],
     topF.map(([fi, s], i) => {
       const f = fns[fi], loc = f.line ? f.file + ":" + f.line : f.file, ncalls = f.callers.reduce((a, c) => a + c[4], 0);
       return [String(i + 1),
@@ -611,17 +644,22 @@ function renderFile(path, line) {
   for (const x of EXTRA) { const s = x.get(f.self); if (s) h += `<span class="stat" title="${esc(x.long)}: ${fmtN(s)}">${esc(evLabel(x))} <b>${fmtP(100 * s / MAXPX[x.key].total)}</b> (${fmtH(s)})</span>`; }
   if (f.group === "external") h += `<span class="stat">not in this repo (${esc(f.raw)})</span>`;
   h += `</div>`;
+  if (f.src == null) {
+    h += `<div class="nosrc">Source not available.</div>`;
+    mainEl.innerHTML = h;
+    renderTree();
+    Theme.init(mainEl);
+    minimapClear();
+    return;
+  }
   const cols = [{ label: "line", num: true }, evCol(ev, { title: ev.long + ", share of total, spent on the line itself" }),
-                { label: "calls", title: "inclusive cost of the calls made from the line, share of total", num: true },
+                { label: "calls", title: "total cost of the calls made from the line, share of total", num: true },
                 ...extraCols(), { label: "source" }];
   const hot = Object.keys(lines).map(k => [+k, val(lines[k][0])]).filter(t => t[1] > 0).sort((a, b) => b[1] - a[1]).slice(0, 12);
   if (hot.length) {
     h += `<div class="chips"><span class="lbl">hottest lines</span>`;
     for (const [ln, cost] of hot) h += `<span class="chip" data-goto="${ln}" style="${heatBg(heatT(cost, maxP))}">${ln} \\u00b7 ${fmtPct(cost)}</span>`;
     h += `</div>`;
-  }
-  if (f.src == null) {
-    h += `<div class="nosrc">Source not available it carries no cost.</div>`;
   }
   const rows = [];
   const emitRow = (ln, text) => {
@@ -634,16 +672,11 @@ function renderFile(path, line) {
     const cls = [rec ? "clickable" : "", f.callees[ln] ? "hasc" : "", line === ln ? "target" : "", hs ? "heat" : ""].filter(Boolean).join(" ");
     rows.push(`<tr id="L${ln}" class="${cls}" style="${hs}"${title ? ` title="${esc(title)}"` : ""}><td class="n ln" data-ln="${ln}">${ln}</td><td class="n self${t > 0.45 ? " hot" : ""}">${self ? fmtPct(self) : ""}</td><td class="n incl">${calls ? fmtPct(calls) : ""}</td>${xs}<td class="code">${text == null ? "" : esc(text)}</td></tr>`);
   };
-  let nlines = 0;
-  if (f.src != null) {
-    const srcl = f.src.split("\\n");
-    if (srcl.length && srcl[srcl.length - 1] === "") srcl.pop();
-    nlines = srcl.length;
-    for (let i = 0; i < srcl.length; i++) emitRow(i + 1, srcl[i]);
-    for (const k of Object.keys(lines)) if (+k > srcl.length) { nlines = Math.max(nlines, +k); emitRow(+k, "(line beyond end of file: source changed since the profile was taken)"); }
-  } else {
-    for (const k of Object.keys(lines).map(Number).sort((a, b) => a - b)) { nlines = k; emitRow(k, null); }
-  }
+  const srcl = f.src.split("\\n");
+  if (srcl.length && srcl[srcl.length - 1] === "") srcl.pop();
+  let nlines = srcl.length;
+  for (let i = 0; i < srcl.length; i++) emitRow(i + 1, srcl[i]);
+  for (const k of Object.keys(lines)) if (+k > srcl.length) { nlines = Math.max(nlines, +k); emitRow(+k, "(line beyond end of file: source changed since the profile was taken)"); }
   h += `<div class="tbl-cols"><table class="cols fill src" data-key="heat.src"><colgroup>`;
   cols.forEach((c, i) => {
     // line numbers carry a 2-character call marker; the cost columns hold "<0.01%"
@@ -738,7 +771,7 @@ function minimapBuild(nlines) {
 // no-ops via the scaledH clamp in the click/drag handlers below.
 function minimapLayout() {
   if (minimapEl.classList.contains("empty")) return;
-  const bandW = minimapEl.clientWidth;
+  const bandW = minimapEl.clientWidth, bandH = minimapEl.clientHeight;
   // The real content width, not an assumed minimum: mmMaxCols (measured in
   // minimapBuild from the actual longest source line, floored at
   // MM_MIN_COLS) sets how many characters must fit. Without this, mmBox was
@@ -747,7 +780,13 @@ function minimapLayout() {
   // band (the gap between actual scaled content and the band edge) that
   // varied with mmScale, i.e. with window width, instead of always being
   // zero.
-  mmScale = Math.min(1, bandW / (mmMaxCols * mmChPx));
+  // The whole file must fit the band vertically too -- minimapSync's viewport
+  // math (and the "never scrolls on its own" design, see its comment above)
+  // assumes the full mmNaturalH*mmScale content is what's on screen; without
+  // this the width-only scale left tall files' minimap frozen on their first
+  // screenful while the viewport box kept sliding down past content that was
+  // never actually drawn.
+  mmScale = Math.min(1, bandW / (mmMaxCols * mmChPx), bandH / mmNaturalH);
   mmBox.style.transform = `scale(${mmScale})`;
   mmBox.style.transformOrigin = "top left";
   mmBox.style.width = (bandW / mmScale) + "px";
@@ -815,33 +854,45 @@ function toggleDetail(path, ln, forceOpen) {
   const rec = f.lines[ln] || [[], [], 0];
   const fnCol = label => ({ label, title: `first ${SYMBOL_CHARS} characters; drag the bar for more`, width: SYMBOL_CHARS });
   const locCol = { label: "defined at", title: "file:line of the function's first executed line", clip: 48 };
+  const headLine = `line ${ln}${fnidx != null ? " in " + fnName(fnidx) : ""}: self ${fmtH(val(rec[0]))} ${evLabel(ev)} (${fmtPct(val(rec[0])) || "0%"})${val(rec[1]) ? `, calls ${fmtH(val(rec[1]))} (${fmtPct(val(rec[1]))}) over ${fmtH(rec[2])} calls` : ""}`;
   let h = `<div class="dbox">`;
   h += `<a href="#" class="dclose" title="close">[X]</a>`;
   h += `<div>line ${ln}${fnidx != null ? " in <b>" + esc(fnName(fnidx)) + "</b>" : ""}: self ${fmtH(val(rec[0]))} ${esc(evLabel(ev))} (${fmtPct(val(rec[0])) || "0%"})${val(rec[1]) ? `, calls ${fmtH(val(rec[1]))} (${fmtPct(val(rec[1]))}) over ${fmtH(rec[2])} calls` : ""}</div>`;
+  const textParts = [headLine];
   if (callees.length) {
-    h += `<h4>calls from this line (inclusive ${esc(evLabel(ev))})</h4>` + table("heat.detail.callees",
-      [{ label: "% of total", num: true }, evCol(ev), { label: "call count", num: true }, fnCol("callee"), locCol],
-      callees.map(([ci, cf, cl, vec, count]) => {
-        const loc = cl ? cf + ":" + cl : cf;
-        return [fmtPct(val(vec)), num(val(vec)), num(count), { text: fnName(ci), title: fnName(ci) }, { text: loc, html: link(cf, cl, loc) }];
-      }));
+    const cols = [{ label: "% of total", num: true }, evCol(ev), { label: "call count", num: true }, fnCol("callee"), locCol];
+    const rows = callees.map(([ci, cf, cl, vec, count]) => {
+      const loc = cl ? cf + ":" + cl : cf;
+      return [fmtPct(val(vec)), num(val(vec)), num(count), { text: fnName(ci), title: fnName(ci) }, { text: loc, html: link(cf, cl, loc) }];
+    });
+    const heading = `calls from this line (total ${evLabel(ev)})`;
+    h += `<h4>${esc(heading)}</h4>` + table("heat.detail.callees", cols, rows);
+    textParts.push(heading + "\\n" + tableText(cols, rows));
   }
   if (fi != null) {
     const fn = fns[fi];
     const callers = fn.callers.slice().sort((a, b) => b[4] - a[4]);
-    h += `<h4>${esc(fn.name)} is entered here \\u2014 self ${fmtPct(val(fn.self)) || "0%"}, inclusive ${fmtPct(val(fn.self) + val(fn.calls)) || "0%"}. Called from (by call count):</h4>`;
-    h += callers.length ? table("heat.detail.callers",
-      [{ label: "call count", num: true }, { label: "% of total", num: true }, evCol(ev), fnCol("caller"), { label: "called at", title: "file:line of the call", clip: 48 }],
-      callers.map(([ci, cf, cl, vec, count]) => {
+    const heading = `${fn.name} is entered here \\u2014 self ${fmtPct(val(fn.self)) || "0%"}, total ${fmtPct(val(fn.self) + val(fn.calls)) || "0%"}. Called from (by call count):`;
+    h += `<h4>${esc(fn.name)} is entered here \\u2014 self ${fmtPct(val(fn.self)) || "0%"}, total ${fmtPct(val(fn.self) + val(fn.calls)) || "0%"}. Called from (by call count):</h4>`;
+    if (callers.length) {
+      const cols = [{ label: "call count", num: true }, { label: "% of total", num: true }, evCol(ev), fnCol("caller"), { label: "called at", title: "file:line of the call", clip: 48 }];
+      const rows = callers.map(([ci, cf, cl, vec, count]) => {
         const loc = cl ? cf + ":" + cl : cf;
         return [num(count), fmtPct(val(vec)), num(val(vec)), { text: fnName(ci), title: fnName(ci) }, { text: loc, html: link(cf, cl, loc) }];
-      })) : `<div class="dim">(no recorded caller \\u2014 a root or a resolver stub)</div>`;
+      });
+      h += table("heat.detail.callers", cols, rows);
+      textParts.push(heading + "\\n" + tableText(cols, rows));
+    } else {
+      h += `<div class="dim">(no recorded caller \\u2014 a root or a resolver stub)</div>`;
+      textParts.push(heading + "\\n(no recorded caller \\u2014 a root or a resolver stub)");
+    }
   }
   h += `<div class="dactions"><a href="#" class="dcopy">copy</a> <a href="#" class="dclose2">close</a></div>`;
   h += `</div>`;
   const tr = document.createElement("tr");
   tr.className = "detail";
   tr.innerHTML = `<td colspan="${4 + EXTRA.length}">${h}</td>`;
+  tr._copyText = textParts.join("\\n\\n");
   row.after(tr);
   Theme.init(tr);
 }
@@ -852,10 +903,7 @@ mainEl.addEventListener("click", ev2 => {
   const copy = ev2.target.closest(".dcopy");
   if (copy) {
     ev2.preventDefault();
-    const box = copy.closest(".dbox");
-    const skip = new Set(["dclose", "dactions"]);
-    const text = [...box.children].filter(n => ![...n.classList].some(c => skip.has(c))).map(n => n.textContent).join("\\n").trim();
-    navigator.clipboard.writeText(text);
+    navigator.clipboard.writeText(copy.closest("tr.detail")._copyText);
     return;
   }
   const close = ev2.target.closest(".dclose, .dclose2");

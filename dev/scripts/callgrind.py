@@ -4,7 +4,7 @@ Per-line attribution mirrors callgrind_annotate exactly:
   * cost lines are charged to the *current* file, which `fl=` sets for a
     function and `fi=`/`fe=` switch for inlined code, and to the current
     line, decoded from callgrind's absolute/`+n`/`-n`/`*` subpositions;
-  * the cost line that follows a `calls=` record is the *inclusive* cost of
+  * the cost line that follows a `calls=` record is the *total* cost of
     that call, charged to the call-site line separately (never as self cost);
   * `calls=` target positions are decoded relative to the last cost line but
     do not advance it.

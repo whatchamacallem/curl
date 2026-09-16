@@ -100,12 +100,11 @@ details.sec summary h2 { display: inline; margin: 22px 0 6px; color: inherit; }
 details.sec[open] summary { margin-bottom: 2px; }
 pre.logbox { padding: 8px 12px; background: var(--panel); max-height: 60vh; overflow: auto; }
 
-/* splitter between two panes (the heat map's tree and listing): a 2px line
-   in a 7px grab area, 4px wide while the mouse is on it -- the pane's own
-   background is what reads as its edge otherwise; this line exists because
-   the splitter is draggable, not as plain decoration. */
-.split { flex: none; width: 7px; cursor: col-resize; touch-action: none;
-  background: linear-gradient(90deg, transparent 2.5px, var(--bar) 2.5px, var(--bar) 4.5px, transparent 4.5px); }
+/* splitter between two panes (the heat map's tree and listing): invisible at
+   rest -- the pane's own background is what reads as its edge -- and only
+   painted (a 4px line in a 7px grab area) on hover/drag, same convention as
+   .bar's own ::before, so it never reads as a decorative border. */
+.split { flex: none; width: 7px; cursor: col-resize; touch-action: none; background: none; }
 .split:hover, .split.active {
   background: linear-gradient(90deg, transparent 1.5px, var(--bar) 1.5px, var(--bar) 5.5px, transparent 5.5px); }
 

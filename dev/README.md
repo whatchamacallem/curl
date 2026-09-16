@@ -8,25 +8,27 @@ These are the raw counters callgrind records and the derived ones this report
 adds. They show up as column headers and event picker choices in the summary and
 the heat map.
 
-| Event | Meaning |
-|-------|---------|
-| Ir | Instructions executed (I cache reads) |
-| I1mr | L1 instruction cache read misses |
-| ILmr | Last level cache instruction read misses |
-| Dr | Memory reads (D cache reads) |
-| D1mr | L1 data cache read misses |
-| DLmr | Last level cache data read misses |
-| Dw | Memory writes (D cache writes) |
-| D1mw | L1 data cache write misses |
-| DLmw | Last level cache data write misses |
-| Bc | Conditional branches executed |
-| Bcm | Conditional branches mispredicted |
-| Bi | Indirect branches executed |
-| Bim | Indirect branches mispredicted |
+| Event | Meaning                                  |
+|-------|------------------------------------------|
+| Ir    | Instructions executed (I cache reads)    |
+| I1mr  | L1 instruction cache read misses         |
+| ILmr  | Last level cache instruction read misses |
+| Dr    | Memory reads (D cache reads)             |
+| D1mr  | L1 data cache read misses                |
+| DLmr  | Last level cache data read misses        |
+| Dw    | Memory writes (D cache writes)           |
+| D1mw  | L1 data cache write misses               |
+| DLmw  | Last level cache data write misses       |
+| Bc    | Conditional branches executed            |
+| Bcm   | Conditional branches mispredicted        |
+| Bi    | Indirect branches executed               |
+| Bim   | Indirect branches mispredicted           |
 
 Derived from the above: `D1m` is `D1mr + D1mw`, `DLm` is `DLmr + DLmw`,
 `L1m` is every L1 miss, `LLm` is every last level miss, `Bm` is every
 mispredict, and `CEst` is a rough cycle estimate.
+
+See the (callgrind)[https://valgrind.org/docs/manual/cl-manual.html] docs.
 
 ## Flame Graph Bindings (speedscope)
 
@@ -52,3 +54,5 @@ The keybindings are:
 - p: Go to previous profile/thread if one is available
 - t: Open the profile/thread selector if available
 - Cmd+F/Ctrl+F: to open search. While open, Enter and Shift+Enter cycle through results
+
+[speedscope](https://github.com/jlfwong/speedscope) is Copyright (c) 2018 Jamie Wong

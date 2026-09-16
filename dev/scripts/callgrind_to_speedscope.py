@@ -45,7 +45,7 @@ class Graph:
         self.index = {n: i for i, n in enumerate(self.names)}
         self.files = [path_display(repo_root, p.fn_home.get(n, "")) for n in self.names]
         self.self_cost = {self.index[n]: list(vec) for n, vec in p.fn_self.items()}
-        # caller index -> {callee index: summed inclusive cost over all call sites}
+        # caller index -> {callee index: summed total cost over all call sites}
         self.edges: dict[int, dict[int, list[int]]] = defaultdict(dict)
         for callee, sites in p.callers.items():
             for (cfn, _, _), (_, vec) in sites.items():
