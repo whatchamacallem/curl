@@ -301,6 +301,9 @@ script_main() {
   if [ "$TEST" = all ]; then run_all "$OUT_DIR/all"; fi
   [ "$VERBOSE" = 1 ] || printf ' -> %s\n' "$OUT_DIR/index.html"
 
+  log_say "== 8: validate -> $OUT_DIR =="
+  test_run python3 dev/scripts/validate_report.py "$OUT_DIR"
+
   log_say
   log_say "Done: $OUT_DIR/index.html"
 }

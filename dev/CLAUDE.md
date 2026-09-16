@@ -171,8 +171,12 @@ dev/profile.sh --verbose ~/artifacts urlparser   # every tool's output, a banner
   with `all`, the merged report (`all  8 profiles merged | Time: ... usecs`,
   no per-page timing -- building the overview from already-rendered
   per-test pages is fast enough not to warrant one); the last line ends
-  with `-> OUTDIR/index.html`. Ten lines
-  for `all`, two for one test. Everything the tools print (cmake, ninja,
+  with `-> OUTDIR/index.html`. After that, `validate_report.py OUTDIR`
+  runs as the final step and, in quiet mode, prints nothing on success --
+  a broken report is a `test_run` failure like any other (nonzero exit,
+  last 40 lines of its output shown) rather than a separate status line,
+  since there is nothing to report when it passes. Ten lines
+  for `all`, two for one test, before validation. Everything the tools print (cmake, ninja,
   the perf binary under callgrind and natively, the generators and their
   self-check ratios) goes to `dev/trace/profile.<ts>.log`, each command
   under a `$ ...` line, and a failing command's output (last 40 lines)
@@ -211,7 +215,9 @@ class keeps its own methods as-is and its module-level functions are
 class keeps its own methods and its free functions are `path_display`,
 `expr_resolve`, `graph_build_profile`, `document_build`,
 `speedscope_main` (`expr_label` already fits); `build_flame_graph.py`'s
-`index_patch`, `flamegraph_main`. Scope: top-level Python/shell function
+`index_patch`, `flamegraph_main`; `validate_report.py`'s `validate_main`
+(the `check_*`/`fail`/`repo_root_guess` helpers already fit unprefixed).
+Scope: top-level Python/shell function
 defs only -- `theme.js`'s `Theme.*` already fit the style and embedded JS
 inside the generators' HTML/BODY string templates is untouched (comments
 in that JS that name a Python function were kept in sync where they refer
@@ -282,6 +288,22 @@ Scripts (`dev/scripts/`):
   one speedscope profile per expression; `--repo-root` relativizes frame
   file paths, same as the heat map) and `build_flame_graph.py` (patches a
   copy of speedscope's `dist/release` to auto-load it) — flame-graph/.
+- `validate_report.py OUTDIR` — smoke test over a finished report
+  directory: every expected page exists, isn't suspiciously small or a
+  truncated/errored HTML document, the strip links and "top N functions"/
+  "test suites" sections are present, each test's `raw/` holds at least
+  one real callgrind file, `perf-tool/output.txt` has a timing line (plus
+  `Errors:` for urlparser specifically -- the other perf tests don't print
+  one), and no `raw/` file still contains the absolute repo root (the path
+  the report-copy `sed` step is supposed to strip). Structural/size checks
+  only, not a re-parse of the profile data -- it does not validate that
+  the numbers are *correct*, only that the pipeline didn't silently drop
+  a step. Handles both a single-test OUTDIR and an `all`/overview OUTDIR
+  (detected from `index.html`'s content); `--test NAME` narrows an
+  overview check to specific tests. `dev/profile.sh` runs it as the last
+  step against the whole `OUTDIR` it just wrote, non-verbose failures
+  going through the normal `test_run` error path (nonzero exit, last 40
+  log lines shown).
 
 Validated baseline (RelWithDebInfo, pinned, `loops=10000`, median of 7 runs):
 **137.66 ns/URL**, **~7.26M URLs/sec**, `Errors: 1240000` constant across
@@ -543,7 +565,10 @@ laptop, and the pages must not assume more.
 2. Profile if needed (`perf record`/`perf report`, `dev/profile.sh`,
    gdb, or just read the hot path) to find where time goes in
    `curl_url_set()` for `CURLUPART_URL`. Always profile the RelWithDebInfo
-   tree — see "Profiling" above for why.
+   tree — see "Profiling" above for why. `dev/profile.sh` runs
+   `dev/scripts/validate_report.py` on its own output as its last step, so
+   a report that finishes without error is already known to have every
+   expected page.
 3. Make a focused change.
 4. Rebuild (`cmake --build build --target perf`, and the main lib if you
    touched `lib/`) and re-run the benchmark.
