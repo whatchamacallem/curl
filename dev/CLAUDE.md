@@ -168,8 +168,10 @@ dev/profile.sh --verbose ~/artifacts urlparser   # every tool's output, a banner
   build (`build  build-relwithdebinfo -O2 -g, ccache 3s | log
   dev/trace/profile.<ts>.log`), each test (`urlparser  callgrind loops=200
   2m14s | native Time/URL: 137.66 ns, Errors: 1240000 | pages 4s`) and,
-  with `all`, the merged report (`all  8 profiles merged | Time: ... usecs
-  | pages 14s`); the last line ends with `-> OUTDIR/index.html`. Ten lines
+  with `all`, the merged report (`all  8 profiles merged | Time: ... usecs`,
+  no per-page timing -- building the overview from already-rendered
+  per-test pages is fast enough not to warrant one); the last line ends
+  with `-> OUTDIR/index.html`. Ten lines
   for `all`, two for one test. Everything the tools print (cmake, ninja,
   the perf binary under callgrind and natively, the generators and their
   self-check ratios) goes to `dev/trace/profile.<ts>.log`, each command

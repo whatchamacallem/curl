@@ -244,7 +244,8 @@ run_one() {
 # summed (the per-test pages have already been built), then the overview
 # index over every test.
 run_all() {
-  local out="$1" t loops usecs total=0 rows="" args t0 elapsed took perf_out="$out/perf-tool/output.txt"
+  local out="$1"
+  local t loops usecs total=0 rows="" args perf_out="$out/perf-tool/output.txt"
   mkdir -p "$out/perf-tool"
   CG_FILES=()
   LOG_FILES=()
@@ -268,9 +269,8 @@ run_all() {
     printf '%s' "$rows"
     echo "Time:     $total usecs"
   } | { if [ "$VERBOSE" = 1 ]; then tee "$perf_out"; else tee "$perf_out" >>"$RUN_LOG"; fi; }
-  [ "$VERBOSE" = 1 ] || printf '%-13s%d profiles merged | Time: %s usecs | pages' all "${#TESTS[@]}" "$total"
+  [ "$VERBOSE" = 1 ] || printf '%-13s%d profiles merged | Time: %s usecs' all "${#TESTS[@]}" "$total"
 
-  t0=$SECONDS
   report_render all "$out" "$TRACE_DIR/all.$STAMP.speedscope.json" \
     "curl perf all ($STAMP)"
 
@@ -282,9 +282,6 @@ run_all() {
         --test all)
   for t in "${TESTS[@]}"; do args+=(--test "$t"); done
   test_run python3 dev/scripts/build_report.py overview "${args[@]}"
-  elapsed=$(( SECONDS - t0 ))
-  if [ "$elapsed" -ge 60 ]; then took="$((elapsed / 60))m$((elapsed % 60))s"; else took="${elapsed}s"; fi
-  [ "$VERBOSE" = 1 ] || printf ' %s' "$took"
 }
 
 script_main() {
