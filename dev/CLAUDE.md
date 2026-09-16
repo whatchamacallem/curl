@@ -177,8 +177,19 @@ dev/profile.sh --verbose ~/artifacts urlparser   # every tool's output, a banner
   is shown with the error. `--verbose`, recognised as the first argument
   only (it is shifted away), prints it all to the terminal instead under
   a `== N [test]: ...` banner per step and writes no log. In the script:
-  `log_say` is verbose-only text, `log_status` is the quiet line, `log_run`
-  and `log_capture` route a command's output by mode.
+  `log_say` is verbose-only text; `test_run` routes a command's output by
+  mode; each quiet-mode status fragment is its own inline
+  `[ "$VERBOSE" = 1 ] || printf ...` at the call site rather than a shared
+  `log_status` helper -- those fragments only cohere as one line in quiet
+  mode (verbose mode already has `test_run`'s interleaved command spew to
+  match against instead), so the two modes are not one behavior behind a
+  common name, and a shared function for it was not a real abstraction.
+  Everything else that used to be a one-line helper (capturing stdout to
+  `RUN_LOG`, elapsed-time formatting, the perf-tool summary line,
+  listing/validating perf tests) is inlined at each call site instead of
+  factored out -- those were each a one-off wrapper around a single
+  command with no shared behavior worth naming, and named separately from
+  their call site they read as spooky action at a distance.
 
 Functions across `dev/` follow an `object_method`-style naming scheme (a
 C-identifier form of an object hierarchy, lowercase): `profile.sh`'s

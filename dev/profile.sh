@@ -5,7 +5,7 @@
 #
 #   --verbose  show everything the tools print (cmake, ninja, valgrind, the
 #              perf binary, the page generators) under a "== N: ..." banner
-#              per step. Recognised as the first argument only. Without it
+#              per step. Recognized as the first argument only. Without it
 #              the run is one status line per thing -- the build, each test,
 #              with "all" the merged report -- built up as its steps finish
 #              (ten lines for "all"), the last one ending in the report to
@@ -62,17 +62,9 @@ set -euo pipefail
 
 usage_show() { awk 'NR > 1 && !/^#/ { exit } NR > 1 { sub(/^# ?/, ""); print }' "$0"; }
 
-# ---------------------------------------------------------------------------
-# Output. --verbose: `log_say` prints the step banners and every command prints
-# as it does. Otherwise `log_status` builds one line per thing -- the build, each
-# test, the merged report -- as its steps finish, `log_run` and `log_capture` send
-# what the commands print to RUN_LOG, and only a failing command's output
-# reaches the terminal.
 log_say() { if [ "$VERBOSE" = 1 ]; then echo "$@"; fi; }
-# shellcheck disable=SC2059  # status FORMAT ARGS...
-log_status() { if [ "$VERBOSE" != 1 ]; then local fmt="$1"; shift; printf "$fmt" "$@"; fi; }
 
-log_run() {
+test_run() {
   if [ "$VERBOSE" = 1 ]; then "$@"; return; fi
   local rc=0 from
   printf '\n$ %s\n' "$*" >>"$RUN_LOG"
@@ -84,23 +76,6 @@ log_run() {
       echo "(last 40 lines; everything this run printed: $RUN_LOG)"; } >&2
     exit "$rc"
   fi
-}
-
-log_capture() { if [ "$VERBOSE" = 1 ]; then tee "$1"; else tee "$1" >>"$RUN_LOG"; fi; }  # stdin -> FILE
-log_fail() { { [ "$VERBOSE" = 1 ] || echo; echo "error: $*"; } >&2; exit 1; }
-log_took() { local s=$(( SECONDS - $1 )); if [ "$s" -ge 60 ]; then echo "$((s / 60))m$((s % 60))s"; else echo "${s}s"; fi; }
-# a native run's lines worth a status line, as "Time/URL: 137.66 ns, Errors: 1240000"
-log_perf_summary() { awk '/^(Time\/[A-Za-z]+|Errors):/ { $1 = $1; s = s (s ? ", " : "") $0 } END { print s }' "$1"; }
-
-test_all() {
-  sed -n '/^TESTS_C *=/,/^$/p' tests/perf/Makefile.inc | grep -o '[A-Za-z0-9_]*\.c' | sed 's/\.c$//' | sort
-}
-
-test_loops() {
-  case "$1" in
-    urlparser) echo "${CALLGRIND_LOOPS:-200}";;
-    *) echo "${CALLGRIND_LOOPS:-200000}";;
-  esac
 }
 
 args_parse() {
@@ -131,10 +106,10 @@ args_parse() {
   SS_EVENTS=(Ir D1mr+D1mw DLmr+DLmw I1mr Bcm Bim)
 
   if [ "$TEST" = all ]; then
-    TESTS=($(test_all))
+    TESTS=($(sed -n '/^TESTS_C *=/,/^$/p' tests/perf/Makefile.inc | grep -o '[A-Za-z0-9_]*\.c' | sed 's/\.c$//' | sort))
   else
-    if ! test_all | grep -qx -- "$TEST"; then
-      echo "error: unknown perf test '$TEST'; known: $(test_all | tr '\n' ' ')all" >&2
+    if ! sed -n '/^TESTS_C *=/,/^$/p' tests/perf/Makefile.inc | grep -o '[A-Za-z0-9_]*\.c' | sed 's/\.c$//' | sort | grep -qx -- "$TEST"; then
+      echo "error: unknown perf test '$TEST'; known: $(sed -n '/^TESTS_C *=/,/^$/p' tests/perf/Makefile.inc | grep -o '[A-Za-z0-9_]*\.c' | sed 's/\.c$//' | sort | tr '\n' ' ')all" >&2
       exit 2
     fi
     TESTS=("$TEST")
@@ -172,15 +147,17 @@ build_compile() {
   else
     log_say "   note: ccache not found; builds after a flag change will be full rebuilds"
   fi
-  log_status '%-13s%s -O2 -g%s, %s' build "$BUILD_DIR" "${CFLAGS_EXTRA[*]:+ ${CFLAGS_EXTRA[*]}}" "$CCACHE"
+  [ "$VERBOSE" = 1 ] || printf '%-13s%s -O2 -g%s, %s' build "$BUILD_DIR" "${CFLAGS_EXTRA[*]:+ ${CFLAGS_EXTRA[*]}}" "$CCACHE"
   local t0=$SECONDS
   # CMAKE_C_FLAGS is passed every time (possibly empty) so a previous run's
   # flags never linger in the cache.
-  log_run cmake -S . -B "$BUILD_DIR" -G Ninja -DCURL_USE_LIBPSL=OFF -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+  test_run cmake -S . -B "$BUILD_DIR" -G Ninja -DCURL_USE_LIBPSL=OFF -DCMAKE_BUILD_TYPE=RelWithDebInfo \
     "${LAUNCHER[@]}" -DCMAKE_C_FLAGS="${CFLAGS_EXTRA[*]}"
-  log_run cmake --build "$BUILD_DIR" --parallel
-  log_run cmake --build "$BUILD_DIR" --target perf
-  log_status ' %s | log %s\n' "$(log_took "$t0")" "${RUN_LOG#"$REPO_ROOT"/}"
+  test_run cmake --build "$BUILD_DIR" --parallel
+  test_run cmake --build "$BUILD_DIR" --target perf
+  local elapsed=$(( SECONDS - t0 ))
+  local took; if [ "$elapsed" -ge 60 ]; then took="$((elapsed / 60))m$((elapsed % 60))s"; else took="${elapsed}s"; fi
+  [ "$VERBOSE" = 1 ] || printf ' %s | log %s\n' "$took" "${RUN_LOG#"$REPO_ROOT"/}"
   BIN="$BUILD_DIR/tests/perf/perf"
   BUILD_DESC="$BUILD_DIR, -O2 -g -DNDEBUG${CFLAGS_EXTRA[*]:+ ${CFLAGS_EXTRA[*]}}, $(${CC:-cc} --version | head -1)"
   GIT_DESC="$(git describe --always --dirty 2>/dev/null || echo unknown) on $(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo ?)"
@@ -195,18 +172,18 @@ report_render() {
 
   log_say "== 4 [$name]: flame graph -> $out/flame-graph/index.html =="
   for x in "${SS_EVENTS[@]}"; do ev_args+=(--event "$x"); done
-  log_run python3 dev/scripts/callgrind_to_speedscope.py "${CG_FILES[@]}" -o "$json" "${ev_args[@]}" --name "$ss_name"
+  test_run python3 dev/scripts/callgrind_to_speedscope.py "${CG_FILES[@]}" -o "$json" "${ev_args[@]}" --name "$ss_name"
   rm -rf "$out/flame-graph"
   mkdir -p "$out/flame-graph"
   cp -r "$SPEEDSCOPE_RELEASE"/. "$out/flame-graph"/
-  log_run python3 dev/scripts/build_flame_graph.py --speedscope-dir "$out/flame-graph" --profile-json "$json"
+  test_run python3 dev/scripts/build_flame_graph.py --speedscope-dir "$out/flame-graph" --profile-json "$json"
 
   log_say "== 5 [$name]: heat map -> $out/heat-map/index.html =="
-  log_run python3 dev/scripts/callgrind_to_heatmap.py "${CG_FILES[@]}" -o "$out/heat-map/index.html" \
+  test_run python3 dev/scripts/callgrind_to_heatmap.py "${CG_FILES[@]}" -o "$out/heat-map/index.html" \
     --title "$name / heat map"
 
   log_say "== 6 [$name]: index -> $out/index.html =="
-  log_run python3 dev/scripts/build_report.py timing -o "$out/perf-tool/index.html" --test "$name" \
+  test_run python3 dev/scripts/build_report.py timing -o "$out/perf-tool/index.html" --test "$name" \
     --output-file "$out/perf-tool/output.txt" \
     --meta "binary=$BIN" --meta "pinned to=CPU $CPU" --meta "build=$BUILD_DESC"
   for x in "${LOG_FILES[@]}"; do log_args+=(--log "$x"); done
@@ -216,15 +193,18 @@ report_render() {
   cp "${CG_FILES[@]}" "$out/raw/"
   sed -i "s#$REPO_ROOT/##g" "$out"/raw/*
   for x in "${CG_FILES[@]}"; do raw_args+=(--raw-data "$out/raw/$(basename "$x")"); done
-  log_run python3 dev/scripts/build_report.py test "${CG_FILES[@]}" -o "$out/index.html" --test "$name" "${log_args[@]}" "${raw_args[@]}" \
+  test_run python3 dev/scripts/build_report.py test "${CG_FILES[@]}" -o "$out/index.html" --test "$name" "${log_args[@]}" "${raw_args[@]}" \
     --meta "generated=$(date '+%Y-%m-%d %H:%M:%S %Z') on $(hostname)"
   log_say "   raw data: ${CG_FILES[*]}"
 }
 
 run_one() {
   local test="$1" out="$2"
-  local loops cg_out log t0
-  loops="$(test_loops "$test")"
+  local loops cg_out log t0 elapsed took perf_out="$out/perf-tool/output.txt"
+  case "$test" in
+    urlparser) loops="${CALLGRIND_LOOPS:-200}";;
+    *) loops="${CALLGRIND_LOOPS:-200000}";;
+  esac
   cg_out="$TRACE_DIR/callgrind.out.$test.$loops.$STAMP"
   log="$TRACE_DIR/valgrind.$test.$loops.$STAMP.log"
   mkdir -p "$out/perf-tool"
@@ -232,38 +212,47 @@ run_one() {
   log_say "== 2 [$test]: callgrind ${CG_FLAGS[*]} ${CG_EXTRA[*]:-} (pinned to CPU $CPU, loops=$loops) =="
   log_say "   callgrind simulates every instruction (~30-50x slower than native); its"
   log_say "   wall-clock is not a perf number -- the native run below is."
-  log_status '%-13scallgrind loops=%s' "$test" "$loops"
+  [ "$VERBOSE" = 1 ] || printf '%-13scallgrind loops=%s' "$test" "$loops"
   t0=$SECONDS
-  log_run "${TASKSET[@]}" valgrind --tool=callgrind "${CG_FLAGS[@]}" "${CG_EXTRA[@]}" \
+  test_run "${TASKSET[@]}" valgrind --tool=callgrind "${CG_FLAGS[@]}" "${CG_EXTRA[@]}" \
     --callgrind-out-file="$cg_out" --log-file="$log" \
     "$BIN" "$test" "$loops"
-  log_status ' %s | native' "$(log_took "$t0")"
+  elapsed=$(( SECONDS - t0 ))
+  if [ "$elapsed" -ge 60 ]; then took="$((elapsed / 60))m$((elapsed % 60))s"; else took="${elapsed}s"; fi
+  [ "$VERBOSE" = 1 ] || printf ' %s | native' "$took"
 
   log_say "== 3 [$test]: native timing run (pinned to CPU $CPU) =="
   {
     echo "\$ ${TASKSET[*]:-} $BIN $test"
     "${TASKSET[@]}" "$BIN" "$test" 2>&1
-  } | log_capture "$out/perf-tool/output.txt" || log_fail "$BIN $test failed; its output is in $out/perf-tool/output.txt"
-  log_status ' %s | pages' "$(log_perf_summary "$out/perf-tool/output.txt")"
+  } | { if [ "$VERBOSE" = 1 ]; then tee "$perf_out"; else tee "$perf_out" >>"$RUN_LOG"; fi; } \
+    || { { [ "$VERBOSE" = 1 ] || echo; echo "error: $BIN $test failed; its output is in $perf_out"; } >&2; exit 1; }
+  # a native run's lines worth a status line, as "Time/URL: 137.66 ns, Errors: 1240000"
+  [ "$VERBOSE" = 1 ] || printf ' %s | pages' "$(awk '/^(Time\/[A-Za-z]+|Errors):/ { $1 = $1; s = s (s ? ", " : "") $0 } END { print s }' "$perf_out")"
 
   CG_FILES=("$cg_out")
   LOG_FILES=("$log")
   t0=$SECONDS
   report_render "$test" "$out" "$TRACE_DIR/$test.$loops.$STAMP.speedscope.json" \
     "curl perf $test (loops=$loops, $STAMP)"
-  log_status ' %s' "$(log_took "$t0")"
+  elapsed=$(( SECONDS - t0 ))
+  if [ "$elapsed" -ge 60 ]; then took="$((elapsed / 60))m$((elapsed % 60))s"; else took="${elapsed}s"; fi
+  [ "$VERBOSE" = 1 ] || printf ' %s' "$took"
 }
 
 # Every test's callgrind run merged into one profile, every native time
 # summed (the per-test pages have already been built), then the overview
 # index over every test.
 run_all() {
-  local out="$1" t loops usecs total=0 rows="" args t0
+  local out="$1" t loops usecs total=0 rows="" args t0 elapsed took perf_out="$out/perf-tool/output.txt"
   mkdir -p "$out/perf-tool"
   CG_FILES=()
   LOG_FILES=()
   for t in "${TESTS[@]}"; do
-    loops="$(test_loops "$t")"
+    case "$t" in
+      urlparser) loops="${CALLGRIND_LOOPS:-200}";;
+      *) loops="${CALLGRIND_LOOPS:-200000}";;
+    esac
     CG_FILES+=("$TRACE_DIR/callgrind.out.$t.$loops.$STAMP")
     LOG_FILES+=("$TRACE_DIR/valgrind.$t.$loops.$STAMP.log")
   done
@@ -278,8 +267,8 @@ run_all() {
     echo "\$ ${TASKSET[*]:-} $BIN <test>   for every test, one after the other (each test's page has its full output)"
     printf '%s' "$rows"
     echo "Time:     $total usecs"
-  } | log_capture "$out/perf-tool/output.txt"
-  log_status '%-13s%d profiles merged | Time: %s usecs | pages' all "${#TESTS[@]}" "$total"
+  } | { if [ "$VERBOSE" = 1 ]; then tee "$perf_out"; else tee "$perf_out" >>"$RUN_LOG"; fi; }
+  [ "$VERBOSE" = 1 ] || printf '%-13s%d profiles merged | Time: %s usecs | pages' all "${#TESTS[@]}" "$total"
 
   t0=$SECONDS
   report_render all "$out" "$TRACE_DIR/all.$STAMP.speedscope.json" \
@@ -292,8 +281,10 @@ run_all() {
         --meta "timed=$BIN <test>  (native, pinned to CPU $CPU)"
         --test all)
   for t in "${TESTS[@]}"; do args+=(--test "$t"); done
-  log_run python3 dev/scripts/build_report.py overview "${args[@]}"
-  log_status ' %s' "$(log_took "$t0")"
+  test_run python3 dev/scripts/build_report.py overview "${args[@]}"
+  elapsed=$(( SECONDS - t0 ))
+  if [ "$elapsed" -ge 60 ]; then took="$((elapsed / 60))m$((elapsed % 60))s"; else took="${elapsed}s"; fi
+  [ "$VERBOSE" = 1 ] || printf ' %s' "$took"
 }
 
 script_main() {
@@ -307,11 +298,11 @@ script_main() {
 
   local t
   for t in "${TESTS[@]}"; do
-    if [ "$TEST" = all ]; then run_one "$t" "$OUT_DIR/$t"; log_status '\n'
+    if [ "$TEST" = all ]; then run_one "$t" "$OUT_DIR/$t"; [ "$VERBOSE" = 1 ] || printf '\n'
     else run_one "$t" "$OUT_DIR"; fi
   done
   if [ "$TEST" = all ]; then run_all "$OUT_DIR/all"; fi
-  log_status ' -> %s\n' "$OUT_DIR/index.html"
+  [ "$VERBOSE" = 1 ] || printf ' -> %s\n' "$OUT_DIR/index.html"
 
   log_say
   log_say "Done: $OUT_DIR/index.html"
