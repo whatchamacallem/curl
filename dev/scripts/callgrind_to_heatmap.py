@@ -432,20 +432,27 @@ const SYMBOL_CHARS = 20; // visible characters of a function name before it is c
 // row has nothing else to click on, and repeating the link's hover style
 // on every cell would suggest each cell opens something different.
 const PAD = 3; // 1ch padding each side + 1ch slack for the divider bar and ch rounding
+const PCTW = "-100.0%".length; // width floor for any col with neither `width` nor `clip`: it only ever
+                                // holds a percentage/count short enough to fit "-100.0%"; scanning actual
+                                // cell text let a long header label (e.g. "L1 cache / D1m") balloon the
+                                // column into a wide heat-colored block for a tiny value -- the header
+                                // still gets its full text as a tooltip and just ellipsizes on screen.
 function table(key, cols, rows, opts) {
   opts = opts || {};
   const cell = c => (c && typeof c === "object") ? c : { text: c == null ? "" : String(c) };
   const rc = rows.map(r => r.map(cell));
   const widths = cols.map((col, i) => {
     if (col.width != null) return col.width + PAD;
-    let n = col.label.length;
-    for (const r of rc) if (r[i]) n = Math.max(n, (r[i].text || "").length);
-    if (col.clip != null) n = Math.min(n, col.clip);
-    return n + PAD;
+    if (col.clip != null) {
+      let n = col.label.length;
+      for (const r of rc) if (r[i]) n = Math.max(n, (r[i].text || "").length);
+      return Math.min(n, col.clip) + PAD;
+    }
+    return Math.max(col.label.length, PCTW) + PAD;
   });
   let h = `<div class="tbl">`;
-  h += `<div class="tbl-cols"><table class="cols${opts.fill ? " fill" : ""}" data-key="${esc(key)}"><colgroup>`;
-  cols.forEach((c, i) => { h += `<col${i % 2 ? ' class="alt"' : ""}${(opts.fill && i === cols.length - 1) ? "" : ` style="width:${widths[i]}ch"`}>`; });
+  h += `<div class="tbl-cols"><table class="cols" data-key="${esc(key)}"><colgroup>`;
+  cols.forEach((c, i) => { h += `<col${i % 2 ? ' class="alt"' : ""} style="width:${widths[i]}ch">`; });
   h += `</colgroup><thead><tr>`;
   for (const c of cols) h += `<th${c.num ? ' class="n"' : ""}${c.title ? ` title="${esc(c.title)}"` : ""}>${esc(c.label)}</th>`;
   h += `</tr></thead><tbody>`;
@@ -605,7 +612,7 @@ function renderHome() {
               { text: fnName(fnidx), title: fnName(fnidx) },
               { text: path + ":" + ln, html: link(path, ln, path + ":" + ln) },
               snip, num(cost), ...extraCells(rec[0])];
-    }), { fill: true, rowHref: lineRows.map(t => hashFor(t[0], t[1])) });
+    }), { rowHref: lineRows.map(t => hashFor(t[0], t[1])) });
   const topF = fns.map((f, i) => [i, val(f.self)]).filter(t => t[1] > 0).sort((a, b) => b[1] - a[1]).slice(0, 60);
   h += `<h2>Hottest functions by self ${esc(evLabel(ev))}</h2>` + table("heat.home.functions",
     [{ label: "#", title: "rank", num: true }, SELF,
@@ -620,7 +627,7 @@ function renderHome() {
               { text: f.name, title: f.name },
               { text: loc, html: link(f.file, f.line, loc) },
               ncalls ? num(ncalls) : "", fmtPct(s + val(f.calls)), ...extraCells(f.self)];
-    }), { fill: true, rowHref: topF.map(([fi]) => hashFor(fns[fi].file, fns[fi].line)) });
+    }), { rowHref: topF.map(([fi]) => hashFor(fns[fi].file, fns[fi].line)) });
   h += `</div>`;
   mainEl.innerHTML = h;
   mainEl.scrollTop = 0;
@@ -679,8 +686,8 @@ function renderFile(path, line) {
   for (const k of Object.keys(lines)) if (+k > srcl.length) { nlines = Math.max(nlines, +k); emitRow(+k, "(line beyond end of file: source changed since the profile was taken)"); }
   h += `<div class="tbl-cols"><table class="cols fill src" data-key="heat.src"><colgroup>`;
   cols.forEach((c, i) => {
-    // line numbers carry a 2-character call marker; the cost columns hold "<0.01%"
-    const w = (i === 0 ? String(nlines).length + 2 : 6) + PAD;
+    // line numbers carry a 2-character call marker; the cost columns fit "-100.0%"
+    const w = (i === 0 ? String(nlines).length + 2 : PCTW) + PAD;
     h += `<col${i % 2 ? ' class="alt"' : ""}${i === cols.length - 1 ? "" : ` style="width:${w}ch"`}>`;
   });
   h += `</colgroup><thead><tr>${cols.map(c => `<th${c.num ? ' class="n"' : ""}${c.title ? ` title="${esc(c.title)}"` : ""}>${esc(c.label)}</th>`).join("")}</tr></thead><tbody>`;
