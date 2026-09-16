@@ -28,7 +28,8 @@ Derived from the above: `D1m` is `D1mr + D1mw`, `DLm` is `DLmr + DLmw`,
 `L1m` is every L1 miss, `LLm` is every last level miss, `Bm` is every
 mispredict, and `CEst` is a rough cycle estimate.
 
-See the (callgrind)[https://valgrind.org/docs/manual/cl-manual.html] docs.
+See the [callgrind](https://valgrind.org/docs/manual/cl-manual.html) docs.
+GPL Version 3, 29 June 2007.
 
 ## Flame Graph Bindings (speedscope)
 
