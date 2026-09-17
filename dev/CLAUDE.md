@@ -100,8 +100,25 @@ Raw data in `dev/trace/` (gitignored): `callgrind.out.<test>.<loops>.<ts>`, `val
 - `callgrind_to_speedscope.py` (`--event` repeatable, `A+B` sums, `--repo-root` relativizes) + `build_flame_graph.py` — flame-graph/.
 - `callgrind_to_cgdiff.py BEFORE... -- AFTER... -o OUT.html` — regression diff via `dev/profile_diff.sh`.
 - `validate_report.py OUTDIR` — structural smoke test (pages exist/non-truncated, strip links present, `raw/` has real files, timing line present, no leaked absolute paths). `--test NAME` narrows an overview check.
+- `check_js.py` — `node --check` on `theme.js` and on every JS chunk embedded in a generator's Python string (`SOURCES` lists the module/attribute pairs; `<script>` blocks that are only a `__PLACEHOLDER__` are skipped). Add a pair here when a generator grows new embedded JS.
 
 Both `callgrind.py`'s parser and `callgrind_to_speedscope.py`'s walk print self-check ratios to stderr on every run — must be exactly/~1.0000 or nothing is written. If you touch either script, re-verify those ratios.
+
+### `dev/test.sh` — checks for the tooling itself (builds/profiles nothing)
+
+```sh
+dev/test.sh            # every group
+dev/test.sh py         # one group: py | js | import
+dev/test.sh --list     # what the groups check
+```
+
+- `py` — pyright over `dev/scripts` per `dev/pyrightconfig.json` (`standard` mode, `pythonVersion` 3.11). Must stay at **0 errors**.
+- `js` — `check_js.py` (see above); catches a `\n` that needed `\\n` in JS-inside-a-Python-string before it reaches a generated page.
+- `import` — every generator imports and renders `--help`.
+
+The checker is **pyright**, installed from PyPI: `pip3 install --user --break-system-packages pyright` → `~/.local/bin/pyright` (this box is PEP-668 externally-managed and has no pipx/uv; the flag matches how the other `~/.local/bin` tools got there). `test.sh` prefers that, then a cached `npx --offline pyright`. **Pylance is not usable here** — it is a VS Code extension, and its bundled `dist/pyright.bundle.js` speaks LSP only, ignores argv and prints nothing (no `outputjson` string in it).
+
+Generator output is **not reproducible across runs by default**: several raw paths normalize to one display path (`./malloc/../string/bits/string_fortified.h` vs `./string/../string/...`) and which raw one lands in a file's `raw` field follows dict/set order, so `PYTHONHASHSEED` randomization makes three runs of identical code give three different bytes. Set `PYTHONHASHSEED=0` for any before/after byte comparison of generated pages; only the `raw` field of a few external libc/ld headers is affected, never costs or `functions`.
 
 ### Line-level view (why the heat map exists)
 

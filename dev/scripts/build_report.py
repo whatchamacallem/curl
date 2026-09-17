@@ -72,12 +72,26 @@ FRAME_JS = """\
 // asks it to send it again after a show() that re-lit its link without
 // navigating it. "reset columns" resets every table on this page and
 // posts "theme:reset-cols" into the frame for the page there.
+//
+// The three utility links ("reset columns", "help", "curl.se/perf") are on
+// every frame strip, but only the innermost strip on screen shows them --
+// the strip with the most links of its own is the one with space to spare.
+// A frame page announces its own group up with {theme:"util", has:true}
+// whenever it has one on screen, and withdraws it (has:false) when it goes
+// back to a view with no nested strip; utilShow() hides this page's group
+// for as long as a nested one is up, and re-announces this page's own state
+// to its parent, so the rule holds at any nesting depth.
 (function () {
   const bar = document.getElementById("bar"), home = document.getElementById("home"), view = document.getElementById("view");
   const titleEl = document.getElementById("title"), links = [...bar.querySelectorAll("a[data-view]")];
+  const utilEl = document.getElementById("util");
   const framed = window.parent !== window;
-  let title = titleEl.textContent, page = "", state = "";
+  let title = titleEl.textContent, page = "", state = "", innerUtil = false;
   if (framed) titleEl.hidden = true;
+  function utilShow() {
+    if (utilEl) utilEl.hidden = innerUtil;
+    if (framed) window.parent.postMessage({ theme: "util", has: !!utilEl && !innerUtil }, "*");
+  }
   function setTitle(t) {
     title = t;
     titleEl.textContent = t;
@@ -99,9 +113,18 @@ FRAME_JS = """\
     const link = links.find(a => a.dataset.view === key), cur = link || links[0];
     for (const a of links) a.classList.toggle("on", a === cur);
     setTitle(cur.dataset.title);
-    if (!link || !key) { view.hidden = true; home.hidden = false; sync(""); return; }
+    if (!link || !key) {
+      view.hidden = true; home.hidden = false;
+      innerUtil = false; utilShow(); // nothing in the frame: this strip is the innermost one
+      sync(""); return;
+    }
     const href = link.getAttribute("href");
-    if (href !== page || sub !== state) view.contentWindow.location.replace(href + (sub || "#"));
+    if (href !== page || sub !== state) {
+      // the page going into the frame says for itself whether it has a strip
+      // of its own; until it does, this strip keeps its own group
+      innerUtil = false; utilShow();
+      view.contentWindow.location.replace(href + (sub || "#"));
+    }
     if (href === page) view.contentWindow.postMessage("theme:title?", "*");
     page = href; state = sub;
     home.hidden = true; view.hidden = false;
@@ -135,9 +158,10 @@ FRAME_JS = """\
   window.addEventListener("message", e => {
     if (e.source === view.contentWindow) {
       if (e.data && e.data.theme === "title") setTitle(e.data.title);
+      else if (e.data && e.data.theme === "util") { innerUtil = !!e.data.has; utilShow(); }
       else if (e.data && e.data.theme === "hash" && page) { state = e.data.hash; sync(build(parse(location.hash)[0], state)); }
     } else if (framed && e.source === window.parent) {
-      if (e.data === "theme:title?") setTitle(title);
+      if (e.data === "theme:title?") { setTitle(title); utilShow(); }
       else if (e.data === "theme:reset-cols") {
         window.Theme.resetCols(home);
         if (page) view.contentWindow.postMessage("theme:reset-cols", "*");
@@ -169,30 +193,37 @@ def file_read_text(path: str) -> str:
         return f"(missing: {path})"
 
 
-def strip_render(title: str, links: list[tuple[str, str, str, str]], perf_link: bool = False) -> str:
-    """The strip across the top: the title, then the links -- (view key or ""
-    for the page itself, label, href, title to show when picked), each pair
-    separated by its own "|" cell so highlighting a link's background never
-    bleeds into the divider -- then, on the top-level page only, "reset
-    columns" (restores every table on the page to its default widths;
-    dragged widths themselves are still not persisted across reloads, only
-    resettable within one), "help" and "curl.se/perf", pushed to the far
-    right. A per-test strip nested in the overview's iframe (report_test's
-    own strip) has none of those three, since the overview strip above it
-    already carries them."""
+def strip_render(title: str, links: list[tuple[str, str, str, str]], help_href: str = "README.md") -> str:
+    """The strip across the top: the title badge, then the links -- (view key
+    or "" for the page itself, label, href, title to show when picked) --
+    separated by their own "|" cells so highlighting a link's background
+    never bleeds into a divider. The title badge is a divider of its own, so
+    there is no "|" between it and the first link; every later pair has one.
+
+    Then the three utility links -- "reset columns" (every table on this page
+    and in its frame back to its default widths; dragged widths are still not
+    persisted across reloads, only resettable within one), "help" and
+    "curl.se/perf" -- pushed to the far right in a `.util` group. Every frame
+    strip carries them, but only one strip shows them at a time: whenever a
+    nested strip is on screen (the overview's per-test page in its iframe),
+    the strip above it hides its own group and the innermost visible one
+    carries them, freeing the space on the strip that has the most links.
+    FRAME_JS does that at runtime (utilShow)."""
     def sep() -> str:
         return '<span class="sep">|</span>'
     parts = [f'<b class="title" id="title">{html_esc(title)}</b>']
-    for key, label, href, t in links:
-        parts.append(sep())
+    for i, (key, label, href, t) in enumerate(links):
+        if i:
+            parts.append(sep())
         parts.append(f'<a href="{html_esc(href)}" data-view="{html_esc(key)}" data-title="{html_esc(t)}">{html_esc(label)}</a>')
-    if perf_link:
-        parts.append('<span class="sp"></span>')
-        parts.append('<a href="#" id="reset-cols">reset columns</a>')
-        parts.append(sep())
-        parts.append('<a href="README.md" target="_blank">help</a>')
-        parts.append(sep())
-        parts.append(f'<a href="{PERF_CHART}" target="_blank" rel="noopener">curl.se/perf</a>')
+    parts.append('<span class="sp"></span>')
+    parts.append('<span class="util" id="util">')
+    parts.append('<a href="#" id="reset-cols">reset columns</a>')
+    parts.append(sep())
+    parts.append(f'<a href="{html_esc(help_href)}" target="_blank">help</a>')
+    parts.append(sep())
+    parts.append(f'<a href="{PERF_CHART}" target="_blank" rel="noopener">curl.se/perf</a>')
+    parts.append("</span>")
     return f'<nav id="bar" class="strip">{"".join(parts)}</nav>'
 
 
@@ -285,6 +316,39 @@ def functions_table(p: cg.Profile, event: str, top: int, repo_root: str) -> str:
     return theme.table_render("report.functions", cols, rows, fill=True, lines=True)
 
 
+# A duration a perf test printed, as its own C code spells it: either
+# "Time:     5593372 usecs" (a whole count of microseconds) or
+# "Time/URL: 138.48 ns" (a value and its unit, with the unit spelled the way
+# the C printf wrote it). A line is a duration by its unit suffix, whatever
+# its label (the "all" run's summed rows are labelled by test name); both
+# become theme.num_time()'s one form.
+TIME_LINE = re.compile(r"^(\s*[A-Za-z][\w/ ]*:\s*)"
+                       r"(-?\d+(?:\.\d+)?)\s*(usecs?|us|µs|msecs?|ms|nsecs?|ns|secs?|s)\s*$",
+                       re.I | re.M)
+TIME_SCALE = {"usec": 1e-6, "usecs": 1e-6, "us": 1e-6, "µs": 1e-6,
+              "msec": 1e-3, "msecs": 1e-3, "ms": 1e-3,
+              "nsec": 1e-9, "nsecs": 1e-9, "ns": 1e-9,
+              "sec": 1.0, "secs": 1.0, "s": 1.0}
+
+
+def time_humanize(text: str) -> str:
+    """Every duration a perf test printed, rewritten in theme.num_time()'s
+    form -- "Time: 5593372 usecs" -> "Time: 5.59s", "Time/URL: 138.48 ns" ->
+    "Time/URL: 138.48ns". A line that is not a duration is left alone."""
+    def one(m: re.Match) -> str:
+        scale = TIME_SCALE.get(m.group(3).lower())
+        return m.group(0) if scale is None else m.group(1) + theme.num_time(float(m.group(2)) * scale)
+    return TIME_LINE.sub(one, text)
+
+
+def value_humanize(label: str, value: str) -> str:
+    """One "label: value" pair off a native run, as the overview's table
+    shows it: a duration in theme.num_time()'s form, anything else as it
+    came."""
+    line = time_humanize(f"{label}: {value}")
+    return line.split(": ", 1)[1] if line != f"{label}: {value}" else value
+
+
 PID_PREFIX = re.compile(r"^==\d+==\s?")
 
 
@@ -318,7 +382,7 @@ def report_test(args: argparse.Namespace) -> None:
         sys.exit("error: per-line self cost does not add up to callgrind's summary")
 
     links = [("", "summary", "#", args.test)] + [(k, label, path, f"{args.test} / {label}") for k, label, path in VIEWS]
-    body = strip_render(args.test, links)
+    body = strip_render(args.test, links, help_href=args.help_href)
     out_dir = os.path.dirname(os.path.abspath(args.output))
     body += '<main id="home"><div class="page">'
     if args.log and not args.no_log:
@@ -336,7 +400,8 @@ def report_test(args: argparse.Namespace) -> None:
 
 def report_timing(args: argparse.Namespace) -> None:
     body = '<div class="page">' + meta_table("timing.meta", meta_parse_pairs(args.meta))
-    body += f"<h2>output</h2><pre>{html_esc(file_read_text(args.output_file).rstrip())}</pre></div>"
+    out = time_humanize(file_read_text(args.output_file).rstrip())
+    body += f"<h2>output</h2><pre>{html_esc(out)}</pre></div>"
     page_write(args.output, theme.page_document(f"{args.test} / native timing", body))
 
 
@@ -355,7 +420,7 @@ def report_overview(args: argparse.Namespace) -> None:
         for line in file_read_text(os.path.join(d, "perf-tool", "output.txt")).splitlines():
             m = re.match(r"^([A-Za-z][^:]{0,30}):\s+(.+?)\s*$", line)
             if m:
-                vals[m.group(1)] = m.group(2)
+                vals[m.group(1)] = value_humanize(m.group(1), m.group(2))
                 if m.group(1) not in keys:
                     keys.append(m.group(1))
         numbers[name] = vals
@@ -364,7 +429,7 @@ def report_overview(args: argparse.Namespace) -> None:
     rows = [[Cell(name, html=f'<a href="{html_esc(name)}/index.html">{html_esc(name)}</a>')] + [numbers[name].get(k, "") for k in keys]
             for name, _ in tests]
     links = [("", "overview", "#", "overview")] + [(name, name, f"{name}/index.html", name) for name, _ in tests]
-    body = strip_render("overview", links, perf_link=True)
+    body = strip_render("overview", links)
     body += '<main id="home"><div class="page">' + meta_table("overview.meta", meta_parse_pairs(args.meta))
     body += "<h2>test suites</h2>" + theme.table_render("overview.tests", cols, rows)
     body += '</div></main><iframe id="view" hidden title="report page"></iframe>'
@@ -387,6 +452,9 @@ def report_main() -> None:
     t.add_argument("--event", default="Ir", help="event that ranks the functions (default: Ir)")
     t.add_argument("--top", type=int, default=50)
     t.add_argument("--repo-root", default=".")
+    t.add_argument("--help-href", default="README.md",
+                   help="the strip's 'help' target, relative to this page (default: README.md; "
+                        "a per-test page under an overview needs ../README.md)")
     t.set_defaults(run=report_test)
 
     n = sub.add_parser("timing", help="the native timing run page")

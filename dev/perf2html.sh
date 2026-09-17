@@ -118,7 +118,7 @@ build_compile() {
 # log(s) in LOG_FILES and the native output at $out/perf-tool/output.txt.
 report_render() {
   local name="$1" out="$2" json="$3" ss_name="$4"
-  local ev_args=() log_args=() raw_args=() x
+  local ev_args=() log_args=() raw_args=() help_args=() x
 
   log_say "== 4 [$name]: flame graph -> $out/flame-graph/index.html =="
   for x in "${SS_EVENTS[@]}"; do ev_args+=(--event "$x"); done
@@ -144,7 +144,11 @@ report_render() {
   sed -i "s#$REPO_ROOT/##g" "$out"/raw/*
   for x in "${CG_FILES[@]}"; do raw_args+=(--raw-data "$out/raw/$(basename "$x")"); done
   [ "$name" = all ] && log_args+=(--no-log)
-  test_run python3 dev/scripts/build_report.py test "${CG_FILES[@]}" -o "$out/index.html" --test "$name" --top "$TOP" "${log_args[@]}" "${raw_args[@]}"
+  # under `all` every test's page sits one directory down from the copy of
+  # README.md its strip's "help" link opens
+  [ "$TEST" = all ] && help_args=(--help-href ../README.md)
+  test_run python3 dev/scripts/build_report.py test "${CG_FILES[@]}" -o "$out/index.html" --test "$name" --top "$TOP" \
+    "${log_args[@]}" "${raw_args[@]}" "${help_args[@]}"
   log_say "   raw data: ${CG_FILES[*]}"
 }
 
@@ -210,9 +214,11 @@ run_all() {
   done
 
   log_say "== 3 [all]: native timing, every test's run above summed =="
+  # "<test>: <n> usecs" -- a "label: value" line, the one shape the report's
+  # time_humanize()/value_humanize() rewrite into 5.59s-style durations
   for t in "${TESTS[@]}"; do
     usecs="$(awk '/^Time:/ { print $2; exit }' "$OUT_DIR/$t/perf-tool/output.txt")"
-    rows+="$(printf '%-14s %12s usecs' "$t" "${usecs:-?}")"$'\n'
+    rows+="$(printf '%-14s %12s usecs' "$t:" "${usecs:-?}")"$'\n'
     total=$(( total + ${usecs:-0} ))
   done
   {

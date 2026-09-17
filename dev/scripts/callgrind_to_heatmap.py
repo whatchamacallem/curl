@@ -120,8 +120,9 @@ def model_build(p: cg.Profile, args: argparse.Namespace) -> dict:
             "self": [0] * nev, "calls": [0] * nev, "src": None, "lines": {}, "lfn": {},
             "callees": {}, "group": group[raw], "raw": raw if group[raw] == "external" else d,
         })
-        if entry["src"] is None and local[raw]:
-            entry["src"] = source_read(local[raw])
+        loc = local[raw]
+        if entry["src"] is None and loc:
+            entry["src"] = source_read(loc)
     for (raw, ln), vec in p.line_self.items():
         e = files[disp[raw]]
         vadd(e["self"], vec)
@@ -153,10 +154,14 @@ def model_build(p: cg.Profile, args: argparse.Namespace) -> dict:
     for name in fn_names:
         home = p.fn_home[name]
         ef, el = p.fn_entry.get(name, (home, 0))
-        callers = sorted(
-            ([fn_index[cf], disp.get(cfile, cfile), cl, vec_trim(vec), count]
-             for (cf, cfile, cl), (count, vec) in p.callers[name].items()),
-            key=lambda t: -(t[3][0] if t[3] else 0))
+        # Rows are heterogeneous lists the page reads positionally; sort on the
+        # trimmed cost vector's first event, which vec_trim() may have emptied.
+        caller_rows: list[tuple[list[int], list[object]]] = []
+        for (cf, cfile, cl), (count, vec) in p.callers[name].items():
+            tvec = vec_trim(vec)
+            caller_rows.append((tvec, [fn_index[cf], disp.get(cfile, cfile), cl, tvec, count]))
+        callers = [row for _, row in
+                   sorted(caller_rows, key=lambda t: -(t[0][0] if t[0] else 0))]
         functions.append({
             "name": name,
             "file": disp.get(ef, ef),
@@ -216,6 +221,14 @@ body { display: flex; flex-direction: column; height: 100vh; }
    listing's cells clip (table.cols' own rule), so the wrapper's width is
    exactly the scrollable width. */
 .srcwrap { width: max-content; min-width: 100%; }
+/* room past the last source line, so the end of a file can still be
+   scrolled up to the middle of the pane -- where centerRow puts every line
+   a chip, link or bookmark leads to -- instead of the last row stopping at
+   the pane's bottom edge. Not padding on #main or .srcwrap: either would
+   sit inside what the sticky header band and the minimap's clone measure.
+   A block of its own after the listing, half the pane tall (renderFile
+   sets the exact px; this is the value before the first measurement). */
+.srctail { height: 50vh; }
 /* only the listing box may set the wrapper's width: the header band and
    chips wrap their contents to whatever width they're given, and without
    this their *unwrapped* single-line width (all of .fhead's stats in a row)
@@ -266,9 +279,12 @@ body { display: flex; flex-direction: column; height: 100vh; }
   display: flex; gap: 4px 18px; align-items: baseline; flex-wrap: wrap; }
 .fhead .path { font-weight: 600; }
 .fhead .stat { color: var(--muted); }
-.chips { display: flex; gap: 4px; flex-wrap: wrap; padding: 5px 14px; background: var(--panel); }
-.chips .lbl { color: var(--muted); align-self: center; margin-right: 4px; }
-.chip { padding: 0 7px; background: var(--bg-alt); cursor: pointer; }
+/* one row, never two: the chips are an aside, and a second row of them
+   would push the listing itself down the pane. What does not fit is simply
+   cut off at the pane's right edge, like every other clipped thing here. */
+.chips { display: flex; gap: 4px; flex-wrap: nowrap; padding: 5px 14px; background: var(--panel); overflow: hidden; }
+.chips .lbl { color: var(--muted); align-self: center; margin-right: 4px; flex: none; }
+.chip { padding: 0 7px; background: var(--bg-alt); cursor: pointer; flex: none; white-space: nowrap; }
 .chip:hover { outline: 1px solid var(--link); outline-offset: -1px; }
 .nosrc { padding: 8px 14px; color: var(--muted); }
 table.src > tbody > tr > td { padding-top: 0; padding-bottom: 0; }
@@ -477,6 +493,7 @@ const fnLinkable = fi => fi != null && fns[fi] && fns[fi].line && files[fns[fi].
 function linkFn(fi, text) { return fnLinkable(fi) ? `<a href="${hashForFn(fns[fi].name)}">${esc(text)}</a>` : esc(text); }
 const SYMBOL_CHARS = 20; // visible characters of a function name before it is cut off
 const SRC_COLS = 80; // visible characters of source the listing always shows; the pane's spare width is added on top
+const HOT_CHIPS = 10; // most "hottest lines" chips a file view offers; the row is one line and cuts off at the pane's edge
 
 // A .tbl box: a fixed-layout table with widths in characters (everything is
 // monospace). Mirrors theme.table_render() in theme.py. cols: {label, title,
@@ -731,10 +748,18 @@ function renderFile(path, line) {
     minimapClear();
     return;
   }
-  const hot = Object.keys(lines).map(k => [+k, val(lines[k][0])]).filter(t => t[1] > 0).sort((a, b) => b[1] - a[1]).slice(0, 12);
-  if (hot.length) {
+  // The file's hottest lines as chips: only lines whose share is worth a
+  // number (fmtPct gives "<0.01%" below that, which says nothing and filled
+  // the row with chips that were not worth clicking), the ten hottest of
+  // them, and no row at all when none qualifies. The row is one line: chips
+  // past the right edge are cut off rather than wrapping onto a second row
+  // that would push the listing down.
+  const hot = Object.keys(lines).map(k => [+k, val(lines[k][0])])
+    .filter(t => t[1] > 0).sort((a, b) => b[1] - a[1]);
+  const chips = hot.filter(t => pct(t[1]) >= 0.01).slice(0, HOT_CHIPS);
+  if (chips.length) {
     h += `<div class="chips"><span class="lbl">hottest lines</span>`;
-    for (const [ln, cost] of hot) h += `<span class="chip" data-goto="${ln}" style="${heatBg(heatT(cost, maxP))}">${ln} \\u00b7 ${fmtPct(cost)}</span>`;
+    for (const [ln, cost] of chips) h += `<span class="chip" data-goto="${ln}" style="${heatBg(heatT(cost, maxP))}">${ln} \\u00b7 ${fmtPct(cost)}</span>`;
     h += `</div>`;
   }
   // One row per source line. No row-wide heat: the event, line and source
@@ -773,7 +798,8 @@ function renderFile(path, line) {
                 { label: "source", width: SRC_COLS, grow: true, cls: "code" },
                 { label: "calls", title: "total cost of the calls made from the line, share of total", num: true, cls: "incl" },
                 ...extraCols()];
-  h += table("heat.src", cols, rows, { rowAttrs: attrs, fill: 1, cls: "src", bare: true }) + `</div>`;
+  h += table("heat.src", cols, rows, { rowAttrs: attrs, fill: 1, cls: "src", bare: true });
+  h += `<div class="srctail"></div></div>`;
   mainEl.innerHTML = h;
   renderTree();
   // The minimap band goes up before the listing's width is settled: it
@@ -782,6 +808,7 @@ function renderFile(path, line) {
   // pane as it is at that moment.
   minimapBuild();
   Theme.init(mainEl);
+  srctailFit();
   if (!first) mainEl.scrollTop = keepTop;
   else if (!line) {
     const hottest = hot.length ? hot[0][0] : 0;
@@ -813,6 +840,19 @@ function centerRow(el) {
   const cover = coverH(el.closest("table"));
   const r = el.getBoundingClientRect(), m = mainEl.getBoundingClientRect();
   mainEl.scrollTop += r.top - m.top - cover - (mainEl.clientHeight - cover - r.height) / 2;
+}
+// Sizes .srctail so that scrolling all the way down leaves the file's last
+// row exactly where centerRow would put it -- the middle of the part of the
+// pane below the sticky header -- and no further. Run after every render and
+// on every relayout, since it depends on the pane's height and on how tall
+// the header band has wrapped.
+function srctailFit() {
+  const tail = mainEl.querySelector(".srctail"), table = mainEl.querySelector("table.src");
+  if (!tail || !table) return;
+  const rows = table.tBodies[0].rows, last = rows[rows.length - 1];
+  if (!last) return;
+  const cover = coverH(table), rowH = last.getBoundingClientRect().height;
+  tail.style.height = Math.max(0, (mainEl.clientHeight - cover - rowH) / 2) + "px";
 }
 
 // ---------- minimap ----------
@@ -1139,9 +1179,13 @@ window.addEventListener("message", e => {
 });
 // Same 120ms-debounced resize pattern as theme.js's own relayout() listener
 // (kept separate rather than folded into Theme.relayout: the minimap only
-// needs to reposition/rescale existing DOM, never re-snapshot it).
+// needs to reposition/rescale existing DOM, never re-snapshot it). The
+// scroll tail past the last source line follows the pane's height too.
 let mmResizeTimer = null;
-window.addEventListener("resize", () => { clearTimeout(mmResizeTimer); mmResizeTimer = setTimeout(minimapLayout, 120); });
+window.addEventListener("resize", () => {
+  clearTimeout(mmResizeTimer);
+  mmResizeTimer = setTimeout(() => { srctailFit(); minimapLayout(); }, 120);
+});
 evSel.addEventListener("change", e => { location.hash = hashOf(Object.assign({}, st, { ev: e.target.value })); });
 document.getElementById("scale").addEventListener("change", e => { scale = e.target.value; store.set("heat.scale", scale); shown = ""; route(); });
 document.getElementById("sort").addEventListener("change", e => { sortMode = e.target.value; store.set("heat.sort", sortMode); renderTree(); });

@@ -34,9 +34,22 @@ select, input { font: inherit; color: var(--fg); background: var(--bg); padding:
 .strip .sep { flex: none; margin: 0 8px; color: var(--muted); }
 .strip a:hover { background: var(--link); color: var(--nav); text-decoration: none; }
 .strip a.on { background: var(--hot); color: var(--hot-fg); }
-.strip .title { font-size: 13px; font-weight: 600; color: var(--title-fg); background: var(--title-bg); white-space: nowrap;
-  padding: 3px 8px; margin: -5px 6px -5px -12px; align-self: stretch; display: flex; align-items: center; flex: none; }
+/* the title badge holds the current view's path, which changes with every
+   pick ("urlparser" -> "urlparser / native timing"); a badge sized to its
+   own text would change width on every click and shove the whole strip
+   sideways. It is a fixed box wide enough for the longest path any report
+   produces (TITLE_COLS characters, "simpleformat / native timing"), and a
+   longer one ellipsizes rather than growing. */
+.strip .title { font-size: 13px; font-weight: 600; color: var(--title-fg); background: var(--title-bg);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  padding: 3px 8px; margin: -5px 6px -5px -12px; align-self: stretch; display: flex; align-items: center;
+  flex: none; width: var(--title-w); }
 .strip .sp { flex: 1 0 0; min-width: 0; }
+/* the right-aligned utility group ("reset columns | help | curl.se/perf").
+   Every frame strip carries one; only the innermost strip on screen shows
+   it (FRAME_JS's utilShow), so the strip with the most links of its own is
+   the one that keeps the room. */
+.strip .util { display: flex; align-items: center; flex: none; }
 
 /* frame: the toolbar over either the summary page or an iframe. The outer
    document itself never scrolls -- body.frame > main and the iframe (which
