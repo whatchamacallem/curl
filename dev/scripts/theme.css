@@ -56,9 +56,9 @@ body.frame > iframe { flex: 1; min-height: 0; width: 100%; border: 0; background
    as a header by its own background, not a rule under it. The header row
    stays put while the page scrolls past the table. The box never scrolls
    on its own: it is as long and as wide as its columns -- with .fill that
-   starts at 90% of the viewport (initTable in theme.js bakes that in as an
-   explicit width on the last column, once, at first render) and never
-   re-consults the viewport again; dragging any bar, including the trailing
+   starts at 90% of the visible width of the pane that scrolls it (initTable
+   in theme.js bakes that in as an explicit width on the last column, once,
+   at first render) and never re-consults the pane again; dragging any bar, including the trailing
    one, only ever changes the one column's own width, growing or shrinking
    the table's total width with it, and the page (or the nearest scrolling
    ancestor) picks up a scrollbar rather than the table clipping itself.

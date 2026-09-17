@@ -52,7 +52,13 @@ FRAME_JS = """\
 // title up and hides it, so the outermost strip carries the one title.
 // Re-clicking the strip link for the view already showing posts "theme:home"
 // into the frame instead of reloading it, so a page with its own internal
-// navigation (the heat map's file listings) can jump back to its start.
+// navigation (the heat map's file listings) can jump back to its start. Same
+// deal returning to a view after visiting another one: the outer hash for
+// the old view lost its "=..." deep-link suffix (dropped, never restored, by
+// the plain "#view" the click handler builds) and its own hashchange-driven
+// replaceState calls in the meantime (see hashFor()'s "theme:hash" mirroring)
+// never touch view.dataset.src, so show() sees the same bare src it already
+// has loaded and would otherwise do nothing -- also send "theme:home" then.
 // "reset columns" resets every table on this page directly and posts
 // "theme:reset-cols" into the frame for its own tables (the heat map's
 // home/file tables, an overview's nested per-test strip and its own frame).
@@ -83,7 +89,10 @@ FRAME_JS = """\
     if (!link || !key) { view.hidden = true; home.hidden = false; return; }
     const src = link.getAttribute("href") + (m[2] ? "#" + decodeURIComponent(m[2]) : "");
     if (view.dataset.src !== src) { view.src = src; view.dataset.src = src; }
-    else if (view.contentWindow) view.contentWindow.postMessage("theme:title?", "*");
+    else if (view.contentWindow) {
+      view.contentWindow.postMessage("theme:title?", "*");
+      if (!m[2]) view.contentWindow.postMessage("theme:home", "*");
+    }
     home.hidden = true; view.hidden = false;
   }
   function hashFor(href) {

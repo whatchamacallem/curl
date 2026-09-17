@@ -42,11 +42,24 @@ window.Theme = (function () {
     for (const [t, f] of [["pointermove", move], ["pointerup", up], ["pointercancel", up]]) bar.addEventListener(t, f);
     e.preventDefault();
   }
-  // The 90%-of-viewport baseline a `fill` table's open-ended last column
-  // gets on first render.
+  // The nearest ancestor that scrolls (the pane the table lives in), else
+  // the document itself. Its clientWidth is the visible width a table can
+  // use without a horizontal scrollbar.
+  function scrollerOf(el) {
+    for (let p = el.parentElement; p; p = p.parentElement) {
+      const o = getComputedStyle(p).overflowY;
+      if (o === "auto" || o === "scroll") return p;
+    }
+    return document.documentElement;
+  }
+  // The baseline a `fill` table's open-ended last column gets on first
+  // render: the table opens at 90% of its scrolling pane's visible width
+  // (floored to a whole pixel so sub-pixel rounding can never tip the pane
+  // into a horizontal scrollbar), not of the window -- the heat map's
+  // listing pane is only part of the window.
   function fillBaseline(table, cols) {
     const last = cols[cols.length - 1];
-    const target = window.innerWidth * 0.9;
+    const target = Math.floor(scrollerOf(table).clientWidth * 0.9);
     const others = table.getBoundingClientRect().width - last.getBoundingClientRect().width;
     return Math.max(MIN_COL, target - others) + "px";
   }

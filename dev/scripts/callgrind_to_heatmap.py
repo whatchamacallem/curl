@@ -207,12 +207,27 @@ body { display: flex; flex-direction: column; height: 100vh; }
 #layout { display: flex; flex: 1; min-height: 0; }
 #tree { width: 280px; min-width: 120px; flex: none; overflow: auto; padding: 4px 0 24px; }
 #main { flex: 1; min-width: 0; overflow: auto; background: var(--bg); }
+/* .srcwrap: the file view's one block child of #main -- header band, chips
+   and the listing -- as wide as the widest of them (or the pane, whichever
+   is more), so the sticky header band's background always reaches the far
+   right edge of everything #main can scroll to sideways, instead of ending
+   at the pane's width and letting rows show past it once the listing has
+   been dragged wider than the pane. Nothing inside ever overflows it: the
+   listing's cells clip (table.cols' own rule), so the wrapper's width is
+   exactly the scrollable width. */
+.srcwrap { width: max-content; min-width: 100%; }
+/* only the listing box may set the wrapper's width: the header band and
+   chips wrap their contents to whatever width they're given, and without
+   this their *unwrapped* single-line width (all of .fhead's stats in a row)
+   is what max-content would take from them, pushing the wrapper -- and a
+   horizontal scrollbar -- past the pane on every file. */
+.srcwrap > :not(.tbl-cols) { contain: inline-size; }
 /* minimap: fixed-width band after #main, VS-Code style -- a scaled clone of
    table.src's code column only, drawn once per renderFile (minimapBuild)
-   and reflowed (never re-cloned) on resize (minimapLayout, which is also
-   what shortens #minimap -- not #mmBox -- top-aligned, when the scaled
-   content is shorter than the band). It never scrolls on its own.
-   background matches #main's (var(--bg), the page background -- not
+   and reflowed (never re-cloned) on resize (minimapLayout). It never
+   scrolls on its own and #minimap itself is never resized: a file whose
+   scaled clone is shorter than the band just leaves the rest of the band
+   empty. background matches #main's (var(--bg), the page background -- not
    var(--panel), which reads as a visibly different, bluer panel) since an
    unheated row's cell has no background of its own and otherwise falls
    back to whatever #minimap itself is painted, same as the real source --
@@ -222,9 +237,15 @@ body { display: flex; flex-direction: column; height: 100vh; }
   background: var(--bg); cursor: pointer; }
 #minimap.empty { display: none; }
 #mmBox { position: absolute; top: 0; left: 0; }
-#mmBox table.src { border-collapse: collapse; }
-#mmBox table.src td { padding: 0; border: 0; white-space: pre; }
-#mmViewport { position: absolute; left: 0; right: 0; background: rgba(245, 246, 250, 0.18);
+/* the clone is one column wide and exactly as wide as #mmBox (which
+   minimapLayout sizes to the band): table-layout: fixed only takes effect
+   with a non-auto table width, and without it the lone column sized itself
+   to the longest line, so every row's heat background stopped there
+   instead of at the band's edge. Text longer than the column overflows the
+   cell and is clipped by #minimap. */
+#mmBox table.src { border-collapse: collapse; table-layout: fixed; width: 100%; }
+#mmBox table.src td { padding: 0; border: 0; white-space: pre; overflow: visible; }
+#mmViewport { position: absolute; left: 0; right: 0; background: rgba(245, 246, 250, 0.36);
   border: 1px solid rgba(245, 246, 250, 0.55); cursor: grab; }
 #mmViewport.drag { cursor: grabbing; }
 .node { display: flex; align-items: center; gap: 4px; padding-right: 8px; cursor: pointer; white-space: nowrap; }
@@ -263,7 +284,11 @@ table.src td.self, table.src td.incl, table.src td.x { color: var(--muted); }
    one background (or none) using contrast computed for a different one. */
 table.src tr.heat td.ln, table.src tr.heat td.self, table.src tr.heat td.code { color: inherit; }
 table.src td.hot { font-weight: 600; }
-table.src td.code { overflow: visible; text-overflow: clip; white-space: pre; tab-size: 4; }
+/* a line longer than the source column clips at the column's edge (no
+   ellipsis: it's code), same as every other cell; drag the trailing bar to
+   see more. It never spills past the table, so the table's width is the
+   whole of what can scroll sideways (see .srcwrap). */
+table.src td.code { text-overflow: clip; white-space: pre; tab-size: 4; }
 table.src tr.hasc td.ln::before { content: "\\25B8 "; color: var(--link); }
 table.src tr.target td { box-shadow: inset 0 0 0 2px var(--accent); }
 /* the direct-child combinator matters here: "tr.detail td" (no >) would also
@@ -652,13 +677,13 @@ function renderFile(path, line) {
   let fmax = 0;
   for (const rec of Object.values(lines)) { const s = val(rec[0]); if (s > fmax) fmax = s; }
   const maxP = scale === "file" ? Math.max(pct(fmax), 0.0001) : MAXP;
-  let h = `<div class="fhead band"><span class="path">${esc(path)}</span>`;
+  let h = `<div class="srcwrap"><div class="fhead band"><span class="path">${esc(path)}</span>`;
   h += `<span class="stat" title="${fmtN(val(f.self))}">self <b>${fmtPct(val(f.self)) || "0%"}</b> (${fmtH(val(f.self))} ${esc(evLabel(ev))})</span>`;
   for (const x of EXTRA) { const s = x.get(f.self); if (s) h += `<span class="stat" title="${esc(x.long)}: ${fmtN(s)}">${esc(evLabel(x))} <b>${fmtP(100 * s / MAXPX[x.key].total)}</b> (${fmtH(s)})</span>`; }
   if (f.group === "external") h += `<span class="stat">not in this repo (${esc(f.raw)})</span>`;
   h += `</div>`;
   if (f.src == null) {
-    h += `<div class="nosrc">Source not available.</div>`;
+    h += `<div class="nosrc">Source not available.</div></div>`;
     mainEl.innerHTML = h;
     renderTree();
     Theme.init(mainEl);
@@ -697,20 +722,57 @@ function renderFile(path, line) {
     h += `<col${i % 2 ? ' class="alt"' : ""}${i === cols.length - 1 ? "" : ` style="width:${w}ch"`}>`;
   });
   h += `</colgroup><thead><tr>${cols.map(c => `<th${c.num ? ' class="n"' : ""}${c.title ? ` title="${esc(c.title)}"` : ""}>${esc(c.label)}</th>`).join("")}</tr></thead><tbody>`;
-  h += rows.join("") + `</tbody></table></div>`;
+  h += rows.join("") + `</tbody></table></div></div>`;
   mainEl.innerHTML = h;
   renderTree();
+  // The minimap band goes up before the listing's width is settled: it
+  // narrows the pane by its own width, and Theme.init's 90% fill measures
+  // the pane as it is at that moment.
+  minimapBuild();
   Theme.init(mainEl);
-  minimapBuild(nlines);
+  srcCenter();
   if (line) {
     const el = document.getElementById("L" + line);
-    if (el) { el.scrollIntoView({ block: "center" }); toggleDetail(path, line, true); }
+    if (el) { centerRow(el); toggleDetail(path, line, true); }
   } else if (first) {
     const hottest = hot.length ? hot[0][0] : 0;
     const el = hottest ? document.getElementById("L" + hottest) : null;
-    if (el) el.scrollIntoView({ block: "center" }); else mainEl.scrollTop = 0;
+    if (el) centerRow(el); else mainEl.scrollTop = 0;
   }
   minimapSync();
+}
+// The height of what stays put over the top of the pane while the listing
+// scrolls under it: the sticky header band plus the (sticky) header cells
+// -- the cells, not the <thead>, which scrolls away like any other box.
+function coverH(table) {
+  let h = table.tHead.rows[0].cells[0].getBoundingClientRect().height;
+  for (const b of mainEl.querySelectorAll(".band")) h += b.getBoundingClientRect().height;
+  return h;
+}
+// Scrolls the pane so the row sits mid-way down the part of it not under
+// the sticky header -- vertically only. scrollIntoView would also pull the
+// pane sideways to bring a row wider than the pane into view, shifting a
+// listing the reader has dragged wider than the pane every time a chip or
+// a "defined at" link is followed.
+function centerRow(el) {
+  const cover = coverH(el.closest("table"));
+  const r = el.getBoundingClientRect(), m = mainEl.getBoundingClientRect();
+  mainEl.scrollTop += r.top - m.top - cover - (mainEl.clientHeight - cover - r.height) / 2;
+}
+// Centers the listing in the pane: Theme.init opened it at 90% of the pane's
+// width (fillBaseline), so equal side margins of the leftover put it at 5%
+// from either edge. Whole pixels, so the margins never overshoot the pane
+// by a fraction and raise a horizontal scrollbar. Computed once per render
+// (and again on "reset columns", which re-derives the 90% too); dragging a
+// column wider grows the listing rightward from that fixed left margin,
+// with the same margin kept after its trailing bar (a margin on a
+// max-content wrapper's child counts toward the wrapper's width).
+function srcCenter() {
+  const box = mainEl.querySelector(".srcwrap > .tbl-cols");
+  if (!box) return;
+  const table = box.querySelector("table");
+  const gap = Math.max(0, Math.floor((mainEl.clientWidth - table.getBoundingClientRect().width) / 2));
+  box.style.marginLeft = box.style.marginRight = gap + "px";
 }
 
 // ---------- minimap ----------
@@ -725,21 +787,19 @@ function renderFile(path, line) {
 // and rescale the existing DOM (minimapLayout), not re-snapshot it.
 const MM_MIN_COLS = 80; // never zoom in tighter (wider effective scale) than 80 source columns
 const MM_MIN_LINES = 40; // below this the file can't scroll off-screen; omit the minimap
-let mmChPx = 0, mmLineH = 0, mmScale = 1, mmNaturalH = 0, mmMaxCols = MM_MIN_COLS;
+let mmChPx = 0, mmScale = 1, mmCloneH = 0;
 function minimapClear() {
   minimapEl.classList.add("empty");
   mmBox.innerHTML = "";
   mmViewport.hidden = true;
 }
-function minimapBuild(nlines) {
-  const table = mainEl.querySelector("table.src");
-  if (!table || nlines < MM_MIN_LINES) { minimapClear(); return; }
+function minimapBuild() {
+  const table = mainEl.querySelector("table.src"), tbody = table && table.tBodies[0];
+  if (!tbody || tbody.rows.length < MM_MIN_LINES) { minimapClear(); return; }
   // Measure the monospace cell size straight from the live table so the
   // clone's scale is exact regardless of font metrics.
-  const probeRow = table.tBodies[0] && table.tBodies[0].rows[0];
-  const probeCell = probeRow && probeRow.querySelector("td.code");
+  const probeCell = tbody.rows[0].querySelector("td.code");
   if (!probeCell) { minimapClear(); return; }
-  mmLineH = probeRow.getBoundingClientRect().height || 15;
   const span = document.createElement("span");
   span.textContent = "0123456789";
   span.style.cssText = "position:absolute;visibility:hidden;white-space:pre;font:inherit";
@@ -749,26 +809,23 @@ function minimapBuild(nlines) {
 
   const clone = document.createElement("table");
   clone.className = "src";
-  const tbody = document.createElement("tbody");
-  let maxCols = 0;
-  for (const row of table.tBodies[0].rows) {
+  const body = document.createElement("tbody");
+  for (const row of tbody.rows) {
     if (row.classList.contains("detail")) continue; // never open at build time, but be safe
     const code = row.querySelector("td.code");
     if (!code) continue;
-    maxCols = Math.max(maxCols, code.textContent.length);
     const tr = document.createElement("tr");
     tr.className = row.className;
     tr.style.cssText = row.style.cssText;
     tr.appendChild(code.cloneNode(true));
-    tbody.appendChild(tr);
+    body.appendChild(tr);
   }
-  clone.appendChild(tbody);
+  clone.appendChild(body);
   mmBox.innerHTML = "";
   mmBox.appendChild(clone);
-  mmNaturalH = nlines * mmLineH;
-  mmMaxCols = Math.max(MM_MIN_COLS, maxCols);
-  minimapEl.classList.remove("empty");
+  minimapEl.classList.remove("empty"); // display: none while empty -- unhide before measuring
   mmViewport.hidden = false;
+  mmCloneH = clone.offsetHeight; // unscaled: offsetHeight ignores mmBox's transform
   minimapLayout();
 }
 // The true band height comes from #minimap's own flex-stretched layout size
@@ -780,71 +837,84 @@ function minimapBuild(nlines) {
 // permanently capping it below the real available height. Fixed here by
 // never resizing #minimap: it always stays the full band, and "shorter than
 // the content" is represented purely by mmBox not filling the space below
-// -- clicks past the end of the actual (unscaled) content are already
-// no-ops via the scaledH clamp in the click/drag handlers below.
+// -- a click past the end of the scaled content just scrolls to the end.
 function minimapLayout() {
   if (minimapEl.classList.contains("empty")) return;
   const bandW = minimapEl.clientWidth, bandH = minimapEl.clientHeight;
-  // The real content width, not an assumed minimum: mmMaxCols (measured in
-  // minimapBuild from the actual longest source line, floored at
-  // MM_MIN_COLS) sets how many characters must fit. Without this, mmBox was
-  // always sized to a fixed MM_MIN_COLS-wide assumption regardless of the
-  // file's real width, leaving inconsistent right-side padding inside the
-  // band (the gap between actual scaled content and the band edge) that
-  // varied with mmScale, i.e. with window width, instead of always being
-  // zero.
-  // The whole file must fit the band vertically too -- minimapSync's viewport
-  // math (and the "never scrolls on its own" design, see its comment above)
-  // assumes the full mmNaturalH*mmScale content is what's on screen; without
-  // this the width-only scale left tall files' minimap frozen on their first
-  // screenful while the viewport box kept sliding down past content that was
-  // never actually drawn.
-  mmScale = Math.min(1, bandW / (mmMaxCols * mmChPx), bandH / mmNaturalH);
+  // Scale is pinned to fit exactly MM_MIN_COLS (80) source columns in the
+  // band -- never zoomed out further for a file with longer lines, so every
+  // row's heat background always reaches the band's right edge (a short
+  // file's shorter lines would otherwise leave a gap there, and previously
+  // the scale shrank per-file to whatever the actual longest line was,
+  // which produced inconsistent zoom levels file to file). A line longer
+  // than 80 columns overflows mmBox rather than being fitted; #minimap's
+  // own overflow:hidden clips it, same as it always clipped anything below
+  // the visible band vertically.
+  // The whole file must still fit the band vertically -- minimapSync's
+  // viewport math (and the "never scrolls on its own" design, see its
+  // comment above) assumes the full clone is what's on screen; without this
+  // the width-only scale left tall files' minimap frozen on their first
+  // screenful while the viewport box kept sliding down past content that
+  // was never actually drawn.
+  mmScale = Math.min(1, bandW / (MM_MIN_COLS * mmChPx), bandH / mmCloneH);
   mmBox.style.transform = `scale(${mmScale})`;
   mmBox.style.transformOrigin = "top left";
   mmBox.style.width = (bandW / mmScale) + "px";
   minimapSync();
 }
+// What the viewport box mirrors, read live off the listing every time
+// (nothing is cached across scrolls, so a header band that re-wraps on
+// resize or a detail popup opening under a row can't put the box out of
+// step): `rows` is the height of the source rows alone (an open detail
+// popup's row excluded -- the clone never has one), `above(y)` how many of
+// those row pixels lie above client-y `y`, `cover` what hides the top of
+// the pane once the listing has scrolled up under it (coverH). The first
+// visible row is the one right under the header cells' bottom edge
+// (`head`): while the listing is still below the header in flow, that edge
+// is the body's own top, so nothing is hidden; once stuck, everything
+// scrolled past it is.
+function mmGeom() {
+  const table = mainEl.querySelector("table.src"), tbody = table.tBodies[0];
+  const main = mainEl.getBoundingClientRect(), body = tbody.getBoundingClientRect();
+  const detailEl = tbody.querySelector("tr.detail"), detail = detailEl && detailEl.getBoundingClientRect();
+  const rows = body.height - (detail ? detail.height : 0);
+  const above = y => {
+    let px = y - body.top;
+    if (detail) px -= Math.max(0, Math.min(y, detail.bottom) - detail.top);
+    return Math.max(0, Math.min(rows, px));
+  };
+  return { rows, above, cover: coverH(table), body, detail, top: main.top, bottom: main.top + mainEl.clientHeight,
+           head: table.tHead.rows[0].cells[0].getBoundingClientRect().bottom };
+}
 function minimapSync() {
   if (minimapEl.classList.contains("empty")) return;
-  const bandH = minimapEl.clientHeight;
-  const scaledH = Math.min(mmNaturalH * mmScale, bandH);
-  const scrollable = mainEl.scrollHeight - mainEl.clientHeight;
-  // The viewport box's height/aspect ratio must mirror the real fraction of
-  // the file #main can show at once (clientHeight / scrollHeight), applied
-  // against the *content* height (scaledH), not the full band -- using the
-  // full band here (when the file is shorter than the band, scaledH <
-  // bandH) previously made the box taller than the content it was meant to
-  // overlay, i.e. the wrong aspect ratio.
-  const vh = scrollable > 0 ? Math.max(8, scaledH * (mainEl.clientHeight / mainEl.scrollHeight)) : scaledH;
-  const maxTop = Math.max(0, scaledH - vh);
-  const vy = scrollable > 0 ? (mainEl.scrollTop / scrollable) * maxTop : 0;
-  mmViewport.style.top = vy + "px";
-  mmViewport.style.height = vh + "px";
+  const g = mmGeom(), scaledH = mmCloneH * mmScale;
+  const r0 = g.above(g.head), r1 = g.above(g.bottom); // the rows on screen, as row pixels from the top
+  const h = Math.max(8, scaledH * (r1 - r0) / g.rows);
+  mmViewport.style.top = Math.max(0, Math.min(scaledH - h, scaledH * r0 / g.rows)) + "px";
+  mmViewport.style.height = h + "px";
+}
+// Scrolls #main so that `r0` row pixels sit hidden above the sticky header
+// band and table head: the inverse of minimapSync's r0.
+function mmScrollTo(r0) {
+  const g = mmGeom();
+  r0 = Math.max(0, Math.min(g.rows, r0));
+  let y = g.body.top - g.top + mainEl.scrollTop + r0 - g.cover; // that row's scroll position, less what covers it
+  if (g.detail && g.detail.top - g.body.top < r0) y += g.detail.height; // an open popup above it shifts it down
+  mainEl.scrollTop = Math.max(0, Math.min(mainEl.scrollHeight - mainEl.clientHeight, y));
 }
 mainEl.addEventListener("scroll", minimapSync);
 minimapEl.addEventListener("click", e => {
   if (e.target.closest("#mmViewport")) return; // the viewport box has its own drag handler
-  const rect = minimapEl.getBoundingClientRect();
-  const scaledH = Math.min(mmNaturalH * mmScale, rect.height);
-  const scrollable = mainEl.scrollHeight - mainEl.clientHeight;
-  if (scrollable <= 0) return;
-  const frac = Math.max(0, Math.min(1, (e.clientY - rect.top) / scaledH));
-  mainEl.scrollTop = frac * scrollable;
+  const g = mmGeom(), scaledH = mmCloneH * mmScale;
+  const r = (e.clientY - minimapEl.getBoundingClientRect().top) / scaledH * g.rows; // the row pixel under the pointer
+  mmScrollTo(r - (mainEl.clientHeight - g.cover) / 2); // centered on screen
 });
 mmViewport.addEventListener("pointerdown", e => {
-  const rect = minimapEl.getBoundingClientRect();
-  const y0 = e.clientY, top0 = mmViewport.offsetTop;
-  const scaledH = Math.min(mmNaturalH * mmScale, rect.height);
-  const vh = mmViewport.getBoundingClientRect().height;
-  const scrollable = mainEl.scrollHeight - mainEl.clientHeight;
+  const y0 = e.clientY, top0 = mmViewport.offsetTop, scaledH = mmCloneH * mmScale;
   mmViewport.classList.add("drag");
   if (mmViewport.setPointerCapture) mmViewport.setPointerCapture(e.pointerId);
-  const move = ev => {
-    const maxTop = Math.max(0, scaledH - vh);
-    const top = Math.max(0, Math.min(maxTop, top0 + (ev.clientY - y0)));
-    if (scrollable > 0) mainEl.scrollTop = (top / maxTop || 0) * scrollable;
-  };
+  const move = ev => mmScrollTo((top0 + ev.clientY - y0) / scaledH * mmGeom().rows);
   const up = () => {
     mmViewport.classList.remove("drag");
     for (const [t, f] of [["pointermove", move], ["pointerup", up], ["pointercancel", up]]) mmViewport.removeEventListener(t, f);
@@ -927,12 +997,13 @@ mainEl.addEventListener("click", ev2 => {
     return;
   }
   const close = ev2.target.closest(".dclose, .dclose2");
-  if (close) { ev2.preventDefault(); close.closest("tr.detail").remove(); return; }
+  if (close) { ev2.preventDefault(); close.closest("tr.detail").remove(); minimapSync(); return; }
   if (ev2.target.closest("a")) return; // let the row's own link (e.g. "defined at") handle its own click
   const linkRow = ev2.target.closest("tr.rowlink");
   if (linkRow) { location.hash = linkRow.dataset.href; return; }
   const row = ev2.target.closest("tr.clickable");
-  if (row && curFile) { toggleDetail(curFile, +row.querySelector("td.ln").dataset.ln, false); return; }
+  // a popup opening or closing changes which rows are on screen without a scroll event
+  if (row && curFile) { toggleDetail(curFile, +row.querySelector("td.ln").dataset.ln, false); minimapSync(); return; }
 });
 
 // ---------- routing ----------
@@ -990,7 +1061,7 @@ window.addEventListener("hashchange", route);
 // iframe, so it jumps back to the hottest-lines/functions overview.
 window.addEventListener("message", e => {
   if (e.data === "theme:home") location.hash = "";
-  else if (e.data === "theme:reset-cols") Theme.resetCols(mainEl);
+  else if (e.data === "theme:reset-cols") { Theme.resetCols(mainEl); srcCenter(); }
 });
 // Same 120ms-debounced resize pattern as theme.js's own relayout() listener
 // (kept separate rather than folded into Theme.relayout: the minimap only
