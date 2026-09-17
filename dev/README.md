@@ -31,6 +31,17 @@ mispredict, and `CEst` is a rough cycle estimate.
 See the [callgrind](https://valgrind.org/docs/manual/cl-manual.html) docs.
 GPL Version 3, 29 June 2007.
 
+## Colors
+
+One ramp, the same rule everywhere: a cell is colored by its own metric's
+share of that metric's total, on a log scale from 0.001% up to the largest
+share seen for that metric. A cost cell (self, incl, calls) is a share of the
+selected event; a miss cell (D1m, DLm, Bcm) a share of that event's own
+total; a call count a share of every call the profile recorded, scaled to the
+most-called function. In the source listing the event, line and source cells
+all carry the line's own (self) cost; "calls" carries the cost of the calls
+made from that line.
+
 ## Flame Graph Bindings (speedscope)
 
 Open the flame graph and remain with "Time Order" in the view menu. The

@@ -172,6 +172,7 @@ class Col:
     width: int | None = None   # visible characters (cell padding is added)
     clip: int | None = None    # cap the content-derived width at this many characters
     cls: str = ""
+    grow: bool = False         # a fill table's open-ended column (else its last one)
 
 
 @dataclass
@@ -197,34 +198,38 @@ def table_render(key: str, cols: list[Col], rows: list[list[object]], fill: bool
     """A .tbl box: the table. Each column's full meaning is still a tooltip
     on its header cell (see README.md for the glossary).
 
-    Column widths are derived from the longest text in each column, in
-    characters (everything is monospace, so this is exact), unless the
-    column sets `width`; `clip` caps the derived width and clipped cells get
-    their full text as a tooltip. With `fill` the last column takes the
-    remaining width and the table spans its container, so that column is
-    cut off at the table's edge. With `lines` every row is underlined by
-    the same bar that divides the columns.
+    Column widths are in characters (everything is monospace, so this is
+    exact): the header label is every column's floor -- a header never
+    ellipsizes -- then the longest cell text, unless the column sets `width`
+    (exact); `clip` caps the derived width and clipped cells get their full
+    text as a tooltip. With `fill` the `grow` column (else the last) is
+    open-ended: it stops at its floor/`width`, which is its minimum, and
+    fillTable() in theme.js hands it the rest of the pane so the table spans
+    its container; it is cut off at the table's edge. With `lines` every row
+    is underlined by the same bar that divides the columns. Same rule as
+    colWidths() in callgrind_to_heatmap.py -- keep the two in step.
     """
     cells = [[_cell(c) for c in r] for r in rows]
+    grow = next((i for i, c in enumerate(cols) if c.grow), len(cols) - 1) if fill else -1
     widths: list[int] = []
     for i, col in enumerate(cols):
-        if col.width is not None:
-            widths.append(col.width + PAD)
-            continue
         n = len(col.label)
-        for r in cells:
-            if i < len(r):
-                n = max(n, len(r[i].text))
-        if col.clip is not None:
-            n = min(n, col.clip)
+        if col.width is not None:
+            n = max(n, col.width)
+        elif i != grow:
+            for r in cells:
+                if i < len(r):
+                    n = max(n, len(r[i].text))
+            if col.clip is not None:
+                n = max(len(col.label), min(n, col.clip))
         widths.append(n + PAD)
     out = [f'<div class="tbl{" fill" if fill else ""}">']
     classes = "cols" + (" fill" if fill else "") + (" lines" if lines else "")
     out.append(f'<div class="tbl-cols"><table class="{classes}" data-key="{html_esc(key)}"><colgroup>')
     for i, w in enumerate(widths):
-        alt = ' class="alt"' if i % 2 else ""
-        style = "" if fill and i == len(widths) - 1 else f' style="width:{w}ch"'
-        out.append(f"<col{alt}{style}>")
+        cls = " ".join(x for x in ("alt" if i % 2 else "", "grow" if i == grow else "") if x)
+        attr = f' class="{cls}"' if cls else ""
+        out.append(f'<col{attr} style="width:{w}ch">')
     out.append("</colgroup>")
     if header:
         out.append("<thead><tr>")

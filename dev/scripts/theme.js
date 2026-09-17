@@ -5,8 +5,9 @@
 //                are not persisted -- a table always opens at its default,
 //                and resetCols() puts every dragged column back to that
 //                default within the same page view (the strip's "reset
-//                columns" link). A .fill table's last column fills the pane
-//                (fillTable) and keeps doing so until a bar is dragged.
+//                columns" link). A .fill table's grow column (col.grow, else
+//                the last) fills the pane (fillTable) and keeps doing so
+//                until a bar is dragged.
 //   .band + th   sticky elements inside one scroller are stacked in DOM
 //                order (a legend above a header row) instead of overlapping.
 //   splitter()   a draggable divider between two panes.
@@ -54,24 +55,32 @@ window.Theme = (function () {
     }
     return document.documentElement;
   }
-  // A `fill` table's open-ended last column: the table spans data-fill of
-  // its scrolling pane's visible width (a fraction; 1 = the whole pane,
-  // default 0.9; floored to a whole pixel so sub-pixel rounding can never
-  // tip the pane into a horizontal scrollbar), not of the window -- the
-  // heat map's listing pane is only part of the window. relayout() re-fits
-  // it whenever the pane may have changed (window resize, a splitter drag)
-  // until a column is dragged (table._dragged); resetCols clears that.
+  // A `fill` table's one open-ended column -- <col class="grow">, else the
+  // last one -- takes what is left once every other column has its
+  // content-fitted width, so the table spans data-fill of its scrolling
+  // pane's visible width (a fraction; 1 = the whole pane, default 0.9;
+  // floored to a whole pixel so sub-pixel rounding can never tip the pane
+  // into a horizontal scrollbar), not of the window -- the heat map's
+  // listing pane is only part of the window. The column's own default width
+  // (dataset.w; the source listing's 80 visible characters) is its minimum:
+  // a pane too narrow for that gets a sideways scrollbar, the column is
+  // never squeezed. relayout() re-fits it whenever the pane may have changed
+  // (window resize, a splitter drag) until a column is dragged
+  // (table._dragged); resetCols clears that.
   function fillTable(table) {
     const cols = [...table.querySelectorAll("colgroup > col")];
     if (!cols.length) return;
-    const last = cols[cols.length - 1];
+    const grow = cols.find(c => c.classList.contains("grow")) || cols[cols.length - 1];
+    grow.style.width = grow.dataset.w; // back at its default, which is its minimum
+    const min = grow.dataset.w ? grow.getBoundingClientRect().width : MIN_COL;
     const target = Math.floor(scrollerOf(table).clientWidth * (+table.dataset.fill || 0.9));
-    const others = table.getBoundingClientRect().width - last.getBoundingClientRect().width;
-    last.style.width = Math.max(MIN_COL, target - others) + "px";
+    const others = table.getBoundingClientRect().width - grow.getBoundingClientRect().width;
+    grow.style.width = Math.max(min, target - others) + "px";
   }
   // Bars only: init()'s relayout() right after does the first fill and lays
-  // the bars out, so a fill table's last column keeps dataset.w = "" (open)
-  // and resetCols re-fits it instead of replaying a stale pixel width.
+  // the bars out, so a fill table's grow column keeps its generator-set
+  // minimum as dataset.w and resetCols re-fits it instead of replaying a
+  // stale pixel width.
   function initTable(table) {
     if (table._bars) return;
     const wrap = table.parentElement;

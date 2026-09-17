@@ -275,14 +275,15 @@ table.src > tbody > tr > td { padding-top: 0; padding-bottom: 0; }
 table.src td.ln { color: var(--muted); user-select: none; }
 tr.rowlink { cursor: pointer; }
 table.src tr.clickable { cursor: pointer; }
-table.src tr.clickable:hover td.ln { color: var(--link); }
+/* the click cue is an underline, as on a link: a heated line-number cell's
+   inline contrast color beats any stylesheet color, so recoloring it here
+   could never show on exactly the lines worth clicking */
+table.src tr.clickable:hover td.ln { text-decoration: underline; }
+/* an unheated cost cell is muted; a heated one carries its own inline
+   background and contrast color (heatBg), cell by cell -- there is no
+   row-wide heat, so no cell's text is ever colored for contrast against a
+   background that belongs to a different cell */
 table.src td.self, table.src td.incl, table.src td.x { color: var(--muted); }
-/* the row's self-cost heat (tr[style]) only colors .ln/.self/.code -- .incl
-   ("calls") and .x (D1m/DLm/Bcm) carry their own independent cost and, for
-   .x, their own inline heat background (extraCells' style=), so they must
-   never inherit the row's text color: that would recolor text sitting on
-   one background (or none) using contrast computed for a different one. */
-table.src tr.heat td.ln, table.src tr.heat td.self, table.src tr.heat td.code { color: inherit; }
 table.src td.hot { font-weight: 600; }
 /* a line longer than the source column clips at the column's edge (no
    ellipsis: it's code), same as every other cell; drag the trailing bar to
@@ -444,6 +445,15 @@ function heatStyle(t, aMin, aMax) {
 }
 const heatBg = t => heatStyle(t, 0.18, 0.92);
 const heatBgSoft = t => heatStyle(t, 0.12, 0.55); // tree rows: keep names readable
+// Call counts are a metric of their own, colored like every other one: a
+// count's heat is its share of every call the profile recorded (each call
+// site's count, summed), on the same ramp, log-scaled to the most-called
+// function. Independent of the selected event. The summary page's functions
+// table (functions_table in build_report.py) applies the same rule.
+const fnCalls = fns.map(f => f.callers.reduce((a, c) => a + c[4], 0));
+const CALLS_TOTAL = fnCalls.reduce((a, b) => a + b, 0) || 1;
+const CALLS_MAXP = Math.max(100 * fnCalls.reduce((a, b) => Math.max(a, b), 0) / CALLS_TOTAL, 0.0001);
+const numCalls = n => n ? { text: fmtH(n), title: fmtN(n) + " calls", style: heatBg(heatP(100 * n / CALLS_TOTAL, CALLS_MAXP)) } : "";
 function hashFor(path, line) {
   const parts = ["f=" + encodeURIComponent(path)];
   if (line) parts.push("l=" + line);
@@ -453,43 +463,57 @@ function hashFor(path, line) {
 function fnName(i) { return (i != null && fns[i]) ? fns[i].name : "?"; }
 function link(path, line, text) { return files[path] && line ? `<a href="${hashFor(path, line)}">${esc(text)}</a>` : esc(text); }
 const SYMBOL_CHARS = 20; // visible characters of a function name before it is cut off
+const SRC_COLS = 80; // visible characters of source the listing always shows; the pane's spare width is added on top
 
 // A .tbl box: a fixed-layout table with widths in characters (everything is
 // monospace). Mirrors theme.table_render() in theme.py. cols: {label, title,
-// num, width, clip, cls}; cells: a string, or {text, html, style, cls, title}.
-// opts.rowHref: one hash per row (or "" to skip) makes the whole row a click
-// target (see the delegated click handler below, "row-click"), even though
-// only the "defined at" cell's own <a> visibly reacts to hover -- a plain
-// row has nothing else to click on, and repeating the link's hover style
-// on every cell would suggest each cell opens something different.
+// num, width, clip, cls, grow}; cells: a string, or {text, html, style, cls,
+// title}. opts.rowHref: one hash per row (or "" to skip) makes the whole row
+// a click target (see the delegated click handler below, "row-click"), even
+// though only the "defined at" cell's own <a> visibly reacts to hover -- a
+// plain row has nothing else to click on, and repeating the link's hover
+// style on every cell would suggest each cell opens something different.
+// opts.rowAttrs: one ready-made attribute string per row (id/class/title;
+// not combined with rowHref). opts.fill: a fill table with that data-fill
+// fraction -- its `grow` column takes the rest of the pane, see fillTable in
+// theme.js. opts.cls: extra table classes. opts.bare: no .tbl box around it
+// (the source listing sits edge to edge in .srcwrap, and only header cells
+// outside a .tbl box are stacked under the sticky bands by alignSticky).
 const PAD = 3; // 1ch padding each side + 1ch slack for the divider bar and ch rounding
-const PCTW = "-100.0%".length; // width floor for any col with neither `width` nor `clip`: it only ever
-                                // holds a percentage/count short enough to fit "-100.0%"; scanning actual
-                                // cell text let a long header label (e.g. "L1 cache / D1m") balloon the
-                                // column into a wide heat-colored block for a tiny value -- the header
-                                // still gets its full text as a tooltip and just ellipsizes on screen.
+// Column widths in characters: the header label is every column's floor --
+// a header never ellipsizes -- then the longest cell text, unless the column
+// sets `width` (exact); `clip` caps the derived width. A `grow` column stops
+// at its floor/`width`: that is its minimum, the rest comes from fillTable.
+// Same rule as theme.table_render() -- keep the two in step.
+function colWidths(cols, rc) {
+  return cols.map((col, i) => {
+    let n = col.label.length;
+    if (col.width != null) n = Math.max(n, col.width);
+    else if (!col.grow) {
+      for (const r of rc) if (r[i]) n = Math.max(n, (r[i].text || "").length);
+      if (col.clip != null) n = Math.max(col.label.length, Math.min(n, col.clip));
+    }
+    return n + PAD;
+  });
+}
 function table(key, cols, rows, opts) {
   opts = opts || {};
   const cell = c => (c && typeof c === "object") ? c : { text: c == null ? "" : String(c) };
   const rc = rows.map(r => r.map(cell));
-  const widths = cols.map((col, i) => {
-    if (col.width != null) return col.width + PAD;
-    if (col.clip != null) {
-      let n = col.label.length;
-      for (const r of rc) if (r[i]) n = Math.max(n, (r[i].text || "").length);
-      return Math.min(n, col.clip) + PAD;
-    }
-    return Math.max(col.label.length, PCTW) + PAD;
+  const widths = colWidths(cols, rc);
+  const tcls = ["cols", opts.fill ? "fill" : "", opts.cls || ""].filter(Boolean).join(" ");
+  let h = opts.bare ? "" : `<div class="tbl">`;
+  h += `<div class="tbl-cols"><table class="${tcls}" data-key="${esc(key)}"${opts.fill ? ` data-fill="${opts.fill}"` : ""}><colgroup>`;
+  cols.forEach((c, i) => {
+    const ccls = [i % 2 ? "alt" : "", c.grow ? "grow" : ""].filter(Boolean).join(" ");
+    h += `<col${ccls ? ` class="${ccls}"` : ""} style="width:${widths[i]}ch">`;
   });
-  let h = `<div class="tbl">`;
-  h += `<div class="tbl-cols"><table class="cols" data-key="${esc(key)}"><colgroup>`;
-  cols.forEach((c, i) => { h += `<col${i % 2 ? ' class="alt"' : ""} style="width:${widths[i]}ch">`; });
   h += `</colgroup><thead><tr>`;
   for (const c of cols) h += `<th${c.num ? ' class="n"' : ""}${c.title ? ` title="${esc(c.title)}"` : ""}>${esc(c.label)}</th>`;
   h += `</tr></thead><tbody>`;
   rc.forEach((r, ri) => {
     const href = opts.rowHref && opts.rowHref[ri];
-    h += href ? `<tr class="rowlink" data-href="${esc(href)}">` : "<tr>";
+    h += href ? `<tr class="rowlink" data-href="${esc(href)}">` : opts.rowAttrs ? `<tr ${opts.rowAttrs[ri]}>` : "<tr>";
     r.forEach((c, i) => {
       const col = cols[i] || {};
       const cls = [col.num ? "n" : "", col.cls || "", c.cls || ""].filter(Boolean).join(" ");
@@ -499,7 +523,7 @@ function table(key, cols, rows, opts) {
     h += "</tr>";
   });
   h += `</tbody></table></div>`;
-  return h + `</div>`;
+  return opts.bare ? h : h + `</div>`;
 }
 // Plain-text twin of table(): a GFM pipe table, space-padded so the columns
 // line up whether it's pasted raw or rendered as markdown -- same cols/rows
@@ -652,12 +676,12 @@ function renderHome() {
      { label: "calls", title: "times the function was entered", num: true },
      { label: "incl", title: "total: self plus everything it calls", num: true }, ...extraCols()],
     topF.map(([fi, s], i) => {
-      const f = fns[fi], loc = f.line ? f.file + ":" + f.line : f.file, ncalls = f.callers.reduce((a, c) => a + c[4], 0);
+      const f = fns[fi], loc = f.line ? f.file + ":" + f.line : f.file;
       return [String(i + 1),
               { text: fmtPct(s), style: heatBg(heatT(s, MAXP)) },
               { text: f.name, title: f.name },
               { text: loc, html: link(f.file, f.line, loc) },
-              ncalls ? num(ncalls) : "", fmtPct(s + val(f.calls)), ...extraCells(f.self)];
+              numCalls(fnCalls[fi]), fmtPct(s + val(f.calls)), ...extraCells(f.self)];
     }), { rowHref: topF.map(([fi]) => hashFor(fns[fi].file, fns[fi].line)) });
   h += `</div>`;
   mainEl.innerHTML = h;
@@ -690,39 +714,49 @@ function renderFile(path, line) {
     minimapClear();
     return;
   }
-  const cols = [{ label: "line", num: true }, evCol(ev, { title: ev.long + ", share of total, spent on the line itself" }),
-                { label: "calls", title: "total cost of the calls made from the line, share of total", num: true },
-                ...extraCols(), { label: "source" }];
   const hot = Object.keys(lines).map(k => [+k, val(lines[k][0])]).filter(t => t[1] > 0).sort((a, b) => b[1] - a[1]).slice(0, 12);
   if (hot.length) {
     h += `<div class="chips"><span class="lbl">hottest lines</span>`;
     for (const [ln, cost] of hot) h += `<span class="chip" data-goto="${ln}" style="${heatBg(heatT(cost, maxP))}">${ln} \\u00b7 ${fmtPct(cost)}</span>`;
     h += `</div>`;
   }
-  const rows = [];
+  // One row per source line. No row-wide heat: the event, line and source
+  // cells each carry the line's own self heat, calls the heat of its own
+  // share (the cost of the calls made from the line -- same event, same
+  // scale as self), the miss columns theirs (extraCells). So no cell's text
+  // is ever colored for contrast against a background another cell owns.
+  const rows = [], attrs = [];
   const emitRow = (ln, text) => {
     const rec = lines[ln];
     const self = rec ? val(rec[0]) : 0, calls = rec ? val(rec[1]) : 0;
     const t = heatT(self, maxP), hs = heatBg(t);
     const fnidx = f.lfn[ln];
     const title = rec ? `${fmtN(self)} ${ev.key} self, ${fmtN(calls)} in calls${rec[2] ? " over " + fmtH(rec[2]) + " calls" : ""}${fnidx != null ? " \\u2014 in " + fnName(fnidx) : ""}` : "";
-    const xs = rec ? extraCells(rec[0]).map(c => `<td class="n x${c.cls ? " " + c.cls : ""}" style="${c.style}" title="${esc(c.title)}">${esc(c.text)}</td>`).join("") : EXTRA.map(() => `<td class="n x"></td>`).join("");
-    const cls = [rec ? "clickable" : "", f.callees[ln] ? "hasc" : "", line === ln ? "target" : "", hs ? "heat" : ""].filter(Boolean).join(" ");
-    rows.push(`<tr id="L${ln}" class="${cls}" style="${hs}"${title ? ` title="${esc(title)}"` : ""}><td class="n ln" data-ln="${ln}">${ln}</td><td class="n self${t > 0.45 ? " hot" : ""}">${self ? fmtPct(self) : ""}</td><td class="n incl">${calls ? fmtPct(calls) : ""}</td>${xs}<td class="code">${text == null ? "" : esc(text)}</td></tr>`);
+    const cls = [rec ? "clickable" : "", f.callees[ln] ? "hasc" : "", line === ln ? "target" : ""].filter(Boolean).join(" ");
+    attrs.push(`id="L${ln}"${cls ? ` class="${cls}"` : ""} data-ln="${ln}"${title ? ` title="${esc(title)}"` : ""}`);
+    rows.push([{ text: self ? fmtPct(self) : "", style: hs, cls: t > 0.45 ? "hot" : "" },
+               { text: String(ln), style: hs },
+               { text, style: hs },
+               { text: calls ? fmtPct(calls) : "", style: heatBg(heatT(calls, maxP)) },
+               ...(rec ? extraCells(rec[0]) : EXTRA.map(() => ""))]);
   };
   const srcl = f.src.split("\\n");
   if (srcl.length && srcl[srcl.length - 1] === "") srcl.pop();
   let nlines = srcl.length;
   for (let i = 0; i < srcl.length; i++) emitRow(i + 1, srcl[i]);
   for (const k of Object.keys(lines)) if (+k > srcl.length) { nlines = Math.max(nlines, +k); emitRow(+k, "(line beyond end of file: source changed since the profile was taken)"); }
-  h += `<div class="tbl-cols"><table class="cols fill src" data-key="heat.src" data-fill="1"><colgroup>`;
-  cols.forEach((c, i) => {
-    // line numbers carry a 2-character call marker; the cost columns fit "-100.0%"
-    const w = (i === 0 ? String(nlines).length + 2 : PCTW) + PAD;
-    h += `<col${i % 2 ? ' class="alt"' : ""}${i === cols.length - 1 ? "" : ` style="width:${w}ch"`}>`;
-  });
-  h += `</colgroup><thead><tr>${cols.map(c => `<th${c.num ? ' class="n"' : ""}${c.title ? ` title="${esc(c.title)}"` : ""}>${esc(c.label)}</th>`).join("")}</tr></thead><tbody>`;
-  h += rows.join("") + `</tbody></table></div></div>`;
+  // Event, line and source first -- the three that read as one heat-colored
+  // unit -- then what the line spends elsewhere: calls and the miss columns.
+  // The source column is the one that grows: at least SRC_COLS visible
+  // characters, wider whenever the pane has room (fill 1 = edge to edge
+  // between tree and minimap); every other column is fitted to its content
+  // with its header label as the floor, so no header is ever cut off.
+  const cols = [evCol(ev, { title: ev.long + ", share of total, spent on the line itself", cls: "self" }),
+                { label: "line", num: true, width: String(nlines).length + 2, cls: "ln" }, // + the 2-character call marker
+                { label: "source", width: SRC_COLS, grow: true, cls: "code" },
+                { label: "calls", title: "total cost of the calls made from the line, share of total", num: true, cls: "incl" },
+                ...extraCols()];
+  h += table("heat.src", cols, rows, { rowAttrs: attrs, fill: 1, cls: "src", bare: true }) + `</div>`;
   mainEl.innerHTML = h;
   renderTree();
   // The minimap band goes up before the listing's width is settled: it
@@ -763,10 +797,11 @@ function centerRow(el) {
 // ---------- minimap ----------
 // A VS-Code-style scaled thumbnail of the current file's source column,
 // between #split and #main. Built once per renderFile call by cloning the
-// live table.src rows (dropping every column but .code, since only the
-// source's own coloring is wanted, not line/self/calls/event) rather than
-// re-rendering from the model a second time -- this way it can never drift
-// out of sync with what the source table actually shows. CSS transform:
+// live table.src rows (only the .code cell of each, which carries its own
+// self heat inline -- not the calls/miss cells with their independent
+// heats) rather than re-rendering from the model a second time -- this way
+// it can never drift out of sync with what the source table actually shows.
+// CSS transform:
 // scale() then shrinks the clone to fit; the clone itself is never
 // rebuilt except by the next renderFile, so resize only has to reposition
 // and rescale the existing DOM (minimapLayout), not re-snapshot it.
@@ -801,7 +836,6 @@ function minimapBuild() {
     if (!code) continue;
     const tr = document.createElement("tr");
     tr.className = row.className;
-    tr.style.cssText = row.style.cssText;
     tr.appendChild(code.cloneNode(true));
     body.appendChild(tr);
   }
@@ -938,7 +972,7 @@ function toggleDetail(path, ln, forceOpen) {
     const cols = [{ label: "% of total", num: true }, evCol(ev), { label: "call count", num: true }, fnCol("callee"), locCol];
     const rows = callees.map(([ci, cf, cl, vec, count]) => {
       const loc = cl ? cf + ":" + cl : cf;
-      return [fmtPct(val(vec)), num(val(vec)), num(count), { text: fnName(ci), title: fnName(ci) }, { text: loc, html: link(cf, cl, loc) }];
+      return [fmtPct(val(vec)), num(val(vec)), numCalls(count), { text: fnName(ci), title: fnName(ci) }, { text: loc, html: link(cf, cl, loc) }];
     });
     const heading = `calls from this line (total ${evLabel(ev)})`;
     h += `<h4>${esc(heading)}</h4>` + table("heat.detail.callees", cols, rows);
@@ -953,7 +987,7 @@ function toggleDetail(path, ln, forceOpen) {
       const cols = [{ label: "call count", num: true }, { label: "% of total", num: true }, evCol(ev), fnCol("caller"), { label: "called at", title: "file:line of the call", clip: 48 }];
       const rows = callers.map(([ci, cf, cl, vec, count]) => {
         const loc = cl ? cf + ":" + cl : cf;
-        return [num(count), fmtPct(val(vec)), num(val(vec)), { text: fnName(ci), title: fnName(ci) }, { text: loc, html: link(cf, cl, loc) }];
+        return [numCalls(count), fmtPct(val(vec)), num(val(vec)), { text: fnName(ci), title: fnName(ci) }, { text: loc, html: link(cf, cl, loc) }];
       });
       h += table("heat.detail.callers", cols, rows);
       textParts.push(heading + "\\n" + tableText(cols, rows));
@@ -966,7 +1000,7 @@ function toggleDetail(path, ln, forceOpen) {
   h += `</div>`;
   const tr = document.createElement("tr");
   tr.className = "detail";
-  tr.innerHTML = `<td colspan="${4 + EXTRA.length}">${h}</td>`;
+  tr.innerHTML = `<td colspan="${row.cells.length}">${h}</td>`;
   tr._copyText = textParts.join("\\n\\n");
   row.after(tr);
   Theme.init(tr);
@@ -988,7 +1022,7 @@ mainEl.addEventListener("click", ev2 => {
   if (linkRow) { location.hash = linkRow.dataset.href; return; }
   const row = ev2.target.closest("tr.clickable");
   // a popup opening or closing changes which rows are on screen without a scroll event
-  if (row && curFile) { toggleDetail(curFile, +row.querySelector("td.ln").dataset.ln, false); minimapSync(); return; }
+  if (row && curFile) { toggleDetail(curFile, +row.dataset.ln, false); minimapSync(); return; }
 });
 
 // ---------- routing ----------

@@ -237,6 +237,13 @@ def functions_table(p: cg.Profile, event: str, top: int, repo_root: str) -> str:
     ranked = sorted(((p.value(vec, event), fn) for fn, vec in p.fn_self.items() if p.value(vec, event) > 0),
                     key=lambda t: (-t[0], t[1]))[:top]
     max_pct = 100.0 * ranked[0][0] / total if ranked else 1.0
+    # call counts are a metric of their own, colored like every other one: a
+    # count's heat is its share of every call the profile recorded (each call
+    # site's count, summed), log-scaled to the most-called function -- the
+    # heat map's numCalls() applies the same rule
+    fn_calls = {fn: sum(count for count, _ in callers.values()) for fn, callers in p.callers.items()}
+    calls_total = sum(fn_calls.values()) or 1
+    calls_max_pct = 100.0 * max(fn_calls.values(), default=0) / calls_total
     cols = [Col("#", "rank", num=True),
             Col("% self", f"share of all {event} spent in the function itself, not in what it calls", num=True),
             Col("symbol", f"the function, first {SYMBOL_CHARS} characters (drag the bar for more); "
@@ -263,7 +270,8 @@ def functions_table(p: cg.Profile, event: str, top: int, repo_root: str) -> str:
         rows.append([str(rank),
                      Cell(theme.num_pct(share), style=theme.heat_style(theme.heat_t(share, max_pct))),
                      Cell(fn, title=fn, html=f'<a href="{href}">{html_esc(fn)}</a>' if href else None),
-                     theme.num_human(ncalls) if ncalls else "",
+                     Cell(theme.num_human(ncalls), title=f"{ncalls:,} calls",
+                          style=theme.heat_style(theme.heat_t(100.0 * ncalls / calls_total, calls_max_pct))) if ncalls else "",
                      Cell(who, title=who, html=who_html) if who else Cell("(no recorded caller)", cls="dim")])
     return theme.table_render("report.functions", cols, rows, fill=True, lines=True)
 
