@@ -56,15 +56,15 @@ body.frame > iframe { flex: 1; min-height: 0; width: 100%; border: 0; background
    as a header by its own background, not a rule under it. The header row
    stays put while the page scrolls past the table. The box never scrolls
    on its own: it is as long and as wide as its columns -- with .fill that
-   starts at 90% of the visible width of the pane that scrolls it (initTable
-   in theme.js bakes that in as an explicit width on the last column, once,
-   at first render) and never re-consults the pane again; dragging any bar, including the trailing
-   one, only ever changes the one column's own width, growing or shrinking
-   the table's total width with it, and the page (or the nearest scrolling
-   ancestor) picks up a scrollbar rather than the table clipping itself.
-   The 14px margin sits outside the box on every side but the top, so the
-   trailing bar's grab area always has clear space next to it, including
-   against the page's own edge once a table has grown past its container.
+   spans data-fill (default 90%, 1 = all) of the visible width of the pane
+   that scrolls it (fillTable in theme.js sets that as an explicit width on
+   the last column) and follows the pane until a bar is dragged; dragging
+   any bar, including the trailing one, only ever changes the one column's
+   own width, growing or shrinking the table's total width with it, and
+   the page (or the nearest scrolling ancestor) picks up a scrollbar rather
+   than the table clipping itself. The 14px margin sits outside the box on
+   every side but the top, so a table that has grown past its container
+   still ends short of the page's own edge.
    Column widths are set in ch by the generators: content + 1ch padding
    each side + 1ch slack for the divider bar and fractional rounding. Each
    column's full meaning is a tooltip on its header cell; see README.md
@@ -88,6 +88,11 @@ table.cols .dim { color: var(--muted); }
   cursor: col-resize; touch-action: none; }
 .bar::before { content: ""; position: absolute; top: 0; bottom: 0; left: 2.5px; width: 4px; }
 .bar:hover::before, .bar.active::before { background: var(--bar); }
+/* the trailing bar lies wholly inside the table, its line flush with the
+   right edge, so a table that fills its pane exactly (data-fill="1") never
+   reaches 4px past the pane and raises a sideways scrollbar */
+.bar:last-child { margin-left: -9px; }
+.bar:last-child::before { left: 5px; }
 
 ul.rawdata { margin: 4px 0 10px; padding-left: 20px; }
 

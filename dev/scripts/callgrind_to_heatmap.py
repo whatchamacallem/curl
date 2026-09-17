@@ -715,7 +715,7 @@ function renderFile(path, line) {
   let nlines = srcl.length;
   for (let i = 0; i < srcl.length; i++) emitRow(i + 1, srcl[i]);
   for (const k of Object.keys(lines)) if (+k > srcl.length) { nlines = Math.max(nlines, +k); emitRow(+k, "(line beyond end of file: source changed since the profile was taken)"); }
-  h += `<div class="tbl-cols"><table class="cols fill src" data-key="heat.src"><colgroup>`;
+  h += `<div class="tbl-cols"><table class="cols fill src" data-key="heat.src" data-fill="1"><colgroup>`;
   cols.forEach((c, i) => {
     // line numbers carry a 2-character call marker; the cost columns fit "-100.0%"
     const w = (i === 0 ? String(nlines).length + 2 : PCTW) + PAD;
@@ -726,11 +726,11 @@ function renderFile(path, line) {
   mainEl.innerHTML = h;
   renderTree();
   // The minimap band goes up before the listing's width is settled: it
-  // narrows the pane by its own width, and Theme.init's 90% fill measures
-  // the pane as it is at that moment.
+  // narrows the pane by its own width, and Theme.init's fill (the whole
+  // pane between the tree and the minimap, data-fill="1") measures the
+  // pane as it is at that moment.
   minimapBuild();
   Theme.init(mainEl);
-  srcCenter();
   if (line) {
     const el = document.getElementById("L" + line);
     if (el) { centerRow(el); toggleDetail(path, line, true); }
@@ -758,21 +758,6 @@ function centerRow(el) {
   const cover = coverH(el.closest("table"));
   const r = el.getBoundingClientRect(), m = mainEl.getBoundingClientRect();
   mainEl.scrollTop += r.top - m.top - cover - (mainEl.clientHeight - cover - r.height) / 2;
-}
-// Centers the listing in the pane: Theme.init opened it at 90% of the pane's
-// width (fillBaseline), so equal side margins of the leftover put it at 5%
-// from either edge. Whole pixels, so the margins never overshoot the pane
-// by a fraction and raise a horizontal scrollbar. Computed once per render
-// (and again on "reset columns", which re-derives the 90% too); dragging a
-// column wider grows the listing rightward from that fixed left margin,
-// with the same margin kept after its trailing bar (a margin on a
-// max-content wrapper's child counts toward the wrapper's width).
-function srcCenter() {
-  const box = mainEl.querySelector(".srcwrap > .tbl-cols");
-  if (!box) return;
-  const table = box.querySelector("table");
-  const gap = Math.max(0, Math.floor((mainEl.clientWidth - table.getBoundingClientRect().width) / 2));
-  box.style.marginLeft = box.style.marginRight = gap + "px";
 }
 
 // ---------- minimap ----------
@@ -1061,7 +1046,7 @@ window.addEventListener("hashchange", route);
 // iframe, so it jumps back to the hottest-lines/functions overview.
 window.addEventListener("message", e => {
   if (e.data === "theme:home") location.hash = "";
-  else if (e.data === "theme:reset-cols") { Theme.resetCols(mainEl); srcCenter(); }
+  else if (e.data === "theme:reset-cols") Theme.resetCols(mainEl);
 });
 // Same 120ms-debounced resize pattern as theme.js's own relayout() listener
 // (kept separate rather than folded into Theme.relayout: the minimap only

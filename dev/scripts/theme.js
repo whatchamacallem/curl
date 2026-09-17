@@ -5,7 +5,8 @@
 //                are not persisted -- a table always opens at its default,
 //                and resetCols() puts every dragged column back to that
 //                default within the same page view (the strip's "reset
-//                columns" link).
+//                columns" link). A .fill table's last column fills the pane
+//                (fillTable) and keeps doing so until a bar is dragged.
 //   .band + th   sticky elements inside one scroller are stacked in DOM
 //                order (a legend above a header row) instead of overlapping.
 //   splitter()   a draggable divider between two panes.
@@ -31,6 +32,7 @@ window.Theme = (function () {
   function drag(e, table, i, bar) {
     const col = table.querySelectorAll("colgroup > col")[i], cell = headerCells(table)[i];
     if (!col || !cell) return;
+    table._dragged = true; // a fill table stops following its pane from here on (see fillTable)
     const x0 = e.clientX, w0 = cell.getBoundingClientRect().width;
     bar.classList.add("active");
     if (bar.setPointerCapture) bar.setPointerCapture(e.pointerId);
@@ -52,25 +54,29 @@ window.Theme = (function () {
     }
     return document.documentElement;
   }
-  // The baseline a `fill` table's open-ended last column gets on first
-  // render: the table opens at 90% of its scrolling pane's visible width
-  // (floored to a whole pixel so sub-pixel rounding can never tip the pane
-  // into a horizontal scrollbar), not of the window -- the heat map's
-  // listing pane is only part of the window.
-  function fillBaseline(table, cols) {
+  // A `fill` table's open-ended last column: the table spans data-fill of
+  // its scrolling pane's visible width (a fraction; 1 = the whole pane,
+  // default 0.9; floored to a whole pixel so sub-pixel rounding can never
+  // tip the pane into a horizontal scrollbar), not of the window -- the
+  // heat map's listing pane is only part of the window. relayout() re-fits
+  // it whenever the pane may have changed (window resize, a splitter drag)
+  // until a column is dragged (table._dragged); resetCols clears that.
+  function fillTable(table) {
+    const cols = [...table.querySelectorAll("colgroup > col")];
+    if (!cols.length) return;
     const last = cols[cols.length - 1];
-    const target = Math.floor(scrollerOf(table).clientWidth * 0.9);
+    const target = Math.floor(scrollerOf(table).clientWidth * (+table.dataset.fill || 0.9));
     const others = table.getBoundingClientRect().width - last.getBoundingClientRect().width;
-    return Math.max(MIN_COL, target - others) + "px";
+    last.style.width = Math.max(MIN_COL, target - others) + "px";
   }
+  // Bars only: init()'s relayout() right after does the first fill and lays
+  // the bars out, so a fill table's last column keeps dataset.w = "" (open)
+  // and resetCols re-fits it instead of replaying a stale pixel width.
   function initTable(table) {
     if (table._bars) return;
     const wrap = table.parentElement;
     if (!wrap.classList.contains("tbl-cols")) return;
     const cols = [...table.querySelectorAll("colgroup > col")];
-    if (table.classList.contains("fill") && cols.length) {
-      cols[cols.length - 1].style.width = fillBaseline(table, cols);
-    }
     for (const c of cols) c.dataset.w = c.style.width;
     table._bars = [];
     for (let i = 0; i < cols.length; i++) {
@@ -81,24 +87,20 @@ window.Theme = (function () {
       wrap.appendChild(bar);
       table._bars.push(bar);
     }
-    layoutBars(table);
   }
 
   // Puts every already-initialised table's columns back to the width
-  // initTable() gave them at first render (dataset.w, set once and never
-  // updated by a drag) -- a `fill` table's open-ended last column is
-  // recomputed against the current viewport rather than replayed from
-  // dataset.w, same as a fresh first render would do.
+  // initTable() saw at first render (dataset.w, set once and never updated
+  // by a drag) -- a `fill` table's open-ended last column is re-fitted to
+  // the current pane, same as a fresh first render would do, and follows
+  // the pane again from here on.
   function resetCols(root) {
     root = root || document.body;
     for (const t of root.querySelectorAll("table.cols")) {
       if (!t._bars) continue;
-      const cols = [...t.querySelectorAll("colgroup > col")];
-      for (const c of cols) c.style.width = c.dataset.w;
-      if (t.classList.contains("fill") && cols.length) {
-        cols[cols.length - 1].style.width = fillBaseline(t, cols);
-        cols[cols.length - 1].dataset.w = cols[cols.length - 1].style.width;
-      }
+      for (const c of t.querySelectorAll("colgroup > col")) c.style.width = c.dataset.w;
+      t._dragged = false;
+      if (t.classList.contains("fill")) fillTable(t);
       layoutBars(t);
     }
   }
@@ -114,7 +116,11 @@ window.Theme = (function () {
   }
   function relayout(root) {
     root = root || document.body;
-    for (const t of root.querySelectorAll("table.cols")) if (t._bars) layoutBars(t);
+    for (const t of root.querySelectorAll("table.cols")) {
+      if (!t._bars) continue;
+      if (t.classList.contains("fill") && !t._dragged) fillTable(t);
+      layoutBars(t);
+    }
     new Set([...root.querySelectorAll(".band")].map(b => b.parentElement)).forEach(alignSticky);
   }
   function init(root) {
@@ -138,8 +144,10 @@ window.Theme = (function () {
       const x0 = e.clientX, w0 = pane.getBoundingClientRect().width;
       bar.classList.add("active");
       if (bar.setPointerCapture) bar.setPointerCapture(e.pointerId);
+      let raf = 0; // the other pane's fill tables follow the drag, once per frame
       const move = ev => {
         pane.style.width = Math.min(window.innerWidth * 0.6, Math.max(min || 120, w0 + ev.clientX - x0)) + "px";
+        if (!raf) raf = requestAnimationFrame(() => { raf = 0; relayout(); });
       };
       const up = () => {
         bar.classList.remove("active");
