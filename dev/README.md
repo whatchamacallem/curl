@@ -42,6 +42,17 @@ most-called function. In the source listing the event, line and source cells
 all carry the line's own (self) cost; "calls" carries the cost of the calls
 made from that line.
 
+## Links
+
+The address bar always spells out what is on screen, so it can be bookmarked
+or copied at any point and reopened later. After the view name comes that
+view's own state: `#heat-map/f=lib/urlapi.c&l=1343&e=Ir` is the heat map at
+that line of that file with that event, `fn=parseurl_and_replace` a function
+(its file, opened on the function's first line), `f=lib/urlapi.c` a file, and
+nothing after the view name is the view's start page. An `all` report puts
+the test first: `#urlparser/heat-map/...`. Closing a line's detail box moves
+the selection to its file; back and forward walk through every step.
+
 ## Flame Graph Bindings (speedscope)
 
 Open the flame graph and remain with "Time Order" in the view menu. The

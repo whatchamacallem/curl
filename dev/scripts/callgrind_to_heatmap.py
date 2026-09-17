@@ -362,7 +362,7 @@ for (const [n, terms, long] of D.meta.derived) {
   if (get(D.meta.totals) > 0) EVS.push({ key: n, long: long || D.meta.eventLong[n] || "", get, derived: true });
 }
 const evByKey = k => EVS.find(e => e.key === k);
-let ev = evByKey(store.get("heat.event")) || evByKey(D.meta.defaultEvent) || EVS[0];
+let ev = evByKey(D.meta.defaultEvent) || EVS[0]; // the hash's e= overrides, see route()
 const EXTRA = ["D1m", "DLm", "Bcm"].map(evByKey).filter(Boolean);
 // Short plain-language name for every event key callgrind can emit plus the
 // derived ones (mirrors callgrind.py's EVENT_LONG / DERIVED_DEFAULTS, kept
@@ -454,14 +454,27 @@ const fnCalls = fns.map(f => f.callers.reduce((a, c) => a + c[4], 0));
 const CALLS_TOTAL = fnCalls.reduce((a, b) => a + b, 0) || 1;
 const CALLS_MAXP = Math.max(100 * fnCalls.reduce((a, b) => Math.max(a, b), 0) / CALLS_TOTAL, 0.0001);
 const numCalls = n => n ? { text: fmtH(n), title: fmtN(n) + " calls", style: heatBg(heatP(100 * n / CALLS_TOTAL, CALLS_MAXP)) } : "";
-function hashFor(path, line) {
-  const parts = ["f=" + encodeURIComponent(path)];
-  if (line) parts.push("l=" + line);
-  if (EVS.length > 1) parts.push("e=" + encodeURIComponent(ev.key));
-  return "#" + parts.join("&");
+// The hash of a view -- see "routing" below for the grammar. A value is
+// percent-encoded except for "/", which stays readable in file paths; the
+// event is always spelled out whenever there is a choice, so a hash names
+// its view in full and never depends on what the page showed before.
+const enc = v => encodeURIComponent(v).replace(/%2F/g, "/");
+function hashOf(s) {
+  const parts = [];
+  if (s.fn) parts.push("fn=" + enc(s.fn));
+  else if (s.file) { parts.push("f=" + enc(s.file)); if (s.line) parts.push("l=" + s.line); }
+  if (EVS.length > 1) parts.push("e=" + enc(s.ev || ev.key));
+  return parts.length ? "#" + parts.join("&") : "";
 }
+const hashFor = (path, line) => hashOf({ file: path, line: line });
+const hashForFn = name => hashOf({ fn: name });
 function fnName(i) { return (i != null && fns[i]) ? fns[i].name : "?"; }
+// A line link (its file must be here), or the text alone.
 function link(path, line, text) { return files[path] && line ? `<a href="${hashFor(path, line)}">${esc(text)}</a>` : esc(text); }
+// A function link: resolves to its entry line when followed, so the address
+// bar names the function itself, not a line number that may move.
+const fnLinkable = fi => fi != null && fns[fi] && fns[fi].line && files[fns[fi].file];
+function linkFn(fi, text) { return fnLinkable(fi) ? `<a href="${hashForFn(fns[fi].name)}">${esc(text)}</a>` : esc(text); }
 const SYMBOL_CHARS = 20; // visible characters of a function name before it is cut off
 const SRC_COLS = 80; // visible characters of source the listing always shows; the pane's spare width is added on top
 
@@ -680,9 +693,9 @@ function renderHome() {
       return [String(i + 1),
               { text: fmtPct(s), style: heatBg(heatT(s, MAXP)) },
               { text: f.name, title: f.name },
-              { text: loc, html: link(f.file, f.line, loc) },
+              { text: loc, html: linkFn(fi, loc) },
               numCalls(fnCalls[fi]), fmtPct(s + val(f.calls)), ...extraCells(f.self)];
-    }), { rowHref: topF.map(([fi]) => hashFor(fns[fi].file, fns[fi].line)) });
+    }), { rowHref: topF.map(([fi]) => fnLinkable(fi) ? hashForFn(fns[fi].name) : "") });
   h += `</div>`;
   mainEl.innerHTML = h;
   mainEl.scrollTop = 0;
@@ -691,10 +704,14 @@ function renderHome() {
   minimapClear();
 }
 
+// Builds the listing of `path` from scratch (the popup, if any, is the
+// state's business: detailSet() after this). A listing rebuilt for the file
+// already shown (event or scale changed) keeps its scroll position; a new
+// file opens on its hottest line unless `line` says where it will open.
 function renderFile(path, line) {
   const f = files[path];
   if (!f) { renderHome(); return; }
-  const first = curFile !== path;
+  const first = curFile !== path, keepTop = first ? -1 : mainEl.scrollTop;
   curFile = path;
   revealInTree(path);
   const lines = f.lines;
@@ -732,7 +749,7 @@ function renderFile(path, line) {
     const t = heatT(self, maxP), hs = heatBg(t);
     const fnidx = f.lfn[ln];
     const title = rec ? `${fmtN(self)} ${ev.key} self, ${fmtN(calls)} in calls${rec[2] ? " over " + fmtH(rec[2]) + " calls" : ""}${fnidx != null ? " \\u2014 in " + fnName(fnidx) : ""}` : "";
-    const cls = [rec ? "clickable" : "", f.callees[ln] ? "hasc" : "", line === ln ? "target" : ""].filter(Boolean).join(" ");
+    const cls = [rec ? "clickable" : "", f.callees[ln] ? "hasc" : ""].filter(Boolean).join(" ");
     attrs.push(`id="L${ln}"${cls ? ` class="${cls}"` : ""} data-ln="${ln}"${title ? ` title="${esc(title)}"` : ""}`);
     rows.push([{ text: self ? fmtPct(self) : "", style: hs, cls: t > 0.45 ? "hot" : "" },
                { text: String(ln), style: hs },
@@ -765,15 +782,19 @@ function renderFile(path, line) {
   // pane as it is at that moment.
   minimapBuild();
   Theme.init(mainEl);
-  if (line) {
-    const el = document.getElementById("L" + line);
-    if (el) { centerRow(el); toggleDetail(path, line, true); }
-  } else if (first) {
+  if (!first) mainEl.scrollTop = keepTop;
+  else if (!line) {
     const hottest = hot.length ? hot[0][0] : 0;
     const el = hottest ? document.getElementById("L" + hottest) : null;
     if (el) centerRow(el); else mainEl.scrollTop = 0;
   }
   minimapSync();
+}
+// Whether the row is wholly on screen: below what covers the top of the
+// pane (coverH) and above the pane's bottom edge.
+function rowOnScreen(el) {
+  const r = el.getBoundingClientRect(), m = mainEl.getBoundingClientRect();
+  return r.top >= m.top + coverH(el.closest("table")) && r.bottom <= m.top + mainEl.clientHeight;
 }
 // The height of what stays put over the top of the pane while the listing
 // scrolls under it: the sticky header band plus the (sticky) header cells
@@ -943,13 +964,31 @@ mmViewport.addEventListener("pointerdown", e => {
   e.stopPropagation(); // don't also trigger the bare-background click-to-jump
 });
 
-function toggleDetail(path, ln, forceOpen) {
+// The line whose detail popup is open in the listing, 0 if none.
+function detailLine() {
+  const d = mainEl.querySelector("tr.detail");
+  return d ? +d.previousElementSibling.dataset.ln : 0;
+}
+// Makes the listing's popup match the state: open on `line` (0: none). The
+// row is outlined and, if it is off screen, centered -- a row the reader
+// just clicked is on screen and stays put; one reached through a chip, a
+// popup link or a fresh URL is brought into view. The popup opening or
+// closing changes which rows are on screen without a scroll event, so the
+// minimap is re-synced here.
+function detailSet(line) {
+  if (line === detailLine()) return;
+  for (const e of mainEl.querySelectorAll("tr.detail")) e.remove();
+  for (const e of mainEl.querySelectorAll("tr.target")) e.classList.remove("target");
+  const row = line ? document.getElementById("L" + line) : null;
+  if (row) {
+    row.classList.add("target");
+    detailOpen(curFile, line, row);
+    if (!rowOnScreen(row)) centerRow(row);
+  }
+  minimapSync();
+}
+function detailOpen(path, ln, row) {
   const f = files[path];
-  const row = document.getElementById("L" + ln);
-  if (!row) return;
-  const next = row.nextElementSibling;
-  if (next && next.classList.contains("detail")) { if (!forceOpen) next.remove(); return; }
-  document.querySelectorAll("tr.detail").forEach(e => e.remove());
   const callees = (f.callees[ln] || []).slice().sort((a, b) => val(b[3]) - val(a[3]));
   const fi = (entryIdx[path] || {})[ln];
   const fnidx = f.lfn[ln];
@@ -972,7 +1011,7 @@ function toggleDetail(path, ln, forceOpen) {
     const cols = [{ label: "% of total", num: true }, evCol(ev), { label: "call count", num: true }, fnCol("callee"), locCol];
     const rows = callees.map(([ci, cf, cl, vec, count]) => {
       const loc = cl ? cf + ":" + cl : cf;
-      return [fmtPct(val(vec)), num(val(vec)), numCalls(count), { text: fnName(ci), title: fnName(ci) }, { text: loc, html: link(cf, cl, loc) }];
+      return [fmtPct(val(vec)), num(val(vec)), numCalls(count), { text: fnName(ci), title: fnName(ci) }, { text: loc, html: linkFn(ci, loc) }];
     });
     const heading = `calls from this line (total ${evLabel(ev)})`;
     h += `<h4>${esc(heading)}</h4>` + table("heat.detail.callees", cols, rows);
@@ -1006,6 +1045,7 @@ function toggleDetail(path, ln, forceOpen) {
   Theme.init(tr);
 }
 
+// Every click is a navigation: it sets location.hash and route() draws it.
 mainEl.addEventListener("click", ev2 => {
   const chip = ev2.target.closest(".chip");
   if (chip) { location.hash = hashFor(curFile, +chip.dataset.goto); return; }
@@ -1016,79 +1056,94 @@ mainEl.addEventListener("click", ev2 => {
     return;
   }
   const close = ev2.target.closest(".dclose, .dclose2");
-  if (close) { ev2.preventDefault(); close.closest("tr.detail").remove(); minimapSync(); return; }
+  if (close) { ev2.preventDefault(); location.hash = hashFor(curFile); return; } // the file it is in
   if (ev2.target.closest("a")) return; // let the row's own link (e.g. "defined at") handle its own click
   const linkRow = ev2.target.closest("tr.rowlink");
   if (linkRow) { location.hash = linkRow.dataset.href; return; }
   const row = ev2.target.closest("tr.clickable");
-  // a popup opening or closing changes which rows are on screen without a scroll event
-  if (row && curFile) { toggleDetail(curFile, +row.dataset.ln, false); minimapSync(); return; }
+  if (row && curFile) { const ln = +row.dataset.ln; location.hash = ln === detailLine() ? hashFor(curFile) : hashFor(curFile, ln); }
 });
 
 // ---------- routing ----------
-// The hash is the one source of truth for "what's on screen" (file, line,
-// event) so a link into this page -- including one relayed through the
-// outer frame's own hash, see syncHash()/FRAME_JS -- reopens the same view.
-// applyEvent() only updates state (no navigation); setEvent() is the
-// user-facing entry point (select box) that also rewrites the hash.
+// The hash is the whole state of this page -- what is on screen is a
+// function of it and of nothing shown before:
+//   #f=<file>              a file: its listing, opened on its hottest line
+//   #f=<file>&l=<line>     a line of it: the listing with that line's detail
+//                          popup open
+//   #fn=<function>         a function: the listing of its file with the
+//                          popup of its entry line open
+//   (none of the above)    the home page
+//   ... &e=<event>         the event, on every one of the above (left out
+//                          only when the profile has a single event)
+// Every click sets location.hash (one history entry per step, so back and
+// forward walk through them) and route() renders it; closing a line's popup
+// navigates to the file it is in. After every render the hash is rewritten
+// to the canonical spelling of what is on screen (a hash that named a
+// missing file, function or line falls back to the nearest thing that
+// exists; the event is always spelled out) with history.replaceState --
+// never location.hash=, which would add an entry -- and posted up to the
+// frame page around this one, if any, which mirrors it into the address
+// bar (FRAME_JS in build_report.py). Only the tree's sort/search and the
+// scale are not part of the hash: they are viewing preferences (localStorage).
+let st = { file: null, line: 0, fn: null }; // what the hash last named, resolved to what exists
+let shown = "";                             // what the pane holds, as a key over file/event/scale
+function stateOf(hash) {
+  const s = { file: null, line: 0, fn: null, ev: null };
+  for (const part of (hash || "").replace(/^#/, "").split("&")) {
+    const i = part.indexOf("=");
+    if (i < 0) continue;
+    let v;
+    try { v = decodeURIComponent(part.slice(i + 1)); } catch (e) { continue; }
+    const k = part.slice(0, i);
+    if (k === "f") s.file = v; else if (k === "l") s.line = +v || 0; else if (k === "fn") s.fn = v; else if (k === "e") s.ev = v;
+  }
+  return s;
+}
 function applyEvent(key) {
   ev = evByKey(key) || EVS[0];
-  store.set("heat.event", ev.key);
+  evSel.value = ev.key;
   recomputeScale();
   TREE = buildTree();
   for (const d of TREE.dirs.values()) if (d.self / TOTAL > 0.05) openDirs.add(d.path);
 }
-function curLine() {
-  const d = mainEl.querySelector("tr.detail");
-  const id = d && d.previousElementSibling && d.previousElementSibling.id;
-  return id && id[0] === "L" ? +id.slice(1) : 0;
-}
-// Rewrites location.hash to match what's actually rendered right now
-// (replaceState: a view refinement of the same page, not a new history
-// entry) and relays it to the outer frame page, if any, so FRAME_JS can
-// mirror it into the top-level URL -- see the "message" listener there.
 function syncHash() {
-  const hash = curFile ? hashFor(curFile, curLine()) : (EVS.length > 1 ? "#e=" + encodeURIComponent(ev.key) : "#");
+  const hash = hashOf(st);
   if (hash !== location.hash) history.replaceState(null, "", hash || "#");
-  if (window.parent !== window) window.parent.postMessage({ theme: "hash", hash: hash || "" }, "*");
-}
-// Renders whatever the hash currently names (file+line, if any) using
-// whatever event is currently applied, then syncs the hash to match --
-// shared by route() (hash changed elsewhere: parse it first) and setEvent()
-// (event changed here: ev is already right, no re-parse wanted, or a stale
-// e= still in the hash would immediately override the just-applied value).
-function renderFromHash() {
-  const m = /^#(?:f=([^&]*))?(?:&?l=(\\d+))?/.exec(location.hash);
-  evSel.value = ev.key;
-  if (m && m[1]) renderFile(decodeURIComponent(m[1]), m[2] ? +m[2] : 0);
-  else renderHome();
-  syncHash();
+  if (window.parent !== window) window.parent.postMessage({ theme: "hash", hash: hash }, "*");
 }
 function route() {
-  const m = /^#(?:f=[^&]*)?(?:&?l=\\d+)?(?:&?e=([^&]*))?/.exec(location.hash);
-  const key = m && m[1] ? decodeURIComponent(m[1]) : null;
-  if (key && evByKey(key) && key !== ev.key) applyEvent(key);
-  renderFromHash();
-}
-function setEvent(key) {
-  applyEvent(key);
-  renderFromHash();
+  const s = stateOf(location.hash);
+  const e = evByKey(s.ev) || evByKey(D.meta.defaultEvent) || EVS[0];
+  if (e.key !== ev.key) applyEvent(e.key);
+  let file = s.file, line = s.line, fn = s.fn;
+  if (fn) {
+    const f = fns.find(x => x.name === fn);
+    if (f && f.line && files[f.file]) { file = f.file; line = f.line; }
+    else { fn = null; file = null; line = 0; }
+  }
+  if (file && !files[file]) { file = null; line = 0; }
+  // the listing is rebuilt only for another file, event or scale; the popup
+  // is reconciled on every route (a click on a row, a chip or "close")
+  const key = (file ? "file\\n" + file : "home") + "\\n" + ev.key + "\\n" + scale;
+  if (key !== shown) { shown = key; if (file) renderFile(file, line); else renderHome(); }
+  if (file) {
+    if (line && !document.getElementById("L" + line)) line = 0;
+    detailSet(line);
+  }
+  st = { file: file, line: line, fn: fn };
+  syncHash();
 }
 window.addEventListener("hashchange", route);
-// Re-picking [heat map] in an outer strip while already showing this page
-// (see FRAME_JS in build_report.py) posts this instead of reloading the
-// iframe, so it jumps back to the hottest-lines/functions overview.
 window.addEventListener("message", e => {
-  if (e.data === "theme:home") location.hash = "";
-  else if (e.data === "theme:reset-cols") Theme.resetCols(mainEl);
+  if (e.data === "theme:reset-cols") Theme.resetCols(mainEl);
 });
 // Same 120ms-debounced resize pattern as theme.js's own relayout() listener
 // (kept separate rather than folded into Theme.relayout: the minimap only
 // needs to reposition/rescale existing DOM, never re-snapshot it).
 let mmResizeTimer = null;
 window.addEventListener("resize", () => { clearTimeout(mmResizeTimer); mmResizeTimer = setTimeout(minimapLayout, 120); });
-evSel.addEventListener("change", e => setEvent(e.target.value));
-document.getElementById("scale").addEventListener("change", e => { scale = e.target.value; store.set("heat.scale", scale); route(); });
+evSel.addEventListener("change", e => { location.hash = hashOf(Object.assign({}, st, { ev: e.target.value })); });
+document.getElementById("scale").addEventListener("change", e => { scale = e.target.value; store.set("heat.scale", scale); shown = ""; route(); });
 document.getElementById("sort").addEventListener("change", e => { sortMode = e.target.value; store.set("heat.sort", sortMode); renderTree(); });
 document.getElementById("q").addEventListener("input", e => { query = e.target.value.trim().toLowerCase(); renderTree(); });
 applyEvent(ev.key);

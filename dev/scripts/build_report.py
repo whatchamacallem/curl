@@ -26,6 +26,7 @@ import argparse
 import os
 import re
 import sys
+from urllib.parse import quote
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import callgrind as cg  # noqa: E402
@@ -44,36 +45,38 @@ LOG_SKIP = 9        # valgrind's banner: tool, copyright, version, command, pare
 
 FRAME_JS = """\
 // Strip: a link with data-view loads its page into the frame (only when
-// picked, never up front); the first link shows this page again. The choice
-// lives in the hash so it survives reload and can be linked to. Links inside
-// the summary that point at a sub-page (a location in the heat map) open
-// there. The title is the picked link's data-title ("urlparser / heat map");
-// a page loaded into the frame that is itself a frame page sends its own
-// title up and hides it, so the outermost strip carries the one title.
-// Re-clicking the strip link for the view already showing posts "theme:home"
-// into the frame instead of reloading it, so a page with its own internal
-// navigation (the heat map's file listings) can jump back to its start. Same
-// deal returning to a view after visiting another one: the outer hash for
-// the old view lost its "=..." deep-link suffix (dropped, never restored, by
-// the plain "#view" the click handler builds) and its own hashchange-driven
-// replaceState calls in the meantime (see hashFor()'s "theme:hash" mirroring)
-// never touch view.dataset.src, so show() sees the same bare src it already
-// has loaded and would otherwise do nothing -- also send "theme:home" then.
-// "reset columns" resets every table on this page directly and posts
-// "theme:reset-cols" into the frame for its own tables (the heat map's
-// home/file tables, an overview's nested per-test strip and its own frame).
-// A page in the frame that navigates internally (the heat map's file/line/
-// event picks) posts its own hash up via {theme:"hash", hash}; this mirrors
-// it into the outer URL with history.replaceState -- not location.hash=,
-// which would re-run show() and re-post "theme:title?" into the frame on
-// every keystroke for no reason, since the view itself never changes, only
-// the deep-link portion after "=". That keeps the address bar always equal
-// to "reopen this exact page in this exact state", copy-paste ready.
+// picked, never up front); the first link shows this page again. The hash
+// is the whole state of this page, and of the page in the frame after it:
+//   #<view>                the strip's pick, its page at its start
+//   #<view>/<state>        that page at <state>: its own hash without the
+//                          "#" (the heat map's f=...&l=...&e=..., or, for
+//                          the overview's per-test pages, which are frame
+//                          pages themselves, again <view>/<state>)
+// so #urlparser/heat-map/f=lib/urlapi.c&l=1290&e=Ir reopens exactly that.
+// show() renders a hash: it lights the link and puts the page into the
+// frame at <state> -- with location.replace on the frame's window, never
+// iframe.src, which would add a history entry of its own on top of the
+// one the hash change already made, so every strip click is one "back"
+// step. The frame's page is a plain hash-routed page and needs nothing
+// else from here. The other way round, a page in the frame that navigates
+// on its own (the heat map's file/line/event picks) posts its hash up via
+// {theme:"hash", hash} after every render; sync() mirrors that into this
+// page's hash with history.replaceState (a refinement of the same view,
+// never a new entry) and, when this page is itself in a frame, posts the
+// result on up -- so the address bar of the outermost page always spells
+// out what is on screen, whichever level changed it. Links inside the
+// summary that point at a sub-page (heat-map/index.html#fn=...) turn into
+// that hash. The title is the picked link's data-title ("urlparser / heat
+// map"); a frame page inside the frame sends its own title up and hides
+// its own, so the outermost strip carries the one title; "theme:title?"
+// asks it to send it again after a show() that re-lit its link without
+// navigating it. "reset columns" resets every table on this page and
+// posts "theme:reset-cols" into the frame for the page there.
 (function () {
   const bar = document.getElementById("bar"), home = document.getElementById("home"), view = document.getElementById("view");
   const titleEl = document.getElementById("title"), links = [...bar.querySelectorAll("a[data-view]")];
   const framed = window.parent !== window;
-  let title = titleEl.textContent;
+  let title = titleEl.textContent, page = "", state = "";
   if (framed) titleEl.hidden = true;
   function setTitle(t) {
     title = t;
@@ -81,26 +84,35 @@ FRAME_JS = """\
     document.title = t;
     if (framed) window.parent.postMessage({ theme: "title", title: t }, "*");
   }
+  // #<view>/<state> <-> [view, "#<state>"]
+  function parse(hash) {
+    const m = /^#([\\w-]*)(?:\\/(.*))?$/.exec(hash || "");
+    return m ? [m[1], m[2] ? "#" + m[2] : ""] : ["", ""];
+  }
+  const build = (key, sub) => key ? "#" + key + (sub ? "/" + sub.slice(1) : "") : "";
+  function sync(hash) {
+    if (hash !== location.hash) history.replaceState(null, "", hash || "#");
+    if (framed) window.parent.postMessage({ theme: "hash", hash: hash }, "*");
+  }
   function show(hash) {
-    const m = /^#([\\w-]+)(?:=(.*))?$/.exec(hash);
-    const key = m ? m[1] : "", link = links.find(a => a.dataset.view === key), cur = link || links[0];
+    const [key, sub] = parse(hash);
+    const link = links.find(a => a.dataset.view === key), cur = link || links[0];
     for (const a of links) a.classList.toggle("on", a === cur);
     setTitle(cur.dataset.title);
-    if (!link || !key) { view.hidden = true; home.hidden = false; return; }
-    const src = link.getAttribute("href") + (m[2] ? "#" + decodeURIComponent(m[2]) : "");
-    if (view.dataset.src !== src) { view.src = src; view.dataset.src = src; }
-    else if (view.contentWindow) {
-      view.contentWindow.postMessage("theme:title?", "*");
-      if (!m[2]) view.contentWindow.postMessage("theme:home", "*");
-    }
+    if (!link || !key) { view.hidden = true; home.hidden = false; sync(""); return; }
+    const href = link.getAttribute("href");
+    if (href !== page || sub !== state) view.contentWindow.location.replace(href + (sub || "#"));
+    if (href === page) view.contentWindow.postMessage("theme:title?", "*");
+    page = href; state = sub;
     home.hidden = true; view.hidden = false;
+    sync(build(key, sub));
   }
   function hashFor(href) {
     for (const a of links) {
       const base = a.getAttribute("href");
       if (a.dataset.view && href.startsWith(base)) {
         const rest = href.slice(base.length);
-        return "#" + a.dataset.view + (rest.startsWith("#") ? "=" + encodeURIComponent(rest.slice(1)) : "");
+        return build(a.dataset.view, rest.startsWith("#") ? rest : "");
       }
     }
     return null;
@@ -109,32 +121,27 @@ FRAME_JS = """\
   if (resetCols) resetCols.addEventListener("click", e => {
     e.preventDefault();
     window.Theme.resetCols(home);
-    if (view.contentWindow) view.contentWindow.postMessage("theme:reset-cols", "*");
+    if (page) view.contentWindow.postMessage("theme:reset-cols", "*");
   });
   document.addEventListener("click", e => {
     const a = e.target.closest("a[href]");
     if (!a || a === resetCols || a.target || e.ctrlKey || e.metaKey || e.shiftKey || e.button) return;
     const href = a.getAttribute("href");
-    const hash = a.dataset.view != null ? (a.dataset.view ? "#" + a.dataset.view : "") : hashFor(href);
+    const hash = a.dataset.view != null ? build(a.dataset.view, "") : hashFor(href);
     if (hash == null) return;
     e.preventDefault();
-    if (hash === (location.hash || "")) {
-      if (a.dataset.view && view.contentWindow) view.contentWindow.postMessage("theme:home", "*");
-      show(hash);
-    } else location.hash = hash;
+    if (hash === (location.hash || "")) show(hash); else location.hash = hash;
   });
   window.addEventListener("message", e => {
-    if (e.data === "theme:title?") setTitle(title);
-    else if (e.data === "theme:reset-cols") {
-      window.Theme.resetCols(home);
-      if (view.contentWindow) view.contentWindow.postMessage("theme:reset-cols", "*");
-    }
-    else if (e.data && e.data.theme === "title" && e.source === view.contentWindow) setTitle(e.data.title);
-    else if (e.data && e.data.theme === "hash" && e.source === view.contentWindow) {
-      const cur = links.find(a => a.classList.contains("on"));
-      if (!cur || !cur.dataset.view) return;
-      const hash = "#" + cur.dataset.view + (e.data.hash ? "=" + encodeURIComponent(e.data.hash.slice(1)) : "");
-      if (hash !== location.hash) history.replaceState(null, "", hash);
+    if (e.source === view.contentWindow) {
+      if (e.data && e.data.theme === "title") setTitle(e.data.title);
+      else if (e.data && e.data.theme === "hash" && page) { state = e.data.hash; sync(build(parse(location.hash)[0], state)); }
+    } else if (framed && e.source === window.parent) {
+      if (e.data === "theme:title?") setTitle(title);
+      else if (e.data === "theme:reset-cols") {
+        window.Theme.resetCols(home);
+        if (page) view.contentWindow.postMessage("theme:reset-cols", "*");
+      }
     }
   });
   window.addEventListener("hashchange", () => show(location.hash));
@@ -227,12 +234,14 @@ def functions_table(p: cg.Profile, event: str, top: int, repo_root: str) -> str:
     total = p.value(p.totals(), event) or 1
 
     def entry_link(fn: str) -> str:
-        """Heat-map link to the function's first executed line, if the file is here."""
+        """Heat-map link to the function (it opens at its first executed
+        line), if that line's file is here. Spelled the way the heat map's
+        own enc() spells a hash value."""
         ef, el = p.fn_entry.get(fn, (p.fn_home.get(fn, "???"), 0))
         f = path_display(repo_root, ef)
         if not f or not el or not (os.path.isfile(os.path.join(repo_root, f)) or os.path.isfile(f)):
             return ""
-        return f"heat-map/index.html#f={html_esc(f)}&l={el}"
+        return "heat-map/index.html#fn=" + html_esc(quote(fn, safe="/-_.!~*'()"))
 
     ranked = sorted(((p.value(vec, event), fn) for fn, vec in p.fn_self.items() if p.value(vec, event) > 0),
                     key=lambda t: (-t[0], t[1]))[:top]
