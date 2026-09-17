@@ -6,14 +6,49 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import NamedTuple, TypeAlias, TypeVar
 
-_NAME_RE = re.compile(r"^\((\d+)\)(?: (.*))?$")
+Costs: TypeAlias = list[int]
+Key = TypeVar("Key")
 
-Vec: TypeAlias = list[int]
+_NAME_COMPRESSION_RE = re.compile(r"^\((\d+)\)(?: (.*))?$")
+
+EVENT_LONG: dict[str, str] = {
+    "AcCost1": "L1 cache-block access cost",
+    "AcCost2": "LL cache-block access cost",
+    "Bc": "conditional branches executed",
+    "Bcm": "conditional branches mispredicted",
+    "Bi": "indirect branches executed",
+    "Bim": "indirect branches mispredicted",
+    "D1mr": "L1 data cache read misses",
+    "D1mw": "L1 data cache write misses",
+    "DLdmr": "LL data read write-backs",
+    "DLdmw": "LL data write write-backs",
+    "DLmr": "LL (last-level) data read misses",
+    "DLmw": "LL (last-level) data write misses",
+    "Dr": "data reads",
+    "Dw": "data writes",
+    "Ge": "global bus events",
+    "I1mr": "L1 instruction cache misses",
+    "ILdmr": "LL instruction write-backs",
+    "ILmr": "LL (last-level) instruction cache misses",
+    "Ir": "instructions executed",
+    "SpLoss1": "L1 cache-block spatial loss",
+    "SpLoss2": "LL cache-block spatial loss",
+    "sysCount": "system calls",
+    "sysCpuTime": "system call cpu time",
+    "sysTime": "system call time",
+}
 
 
-class Term(NamedTuple):
-    coef: int
-    raw: str
+class Caller(NamedTuple):
+    function: str
+    file: str
+    line: int
+
+
+class CallSite(NamedTuple):
+    file: str
+    line: int
+    callee: str
 
 
 class DerivedEvent(NamedTuple):
@@ -22,44 +57,21 @@ class DerivedEvent(NamedTuple):
     long: str
 
 
-class IndexedTerm(NamedTuple):
-    coef: int
-    index_: int
-
-
-class DerivedIndexed(NamedTuple):
-    name: str
-    terms: tuple[IndexedTerm, ...]
-    long: str
-
-
-class LineKey(NamedTuple):
-    file: str
-    line: int
-
-
-class CallSiteKey(NamedTuple):
-    file: str
-    line: int
-    callee: str
-
-
-class CallerKey(NamedTuple):
-    fn: str
-    file: str
-    line: int
-
-
-@dataclass
-class CallCost:
-    count: int
-    cost: Vec
-
-
 class EventHeader(NamedTuple):
     name: str
     terms: tuple[Term, ...] | None
     long: str
+
+
+class ResolvedDerivedEvent(NamedTuple):
+    name: str
+    terms: tuple[ResolvedTerm, ...]
+    long: str
+
+
+class ResolvedTerm(NamedTuple):
+    coefficient: int
+    event_index: int
 
 
 class SelfCheck(NamedTuple):
@@ -68,37 +80,83 @@ class SelfCheck(NamedTuple):
     ratio: float
 
 
+class SourceLine(NamedTuple):
+    file: str
+    line: int
+
+
+class Term(NamedTuple):
+    coefficient: int
+    event_name: str
+
+
 class _PendingCall(NamedTuple):
-    count_: int
-    target: int
+    call_count: int
+    target_line: int
 
 
-EVENT_LONG: dict[str, str] = {
-    "Ir": "instructions executed",
-    "Dr": "data reads",
-    "Dw": "data writes",
-    "I1mr": "L1 instruction cache misses",
-    "D1mr": "L1 data cache read misses",
-    "D1mw": "L1 data cache write misses",
-    "ILmr": "LL (last-level) instruction cache misses",
-    "DLmr": "LL (last-level) data read misses",
-    "DLmw": "LL (last-level) data write misses",
-    "Bc": "conditional branches executed",
-    "Bcm": "conditional branches mispredicted",
-    "Bi": "indirect branches executed",
-    "Bim": "indirect branches mispredicted",
-    "Ge": "global bus events",
-    "sysCount": "system calls",
-    "sysTime": "system call time",
-    "sysCpuTime": "system call cpu time",
-    "AcCost1": "L1 cache-block access cost",
-    "SpLoss1": "L1 cache-block spatial loss",
-    "AcCost2": "LL cache-block access cost",
-    "SpLoss2": "LL cache-block spatial loss",
-    "ILdmr": "LL instruction write-backs",
-    "DLdmr": "LL data read write-backs",
-    "DLdmw": "LL data write write-backs",
-}
+@dataclass
+class Tally:
+    count: int
+    costs: Costs
+
+
+@dataclass
+class Profile:
+    events: list[str] = field(default_factory=list)
+    event_long: dict[str, str] = field(default_factory=dict)
+    derived: list[DerivedEvent] = field(default_factory=list)
+    descriptions: list[str] = field(default_factory=list)
+    positions: list[str] = field(default_factory=lambda: ["line"])
+    command: str = ""
+    summary: list[int] = field(default_factory=list)
+    line_self: dict[SourceLine, Costs] = field(default_factory=dict)
+    line_calls: dict[SourceLine, Costs] = field(default_factory=dict)
+    line_call_count: defaultdict[SourceLine, int] = field(default_factory=lambda: defaultdict(int))
+    line_function: dict[SourceLine, str] = field(default_factory=dict)
+    function_home: dict[str, str] = field(default_factory=dict)
+    function_self: dict[str, Costs] = field(default_factory=dict)
+    function_calls: dict[str, Costs] = field(default_factory=dict)
+    function_entry: dict[str, SourceLine] = field(default_factory=dict)
+    callees: dict[CallSite, Tally] = field(default_factory=dict)
+    callers: defaultdict[str, dict[Caller, Tally]] = field(default_factory=lambda: defaultdict(dict))
+    file_ob: dict[str, str] = field(default_factory=dict)
+
+    def zeros(self) -> Costs:
+        return [0] * len(self.events)
+
+    def totals(self) -> Costs:
+        if self.summary:
+            return list(self.summary)
+        total = self.zeros()
+        for costs in self.line_self.values():
+            costs_add(total, costs)
+        return total
+
+    def resolved_derived_events(self) -> list[ResolvedDerivedEvent]:
+        resolved: list[ResolvedDerivedEvent] = []
+        for derived_event in self.derived:
+            if all(term.event_name in self.events for term in derived_event.terms):
+                resolved.append(ResolvedDerivedEvent(
+                    derived_event.name,
+                    tuple(ResolvedTerm(term.coefficient, self.events.index(term.event_name))
+                          for term in derived_event.terms),
+                    derived_event.long))
+        return resolved
+
+    def value(self, costs: Costs, name: str) -> int:
+        if name in self.events:
+            event_index = self.events.index(name)
+            return costs[event_index] if event_index < len(costs) else 0
+        for derived_event in self.resolved_derived_events():
+            if derived_event.name == name:
+                return sum(term.coefficient * (costs[term.event_index] if term.event_index < len(costs) else 0)
+                           for term in derived_event.terms)
+        raise KeyError(name)
+
+    def event_names(self) -> list[str]:
+        return list(self.events) + [derived_event.name for derived_event in self.resolved_derived_events()]
+
 
 DERIVED_DEFAULTS: tuple[DerivedEvent, ...] = (
     DerivedEvent("D1m", (Term(1, "D1mr"), Term(1, "D1mw")), "L1 data cache misses (D1mr + D1mw)"),
@@ -112,88 +170,233 @@ DERIVED_DEFAULTS: tuple[DerivedEvent, ...] = (
 )
 
 
-K = TypeVar("K")
+def costs_add(dst: Costs, src: Costs) -> None:
+    for index, value in enumerate(src):
+        dst[index] += value
 
 
-def vec_add(dst: Vec, src: Vec) -> None:
-    for k, v in enumerate(src):
-        dst[k] += v
-
-
-def vec_acc(table: dict[K, Vec], key: K, vec: Vec) -> None:
-    cur = table.get(key)
-    if cur is None:
-        table[key] = list(vec)
+def costs_accumulate(table: dict[Key, Costs], key: Key, costs: Costs) -> None:
+    current = table.get(key)
+    if current is None:
+        table[key] = list(costs)
     else:
-        vec_add(cur, vec)
+        costs_add(current, costs)
 
 
-def call_acc(table: dict[K, CallCost], key: K, count: int, vec: Vec) -> None:
-    cur = table.get(key)
-    if cur is None:
-        table[key] = CallCost(count, list(vec))
+def tally_accumulate(table: dict[Key, Tally], key: Key, count: int, costs: Costs) -> None:
+    current = table.get(key)
+    if current is None:
+        table[key] = Tally(count, list(costs))
     else:
-        cur.count += count
-        vec_add(cur.cost, vec)
+        current.count += count
+        costs_add(current.costs, costs)
 
 
-@dataclass
-class Profile:
-    events: list[str] = field(default_factory=list)
-    event_long: dict[str, str] = field(default_factory=dict)
-    derived: list[DerivedEvent] = field(default_factory=list)
-    desc: list[str] = field(default_factory=list)
-    positions: list[str] = field(default_factory=lambda: ["line"])
-    cmd: str = ""
-    summary: list[int] = field(default_factory=list)
-    line_self: dict[LineKey, Vec] = field(default_factory=dict)
-    line_calls: dict[LineKey, Vec] = field(default_factory=dict)
-    line_callcount: defaultdict[LineKey, int] = field(default_factory=lambda: defaultdict(int))
-    line_fn: dict[LineKey, str] = field(default_factory=dict)
-    fn_home: dict[str, str] = field(default_factory=dict)
-    fn_self: dict[str, Vec] = field(default_factory=dict)
-    fn_calls: dict[str, Vec] = field(default_factory=dict)
-    fn_entry: dict[str, LineKey] = field(default_factory=dict)
-    callees: dict[CallSiteKey, CallCost] = field(default_factory=dict)
-    callers: defaultdict[str, dict[CallerKey, CallCost]] = field(default_factory=lambda: defaultdict(dict))
-    file_ob: dict[str, str] = field(default_factory=dict)
-
-    def zeros(self) -> Vec:
-        return [0] * len(self.events)
-
-    def totals(self) -> Vec:
-        if self.summary:
-            return list(self.summary)
-        t = self.zeros()
-        for vec in self.line_self.values():
-            vec_add(t, vec)
-        return t
-
-    def derived_terms(self) -> list[DerivedIndexed]:
-        out: list[DerivedIndexed] = []
-        for d in self.derived:
-            if all(t.raw in self.events for t in d.terms):
-                out.append(DerivedIndexed(
-                    d.name, tuple(IndexedTerm(t.coef, self.events.index(t.raw)) for t in d.terms), d.long))
-        return out
-
-    def value(self, vec: Vec, name: str) -> int:
-        if name in self.events:
-            i = self.events.index(name)
-            return vec[i] if i < len(vec) else 0
-        for d in self.derived_terms():
-            if d.name == name:
-                return sum(t.coef * (vec[t.index_] if t.index_ < len(vec) else 0) for t in d.terms)
-        raise KeyError(name)
-
-    def event_names(self) -> list[str]:
-        return list(self.events) + [d.name for d in self.derived_terms()]
+def profile_load(paths: Sequence[str]) -> Profile:
+    profiles: list[Profile] = []
+    for path in paths:
+        with open(path, encoding="utf-8", errors="replace") as handle:
+            profiles.append(profile_parse(handle.read()))
+    return profile_merge(profiles)
 
 
-def _parse_event_header(val: str) -> EventHeader:
+def profile_merge(profiles: Sequence[Profile]) -> Profile:
+    if not profiles:
+        raise ValueError("no profiles to merge")
+    if len(profiles) == 1:
+        return profiles[0]
+    first = profiles[0]
+    for other in profiles[1:]:
+        if other.events != first.events:
+            raise ValueError(f"cannot merge profiles with different events: {first.events} vs {other.events}")
+    merged = Profile(events=list(first.events), event_long=dict(first.event_long), derived=list(first.derived),
+                     descriptions=list(first.descriptions), positions=list(first.positions))
+    commands = [other.command.split() for other in profiles]
+    if all(command and command[0] == commands[0][0] for command in commands):
+        merged.command = commands[0][0] + " " + ", ".join(" ".join(command[1:]) for command in commands)
+    else:
+        merged.command = " + ".join(other.command for other in profiles)
+    if all(other.summary for other in profiles):
+        merged.summary = [sum(other.summary[index] if index < len(other.summary) else 0 for other in profiles)
+                          for index in range(max(len(other.summary) for other in profiles))]
+    for other in profiles:
+        for key, costs in other.line_self.items():
+            costs_accumulate(merged.line_self, key, costs)
+        for key, costs in other.line_calls.items():
+            costs_accumulate(merged.line_calls, key, costs)
+        for key, count in other.line_call_count.items():
+            merged.line_call_count[key] += count
+        for key, function in other.line_function.items():
+            merged.line_function.setdefault(key, function)
+        for function, home in other.function_home.items():
+            merged.function_home.setdefault(function, home)
+        for function, costs in other.function_self.items():
+            costs_accumulate(merged.function_self, function, costs)
+        for function, costs in other.function_calls.items():
+            costs_accumulate(merged.function_calls, function, costs)
+        for function, entry in other.function_entry.items():
+            merged.function_entry.setdefault(function, entry)
+        for site, tally in other.callees.items():
+            tally_accumulate(merged.callees, site, tally.count, tally.costs)
+        for callee, callers in other.callers.items():
+            for caller, tally in callers.items():
+                tally_accumulate(merged.callers[callee], caller, tally.count, tally.costs)
+        for file, ob in other.file_ob.items():
+            merged.file_ob.setdefault(file, ob)
+    return merged
+
+
+def profile_parse(text: str) -> Profile:
+    profile = Profile()
+    names: dict[str, dict[str, str]] = {"fl": {}, "fn": {}, "ob": {}}
+
+    def name_uncompress(kind: str, val: str) -> str:
+        match = _NAME_COMPRESSION_RE.match(val)
+        if not match:
+            return val
+        ident, name = match.group(1), match.group(2)
+        if name is not None:
+            names[kind][ident] = name
+            return name
+        return names[kind].get(ident, f"({ident})")
+
+    event_count = 0
+    position_count = 1
+    line_position = 0
+    previous: list[int] = [0]
+    cur_file = "???"
+    cur_function = "???"
+    cur_ob = "???"
+    cur_callee_ob: str | None = None
+    cur_callee_file: str | None = None
+    cur_callee_function: str | None = None
+    pending_call: _PendingCall | None = None
+
+    def position_decode(token: str, position: int) -> int:
+        if token == "*":
+            return previous[position]
+        if token[0] == "+":
+            return previous[position] + int(token[1:])
+        if token[0] == "-":
+            return previous[position] - int(token[1:])
+        if token.startswith("0x") or token.startswith("0X"):
+            return int(token, 16)
+        return int(token)
+
+    for raw_line in text.split("\n"):
+        if not raw_line or raw_line[0] == "#":
+            continue
+        first_char = raw_line[0]
+        if first_char.isdigit() or first_char in "+-*":
+            tokens = raw_line.split()
+            for position in range(position_count):
+                previous[position] = position_decode(tokens[position], position)
+            line = previous[line_position]
+            costs = [int(token) for token in tokens[position_count:]]
+            if len(costs) < event_count:
+                costs.extend([0] * (event_count - len(costs)))
+            key = SourceLine(cur_file, line)
+            if pending_call is not None:
+                callee = cur_callee_function or "???"
+                callee_file = cur_callee_file if cur_callee_file is not None else cur_file
+                cur_callee_file = None
+                costs_accumulate(profile.line_calls, key, costs)
+                profile.line_call_count[key] += pending_call.call_count
+                profile.line_function.setdefault(key, cur_function)
+                costs_accumulate(profile.function_calls, cur_function, costs)
+                tally_accumulate(profile.callees, CallSite(cur_file, line, callee), pending_call.call_count, costs)
+                tally_accumulate(profile.callers[callee], Caller(cur_function, cur_file, line),
+                                 pending_call.call_count, costs)
+                if callee not in profile.function_entry:
+                    profile.function_entry[callee] = SourceLine(callee_file, pending_call.target_line)
+                profile.function_home.setdefault(callee, callee_file)
+                profile.file_ob.setdefault(callee_file, cur_callee_ob or cur_ob)
+                cur_callee_ob = None
+                pending_call = None
+            else:
+                costs_accumulate(profile.line_self, key, costs)
+                profile.line_function.setdefault(key, cur_function)
+                costs_accumulate(profile.function_self, cur_function, costs)
+                profile.file_ob.setdefault(cur_file, cur_ob)
+            continue
+
+        equals_index = raw_line.find("=")
+        colon_index = raw_line.find(":")
+        if equals_index != -1 and (colon_index == -1 or equals_index < colon_index):
+            key, val = raw_line[:equals_index], raw_line[equals_index + 1:]
+            if key == "fl":
+                cur_file = name_uncompress("fl", val)
+            elif key in ("fi", "fe"):
+                cur_file = name_uncompress("fl", val)
+            elif key == "fn":
+                cur_function = name_uncompress("fn", val)
+                profile.function_home.setdefault(cur_function, cur_file)
+                cur_callee_file = None
+            elif key == "ob":
+                cur_ob = name_uncompress("ob", val)
+            elif key == "cob":
+                cur_callee_ob = name_uncompress("ob", val)
+            elif key in ("cfl", "cfi"):
+                cur_callee_file = name_uncompress("fl", val)
+            elif key == "cfn":
+                cur_callee_function = name_uncompress("fn", val)
+            elif key == "calls":
+                parts = val.split()
+                target_line = position_decode(parts[1 + line_position], line_position) \
+                    if len(parts) > 1 + line_position else 0
+                pending_call = _PendingCall(int(parts[0]), target_line)
+            elif key in ("jfi", "jfn"):
+                name_uncompress("fl" if key == "jfi" else "fn", val)
+            continue
+        if colon_index == -1:
+            continue
+        key, val = raw_line[:colon_index], raw_line[colon_index + 1:].strip()
+        if key == "events":
+            profile.events = val.split()
+            event_count = len(profile.events)
+        elif key == "event":
+            header = _event_header_parse(val)
+            if header.long:
+                profile.event_long[header.name] = header.long
+            if header.terms is not None:
+                profile.derived.append(DerivedEvent(header.name, header.terms, header.long))
+        elif key == "positions":
+            profile.positions = val.split()
+            position_count = len(profile.positions)
+            line_position = profile.positions.index("line") if "line" in profile.positions else position_count - 1
+            previous = [0] * position_count
+        elif key == "cmd":
+            profile.command = val
+        elif key == "desc":
+            profile.descriptions.append(val)
+        elif key in ("summary", "totals"):
+            values = [int(v) for v in val.split()]
+            if len(values) >= len(profile.summary):
+                profile.summary = values
+
+    for name in profile.events:
+        profile.event_long.setdefault(name, EVENT_LONG.get(name, ""))
+    defined = {derived_event.name for derived_event in profile.derived}
+    for derived_event in DERIVED_DEFAULTS:
+        if derived_event.name not in defined and all(term.event_name in profile.events
+                                                       for term in derived_event.terms):
+            profile.derived.append(derived_event)
+    for derived_event in profile.derived:
+        profile.event_long.setdefault(derived_event.name, derived_event.long)
+    return profile
+
+
+def profile_self_check(profile: Profile) -> SelfCheck:
+    self_sum = sum(costs[0] for costs in profile.line_self.values() if costs)
+    total = profile.summary[0] if profile.summary else self_sum
+    ratio = self_sum / total if total else float("nan")
+    return SelfCheck(self_sum, total, ratio)
+
+
+def _event_header_parse(val: str) -> EventHeader:
     head, _, long = val.partition(":")
-    name, eq, expr = head.partition("=")
-    if not eq:
+    name, has_expr, expr = head.partition("=")
+    if not has_expr:
         return EventHeader(name.strip(), None, long.strip())
     terms: list[Term] = []
     for term in expr.split("+"):
@@ -203,201 +406,3 @@ def _parse_event_header(val: str) -> EventHeader:
         elif len(parts) == 2:
             terms.append(Term(int(parts[0], 0), parts[1]))
     return EventHeader(name.strip(), tuple(terms), long.strip())
-
-
-def profile_parse(text: str) -> Profile:
-    p = Profile()
-    names: dict[str, dict[str, str]] = {"fl": {}, "fn": {}, "ob": {}}
-
-    def unc(kind: str, val: str) -> str:
-        m = _NAME_RE.match(val)
-        if not m:
-            return val
-        ident, name = m.group(1), m.group(2)
-        if name is not None:
-            names[kind][ident] = name
-            return name
-        return names[kind].get(ident, f"({ident})")
-
-    nev = 0
-    npos = 1
-    line_idx = 0
-    prev: list[int] = [0]
-    cur_file = "???"
-    cur_fn = "???"
-    cur_ob = "???"
-    cur_cob: str | None = None
-    cur_cfile: str | None = None
-    cur_cfn: str | None = None
-    pending_call: _PendingCall | None = None
-
-    def decode(tok: str, k: int) -> int:
-        if tok == "*":
-            return prev[k]
-        if tok[0] == "+":
-            return prev[k] + int(tok[1:])
-        if tok[0] == "-":
-            return prev[k] - int(tok[1:])
-        if tok.startswith("0x") or tok.startswith("0X"):
-            return int(tok, 16)
-        return int(tok)
-
-    for raw in text.split("\n"):
-        if not raw or raw[0] == "#":
-            continue
-        c0 = raw[0]
-        if c0.isdigit() or c0 in "+-*":
-            toks = raw.split()
-            for k in range(npos):
-                prev[k] = decode(toks[k], k)
-            line = prev[line_idx]
-            vec = [int(t) for t in toks[npos:]]
-            if len(vec) < nev:
-                vec.extend([0] * (nev - len(vec)))
-            key = LineKey(cur_file, line)
-            if pending_call is not None:
-                callee = cur_cfn or "???"
-                callee_file = cur_cfile if cur_cfile is not None else cur_file
-                cur_cfile = None
-                vec_acc(p.line_calls, key, vec)
-                p.line_callcount[key] += pending_call.count_
-                p.line_fn.setdefault(key, cur_fn)
-                vec_acc(p.fn_calls, cur_fn, vec)
-                call_acc(p.callees, CallSiteKey(cur_file, line, callee), pending_call.count_, vec)
-                call_acc(p.callers[callee], CallerKey(cur_fn, cur_file, line), pending_call.count_, vec)
-                if callee not in p.fn_entry:
-                    p.fn_entry[callee] = LineKey(callee_file, pending_call.target)
-                p.fn_home.setdefault(callee, callee_file)
-                p.file_ob.setdefault(callee_file, cur_cob or cur_ob)
-                cur_cob = None
-                pending_call = None
-            else:
-                vec_acc(p.line_self, key, vec)
-                p.line_fn.setdefault(key, cur_fn)
-                vec_acc(p.fn_self, cur_fn, vec)
-                p.file_ob.setdefault(cur_file, cur_ob)
-            continue
-
-        eq = raw.find("=")
-        colon = raw.find(":")
-        if eq != -1 and (colon == -1 or eq < colon):
-            key, val = raw[:eq], raw[eq + 1:]
-            if key == "fl":
-                cur_file = unc("fl", val)
-            elif key in ("fi", "fe"):
-                cur_file = unc("fl", val)
-            elif key == "fn":
-                cur_fn = unc("fn", val)
-                p.fn_home.setdefault(cur_fn, cur_file)
-                cur_cfile = None
-            elif key == "ob":
-                cur_ob = unc("ob", val)
-            elif key == "cob":
-                cur_cob = unc("ob", val)
-            elif key in ("cfl", "cfi"):
-                cur_cfile = unc("fl", val)
-            elif key == "cfn":
-                cur_cfn = unc("fn", val)
-            elif key == "calls":
-                parts = val.split()
-                target = decode(parts[1 + line_idx], line_idx) if len(parts) > 1 + line_idx else 0
-                pending_call = _PendingCall(int(parts[0]), target)
-            elif key in ("jfi", "jfn"):
-                unc("fl" if key == "jfi" else "fn", val)
-            continue
-        if colon == -1:
-            continue
-        key, val = raw[:colon], raw[colon + 1:].strip()
-        if key == "events":
-            p.events = val.split()
-            nev = len(p.events)
-        elif key == "event":
-            hdr = _parse_event_header(val)
-            if hdr.long:
-                p.event_long[hdr.name] = hdr.long
-            if hdr.terms is not None:
-                p.derived.append(DerivedEvent(hdr.name, hdr.terms, hdr.long))
-        elif key == "positions":
-            p.positions = val.split()
-            npos = len(p.positions)
-            line_idx = p.positions.index("line") if "line" in p.positions else npos - 1
-            prev = [0] * npos
-        elif key == "cmd":
-            p.cmd = val
-        elif key == "desc":
-            p.desc.append(val)
-        elif key in ("summary", "totals"):
-            vals = [int(v) for v in val.split()]
-            if len(vals) >= len(p.summary):
-                p.summary = vals
-
-    for name in p.events:
-        p.event_long.setdefault(name, EVENT_LONG.get(name, ""))
-    defined = {d.name for d in p.derived}
-    for d in DERIVED_DEFAULTS:
-        if d.name not in defined and all(t.raw in p.events for t in d.terms):
-            p.derived.append(d)
-    for d in p.derived:
-        p.event_long.setdefault(d.name, d.long)
-    return p
-
-
-def profile_self_check(p: Profile) -> SelfCheck:
-    self_sum = sum(vec[0] for vec in p.line_self.values() if vec)
-    total = p.summary[0] if p.summary else self_sum
-    ratio = self_sum / total if total else float("nan")
-    return SelfCheck(self_sum, total, ratio)
-
-
-def profile_merge(profiles: Sequence[Profile]) -> Profile:
-    if not profiles:
-        raise ValueError("no profiles to merge")
-    if len(profiles) == 1:
-        return profiles[0]
-    first = profiles[0]
-    for q in profiles[1:]:
-        if q.events != first.events:
-            raise ValueError(f"cannot merge profiles with different events: {first.events} vs {q.events}")
-    p = Profile(events=list(first.events), event_long=dict(first.event_long), derived=list(first.derived),
-                desc=list(first.desc), positions=list(first.positions))
-    cmds = [q.cmd.split() for q in profiles]
-    if all(c and c[0] == cmds[0][0] for c in cmds):
-        p.cmd = cmds[0][0] + " " + ", ".join(" ".join(c[1:]) for c in cmds)
-    else:
-        p.cmd = " + ".join(q.cmd for q in profiles)
-    if all(q.summary for q in profiles):
-        p.summary = [sum(q.summary[k] if k < len(q.summary) else 0 for q in profiles)
-                     for k in range(max(len(q.summary) for q in profiles))]
-    for q in profiles:
-        for key, vec in q.line_self.items():
-            vec_acc(p.line_self, key, vec)
-        for key, vec in q.line_calls.items():
-            vec_acc(p.line_calls, key, vec)
-        for key, n in q.line_callcount.items():
-            p.line_callcount[key] += n
-        for key, fn in q.line_fn.items():
-            p.line_fn.setdefault(key, fn)
-        for fn, home in q.fn_home.items():
-            p.fn_home.setdefault(fn, home)
-        for fn, vec in q.fn_self.items():
-            vec_acc(p.fn_self, fn, vec)
-        for fn, vec in q.fn_calls.items():
-            vec_acc(p.fn_calls, fn, vec)
-        for fn, entry in q.fn_entry.items():
-            p.fn_entry.setdefault(fn, entry)
-        for site, cc in q.callees.items():
-            call_acc(p.callees, site, cc.count, cc.cost)
-        for callee, table in q.callers.items():
-            for caller, cc in table.items():
-                call_acc(p.callers[callee], caller, cc.count, cc.cost)
-        for file, ob in q.file_ob.items():
-            p.file_ob.setdefault(file, ob)
-    return p
-
-
-def profile_load(paths: Sequence[str]) -> Profile:
-    profiles: list[Profile] = []
-    for path in paths:
-        with open(path, encoding="utf-8", errors="replace") as f:
-            profiles.append(profile_parse(f.read()))
-    return profile_merge(profiles)

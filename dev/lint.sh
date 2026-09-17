@@ -11,15 +11,15 @@ set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SCRIPTS="$HERE/scripts"
 
-red()  { printf '\033[31m%s\033[0m\n' "$*"; }
-grn()  { printf '\033[32m%s\033[0m\n' "$*"; }
-bold() { printf '\033[1m%s\033[0m\n' "$*"; }
+red()   { printf '\033[31m%s\033[0m\n' "$*"; }
+green() { printf '\033[32m%s\033[0m\n' "$*"; }
+bold()  { printf '\033[1m%s\033[0m\n' "$*"; }
 
 FAILED=()
 run_group() {  # run_group NAME CMD...
   local name="$1"; shift
   bold "== $name"
-  if "$@"; then grn "-- $name ok"; else red "-- $name FAILED"; FAILED+=("$name"); fi
+  if "$@"; then green "-- $name ok"; else red "-- $name FAILED"; FAILED+=("$name"); fi
   echo
 }
 
@@ -52,5 +52,5 @@ case "${1:-all}" in
   *)      red "unknown group: $1 (see --list)"; exit 2 ;;
 esac
 
-if [ ${#FAILED[@]} -eq 0 ]; then grn "all checks passed"; exit 0; fi
+if [ ${#FAILED[@]} -eq 0 ]; then green "all checks passed"; exit 0; fi
 red "failed: ${FAILED[*]}"; exit 1

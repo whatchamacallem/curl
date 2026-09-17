@@ -9,15 +9,15 @@ log_say() { if [ "$VERBOSE" = 1 ]; then echo "$@"; fi; }
 
 test_run() {
   if [ "$VERBOSE" = 1 ]; then "$@"; return; fi
-  local rc=0 from
+  local exit_code=0 from
   printf '\n$ %s\n' "$*" >>"$RUN_LOG"
   from="$(wc -l <"$RUN_LOG")"
-  "$@" >>"$RUN_LOG" 2>&1 || rc=$?
-  if [ "$rc" != 0 ]; then
-    { echo; echo "error: exit $rc from: $*"
+  "$@" >>"$RUN_LOG" 2>&1 || exit_code=$?
+  if [ "$exit_code" != 0 ]; then
+    { echo; echo "error: exit $exit_code from: $*"
       tail -n +"$((from + 1))" "$RUN_LOG" | tail -n 40
       echo "(last 40 lines; everything this run printed: $RUN_LOG)"; } >&2
-    exit "$rc"
+    exit "$exit_code"
   fi
 }
 
@@ -49,11 +49,11 @@ args_parse() {
   TRACE_DIR="$DEV_DIR/trace"
   STAMP="$(date +%s)"
   RUN_LOG="$TRACE_DIR/profile.$STAMP.log"
-  CG_FLAGS=(--cache-sim=yes --branch-sim=yes)
+  CALLGRIND_FLAGS=(--cache-sim=yes --branch-sim=yes)
   # shellcheck disable=SC2206  # word-splitting CALLGRIND_OPTS is the point
-  CG_EXTRA=(${CALLGRIND_OPTS:-})
+  CALLGRIND_EXTRA_FLAGS=(${CALLGRIND_OPTS:-})
   # one speedscope profile per expression; ones whose events are missing are skipped
-  SS_EVENTS=(Ir D1mr+D1mw DLmr+DLmw I1mr Bcm Bim)
+  SPEEDSCOPE_EVENTS=(Ir D1mr+D1mw DLmr+DLmw I1mr Bcm Bim)
 
   if [ "$TEST" = all ]; then
     TESTS=($(sed -n '/^TESTS_C *=/,/^$/p' tests/perf/Makefile.inc | grep -o '[A-Za-z0-9_]*\.c' | sed 's/\.c$//' | sort))
@@ -98,14 +98,14 @@ build_compile() {
     log_say "   note: ccache not found; builds after a flag change will be full rebuilds"
   fi
   [ "$VERBOSE" = 1 ] || printf '%-13s%s -O2 -g%s, %s' build "$BUILD_DIR" "${CFLAGS_EXTRA[*]:+ ${CFLAGS_EXTRA[*]}}" "$CCACHE"
-  local t0=$SECONDS
+  local start_seconds=$SECONDS
   # CMAKE_C_FLAGS is passed every time (possibly empty) so a previous run's
   # flags never linger in the cache.
   test_run cmake -S . -B "$BUILD_DIR" -G Ninja -DCURL_USE_LIBPSL=OFF -DCMAKE_BUILD_TYPE=RelWithDebInfo \
     "${LAUNCHER[@]}" -DCMAKE_C_FLAGS="${CFLAGS_EXTRA[*]}"
   test_run cmake --build "$BUILD_DIR" --parallel
   test_run cmake --build "$BUILD_DIR" --target perf
-  local elapsed=$(( SECONDS - t0 ))
+  local elapsed=$(( SECONDS - start_seconds ))
   local took; if [ "$elapsed" -ge 60 ]; then took="$((elapsed / 60))m$((elapsed % 60))s"; else took="${elapsed}s"; fi
   [ "$VERBOSE" = 1 ] || printf ' %s | log %s\n' "$took" "${RUN_LOG#"$REPO_ROOT"/}"
   BIN="$BUILD_DIR/tests/perf/perf"
@@ -114,64 +114,64 @@ build_compile() {
 }
 
 # The pages of one report directory: flame graph, heat map, native timing
-# page and index, from the callgrind file(s) in CG_FILES, the valgrind
+# page and index, from the callgrind file(s) in CALLGRIND_FILES, the valgrind
 # log(s) in LOG_FILES and the native output at $out/perf-tool/output.txt.
 report_render() {
-  local name="$1" out="$2" json="$3" ss_name="$4"
-  local ev_args=() log_args=() raw_args=() help_args=() x
+  local name="$1" out="$2" json="$3" speedscope_name="$4"
+  local event_args=() log_args=() raw_args=() help_args=() event log_file cg_file
 
   log_say "== 4 [$name]: flame graph -> $out/flame-graph/index.html =="
-  for x in "${SS_EVENTS[@]}"; do ev_args+=(--event "$x"); done
-  test_run python3 dev/scripts/callgrind_to_speedscope.py "${CG_FILES[@]}" -o "$json" "${ev_args[@]}" --name "$ss_name"
+  for event in "${SPEEDSCOPE_EVENTS[@]}"; do event_args+=(--event "$event"); done
+  test_run python3 dev/scripts/callgrind_to_speedscope.py "${CALLGRIND_FILES[@]}" -o "$json" "${event_args[@]}" --name "$speedscope_name"
   rm -rf "$out/flame-graph"
   mkdir -p "$out/flame-graph"
   cp -r "$SPEEDSCOPE_RELEASE"/. "$out/flame-graph"/
   test_run python3 dev/scripts/build_flame_graph.py --speedscope-dir "$out/flame-graph" --profile-json "$json"
 
   log_say "== 5 [$name]: heat map -> $out/heat-map/index.html =="
-  test_run python3 dev/scripts/callgrind_to_heatmap.py "${CG_FILES[@]}" -o "$out/heat-map/index.html" \
+  test_run python3 dev/scripts/callgrind_to_heatmap.py "${CALLGRIND_FILES[@]}" -o "$out/heat-map/index.html" \
     --title "$name / heat map"
 
   log_say "== 6 [$name]: index -> $out/index.html =="
   test_run python3 dev/scripts/build_report.py timing -o "$out/perf-tool/index.html" --test "$name" \
     --output-file "$out/perf-tool/output.txt" \
     --meta "binary=$BIN" --meta "pinned to=CPU $CPU" --meta "build=$BUILD_DESC"
-  for x in "${LOG_FILES[@]}"; do log_args+=(--log "$x"); done
+  for log_file in "${LOG_FILES[@]}"; do log_args+=(--log "$log_file"); done
 
   rm -rf "$out/raw"
   mkdir -p "$out/raw"
-  cp "${CG_FILES[@]}" "$out/raw/"
+  cp "${CALLGRIND_FILES[@]}" "$out/raw/"
   sed -i "s#$REPO_ROOT/##g" "$out"/raw/*
-  for x in "${CG_FILES[@]}"; do raw_args+=(--raw-data "$out/raw/$(basename "$x")"); done
+  for cg_file in "${CALLGRIND_FILES[@]}"; do raw_args+=(--raw-data "$out/raw/$(basename "$cg_file")"); done
   [ "$name" = all ] && log_args+=(--no-log)
   # under `all` every test's page sits one directory down from the copy of
   # README.md its strip's "help" link opens
   [ "$TEST" = all ] && help_args=(--help-href ../README.md)
-  test_run python3 dev/scripts/build_report.py test "${CG_FILES[@]}" -o "$out/index.html" --test "$name" --top "$TOP" \
+  test_run python3 dev/scripts/build_report.py test "${CALLGRIND_FILES[@]}" -o "$out/index.html" --test "$name" --top "$TOP" \
     "${log_args[@]}" "${raw_args[@]}" "${help_args[@]}"
-  log_say "   raw data: ${CG_FILES[*]}"
+  log_say "   raw data: ${CALLGRIND_FILES[*]}"
 }
 
 run_one() {
   local test="$1" out="$2"
-  local loops cg_out log t0 elapsed took perf_out="$out/perf-tool/output.txt"
+  local loops cg_file log start_seconds elapsed took perf_out="$out/perf-tool/output.txt"
   case "$test" in
     urlparser) loops="${CALLGRIND_LOOPS:-200}";;
     *) loops="${CALLGRIND_LOOPS:-200000}";;
   esac
-  cg_out="$TRACE_DIR/callgrind.out.$test.$loops.$STAMP"
+  cg_file="$TRACE_DIR/callgrind.out.$test.$loops.$STAMP"
   log="$TRACE_DIR/valgrind.$test.$loops.$STAMP.log"
   mkdir -p "$out/perf-tool"
 
-  log_say "== 2 [$test]: callgrind ${CG_FLAGS[*]} ${CG_EXTRA[*]:-} (pinned to CPU $CPU, loops=$loops) =="
+  log_say "== 2 [$test]: callgrind ${CALLGRIND_FLAGS[*]} ${CALLGRIND_EXTRA_FLAGS[*]:-} (pinned to CPU $CPU, loops=$loops) =="
   log_say "   callgrind simulates every instruction (~30-50x slower than native); its"
   log_say "   wall-clock is not a perf number -- the native run below is."
   [ "$VERBOSE" = 1 ] || printf '%-13scallgrind loops=%s' "$test" "$loops"
-  t0=$SECONDS
-  test_run "${TASKSET[@]}" valgrind --tool=callgrind "${CG_FLAGS[@]}" "${CG_EXTRA[@]}" \
-    --callgrind-out-file="$cg_out" --log-file="$log" \
+  start_seconds=$SECONDS
+  test_run "${TASKSET[@]}" valgrind --tool=callgrind "${CALLGRIND_FLAGS[@]}" "${CALLGRIND_EXTRA_FLAGS[@]}" \
+    --callgrind-out-file="$cg_file" --log-file="$log" \
     "$BIN" "$test" "$loops"
-  elapsed=$(( SECONDS - t0 ))
+  elapsed=$(( SECONDS - start_seconds ))
   if [ "$elapsed" -ge 60 ]; then took="$((elapsed / 60))m$((elapsed % 60))s"; else took="${elapsed}s"; fi
   [ "$VERBOSE" = 1 ] || printf ' %s' "$took"
 
@@ -188,7 +188,7 @@ run_one() {
     /^Errors:/ { $1 = $1; s = s (s ? ", " : "") $0 }
     END { print s }' "$perf_out")"
 
-  CG_FILES=("$cg_out")
+  CALLGRIND_FILES=("$cg_file")
   LOG_FILES=("$log")
   report_render "$test" "$out" "$TRACE_DIR/$test.$loops.$STAMP.speedscope.json" \
     "curl perf $test (loops=$loops, $STAMP)"
@@ -199,26 +199,26 @@ run_one() {
 # index over every test.
 run_all() {
   local out="$1"
-  local t loops usecs total=0 rows="" args perf_out="$out/perf-tool/output.txt" t0 elapsed took
-  t0=$SECONDS
+  local test_name loops usecs total=0 rows="" args perf_out="$out/perf-tool/output.txt" start_seconds elapsed took
+  start_seconds=$SECONDS
   mkdir -p "$out/perf-tool"
-  CG_FILES=()
+  CALLGRIND_FILES=()
   LOG_FILES=()
-  for t in "${TESTS[@]}"; do
-    case "$t" in
+  for test_name in "${TESTS[@]}"; do
+    case "$test_name" in
       urlparser) loops="${CALLGRIND_LOOPS:-200}";;
       *) loops="${CALLGRIND_LOOPS:-200000}";;
     esac
-    CG_FILES+=("$TRACE_DIR/callgrind.out.$t.$loops.$STAMP")
-    LOG_FILES+=("$TRACE_DIR/valgrind.$t.$loops.$STAMP.log")
+    CALLGRIND_FILES+=("$TRACE_DIR/callgrind.out.$test_name.$loops.$STAMP")
+    LOG_FILES+=("$TRACE_DIR/valgrind.$test_name.$loops.$STAMP.log")
   done
 
   log_say "== 3 [all]: native timing, every test's run above summed =="
   # "<test>: <n> usecs" -- a "label: value" line, the one shape the report's
   # time_humanize()/value_humanize() rewrite into 5.59s-style durations
-  for t in "${TESTS[@]}"; do
-    usecs="$(awk '/^Time:/ { print $2; exit }' "$OUT_DIR/$t/perf-tool/output.txt")"
-    rows+="$(printf '%-14s %12s usecs' "$t:" "${usecs:-?}")"$'\n'
+  for test_name in "${TESTS[@]}"; do
+    usecs="$(awk '/^Time:/ { print $2; exit }' "$OUT_DIR/$test_name/perf-tool/output.txt")"
+    rows+="$(printf '%-14s %12s usecs' "$test_name:" "${usecs:-?}")"$'\n'
     total=$(( total + ${usecs:-0} ))
   done
   {
@@ -236,9 +236,9 @@ run_all() {
         --meta "source=$GIT_DESC" --meta "build=$BUILD_DESC"
         --meta "timed=$BIN <test>  (native, pinned to CPU $CPU)"
         --test all)
-  for t in "${TESTS[@]}"; do args+=(--test "$t"); done
+  for test_name in "${TESTS[@]}"; do args+=(--test "$test_name"); done
   test_run python3 dev/scripts/build_report.py overview "${args[@]}"
-  elapsed=$(( SECONDS - t0 ))
+  elapsed=$(( SECONDS - start_seconds ))
   if [ "$elapsed" -ge 60 ]; then took="$((elapsed / 60))m$((elapsed % 60))s"; else took="${elapsed}s"; fi
   [ "$VERBOSE" = 1 ] || printf '%-13s%d profiles merged | %s wrote %s' all "${#TESTS[@]}" "$took" "$OUT_DIR/index.html"
 }
@@ -253,10 +253,10 @@ main() {
 
   build_compile
 
-  local t
-  for t in "${TESTS[@]}"; do
-    if [ "$TEST" = all ]; then run_one "$t" "$OUT_DIR/$t"; [ "$VERBOSE" = 1 ] || printf '\n'
-    else run_one "$t" "$OUT_DIR"; fi
+  local test_name
+  for test_name in "${TESTS[@]}"; do
+    if [ "$TEST" = all ]; then run_one "$test_name" "$OUT_DIR/$test_name"; [ "$VERBOSE" = 1 ] || printf '\n'
+    else run_one "$test_name" "$OUT_DIR"; fi
   done
   if [ "$TEST" = all ]; then
     run_all "$OUT_DIR/all"
