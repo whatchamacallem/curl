@@ -1,19 +1,3 @@
-// Shared behaviour for every page dev/perf2html.sh writes (inlined by theme.py).
-//
-//   table.cols   every column boundary gets a full-height divider bar that
-//                can be dragged to resize the column on its left. Widths
-//                are not persisted -- a table always opens at its default,
-//                and resetCols() puts every dragged column back to that
-//                default within the same page view (the strip's "reset
-//                columns" link). A .fill table's grow column (col.grow, else
-//                the last) fills the pane (fillTable) and keeps doing so
-//                until a bar is dragged.
-//   .band + th   sticky elements inside one scroller are stacked in DOM
-//                order (a legend above a header row) instead of overlapping.
-//   splitter()   a draggable divider between two panes.
-//
-// Pages that render tables at runtime call Theme.init(container) after each
-// render; static pages are initialised on DOMContentLoaded.
 window.Theme = (function () {
   "use strict";
   const MIN_COL = 24;
@@ -33,7 +17,7 @@ window.Theme = (function () {
   function drag(e, table, i, bar) {
     const col = table.querySelectorAll("colgroup > col")[i], cell = headerCells(table)[i];
     if (!col || !cell) return;
-    table._dragged = true; // a fill table stops following its pane from here on (see fillTable)
+    table._dragged = true;
     const x0 = e.clientX, w0 = cell.getBoundingClientRect().width;
     bar.classList.add("active");
     if (bar.setPointerCapture) bar.setPointerCapture(e.pointerId);
@@ -45,9 +29,8 @@ window.Theme = (function () {
     for (const [t, f] of [["pointermove", move], ["pointerup", up], ["pointercancel", up]]) bar.addEventListener(t, f);
     e.preventDefault();
   }
-  // The nearest ancestor that scrolls (the pane the table lives in), else
-  // the document itself. Its clientWidth is the visible width a table can
-  // use without a horizontal scrollbar.
+
+
   function scrollerOf(el) {
     for (let p = el.parentElement; p; p = p.parentElement) {
       const o = getComputedStyle(p).overflowY;
@@ -55,32 +38,21 @@ window.Theme = (function () {
     }
     return document.documentElement;
   }
-  // A `fill` table's one open-ended column -- <col class="grow">, else the
-  // last one -- takes what is left once every other column has its
-  // content-fitted width, so the table spans data-fill of its scrolling
-  // pane's visible width (a fraction; 1 = the whole pane, default 0.9;
-  // floored to a whole pixel so sub-pixel rounding can never tip the pane
-  // into a horizontal scrollbar), not of the window -- the heat map's
-  // listing pane is only part of the window. The column's own default width
-  // (dataset.w; the source listing's 80 visible characters) is its minimum:
-  // a pane too narrow for that gets a sideways scrollbar, the column is
-  // never squeezed. relayout() re-fits it whenever the pane may have changed
-  // (window resize, a splitter drag) until a column is dragged
-  // (table._dragged); resetCols clears that.
+
+
   function fillTable(table) {
+    if (!table.offsetWidth) return;
     const cols = [...table.querySelectorAll("colgroup > col")];
     if (!cols.length) return;
     const grow = cols.find(c => c.classList.contains("grow")) || cols[cols.length - 1];
-    grow.style.width = grow.dataset.w; // back at its default, which is its minimum
+    grow.style.width = grow.dataset.w;
     const min = grow.dataset.w ? grow.getBoundingClientRect().width : MIN_COL;
     const target = Math.floor(scrollerOf(table).clientWidth * (+table.dataset.fill || 0.9));
     const others = table.getBoundingClientRect().width - grow.getBoundingClientRect().width;
     grow.style.width = Math.max(min, target - others) + "px";
   }
-  // Bars only: init()'s relayout() right after does the first fill and lays
-  // the bars out, so a fill table's grow column keeps its generator-set
-  // minimum as dataset.w and resetCols re-fits it instead of replaying a
-  // stale pixel width.
+
+
   function initTable(table) {
     if (table._bars) return;
     const wrap = table.parentElement;
@@ -98,11 +70,7 @@ window.Theme = (function () {
     }
   }
 
-  // Puts every already-initialised table's columns back to the width
-  // initTable() saw at first render (dataset.w, set once and never updated
-  // by a drag) -- a `fill` table's open-ended last column is re-fitted to
-  // the current pane, same as a fresh first render would do, and follows
-  // the pane again from here on.
+
   function resetCols(root) {
     root = root || document.body;
     for (const t of root.querySelectorAll("table.cols")) {
@@ -120,7 +88,7 @@ window.Theme = (function () {
       band.style.top = y + "px";
       y += band.getBoundingClientRect().height;
     }
-    // header cells of tables that scroll with this scroller, not of a nested .tbl box
+
     for (const th of scroller.querySelectorAll("th")) if ((th.closest(".tbl") || scroller) === scroller) th.style.top = y + "px";
   }
   function relayout(root) {
@@ -138,9 +106,7 @@ window.Theme = (function () {
     relayout(root);
   }
 
-  // Pane splitters (the heat map's tree width) still remember their width in
-  // localStorage under "split.<key>" -- unrelated to, and not affected by,
-  // table column widths, which are no longer persisted at all.
+
   const store = {
     get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } },
     set(k, v) { try { if (v == null) localStorage.removeItem(k); else localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} },
@@ -153,7 +119,7 @@ window.Theme = (function () {
       const x0 = e.clientX, w0 = pane.getBoundingClientRect().width;
       bar.classList.add("active");
       if (bar.setPointerCapture) bar.setPointerCapture(e.pointerId);
-      let raf = 0; // the other pane's fill tables follow the drag, once per frame
+      let raf = 0;
       const move = ev => {
         pane.style.width = Math.min(window.innerWidth * 0.6, Math.max(min || 120, w0 + ev.clientX - x0)) + "px";
         if (!raf) raf = requestAnimationFrame(() => { raf = 0; relayout(); });

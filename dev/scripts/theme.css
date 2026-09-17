@@ -1,6 +1,3 @@
-/* Shared stylesheet for every page dev/perf2html.sh writes. theme.py prepends
-   the palette as :root variables (--bg, --fg, --link, --bar, ... and the raw
-   pairs --blue/--blue-l etc.) and inlines the result into each page. */
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
 html, body { height: 100%; margin: 0; }
@@ -12,21 +9,11 @@ h2 { font-size: 12px; font-weight: 600; color: var(--fg-dim); margin: 22px 0 6px
 p { margin: 4px 0; color: var(--muted); max-width: 96ch; }
 b { color: var(--fg); font-weight: 600; }
 pre { font: inherit; margin: 0; white-space: pre; overflow-x: auto; }
-/* The only lines anywhere in this UI, doubled in width, sit on elements the
-   mouse can actually drag: a column-resize bar (.bar::before) and a pane
-   splitter (.split). Everything else that used to be a 1px --bar border --
-   strips, table/box outlines, column and row dividers, control outlines --
-   is drawn with no border at all; adjacent panels, panes and table columns
-   are told apart by --panel/--bg-alt/--nav background shading instead. */
+
 select, input { font: inherit; color: var(--fg); background: var(--bg); padding: 2px 6px;
   border: 0; border-radius: 0; }
 
-/* strip: the page's title, then its links, plain words separated by extra
-   space rather than bracketed -- "heat map  |  native timing" -- and the
-   current one lit. The frame pages' toolbar and the heat map's header are
-   strips. Every strip row is a single line: it never wraps to a second row,
-   an overflowing link cuts off with an ellipsis like any other clipped text
-   in this UI instead of spilling the strip onto multiple lines. */
+
 .strip { display: flex; flex-wrap: nowrap; align-items: center; flex: none;
   padding: 5px 12px; background: var(--nav); overflow: hidden; }
 .strip a { padding: 2px 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -34,54 +21,23 @@ select, input { font: inherit; color: var(--fg); background: var(--bg); padding:
 .strip .sep { flex: none; margin: 0 8px; color: var(--muted); }
 .strip a:hover { background: var(--link); color: var(--nav); text-decoration: none; }
 .strip a.on { background: var(--hot); color: var(--hot-fg); }
-/* the title badge holds the current view's path, which changes with every
-   pick ("urlparser" -> "urlparser / native timing"); a badge sized to its
-   own text would change width on every click and shove the whole strip
-   sideways. It is a fixed box wide enough for the longest path any report
-   produces (TITLE_COLS characters, "simpleformat / native timing"), and a
-   longer one ellipsizes rather than growing. */
+
 .strip .title { font-size: 13px; font-weight: 600; color: var(--title-fg); background: var(--title-bg);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   padding: 3px 8px; margin: -5px 6px -5px -12px; align-self: stretch; display: flex; align-items: center;
   flex: none; width: var(--title-w); }
 .strip .sp { flex: 1 0 0; min-width: 0; }
-/* the right-aligned utility group ("reset columns | help | curl.se/perf").
-   Every frame strip carries one; only the innermost strip on screen shows
-   it (FRAME_JS's utilShow), so the strip with the most links of its own is
-   the one that keeps the room. */
+
 .strip .util { display: flex; align-items: center; flex: none; }
 
-/* frame: the toolbar over either the summary page or an iframe. The outer
-   document itself never scrolls -- body.frame > main and the iframe (which
-   owns its own inner document's scrolling) are the only things that do --
-   so a sub-pixel rounding mismatch between 100vh and the two flex
-   children's own heights (seen with real, non-overlay scrollbars; not
-   reproducible headless) can never manifest as a spurious near-zero-range
-   scrollbar on the frame page itself. */
+
 html:has(body.frame), body.frame { overflow: hidden; }
 body.frame { display: flex; flex-direction: column; height: 100vh; }
 body.frame > main { flex: 1; min-height: 0; overflow: auto; }
 body.frame > iframe { flex: 1; min-height: 0; width: 100%; border: 0; background: var(--bg); }
 .page { padding: 24px 36px 48px; }
 
-/* tables: no borders anywhere on the box or its columns/rows -- alternate
-   columns are shaded (--bg-alt) instead, and the header row (--panel) reads
-   as a header by its own background, not a rule under it. The header row
-   stays put while the page scrolls past the table. The box never scrolls
-   on its own: it is as long and as wide as its columns -- with .fill that
-   spans data-fill (default 90%, 1 = all) of the visible width of the pane
-   that scrolls it (fillTable in theme.js sets that as an explicit width on
-   the last column) and follows the pane until a bar is dragged; dragging
-   any bar, including the trailing one, only ever changes the one column's
-   own width, growing or shrinking the table's total width with it, and
-   the page (or the nearest scrolling ancestor) picks up a scrollbar rather
-   than the table clipping itself. The 14px margin sits outside the box on
-   every side but the top, so a table that has grown past its container
-   still ends short of the page's own edge.
-   Column widths are set in ch by the generators: content + 1ch padding
-   each side + 1ch slack for the divider bar and fractional rounding. Each
-   column's full meaning is a tooltip on its header cell; see README.md
-   (the [help] link) for the event glossary. */
+
 .tbl { position: relative; width: fit-content; margin: 4px 14px 14px 0; }
 .band { position: sticky; top: 0; z-index: 2; }
 .tbl-cols { position: relative; width: fit-content; }
@@ -93,53 +49,35 @@ table.cols th { position: sticky; top: 0; z-index: 1; text-align: left; font-wei
   color: var(--fg-dim); background: var(--panel); }
 table.cols .n { text-align: right; font-variant-numeric: tabular-nums; }
 table.cols .dim { color: var(--muted); }
-/* the only line a column boundary draws is the drag bar's own, on hover or
-   while active (.bar overlays a 9px grab area on a 4px-wide visible line,
-   centered on the boundary); at rest a column is told apart from its
-   neighbor only by the alternating background, same as a row in .lines */
+
 .bar { position: absolute; top: 0; bottom: 0; width: 9px; margin-left: -5px; z-index: 1;
   cursor: col-resize; touch-action: none; }
 .bar::before { content: ""; position: absolute; top: 0; bottom: 0; left: 2.5px; width: 4px; }
 .bar:hover::before, .bar.active::before { background: var(--bar); }
-/* the trailing bar lies wholly inside the table, its line flush with the
-   right edge, so a table that fills its pane exactly (data-fill="1") never
-   reaches 4px past the pane and raises a sideways scrollbar */
+
 .bar:last-child { margin-left: -9px; }
 .bar:last-child::before { left: 5px; }
 
 ul.rawdata { margin: 4px 0 10px; padding-left: 20px; }
 
-/* .sec: a collapsible section (raw data, valgrind log), collapsed by default.
-   The <summary> carries the h2 so the chevron sits right before the heading
-   text; ::marker is themed so the chevron doesn't default to black. */
+
 details.sec summary { cursor: pointer; color: var(--fg-dim); }
 details.sec summary::marker { color: var(--fg-dim); }
 details.sec summary h2 { display: inline; margin: 22px 0 6px; color: inherit; }
 details.sec[open] summary { margin-bottom: 2px; }
 pre.logbox { padding: 8px 12px; background: var(--panel); max-height: 60vh; overflow: auto; }
 
-/* splitter between two panes (the heat map's tree and listing): invisible at
-   rest -- the pane's own background is what reads as its edge -- and only
-   painted (a 4px line in a 7px grab area) on hover/drag, same convention as
-   .bar's own ::before, so it never reads as a decorative border. */
+
 .split { flex: none; width: 7px; cursor: col-resize; touch-action: none; background: none; }
 .split:hover, .split.active {
   background: linear-gradient(90deg, transparent 1.5px, var(--bar) 1.5px, var(--bar) 5.5px, transparent 5.5px); }
 
-/* scrollbars: a plain square thumb (no rounding, no arrows/corner-piece) in
-   the darker of the two "blue" theme pair members, stoic -- it never reacts
-   to hover or an active drag, unlike .bar/.split/the resize bars, since it
-   is not itself a drag target for anything but native scrolling. The track
-   is the same background as the pane it scrolls (--bg), not a separate
-   track color, so the thumb reads as floating in the pane rather than
-   sitting in its own lane; hidden entirely until the content actually
-   scrolls. */
+
 * { scrollbar-color: var(--blue) var(--bg); }
 ::-webkit-scrollbar { width: 14px; height: 14px; }
 ::-webkit-scrollbar-track { background: var(--bg); }
 ::-webkit-scrollbar-thumb { background: var(--blue); border-radius: 0; }
 ::-webkit-scrollbar-corner { background: var(--bg); }
-/* the one scrolling pane on a --panel background (the valgrind log box) --
-   everywhere else scrolls on the plain --bg the rule above already covers */
+
 pre.logbox { scrollbar-color: var(--blue) var(--panel); }
 pre.logbox::-webkit-scrollbar-track, pre.logbox::-webkit-scrollbar-corner { background: var(--panel); }

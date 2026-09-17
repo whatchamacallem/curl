@@ -1,11 +1,4 @@
 #!/usr/bin/env python3
-"""Turn a callgrind profile into a self-contained "source heatmap" web page.
-
-Usage:
-  callgrind_to_heatmap.py callgrind.out.X [callgrind.out.Y ...] \
-      -o report/heat-map/index.html [--event CEst] [--repo-root .] \
-      [--tree lib include src tests/perf] [--all-sources] [--title "..."]
-"""
 from __future__ import annotations
 
 import argparse
@@ -14,40 +7,101 @@ import os
 import posixpath
 import subprocess
 import sys
+from collections.abc import Sequence
+from dataclasses import dataclass, field
+from typing import Literal, NamedTuple, TypedDict
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import callgrind as cg  # noqa: E402
-import theme  # noqa: E402
+import callgrind as cg
+import theme
+from callgrind import Vec
+
+Group = Literal["repo", "system", "external"]
 
 
-# --------------------------------------------------------------------------
-# Path handling / source loading
-# --------------------------------------------------------------------------
+class HeatArgs(NamedTuple):
+    callgrind_file: list[str]
+    output: str
+    event: str
+    repo_root: str
+    tree: list[str]
+    all_sources: bool
+    title: str | None
 
 
-def path_norm(path: str, repo_root: str) -> tuple[str, str | None, str]:
-    """Return (display path, local path to read source from or None, group).
+class LineCost(NamedTuple):
+    self_cost: Vec
+    calls_cost: Vec
+    count_: int
 
-    group is "repo" for files inside the repository, "system" for other
-    absolute paths that exist on disk, "external" for everything else.
-    """
+
+class CallRow(NamedTuple):
+    fn: int
+    file: str
+    line: int
+    cost: Vec
+    count_: int
+
+
+class FileModel(TypedDict):
+    self: Vec
+    calls: Vec
+    src: str | None
+    lines: dict[str, LineCost]
+    lfn: dict[str, int]
+    callees: dict[str, list[CallRow]]
+    group: Group
+    raw: str
+
+
+class FunctionModel(TypedDict):
+    name: str
+    file: str
+    line: int
+    self: Vec
+    calls: Vec
+    callers: list[CallRow]
+
+
+class MetaModel(TypedDict):
+    events: list[str]
+    eventLong: dict[str, str]
+    derived: list[cg.DerivedIndexed]
+    defaultEvent: str
+    totals: Vec
+
+
+class HeatModel(TypedDict):
+    meta: MetaModel
+    theme: theme.ThemeRuntime
+    files: dict[str, FileModel]
+    functions: list[FunctionModel]
+    cold: list[str]
+
+
+class PathInfo(NamedTuple):
+    display: str
+    local: str | None
+    group: Group
+
+
+def path_norm(path: str, repo_root: str) -> PathInfo:
     if path == "???":
-        return "(unknown)", None, "external"
+        return PathInfo("(unknown)", None, "external")
     root = repo_root.rstrip("/") + "/"
     if os.path.isabs(path):
-        path = posixpath.normpath(path)  # build dirs record e.g. build/lib/../../lib/x.c
+        path = posixpath.normpath(path)
     if path.startswith(root):
         rel = path[len(root):]
-        return rel, os.path.join(repo_root, rel), "repo"
+        return PathInfo(rel, os.path.join(repo_root, rel), "repo")
     if os.path.isabs(path):
         if os.path.isfile(path):
-            return path.lstrip("/"), path, "system"
-        return path.lstrip("/"), None, "external"
-    # relative: try the repo root first
+            return PathInfo(path.lstrip("/"), path, "system")
+        return PathInfo(path.lstrip("/"), None, "external")
     cand = os.path.join(repo_root, path)
     if os.path.isfile(cand):
-        return posixpath.normpath(path), cand, "repo"
-    return posixpath.normpath(path), None, "external"
+        return PathInfo(posixpath.normpath(path), cand, "repo")
+    return PathInfo(posixpath.normpath(path), None, "external")
 
 
 def source_read(local: str) -> str | None:
@@ -59,7 +113,7 @@ def source_read(local: str) -> str | None:
     return data.decode("utf-8", errors="replace")
 
 
-def repo_tracked_files(repo_root: str, dirs: list[str]) -> list[str]:
+def repo_tracked_files(repo_root: str, dirs: Sequence[str]) -> list[str]:
     if not dirs:
         return []
     try:
@@ -71,125 +125,125 @@ def repo_tracked_files(repo_root: str, dirs: list[str]) -> list[str]:
     return [ln for ln in out.split("\n") if ln.endswith((".c", ".h"))]
 
 
-# --------------------------------------------------------------------------
-# Build the JSON model
-# --------------------------------------------------------------------------
-
-
-def vec_trim(vec: list[int]) -> list[int]:
-    """Drop trailing zeros; the page pads on read. Keeps the model small."""
+def vec_trim(vec: Vec) -> Vec:
     n = len(vec)
     while n and vec[n - 1] == 0:
         n -= 1
     return vec[:n]
 
 
-def model_build(p: cg.Profile, args: argparse.Namespace) -> dict:
+@dataclass
+class _LineAcc:
+    self_cost: Vec
+    calls_cost: Vec
+    count: int = 0
+
+
+@dataclass
+class _FileAcc:
+    group: Group
+    raw: str
+    self_cost: Vec
+    calls_cost: Vec
+    src: str | None = None
+    lines: dict[str, _LineAcc] = field(default_factory=dict)
+    lfn: dict[str, int] = field(default_factory=dict)
+    callees: dict[str, list[CallRow]] = field(default_factory=dict)
+
+    def line(self, ln: int, nev: int) -> _LineAcc:
+        rec = self.lines.get(str(ln))
+        if rec is None:
+            rec = self.lines[str(ln)] = _LineAcc([0] * nev, [0] * nev)
+        return rec
+
+    def emit(self) -> FileModel:
+        def first(row: CallRow) -> int:
+            return -(row.cost[0] if row.cost else 0)
+        return {"self": vec_trim(self.self_cost), "calls": vec_trim(self.calls_cost), "src": self.src,
+                "lines": {ln: LineCost(vec_trim(r.self_cost), vec_trim(r.calls_cost), r.count)
+                          for ln, r in self.lines.items()},
+                "lfn": self.lfn,
+                "callees": {ln: sorted(rows, key=first) for ln, rows in self.callees.items()},
+                "group": self.group, "raw": self.raw}
+
+
+def model_build(p: cg.Profile, args: HeatArgs) -> HeatModel:
     repo_root = os.path.abspath(args.repo_root)
     nev = len(p.events)
 
-    fn_names = sorted(p.fn_home.keys())
+    fn_names = sorted(p.fn_home)
     fn_index = {n: i for i, n in enumerate(fn_names)}
 
-    # display path for every raw file name
-    disp: dict[str, str] = {}
-    local: dict[str, str | None] = {}
-    group: dict[str, str] = {}
-    raw_files = set(f for f, _ in p.line_self) | set(f for f, _ in p.line_calls) \
-        | set(f for f, _ in p.fn_entry.values())
+    raw_files = sorted({k.file for k in p.line_self} | {k.file for k in p.line_calls}
+                       | {e.file for e in p.fn_entry.values()})
+    info: dict[str, PathInfo] = {}
     for raw in raw_files:
-        d, loc, g = path_norm(raw, repo_root)
-        if g == "external":
+        pi = path_norm(raw, repo_root)
+        if pi.group == "external":
             ob = os.path.basename(p.file_ob.get(raw, "")) or "(unknown object)"
-            d = f"{ob}/{d}"
-        disp[raw] = d
-        local[raw] = loc
-        group[raw] = g
+            pi = pi._replace(display=f"{ob}/{pi.display}")
+        info[raw] = pi
+    disp = {raw: pi.display for raw, pi in info.items()}
 
-    def vadd(dst: list[int], src: list[int]) -> None:
-        for k, v in enumerate(src):
-            dst[k] += v
-
-    files: dict[str, dict] = {}
+    acc: dict[str, _FileAcc] = {}
     for raw in raw_files:
-        d = disp[raw]
-        # "raw" is shown only for group == "external" (see f.raw in the JS);
-        # for repo/system files it's the absolute source path and must not
-        # leak into the page, so it's dropped to the (already relative) d.
-        entry = files.setdefault(d, {
-            "self": [0] * nev, "calls": [0] * nev, "src": None, "lines": {}, "lfn": {},
-            "callees": {}, "group": group[raw], "raw": raw if group[raw] == "external" else d,
-        })
-        loc = local[raw]
-        if entry["src"] is None and loc:
-            entry["src"] = source_read(loc)
-    for (raw, ln), vec in p.line_self.items():
-        e = files[disp[raw]]
-        vadd(e["self"], vec)
-        rec = e["lines"].setdefault(str(ln), [[0] * nev, [0] * nev, 0])
-        vadd(rec[0], vec)
-    for (raw, ln), vec in p.line_calls.items():
-        e = files[disp[raw]]
-        vadd(e["calls"], vec)
-        rec = e["lines"].setdefault(str(ln), [[0] * nev, [0] * nev, 0])
-        vadd(rec[1], vec)
-        rec[2] += p.line_callcount[(raw, ln)]
-    for (raw, ln), fn in p.line_fn.items():
-        files[disp[raw]]["lfn"][str(ln)] = fn_index[fn]
-    for (raw, ln, callee), (count, vec) in p.callees.items():
-        e = files[disp[raw]]
-        ef, el = p.fn_entry.get(callee, (p.fn_home.get(callee, "???"), 0))
-        e["callees"].setdefault(str(ln), []).append(
-            [fn_index[callee], disp.get(ef, ef), el, vec_trim(vec), count])
-    for e in files.values():
-        for lst in e["callees"].values():
-            lst.sort(key=lambda t: -(t[3][0] if t[3] else 0))
-        for rec in e["lines"].values():
-            rec[0] = vec_trim(rec[0])
-            rec[1] = vec_trim(rec[1])
-        e["self"] = vec_trim(e["self"])
-        e["calls"] = vec_trim(e["calls"])
+        pi = info[raw]
+        e = acc.get(pi.display)
+        if e is None:
+            e = acc[pi.display] = _FileAcc(group=pi.group, raw=raw if pi.group == "external" else pi.display,
+                                           self_cost=[0] * nev, calls_cost=[0] * nev)
+        if e.src is None and pi.local:
+            e.src = source_read(pi.local)
+    for key, vec in p.line_self.items():
+        e = acc[disp[key.file]]
+        cg.vec_add(e.self_cost, vec)
+        cg.vec_add(e.line(key.line, nev).self_cost, vec)
+    for key, vec in p.line_calls.items():
+        e = acc[disp[key.file]]
+        cg.vec_add(e.calls_cost, vec)
+        rec = e.line(key.line, nev)
+        cg.vec_add(rec.calls_cost, vec)
+        rec.count += p.line_callcount[key]
+    for key, fn in p.line_fn.items():
+        acc[disp[key.file]].lfn[str(key.line)] = fn_index[fn]
+    for site, cc in p.callees.items():
+        entry = p.fn_entry.get(site.callee, cg.LineKey(p.fn_home.get(site.callee, "???"), 0))
+        acc[disp[site.file]].callees.setdefault(str(site.line), []).append(
+            CallRow(fn_index[site.callee], disp.get(entry.file, entry.file), entry.line, vec_trim(cc.cost), cc.count))
+    files: dict[str, FileModel] = {d: e.emit() for d, e in acc.items()}
 
-    functions = []
+    functions: list[FunctionModel] = []
     for name in fn_names:
-        home = p.fn_home[name]
-        ef, el = p.fn_entry.get(name, (home, 0))
-        # Rows are heterogeneous lists the page reads positionally; sort on the
-        # trimmed cost vector's first event, which vec_trim() may have emptied.
-        caller_rows: list[tuple[list[int], list[object]]] = []
-        for (cf, cfile, cl), (count, vec) in p.callers[name].items():
-            tvec = vec_trim(vec)
-            caller_rows.append((tvec, [fn_index[cf], disp.get(cfile, cfile), cl, tvec, count]))
-        callers = [row for _, row in
-                   sorted(caller_rows, key=lambda t: -(t[0][0] if t[0] else 0))]
+        entry = p.fn_entry.get(name, cg.LineKey(p.fn_home[name], 0))
+        callers = sorted(
+            (CallRow(fn_index[c.fn], disp.get(c.file, c.file), c.line, vec_trim(cc.cost), cc.count)
+             for c, cc in p.callers.get(name, {}).items()),
+            key=lambda r: -(r.cost[0] if r.cost else 0))
         functions.append({
             "name": name,
-            "file": disp.get(ef, ef),
-            "line": el,
+            "file": disp.get(entry.file, entry.file),
+            "line": entry.line,
             "self": vec_trim(p.fn_self.get(name, [])),
             "calls": vec_trim(p.fn_calls.get(name, [])),
             "callers": callers,
         })
 
-    # cold files: tracked sources in the requested dirs with no samples
     cold: list[str] = []
     for rel in repo_tracked_files(repo_root, args.tree):
         if rel in files:
             continue
         if args.all_sources:
-            src = source_read(os.path.join(repo_root, rel))
-            files[rel] = {"self": [], "calls": [], "src": src, "lines": {}, "lfn": {},
-                          "callees": {}, "group": "repo", "raw": rel}
+            files[rel] = {"self": [], "calls": [], "src": source_read(os.path.join(repo_root, rel)),
+                          "lines": {}, "lfn": {}, "callees": {}, "group": "repo", "raw": rel}
         else:
             cold.append(rel)
 
-    derived = [[name, [[c, i] for c, i in terms], long] for name, terms, long in p.derived_terms()]
     default_event = args.event if args.event in p.event_names() else (p.events[0] if p.events else "Ir")
     return {
         "meta": {
             "events": p.events,
             "eventLong": {n: p.event_long.get(n, "") for n in p.event_names()},
-            "derived": derived,
+            "derived": p.derived_terms(),
             "defaultEvent": default_event,
             "totals": p.totals(),
         },
@@ -200,10 +254,6 @@ def model_build(p: cg.Profile, args: argparse.Namespace) -> dict:
     }
 
 
-# --------------------------------------------------------------------------
-# HTML
-# --------------------------------------------------------------------------
-
 CSS = """\
 body { display: flex; flex-direction: column; height: 100vh; }
 #hdr { gap: 4px 14px; }
@@ -212,50 +262,18 @@ body { display: flex; flex-direction: column; height: 100vh; }
 #layout { display: flex; flex: 1; min-height: 0; }
 #tree { width: 280px; min-width: 120px; flex: none; overflow: auto; padding: 4px 0 24px; }
 #main { flex: 1; min-width: 0; overflow: auto; background: var(--bg); }
-/* .srcwrap: the file view's one block child of #main -- header band, chips
-   and the listing -- as wide as the widest of them (or the pane, whichever
-   is more), so the sticky header band's background always reaches the far
-   right edge of everything #main can scroll to sideways, instead of ending
-   at the pane's width and letting rows show past it once the listing has
-   been dragged wider than the pane. Nothing inside ever overflows it: the
-   listing's cells clip (table.cols' own rule), so the wrapper's width is
-   exactly the scrollable width. */
+
 .srcwrap { width: max-content; min-width: 100%; }
-/* room past the last source line, so the end of a file can still be
-   scrolled up to the middle of the pane -- where centerRow puts every line
-   a chip, link or bookmark leads to -- instead of the last row stopping at
-   the pane's bottom edge. Not padding on #main or .srcwrap: either would
-   sit inside what the sticky header band and the minimap's clone measure.
-   A block of its own after the listing, half the pane tall (renderFile
-   sets the exact px; this is the value before the first measurement). */
+
 .srctail { height: 50vh; }
-/* only the listing box may set the wrapper's width: the header band and
-   chips wrap their contents to whatever width they're given, and without
-   this their *unwrapped* single-line width (all of .fhead's stats in a row)
-   is what max-content would take from them, pushing the wrapper -- and a
-   horizontal scrollbar -- past the pane on every file. */
+
 .srcwrap > :not(.tbl-cols) { contain: inline-size; }
-/* minimap: fixed-width band after #main, VS-Code style -- a scaled clone of
-   table.src's code column only, drawn once per renderFile (minimapBuild)
-   and reflowed (never re-cloned) on resize (minimapLayout). It never
-   scrolls on its own and #minimap itself is never resized: a file whose
-   scaled clone is shorter than the band just leaves the rest of the band
-   empty. background matches #main's (var(--bg), the page background -- not
-   var(--panel), which reads as a visibly different, bluer panel) since an
-   unheated row's cell has no background of its own and otherwise falls
-   back to whatever #minimap itself is painted, same as the real source --
-   this is also why there is no border between it and #main: the two are
-   meant to blend together tonally, same as VS Code's own minimap. */
+
 #minimap { width: 110px; flex: none; overflow: hidden; position: relative;
   background: var(--bg); cursor: pointer; }
 #minimap.empty { display: none; }
 #mmBox { position: absolute; top: 0; left: 0; }
-/* the clone is one column wide and exactly as wide as #mmBox (which
-   minimapLayout sizes to the band): table-layout: fixed only takes effect
-   with a non-auto table width, and without it the lone column sized itself
-   to the longest line, so every row's heat background stopped there
-   instead of at the band's edge. Text longer than the column overflows the
-   cell and is clipped by #minimap. */
+
 #mmBox table.src { border-collapse: collapse; table-layout: fixed; width: 100%; }
 #mmBox table.src td { padding: 0; border: 0; white-space: pre; overflow: visible; }
 #mmViewport { position: absolute; left: 0; right: 0; background: rgba(245, 246, 250, 0.36);
@@ -279,9 +297,7 @@ body { display: flex; flex-direction: column; height: 100vh; }
   display: flex; gap: 4px 18px; align-items: baseline; flex-wrap: wrap; }
 .fhead .path { font-weight: 600; }
 .fhead .stat { color: var(--muted); }
-/* one row, never two: the chips are an aside, and a second row of them
-   would push the listing itself down the pane. What does not fit is simply
-   cut off at the pane's right edge, like every other clipped thing here. */
+
 .chips { display: flex; gap: 4px; flex-wrap: nowrap; padding: 5px 14px; background: var(--panel); overflow: hidden; }
 .chips .lbl { color: var(--muted); align-self: center; margin-right: 4px; flex: none; }
 .chip { padding: 0 7px; background: var(--bg-alt); cursor: pointer; flex: none; white-space: nowrap; }
@@ -291,29 +307,15 @@ table.src > tbody > tr > td { padding-top: 0; padding-bottom: 0; }
 table.src td.ln { color: var(--muted); user-select: none; }
 tr.rowlink { cursor: pointer; }
 table.src tr.clickable { cursor: pointer; }
-/* the click cue is an underline, as on a link: a heated line-number cell's
-   inline contrast color beats any stylesheet color, so recoloring it here
-   could never show on exactly the lines worth clicking */
+
 table.src tr.clickable:hover td.ln { text-decoration: underline; }
-/* an unheated cost cell is muted; a heated one carries its own inline
-   background and contrast color (heatBg), cell by cell -- there is no
-   row-wide heat, so no cell's text is ever colored for contrast against a
-   background that belongs to a different cell */
+
 table.src td.self, table.src td.incl, table.src td.x { color: var(--muted); }
 table.src td.hot { font-weight: 600; }
-/* a line longer than the source column clips at the column's edge (no
-   ellipsis: it's code), same as every other cell; drag the trailing bar to
-   see more. It never spills past the table, so the table's width is the
-   whole of what can scroll sideways (see .srcwrap). */
+
 table.src td.code { text-overflow: clip; white-space: pre; tab-size: 4; }
 table.src tr.hasc td.ln::before { content: "\\25B8 "; color: var(--link); }
-table.src tr.target td { box-shadow: inset 0 0 0 2px var(--accent); }
-/* the direct-child combinator matters here: "tr.detail td" (no >) would also
-   match every <td> inside the popup's own nested tables (.dbox's callee/
-   caller tables), overriding their table.cols overflow:hidden/nowrap with
-   higher specificity than that rule (three classes+types beats table.cols
-   td's two) and letting long function names visibly overlap the next
-   column instead of being clipped with an ellipsis. */
+
 table.src tr.detail > td { white-space: normal; overflow: visible; padding: 0; }
 .dbox { position: relative; margin: 3px 12px 8px; padding: 6px 12px; background: var(--panel); }
 .dbox h4 { margin: 6px 0 2px; font-size: 12px; color: var(--muted); font-weight: 600; }
@@ -352,8 +354,7 @@ BODY = """<div id="hdr" class="strip">
 <script>
 __THEME_JS__
 </script>
-<script>
-(function () {
+<script>(function () {
 "use strict";
 const D = JSON.parse(document.getElementById("heatdata").textContent);
 const files = D.files, fns = D.functions;
@@ -365,11 +366,6 @@ document.getElementById("scale").value = scale;
 document.getElementById("sort").value = sortMode;
 Theme.splitter(document.getElementById("split"), treeEl, "heat.tree", 120);
 
-// ---------- events ----------
-// Every cost is a vector in D.meta.events order (trailing zeros dropped).
-// EVS lists the raw events that occurred plus the derived ones (sums of raw
-// columns) whose inputs exist; the selected one drives heat, sorting and the
-// self/calls columns. EXTRA are the always-visible miss columns.
 const at = (v, i) => (v && i < v.length) ? v[i] : 0;
 const EVS = [];
 D.meta.events.forEach((n, i) => { if (at(D.meta.totals, i) > 0) EVS.push({ key: n, long: D.meta.eventLong[n] || "", get: v => at(v, i) }); });
@@ -378,12 +374,9 @@ for (const [n, terms, long] of D.meta.derived) {
   if (get(D.meta.totals) > 0) EVS.push({ key: n, long: long || D.meta.eventLong[n] || "", get, derived: true });
 }
 const evByKey = k => EVS.find(e => e.key === k);
-let ev = evByKey(D.meta.defaultEvent) || EVS[0]; // the hash's e= overrides, see route()
+let ev = evByKey(D.meta.defaultEvent) || EVS[0];
 const EXTRA = ["D1m", "DLm", "Bcm"].map(evByKey).filter(Boolean);
-// Short plain-language name for every event key callgrind can emit plus the
-// derived ones (mirrors callgrind.py's EVENT_LONG / DERIVED_DEFAULTS, kept
-// short enough for an inline label). evLabel() is "short / KEY" wherever a
-// key would otherwise stand alone with no long name next to it.
+
 const EVENT_SHORT = {
   Ir: "instructions", Dr: "data reads", Dw: "data writes",
   I1mr: "L1 icache miss", D1mr: "L1 dcache read miss", D1mw: "L1 dcache write miss",
@@ -407,8 +400,7 @@ for (const e of EVS) {
   evSel.appendChild(o);
 }
 evSel.value = ev.key;
-// Fixed to the longest option's width (+ slack for the native dropdown
-// arrow) so picking a shorter/longer event never reflows the header row.
+
 evSel.style.width = (evMaxLen + 4) + "ch";
 let TOTAL = 1, MAXP = 1, MAXPX = {};
 const val = v => ev.get(v);
@@ -426,20 +418,19 @@ function recomputeScale() {
   }
 }
 
-// ---------- helpers ----------
 const esc = s => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 const pct = v => 100 * v / TOTAL;
-const fmtP = p => p >= 9.95 ? p.toFixed(1) + "%" : p >= 0.01 ? p.toFixed(2) + "%" : p > 0 ? "<0.01%" : ""; // theme.num_pct()
+const fmtP = p => p >= 9.95 ? p.toFixed(1) + "%" : p >= 0.01 ? p.toFixed(2) + "%" : p > 0 ? "<0.01%" : "";
 const fmtPct = v => fmtP(pct(v));
-const fmtN = v => v.toLocaleString("en-US"); // exact; tooltips only
-// 2.1K, 21K, 210K, 2.1M, 2.0G: at least two meaningful digits (theme.num_human() in theme.py)
+const fmtN = v => v.toLocaleString("en-US");
+
 function fmtH(v) {
   let unit = "";
   for (const u of ["K", "M", "G", "T"]) { if (v < 999.5) break; v /= 1000; unit = u; }
   return (unit && v < 9.95 ? v.toFixed(1) : v.toFixed(0)) + unit;
 }
-const num = v => ({ text: fmtH(v), title: fmtN(v) }); // a count cell: short, exact on hover
-const PMIN = 0.001; // lines below 0.001% of total stay uncolored in log mode
+const num = v => ({ text: fmtH(v), title: fmtN(v) });
+const PMIN = 0.001;
 function heatP(p, maxP) {
   if (p <= 0) return 0;
   if (scale === "linear") return Math.min(1, p / maxP);
@@ -447,9 +438,7 @@ function heatP(p, maxP) {
   return Math.min(1, Math.log10(p / PMIN) / Math.log10(Math.max(maxP, PMIN * 10) / PMIN));
 }
 function heatT(cost, maxP) { return heatP(pct(cost), maxP); }
-// The ramp color at t, blended over the page background (alpha grows with
-// t), plus a text color that keeps contrast on the result. Same math as
-// theme.heat_style() in theme.py.
+
 const RGB = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
 const STOPS = D.theme.heat.map(RGB), BG = RGB(D.theme.bg);
 function heatStyle(t, aMin, aMax) {
@@ -460,20 +449,13 @@ function heatStyle(t, aMin, aMax) {
   return `background:rgb(${m.join(",")});color:${lum > 0.5 ? D.theme.fgDark : D.theme.fgLight}`;
 }
 const heatBg = t => heatStyle(t, 0.18, 0.92);
-const heatBgSoft = t => heatStyle(t, 0.12, 0.55); // tree rows: keep names readable
-// Call counts are a metric of their own, colored like every other one: a
-// count's heat is its share of every call the profile recorded (each call
-// site's count, summed), on the same ramp, log-scaled to the most-called
-// function. Independent of the selected event. The summary page's functions
-// table (functions_table in build_report.py) applies the same rule.
+const heatBgSoft = t => heatStyle(t, 0.12, 0.55);
+
 const fnCalls = fns.map(f => f.callers.reduce((a, c) => a + c[4], 0));
 const CALLS_TOTAL = fnCalls.reduce((a, b) => a + b, 0) || 1;
 const CALLS_MAXP = Math.max(100 * fnCalls.reduce((a, b) => Math.max(a, b), 0) / CALLS_TOTAL, 0.0001);
 const numCalls = n => n ? { text: fmtH(n), title: fmtN(n) + " calls", style: heatBg(heatP(100 * n / CALLS_TOTAL, CALLS_MAXP)) } : "";
-// The hash of a view -- see "routing" below for the grammar. A value is
-// percent-encoded except for "/", which stays readable in file paths; the
-// event is always spelled out whenever there is a choice, so a hash names
-// its view in full and never depends on what the page showed before.
+
 const enc = v => encodeURIComponent(v).replace(/%2F/g, "/");
 function hashOf(s) {
   const parts = [];
@@ -485,36 +467,17 @@ function hashOf(s) {
 const hashFor = (path, line) => hashOf({ file: path, line: line });
 const hashForFn = name => hashOf({ fn: name });
 function fnName(i) { return (i != null && fns[i]) ? fns[i].name : "?"; }
-// A line link (its file must be here), or the text alone.
+
 function link(path, line, text) { return files[path] && line ? `<a href="${hashFor(path, line)}">${esc(text)}</a>` : esc(text); }
-// A function link: resolves to its entry line when followed, so the address
-// bar names the function itself, not a line number that may move.
+
 const fnLinkable = fi => fi != null && fns[fi] && fns[fi].line && files[fns[fi].file];
 function linkFn(fi, text) { return fnLinkable(fi) ? `<a href="${hashForFn(fns[fi].name)}">${esc(text)}</a>` : esc(text); }
-const SYMBOL_CHARS = 20; // visible characters of a function name before it is cut off
-const SRC_COLS = 80; // visible characters of source the listing always shows; the pane's spare width is added on top
-const HOT_CHIPS = 10; // most "hottest lines" chips a file view offers; the row is one line and cuts off at the pane's edge
+const SYMBOL_CHARS = 20;
+const SRC_COLS = 80;
+const HOT_CHIPS = 10;
 
-// A .tbl box: a fixed-layout table with widths in characters (everything is
-// monospace). Mirrors theme.table_render() in theme.py. cols: {label, title,
-// num, width, clip, cls, grow}; cells: a string, or {text, html, style, cls,
-// title}. opts.rowHref: one hash per row (or "" to skip) makes the whole row
-// a click target (see the delegated click handler below, "row-click"), even
-// though only the "defined at" cell's own <a> visibly reacts to hover -- a
-// plain row has nothing else to click on, and repeating the link's hover
-// style on every cell would suggest each cell opens something different.
-// opts.rowAttrs: one ready-made attribute string per row (id/class/title;
-// not combined with rowHref). opts.fill: a fill table with that data-fill
-// fraction -- its `grow` column takes the rest of the pane, see fillTable in
-// theme.js. opts.cls: extra table classes. opts.bare: no .tbl box around it
-// (the source listing sits edge to edge in .srcwrap, and only header cells
-// outside a .tbl box are stacked under the sticky bands by alignSticky).
-const PAD = 3; // 1ch padding each side + 1ch slack for the divider bar and ch rounding
-// Column widths in characters: the header label is every column's floor --
-// a header never ellipsizes -- then the longest cell text, unless the column
-// sets `width` (exact); `clip` caps the derived width. A `grow` column stops
-// at its floor/`width`: that is its minimum, the rest comes from fillTable.
-// Same rule as theme.table_render() -- keep the two in step.
+const PAD = 3;
+
 function colWidths(cols, rc) {
   return cols.map((col, i) => {
     let n = col.label.length;
@@ -555,9 +518,7 @@ function table(key, cols, rows, opts) {
   h += `</tbody></table></div>`;
   return opts.bare ? h : h + `</div>`;
 }
-// Plain-text twin of table(): a GFM pipe table, space-padded so the columns
-// line up whether it's pasted raw or rendered as markdown -- same cols/rows
-// inputs, so it can never drift out of sync with what the box shows.
+
 function tableText(cols, rows) {
   const cell = c => (c && typeof c === "object") ? c : { text: c == null ? "" : String(c) };
   const rc = rows.map(r => r.map(cell));
@@ -585,7 +546,6 @@ function extraCells(vec) {
   });
 }
 
-// ---------- tree ----------
 let TREE = null;
 function buildTree() {
   const root = { name: "", path: "", dirs: new Map(), files: [], self: 0 };
@@ -663,11 +623,9 @@ function revealInTree(path) {
   for (let i = 0; i < parts.length - 1; i++) { acc = acc ? acc + "/" + parts[i] : parts[i]; openDirs.add(acc); }
 }
 
-// ---------- function entry index: file -> line -> fn index ----------
 const entryIdx = {};
 fns.forEach((f, i) => { if (f.line) { (entryIdx[f.file] = entryIdx[f.file] || {})[f.line] = i; } });
 
-// ---------- views ----------
 function topLines(n) {
   const all = [];
   for (const [d, e] of Object.entries(files)) for (const [ln, rec] of Object.entries(e.lines)) { const s = val(rec[0]); if (s > 0) all.push([d, +ln, s, e.lfn[ln]]); }
@@ -721,10 +679,6 @@ function renderHome() {
   minimapClear();
 }
 
-// Builds the listing of `path` from scratch (the popup, if any, is the
-// state's business: detailSet() after this). A listing rebuilt for the file
-// already shown (event or scale changed) keeps its scroll position; a new
-// file opens on its hottest line unless `line` says where it will open.
 function renderFile(path, line) {
   const f = files[path];
   if (!f) { renderHome(); return; }
@@ -748,12 +702,7 @@ function renderFile(path, line) {
     minimapClear();
     return;
   }
-  // The file's hottest lines as chips: only lines whose share is worth a
-  // number (fmtPct gives "<0.01%" below that, which says nothing and filled
-  // the row with chips that were not worth clicking), the ten hottest of
-  // them, and no row at all when none qualifies. The row is one line: chips
-  // past the right edge are cut off rather than wrapping onto a second row
-  // that would push the listing down.
+
   const hot = Object.keys(lines).map(k => [+k, val(lines[k][0])])
     .filter(t => t[1] > 0).sort((a, b) => b[1] - a[1]);
   const chips = hot.filter(t => pct(t[1]) >= 0.01).slice(0, HOT_CHIPS);
@@ -762,11 +711,7 @@ function renderFile(path, line) {
     for (const [ln, cost] of chips) h += `<span class="chip" data-goto="${ln}" style="${heatBg(heatT(cost, maxP))}">${ln} \\u00b7 ${fmtPct(cost)}</span>`;
     h += `</div>`;
   }
-  // One row per source line. No row-wide heat: the event, line and source
-  // cells each carry the line's own self heat, calls the heat of its own
-  // share (the cost of the calls made from the line -- same event, same
-  // scale as self), the miss columns theirs (extraCells). So no cell's text
-  // is ever colored for contrast against a background another cell owns.
+
   const rows = [], attrs = [];
   const emitRow = (ln, text) => {
     const rec = lines[ln];
@@ -787,14 +732,9 @@ function renderFile(path, line) {
   let nlines = srcl.length;
   for (let i = 0; i < srcl.length; i++) emitRow(i + 1, srcl[i]);
   for (const k of Object.keys(lines)) if (+k > srcl.length) { nlines = Math.max(nlines, +k); emitRow(+k, "(line beyond end of file: source changed since the profile was taken)"); }
-  // Event, line and source first -- the three that read as one heat-colored
-  // unit -- then what the line spends elsewhere: calls and the miss columns.
-  // The source column is the one that grows: at least SRC_COLS visible
-  // characters, wider whenever the pane has room (fill 1 = edge to edge
-  // between tree and minimap); every other column is fitted to its content
-  // with its header label as the floor, so no header is ever cut off.
+
   const cols = [evCol(ev, { title: ev.long + ", share of total, spent on the line itself", cls: "self" }),
-                { label: "line", num: true, width: String(nlines).length + 2, cls: "ln" }, // + the 2-character call marker
+                { label: "line", num: true, width: String(nlines).length + 2, cls: "ln" },
                 { label: "source", width: SRC_COLS, grow: true, cls: "code" },
                 { label: "calls", title: "total cost of the calls made from the line, share of total", num: true, cls: "incl" },
                 ...extraCols()];
@@ -802,10 +742,7 @@ function renderFile(path, line) {
   h += `<div class="srctail"></div></div>`;
   mainEl.innerHTML = h;
   renderTree();
-  // The minimap band goes up before the listing's width is settled: it
-  // narrows the pane by its own width, and Theme.init's fill (the whole
-  // pane between the tree and the minimap, data-fill="1") measures the
-  // pane as it is at that moment.
+
   minimapBuild();
   Theme.init(mainEl);
   srctailFit();
@@ -817,35 +754,24 @@ function renderFile(path, line) {
   }
   minimapSync();
 }
-// Whether the row is wholly on screen: below what covers the top of the
-// pane (coverH) and above the pane's bottom edge.
+
 function rowOnScreen(el) {
   const r = el.getBoundingClientRect(), m = mainEl.getBoundingClientRect();
   return r.top >= m.top + coverH(el.closest("table")) && r.bottom <= m.top + mainEl.clientHeight;
 }
-// The height of what stays put over the top of the pane while the listing
-// scrolls under it: the sticky header band plus the (sticky) header cells
-// -- the cells, not the <thead>, which scrolls away like any other box.
+
 function coverH(table) {
   let h = table.tHead.rows[0].cells[0].getBoundingClientRect().height;
   for (const b of mainEl.querySelectorAll(".band")) h += b.getBoundingClientRect().height;
   return h;
 }
-// Scrolls the pane so the row sits mid-way down the part of it not under
-// the sticky header -- vertically only. scrollIntoView would also pull the
-// pane sideways to bring a row wider than the pane into view, shifting a
-// listing the reader has dragged wider than the pane every time a chip or
-// a "defined at" link is followed.
+
 function centerRow(el) {
   const cover = coverH(el.closest("table"));
   const r = el.getBoundingClientRect(), m = mainEl.getBoundingClientRect();
   mainEl.scrollTop += r.top - m.top - cover - (mainEl.clientHeight - cover - r.height) / 2;
 }
-// Sizes .srctail so that scrolling all the way down leaves the file's last
-// row exactly where centerRow would put it -- the middle of the part of the
-// pane below the sticky header -- and no further. Run after every render and
-// on every relayout, since it depends on the pane's height and on how tall
-// the header band has wrapped.
+
 function srctailFit() {
   const tail = mainEl.querySelector(".srctail"), table = mainEl.querySelector("table.src");
   if (!tail || !table) return;
@@ -855,19 +781,8 @@ function srctailFit() {
   tail.style.height = Math.max(0, (mainEl.clientHeight - cover - rowH) / 2) + "px";
 }
 
-// ---------- minimap ----------
-// A VS-Code-style scaled thumbnail of the current file's source column,
-// between #split and #main. Built once per renderFile call by cloning the
-// live table.src rows (only the .code cell of each, which carries its own
-// self heat inline -- not the calls/miss cells with their independent
-// heats) rather than re-rendering from the model a second time -- this way
-// it can never drift out of sync with what the source table actually shows.
-// CSS transform:
-// scale() then shrinks the clone to fit; the clone itself is never
-// rebuilt except by the next renderFile, so resize only has to reposition
-// and rescale the existing DOM (minimapLayout), not re-snapshot it.
-const MM_MIN_COLS = 80; // never zoom in tighter (wider effective scale) than 80 source columns
-const MM_MIN_LINES = 40; // below this the file can't scroll off-screen; omit the minimap
+const MM_MIN_COLS = 80;
+const MM_MIN_LINES = 40;
 let mmChPx = 0, mmScale = 1, mmCloneH = 0;
 function minimapClear() {
   minimapEl.classList.add("empty");
@@ -877,8 +792,7 @@ function minimapClear() {
 function minimapBuild() {
   const table = mainEl.querySelector("table.src"), tbody = table && table.tBodies[0];
   if (!tbody || tbody.rows.length < MM_MIN_LINES) { minimapClear(); return; }
-  // Measure the monospace cell size straight from the live table so the
-  // clone's scale is exact regardless of font metrics.
+
   const probeCell = tbody.rows[0].querySelector("td.code");
   if (!probeCell) { minimapClear(); return; }
   const span = document.createElement("span");
@@ -892,7 +806,7 @@ function minimapBuild() {
   clone.className = "src";
   const body = document.createElement("tbody");
   for (const row of tbody.rows) {
-    if (row.classList.contains("detail")) continue; // never open at build time, but be safe
+    if (row.classList.contains("detail")) continue;
     const code = row.querySelector("td.code");
     if (!code) continue;
     const tr = document.createElement("tr");
@@ -903,56 +817,23 @@ function minimapBuild() {
   clone.appendChild(body);
   mmBox.innerHTML = "";
   mmBox.appendChild(clone);
-  minimapEl.classList.remove("empty"); // display: none while empty -- unhide before measuring
+  minimapEl.classList.remove("empty");
   mmViewport.hidden = false;
-  mmCloneH = clone.offsetHeight; // unscaled: offsetHeight ignores mmBox's transform
+  mmCloneH = clone.offsetHeight;
   minimapLayout();
 }
-// The true band height comes from #minimap's own flex-stretched layout size
-// (#layout's align-items: stretch, unset anywhere in CSS) and must never be
-// read back off #minimap after minimapLayout has touched it -- earlier this
-// function shortened #minimap itself to the scaled content height, so a
-// later call (e.g. on window resize, or the next file's minimapBuild) read
-// clientHeight off a band that was still shrunk from a previous short file,
-// permanently capping it below the real available height. Fixed here by
-// never resizing #minimap: it always stays the full band, and "shorter than
-// the content" is represented purely by mmBox not filling the space below
-// -- a click past the end of the scaled content just scrolls to the end.
+
 function minimapLayout() {
   if (minimapEl.classList.contains("empty")) return;
   const bandW = minimapEl.clientWidth, bandH = minimapEl.clientHeight;
-  // Scale is pinned to fit exactly MM_MIN_COLS (80) source columns in the
-  // band -- never zoomed out further for a file with longer lines, so every
-  // row's heat background always reaches the band's right edge (a short
-  // file's shorter lines would otherwise leave a gap there, and previously
-  // the scale shrank per-file to whatever the actual longest line was,
-  // which produced inconsistent zoom levels file to file). A line longer
-  // than 80 columns overflows mmBox rather than being fitted; #minimap's
-  // own overflow:hidden clips it, same as it always clipped anything below
-  // the visible band vertically.
-  // The whole file must still fit the band vertically -- minimapSync's
-  // viewport math (and the "never scrolls on its own" design, see its
-  // comment above) assumes the full clone is what's on screen; without this
-  // the width-only scale left tall files' minimap frozen on their first
-  // screenful while the viewport box kept sliding down past content that
-  // was never actually drawn.
+
   mmScale = Math.min(1, bandW / (MM_MIN_COLS * mmChPx), bandH / mmCloneH);
   mmBox.style.transform = `scale(${mmScale})`;
   mmBox.style.transformOrigin = "top left";
   mmBox.style.width = (bandW / mmScale) + "px";
   minimapSync();
 }
-// What the viewport box mirrors, read live off the listing every time
-// (nothing is cached across scrolls, so a header band that re-wraps on
-// resize or a detail popup opening under a row can't put the box out of
-// step): `rows` is the height of the source rows alone (an open detail
-// popup's row excluded -- the clone never has one), `above(y)` how many of
-// those row pixels lie above client-y `y`, `cover` what hides the top of
-// the pane once the listing has scrolled up under it (coverH). The first
-// visible row is the one right under the header cells' bottom edge
-// (`head`): while the listing is still below the header in flow, that edge
-// is the body's own top, so nothing is hidden; once stuck, everything
-// scrolled past it is.
+
 function mmGeom() {
   const table = mainEl.querySelector("table.src"), tbody = table.tBodies[0];
   const main = mainEl.getBoundingClientRect(), body = tbody.getBoundingClientRect();
@@ -969,26 +850,25 @@ function mmGeom() {
 function minimapSync() {
   if (minimapEl.classList.contains("empty")) return;
   const g = mmGeom(), scaledH = mmCloneH * mmScale;
-  const r0 = g.above(g.head), r1 = g.above(g.bottom); // the rows on screen, as row pixels from the top
+  const r0 = g.above(g.head), r1 = g.above(g.bottom);
   const h = Math.max(8, scaledH * (r1 - r0) / g.rows);
   mmViewport.style.top = Math.max(0, Math.min(scaledH - h, scaledH * r0 / g.rows)) + "px";
   mmViewport.style.height = h + "px";
 }
-// Scrolls #main so that `r0` row pixels sit hidden above the sticky header
-// band and table head: the inverse of minimapSync's r0.
+
 function mmScrollTo(r0) {
   const g = mmGeom();
   r0 = Math.max(0, Math.min(g.rows, r0));
-  let y = g.body.top - g.top + mainEl.scrollTop + r0 - g.cover; // that row's scroll position, less what covers it
-  if (g.detail && g.detail.top - g.body.top < r0) y += g.detail.height; // an open popup above it shifts it down
+  let y = g.body.top - g.top + mainEl.scrollTop + r0 - g.cover;
+  if (g.detail && g.detail.top - g.body.top < r0) y += g.detail.height;
   mainEl.scrollTop = Math.max(0, Math.min(mainEl.scrollHeight - mainEl.clientHeight, y));
 }
 mainEl.addEventListener("scroll", minimapSync);
 minimapEl.addEventListener("click", e => {
-  if (e.target.closest("#mmViewport")) return; // the viewport box has its own drag handler
+  if (e.target.closest("#mmViewport")) return;
   const g = mmGeom(), scaledH = mmCloneH * mmScale;
-  const r = (e.clientY - minimapEl.getBoundingClientRect().top) / scaledH * g.rows; // the row pixel under the pointer
-  mmScrollTo(r - (mainEl.clientHeight - g.cover) / 2); // centered on screen
+  const r = (e.clientY - minimapEl.getBoundingClientRect().top) / scaledH * g.rows;
+  mmScrollTo(r - (mainEl.clientHeight - g.cover) / 2);
 });
 mmViewport.addEventListener("pointerdown", e => {
   const y0 = e.clientY, top0 = mmViewport.offsetTop, scaledH = mmCloneH * mmScale;
@@ -1001,27 +881,19 @@ mmViewport.addEventListener("pointerdown", e => {
   };
   for (const [t, f] of [["pointermove", move], ["pointerup", up], ["pointercancel", up]]) mmViewport.addEventListener(t, f);
   e.preventDefault();
-  e.stopPropagation(); // don't also trigger the bare-background click-to-jump
+  e.stopPropagation();
 });
 
-// The line whose detail popup is open in the listing, 0 if none.
 function detailLine() {
   const d = mainEl.querySelector("tr.detail");
   return d ? +d.previousElementSibling.dataset.ln : 0;
 }
-// Makes the listing's popup match the state: open on `line` (0: none). The
-// row is outlined and, if it is off screen, centered -- a row the reader
-// just clicked is on screen and stays put; one reached through a chip, a
-// popup link or a fresh URL is brought into view. The popup opening or
-// closing changes which rows are on screen without a scroll event, so the
-// minimap is re-synced here.
+
 function detailSet(line) {
   if (line === detailLine()) return;
   for (const e of mainEl.querySelectorAll("tr.detail")) e.remove();
-  for (const e of mainEl.querySelectorAll("tr.target")) e.classList.remove("target");
   const row = line ? document.getElementById("L" + line) : null;
   if (row) {
-    row.classList.add("target");
     detailOpen(curFile, line, row);
     if (!rowOnScreen(row)) centerRow(row);
   }
@@ -1037,7 +909,7 @@ function detailOpen(path, ln, row) {
   const locCol = { label: "defined at", title: "file:line of the function's first executed line", clip: 48 };
   const callsClause = val(rec[1]) ? `, calls ${fmtH(val(rec[1]))} (${fmtPct(val(rec[1]))}) over ${fmtH(rec[2])} calls` : "";
   const extraStats = xs => xs.map(x => { const s = x.get(rec[0]); return s ? `, ${evLabel(x)} ${fmtP(100 * s / MAXPX[x.key].total)} (${fmtH(s)})` : ""; }).join("");
-  // Entry lines skip "in fnName" and "line": the "entered here" heading right below already names the function.
+
   const headLine = (fi != null)
     ? `${path}:${ln} self ${fmtPct(val(rec[0])) || "0%"} by ${evLong(ev)}, ${fmtH(val(rec[0]))} ${ev.key}.${callsClause}${extraStats(EXTRA)}`
     : `${path}:${ln}${fnidx != null ? " in " + fnName(fnidx) : ""}: line self ${fmtPct(val(rec[0])) || "0%"} ${evLong(ev)}, ${fmtH(val(rec[0]))} ${ev.key}${callsClause}${extraStats(EXTRA)}`;
@@ -1085,7 +957,6 @@ function detailOpen(path, ln, row) {
   Theme.init(tr);
 }
 
-// Every click is a navigation: it sets location.hash and route() draws it.
 mainEl.addEventListener("click", ev2 => {
   const chip = ev2.target.closest(".chip");
   if (chip) { location.hash = hashFor(curFile, +chip.dataset.goto); return; }
@@ -1096,37 +967,16 @@ mainEl.addEventListener("click", ev2 => {
     return;
   }
   const close = ev2.target.closest(".dclose, .dclose2");
-  if (close) { ev2.preventDefault(); location.hash = hashFor(curFile); return; } // the file it is in
-  if (ev2.target.closest("a")) return; // let the row's own link (e.g. "defined at") handle its own click
+  if (close) { ev2.preventDefault(); location.hash = hashFor(curFile); return; }
+  if (ev2.target.closest("a")) return;
   const linkRow = ev2.target.closest("tr.rowlink");
   if (linkRow) { location.hash = linkRow.dataset.href; return; }
   const row = ev2.target.closest("tr.clickable");
   if (row && curFile) { const ln = +row.dataset.ln; location.hash = ln === detailLine() ? hashFor(curFile) : hashFor(curFile, ln); }
 });
 
-// ---------- routing ----------
-// The hash is the whole state of this page -- what is on screen is a
-// function of it and of nothing shown before:
-//   #f=<file>              a file: its listing, opened on its hottest line
-//   #f=<file>&l=<line>     a line of it: the listing with that line's detail
-//                          popup open
-//   #fn=<function>         a function: the listing of its file with the
-//                          popup of its entry line open
-//   (none of the above)    the home page
-//   ... &e=<event>         the event, on every one of the above (left out
-//                          only when the profile has a single event)
-// Every click sets location.hash (one history entry per step, so back and
-// forward walk through them) and route() renders it; closing a line's popup
-// navigates to the file it is in. After every render the hash is rewritten
-// to the canonical spelling of what is on screen (a hash that named a
-// missing file, function or line falls back to the nearest thing that
-// exists; the event is always spelled out) with history.replaceState --
-// never location.hash=, which would add an entry -- and posted up to the
-// frame page around this one, if any, which mirrors it into the address
-// bar (FRAME_JS in build_report.py). Only the tree's sort/search and the
-// scale are not part of the hash: they are viewing preferences (localStorage).
-let st = { file: null, line: 0, fn: null }; // what the hash last named, resolved to what exists
-let shown = "";                             // what the pane holds, as a key over file/event/scale
+let st = { file: null, line: 0, fn: null };
+let shown = "";
 function stateOf(hash) {
   const s = { file: null, line: 0, fn: null, ev: null };
   for (const part of (hash || "").replace(/^#/, "").split("&")) {
@@ -1162,8 +1012,7 @@ function route() {
     else { fn = null; file = null; line = 0; }
   }
   if (file && !files[file]) { file = null; line = 0; }
-  // the listing is rebuilt only for another file, event or scale; the popup
-  // is reconciled on every route (a click on a row, a chip or "close")
+
   const key = (file ? "file\\n" + file : "home") + "\\n" + ev.key + "\\n" + scale;
   if (key !== shown) { shown = key; if (file) renderFile(file, line); else renderHome(); }
   if (file) {
@@ -1177,10 +1026,7 @@ window.addEventListener("hashchange", route);
 window.addEventListener("message", e => {
   if (e.data === "theme:reset-cols") Theme.resetCols(mainEl);
 });
-// Same 120ms-debounced resize pattern as theme.js's own relayout() listener
-// (kept separate rather than folded into Theme.relayout: the minimap only
-// needs to reposition/rescale existing DOM, never re-snapshot it). The
-// scroll tail past the last source line follows the pane's height too.
+
 let mmResizeTimer = null;
 window.addEventListener("resize", () => {
   clearTimeout(mmResizeTimer);
@@ -1197,17 +1043,14 @@ route();
 """
 
 
-def heatmap_render(model: dict, title: str) -> str:
+def heatmap_render(model: HeatModel, title: str) -> str:
     data = json.dumps(model, separators=(",", ":"), ensure_ascii=False)
-    data = data.replace("</", "<\\/")  # never close our own <script>
+    data = data.replace("</", "<\\/")
     body = BODY.replace("__THEME_JS__", theme.theme_js()).replace("__DATA__", data)
     return ("<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n"
             "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n"
             f"<title>{theme.html_esc(title)}</title>\n<style>\n{theme.theme_css()}{CSS}</style>\n</head>\n<body>\n"
             + body + "</body>\n</html>\n")
-
-
-# --------------------------------------------------------------------------
 
 
 def heatmap_main() -> None:
@@ -1221,7 +1064,9 @@ def heatmap_main() -> None:
     ap.add_argument("--all-sources", action="store_true",
                     help="embed the source of every tracked file in --tree, not just files with samples")
     ap.add_argument("--title", default=None)
-    args = ap.parse_args()
+    ns = ap.parse_args()
+    args = HeatArgs(callgrind_file=ns.callgrind_file, output=ns.output, event=ns.event, repo_root=ns.repo_root,
+                    tree=ns.tree, all_sources=ns.all_sources, title=ns.title)
 
     prof = cg.profile_load(args.callgrind_file)
     if not prof.events:
@@ -1229,20 +1074,19 @@ def heatmap_main() -> None:
     src_name = os.path.basename(args.callgrind_file[0])
     if len(args.callgrind_file) > 1:
         src_name += f" + {len(args.callgrind_file) - 1} more"
-    if args.title is None:
-        args.title = f"heat map: {prof.cmd or src_name}"
+    title = args.title if args.title is not None else f"heat map: {prof.cmd or src_name}"
 
-    self_sum, total, ratio = cg.profile_self_check(prof)
+    check = cg.profile_self_check(prof)
     print(f"events: {' '.join(prof.events)}", file=sys.stderr)
-    print(f"callgrind summary ({prof.events[0]}): {total:,}", file=sys.stderr)
-    print(f"sum of self-cost lines:          {self_sum:,}", file=sys.stderr)
-    print(f"ratio (must be 1.0000):          {ratio:.4f}", file=sys.stderr)
-    if total and abs(ratio - 1.0) > 1e-6:
+    print(f"callgrind summary ({prof.events[0]}): {check.total:,}", file=sys.stderr)
+    print(f"sum of self-cost lines:          {check.self_sum:,}", file=sys.stderr)
+    print(f"ratio (must be 1.0000):          {check.ratio:.4f}", file=sys.stderr)
+    if check.total and abs(check.ratio - 1.0) > 1e-6:
         print("error: per-line self cost does not add up to callgrind's summary; refusing to write", file=sys.stderr)
         sys.exit(2)
 
     model = model_build(prof, args)
-    html = heatmap_render(model, args.title)
+    html = heatmap_render(model, title)
     out_dir = os.path.dirname(os.path.abspath(args.output))
     os.makedirs(out_dir, exist_ok=True)
     with open(args.output, "w", encoding="utf-8") as f:

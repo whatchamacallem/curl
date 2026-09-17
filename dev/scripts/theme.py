@@ -1,59 +1,58 @@
-"""Shared look and feel for every page dev/perf2html.sh writes -- palettes
-pinned in CLAUDE.md under "User settings"; layout rules under "Look and
-feel". css()/js() return theme.css/theme.js for each generator to inline
-(pages open from file://, nothing may be fetched at view time)."""
 from __future__ import annotations
 
 import html
 import math
 import os
 from collections.abc import Sequence
-from dataclasses import dataclass
+from typing import NamedTuple, TypeAlias, TypedDict
 
-HEAT = ["#3E4A89", "#31688E", "#26828E", "#1F9E89", "#35B779", "#6DCD59",
-        "#B4DE2C", "#FDE725", "#FFC83B", "#FFA22C", "#FF7F21", "#F06142"]
+HEAT: list[str] = ["#3E4A89", "#31688E", "#26828E", "#1F9E89", "#35B779", "#6DCD59",
+                   "#B4DE2C", "#FDE725", "#FFC83B", "#FFA22C", "#FF7F21", "#F06142"]
 
-# The "User settings" THEME entries this UI draws with -- the red, purple and
-# green pairs name nothing here (no good/bad/second accent anywhere: state is
-# the heat ramp) and are left out.
-THEME = ["#00A8FF", "#0097E6", "#F5F6FA", "#DCDDE1", "#FBC531", "#E1B12C",
-         "#7F8FA6", "#718093", "#273C75", "#192A56", "#487EB0", "#40739E",
-         "#353B48", "#2F3640"]
+THEME: list[str] = ["#00A8FF", "#0097E6", "#F5F6FA", "#DCDDE1", "#FBC531", "#E1B12C",
+                    "#7F8FA6", "#718093", "#273C75", "#192A56", "#487EB0", "#40739E",
+                    "#353B48", "#2F3640"]
 
-# (light, dark) pairs, in THEME order
-PAIR = {name: (THEME[2 * i], THEME[2 * i + 1]) for i, name in enumerate(
+
+class Pair(NamedTuple):
+    light: str
+    dark: str
+
+
+PAIR: dict[str, Pair] = {name: Pair(THEME[2 * i], THEME[2 * i + 1]) for i, name in enumerate(
     ["blue", "white", "yellow", "gray", "navy", "steel", "slate"])}
 
+
+class RGB(NamedTuple):
+    r: int
+    g: int
+    b: int
+
+
+def _rgb(hex_color: str) -> RGB:
+    return RGB(int(hex_color[1:3], 16), int(hex_color[3:5], 16), int(hex_color[5:7], 16))
+
+
 def _shade(hex_color: str, factor: float) -> str:
-    """hex_color with every channel scaled by factor (< 1 darkens)."""
-    return "#" + "".join(f"{round(int(hex_color[i:i + 2], 16) * factor):02X}" for i in (1, 3, 5))
+    return "#" + "".join(f"{round(c * factor):02X}" for c in _rgb(hex_color))
 
 
-# semantic roles -> palette member. --bg is the one role that is not a raw
-# palette entry: the slate dark member taken down 8%, so the page sits a
-# shade below every panel/strip/alt-column that is drawn in raw palette
-# colors on top of it.
-ROLE = {
-    "bg": _shade(PAIR["slate"][1], 0.90),  # page background
-    "bg-alt": PAIR["slate"][0],   # alternating table columns
-    "panel": PAIR["navy"][1],     # table headers, header bars
-    "nav": PAIR["navy"][1],       # toolbar strip
-    "sel": PAIR["navy"][0],       # selected row
-    "fg": PAIR["white"][0],       # body text (light member: contrast on the dark background)
-    "fg-dim": PAIR["white"][1],   # headings, table headers
-    "muted": PAIR["gray"][0],     # secondary text (light member, same reason)
-    "link": PAIR["blue"][0],      # links (light member, same reason)
-    "accent": PAIR["yellow"][0],  # title, active toolbar link
-    "bar": PAIR["steel"][1],      # column divider bars, row separators, borders
+ROLE: dict[str, str] = {
+    "bg": _shade(PAIR["slate"].dark, 0.90),
+    "bg-alt": PAIR["slate"].light,
+    "panel": PAIR["navy"].dark,
+    "nav": PAIR["navy"].dark,
+    "sel": PAIR["navy"].light,
+    "fg": PAIR["white"].light,
+    "fg-dim": PAIR["white"].dark,
+    "muted": PAIR["gray"].light,
+    "link": PAIR["blue"].light,
+    "accent": PAIR["yellow"].light,
+    "bar": PAIR["steel"].dark,
 }
 
 FONT = 'Monaco, Menlo, "DejaVu Sans Mono", "Liberation Mono", Consolas, monospace'
 
-# Visible width of the strip's title badge, in characters of its own (13px)
-# type. The badge holds the current view's path and must not change width as
-# the reader picks views, or every link after it jumps sideways; this is the
-# longest path any report produces -- the longest perf test name plus the
-# longest view label, "simpleformat / native timing".
 TITLE_COLS = len("simpleformat / native timing")
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -64,24 +63,24 @@ def _read(name: str) -> str:
         return f.read()
 
 
+def _luminance(c: RGB) -> float:
+    return (0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b) / 255
+
+
+def _contrast_fg(c: RGB) -> str:
+    return ROLE["bg"] if _luminance(c) > 0.5 else ROLE["fg"]
+
+
 def theme_css() -> str:
-    """The :root palette plus theme.css, ready to inline in a <style>."""
     lines = [":root {"]
-    for name, (light, dark) in PAIR.items():
-        lines.append(f"  --{name}: {dark}; --{name}-l: {light};")
+    for name, pair in PAIR.items():
+        lines.append(f"  --{name}: {pair.dark}; --{name}-l: {pair.light};")
     for role, color in ROLE.items():
         lines.append(f"  --{role}: {color};")
-    hot = _rgb(HEAT[-1])
-    lum = (0.2126 * hot[0] + 0.7152 * hot[1] + 0.0722 * hot[2]) / 255
     lines.append(f"  --hot: {HEAT[-1]};")
-    lines.append(f"  --hot-fg: {ROLE['bg'] if lum > 0.5 else ROLE['fg']};")
-    title_bg = _rgb(HEAT[2])  # 3rd heatmap stop: the strip title badge's background
-    title_lum = (0.2126 * title_bg[0] + 0.7152 * title_bg[1] + 0.0722 * title_bg[2]) / 255
+    lines.append(f"  --hot-fg: {_contrast_fg(_rgb(HEAT[-1]))};")
     lines.append(f"  --title-bg: {HEAT[2]};")
-    lines.append(f"  --title-fg: {ROLE['bg'] if title_lum > 0.5 else ROLE['fg']};")
-    # the badge is a fixed box, not one that grows with the picked view's
-    # title (see .strip .title): TITLE_COLS characters plus its own 8px
-    # padding on each side, which box-sizing puts inside this width
+    lines.append(f"  --title-fg: {_contrast_fg(_rgb(HEAT[2]))};")
     lines.append(f"  --title-w: calc({TITLE_COLS}ch + 16px);")
     lines.append(f"  --font: {FONT};")
     lines.append("}")
@@ -89,64 +88,49 @@ def theme_css() -> str:
 
 
 def theme_js() -> str:
-    """theme.js, ready to inline in a <script>."""
     return _read("theme.js")
 
 
-def theme_runtime() -> dict:
-    """What a page that colors at runtime needs (see heatStyle in theme.js)."""
+class ThemeRuntime(TypedDict):
+    heat: list[str]
+    bg: str
+    fgLight: str
+    fgDark: str
+
+
+def theme_runtime() -> ThemeRuntime:
     return {"heat": HEAT, "bg": ROLE["bg"], "fgLight": ROLE["fg"], "fgDark": ROLE["bg"]}
 
 
-# --------------------------------------------------------------------------
-# Heat coloring (theme.js carries the same math for pages that color at
-# runtime; keep the two in step)
-# --------------------------------------------------------------------------
-
-HEAT_MIN_PCT = 0.001  # shares below this stay uncolored on the log scale
+HEAT_MIN_PCT = 0.001
 
 
 def heat_t(pct: float, max_pct: float) -> float:
-    """Position on the ramp, 0..1, log scale from HEAT_MIN_PCT to max_pct."""
-    if pct <= 0 or pct < HEAT_MIN_PCT:
+    if pct < HEAT_MIN_PCT:
         return 0.0
     top = max(max_pct, HEAT_MIN_PCT * 10) / HEAT_MIN_PCT
     return min(1.0, math.log10(pct / HEAT_MIN_PCT) / math.log10(top))
 
 
-def _rgb(hex_color: str) -> tuple[int, int, int]:
-    return tuple(int(hex_color[i:i + 2], 16) for i in (1, 3, 5))  # type: ignore[return-value]
+class Alpha(NamedTuple):
+    lo: float
+    hi: float
 
 
-def heat_style(t: float, alpha: tuple[float, float] = (0.18, 0.92)) -> str:
-    """Inline style for a cell at ramp position t: the ramp color blended
-    over the page background (alpha grows with t) and a text color chosen
-    for contrast against the result."""
+def heat_style(t: float, alpha: Alpha = Alpha(0.18, 0.92)) -> str:
     if t <= 0:
         return ""
     stops = [_rgb(c) for c in HEAT]
     x = t * (len(stops) - 1)
     i = min(int(x), len(stops) - 2)
     f = x - i
-    a = alpha[0] + (alpha[1] - alpha[0]) * t
+    a = alpha.lo + (alpha.hi - alpha.lo) * t
     bg = _rgb(ROLE["bg"])
-    mix = []
-    for k in range(3):
-        c = stops[i][k] + (stops[i + 1][k] - stops[i][k]) * f
-        mix.append(round(bg[k] + (c - bg[k]) * a))
-    lum = (0.2126 * mix[0] + 0.7152 * mix[1] + 0.0722 * mix[2]) / 255
-    fg = ROLE["bg"] if lum > 0.5 else ROLE["fg"]
-    return f"background:rgb({mix[0]},{mix[1]},{mix[2]});color:{fg}"
-
-
-# --------------------------------------------------------------------------
-# Numbers (fmtH / fmtP in the heat map's script carry the same rules)
-# --------------------------------------------------------------------------
+    mix = RGB(*(round(bg[k] + (stops[i][k] + (stops[i + 1][k] - stops[i][k]) * f - bg[k]) * a) for k in range(3)))
+    return f"background:rgb({mix.r},{mix.g},{mix.b});color:{_contrast_fg(mix)}"
 
 
 def num_human(n: float) -> str:
-    """A count for reading, not for arithmetic: 2.1K, 21K, 210K, 2.1M, 2.0G --
-    always at least two meaningful digits, never a thousands separator."""
     v, unit = float(n), ""
     for u in ("K", "M", "G", "T"):
         if v < 999.5:
@@ -157,7 +141,6 @@ def num_human(n: float) -> str:
 
 
 def num_pct(p: float) -> str:
-    """A share of a total: 63.2%, 5.12%, <0.01%, or "" for zero."""
     if p >= 9.95:
         return f"{p:.1f}%"
     if p >= 0.01:
@@ -165,84 +148,62 @@ def num_pct(p: float) -> str:
     return "<0.01%" if p > 0 else ""
 
 
-# seconds per unit, largest first; a duration is shown in the largest unit
-# that leaves it at 1 or more
-TIME_UNITS = [("s", 1.0), ("ms", 1e-3), ("µs", 1e-6), ("ns", 1e-9), ("ps", 1e-12)]
+class TimeUnit(NamedTuple):
+    suffix: str
+    seconds: float
+
+
+TIME_UNITS: tuple[TimeUnit, ...] = (TimeUnit("s", 1.0), TimeUnit("ms", 1e-3), TimeUnit("µs", 1e-6),
+                                    TimeUnit("ns", 1e-9), TimeUnit("ps", 1e-12))
 
 
 def num_time(seconds: float) -> str:
-    """A duration for reading: 244.40ns, 7.00s, 5.59s, 1.20ms -- the largest
-    unit that leaves a value of 1 or more, always at two decimals, so the
-    value never carries fewer than two significant digits and two durations
-    in the same unit line up. Nothing is ever shown as a raw count of
-    microseconds ("5593372 usecs"); that is what this replaces."""
     if seconds == 0:
         return "0.00s"
     sign = "-" if seconds < 0 else ""
     v = abs(seconds)
-    unit, scale = TIME_UNITS[-1]
-    for u, s in TIME_UNITS:
-        if v >= s:
-            unit, scale = u, s
-            break
-    return f"{sign}{v / scale:.2f}{unit}"
-
-
-# --------------------------------------------------------------------------
-# Markup
-# --------------------------------------------------------------------------
+    unit = next((u for u in TIME_UNITS if v >= u.seconds), TIME_UNITS[-1])
+    return f"{sign}{v / unit.seconds:.2f}{unit.suffix}"
 
 
 def html_esc(s: object) -> str:
     return html.escape(str(s), quote=True)
 
 
-@dataclass
-class Col:
+class Col(NamedTuple):
     label: str
-    title: str = ""            # plain-language meaning; shown as a header tooltip
-    num: bool = False          # right-aligned
-    width: int | None = None   # visible characters (cell padding is added)
-    clip: int | None = None    # cap the content-derived width at this many characters
+    title: str = ""
+    num: bool = False
+    width: int | None = None
+    clip: int | None = None
     cls: str = ""
-    grow: bool = False         # a fill table's open-ended column (else its last one)
+    grow: bool = False
 
 
-@dataclass
-class Cell:
+class Cell(NamedTuple):
     text: str = ""
-    html: str | None = None    # pre-escaped markup instead of text
+    html: str | None = None
     style: str = ""
     cls: str = ""
     title: str = ""
 
 
-def _cell(c: object) -> Cell:
-    return c if isinstance(c, Cell) else Cell(text="" if c is None else str(c))
+CellLike: TypeAlias = Cell | str
 
 
-# characters added to a column's visible width: 1ch padding each side plus
-# 1ch of slack for the divider bar's pixel and fractional ch rounding
+def _cell(c: CellLike) -> Cell:
+    return c if isinstance(c, Cell) else Cell(text=c)
+
+
 PAD = 3
 
 
-def table_render(key: str, cols: list[Col], rows: Sequence[Sequence[object]], fill: bool = False,
-                  header: bool = True, lines: bool = False) -> str:
-    """A .tbl box: the table. Each column's full meaning is still a tooltip
-    on its header cell (see README.md for the glossary).
-
-    Column widths are in characters (everything is monospace, so this is
-    exact): the header label is every column's floor -- a header never
-    ellipsizes -- then the longest cell text, unless the column sets `width`
-    (exact); `clip` caps the derived width and clipped cells get their full
-    text as a tooltip. With `fill` the `grow` column (else the last) is
-    open-ended: it stops at its floor/`width`, which is its minimum, and
-    fillTable() in theme.js hands it the rest of the pane so the table spans
-    its container; it is cut off at the table's edge. With `lines` every row
-    is underlined by the same bar that divides the columns. Same rule as
-    colWidths() in callgrind_to_heatmap.py -- keep the two in step.
-    """
+def table_render(key: str, cols: Sequence[Col], rows: Sequence[Sequence[CellLike]], fill: bool = False,
+                 header: bool = True, lines: bool = False) -> str:
     cells = [[_cell(c) for c in r] for r in rows]
+    for r in cells:
+        if len(r) > len(cols):
+            raise ValueError(f"table {key!r}: a row has {len(r)} cells for {len(cols)} columns")
     grow = next((i for i, c in enumerate(cols) if c.grow), len(cols) - 1) if fill else -1
     widths: list[int] = []
     for i, col in enumerate(cols):
@@ -273,10 +234,9 @@ def table_render(key: str, cols: list[Col], rows: Sequence[Sequence[object]], fi
     out.append("<tbody>")
     for r in cells:
         out.append("<tr>")
-        for i, c in enumerate(r):
-            col = cols[i] if i < len(cols) else Col("")
+        for col, w, c in zip(cols, widths, r):
             cls = " ".join(x for x in ("n" if col.num else "", col.cls, c.cls) if x)
-            title = c.title or (c.text if len(c.text) + PAD > widths[i] else "")
+            title = c.title or (c.text if len(c.text) + PAD > w else "")
             attrs = (f' class="{cls}"' if cls else "") + (f' style="{c.style}"' if c.style else "") \
                 + (f' title="{html_esc(title)}"' if title else "")
             out.append(f"<td{attrs}>{c.html if c.html is not None else html_esc(c.text)}</td>")
@@ -287,7 +247,6 @@ def table_render(key: str, cols: list[Col], rows: Sequence[Sequence[object]], fi
 
 
 def page_document(title: str, body: str, extra_css: str = "", extra_js: str = "", body_class: str = "") -> str:
-    """A complete page: shared style and script inlined, then `body`."""
     body_attr = f' class="{body_class}"' if body_class else ""
     return ("<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n"
             "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n"

@@ -31,27 +31,10 @@ mispredict, and `CEst` is a rough cycle estimate.
 See the [callgrind](https://valgrind.org/docs/manual/cl-manual.html) docs.
 GPL Version 3, 29 June 2007.
 
-## Colors
-
-One ramp, the same rule everywhere: a cell is colored by its own metric's
-share of that metric's total, on a log scale from 0.001% up to the largest
-share seen for that metric. A cost cell (self, incl, calls) is a share of the
-selected event; a miss cell (D1m, DLm, Bcm) a share of that event's own
-total; a call count a share of every call the profile recorded, scaled to the
-most-called function. In the source listing the event, line and source cells
-all carry the line's own (self) cost; "calls" carries the cost of the calls
-made from that line.
-
 ## Links
 
-The address bar always spells out what is on screen, so it can be bookmarked
-or copied at any point and reopened later. After the view name comes that
-view's own state: `#heat-map/f=lib/urlapi.c&l=1343&e=Ir` is the heat map at
-that line of that file with that event, `fn=parseurl_and_replace` a function
-(its file, opened on the function's first line), `f=lib/urlapi.c` a file, and
-nothing after the view name is the view's start page. An `all` report puts
-the test first: `#urlparser/heat-map/...`. Closing a line's detail box moves
-the selection to its file; back and forward walk through every step.
+The address bar of `index.html` always links to what is on screen, so it can be
+bookmarked and reopened later.
 
 ## Flame Graph Bindings (speedscope)
 

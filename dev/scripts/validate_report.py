@@ -1,35 +1,32 @@
 #!/usr/bin/env python3
-"""Smoke test over a dev/perf2html.sh report directory: cheap structural and
-content checks, not a re-parse of the profile data. Catches the failure mode
-of a page silently missing (a step failed but the script kept going),
-existing but truncated/empty, or leaking an absolute host path -- not
-whether the numbers in it are correct.
-
-Usage:
-  validate_report.py OUTDIR [--test NAME ...]
-
-  OUTDIR    a report directory written by dev/perf2html.sh: either one test's
-            report (OUTDIR/index.html is a test page) or an "all" run
-            (OUTDIR/index.html is the overview, OUTDIR/<test>/ and
-            OUTDIR/all/ each hold a test page).
-  --test    check only these tests under an overview OUTDIR (default: every
-            test the overview links to, plus "all").
-
-Prints one line per check that failed; exits 0 if everything passed, 1
-otherwise. Prints nothing on full success besides a final "ok" summary line.
-"""
 from __future__ import annotations
 
 import argparse
 import os
 import re
 import sys
+from typing import NamedTuple
 
-MIN_PAGE_BYTES = 500          # a page this small is missing its body
-MIN_INDEX_BYTES = 2000        # a test/overview index with a real summary
-MIN_HEATMAP_BYTES = 5000      # the heat map embeds source; near-empty means no samples matched
-MIN_FLAME_JSON_BYTES = 200    # profile.speedscope.json / profile.js payload
-SUBPAGES = ["flame-graph/index.html", "heat-map/index.html", "perf-tool/index.html"]
+MIN_PAGE_BYTES = 500
+MIN_INDEX_BYTES = 2000
+MIN_HEATMAP_BYTES = 5000
+MIN_FLAME_JSON_BYTES = 200
+
+
+class SubPage(NamedTuple):
+    key: str
+    href: str
+
+
+SUBPAGES: tuple[SubPage, ...] = (SubPage("flame-graph", "flame-graph/index.html"),
+                                 SubPage("heat-map", "heat-map/index.html"),
+                                 SubPage("perf-tool", "perf-tool/index.html"))
+
+
+class ValidateArgs(NamedTuple):
+    out_dir: str
+    test: list[str] | None
+
 
 errors: list[str] = []
 
@@ -46,7 +43,6 @@ def check_exists(path: str, label: str) -> bool:
 
 
 def check_min_size(path: str, min_bytes: int, label: str) -> str:
-    """Returns the file's text (for further checks), or "" if it failed size/read."""
     try:
         size = os.path.getsize(path)
     except OSError as e:
@@ -63,7 +59,7 @@ def check_min_size(path: str, min_bytes: int, label: str) -> str:
 
 
 def check_html_page(path: str, label: str, min_bytes: int = MIN_PAGE_BYTES,
-                     want_title: str | None = None) -> str:
+                    want_title: str | None = None) -> str:
     if not check_exists(path, label):
         return ""
     text = check_min_size(path, min_bytes, label)
@@ -85,9 +81,6 @@ def check_html_page(path: str, label: str, min_bytes: int = MIN_PAGE_BYTES,
 
 
 def check_no_leaked_paths(path: str, repo_root: str, label: str) -> None:
-    """raw/ files and generated pages should have the repo root stripped --
-    an absolute path here means OUTDIR was not copied out safely, or the
-    sed/relpath step that is supposed to strip it silently didn't run."""
     text = check_min_size(path, 0, label)
     if repo_root and repo_root in text:
         fail(f"{label} still contains the absolute repo root {repo_root!r}: {path}")
@@ -107,8 +100,8 @@ def check_raw_dir(test_dir: str, test_name: str) -> None:
         if os.path.getsize(p) < MIN_PAGE_BYTES:
             fail(f"raw data file suspiciously small: {p}")
         with open(p, "rb") as fh:
-            head = fh.read(64)
-        if b"events:" not in open(p, "rb").read(4096):
+            head = fh.read(4096)
+        if b"events:" not in head:
             fail(f"raw data file does not look like a callgrind trace (no 'events:' near the top): {p}")
 
 
@@ -126,7 +119,7 @@ def check_perf_tool(test_dir: str, test_name: str, *, is_all: bool) -> None:
         if test_name == "urlparser" and "Errors:" not in text:
             fail(f"perf-tool/output.txt has no 'Errors:' line (urlparser is expected to print one): {out_txt}")
     check_html_page(os.path.join(test_dir, "perf-tool", "index.html"), "perf-tool/index.html",
-                     want_title=f"{test_name} / native timing")
+                    want_title=f"{test_name} / native timing")
 
 
 def check_flame_graph(test_dir: str) -> None:
@@ -134,10 +127,10 @@ def check_flame_graph(test_dir: str) -> None:
     if not os.path.isdir(fg):
         fail(f"missing flame-graph/ dir: {fg}")
         return
-    check_exists(os.path.join(fg, "index.html"), "flame-graph/index.html")
-    check_min_size(os.path.join(fg, "index.html"), MIN_PAGE_BYTES, "flame-graph/index.html")
-    check_min_size(os.path.join(fg, "profile.js"), MIN_FLAME_JSON_BYTES, "flame-graph/profile.js")
-    js = check_min_size(os.path.join(fg, "profile.js"), 0, "flame-graph/profile.js")
+    index = os.path.join(fg, "index.html")
+    if check_exists(index, "flame-graph/index.html"):
+        check_min_size(index, MIN_PAGE_BYTES, "flame-graph/index.html")
+    js = check_min_size(os.path.join(fg, "profile.js"), MIN_FLAME_JSON_BYTES, "flame-graph/profile.js")
     if js and "loadFileFromBase64" not in js:
         fail(f"flame-graph/profile.js does not call loadFileFromBase64: {fg}/profile.js")
 
@@ -145,7 +138,7 @@ def check_flame_graph(test_dir: str) -> None:
 def check_heat_map(test_dir: str, test_name: str) -> None:
     path = os.path.join(test_dir, "heat-map", "index.html")
     text = check_html_page(path, "heat-map/index.html", min_bytes=MIN_HEATMAP_BYTES,
-                            want_title=f"{test_name} / heat map")
+                           want_title=f"{test_name} / heat map")
     if text and "heatStyle" not in text:
         fail(f"heat-map/index.html is missing its runtime script (no heatStyle): {path}")
 
@@ -157,11 +150,9 @@ def check_test_index(test_dir: str, test_name: str) -> None:
         return
     if not re.search(r"<h2>top \d+ functions by self</h2>", text):
         fail(f"index.html has no 'top N functions by self' section: {path}")
-    for key, _, href in [("flame-graph", "flame graph", "flame-graph/index.html"),
-                          ("heat-map", "heat map", "heat-map/index.html"),
-                          ("perf-tool", "native timing", "perf-tool/index.html")]:
-        if f'href="{href}"' not in text:
-            fail(f"index.html is missing its {key} strip link ({href}): {path}")
+    for sub in SUBPAGES:
+        if f'href="{sub.href}"' not in text:
+            fail(f"index.html is missing its {sub.key} strip link ({sub.href}): {path}")
     if "raw data" not in text:
         fail(f"index.html has no 'raw data' section: {path}")
 
@@ -178,8 +169,6 @@ def check_test_report(test_dir: str, test_name: str, *, is_all: bool) -> None:
 
 
 def check_overview(out_dir: str, only_tests: list[str] | None) -> list[str]:
-    """Returns the list of test names the overview links to (so the caller
-    can also check each one), after validating the overview page itself."""
     path = os.path.join(out_dir, "index.html")
     text = check_html_page(path, "index.html (overview)", min_bytes=MIN_INDEX_BYTES, want_title="overview")
     if not text:
@@ -207,8 +196,9 @@ def validate_main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("out_dir", help="report directory (dev/perf2html.sh's OUTDIR)")
     ap.add_argument("--test", action="append", default=None, metavar="NAME",
-                     help="check only this test under an overview OUTDIR (repeatable; default: every linked test)")
-    args = ap.parse_args()
+                    help="check only this test under an overview OUTDIR (repeatable; default: every linked test)")
+    ns = ap.parse_args()
+    args = ValidateArgs(out_dir=ns.out_dir, test=ns.test)
 
     out_dir = os.path.abspath(args.out_dir)
     if not os.path.isdir(out_dir):
@@ -231,7 +221,6 @@ def validate_main() -> int:
             check_test_report(os.path.join(out_dir, name), name, is_all=(name == "all"))
             checked += 1
     else:
-        # single-test report: OUTDIR itself is the test page.
         m = re.search(r"<title>(.*?)</title>", head)
         name = m.group(1) if m else os.path.basename(out_dir)
         check_test_report(out_dir, name, is_all=(name == "all"))

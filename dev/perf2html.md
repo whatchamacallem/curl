@@ -129,4 +129,4 @@ lines:
 
 ## SEE ALSO
 
-`dev/profile_diff.sh`(1), `dev/CLAUDE.md`
+`dev/lint.sh`(1), `dev/CLAUDE.md`

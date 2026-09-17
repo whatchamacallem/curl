@@ -1,37 +1,38 @@
 #!/usr/bin/env python3
-"""`node --check` every JS the generators embed in a Python string.
-
-JS inside a Python triple-quoted string is invisible to every other check
-here: a `\\n` that should have been `\\\\n`, a stray brace, an f-string brace
-that ate a JS one -- all of it survives until the generated page silently
-fails to run. This imports each generator and syntax-checks the JS it would
-emit, plus the standalone theme.js the pages inline verbatim.
-"""
 from __future__ import annotations
 
+import importlib
 import os
 import re
 import subprocess
 import sys
 import tempfile
+from typing import NamedTuple
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
-# Generator attributes holding JS to check: (module, attribute). A value that
-# looks like HTML is scanned for <script> blocks instead of checked whole.
-SOURCES = [
-    ("build_report", "FRAME_JS"),
-    ("callgrind_to_heatmap", "BODY"),
-]
 
-# Placeholders the generators substitute at build time; a block that is only a
-# placeholder is checked via its own source file, not here.
+class JsSource(NamedTuple):
+    module: str
+    attr: str
+
+
+SOURCES: tuple[JsSource, ...] = (
+    JsSource("build_report", "FRAME_JS"),
+    JsSource("callgrind_to_heatmap", "BODY"),
+)
+
+
+class JsChunk(NamedTuple):
+    label: str
+    js: str
+
+
 PLACEHOLDER_RE = re.compile(r"^\s*__[A-Z_]+__\s*$")
 
 
 def js_check(label: str, src: str) -> bool:
-    """Syntax-check one chunk of JS. True when it parses."""
-    with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False) as fh:
+    with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False, encoding="utf-8") as fh:
         fh.write(src)
         path = fh.name
     try:
@@ -40,31 +41,33 @@ def js_check(label: str, src: str) -> bool:
         os.unlink(path)
     if r.returncode == 0:
         return True
-    # node points at the temp file; name the real source instead.
     print(f"{label}: {r.stderr.strip()}".replace(path, label), file=sys.stderr)
     return False
 
 
-def blocks_of(label: str, src: str) -> list[tuple[str, str]]:
-    """The JS chunks in one source value, as (label, js) pairs."""
+def blocks_of(label: str, src: str) -> list[JsChunk]:
     if "<script" not in src:
-        return [(label, src)]
-    out = []
+        return [JsChunk(label, src)]
+    out: list[JsChunk] = []
     for i, js in enumerate(re.findall(r"<script[^>]*>(.*?)</script>", src, re.S)):
         if PLACEHOLDER_RE.match(js):
             continue
-        out.append((f"{label} block {i}", js))
+        out.append(JsChunk(f"{label} block {i}", js))
     return out
 
 
 def check_main() -> int:
     sys.path.insert(0, HERE)
-    ok = True
-    ok &= js_check("theme.js", open(os.path.join(HERE, "theme.js")).read())
-    for mod_name, attr in SOURCES:
-        mod = __import__(mod_name)
-        for label, js in blocks_of(f"{mod_name}.{attr}", getattr(mod, attr)):
-            ok &= js_check(label, js)
+    with open(os.path.join(HERE, "theme.js"), encoding="utf-8") as f:
+        ok = js_check("theme.js", f.read())
+    for src in SOURCES:
+        value: object = getattr(importlib.import_module(src.module), src.attr)
+        if not isinstance(value, str):
+            print(f"{src.module}.{src.attr}: not a string", file=sys.stderr)
+            ok = False
+            continue
+        for chunk in blocks_of(f"{src.module}.{src.attr}", value):
+            ok = js_check(chunk.label, chunk.js) and ok
     return 0 if ok else 1
 
 

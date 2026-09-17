@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
-"""Turn a copy of speedscope's dist/release into a bundle that opens straight
-on an embedded profile instead of the drag-and-drop landing page. See
-CLAUDE.md's build_flame_graph.py note for why this hash/profile.js dance
-is needed instead of speedscope's own CLI mechanism.
+"""Turn a copy of speedscope's dist/release into a bundle that opens
+on an embedded profile instead of the drag-and-drop landing page.
 
 Usage:
   build_flame_graph.py --speedscope-dir OUT/flame-graph --profile-json X.speedscope.json
@@ -16,14 +14,14 @@ import json
 import re
 import sys
 from pathlib import Path
+from typing import NamedTuple
 
 PROFILE_JS = "profile.js"
 MARK_START = "<!-- flame-graph:start -->"
 MARK_END = "<!-- flame-graph:end -->"
 
 BOOTSTRAP = """\
-// Written by dev/scripts/build_flame_graph.py: the profile, and the hand-off
-// to speedscope's loadFileFromBase64 once the app has defined it.
+
 (function () {
   var NAME = {name};
   var DATA = {data};
@@ -41,21 +39,34 @@ BOOTSTRAP = """\
   }
 })();
 """
+_SLOT_RE = re.compile(r"\{(name|data)\}")
+
+
+class FlameArgs(NamedTuple):
+    speedscope_dir: str
+    profile_json: str
+    profile_filename: str | None
+
+
+def bootstrap_render(name: str, data_b64: str) -> str:
+    slots = {"name": json.dumps(name), "data": json.dumps(data_b64)}
+    return _SLOT_RE.sub(lambda m: slots[m.group(1)], BOOTSTRAP)
 
 
 def index_patch(index_html: Path) -> None:
-    html = index_html.read_text()
+    html = index_html.read_text(encoding="utf-8")
     html = re.sub(rf"\s*{re.escape(MARK_START)}.*?{re.escape(MARK_END)}\n?", "\n", html, flags=re.DOTALL)
     injection = (f"\n    {MARK_START}\n"
                  "    <script>if (!location.hash) location.hash = '#localProfilePath=profile';</script>\n"
                  f'    <script src="{PROFILE_JS}"></script>\n'
                  f"    {MARK_END}\n")
-    # before the app's own bundle, so the hash is set when it mounts
     if "<script src=" in html:
         html = html.replace('<script src="', injection + '    <script src="', 1)
-    else:
+    elif "</body>" in html:
         html = html.replace("</body>", injection + "  </body>")
-    index_html.write_text(html)
+    else:
+        sys.exit(f"error: {index_html}: no <script src=> or </body> to patch the profile into")
+    index_html.write_text(html, encoding="utf-8")
 
 
 def flamegraph_main() -> None:
@@ -65,7 +76,9 @@ def flamegraph_main() -> None:
     ap.add_argument("--profile-json", required=True, help="the .speedscope.json to embed")
     ap.add_argument("--profile-filename", default=None,
                     help="file name speedscope shows for the profile (default: the JSON's basename)")
-    args = ap.parse_args()
+    ns = ap.parse_args()
+    args = FlameArgs(speedscope_dir=ns.speedscope_dir, profile_json=ns.profile_json,
+                     profile_filename=ns.profile_filename)
 
     out = Path(args.speedscope_dir)
     index_html = out / "index.html"
@@ -74,21 +87,29 @@ def flamegraph_main() -> None:
     profile = Path(args.profile_json)
     raw = profile.read_bytes()
     try:
-        doc = json.loads(raw)
+        doc: object = json.loads(raw)
     except json.JSONDecodeError as e:
         sys.exit(f"error: {profile} is not valid JSON: {e}")
-    if "profiles" not in doc or "shared" not in doc:
+    if not isinstance(doc, dict):
+        sys.exit(f"error: {profile} does not look like a speedscope profile")
+    shared, profiles = doc.get("shared"), doc.get("profiles")
+    if not isinstance(shared, dict) or not isinstance(profiles, list):
         sys.exit(f"error: {profile} does not look like a speedscope profile")
 
-    js = BOOTSTRAP.replace("{name}", json.dumps(args.profile_filename or profile.name)) \
-                  .replace("{data}", json.dumps(base64.b64encode(raw).decode("ascii")))
-    (out / PROFILE_JS).write_text(js)
+    (out / PROFILE_JS).write_text(
+        bootstrap_render(args.profile_filename or profile.name, base64.b64encode(raw).decode("ascii")),
+        encoding="utf-8")
     (out / "profile.speedscope.json").write_bytes(raw)
     index_patch(index_html)
-    nframes = len(doc["shared"].get("frames", []))
-    nsamples = sum(len(p.get("samples", [])) for p in doc["profiles"])
+    frames = shared.get("frames")
+    nframes = len(frames) if isinstance(frames, list) else 0
+    nsamples = 0
+    for p in profiles:
+        samples = p.get("samples") if isinstance(p, dict) else None
+        if isinstance(samples, list):
+            nsamples += len(samples)
     print(f"wrote {out / PROFILE_JS} ({nframes} frames, {nsamples} stack samples, "
-          f"{len(doc['profiles'])} profiles) and patched {index_html}", file=sys.stderr)
+          f"{len(profiles)} profiles) and patched {index_html}", file=sys.stderr)
 
 
 if __name__ == "__main__":

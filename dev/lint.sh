@@ -3,9 +3,9 @@
 # the JS (standalone and the chunks embedded in Python strings), and smoke-run
 # the generators. Nothing here builds or profiles curl -- see perf2html.sh.
 #
-#   dev/test.sh            # every check
-#   dev/test.sh py         # one group: py | js
-#   dev/test.sh --list     # what the groups are
+#   dev/lint.sh            # every check
+#   dev/lint.sh py         # one group: py | js
+#   dev/lint.sh --list     # what the groups are
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

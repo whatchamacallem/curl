@@ -1,11 +1,4 @@
 #!/usr/bin/env python3
-"""Convert a callgrind profile into speedscope's JSON file format
-(https://www.speedscope.app/file-format-schema.json).
-
-Usage:
-  callgrind_to_speedscope.py callgrind.out.X -o out.speedscope.json
-      [--event Ir] [--event D1mr+D1mw ...] [--name "..."]
-"""
 from __future__ import annotations
 
 import argparse
@@ -13,17 +6,54 @@ import json
 import os
 import sys
 from collections import defaultdict
+from collections.abc import Iterator, Sequence
+from dataclasses import dataclass, field
+from typing import NamedTuple, NotRequired, TypedDict
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import callgrind as cg  # noqa: E402
+import callgrind as cg
+from callgrind import Vec
 
 MAX_STACK_DEPTH = 200
 
 
+class Frame(TypedDict):
+    name: str
+    file: NotRequired[str]
+
+
+class Shared(TypedDict):
+    frames: list[Frame]
+
+
+class SampledProfile(TypedDict):
+    type: str
+    name: str
+    unit: str
+    startValue: int
+    endValue: float
+    samples: list[list[int]]
+    weights: list[float]
+
+
+SpeedscopeDoc = TypedDict("SpeedscopeDoc", {
+    "$schema": str, "shared": Shared, "profiles": list[SampledProfile], "name": str, "exporter": str})
+
+
+class BuiltProfile(NamedTuple):
+    profile: SampledProfile
+    total: float
+
+
+class SpeedscopeArgs(NamedTuple):
+    callgrind_file: list[str]
+    output: str
+    event: list[str] | None
+    name: str | None
+    repo_root: str
+
+
 def path_display(repo_root: str, path: str) -> str:
-    """Path relative to repo_root when it's inside it; otherwise unchanged.
-    Keeps absolute host paths (callgrind records e.g. /home/user/curl/lib/x.c)
-    out of the emitted JSON so the bundle stays relocatable."""
     if not path or path == "???":
         return path
     root = os.path.abspath(repo_root).rstrip("/") + "/"
@@ -31,49 +61,35 @@ def path_display(repo_root: str, path: str) -> str:
     return norm[len(root):] if norm.startswith(root) else norm
 
 
+class _Work(NamedTuple):
+    v: int
+    it: Iterator[int]
+
+
+@dataclass
 class Graph:
-    """Frames (one per function name) with self cost and summed caller->callee
-    edges, lifted from a parsed Profile."""
+    nev: int
+    names: list[str]
+    files: list[str]
+    index: dict[str, int]
+    self_cost: dict[int, Vec]
+    edges: defaultdict[int, dict[int, Vec]]
+    cycles: list[str] = field(default_factory=list)
 
-    def __init__(self, p: cg.Profile, repo_root: str = ".") -> None:
-        names = set(p.fn_self) | set(p.fn_calls) | set(p.callers) | set(p.fn_home)
-        for sites in p.callers.values():
-            for cfn, _, _ in sites:
-                names.add(cfn)
-        self.nev = len(p.events)
-        self.names = sorted(names)
-        self.index = {n: i for i, n in enumerate(self.names)}
-        self.files = [path_display(repo_root, p.fn_home.get(n, "")) for n in self.names]
-        self.self_cost = {self.index[n]: list(vec) for n, vec in p.fn_self.items()}
-        # caller index -> {callee index: summed total cost over all call sites}
-        self.edges: dict[int, dict[int, list[int]]] = defaultdict(dict)
-        for callee, sites in p.callers.items():
-            for (cfn, _, _), (_, vec) in sites.items():
-                if cfn != callee:  # direct recursion: the self cost already covers every level
-                    self._add(self.edges[self.index[cfn]], self.index[callee], vec)
-        self.cycles = self._collapse_cycles()
-
-    def _add(self, table: dict[int, list[int]], key: int, vec: list[int]) -> None:
-        acc = table.setdefault(key, [0] * self.nev)
-        for k, v in enumerate(vec):
-            acc[k] += v
-
-    def _collapse_cycles(self) -> list[str]:
-        """Merge every strongly connected component into one frame (see
-        CLAUDE.md's tooling notes for why). Returns the merged frames' names."""
+    def collapse_cycles(self) -> list[str]:
         n = len(self.names)
         index, low, on = [-1] * n, [0] * n, [False] * n
         stack: list[int] = []
         comps: list[list[int]] = []
         counter = 0
-        for v0 in range(n):  # Tarjan, iterative
+        for v0 in range(n):
             if index[v0] != -1:
                 continue
             index[v0] = low[v0] = counter
             counter += 1
             stack.append(v0)
             on[v0] = True
-            work = [(v0, iter(self.edges.get(v0, {})))]
+            work = [_Work(v0, iter(self.edges.get(v0, {})))]
             while work:
                 v, it = work[-1]
                 pushed = False
@@ -83,7 +99,7 @@ class Graph:
                         counter += 1
                         stack.append(w)
                         on[w] = True
-                        work.append((w, iter(self.edges.get(w, {}))))
+                        work.append(_Work(w, iter(self.edges.get(w, {}))))
                         pushed = True
                         break
                     if on[w]:
@@ -92,7 +108,7 @@ class Graph:
                     continue
                 work.pop()
                 if work:
-                    low[work[-1][0]] = min(low[work[-1][0]], low[v])
+                    low[work[-1].v] = min(low[work[-1].v], low[v])
                 if low[v] == index[v]:
                     comp: list[int] = []
                     while True:
@@ -119,27 +135,43 @@ class Graph:
         self.names = [merged.get(i, self.names[i]) for i in keep]
         self.files = [self.files[i] for i in keep]
         self.index = {n: i for i, n in enumerate(self.names)}
-        self_cost: dict[int, list[int]] = {}
+        self_cost: dict[int, Vec] = {}
         for i, vec in self.self_cost.items():
-            self._add(self_cost, new[rep[i]], vec)
-        edges: dict[int, dict[int, list[int]]] = defaultdict(dict)
+            cg.vec_acc(self_cost, new[rep[i]], vec)
+        edges: defaultdict[int, dict[int, Vec]] = defaultdict(dict)
         for a, out in self.edges.items():
             for b, vec in out.items():
                 if rep[a] != rep[b]:
-                    self._add(edges[new[rep[a]]], new[rep[b]], vec)
+                    cg.vec_acc(edges[new[rep[a]]], new[rep[b]], vec)
         self.self_cost, self.edges = self_cost, edges
         return list(merged.values())
 
     def roots(self) -> list[int]:
-        """Frames that are never a callee; every frame if there are none."""
         callees = {c for out in self.edges.values() for c in out}
         roots = [i for i in range(len(self.names)) if i not in callees]
         return roots or list(range(len(self.names)))
 
 
+def graph_from_profile(p: cg.Profile, repo_root: str = ".") -> Graph:
+    names = set(p.fn_self) | set(p.fn_calls) | set(p.callers) | set(p.fn_home)
+    for sites in p.callers.values():
+        for caller in sites:
+            names.add(caller.fn)
+    sorted_names = sorted(names)
+    index = {n: i for i, n in enumerate(sorted_names)}
+    g = Graph(nev=len(p.events), names=sorted_names,
+              files=[path_display(repo_root, p.fn_home.get(n, "")) for n in sorted_names], index=index,
+              self_cost={index[n]: list(vec) for n, vec in p.fn_self.items()}, edges=defaultdict(dict))
+    for callee, sites in p.callers.items():
+        for caller, cc in sites.items():
+            if caller.fn != callee:
+                cg.vec_acc(g.edges[index[caller.fn]], index[callee], cc.cost)
+    g.cycles = g.collapse_cycles()
+    return g
+
+
 def expr_resolve(p: cg.Profile, expr: str) -> list[int] | None:
-    """'D1mr+D1mw' -> the raw event columns it sums; None if one is missing."""
-    idxs = []
+    idxs: list[int] = []
     for name in (t.strip() for t in expr.split("+")):
         if name not in p.events:
             return None
@@ -148,32 +180,29 @@ def expr_resolve(p: cg.Profile, expr: str) -> list[int] | None:
 
 
 def expr_label(p: cg.Profile, expr: str) -> str:
-    """'D1mr+D1mw — L1 data cache misses (D1mr + D1mw)'."""
     names = [t.strip() for t in expr.split("+")]
     long = ""
     if len(names) == 1:
         long = p.event_long.get(names[0], "")
     else:
-        for _, terms, dlong in cg.DERIVED_DEFAULTS:
-            if all(c == 1 for c, _ in terms) and sorted(r for _, r in terms) == sorted(names):
-                long = dlong
+        for d in cg.DERIVED_DEFAULTS:
+            if all(t.coef == 1 for t in d.terms) and sorted(t.raw for t in d.terms) == sorted(names):
+                long = d.long
                 break
         long = long or " + ".join(p.event_long.get(n) or n for n in names)
     return f"{expr} — {long}" if long else expr
 
 
-def graph_build_profile(g: Graph, idxs: list[int], name: str) -> tuple[dict, float]:
-    """One speedscope 'sampled' profile weighted by the sum of the given
-    event columns. Returns (profile, sum of emitted weights)."""
+def graph_build_profile(g: Graph, idxs: Sequence[int], name: str) -> BuiltProfile:
 
-    def value(vec: list[int]) -> int:
+    def value(vec: Vec) -> int:
         return sum(vec[i] for i in idxs if i < len(vec))
 
     def self_of(frame: int) -> int:
         vec = g.self_cost.get(frame)
         return value(vec) if vec else 0
 
-    incoming: dict[int, float] = defaultdict(float)
+    incoming: defaultdict[int, float] = defaultdict(float)
     for out in g.edges.values():
         for callee, vec in out.items():
             incoming[callee] += value(vec)
@@ -183,8 +212,6 @@ def graph_build_profile(g: Graph, idxs: list[int], name: str) -> tuple[dict, flo
 
     def walk(frame: int, stack: list[int], visiting: frozenset[int], scale: float) -> None:
         if len(stack) >= MAX_STACK_DEPTH or frame in visiting:
-            # cannot happen on the collapsed DAG; kept as the guarantee of
-            # termination, folding the cost into the current stack
             sc = self_of(frame) * scale
             if sc > 0:
                 samples.append(list(stack))
@@ -208,19 +235,21 @@ def graph_build_profile(g: Graph, idxs: list[int], name: str) -> tuple[dict, flo
     for r in g.roots():
         walk(r, [], frozenset(), 1.0)
     total = sum(weights)
-    return {"type": "sampled", "name": name, "unit": "none", "startValue": 0, "endValue": total,
-            "samples": samples, "weights": weights}, total
+    return BuiltProfile({"type": "sampled", "name": name, "unit": "none", "startValue": 0, "endValue": total,
+                         "samples": samples, "weights": weights}, total)
 
 
-def document_build(p: cg.Profile, exprs: list[str], base_name: str, repo_root: str = ".") -> dict:
-    """One speedscope document with one profile per event expression
-    (speedscope shows a picker when there is more than one). Expressions
-    whose events are absent, or whose total is zero, are skipped."""
-    g = Graph(p, repo_root)
+def document_build(p: cg.Profile, exprs: Sequence[str], base_name: str, repo_root: str = ".") -> SpeedscopeDoc:
+    g = graph_from_profile(p, repo_root)
     if g.cycles:
         print(f"collapsed {len(g.cycles)} cycle(s) into one frame each: {'; '.join(g.cycles)}", file=sys.stderr)
-    frames = [{"name": n, **({"file": f} if f and f != "???" else {})} for n, f in zip(g.names, g.files)]
-    profiles = []
+    frames: list[Frame] = []
+    for n, f in zip(g.names, g.files):
+        frame: Frame = {"name": n}
+        if f and f != "???":
+            frame["file"] = f
+        frames.append(frame)
+    profiles: list[SampledProfile] = []
     for expr in exprs:
         idxs = expr_resolve(p, expr)
         if idxs is None:
@@ -232,10 +261,10 @@ def document_build(p: cg.Profile, exprs: list[str], base_name: str, repo_root: s
             print(f"skipping --event {expr!r}: total is zero", file=sys.stderr)
             continue
         label = expr_label(p, expr)
-        profile, total = graph_build_profile(g, idxs, label)
-        print(f"{label}: {len(profile['samples'])} stack samples; raw self total {raw_total:,}, "
-              f"emitted {total:,.0f}, ratio {total / raw_total:.4f} (must be ~1.0)", file=sys.stderr)
-        profiles.append(profile)
+        built = graph_build_profile(g, idxs, label)
+        print(f"{label}: {len(built.profile['samples'])} stack samples; raw self total {raw_total:,}, "
+              f"emitted {built.total:,.0f}, ratio {built.total / raw_total:.4f} (must be ~1.0)", file=sys.stderr)
+        profiles.append(built.profile)
     if not profiles:
         sys.exit("error: none of the requested --event expressions is usable")
     return {"$schema": "https://www.speedscope.app/file-format-schema.json",
@@ -252,14 +281,16 @@ def speedscope_main() -> None:
                          "events, e.g. D1mr+D1mw (default: Ir)")
     ap.add_argument("--name", default=None, help="document name (default: input file basename)")
     ap.add_argument("--repo-root", default=".", help="repository root the profile's paths are relative to")
-    args = ap.parse_args()
+    ns = ap.parse_args()
+    args = SpeedscopeArgs(callgrind_file=ns.callgrind_file, output=ns.output, event=ns.event, name=ns.name,
+                          repo_root=ns.repo_root)
 
     p = cg.profile_load(args.callgrind_file)
     if not p.events:
         sys.exit("error: no 'events:' line -- not a callgrind file?")
-    self_sum, total, ratio = cg.profile_self_check(p)
-    print(f"events: {' '.join(p.events)}; ratio (must be 1.0000): {ratio:.4f}", file=sys.stderr)
-    if total and abs(ratio - 1.0) > 1e-6:
+    check = cg.profile_self_check(p)
+    print(f"events: {' '.join(p.events)}; ratio (must be 1.0000): {check.ratio:.4f}", file=sys.stderr)
+    if check.total and abs(check.ratio - 1.0) > 1e-6:
         sys.exit("error: per-line self cost does not add up to callgrind's summary")
 
     doc = document_build(p, args.event or ["Ir"], args.name or os.path.basename(args.callgrind_file[0]), args.repo_root)
