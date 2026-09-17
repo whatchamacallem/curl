@@ -204,14 +204,14 @@ table.src tr.detail > td { white-space: normal; overflow: visible; padding: 0; }
 """
 
 BODY = """<div id="hdr" class="strip">
-  <label>event <select id="event"></select></label>
-  <label>scale <select id="scale">
+  <label>event: <select id="event"></select></label>
+  <label>scale: <select id="scale">
     <option value="global">log, global</option>
     <option value="file">log, per file</option>
     <option value="linear">linear, global</option>
   </select></label>
-  <label>tree <select id="sort"><option value="heat">by heat</option><option value="name">by name</option></select></label>
-  <label>search <input id="q" type="search" placeholder="file name\u2026"></label>
+  <label>tree: <select id="sort"><option value="heat">by heat</option><option value="name">by name</option></select></label>
+  <label>search: <input id="q" type="search" placeholder="file name\u2026"></label>
 </div>
 <div id="layout">
   <nav id="tree"></nav>

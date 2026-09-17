@@ -15,7 +15,7 @@ HEAT_MINIMUM_SHARE = 0.001
 
 PADDING_CHARS = 3
 
-THEME: list[str] = ["#00A8FF", "#0097E6", "#F5F6FA", "#DCDDE1", "#FBC531", "#E1B12C",
+THEME: list[str] = ["#1AB6FF", "#0097E6", "#F5F6FA", "#DCDDE1", "#FBC531", "#E1B12C",
                     "#7F8FA6", "#718093", "#273C75", "#192A56", "#487EB0", "#40739E",
                     "#353B48", "#2F3640"]
 
@@ -114,7 +114,7 @@ ROLE: dict[str, str] = {
     "sel": COLOR_PAIR["navy"].light,
     "fg": COLOR_PAIR["white"].light,
     "fg-dim": COLOR_PAIR["white"].dark,
-    "muted": COLOR_PAIR["gray"].light,
+    "muted": COLOR_PAIR["white"].dark,
     "link": COLOR_PAIR["blue"].light,
     "accent": COLOR_PAIR["yellow"].light,
     "bar": COLOR_PAIR["steel"].dark,
