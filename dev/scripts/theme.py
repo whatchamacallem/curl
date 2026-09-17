@@ -21,9 +21,17 @@ THEME = ["#00A8FF", "#0097E6", "#E84118", "#C23616", "#9C88FF", "#8C7AE6",
 PAIR = {name: (THEME[2 * i], THEME[2 * i + 1]) for i, name in enumerate(
     ["blue", "red", "purple", "white", "yellow", "gray", "green", "navy", "steel", "slate"])}
 
-# semantic roles -> palette member
+def _shade(hex_color: str, factor: float) -> str:
+    """hex_color with every channel scaled by factor (< 1 darkens)."""
+    return "#" + "".join(f"{round(int(hex_color[i:i + 2], 16) * factor):02X}" for i in (1, 3, 5))
+
+
+# semantic roles -> palette member. --bg is the one role that is not a raw
+# palette entry: the slate dark member taken down 8%, so the page sits a
+# shade below every panel/strip/alt-column that is drawn in raw palette
+# colors on top of it.
 ROLE = {
-    "bg": PAIR["slate"][1],       # page background
+    "bg": _shade(PAIR["slate"][1], 0.90),  # page background
     "bg-alt": PAIR["slate"][0],   # alternating table columns
     "panel": PAIR["navy"][1],     # table headers, header bars
     "nav": PAIR["navy"][1],       # toolbar strip

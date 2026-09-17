@@ -123,7 +123,7 @@ Uses valgrind's real `cg_diff` (function-level only — it always emits line `0`
 
 ### Look and feel (theme rules — apply to any dev/ page changes)
 
-- One dark theme. `theme.py`'s `PAIR` values are raw "User settings" THEME entries, odd index = dark member, even = light; `--<name>-l` is the light member. Don't touch the `HEAT` ramp with this rule.
+- One dark theme. `theme.py`'s `PAIR` values are raw "User settings" THEME entries, odd index = dark member, even = light; `--<name>-l` is the light member. Don't touch the `HEAT` ramp with this rule. Exception: `--bg` (`ROLE["bg"]`) is the slate dark member darkened 8% via `_shade()` (`#2F3640` → `#2B323B`); every page background, the scrollbar track, the minimap band and the heat blend (`heat_style()`/`heatStyle()` via `theme_runtime()`) all follow it, so change it only there.
 - Monaco/monospace everywhere; column widths are exact `ch` counts (`theme.PAD` = 1ch padding + 1ch slack; heat map's `table()` also has its own `PCTW` = width of `"-100.0%"`, the floor for any column without an explicit `width`/`clip`).
 - Heat colors: 12-stop ramp blended over `--bg`, alpha on log scale of share; text color picked by resulting luminance (`theme.heat_style()` / `heatStyle()`). Speedscope keeps its own colors (untouched by theme).
 - No decorative borders anywhere. The only drawn lines are drag targets: column-resize `.bar` and pane `.split`, both invisible at rest and painted only on hover/active (`.bar::before`/`.split` background is `none` until `:hover`/`.active`). Everything else is told apart by background shading only (`--panel`/`--bg`/`--bg-alt`/`--nav`). `select`/`input` get `border:0; border-radius:0` + explicit `--bg`.
