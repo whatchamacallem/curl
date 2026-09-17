@@ -48,7 +48,7 @@ case "${1:-all}" in
   py)     run_group py     check_py ;;
   js)     run_group js     check_js ;;
   all)    run_group py     check_py
-          run_group js     check_js
+          run_group js     check_js ;;
   *)      red "unknown group: $1 (see --list)"; exit 2 ;;
 esac
 

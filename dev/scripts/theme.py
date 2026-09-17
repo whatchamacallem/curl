@@ -7,19 +7,22 @@ from __future__ import annotations
 import html
 import math
 import os
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 HEAT = ["#3E4A89", "#31688E", "#26828E", "#1F9E89", "#35B779", "#6DCD59",
         "#B4DE2C", "#FDE725", "#FFC83B", "#FFA22C", "#FF7F21", "#F06142"]
 
-THEME = ["#00A8FF", "#0097E6", "#E84118", "#C23616", "#9C88FF", "#8C7AE6",
-         "#F5F6FA", "#DCDDE1", "#FBC531", "#E1B12C", "#7F8FA6", "#718093",
-         "#4CD137", "#44BD32", "#273C75", "#192A56", "#487EB0", "#40739E",
+# The "User settings" THEME entries this UI draws with -- the red, purple and
+# green pairs name nothing here (no good/bad/second accent anywhere: state is
+# the heat ramp) and are left out.
+THEME = ["#00A8FF", "#0097E6", "#F5F6FA", "#DCDDE1", "#FBC531", "#E1B12C",
+         "#7F8FA6", "#718093", "#273C75", "#192A56", "#487EB0", "#40739E",
          "#353B48", "#2F3640"]
 
 # (light, dark) pairs, in THEME order
 PAIR = {name: (THEME[2 * i], THEME[2 * i + 1]) for i, name in enumerate(
-    ["blue", "red", "purple", "white", "yellow", "gray", "green", "navy", "steel", "slate"])}
+    ["blue", "white", "yellow", "gray", "navy", "steel", "slate"])}
 
 def _shade(hex_color: str, factor: float) -> str:
     """hex_color with every channel scaled by factor (< 1 darkens)."""
@@ -40,14 +43,18 @@ ROLE = {
     "fg-dim": PAIR["white"][1],   # headings, table headers
     "muted": PAIR["gray"][0],     # secondary text (light member, same reason)
     "link": PAIR["blue"][0],      # links (light member, same reason)
-    "link-bg": PAIR["blue"][1],   # link hover background
     "accent": PAIR["yellow"][0],  # title, active toolbar link
     "bar": PAIR["steel"][1],      # column divider bars, row separators, borders
-    "good": PAIR["green"][1],
-    "bad": PAIR["red"][1],
 }
 
 FONT = 'Monaco, Menlo, "DejaVu Sans Mono", "Liberation Mono", Consolas, monospace'
+
+# Visible width of the strip's title badge, in characters of its own (13px)
+# type. The badge holds the current view's path and must not change width as
+# the reader picks views, or every link after it jumps sideways; this is the
+# longest path any report produces -- the longest perf test name plus the
+# longest view label, "simpleformat / native timing".
+TITLE_COLS = len("simpleformat / native timing")
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -64,7 +71,6 @@ def theme_css() -> str:
         lines.append(f"  --{name}: {dark}; --{name}-l: {light};")
     for role, color in ROLE.items():
         lines.append(f"  --{role}: {color};")
-    lines.append(f"  --heat: linear-gradient(90deg, {', '.join(HEAT)});")
     hot = _rgb(HEAT[-1])
     lum = (0.2126 * hot[0] + 0.7152 * hot[1] + 0.0722 * hot[2]) / 255
     lines.append(f"  --hot: {HEAT[-1]};")
@@ -73,6 +79,10 @@ def theme_css() -> str:
     title_lum = (0.2126 * title_bg[0] + 0.7152 * title_bg[1] + 0.0722 * title_bg[2]) / 255
     lines.append(f"  --title-bg: {HEAT[2]};")
     lines.append(f"  --title-fg: {ROLE['bg'] if title_lum > 0.5 else ROLE['fg']};")
+    # the badge is a fixed box, not one that grows with the picked view's
+    # title (see .strip .title): TITLE_COLS characters plus its own 8px
+    # padding on each side, which box-sizing puts inside this width
+    lines.append(f"  --title-w: calc({TITLE_COLS}ch + 16px);")
     lines.append(f"  --font: {FONT};")
     lines.append("}")
     return "\n".join(lines) + "\n" + _read("theme.css")
@@ -155,6 +165,29 @@ def num_pct(p: float) -> str:
     return "<0.01%" if p > 0 else ""
 
 
+# seconds per unit, largest first; a duration is shown in the largest unit
+# that leaves it at 1 or more
+TIME_UNITS = [("s", 1.0), ("ms", 1e-3), ("µs", 1e-6), ("ns", 1e-9), ("ps", 1e-12)]
+
+
+def num_time(seconds: float) -> str:
+    """A duration for reading: 244.40ns, 7.00s, 5.59s, 1.20ms -- the largest
+    unit that leaves a value of 1 or more, always at two decimals, so the
+    value never carries fewer than two significant digits and two durations
+    in the same unit line up. Nothing is ever shown as a raw count of
+    microseconds ("5593372 usecs"); that is what this replaces."""
+    if seconds == 0:
+        return "0.00s"
+    sign = "-" if seconds < 0 else ""
+    v = abs(seconds)
+    unit, scale = TIME_UNITS[-1]
+    for u, s in TIME_UNITS:
+        if v >= s:
+            unit, scale = u, s
+            break
+    return f"{sign}{v / scale:.2f}{unit}"
+
+
 # --------------------------------------------------------------------------
 # Markup
 # --------------------------------------------------------------------------
@@ -193,7 +226,7 @@ def _cell(c: object) -> Cell:
 PAD = 3
 
 
-def table_render(key: str, cols: list[Col], rows: list[list[object]], fill: bool = False,
+def table_render(key: str, cols: list[Col], rows: Sequence[Sequence[object]], fill: bool = False,
                   header: bool = True, lines: bool = False) -> str:
     """A .tbl box: the table. Each column's full meaning is still a tooltip
     on its header cell (see README.md for the glossary).
