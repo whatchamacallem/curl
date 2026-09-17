@@ -1,41 +1,35 @@
 from __future__ import annotations
 
+import os
+import posixpath
 import re
+import sys
 from collections import defaultdict
-from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import NamedTuple, TypeAlias, TypeVar
+from typing import Literal, NamedTuple, TypeAlias, TypeVar
 
 Costs: TypeAlias = list[int]
+Group = Literal["repo", "system", "external"]
 Key = TypeVar("Key")
+
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 _NAME_COMPRESSION_RE = re.compile(r"^\((\d+)\)(?: (.*))?$")
 
 EVENT_LONG: dict[str, str] = {
-    "AcCost1": "L1 cache-block access cost",
-    "AcCost2": "LL cache-block access cost",
     "Bc": "conditional branches executed",
     "Bcm": "conditional branches mispredicted",
     "Bi": "indirect branches executed",
     "Bim": "indirect branches mispredicted",
     "D1mr": "L1 data cache read misses",
     "D1mw": "L1 data cache write misses",
-    "DLdmr": "LL data read write-backs",
-    "DLdmw": "LL data write write-backs",
     "DLmr": "LL (last-level) data read misses",
     "DLmw": "LL (last-level) data write misses",
     "Dr": "data reads",
     "Dw": "data writes",
-    "Ge": "global bus events",
     "I1mr": "L1 instruction cache misses",
-    "ILdmr": "LL instruction write-backs",
     "ILmr": "LL (last-level) instruction cache misses",
     "Ir": "instructions executed",
-    "SpLoss1": "L1 cache-block spatial loss",
-    "SpLoss2": "LL cache-block spatial loss",
-    "sysCount": "system calls",
-    "sysCpuTime": "system call cpu time",
-    "sysTime": "system call time",
 }
 
 
@@ -57,10 +51,10 @@ class DerivedEvent(NamedTuple):
     long: str
 
 
-class EventHeader(NamedTuple):
-    name: str
-    terms: tuple[Term, ...] | None
-    long: str
+class PathInfo(NamedTuple):
+    display: str
+    local: str | None
+    group: Group
 
 
 class ResolvedDerivedEvent(NamedTuple):
@@ -72,12 +66,6 @@ class ResolvedDerivedEvent(NamedTuple):
 class ResolvedTerm(NamedTuple):
     coefficient: int
     event_index: int
-
-
-class SelfCheck(NamedTuple):
-    self_sum: int
-    total: int
-    ratio: float
 
 
 class SourceLine(NamedTuple):
@@ -105,8 +93,6 @@ class Tally:
 class Profile:
     events: list[str] = field(default_factory=list)
     event_long: dict[str, str] = field(default_factory=dict)
-    derived: list[DerivedEvent] = field(default_factory=list)
-    descriptions: list[str] = field(default_factory=list)
     positions: list[str] = field(default_factory=lambda: ["line"])
     command: str = ""
     summary: list[int] = field(default_factory=list)
@@ -135,15 +121,12 @@ class Profile:
         return total
 
     def resolved_derived_events(self) -> list[ResolvedDerivedEvent]:
-        resolved: list[ResolvedDerivedEvent] = []
-        for derived_event in self.derived:
-            if all(term.event_name in self.events for term in derived_event.terms):
-                resolved.append(ResolvedDerivedEvent(
-                    derived_event.name,
-                    tuple(ResolvedTerm(term.coefficient, self.events.index(term.event_name))
-                          for term in derived_event.terms),
-                    derived_event.long))
-        return resolved
+        return [ResolvedDerivedEvent(derived_event.name,
+                                     tuple(ResolvedTerm(term.coefficient, self.events.index(term.event_name))
+                                           for term in derived_event.terms),
+                                     derived_event.long)
+                for derived_event in DERIVED_DEFAULTS
+                if all(term.event_name in self.events for term in derived_event.terms)]
 
     def value(self, costs: Costs, name: str) -> int:
         if name in self.events:
@@ -193,61 +176,38 @@ def tally_accumulate(table: dict[Key, Tally], key: Key, count: int, costs: Costs
         costs_add(current.costs, costs)
 
 
-def profile_load(paths: Sequence[str]) -> Profile:
-    profiles: list[Profile] = []
-    for path in paths:
-        with open(path, encoding="utf-8", errors="replace") as handle:
-            profiles.append(profile_parse(handle.read()))
-    return profile_merge(profiles)
+def path_norm(path: str) -> PathInfo:
+    if path == "???":
+        return PathInfo("(unknown)", None, "external")
+    root = REPO_ROOT + "/"
+    if os.path.isabs(path):
+        path = posixpath.normpath(path)
+    if path.startswith(root):
+        relative = path[len(root):]
+        local = os.path.join(REPO_ROOT, relative)
+        return PathInfo(relative, local if os.path.isfile(local) else None, "repo")
+    if os.path.isabs(path):
+        if os.path.isfile(path):
+            return PathInfo(path.lstrip("/"), path, "system")
+        return PathInfo(path.lstrip("/"), None, "external")
+    candidate = os.path.join(REPO_ROOT, path)
+    if os.path.isfile(candidate):
+        return PathInfo(posixpath.normpath(path), candidate, "repo")
+    return PathInfo(posixpath.normpath(path), None, "external")
 
 
-def profile_merge(profiles: Sequence[Profile]) -> Profile:
-    if not profiles:
-        raise ValueError("no profiles to merge")
-    if len(profiles) == 1:
-        return profiles[0]
-    first = profiles[0]
-    for other in profiles[1:]:
-        if other.events != first.events:
-            raise ValueError(f"cannot merge profiles with different events: {first.events} vs {other.events}")
-    merged = Profile(events=list(first.events), event_long=dict(first.event_long), derived=list(first.derived),
-                     descriptions=list(first.descriptions), positions=list(first.positions))
-    commands = [other.command.split() for other in profiles]
-    if all(command and command[0] == commands[0][0] for command in commands):
-        merged.command = commands[0][0] + " " + ", ".join(" ".join(command[1:]) for command in commands)
-    else:
-        merged.command = " + ".join(other.command for other in profiles)
-    if all(other.summary for other in profiles):
-        merged.summary = [sum(other.summary[index] if index < len(other.summary) else 0 for other in profiles)
-                          for index in range(max(len(other.summary) for other in profiles))]
-    for other in profiles:
-        for key, costs in other.line_self.items():
-            costs_accumulate(merged.line_self, key, costs)
-        for key, costs in other.line_calls.items():
-            costs_accumulate(merged.line_calls, key, costs)
-        for key, count in other.line_call_count.items():
-            merged.line_call_count[key] += count
-        for key, function in other.line_function.items():
-            merged.line_function.setdefault(key, function)
-        for function, home in other.function_home.items():
-            merged.function_home.setdefault(function, home)
-        for function, costs in other.function_self.items():
-            costs_accumulate(merged.function_self, function, costs)
-        for function, lines in other.function_lines.items():
-            for key, costs in lines.items():
-                costs_accumulate(merged.function_lines[function], key, costs)
-        for function, costs in other.function_calls.items():
-            costs_accumulate(merged.function_calls, function, costs)
-        for function, entry in other.function_entry.items():
-            merged.function_entry.setdefault(function, entry)
-        for site, tally in other.callees.items():
-            tally_accumulate(merged.callees, site, tally.count, tally.costs)
-        for callee, callers in other.callers.items():
-            for caller, tally in callers.items():
-                tally_accumulate(merged.callers[callee], caller, tally.count, tally.costs)
-        for file, ob in other.file_ob.items():
-            merged.file_ob.setdefault(file, ob)
-    return merged
+def profile_load(path: str) -> Profile:
+    with open(path, encoding="utf-8", errors="replace") as handle:
+        profile = profile_parse(handle.read())
+    if not profile.events:
+        sys.exit(f"error: no 'events:' line -- not a callgrind file? ({path})")
+    self_sum = sum(costs[0] for costs in profile.line_self.values() if costs)
+    total = profile.summary[0] if profile.summary else self_sum
+    ratio = self_sum / total if total else float("nan")
+    print(f"ratio (must be 1.0000): {ratio:.4f}  {os.path.basename(path)}", file=sys.stderr)
+    if total and abs(ratio - 1.0) > 1e-6:
+        sys.exit(f"error: per-line self cost does not add up to callgrind's summary ({path})")
+    return profile
 
 
 def profile_parse(text: str) -> Profile:
@@ -329,9 +289,7 @@ def profile_parse(text: str) -> Profile:
         colon_index = raw_line.find(":")
         if equals_index != -1 and (colon_index == -1 or equals_index < colon_index):
             key, val = raw_line[:equals_index], raw_line[equals_index + 1:]
-            if key == "fl":
-                cur_file = name_uncompress("fl", val)
-            elif key in ("fi", "fe"):
+            if key in ("fl", "fi", "fe"):
                 cur_file = name_uncompress("fl", val)
             elif key == "fn":
                 cur_function = name_uncompress("fn", val)
@@ -350,8 +308,6 @@ def profile_parse(text: str) -> Profile:
                 target_line = position_decode(parts[1 + line_position], line_position) \
                     if len(parts) > 1 + line_position else 0
                 pending_call = _PendingCall(int(parts[0]), target_line)
-            elif key in ("jfi", "jfn"):
-                name_uncompress("fl" if key == "jfi" else "fn", val)
             continue
         if colon_index == -1:
             continue
@@ -359,12 +315,6 @@ def profile_parse(text: str) -> Profile:
         if key == "events":
             profile.events = val.split()
             event_count = len(profile.events)
-        elif key == "event":
-            header = _event_header_parse(val)
-            if header.long:
-                profile.event_long[header.name] = header.long
-            if header.terms is not None:
-                profile.derived.append(DerivedEvent(header.name, header.terms, header.long))
         elif key == "positions":
             profile.positions = val.split()
             position_count = len(profile.positions)
@@ -372,22 +322,15 @@ def profile_parse(text: str) -> Profile:
             previous = [0] * position_count
         elif key == "cmd":
             profile.command = val
-        elif key == "desc":
-            profile.descriptions.append(val)
         elif key in ("summary", "totals"):
             values = [int(v) for v in val.split()]
             if len(values) >= len(profile.summary):
                 profile.summary = values
 
     for name in profile.events:
-        profile.event_long.setdefault(name, EVENT_LONG.get(name, ""))
-    defined = {derived_event.name for derived_event in profile.derived}
-    for derived_event in DERIVED_DEFAULTS:
-        if derived_event.name not in defined and all(term.event_name in profile.events
-                                                       for term in derived_event.terms):
-            profile.derived.append(derived_event)
-    for derived_event in profile.derived:
-        profile.event_long.setdefault(derived_event.name, derived_event.long)
+        profile.event_long[name] = EVENT_LONG.get(name, "")
+    for derived_event in profile.resolved_derived_events():
+        profile.event_long[derived_event.name] = derived_event.long
     for function, lines in profile.function_lines.items():
         home = profile.function_home.get(function)
         if function in profile.function_entry or home is None:
@@ -396,25 +339,3 @@ def profile_parse(text: str) -> Profile:
         if line:
             profile.function_entry[function] = SourceLine(home, line)
     return profile
-
-
-def profile_self_check(profile: Profile) -> SelfCheck:
-    self_sum = sum(costs[0] for costs in profile.line_self.values() if costs)
-    total = profile.summary[0] if profile.summary else self_sum
-    ratio = self_sum / total if total else float("nan")
-    return SelfCheck(self_sum, total, ratio)
-
-
-def _event_header_parse(val: str) -> EventHeader:
-    head, _, long = val.partition(":")
-    name, has_expr, expr = head.partition("=")
-    if not has_expr:
-        return EventHeader(name.strip(), None, long.strip())
-    terms: list[Term] = []
-    for term in expr.split("+"):
-        parts = term.replace("*", " ").split()
-        if len(parts) == 1:
-            terms.append(Term(1, parts[0]))
-        elif len(parts) == 2:
-            terms.append(Term(int(parts[0], 0), parts[1]))
-    return EventHeader(name.strip(), tuple(terms), long.strip())

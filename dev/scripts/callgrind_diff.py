@@ -11,52 +11,36 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import callgrind
 from callgrind import Costs
 
-BASELINE_TOTALS = "Baseline totals:"
-
 
 class DiffArgs(NamedTuple):
-    baseline: list[str]
-    current: list[str]
+    baseline: str
+    modified: str
     output: str
-    repo_root: str
 
 
-def costs_sub(current: Costs, baseline: Costs) -> Costs:
-    return [(current[index] if index < len(current) else 0) - (baseline[index] if index < len(baseline) else 0)
-            for index in range(max(len(current), len(baseline)))]
+def costs_sub(modified: Costs, baseline: Costs) -> Costs:
+    return [(modified[index] if index < len(modified) else 0) - (baseline[index] if index < len(baseline) else 0)
+            for index in range(max(len(modified), len(baseline)))]
 
 
-def profile_baseline_total(profile: callgrind.Profile, event: str) -> int:
-    for description in profile.descriptions:
-        if not description.startswith(BASELINE_TOTALS):
-            continue
-        fields = description[len(BASELINE_TOTALS):].split()
-        totals = {name: int(value) for name, value in zip(fields[0::2], fields[1::2])}
-        try:
-            return profile.value([totals.get(name, 0) for name in profile.events], event)
-        except KeyError:
-            return 0
-    return 0
-
-
-def profile_diff(baseline: callgrind.Profile, current: callgrind.Profile) -> callgrind.Profile:
-    if baseline.events != current.events:
+def profile_diff(baseline: callgrind.Profile, modified: callgrind.Profile) -> callgrind.Profile:
+    if baseline.events != modified.events:
         sys.exit(f"error: the two profiles record different events: "
-                 f"{' '.join(baseline.events)} vs {' '.join(current.events)}")
-    diff = callgrind.Profile(events=list(current.events), event_long=dict(current.event_long),
-                             derived=list(current.derived), command=current.command)
-    for function in sorted(set(baseline.function_lines) | set(current.function_lines)):
+                 f"{' '.join(baseline.events)} vs {' '.join(modified.events)}")
+    diff = callgrind.Profile(events=list(modified.events), event_long=dict(modified.event_long),
+                             command=modified.command)
+    for function in sorted(set(baseline.function_lines) | set(modified.function_lines)):
         before = baseline.function_lines.get(function, {})
-        after = current.function_lines.get(function, {})
+        after = modified.function_lines.get(function, {})
         for key in sorted(set(before) | set(after)):
-            costs = costs_sub(after.get(key, current.zeros()), before.get(key, baseline.zeros()))
+            costs = costs_sub(after.get(key, modified.zeros()), before.get(key, baseline.zeros()))
             if not any(costs):
                 continue
             diff.function_lines[function][key] = costs
             diff.line_function.setdefault(key, function)
             callgrind.costs_accumulate(diff.line_self, key, costs)
             callgrind.costs_accumulate(diff.function_self, function, costs)
-    for source in (current, baseline):
+    for source in (modified, baseline):
         for function, home in source.function_home.items():
             diff.function_home.setdefault(function, home)
         for function, entry in source.function_entry.items():
@@ -77,19 +61,8 @@ def profile_magnitudes(profile: callgrind.Profile) -> Costs:
     return total
 
 
-def profile_read(paths: Sequence[str]) -> callgrind.Profile:
-    profile = callgrind.profile_load(paths)
-    if not profile.events:
-        sys.exit(f"error: no 'events:' line -- not a callgrind file? ({paths[0]})")
-    balance = callgrind.profile_self_check(profile)
-    print(f"ratio (must be 1.0000): {balance.ratio:.4f}  {os.path.basename(paths[0])}", file=sys.stderr)
-    if balance.total and abs(balance.ratio - 1.0) > 1e-6:
-        sys.exit("error: per-line self cost does not add up to callgrind's summary")
-    return profile
-
-
-def profile_write(profile: callgrind.Profile, path: str, descriptions: Sequence[str], repo_root: str) -> None:
-    root = os.path.abspath(repo_root).rstrip("/") + "/"
+def profile_write(profile: callgrind.Profile, path: str, descriptions: Sequence[str]) -> None:
+    root = callgrind.REPO_ROOT + "/"
 
     def strip(name: str) -> str:
         return name.replace(root, "")
@@ -131,29 +104,22 @@ def profile_write(profile: callgrind.Profile, path: str, descriptions: Sequence[
 
 
 def diff_build(args: DiffArgs) -> None:
-    baseline = profile_read(args.baseline)
-    current = profile_read(args.current)
-    diff = profile_diff(baseline, current)
-    descriptions = [f"Baseline: {', '.join(args.baseline)}", f"Current: {', '.join(args.current)}",
-                    BASELINE_TOTALS + " " + " ".join(f"{name} {value}" for name, value
-                                                     in zip(baseline.events, baseline.totals()))]
-    profile_write(diff, args.output, descriptions, args.repo_root)
+    baseline = callgrind.profile_load(args.baseline)
+    modified = callgrind.profile_load(args.modified)
+    diff = profile_diff(baseline, modified)
+    profile_write(diff, args.output, [f"Baseline: {args.baseline}", f"Modified: {args.modified}"])
     changed = sum(1 for costs in diff.function_self.values() if any(costs))
     print(f"wrote {args.output} ({os.path.getsize(args.output):,} bytes): "
           f"{len(diff.line_self):,} lines in {changed:,} functions changed", file=sys.stderr)
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--baseline", action="append", required=True, metavar="FILE",
-                        help="the 'before' callgrind file (repeatable; several are merged first)")
-    parser.add_argument("--current", action="append", required=True, metavar="FILE",
-                        help="the 'after' callgrind file (repeatable; several are merged first)")
+    parser = argparse.ArgumentParser()
+    parser.add_argument("baseline", help="the 'before' callgrind file")
+    parser.add_argument("modified", help="the 'after' callgrind file")
     parser.add_argument("-o", "--output", required=True, help="the callgrind-format delta file to write")
-    parser.add_argument("--repo-root", default=".", help="repository root stripped from the written paths")
     namespace = parser.parse_args()
-    diff_build(DiffArgs(baseline=namespace.baseline, current=namespace.current,
-                        output=namespace.output, repo_root=namespace.repo_root))
+    diff_build(DiffArgs(baseline=namespace.baseline, modified=namespace.modified, output=namespace.output))
 
 
 if __name__ == "__main__":

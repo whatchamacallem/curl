@@ -7,72 +7,48 @@ import re
 import sys
 from typing import NamedTuple
 
-MIN_FLAME_JSON_BYTES = 200
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import callgrind
+
+MIN_FLAME_JS_BYTES = 200
 MIN_HEATMAP_BYTES = 5000
 MIN_INDEX_BYTES = 2000
 MIN_PAGE_BYTES = 500
-
-
-class SubPage(NamedTuple):
-    key: str
-    href: str
+MIN_RAW_BYTES = 100
 
 
 class Layout(NamedTuple):
-    manifest: str
-    subpages: tuple[SubPage, ...]
+    subpages: tuple[str, ...]
     heading: str
-    needs_all: bool
 
 
 class ValidateArgs(NamedTuple):
     out_dir: str
-    test: list[str] | None
+    diff: bool
 
 
-SUBPAGES: tuple[SubPage, ...] = (SubPage("flame-graph", "flame-graph/index.html"),
-                                 SubPage("heat-map", "heat-map/index.html"),
-                                 SubPage("perf-tool", "perf-tool/index.html"))
-
-LAYOUT_FULL = Layout("curl/perf2html.sh v1", SUBPAGES, r"<h2>top \d+ functions by self</h2>", True)
-LAYOUT_DIFF = Layout("curl/perf2html_diff.sh v1", (SubPage("heat-map", "heat-map/index.html"),),
-                     r"<h2>top \d+ functions by change in self</h2>", False)
+LAYOUT_FULL = Layout(("flame-graph", "heat-map", "perf-tool"), r"<h2>top \d+ functions by self</h2>")
+LAYOUT_DIFF = Layout(("heat-map",), r"<h2>top \d+ functions by change in self</h2>")
 
 errors: list[str] = []
 
 
-def check_exists(path: str, label: str) -> bool:
-    if not os.path.isfile(path):
-        fail(f"missing {label}: {path}")
-        return False
-    return True
-
-
-def check_flame_graph(test_dir: str) -> None:
-    flame_dir = os.path.join(test_dir, "flame-graph")
-    if not os.path.isdir(flame_dir):
-        fail(f"missing flame-graph/ dir: {flame_dir}")
-        return
-    index = os.path.join(flame_dir, "index.html")
-    if check_exists(index, "flame-graph/index.html"):
-        check_min_size(index, MIN_PAGE_BYTES, "flame-graph/index.html")
-    script = check_min_size(os.path.join(flame_dir, "profile.js"), MIN_FLAME_JSON_BYTES, "flame-graph/profile.js")
+def check_flame_graph(out_dir: str) -> None:
+    flame_dir = os.path.join(out_dir, "flame-graph")
+    check_html_page(os.path.join(flame_dir, "index.html"), "flame-graph/index.html")
+    script = check_min_size(os.path.join(flame_dir, "profile.js"), MIN_FLAME_JS_BYTES, "flame-graph/profile.js")
     if script and "loadFileFromBase64" not in script:
         fail(f"flame-graph/profile.js does not call loadFileFromBase64: {flame_dir}/profile.js")
 
 
-def check_heat_map(test_dir: str, test_name: str) -> None:
-    path = os.path.join(test_dir, "heat-map", "index.html")
-    text = check_html_page(path, "heat-map/index.html", min_bytes=MIN_HEATMAP_BYTES,
-                           want_title=f"{test_name} / heat map")
+def check_heat_map(out_dir: str, test_name: str) -> None:
+    path = os.path.join(out_dir, "heat-map", "index.html")
+    text = check_html_page(path, "heat-map/index.html", MIN_HEATMAP_BYTES, f"{test_name} / heat map")
     if text and "heatStyle" not in text:
         fail(f"heat-map/index.html is missing its runtime script (no heatStyle): {path}")
 
 
-def check_html_page(path: str, label: str, min_bytes: int = MIN_PAGE_BYTES,
-                    want_title: str | None = None) -> str:
-    if not check_exists(path, label):
-        return ""
+def check_html_page(path: str, label: str, min_bytes: int = MIN_PAGE_BYTES, want_title: str | None = None) -> str:
     text = check_min_size(path, min_bytes, label)
     if not text:
         return text
@@ -85,195 +61,101 @@ def check_html_page(path: str, label: str, min_bytes: int = MIN_PAGE_BYTES,
             fail(f"{label} title is {got!r}, expected {want_title!r}: {path}")
     if "</html>" not in text:
         fail(f"{label} is not a closed HTML document (no </html>): {path}")
-    for marker in ("{name}", "{data}", "Traceback (most recent call last)", "NaN%"):
+    for marker in ("__DATA__", "__NAME__", "Traceback (most recent call last)", "NaN%"):
         if marker in text:
             fail(f"{label} contains a leftover template/error marker {marker!r}: {path}")
     return text
 
 
+def check_index(out_dir: str, test_name: str, layout: Layout) -> None:
+    path = os.path.join(out_dir, "index.html")
+    text = check_html_page(path, "index.html", MIN_INDEX_BYTES, test_name)
+    if not text:
+        return
+    if not re.search(layout.heading, text):
+        fail(f"index.html has no 'top N functions' section matching {layout.heading!r}: {path}")
+    for key in layout.subpages:
+        if f'href="{key}/index.html"' not in text:
+            fail(f"index.html is missing its {key} strip link: {path}")
+    if "raw data" not in text:
+        fail(f"index.html has no 'raw data' section: {path}")
+
+
 def check_min_size(path: str, min_bytes: int, label: str) -> str:
     try:
         size = os.path.getsize(path)
+        with open(path, encoding="utf-8", errors="replace") as handle:
+            text = handle.read()
     except OSError as error:
         fail(f"{label}: {path}: {error}")
         return ""
     if size < min_bytes:
         fail(f"{label} suspiciously small ({size} bytes < {min_bytes}): {path}")
-    try:
-        with open(path, encoding="utf-8", errors="replace") as handle:
-            return handle.read()
-    except OSError as error:
-        fail(f"{label}: {path}: {error}")
-        return ""
+    return text
 
 
-def check_no_leaked_paths(path: str, repo_root: str, label: str) -> None:
-    text = check_min_size(path, 0, label)
-    if repo_root and repo_root in text:
-        fail(f"{label} still contains the absolute repo root {repo_root!r}: {path}")
-
-
-def check_overview(out_dir: str, only_tests: list[str] | None, layout: Layout) -> list[str]:
-    path = os.path.join(out_dir, "index.html")
-    text = check_html_page(path, "index.html (overview)", min_bytes=MIN_INDEX_BYTES, want_title="overview")
-    if not text:
-        return []
-    names = sorted(set(re.findall(r'href="([a-z0-9_]+)/index\.html"', text)))
-    if layout.needs_all and "all" not in names:
-        fail(f"overview index.html has no link to 'all/': {path}")
-    if not names:
-        fail(f"overview index.html links to no test reports at all: {path}")
-    if "<h2>test suites</h2>" not in text:
-        fail(f"overview index.html has no 'test suites' table: {path}")
-    return [name for name in names if only_tests is None or name in only_tests or name == "all"]
-
-
-def check_perf_tool(test_dir: str, test_name: str, *, is_all: bool) -> None:
-    out_txt = os.path.join(test_dir, "perf-tool", "output.txt")
+def check_perf_tool(out_dir: str, test_name: str) -> None:
+    out_txt = os.path.join(out_dir, "perf-tool", "output.txt")
     text = check_min_size(out_txt, 20, "perf-tool/output.txt")
-    if not text:
-        return
-    if is_all:
-        if not re.search(r"^Time:\s+\d+\s+usecs\s*$", text, re.M):
-            fail(f"perf-tool/output.txt for 'all' has no summed 'Time:' line: {out_txt}")
-    else:
+    if text:
         if not re.search(r"^Time(/\w+)?:\s+\d", text, re.M):
             fail(f"perf-tool/output.txt has no recognizable timing line: {out_txt}")
         if test_name == "urlparser" and "Errors:" not in text:
             fail(f"perf-tool/output.txt has no 'Errors:' line (urlparser is expected to print one): {out_txt}")
-    check_html_page(os.path.join(test_dir, "perf-tool", "index.html"), "perf-tool/index.html",
+    check_html_page(os.path.join(out_dir, "perf-tool", "index.html"), "perf-tool/index.html",
                     want_title=f"{test_name} / native timing")
 
 
-def check_raw_dir(test_dir: str, test_name: str) -> None:
-    raw_dir = os.path.join(test_dir, "raw")
-    if not os.path.isdir(raw_dir):
-        fail(f"missing raw/ dir for test {test_name!r}: {raw_dir}")
-        return
-    files = [name for name in os.listdir(raw_dir) if os.path.isfile(os.path.join(raw_dir, name))]
+def check_raw_dir(out_dir: str) -> None:
+    raw_dir = os.path.join(out_dir, "raw")
+    files = sorted(os.listdir(raw_dir)) if os.path.isdir(raw_dir) else []
     if not files:
-        fail(f"raw/ dir has no callgrind file(s) for test {test_name!r}: {raw_dir}")
+        fail(f"raw/ has no callgrind file: {raw_dir}")
         return
     for name in files:
         path = os.path.join(raw_dir, name)
-        if os.path.getsize(path) < MIN_PAGE_BYTES:
-            fail(f"raw data file suspiciously small: {path}")
-        with open(path, "rb") as handle:
-            head = handle.read(4096)
-        if b"events:" not in head:
+        text = check_min_size(path, MIN_RAW_BYTES, f"raw/{name}")
+        if "events:" not in text[:4096]:
             fail(f"raw data file does not look like a callgrind trace (no 'events:' near the top): {path}")
-
-
-def check_manifest(out_dir: str) -> Layout:
-    path = os.path.join(out_dir, "MANIFEST.txt")
-    if not os.path.isfile(path):
-        fail(f"missing MANIFEST.txt: {path}")
-        return LAYOUT_FULL
-    with open(path, encoding="utf-8", errors="replace") as handle:
-        text = handle.read()
-    for layout in (LAYOUT_FULL, LAYOUT_DIFF):
-        if text == layout.manifest + "\n":
-            return layout
-    fail(f"MANIFEST.txt is neither {LAYOUT_FULL.manifest!r} nor {LAYOUT_DIFF.manifest!r} "
-         f"(one line, newline-terminated): {path}")
-    return LAYOUT_FULL
-
-
-def check_test_index(test_dir: str, test_name: str, layout: Layout) -> None:
-    path = os.path.join(test_dir, "index.html")
-    text = check_html_page(path, "index.html", min_bytes=MIN_INDEX_BYTES, want_title=test_name)
-    if not text:
-        return
-    if not re.search(layout.heading, text):
-        fail(f"index.html has no 'top N functions' section matching {layout.heading!r}: {path}")
-    for sub in SUBPAGES:
-        linked = f'href="{sub.href}"' in text
-        if sub in layout.subpages and not linked:
-            fail(f"index.html is missing its {sub.key} strip link ({sub.href}): {path}")
-        if sub not in layout.subpages and linked:
-            fail(f"index.html must not link to {sub.key} ({sub.href}) in this layout: {path}")
-    if "raw data" not in text:
-        fail(f"index.html has no 'raw data' section: {path}")
-
-
-def check_test_report(test_dir: str, test_name: str, *, is_all: bool, layout: Layout) -> None:
-    if not os.path.isdir(test_dir):
-        fail(f"missing report directory for test {test_name!r}: {test_dir}")
-        return
-    check_test_index(test_dir, test_name, layout)
-    check_heat_map(test_dir, test_name)
-    check_raw_dir(test_dir, test_name)
-    keys = {sub.key for sub in layout.subpages}
-    for sub in SUBPAGES:
-        if sub.key not in keys and os.path.isdir(os.path.join(test_dir, sub.key)):
-            fail(f"this layout must not have a {sub.key}/ directory: {os.path.join(test_dir, sub.key)}")
-    if "flame-graph" in keys:
-        check_flame_graph(test_dir)
-    if "perf-tool" in keys:
-        check_perf_tool(test_dir, test_name, is_all=is_all)
+        if callgrind.REPO_ROOT in text:
+            fail(f"raw/{name} still contains the absolute repo root {callgrind.REPO_ROOT!r}: {path}")
 
 
 def fail(msg: str) -> None:
     errors.append(msg)
 
 
-def repo_root_guess(out_dir: str) -> str:
-    directory = os.path.abspath(out_dir)
-    for _ in range(6):
-        if os.path.isdir(os.path.join(directory, ".git")):
-            return directory
-        directory = os.path.dirname(directory)
-    return ""
-
-
 def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("out_dir", help="report directory (dev/perf2html.sh's OUTDIR)")
-    parser.add_argument("--test", action="append", default=None, metavar="NAME",
-                        help="check only this test under an overview OUTDIR (repeatable; default: every linked test)")
+    parser = argparse.ArgumentParser()
+    parser.add_argument("out_dir", help="a report directory")
+    parser.add_argument("--diff", action="store_true", help="a perf2html_diff.sh report: heat map only")
     namespace = parser.parse_args()
-    args = ValidateArgs(out_dir=namespace.out_dir, test=namespace.test)
+    args = ValidateArgs(out_dir=namespace.out_dir, diff=namespace.diff)
 
     out_dir = os.path.abspath(args.out_dir)
-    if not os.path.isdir(out_dir):
-        print(f"error: no such directory: {out_dir}", file=sys.stderr)
-        return 1
-    repo_root = repo_root_guess(out_dir)
-    layout = check_manifest(out_dir)
-
     index_path = os.path.join(out_dir, "index.html")
     if not os.path.isfile(index_path):
         print(f"error: no index.html in {out_dir} -- not a report directory?", file=sys.stderr)
         return 1
     with open(index_path, encoding="utf-8", errors="replace") as handle:
-        head = handle.read()
-    is_overview = "test suites" in head or bool(re.search(r'href="[a-z0-9_]+/index\.html"', head))
+        match = re.search(r"<title>(.*?)</title>", handle.read())
+    name = match.group(1) if match else os.path.basename(out_dir)
+    layout = LAYOUT_DIFF if args.diff else LAYOUT_FULL
 
-    checked = 0
-    if is_overview:
-        names = check_overview(out_dir, args.test, layout)
-        for name in names:
-            check_test_report(os.path.join(out_dir, name), name, is_all=(name == "all"), layout=layout)
-            checked += 1
-    else:
-        match = re.search(r"<title>(.*?)</title>", head)
-        name = match.group(1) if match else os.path.basename(out_dir)
-        check_test_report(out_dir, name, is_all=(name == "all"), layout=layout)
-        checked = 1
-
-    if repo_root:
-        for dirpath, _, filenames in os.walk(out_dir):
-            if os.path.basename(dirpath) != "raw":
-                continue
-            for filename in filenames:
-                check_no_leaked_paths(os.path.join(dirpath, filename), repo_root, f"raw/{filename}")
+    check_index(out_dir, name, layout)
+    check_heat_map(out_dir, name)
+    check_raw_dir(out_dir)
+    if "flame-graph" in layout.subpages:
+        check_flame_graph(out_dir)
+    if "perf-tool" in layout.subpages:
+        check_perf_tool(out_dir, name)
 
     if errors:
         print(f"validate_report: {len(errors)} problem(s) in {out_dir}:", file=sys.stderr)
         for error in errors:
             print(f"  - {error}", file=sys.stderr)
         return 1
-    print(f"validate_report: ok ({checked} test report(s) checked in {out_dir})", file=sys.stderr)
+    print(f"validate_report: ok ({out_dir})", file=sys.stderr)
     return 0
 
 

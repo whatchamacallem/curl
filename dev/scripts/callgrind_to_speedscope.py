@@ -14,6 +14,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import callgrind
 from callgrind import Costs
 
+EVENTS = ("Ir", "D1mr+D1mw", "DLmr+DLmw", "I1mr", "Bcm", "Bim")
 MAX_STACK_DEPTH = 200
 
 
@@ -130,11 +131,8 @@ class SampledProfile(TypedDict):
 
 
 class SpeedscopeArgs(NamedTuple):
-    callgrind_file: list[str]
+    callgrind_file: str
     output: str
-    event: list[str] | None
-    name: str | None
-    repo_root: str
 
 
 SpeedscopeDoc = TypedDict("SpeedscopeDoc", {
@@ -146,26 +144,26 @@ class _WalkFrame(NamedTuple):
     neighbors: Iterator[int]
 
 
-def document_build(profile: callgrind.Profile, exprs: Sequence[str], base_name: str, repo_root: str = ".") -> SpeedscopeDoc:
-    graph = graph_from_profile(profile, repo_root)
+def document_build(profile: callgrind.Profile, name: str) -> SpeedscopeDoc:
+    graph = graph_from_profile(profile)
     if graph.cycles:
         print(f"collapsed {len(graph.cycles)} cycle(s) into one frame each: {'; '.join(graph.cycles)}", file=sys.stderr)
     frames: list[Frame] = []
-    for name, file in zip(graph.names, graph.files):
-        frame: Frame = {"name": name}
-        if file and file != "???":
+    for frame_name, file in zip(graph.names, graph.files):
+        frame: Frame = {"name": frame_name}
+        if file:
             frame["file"] = file
         frames.append(frame)
     profiles: list[SampledProfile] = []
-    for expr in exprs:
+    for expr in EVENTS:
         indexes = expr_resolve(profile, expr)
         if indexes is None:
-            print(f"skipping --event {expr!r}: not all of its events are in this file "
+            print(f"skipping {expr!r}: not all of its events are in this file "
                   f"(events: {' '.join(profile.events)})", file=sys.stderr)
             continue
         raw_total = sum(sum(costs[i] for i in indexes if i < len(costs)) for costs in graph.self_cost.values())
         if raw_total <= 0:
-            print(f"skipping --event {expr!r}: total is zero", file=sys.stderr)
+            print(f"skipping {expr!r}: total is zero", file=sys.stderr)
             continue
         label = expr_label(profile, expr)
         built = graph_build_profile(graph, indexes, label)
@@ -173,9 +171,9 @@ def document_build(profile: callgrind.Profile, exprs: Sequence[str], base_name: 
               f"emitted {built.total:,.0f}, ratio {built.total / raw_total:.4f} (must be ~1.0)", file=sys.stderr)
         profiles.append(built.profile)
     if not profiles:
-        sys.exit("error: none of the requested --event expressions is usable")
+        sys.exit("error: none of the event expressions is usable")
     return {"$schema": "https://www.speedscope.app/file-format-schema.json",
-            "shared": {"frames": frames}, "profiles": profiles, "name": base_name,
+            "shared": {"frames": frames}, "profiles": profiles, "name": name,
             "exporter": "callgrind_to_speedscope.py (curl dev/scripts)"}
 
 
@@ -201,6 +199,10 @@ def expr_resolve(profile: callgrind.Profile, expr: str) -> list[int] | None:
             return None
         indexes.append(profile.events.index(name))
     return indexes
+
+
+def frame_file(home: str) -> str:
+    return callgrind.path_norm(home).display if home and home != "???" else ""
 
 
 def graph_build_profile(graph: Graph, indexes: Sequence[int], name: str) -> BuiltProfile:
@@ -249,18 +251,13 @@ def graph_build_profile(graph: Graph, indexes: Sequence[int], name: str) -> Buil
                          "samples": samples, "weights": weights}, total)
 
 
-def graph_from_profile(profile: callgrind.Profile, repo_root: str = ".") -> Graph:
-    names = set(profile.function_self) | set(profile.function_calls) | set(profile.callers) \
-        | set(profile.function_home)
-    for sites in profile.callers.values():
-        for caller in sites:
-            names.add(caller.function)
-    sorted_names = sorted(names)
+def graph_from_profile(profile: callgrind.Profile) -> Graph:
+    sorted_names = sorted(profile.function_home)
     index = {name: i for i, name in enumerate(sorted_names)}
     graph = Graph(event_count=len(profile.events), names=sorted_names,
-                 files=[path_display(repo_root, profile.function_home.get(name, "")) for name in sorted_names],
-                 index=index, self_cost={index[name]: list(costs) for name, costs in profile.function_self.items()},
-                 edges=defaultdict(dict))
+                  files=[frame_file(profile.function_home[name]) for name in sorted_names],
+                  index=index, self_cost={index[name]: list(costs) for name, costs in profile.function_self.items()},
+                  edges=defaultdict(dict))
     for callee, sites in profile.callers.items():
         for caller, tally in sites.items():
             if caller.function != callee:
@@ -269,38 +266,15 @@ def graph_from_profile(profile: callgrind.Profile, repo_root: str = ".") -> Grap
     return graph
 
 
-def path_display(repo_root: str, path: str) -> str:
-    if not path or path == "???":
-        return path
-    root = os.path.abspath(repo_root).rstrip("/") + "/"
-    normalized = os.path.normpath(path) if os.path.isabs(path) else path
-    return normalized[len(root):] if normalized.startswith(root) else normalized
-
-
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("callgrind_file", nargs="+",
-                        help="callgrind output file(s); several are merged into one profile")
+    parser = argparse.ArgumentParser()
+    parser.add_argument("callgrind_file")
     parser.add_argument("-o", "--output", required=True, help="output .speedscope.json path")
-    parser.add_argument("--event", action="append", default=None, metavar="EXPR",
-                        help="event to weight by; repeatable, each becomes one profile; 'A+B' sums "
-                             "events, e.g. D1mr+D1mw (default: Ir)")
-    parser.add_argument("--name", default=None, help="document name (default: input file basename)")
-    parser.add_argument("--repo-root", default=".", help="repository root the profile's paths are relative to")
     namespace = parser.parse_args()
-    args = SpeedscopeArgs(callgrind_file=namespace.callgrind_file, output=namespace.output, event=namespace.event,
-                          name=namespace.name, repo_root=namespace.repo_root)
+    args = SpeedscopeArgs(callgrind_file=namespace.callgrind_file, output=namespace.output)
 
     profile = callgrind.profile_load(args.callgrind_file)
-    if not profile.events:
-        sys.exit("error: no 'events:' line -- not a callgrind file?")
-    check = callgrind.profile_self_check(profile)
-    print(f"events: {' '.join(profile.events)}; ratio (must be 1.0000): {check.ratio:.4f}", file=sys.stderr)
-    if check.total and abs(check.ratio - 1.0) > 1e-6:
-        sys.exit("error: per-line self cost does not add up to callgrind's summary")
-
-    doc = document_build(profile, args.event or ["Ir"], args.name or os.path.basename(args.callgrind_file[0]),
-                         args.repo_root)
+    doc = document_build(profile, os.path.basename(args.callgrind_file))
     with open(args.output, "w", encoding="utf-8") as handle:
         json.dump(doc, handle)
     print(f"wrote {args.output} ({len(doc['shared']['frames'])} frames)", file=sys.stderr)

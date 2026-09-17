@@ -11,6 +11,8 @@ FONT = 'Monaco, Menlo, "DejaVu Sans Mono", "Liberation Mono", Consolas, monospac
 HEAT: list[str] = ["#3E4A89", "#31688E", "#26828E", "#1F9E89", "#35B779", "#6DCD59",
                    "#B4DE2C", "#FDE725", "#FFC83B", "#FFA22C", "#FF7F21", "#F06142"]
 
+HEAT_ALPHA_HIGH = 0.92
+HEAT_ALPHA_LOW = 0.18
 HEAT_MINIMUM_SHARE = 0.001
 
 PADDING_CHARS = 3
@@ -19,14 +21,9 @@ THEME: list[str] = ["#1AB6FF", "#0097E6", "#F5F6FA", "#DCDDE1", "#FBC531", "#E1B
                     "#7F8FA6", "#718093", "#273C75", "#192A56", "#487EB0", "#40739E",
                     "#353B48", "#2F3640"]
 
-TITLE_COLUMNS = len("simpleformat / native timing")
+TITLE_COLUMNS = len("urlparser diff / heat map")
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
-
-
-class AlphaRange(NamedTuple):
-    low: float
-    high: float
 
 
 class Cell(NamedTuple):
@@ -46,7 +43,6 @@ class Column(NamedTuple):
     numeric: bool = False
     width: int | None = None
     clip: int | None = None
-    cls: str = ""
     grow: bool = False
 
 
@@ -125,7 +121,7 @@ def _cell(value: CellOrText) -> Cell:
     return value if isinstance(value, Cell) else Cell(text=value)
 
 
-def heat_style(heat: float, alpha: AlphaRange = AlphaRange(0.18, 0.92), signed: bool = False) -> str:
+def heat_style(heat: float, signed: bool = False) -> str:
     magnitude = abs(heat)
     if magnitude <= 0:
         return ""
@@ -136,7 +132,7 @@ def heat_style(heat: float, alpha: AlphaRange = AlphaRange(0.18, 0.92), signed: 
         position = heat * (len(stops) - 1)
     index = min(max(int(position), 0), len(stops) - 2)
     fraction = position - index
-    amount = alpha.low + (alpha.high - alpha.low) * magnitude
+    amount = HEAT_ALPHA_LOW + (HEAT_ALPHA_HIGH - HEAT_ALPHA_LOW) * magnitude
     background = _rgb(ROLE["bg"])
     mixed = Rgb(*(round(background[channel]
                         + (stops[index][channel] + (stops[index + 1][channel] - stops[index][channel]) * fraction
@@ -197,11 +193,11 @@ def num_time(seconds: float) -> str:
     return f"{sign}{magnitude / unit.seconds:.2f}{unit.suffix}"
 
 
-def page_document(title: str, body: str, extra_css: str = "", extra_js: str = "", body_class: str = "") -> str:
+def page_document(title: str, body: str, extra_js: str = "", body_class: str = "") -> str:
     body_attr = f' class="{body_class}"' if body_class else ""
     return ("<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n"
             "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n"
-            f"<title>{html_escape(title)}</title>\n<style>\n{theme_css()}{extra_css}</style>\n</head>\n"
+            f"<title>{html_escape(title)}</title>\n<style>\n{theme_css()}</style>\n</head>\n"
             f"<body{body_attr}>\n{body}\n"
             f"<script>\n{theme_js()}</script>\n"
             + (f"<script>\n{extra_js}</script>\n" if extra_js else "")
@@ -209,7 +205,7 @@ def page_document(title: str, body: str, extra_css: str = "", extra_js: str = ""
 
 
 def table_render(key: str, columns: Sequence[Column], rows: Sequence[Sequence[CellOrText]], fill: bool = False,
-                 header: bool = True, lines: bool = False) -> str:
+                 header: bool = True) -> str:
     cells = [[_cell(value) for value in row] for row in rows]
     for row in cells:
         if len(row) > len(columns):
@@ -229,7 +225,7 @@ def table_render(key: str, columns: Sequence[Column], rows: Sequence[Sequence[Ce
                 width = max(len(column.label), min(width, column.clip))
         widths.append(width + PADDING_CHARS)
     out = [f'<div class="tbl{" fill" if fill else ""}">']
-    table_classes = "cols" + (" fill" if fill else "") + (" lines" if lines else "")
+    table_classes = "cols" + (" fill" if fill else "")
     out.append(f'<div class="tbl-cols"><table class="{table_classes}" data-key="{html_escape(key)}"><colgroup>')
     for index, width in enumerate(widths):
         col_classes = " ".join(class_name for class_name in
@@ -248,8 +244,7 @@ def table_render(key: str, columns: Sequence[Column], rows: Sequence[Sequence[Ce
     for row in cells:
         out.append("<tr>")
         for column, width, cell in zip(columns, widths, row):
-            cell_classes = " ".join(class_name for class_name in
-                                    ("n" if column.numeric else "", column.cls, cell.cls) if class_name)
+            cell_classes = " ".join(class_name for class_name in ("n" if column.numeric else "", cell.cls) if class_name)
             title = cell.title or (cell.text if len(cell.text) + PADDING_CHARS > width else "")
             attrs = (f' class="{cell_classes}"' if cell_classes else "") \
                 + (f' style="{cell.style}"' if cell.style else "") \

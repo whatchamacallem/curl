@@ -39,7 +39,7 @@ bookmarked and reopened later.
 ## Diff Reports
 
 A report built by `perf2html_diff.sh` compares two earlier reports, and every
-number in it is a difference: the current run minus the baseline. `+4.3K` means
+number in it is a difference: the modified run minus the baseline. `+4.3K` means
 four thousand more than the baseline, `-1,000` a thousand fewer. A share like
 `+16%` is that function's part of everything that changed, not its part of the
 program.

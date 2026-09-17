@@ -2,22 +2,21 @@
 from __future__ import annotations
 
 import argparse
-from collections.abc import Sequence
 from dataclasses import dataclass, field
 import json
 import os
-import posixpath
 import subprocess
 import sys
-from typing import Literal, NamedTuple, TypedDict
+from typing import NamedTuple, TypedDict
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import callgrind
-from callgrind import Costs
+from callgrind import Costs, Group
 import callgrind_diff
 import theme
 
-Group = Literal["repo", "system", "external"]
+DEFAULT_EVENT = "CEst"
+TREE = ("lib", "include", "src", "tests/perf")
 
 
 class CallRow(NamedTuple):
@@ -49,13 +48,9 @@ class FunctionModel(TypedDict):
 
 
 class HeatArgs(NamedTuple):
-    callgrind_file: list[str]
+    callgrind_file: str
     output: str
-    event: str
-    repo_root: str
-    tree: list[str]
-    all_sources: bool
-    title: str | None
+    title: str
     diff: bool
 
 
@@ -80,12 +75,6 @@ class MetaModel(TypedDict):
     defaultEvent: str
     totals: Costs
     diff: bool
-
-
-class PathInfo(NamedTuple):
-    display: str
-    local: str | None
-    group: Group
 
 
 @dataclass
@@ -958,8 +947,7 @@ def heatmap_render(model: HeatModel, title: str) -> str:
             + body + "</body>\n</html>\n")
 
 
-def model_build(profile: callgrind.Profile, args: HeatArgs) -> HeatModel:
-    repo_root = os.path.abspath(args.repo_root)
+def model_build(profile: callgrind.Profile) -> HeatModel:
     event_count = len(profile.events)
 
     function_names = sorted(profile.function_home)
@@ -967,9 +955,9 @@ def model_build(profile: callgrind.Profile, args: HeatArgs) -> HeatModel:
 
     raw_files = sorted({key.file for key in profile.line_self} | {key.file for key in profile.line_calls}
                        | {entry.file for entry in profile.function_entry.values()})
-    info: dict[str, PathInfo] = {}
+    info: dict[str, callgrind.PathInfo] = {}
     for raw in raw_files:
-        path_info = path_norm(raw, repo_root)
+        path_info = callgrind.path_norm(raw)
         if path_info.group == "external":
             object_name = os.path.basename(profile.file_ob.get(raw, "")) or "(unknown object)"
             path_info = path_info._replace(display=f"{object_name}/{path_info.display}")
@@ -1022,17 +1010,8 @@ def model_build(profile: callgrind.Profile, args: HeatArgs) -> HeatModel:
             "callers": callers,
         })
 
-    cold: list[str] = []
-    for relative in repo_tracked_files(repo_root, args.tree):
-        if relative in files:
-            continue
-        if args.all_sources:
-            files[relative] = {"self": [], "calls": [], "source": source_read(os.path.join(repo_root, relative)),
-                               "lines": {}, "lineFunction": {}, "callees": {}, "group": "repo", "raw": relative}
-        else:
-            cold.append(relative)
-
-    default_event = args.event if args.event in profile.event_names() else (profile.events[0] if profile.events else "Ir")
+    cold = sorted(relative for relative in repo_tracked_files() if relative not in files)
+    default_event = DEFAULT_EVENT if DEFAULT_EVENT in profile.event_names() else profile.events[0]
     return {
         "meta": {
             "events": profile.events,
@@ -1045,36 +1024,14 @@ def model_build(profile: callgrind.Profile, args: HeatArgs) -> HeatModel:
         "theme": theme.theme_runtime(),
         "files": files,
         "functions": functions,
-        "cold": sorted(cold),
+        "cold": cold,
     }
 
 
-def path_norm(path: str, repo_root: str) -> PathInfo:
-    if path == "???":
-        return PathInfo("(unknown)", None, "external")
-    root = repo_root.rstrip("/") + "/"
-    if os.path.isabs(path):
-        path = posixpath.normpath(path)
-    if path.startswith(root):
-        relative = path[len(root):]
-        return PathInfo(relative, os.path.join(repo_root, relative), "repo")
-    if os.path.isabs(path):
-        if os.path.isfile(path):
-            return PathInfo(path.lstrip("/"), path, "system")
-        return PathInfo(path.lstrip("/"), None, "external")
-    candidate = os.path.join(repo_root, path)
-    if os.path.isfile(candidate):
-        return PathInfo(posixpath.normpath(path), candidate, "repo")
-    return PathInfo(posixpath.normpath(path), None, "external")
-
-
-def repo_tracked_files(repo_root: str, directories: Sequence[str]) -> list[str]:
-    if not directories:
-        return []
+def repo_tracked_files() -> list[str]:
     try:
-        output = subprocess.run(
-            ["git", "-C", repo_root, "ls-files", "--", *directories],
-            check=True, capture_output=True, text=True).stdout
+        output = subprocess.run(["git", "-C", callgrind.REPO_ROOT, "ls-files", "--", *TREE],
+                                check=True, capture_output=True, text=True).stdout
     except (OSError, subprocess.CalledProcessError):
         return []
     return [line for line in output.split("\n") if line.endswith((".c", ".h"))]
@@ -1090,49 +1047,23 @@ def source_read(local: str) -> str | None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("callgrind_file", nargs="+",
-                        help="callgrind output file(s); several are merged into one profile")
+    parser = argparse.ArgumentParser()
+    parser.add_argument("callgrind_file")
     parser.add_argument("-o", "--output", required=True, help="output .html path (directories are created)")
-    parser.add_argument("--event", default="CEst",
-                        help="event selected when the page opens (default: CEst, KCachegrind's cycle estimate)")
-    parser.add_argument("--repo-root", default=".", help="repository root the profile's paths are relative to")
-    parser.add_argument("--tree", nargs="*", default=["lib", "include", "src", "tests/perf"],
-                        help="directories whose tracked .c/.h files are listed in the tree even without samples")
-    parser.add_argument("--all-sources", action="store_true",
-                        help="embed the source of every tracked file in --tree, not just files with samples")
-    parser.add_argument("--title", default=None)
+    parser.add_argument("--title", required=True)
     parser.add_argument("--diff", action="store_true",
                         help="the callgrind file is a callgrind_diff.py delta: print signed numbers and take "
                              "shares against the summed magnitude of every change")
     namespace = parser.parse_args()
-    args = HeatArgs(callgrind_file=namespace.callgrind_file, output=namespace.output, event=namespace.event,
-                    repo_root=namespace.repo_root, tree=namespace.tree, all_sources=namespace.all_sources,
-                    title=namespace.title, diff=namespace.diff)
+    args = HeatArgs(callgrind_file=namespace.callgrind_file, output=namespace.output, title=namespace.title,
+                    diff=namespace.diff)
 
     profile = callgrind.profile_load(args.callgrind_file)
-    if not profile.events:
-        sys.exit("error: no 'events:' line -- not a callgrind file?")
-    source_name = os.path.basename(args.callgrind_file[0])
-    if len(args.callgrind_file) > 1:
-        source_name += f" + {len(args.callgrind_file) - 1} more"
-    title = args.title if args.title is not None else f"heat map: {profile.command or source_name}"
-
-    balance = callgrind.profile_self_check(profile)
-    print(f"events: {' '.join(profile.events)}", file=sys.stderr)
-    print(f"callgrind summary ({profile.events[0]}): {balance.total:,}", file=sys.stderr)
-    print(f"sum of self-cost lines:          {balance.self_sum:,}", file=sys.stderr)
-    print(f"ratio (must be 1.0000):          {balance.ratio:.4f}", file=sys.stderr)
-    if balance.total and abs(balance.ratio - 1.0) > 1e-6:
-        print("error: per-line self cost does not add up to callgrind's summary; refusing to write", file=sys.stderr)
-        sys.exit(2)
-
-    model = model_build(profile, args)
+    model = model_build(profile)
     if args.diff:
         diff_model(model, profile)
-    html = heatmap_render(model, title)
-    out_dir = os.path.dirname(os.path.abspath(args.output))
-    os.makedirs(out_dir, exist_ok=True)
+    html = heatmap_render(model, args.title)
+    os.makedirs(os.path.dirname(os.path.abspath(args.output)), exist_ok=True)
     with open(args.output, "w", encoding="utf-8") as handle:
         handle.write(html)
     embedded_count = sum(1 for entry in model["files"].values() if entry["source"] is not None)
