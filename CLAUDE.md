@@ -1,1 +1,1 @@
-dev/CLAUDE.md
+dev/DECLAUDE.md
