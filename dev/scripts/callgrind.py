@@ -116,6 +116,7 @@ class Profile:
     line_function: dict[SourceLine, str] = field(default_factory=dict)
     function_home: dict[str, str] = field(default_factory=dict)
     function_self: dict[str, Costs] = field(default_factory=dict)
+    function_lines: defaultdict[str, dict[SourceLine, Costs]] = field(default_factory=lambda: defaultdict(dict))
     function_calls: dict[str, Costs] = field(default_factory=dict)
     function_entry: dict[str, SourceLine] = field(default_factory=dict)
     callees: dict[CallSite, Tally] = field(default_factory=dict)
@@ -232,6 +233,9 @@ def profile_merge(profiles: Sequence[Profile]) -> Profile:
             merged.function_home.setdefault(function, home)
         for function, costs in other.function_self.items():
             costs_accumulate(merged.function_self, function, costs)
+        for function, lines in other.function_lines.items():
+            for key, costs in lines.items():
+                costs_accumulate(merged.function_lines[function], key, costs)
         for function, costs in other.function_calls.items():
             costs_accumulate(merged.function_calls, function, costs)
         for function, entry in other.function_entry.items():
@@ -317,6 +321,7 @@ def profile_parse(text: str) -> Profile:
                 costs_accumulate(profile.line_self, key, costs)
                 profile.line_function.setdefault(key, cur_function)
                 costs_accumulate(profile.function_self, cur_function, costs)
+                costs_accumulate(profile.function_lines[cur_function], key, costs)
                 profile.file_ob.setdefault(cur_file, cur_ob)
             continue
 
@@ -383,6 +388,13 @@ def profile_parse(text: str) -> Profile:
             profile.derived.append(derived_event)
     for derived_event in profile.derived:
         profile.event_long.setdefault(derived_event.name, derived_event.long)
+    for function, lines in profile.function_lines.items():
+        home = profile.function_home.get(function)
+        if function in profile.function_entry or home is None:
+            continue
+        line = next((key.line for key in lines if key.file == home and key.line), 0)
+        if line:
+            profile.function_entry[function] = SourceLine(home, line)
     return profile
 
 

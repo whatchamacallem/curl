@@ -18,6 +18,13 @@ class SubPage(NamedTuple):
     href: str
 
 
+class Layout(NamedTuple):
+    manifest: str
+    subpages: tuple[SubPage, ...]
+    heading: str
+    needs_all: bool
+
+
 class ValidateArgs(NamedTuple):
     out_dir: str
     test: list[str] | None
@@ -26,6 +33,10 @@ class ValidateArgs(NamedTuple):
 SUBPAGES: tuple[SubPage, ...] = (SubPage("flame-graph", "flame-graph/index.html"),
                                  SubPage("heat-map", "heat-map/index.html"),
                                  SubPage("perf-tool", "perf-tool/index.html"))
+
+LAYOUT_FULL = Layout("curl/perf2html.sh v1", SUBPAGES, r"<h2>top \d+ functions by self</h2>", True)
+LAYOUT_DIFF = Layout("curl/perf2html_diff.sh v1", (SubPage("heat-map", "heat-map/index.html"),),
+                     r"<h2>top \d+ functions by change in self</h2>", False)
 
 errors: list[str] = []
 
@@ -102,13 +113,13 @@ def check_no_leaked_paths(path: str, repo_root: str, label: str) -> None:
         fail(f"{label} still contains the absolute repo root {repo_root!r}: {path}")
 
 
-def check_overview(out_dir: str, only_tests: list[str] | None) -> list[str]:
+def check_overview(out_dir: str, only_tests: list[str] | None, layout: Layout) -> list[str]:
     path = os.path.join(out_dir, "index.html")
     text = check_html_page(path, "index.html (overview)", min_bytes=MIN_INDEX_BYTES, want_title="overview")
     if not text:
         return []
     names = sorted(set(re.findall(r'href="([a-z0-9_]+)/index\.html"', text)))
-    if "all" not in names:
+    if layout.needs_all and "all" not in names:
         fail(f"overview index.html has no link to 'all/': {path}")
     if not names:
         fail(f"overview index.html links to no test reports at all: {path}")
@@ -153,29 +164,53 @@ def check_raw_dir(test_dir: str, test_name: str) -> None:
             fail(f"raw data file does not look like a callgrind trace (no 'events:' near the top): {path}")
 
 
-def check_test_index(test_dir: str, test_name: str) -> None:
+def check_manifest(out_dir: str) -> Layout:
+    path = os.path.join(out_dir, "MANIFEST.txt")
+    if not os.path.isfile(path):
+        fail(f"missing MANIFEST.txt: {path}")
+        return LAYOUT_FULL
+    with open(path, encoding="utf-8", errors="replace") as handle:
+        text = handle.read()
+    for layout in (LAYOUT_FULL, LAYOUT_DIFF):
+        if text == layout.manifest + "\n":
+            return layout
+    fail(f"MANIFEST.txt is neither {LAYOUT_FULL.manifest!r} nor {LAYOUT_DIFF.manifest!r} "
+         f"(one line, newline-terminated): {path}")
+    return LAYOUT_FULL
+
+
+def check_test_index(test_dir: str, test_name: str, layout: Layout) -> None:
     path = os.path.join(test_dir, "index.html")
     text = check_html_page(path, "index.html", min_bytes=MIN_INDEX_BYTES, want_title=test_name)
     if not text:
         return
-    if not re.search(r"<h2>top \d+ functions by self</h2>", text):
-        fail(f"index.html has no 'top N functions by self' section: {path}")
+    if not re.search(layout.heading, text):
+        fail(f"index.html has no 'top N functions' section matching {layout.heading!r}: {path}")
     for sub in SUBPAGES:
-        if f'href="{sub.href}"' not in text:
+        linked = f'href="{sub.href}"' in text
+        if sub in layout.subpages and not linked:
             fail(f"index.html is missing its {sub.key} strip link ({sub.href}): {path}")
+        if sub not in layout.subpages and linked:
+            fail(f"index.html must not link to {sub.key} ({sub.href}) in this layout: {path}")
     if "raw data" not in text:
         fail(f"index.html has no 'raw data' section: {path}")
 
 
-def check_test_report(test_dir: str, test_name: str, *, is_all: bool) -> None:
+def check_test_report(test_dir: str, test_name: str, *, is_all: bool, layout: Layout) -> None:
     if not os.path.isdir(test_dir):
         fail(f"missing report directory for test {test_name!r}: {test_dir}")
         return
-    check_test_index(test_dir, test_name)
-    check_flame_graph(test_dir)
+    check_test_index(test_dir, test_name, layout)
     check_heat_map(test_dir, test_name)
-    check_perf_tool(test_dir, test_name, is_all=is_all)
     check_raw_dir(test_dir, test_name)
+    keys = {sub.key for sub in layout.subpages}
+    for sub in SUBPAGES:
+        if sub.key not in keys and os.path.isdir(os.path.join(test_dir, sub.key)):
+            fail(f"this layout must not have a {sub.key}/ directory: {os.path.join(test_dir, sub.key)}")
+    if "flame-graph" in keys:
+        check_flame_graph(test_dir)
+    if "perf-tool" in keys:
+        check_perf_tool(test_dir, test_name, is_all=is_all)
 
 
 def fail(msg: str) -> None:
@@ -204,6 +239,7 @@ def main() -> int:
         print(f"error: no such directory: {out_dir}", file=sys.stderr)
         return 1
     repo_root = repo_root_guess(out_dir)
+    layout = check_manifest(out_dir)
 
     index_path = os.path.join(out_dir, "index.html")
     if not os.path.isfile(index_path):
@@ -215,14 +251,14 @@ def main() -> int:
 
     checked = 0
     if is_overview:
-        names = check_overview(out_dir, args.test)
+        names = check_overview(out_dir, args.test, layout)
         for name in names:
-            check_test_report(os.path.join(out_dir, name), name, is_all=(name == "all"))
+            check_test_report(os.path.join(out_dir, name), name, is_all=(name == "all"), layout=layout)
             checked += 1
     else:
         match = re.search(r"<title>(.*?)</title>", head)
         name = match.group(1) if match else os.path.basename(out_dir)
-        check_test_report(out_dir, name, is_all=(name == "all"))
+        check_test_report(out_dir, name, is_all=(name == "all"), layout=layout)
         checked = 1
 
     if repo_root:

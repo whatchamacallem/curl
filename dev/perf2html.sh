@@ -249,6 +249,7 @@ main() {
 
   mkdir -p "$OUT_DIR" "$TRACE_DIR"
   cp "$DEV_DIR/README.md" "$OUT_DIR/README.md"
+  printf 'curl/perf2html.sh v1\n' >"$OUT_DIR/MANIFEST.txt"
   [ "$VERBOSE" = 1 ] || echo "dev/perf2html.sh $STAMP: OUTDIR=$OUT_DIR PERFTEST=$TEST${CFLAGS_EXTRA[*]:+ CFLAGS=${CFLAGS_EXTRA[*]}}" >"$RUN_LOG"
 
   build_compile

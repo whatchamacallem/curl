@@ -36,6 +36,24 @@ GPL Version 3, 29 June 2007.
 The address bar of `index.html` always links to what is on screen, so it can be
 bookmarked and reopened later.
 
+## Diff Reports
+
+A report built by `perf2html_diff.sh` compares two earlier reports, and every
+number in it is a difference: the current run minus the baseline. `+4.3K` means
+four thousand more than the baseline, `-1,000` a thousand fewer. A share like
+`+16%` is that function's part of everything that changed, not its part of the
+program.
+
+Tables are ranked by how large the change is, ignoring its direction, so the
+biggest improvements and the biggest regressions sit together at the top. The
+heat colours follow the same rule -- a large improvement is as bright as a large
+regression, and only the sign tells them apart.
+
+The differences are taken per source line, so the heat map's listing shows
+exactly where a function got cheaper or dearer. What a diff does not have is
+call data: no call counts, no callers, no flame graph, and no native timing,
+because none of those subtract into a meaningful single number.
+
 ## Flame Graph Bindings (speedscope)
 
 Open the flame graph and remain with "Time Order" in the view menu. The

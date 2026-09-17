@@ -170,6 +170,18 @@ def num_pct(percent: float) -> str:
     return "<0.01%" if percent > 0 else ""
 
 
+def num_signed(number: float) -> str:
+    if number == 0:
+        return ""
+    return ("+" if number > 0 else "-") + num_human(abs(number))
+
+
+def num_signed_pct(percent: float) -> str:
+    if percent == 0:
+        return ""
+    return ("+" if percent > 0 else "-") + num_pct(abs(percent))
+
+
 def num_time(seconds: float) -> str:
     if seconds == 0:
         return "0.00s"
