@@ -277,7 +277,7 @@ def path_display(repo_root: str, path: str) -> str:
     return normalized[len(root):] if normalized.startswith(root) else normalized
 
 
-def speedscope_main() -> None:
+def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("callgrind_file", nargs="+",
                         help="callgrind output file(s); several are merged into one profile")
@@ -307,4 +307,4 @@ def speedscope_main() -> None:
 
 
 if __name__ == "__main__":
-    speedscope_main()
+    main()

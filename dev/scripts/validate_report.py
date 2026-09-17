@@ -191,7 +191,7 @@ def repo_root_guess(out_dir: str) -> str:
     return ""
 
 
-def validate_main() -> int:
+def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("out_dir", help="report directory (dev/perf2html.sh's OUTDIR)")
     parser.add_argument("--test", action="append", default=None, metavar="NAME",
@@ -242,4 +242,4 @@ def validate_main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(validate_main())
+    sys.exit(main())

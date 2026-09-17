@@ -40,20 +40,6 @@ def blocks_of(label: str, src: str) -> list[JsChunk]:
     return chunks
 
 
-def check_main() -> int:
-    sys.path.insert(0, HERE)
-    with open(os.path.join(HERE, "theme.js"), encoding="utf-8") as handle:
-        ok = js_check("theme.js", handle.read())
-    for source in SOURCES:
-        value: object = getattr(importlib.import_module(source.module), source.attr)
-        if not isinstance(value, str):
-            print(f"{source.module}.{source.attr}: not a string", file=sys.stderr)
-            ok = False
-            continue
-        for chunk in blocks_of(f"{source.module}.{source.attr}", value):
-            ok = js_check(chunk.label, chunk.script) and ok
-    return 0 if ok else 1
-
 
 def js_check(label: str, src: str) -> bool:
     with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False, encoding="utf-8") as handle:
@@ -68,6 +54,19 @@ def js_check(label: str, src: str) -> bool:
     print(f"{label}: {result.stderr.strip()}".replace(path, label), file=sys.stderr)
     return False
 
+def main() -> int:
+    sys.path.insert(0, HERE)
+    with open(os.path.join(HERE, "theme.js"), encoding="utf-8") as handle:
+        ok = js_check("theme.js", handle.read())
+    for source in SOURCES:
+        value: object = getattr(importlib.import_module(source.module), source.attr)
+        if not isinstance(value, str):
+            print(f"{source.module}.{source.attr}: not a string", file=sys.stderr)
+            ok = False
+            continue
+        for chunk in blocks_of(f"{source.module}.{source.attr}", value):
+            ok = js_check(chunk.label, chunk.script) and ok
+    return 0 if ok else 1
 
 if __name__ == "__main__":
-    sys.exit(check_main())
+    sys.exit(main())

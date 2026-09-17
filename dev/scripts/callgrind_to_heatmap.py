@@ -916,53 +916,6 @@ def costs_trim(costs: Costs) -> Costs:
     return costs[:length]
 
 
-def heatmap_main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("callgrind_file", nargs="+",
-                        help="callgrind output file(s); several are merged into one profile")
-    parser.add_argument("-o", "--output", required=True, help="output .html path (directories are created)")
-    parser.add_argument("--event", default="CEst",
-                        help="event selected when the page opens (default: CEst, KCachegrind's cycle estimate)")
-    parser.add_argument("--repo-root", default=".", help="repository root the profile's paths are relative to")
-    parser.add_argument("--tree", nargs="*", default=["lib", "include", "src", "tests/perf"],
-                        help="directories whose tracked .c/.h files are listed in the tree even without samples")
-    parser.add_argument("--all-sources", action="store_true",
-                        help="embed the source of every tracked file in --tree, not just files with samples")
-    parser.add_argument("--title", default=None)
-    namespace = parser.parse_args()
-    args = HeatArgs(callgrind_file=namespace.callgrind_file, output=namespace.output, event=namespace.event,
-                    repo_root=namespace.repo_root, tree=namespace.tree, all_sources=namespace.all_sources,
-                    title=namespace.title)
-
-    profile = callgrind.profile_load(args.callgrind_file)
-    if not profile.events:
-        sys.exit("error: no 'events:' line -- not a callgrind file?")
-    source_name = os.path.basename(args.callgrind_file[0])
-    if len(args.callgrind_file) > 1:
-        source_name += f" + {len(args.callgrind_file) - 1} more"
-    title = args.title if args.title is not None else f"heat map: {profile.command or source_name}"
-
-    balance = callgrind.profile_self_check(profile)
-    print(f"events: {' '.join(profile.events)}", file=sys.stderr)
-    print(f"callgrind summary ({profile.events[0]}): {balance.total:,}", file=sys.stderr)
-    print(f"sum of self-cost lines:          {balance.self_sum:,}", file=sys.stderr)
-    print(f"ratio (must be 1.0000):          {balance.ratio:.4f}", file=sys.stderr)
-    if balance.total and abs(balance.ratio - 1.0) > 1e-6:
-        print("error: per-line self cost does not add up to callgrind's summary; refusing to write", file=sys.stderr)
-        sys.exit(2)
-
-    model = model_build(profile, args)
-    html = heatmap_render(model, title)
-    out_dir = os.path.dirname(os.path.abspath(args.output))
-    os.makedirs(out_dir, exist_ok=True)
-    with open(args.output, "w", encoding="utf-8") as handle:
-        handle.write(html)
-    embedded_count = sum(1 for entry in model["files"].values() if entry["source"] is not None)
-    print(f"files with samples: {len(model['files'])} ({embedded_count} with source embedded), "
-          f"cold files listed: {len(model['cold'])}, functions: {len(model['functions'])}", file=sys.stderr)
-    print(f"wrote {args.output} ({len(html.encode('utf-8')):,} bytes)", file=sys.stderr)
-
-
 def heatmap_render(model: HeatModel, title: str) -> str:
     data = json.dumps(model, separators=(",", ":"), ensure_ascii=False)
     data = data.replace("</", "<\\/")
@@ -1103,5 +1056,52 @@ def source_read(local: str) -> str | None:
     return data.decode("utf-8", errors="replace")
 
 
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("callgrind_file", nargs="+",
+                        help="callgrind output file(s); several are merged into one profile")
+    parser.add_argument("-o", "--output", required=True, help="output .html path (directories are created)")
+    parser.add_argument("--event", default="CEst",
+                        help="event selected when the page opens (default: CEst, KCachegrind's cycle estimate)")
+    parser.add_argument("--repo-root", default=".", help="repository root the profile's paths are relative to")
+    parser.add_argument("--tree", nargs="*", default=["lib", "include", "src", "tests/perf"],
+                        help="directories whose tracked .c/.h files are listed in the tree even without samples")
+    parser.add_argument("--all-sources", action="store_true",
+                        help="embed the source of every tracked file in --tree, not just files with samples")
+    parser.add_argument("--title", default=None)
+    namespace = parser.parse_args()
+    args = HeatArgs(callgrind_file=namespace.callgrind_file, output=namespace.output, event=namespace.event,
+                    repo_root=namespace.repo_root, tree=namespace.tree, all_sources=namespace.all_sources,
+                    title=namespace.title)
+
+    profile = callgrind.profile_load(args.callgrind_file)
+    if not profile.events:
+        sys.exit("error: no 'events:' line -- not a callgrind file?")
+    source_name = os.path.basename(args.callgrind_file[0])
+    if len(args.callgrind_file) > 1:
+        source_name += f" + {len(args.callgrind_file) - 1} more"
+    title = args.title if args.title is not None else f"heat map: {profile.command or source_name}"
+
+    balance = callgrind.profile_self_check(profile)
+    print(f"events: {' '.join(profile.events)}", file=sys.stderr)
+    print(f"callgrind summary ({profile.events[0]}): {balance.total:,}", file=sys.stderr)
+    print(f"sum of self-cost lines:          {balance.self_sum:,}", file=sys.stderr)
+    print(f"ratio (must be 1.0000):          {balance.ratio:.4f}", file=sys.stderr)
+    if balance.total and abs(balance.ratio - 1.0) > 1e-6:
+        print("error: per-line self cost does not add up to callgrind's summary; refusing to write", file=sys.stderr)
+        sys.exit(2)
+
+    model = model_build(profile, args)
+    html = heatmap_render(model, title)
+    out_dir = os.path.dirname(os.path.abspath(args.output))
+    os.makedirs(out_dir, exist_ok=True)
+    with open(args.output, "w", encoding="utf-8") as handle:
+        handle.write(html)
+    embedded_count = sum(1 for entry in model["files"].values() if entry["source"] is not None)
+    print(f"files with samples: {len(model['files'])} ({embedded_count} with source embedded), "
+          f"cold files listed: {len(model['cold'])}, functions: {len(model['functions'])}", file=sys.stderr)
+    print(f"wrote {args.output} ({len(html.encode('utf-8')):,} bytes)", file=sys.stderr)
+
+
 if __name__ == "__main__":
-    heatmap_main()
+    main()

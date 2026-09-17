@@ -68,7 +68,7 @@ def index_patch(index_html: Path) -> None:
     index_html.write_text(html, encoding="utf-8")
 
 
-def flamegraph_main() -> None:
+def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--speedscope-dir", required=True,
                         help="the copy of speedscope's dist/release to patch in place")
@@ -112,4 +112,4 @@ def flamegraph_main() -> None:
 
 
 if __name__ == "__main__":
-    flamegraph_main()
+    main()

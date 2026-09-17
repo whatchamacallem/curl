@@ -71,7 +71,7 @@ Full reference: `dev/perf2html.md` / `dev/perf2html.sh --help`. Key facts:
 - Everything the tools print goes to `dev/trace/profile.<ts>.log` (quiet mode) or the terminal (`--verbose`).
 - `--top N` (default 50) sets top-N-functions table size.
 
-Naming scheme across `dev/`: `object_method`-style lowercase C-identifier form (e.g. `args_parse`, `theme_css`, `profile_parse`, `report_test`, `heatmap_main`). Follow it for any new top-level Python/shell function. Embedded JS in generators' HTML templates is untouched by this rule.
+Naming scheme across `dev/`: `object_method`-style lowercase C-identifier form (e.g. `args_parse`, `theme_css`, `profile_parse`, `report_test`). Each script's entry point is `main()`, defined at the bottom of the file directly above `if __name__ == "__main__":`. Follow this for any new top-level Python/shell function. Embedded JS in generators' HTML templates is untouched by this rule.
 
 ### Report layout
 

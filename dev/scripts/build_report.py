@@ -296,52 +296,6 @@ def rawdata_list(paths: Sequence[str], out_dir: str) -> str:
     return f'<details class="sec"><summary><h2>raw data</h2></summary><ul class="rawdata">{items}</ul></details>'
 
 
-def report_main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    subparsers = parser.add_subparsers(dest="cmd", required=True)
-
-    test_parser = subparsers.add_parser("test", help="one perf test's index page")
-    test_parser.add_argument("callgrind_file", nargs="+",
-                             help="callgrind output file(s); several are merged into one profile")
-    test_parser.add_argument("-o", "--output", required=True)
-    test_parser.add_argument("--test", required=True, help="perf test name")
-    test_parser.add_argument("--raw-data", action="append", default=[], metavar="FILE",
-                             help="callgrind trace file to link (repeatable); listed relative to -o")
-    test_parser.add_argument("--log", action="append", default=[], help="valgrind log to include (repeatable)")
-    test_parser.add_argument("--no-log", action="store_true",
-                             help="omit the valgrind log section even if --log was given")
-    test_parser.add_argument("--event", default="Ir", help="event that ranks the functions (default: Ir)")
-    test_parser.add_argument("--top", type=int, default=50)
-    test_parser.add_argument("--repo-root", default=".")
-    test_parser.add_argument("--help-href", default="README.md",
-                             help="the strip's 'help' target, relative to this page (default: README.md; "
-                                  "a per-test page under an overview needs ../README.md)")
-
-    timing_parser = subparsers.add_parser("timing", help="the native timing run page")
-    timing_parser.add_argument("-o", "--output", required=True)
-    timing_parser.add_argument("--test", required=True)
-    timing_parser.add_argument("--output-file", required=True, help="the run's captured output")
-    timing_parser.add_argument("--meta", action="append", metavar="LABEL=VALUE", default=[])
-
-    overview_parser = subparsers.add_parser("overview", help="the page over several tests")
-    overview_parser.add_argument("-o", "--output", required=True)
-    overview_parser.add_argument("--test", action="append", metavar="NAME[=DIR]", required=True,
-                                 help="a test and its report directory (default: NAME next to the output)")
-    overview_parser.add_argument("--meta", action="append", metavar="LABEL=VALUE", default=[])
-
-    namespace = parser.parse_args()
-    if namespace.cmd == "test":
-        report_test(TestArgs(callgrind_file=namespace.callgrind_file, output=namespace.output, test=namespace.test,
-                             raw_data=namespace.raw_data, log=namespace.log, no_log=namespace.no_log,
-                             event=namespace.event, top=namespace.top, repo_root=namespace.repo_root,
-                             help_href=namespace.help_href))
-    elif namespace.cmd == "timing":
-        report_timing(TimingArgs(output=namespace.output, test=namespace.test,
-                                 output_file=namespace.output_file, meta=namespace.meta))
-    else:
-        report_overview(OverviewArgs(output=namespace.output, test=namespace.test, meta=namespace.meta))
-
-
 def report_overview(args: OverviewArgs) -> None:
     out_dir = os.path.dirname(os.path.abspath(args.output))
     tests: list[TestDirectory] = []
@@ -442,5 +396,51 @@ def value_humanize(label: str, value: str) -> str:
     return line.split(": ", 1)[1] if line != f"{label}: {value}" else value
 
 
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    subparsers = parser.add_subparsers(dest="cmd", required=True)
+
+    test_parser = subparsers.add_parser("test", help="one perf test's index page")
+    test_parser.add_argument("callgrind_file", nargs="+",
+                             help="callgrind output file(s); several are merged into one profile")
+    test_parser.add_argument("-o", "--output", required=True)
+    test_parser.add_argument("--test", required=True, help="perf test name")
+    test_parser.add_argument("--raw-data", action="append", default=[], metavar="FILE",
+                             help="callgrind trace file to link (repeatable); listed relative to -o")
+    test_parser.add_argument("--log", action="append", default=[], help="valgrind log to include (repeatable)")
+    test_parser.add_argument("--no-log", action="store_true",
+                             help="omit the valgrind log section even if --log was given")
+    test_parser.add_argument("--event", default="Ir", help="event that ranks the functions (default: Ir)")
+    test_parser.add_argument("--top", type=int, default=50)
+    test_parser.add_argument("--repo-root", default=".")
+    test_parser.add_argument("--help-href", default="README.md",
+                             help="the strip's 'help' target, relative to this page (default: README.md; "
+                                  "a per-test page under an overview needs ../README.md)")
+
+    timing_parser = subparsers.add_parser("timing", help="the native timing run page")
+    timing_parser.add_argument("-o", "--output", required=True)
+    timing_parser.add_argument("--test", required=True)
+    timing_parser.add_argument("--output-file", required=True, help="the run's captured output")
+    timing_parser.add_argument("--meta", action="append", metavar="LABEL=VALUE", default=[])
+
+    overview_parser = subparsers.add_parser("overview", help="the page over several tests")
+    overview_parser.add_argument("-o", "--output", required=True)
+    overview_parser.add_argument("--test", action="append", metavar="NAME[=DIR]", required=True,
+                                 help="a test and its report directory (default: NAME next to the output)")
+    overview_parser.add_argument("--meta", action="append", metavar="LABEL=VALUE", default=[])
+
+    namespace = parser.parse_args()
+    if namespace.cmd == "test":
+        report_test(TestArgs(callgrind_file=namespace.callgrind_file, output=namespace.output, test=namespace.test,
+                             raw_data=namespace.raw_data, log=namespace.log, no_log=namespace.no_log,
+                             event=namespace.event, top=namespace.top, repo_root=namespace.repo_root,
+                             help_href=namespace.help_href))
+    elif namespace.cmd == "timing":
+        report_timing(TimingArgs(output=namespace.output, test=namespace.test,
+                                 output_file=namespace.output_file, meta=namespace.meta))
+    else:
+        report_overview(OverviewArgs(output=namespace.output, test=namespace.test, meta=namespace.meta))
+
+
 if __name__ == "__main__":
-    report_main()
+    main()
