@@ -207,7 +207,7 @@ def diff_functions_table(profile: callgrind.Profile, event: str, top: int, repo_
         share = 100.0 * ranked_function.cost / total
         href = entry_link(profile, repo_root, ranked_function.function)
         rows.append([str(rank),
-                     Cell(theme.num_signed_pct(share), style=theme.heat_style(theme.heat_t(abs(share), max_pct))),
+                     Cell(theme.num_signed_pct(share), style=theme.heat_style(theme.heat_t(share, max_pct), signed=True)),
                      Cell(ranked_function.function, title=ranked_function.function,
                           html=f'<a href="{href}">{html_escape(ranked_function.function)}</a>' if href else None),
                      Cell(theme.num_signed(ranked_function.cost), title=f"{ranked_function.cost:+,} {event}")])

@@ -237,10 +237,10 @@ Theme.splitter(document.getElementById("split"), treeEl, "heat.tree", 120);
 
 const at = (vector, index) => (vector && index < vector.length) ? vector[index] : 0;
 const EVS = [];
-model.meta.events.forEach((name, index) => { if (at(model.meta.totals, index) > 0) EVS.push({ key: name, long: model.meta.eventLong[name] || "", get: vector => at(vector, index) }); });
+model.meta.events.forEach((name, index) => { EVS.push({ key: name, long: model.meta.eventLong[name] || "", get: vector => at(vector, index) }); });
 for (const [name, terms, long] of model.meta.derived) {
   const get = vector => terms.reduce((sum, term) => sum + term[0] * at(vector, term[1]), 0);
-  if (get(model.meta.totals) > 0) EVS.push({ key: name, long: long || model.meta.eventLong[name] || "", get, derived: true });
+  EVS.push({ key: name, long: long || model.meta.eventLong[name] || "", get, derived: true });
 }
 const evByKey = key => EVS.find(event => event.key === key);
 let currentEvent = evByKey(model.meta.defaultEvent) || EVS[0];
@@ -316,19 +316,22 @@ if (DIFF) {
 
 const PMIN = 0.001;
 function heatP(percent, maxP) {
+  const sign = DIFF && percent < 0 ? -1 : 1;
   percent = mag(percent);
   if (percent <= 0) return 0;
-  if (scale === "linear") return Math.min(1, percent / maxP);
+  if (scale === "linear") return sign * Math.min(1, percent / maxP);
   if (percent < PMIN) return 0;
-  return Math.min(1, Math.log10(percent / PMIN) / Math.log10(Math.max(maxP, PMIN * 10) / PMIN));
+  return sign * Math.min(1, Math.log10(percent / PMIN) / Math.log10(Math.max(maxP, PMIN * 10) / PMIN));
 }
 function heatT(cost, maxP) { return heatP(pct(cost), maxP); }
 
 const RGB = hex => [1, 3, 5].map(index => parseInt(hex.slice(index, index + 2), 16));
 const STOPS = model.theme.heat.map(RGB), BG = RGB(model.theme.bg);
 function heatStyle(heat, aMin, aMax) {
-  if (heat <= 0) return "";
-  const scaled = heat * (STOPS.length - 1), index = Math.min(Math.floor(scaled), STOPS.length - 2), frac = scaled - index, alpha = aMin + (aMax - aMin) * heat;
+  const magnitude = mag(heat);
+  if (magnitude <= 0) return "";
+  const scaled = (DIFF ? (heat + 1) * 0.5 : heat) * (STOPS.length - 1);
+  const index = Math.min(Math.max(Math.floor(scaled), 0), STOPS.length - 2), frac = scaled - index, alpha = aMin + (aMax - aMin) * magnitude;
   const mixed = [0, 1, 2].map(channel => Math.round(BG[channel] + (STOPS[index][channel] + (STOPS[index + 1][channel] - STOPS[index][channel]) * frac - BG[channel]) * alpha));
   const lum = (0.2126 * mixed[0] + 0.7152 * mixed[1] + 0.0722 * mixed[2]) / 255;
   return `background:rgb(${mixed.join(",")});color:${lum > 0.5 ? model.theme.fgDark : model.theme.fgLight}`;

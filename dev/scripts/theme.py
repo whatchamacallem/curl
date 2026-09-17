@@ -125,14 +125,18 @@ def _cell(value: CellOrText) -> Cell:
     return value if isinstance(value, Cell) else Cell(text=value)
 
 
-def heat_style(heat: float, alpha: AlphaRange = AlphaRange(0.18, 0.92)) -> str:
-    if heat <= 0:
+def heat_style(heat: float, alpha: AlphaRange = AlphaRange(0.18, 0.92), signed: bool = False) -> str:
+    magnitude = abs(heat)
+    if magnitude <= 0:
         return ""
     stops = [_rgb(color) for color in HEAT]
-    position = heat * (len(stops) - 1)
-    index = min(int(position), len(stops) - 2)
+    if signed:
+        position = (heat + 1) * 0.5 * (len(stops) - 1)
+    else:
+        position = heat * (len(stops) - 1)
+    index = min(max(int(position), 0), len(stops) - 2)
     fraction = position - index
-    amount = alpha.low + (alpha.high - alpha.low) * heat
+    amount = alpha.low + (alpha.high - alpha.low) * magnitude
     background = _rgb(ROLE["bg"])
     mixed = Rgb(*(round(background[channel]
                         + (stops[index][channel] + (stops[index + 1][channel] - stops[index][channel]) * fraction
@@ -142,10 +146,12 @@ def heat_style(heat: float, alpha: AlphaRange = AlphaRange(0.18, 0.92)) -> str:
 
 
 def heat_t(share: float, max_share: float) -> float:
-    if share < HEAT_MINIMUM_SHARE:
+    sign = -1.0 if share < 0 else 1.0
+    magnitude = abs(share)
+    if magnitude < HEAT_MINIMUM_SHARE:
         return 0.0
     top = max(max_share, HEAT_MINIMUM_SHARE * 10) / HEAT_MINIMUM_SHARE
-    return min(1.0, math.log10(share / HEAT_MINIMUM_SHARE) / math.log10(top))
+    return sign * min(1.0, math.log10(magnitude / HEAT_MINIMUM_SHARE) / math.log10(top))
 
 
 def html_escape(value: object) -> str:
