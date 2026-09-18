@@ -359,7 +359,7 @@ function colWidths(cols, cellRows) {
   return cols.map((col, colIndex) => {
     let width = col.label.length;
     if (col.width != null) width = Math.max(width, col.width);
-    else if (!col.grow) {
+    else {
       for (const row of cellRows) if (row[colIndex]) width = Math.max(width, (row[colIndex].text || "").length);
       if (col.clip != null) width = Math.max(col.label.length, Math.min(width, col.clip));
     }
@@ -373,10 +373,10 @@ function table(key, cols, rows, opts) {
   const widths = colWidths(cols, cellRows);
   const tableCls = ["cols", opts.fill ? "fill" : "", opts.cls || ""].filter(Boolean).join(" ");
   let html = opts.bare ? "" : `<div class="tbl">`;
-  html += `<div class="tbl-cols"><table class="${tableCls}" data-key="${esc(key)}"${opts.fill ? ` data-fill="${opts.fill}"` : ""}><colgroup>`;
+  html += `<div class="tbl-cols"><table class="${tableCls}" data-key="${esc(key)}"><colgroup>`;
   cols.forEach((col, colIndex) => {
     const colCls = [colIndex % 2 ? "alt" : "", col.grow ? "grow" : ""].filter(Boolean).join(" ");
-    html += `<col${colCls ? ` class="${colCls}"` : ""} style="width:${widths[colIndex]}ch">`;
+    html += `<col${colCls ? ` class="${colCls}"` : ""} data-min="${col.label.length + PAD}ch" style="width:${widths[colIndex]}ch">`;
   });
   html += `</colgroup><thead><tr>`;
   for (const col of cols) html += `<th${col.num ? ' class="n"' : ""}${col.title ? ` title="${esc(col.title)}"` : ""}>${esc(col.label)}</th>`;

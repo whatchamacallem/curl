@@ -217,7 +217,7 @@ def table_render(key: str, columns: Sequence[Column], rows: Sequence[Sequence[Ce
         width = len(column.label)
         if column.width is not None:
             width = max(width, column.width)
-        elif index != grow_index:
+        else:
             for row in cells:
                 if index < len(row):
                     width = max(width, len(row[index].text))
@@ -231,7 +231,8 @@ def table_render(key: str, columns: Sequence[Column], rows: Sequence[Sequence[Ce
         col_classes = " ".join(class_name for class_name in
                                ("alt" if index % 2 else "", "grow" if index == grow_index else "") if class_name)
         attr = f' class="{col_classes}"' if col_classes else ""
-        out.append(f'<col{attr} style="width:{width}ch">')
+        floor = len(columns[index].label) + PADDING_CHARS
+        out.append(f'<col{attr} data-min="{floor}ch" style="width:{width}ch">')
     out.append("</colgroup>")
     if header:
         out.append("<thead><tr>")

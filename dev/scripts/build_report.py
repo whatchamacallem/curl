@@ -364,7 +364,7 @@ def header_table(key: str, pairs: Sequence[Header]) -> str:
     if not pairs:
         return ""
     rows: list[list[CellOrText]] = [[Cell(pair.label, cls="dim"), pair.value] for pair in pairs]
-    return theme.table_render(key, [Column("label"), Column("value", clip=100)], rows, header=False)
+    return theme.table_render(key, [Column("label"), Column("value", grow=True)], rows, fill=True, header=False)
 
 
 def page_write(path: str, page: str) -> None:

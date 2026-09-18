@@ -6,6 +6,16 @@ window.Theme = (function () {
     const row = table.tHead ? table.tHead.rows[0] : table.rows[0];
     return row ? [...row.cells] : [];
   }
+  function floorPx(col) {
+    const floor = col.dataset.min || col.dataset.w;
+    if (!floor) return MIN_COL;
+    const probe = col.ownerDocument.createElement("div");
+    probe.style.cssText = "position:absolute;visibility:hidden;width:" + floor;
+    col.ownerDocument.body.appendChild(probe);
+    const px = probe.getBoundingClientRect().width;
+    probe.remove();
+    return Math.max(MIN_COL, Math.ceil(px));
+  }
   function layoutBars(table) {
     const left0 = table.parentElement.getBoundingClientRect().left;
     const cells = headerCells(table);
@@ -18,10 +28,10 @@ window.Theme = (function () {
     const col = table.querySelectorAll("colgroup > col")[index], cell = headerCells(table)[index];
     if (!col || !cell) return;
     table._dragged = true;
-    const x0 = event.clientX, width0 = cell.getBoundingClientRect().width;
+    const x0 = event.clientX, width0 = cell.getBoundingClientRect().width, floor = floorPx(col);
     bar.classList.add("active");
     if (bar.setPointerCapture) bar.setPointerCapture(event.pointerId);
-    const move = moveEvent => { col.style.width = Math.max(MIN_COL, width0 + moveEvent.clientX - x0) + "px"; layoutBars(table); };
+    const move = moveEvent => { col.style.width = Math.max(floor, width0 + moveEvent.clientX - x0) + "px"; layoutBars(table); };
     const up = () => {
       bar.classList.remove("active");
       for (const [type, handler] of [["pointermove", move], ["pointerup", up], ["pointercancel", up]]) bar.removeEventListener(type, handler);
@@ -46,10 +56,12 @@ window.Theme = (function () {
     if (!cols.length) return;
     const grow = cols.find(col => col.classList.contains("grow")) || cols[cols.length - 1];
     grow.style.width = grow.dataset.w;
-    const min = grow.dataset.w ? grow.getBoundingClientRect().width : MIN_COL;
-    const target = Math.floor(scrollerOf(table).clientWidth * (+table.dataset.fill || 0.9));
+    const floor = floorPx(grow);
+    const scroller = scrollerOf(table);
+    const inset = table.getBoundingClientRect().left - scroller.getBoundingClientRect().left + scroller.scrollLeft;
+    const target = Math.floor(scroller.clientWidth - 2 * inset);
     const others = table.getBoundingClientRect().width - grow.getBoundingClientRect().width;
-    grow.style.width = Math.max(min, target - others) + "px";
+    grow.style.width = Math.max(floor, target - others) + "px";
   }
 
 
