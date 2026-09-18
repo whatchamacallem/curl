@@ -192,295 +192,280 @@ DIFF_VIEWS: tuple[View, ...] = (
 )
 
 
-def diff_functions_table(profile: callgrind.Profile) -> str:
-    total = profile.value(callgrind_diff.profile_magnitudes(profile), EVENT) or 1
-    ranked = sorted((FunctionCost(profile.value(costs, EVENT), function)
-                     for function, costs in profile.function_self.items() if profile.value(costs, EVENT) != 0),
-                    key=lambda t: (-abs(t.cost), t.function))[:TOP]
-    max_pct = 100.0 * abs(ranked[0].cost) / total if ranked else 1.0
-    columns = [Column("#", "rank by how much the function changed, largest first", numeric=True),
-               Column("% self", f"the function's own {EVENT} delta, as a share of every line's {EVENT} change "
-                                "added up; + is more than the baseline, - is less", numeric=True),
-               Column("symbol", f"the function, first {SYMBOL_CHARS} characters (drag the bar for more); "
-                                "opens the heat map at its first line", width=SYMBOL_CHARS),
-               Column(EVENT, f"the signed {EVENT} delta itself", numeric=True, grow=True)]
-    rows: list[list[CellOrText]] = []
-    for rank, ranked_function in enumerate(ranked, 1):
-        share = 100.0 * ranked_function.cost / total
-        href = entry_link(profile, ranked_function.function)
-        rows.append([str(rank),
-                     Cell(theme.num_signed_pct(share), style=theme.heat_style(theme.heat_t(share, max_pct), signed=True)),
-                     Cell(ranked_function.function, title=ranked_function.function,
-                          html=f'<a href="{href}">{html_escape(ranked_function.function)}</a>' if href else None),
-                     Cell(theme.num_signed(ranked_function.cost), title=f"{ranked_function.cost:+,} {EVENT}")])
-    return theme.table_render("report.functions", columns, rows, fill=True)
+class BuildReport:
+    def caller_link(self, profile: callgrind.Profile, caller_name: str, count: int, call_count: int) -> str:
+        href = self.entry_link(profile, caller_name)
+        label = f"{html_escape(caller_name)} ({theme.num_pct(100.0 * count / call_count)})"
+        return f'<a href="{href}">{label}</a>' if href else label
 
+    def diff_functions_table(self, profile: callgrind.Profile) -> str:
+        total = profile.value(callgrind_diff.profile_magnitudes(profile), EVENT) or 1
+        ranked = sorted((FunctionCost(profile.value(costs, EVENT), function)
+                         for function, costs in profile.function_self.items()
+                         if profile.value(costs, EVENT) != 0),
+                        key=lambda t: (-abs(t.cost), t.function))[:TOP]
+        max_pct = 100.0 * abs(ranked[0].cost) / total if ranked else 1.0
+        columns = [Column("#", "rank by how much the function changed, largest first", numeric=True),
+                   Column("% self", f"the function's own {EVENT} delta, as a share of every line's {EVENT} change "
+                                    "added up; + is more than the baseline, - is less", numeric=True),
+                   Column("symbol", f"the function, first {SYMBOL_CHARS} characters (drag the bar for more); "
+                                    "opens the heat map at its first line", width=SYMBOL_CHARS),
+                   Column(EVENT, f"the signed {EVENT} delta itself", numeric=True, grow=True)]
+        rows: list[list[CellOrText]] = []
+        for rank, ranked_function in enumerate(ranked, 1):
+            share = 100.0 * ranked_function.cost / total
+            href = self.entry_link(profile, ranked_function.function)
+            rows.append([str(rank),
+                         Cell(theme.num_signed_pct(share),
+                              style=theme.heat_style(theme.heat_t(share, max_pct), signed=True)),
+                         Cell(ranked_function.function, title=ranked_function.function,
+                              html=f'<a href="{href}">{html_escape(ranked_function.function)}</a>' if href else None),
+                         Cell(theme.num_signed(ranked_function.cost), title=f"{ranked_function.cost:+,} {EVENT}")])
+        return theme.table_render("report.functions", columns, rows, fill=True)
 
-def diff_overview_rows(tests: Sequence[TestDirectory]) -> tuple[list[Column], list[list[CellOrText]]]:
-    columns = [Column("one report per test"),
-               Column(EVENT, f"the whole run's {EVENT} delta", numeric=True),
-               Column("% of change", f"that delta against every function's {EVENT} change added up", numeric=True),
-               Column("functions changed", f"functions whose {EVENT} moved at all", numeric=True)]
-    rows: list[list[CellOrText]] = []
-    for test in tests:
-        raw_dir = os.path.join(test.directory, "raw")
-        files = sorted(os.path.join(raw_dir, name) for name in os.listdir(raw_dir)) if os.path.isdir(raw_dir) else []
-        link = Cell(test.name, html=f'<a href="{html_escape(test.name)}/index.html">{html_escape(test.name)}</a>')
-        if not files:
-            rows.append([link, "", "", ""])
-            continue
-        profile = callgrind.profile_load(files)
-        delta = profile.value(profile.totals(), EVENT)
-        changed = sum(1 for costs in profile.function_self.values() if profile.value(costs, EVENT) != 0)
-        magnitude = profile.value(callgrind_diff.profile_magnitudes(profile), EVENT)
-        rows.append([link, Cell(theme.num_signed(delta), title=f"{delta:+,} {EVENT}"),
-                     theme.num_signed_pct(100.0 * delta / magnitude) if magnitude else "", theme.num_human(changed)])
-    return columns, rows
+    def diff_overview(self, args: OverviewArgs) -> None:
+        tests = self.overview_tests(args)
+        columns, rows = self.diff_overview_rows(tests)
+        self.overview_page(args, tests, columns, rows)
 
+    def diff_overview_rows(self, tests: Sequence[TestDirectory]) -> tuple[list[Column], list[list[CellOrText]]]:
+        columns = [Column("one report per test"),
+                   Column(EVENT, f"the whole run's {EVENT} delta", numeric=True),
+                   Column("% of change", f"that delta against every function's {EVENT} change added up", numeric=True),
+                   Column("functions changed", f"functions whose {EVENT} moved at all", numeric=True)]
+        rows: list[list[CellOrText]] = []
+        for test in tests:
+            raw_dir = os.path.join(test.directory, "raw")
+            files = sorted(os.path.join(raw_dir, name) for name in os.listdir(raw_dir)) \
+                if os.path.isdir(raw_dir) else []
+            link = Cell(test.name, html=f'<a href="{html_escape(test.name)}/index.html">{html_escape(test.name)}</a>')
+            if not files:
+                rows.append([link, "", "", ""])
+                continue
+            profile = callgrind.profile_load(files)
+            delta = profile.value(profile.totals(), EVENT)
+            changed = sum(1 for costs in profile.function_self.values() if profile.value(costs, EVENT) != 0)
+            magnitude = profile.value(callgrind_diff.profile_magnitudes(profile), EVENT)
+            rows.append([link, Cell(theme.num_signed(delta), title=f"{delta:+,} {EVENT}"),
+                         theme.num_signed_pct(100.0 * delta / magnitude) if magnitude else "",
+                         theme.num_human(changed)])
+        return columns, rows
 
-def diff_report_overview(args: OverviewArgs) -> None:
-    tests = overview_tests(args)
-    columns, rows = diff_overview_rows(tests)
-    overview_page(args, tests, columns, rows)
+    def diff_test(self, args: TestArgs) -> None:
+        profile = callgrind.profile_load(args.callgrind_file)
+        self.report_page(args, DIFF_VIEWS, f"top {TOP} functions by change in self",
+                         self.diff_functions_table(profile))
 
+    def entry_link(self, profile: callgrind.Profile, function: str) -> str:
+        entry = profile.function_entry.get(function)
+        if entry is None or not entry.line or callgrind.path_norm(entry.file).local is None:
+            return ""
+        return "heat-map/index.html#fn=" + html_escape(quote(function, safe="/-_.!~*'()"))
 
-def diff_report_test(args: TestArgs) -> None:
-    profile = callgrind.profile_load(args.callgrind_file)
-    report_page(args, DIFF_VIEWS, f"top {TOP} functions by change in self", diff_functions_table(profile))
+    def file_read(self, path: str) -> str:
+        try:
+            with open(path, encoding="utf-8", errors="replace") as handle:
+                return handle.read()
+        except OSError as error:
+            print(f"warning: {path}: {error}", file=sys.stderr)
+            return f"(missing: {path})"
 
+    def functions_table(self, profile: callgrind.Profile) -> str:
+        total = profile.value(profile.totals(), EVENT) or 1
+        ranked = sorted((FunctionCost(profile.value(costs, EVENT), function)
+                         for function, costs in profile.function_self.items() if profile.value(costs, EVENT) > 0),
+                        key=lambda t: (-t.cost, t.function))[:TOP]
+        max_pct = 100.0 * ranked[0].cost / total if ranked else 1.0
+        function_calls = {function: sum(tally.count for tally in callers.values())
+                          for function, callers in profile.callers.items()}
+        calls_total = sum(function_calls.values()) or 1
+        calls_max_pct = 100.0 * max(function_calls.values(), default=0) / calls_total
+        columns = [Column("#", "rank", numeric=True),
+                   Column("% self", f"share of all {EVENT} spent in the function itself, not in what it calls",
+                          numeric=True),
+                   Column("symbol", f"the function, first {SYMBOL_CHARS} characters (drag the bar for more); "
+                                    "opens the heat map at its first line", width=SYMBOL_CHARS),
+                   Column("calls", "times the function was entered", numeric=True),
+                   Column("callers", "who called it, with the share of those calls; cut off at the edge, "
+                                     "hover for all")]
+        rows: list[list[CellOrText]] = []
+        for rank, ranked_function in enumerate(ranked, 1):
+            by_caller: dict[str, int] = {}
+            for caller, tally in profile.callers.get(ranked_function.function, {}).items():
+                by_caller[caller.function] = by_caller.get(caller.function, 0) + tally.count
+            call_count = sum(by_caller.values())
+            share = 100.0 * ranked_function.cost / total
+            href = self.entry_link(profile, ranked_function.function)
+            by_caller_sorted = sorted(by_caller.items(), key=lambda pair: (-pair[1], pair[0]))
+            who = ", ".join(f"{caller_name} ({theme.num_pct(100.0 * count / call_count)})"
+                            for caller_name, count in by_caller_sorted)
+            who_html = ", ".join(self.caller_link(profile, caller_name, count, call_count)
+                                 for caller_name, count in by_caller_sorted)
+            rows.append([str(rank),
+                         Cell(theme.num_pct(share), style=theme.heat_style(theme.heat_t(share, max_pct))),
+                         Cell(ranked_function.function, title=ranked_function.function,
+                              html=f'<a href="{href}">{html_escape(ranked_function.function)}</a>' if href else None),
+                         Cell(theme.num_human(call_count), title=f"{call_count:,} calls",
+                              style=theme.heat_style(theme.heat_t(100.0 * call_count / calls_total, calls_max_pct)))
+                         if call_count else "",
+                         Cell(who, title=who, html=who_html) if who else Cell("(no recorded caller)", cls="dim")])
+        return theme.table_render("report.functions", columns, rows, fill=True)
 
-def entry_link(profile: callgrind.Profile, function: str) -> str:
-    entry = profile.function_entry.get(function)
-    if entry is None or not entry.line or callgrind.path_norm(entry.file).local is None:
-        return ""
-    return "heat-map/index.html#fn=" + html_escape(quote(function, safe="/-_.!~*'()"))
+    def header_blocks_render(self, key: str, blocks: Sequence[HeaderBlock]) -> str:
+        body = ""
+        for index, block in enumerate(blocks):
+            if not block.pairs:
+                continue
+            body += f"<h2>{html_escape(block.label)}</h2>" + self.header_table(f"{key}.{index}", block.pairs)
+        return body
 
+    def header_parse_blocks(self, items: Sequence[str]) -> list[HeaderBlock]:
+        out: list[HeaderBlock] = []
+        for item in items:
+            if "=" not in item:
+                sys.exit(f"error: --header-block expects LABEL=FILE, got {item!r}")
+            label, _, path = item.partition("=")
+            out.append(HeaderBlock(label.strip(), self.header_read_file(path)))
+        return out
 
-def file_read_text(path: str) -> str:
-    try:
-        with open(path, encoding="utf-8", errors="replace") as handle:
-            return handle.read()
-    except OSError as error:
-        print(f"warning: {path}: {error}", file=sys.stderr)
-        return f"(missing: {path})"
+    def header_parse_pairs(self, items: Sequence[str]) -> list[Header]:
+        out: list[Header] = []
+        for item in items:
+            if "=" not in item:
+                sys.exit(f"error: --header expects LABEL=VALUE, got {item!r}")
+            label, _, value = item.partition("=")
+            out.append(Header(label.strip(), value))
+        return out
 
+    def header_read_file(self, path: str) -> list[Header]:
+        lines = [line for line in self.file_read(path).splitlines() if line.strip() and "=" in line]
+        return self.header_parse_pairs(lines)
 
-def functions_table(profile: callgrind.Profile) -> str:
-    total = profile.value(profile.totals(), EVENT) or 1
-    ranked = sorted((FunctionCost(profile.value(costs, EVENT), function)
-                     for function, costs in profile.function_self.items() if profile.value(costs, EVENT) > 0),
-                    key=lambda t: (-t.cost, t.function))[:TOP]
-    max_pct = 100.0 * ranked[0].cost / total if ranked else 1.0
-    function_calls = {function: sum(tally.count for tally in callers.values())
-                      for function, callers in profile.callers.items()}
-    calls_total = sum(function_calls.values()) or 1
-    calls_max_pct = 100.0 * max(function_calls.values(), default=0) / calls_total
-    columns = [Column("#", "rank", numeric=True),
-               Column("% self", f"share of all {EVENT} spent in the function itself, not in what it calls", numeric=True),
-               Column("symbol", f"the function, first {SYMBOL_CHARS} characters (drag the bar for more); "
-                                "opens the heat map at its first line", width=SYMBOL_CHARS),
-               Column("calls", "times the function was entered", numeric=True),
-               Column("callers", "who called it, with the share of those calls; cut off at the edge, hover for all")]
-    rows: list[list[CellOrText]] = []
-    for rank, ranked_function in enumerate(ranked, 1):
-        by_caller: dict[str, int] = {}
-        for caller, tally in profile.callers.get(ranked_function.function, {}).items():
-            by_caller[caller.function] = by_caller.get(caller.function, 0) + tally.count
-        call_count = sum(by_caller.values())
-        share = 100.0 * ranked_function.cost / total
-        href = entry_link(profile, ranked_function.function)
-        by_caller_sorted = sorted(by_caller.items(), key=lambda pair: (-pair[1], pair[0]))
-        who = ", ".join(f"{caller_name} ({theme.num_pct(100.0 * count / call_count)})"
-                        for caller_name, count in by_caller_sorted)
+    def header_table(self, key: str, pairs: Sequence[Header]) -> str:
+        if not pairs:
+            return ""
+        rows: list[list[CellOrText]] = [[Cell(pair.label, cls="dim"), pair.value] for pair in pairs]
+        return theme.table_render(key, [Column("label"), Column("value", grow=True)], rows, fill=True, header=False)
 
-        def caller_html(caller_name: str, count: int) -> str:
-            caller_href = entry_link(profile, caller_name)
-            label = f"{html_escape(caller_name)} ({theme.num_pct(100.0 * count / call_count)})"
-            return f'<a href="{caller_href}">{label}</a>' if caller_href else label
+    def log_block(self, path: str) -> str:
+        lines = self.file_read(path).rstrip().split("\n")[LOG_SKIP_LINES:]
+        text = "\n".join(PID_PREFIX.sub("", line) for line in lines)
+        return f'<div class="tbl"><pre class="logbox">{html_escape(text)}</pre></div>'
 
-        who_html = ", ".join(caller_html(caller_name, count) for caller_name, count in by_caller_sorted)
-        rows.append([str(rank),
-                     Cell(theme.num_pct(share), style=theme.heat_style(theme.heat_t(share, max_pct))),
-                     Cell(ranked_function.function, title=ranked_function.function,
-                          html=f'<a href="{href}">{html_escape(ranked_function.function)}</a>' if href else None),
-                     Cell(theme.num_human(call_count), title=f"{call_count:,} calls",
-                          style=theme.heat_style(theme.heat_t(100.0 * call_count / calls_total, calls_max_pct)))
-                     if call_count else "",
-                     Cell(who, title=who, html=who_html) if who else Cell("(no recorded caller)", cls="dim")])
-    return theme.table_render("report.functions", columns, rows, fill=True)
+    def log_section(self, paths: Sequence[str]) -> str:
+        if not paths:
+            return ""
+        body = ""
+        for path in paths:
+            if len(paths) > 1:
+                body += f"<p>{html_escape(os.path.basename(path))}</p>"
+            body += self.log_block(path)
+        return '<details class="sec"><summary><h2>valgrind log</h2></summary>' + body + "</details>"
 
+    def overview(self, args: OverviewArgs) -> None:
+        tests = self.overview_tests(args)
+        keys: list[str] = []
+        numbers: dict[str, dict[str, str]] = {}
+        for test in tests:
+            values: dict[str, str] = {}
+            for line in self.file_read(os.path.join(test.directory, "perf-tool", "output.txt")).splitlines():
+                match = re.match(r"^([A-Za-z][^:]{0,30}):\s+(.+?)\s*$", line)
+                if match:
+                    values[match.group(1)] = self.value_humanize(match.group(1), match.group(2))
+                    if match.group(1) not in keys:
+                        keys.append(match.group(1))
+            numbers[test.name] = values
+        columns = [Column("one report per test")] + [Column(key, numeric=True) for key in keys]
+        rows: list[list[CellOrText]] = [
+            [Cell(test.name, html=f'<a href="{html_escape(test.name)}/index.html">{html_escape(test.name)}</a>')]
+            + [numbers[test.name].get(key, "") for key in keys]
+            for test in tests]
+        self.overview_page(args, tests, columns, rows)
 
-def log_block(path: str) -> str:
-    lines = file_read_text(path).rstrip().split("\n")[LOG_SKIP_LINES:]
-    text = "\n".join(PID_PREFIX.sub("", line) for line in lines)
-    return f'<div class="tbl"><pre class="logbox">{html_escape(text)}</pre></div>'
+    def overview_page(self, args: OverviewArgs, tests: Sequence[TestDirectory], columns: Sequence[Column],
+                      rows: Sequence[Sequence[CellOrText]]) -> None:
+        links = [StripLink("", "overview", "#", "overview")] + \
+            [StripLink(test.name, test.name, f"{test.name}/index.html", test.name, frame=True) for test in tests]
+        body = self.strip_render("overview", links)
+        pairs = self.header_parse_pairs(args.header) + \
+            (self.header_read_file(args.header_file) if args.header_file else [])
+        body = body + '<main id="home"><div class="page">' + self.header_table("overview.header", pairs)
+        body += self.header_blocks_render("overview.block", self.header_parse_blocks(args.header_block))
+        body += "<h2>test suites</h2>" + theme.table_render("overview.tests", columns, rows)
+        body += '</div></main><iframe id="view" hidden title="report page"></iframe>'
+        self.page_write(args.output, theme.page_document("overview", body, extra_js=FRAME_JS, body_class="frame"))
 
+    def overview_tests(self, args: OverviewArgs) -> list[TestDirectory]:
+        out_dir = os.path.dirname(os.path.abspath(args.output))
+        tests = [TestDirectory(name, os.path.join(out_dir, name)) for name in args.test]
+        tests.sort()
+        return tests
 
-def log_section(paths: Sequence[str]) -> str:
-    if not paths:
-        return ""
-    body = ""
-    for path in paths:
-        if len(paths) > 1:
-            body += f"<p>{html_escape(os.path.basename(path))}</p>"
-        body += log_block(path)
-    return '<details class="sec"><summary><h2>valgrind log</h2></summary>' + body + "</details>"
+    def page_write(self, path: str, page: str) -> None:
+        os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write(page)
+        print(f"wrote {path} ({len(page.encode('utf-8')):,} bytes)", file=sys.stderr)
 
+    def rawdata_section(self, paths: Sequence[str], out_dir: str) -> str:
+        if not paths:
+            return ""
+        items = "".join(f'<li><a href="{html_escape(os.path.relpath(path, out_dir))}">'
+                        f'{html_escape(os.path.basename(path))}</a></li>' for path in paths)
+        return f'<details class="sec"><summary><h2>raw data</h2></summary><ul class="rawdata">{items}</ul></details>'
 
-def header_parse_pairs(items: Sequence[str]) -> list[Header]:
-    out: list[Header] = []
-    for item in items:
-        if "=" not in item:
-            sys.exit(f"error: --header expects LABEL=VALUE, got {item!r}")
-        label, _, value = item.partition("=")
-        out.append(Header(label.strip(), value))
-    return out
+    def report_page(self, args: TestArgs, views: Sequence[View], heading: str, table: str) -> None:
+        links = [StripLink("", "summary", "#", args.test)] + \
+            [StripLink(view.key, view.label, view.path, f"{args.test} / {view.label}") for view in views]
+        body = self.strip_render(args.test, links, help_href=args.help_href)
+        out_dir = os.path.dirname(os.path.abspath(args.output))
+        body += '<main id="home"><div class="page">' + \
+            self.header_table("report.header", self.header_parse_pairs(args.header))
+        if not args.no_log:
+            body += self.log_section(args.log)
+        body += self.rawdata_section(args.raw_data, out_dir)
+        body += f"<h2>{heading}</h2>" + table
+        body += '</div></main><iframe id="view" hidden title="report page"></iframe>'
+        self.page_write(args.output, theme.page_document(args.test, body, extra_js=FRAME_JS, body_class="frame"))
 
+    def strip_render(self, title: str, links: Sequence[StripLink], help_href: str = "README.md") -> str:
+        separator = '<span class="sep">|</span>'
+        parts = [f'<b class="title" id="title">{html_escape(title)}</b>']
+        for index, link in enumerate(links):
+            if index:
+                parts.append(separator)
+            parts.append(f'<a href="{html_escape(link.href)}" data-view="{html_escape(link.key)}" '
+                         f'data-title="{html_escape(link.title)}"{" data-frame=1" if link.frame else ""}>'
+                         f'{html_escape(link.label)}</a>')
+        parts.append('<span class="sp"></span>')
+        parts.append('<span class="util" id="util">')
+        parts.append('<a href="#" id="reset-cols">reset columns</a>')
+        parts.append(separator)
+        parts.append(f'<a href="{html_escape(help_href)}" target="_blank">help</a>')
+        parts.append(separator)
+        parts.append(f'<a href="{PERF_CHART}" target="_blank" rel="noopener">curl.se/perf</a>')
+        parts.append("</span>")
+        return f'<nav id="bar" class="strip">{"".join(parts)}</nav>'
 
-def header_read_file(path: str) -> list[Header]:
-    lines = [line for line in file_read_text(path).splitlines() if line.strip() and "=" in line]
-    return header_parse_pairs(lines)
+    def test(self, args: TestArgs) -> None:
+        profile = callgrind.profile_load(args.callgrind_file)
+        self.report_page(args, VIEWS, f"top {TOP} functions by self", self.functions_table(profile))
 
+    def time_humanize(self, text: str) -> str:
+        def one(match: re.Match[str]) -> str:
+            scale = TIME_SCALE.get(match.group(3).lower())
+            return match.group(0) if scale is None else match.group(1) + theme.num_time(float(match.group(2)) * scale)
+        return TIME_LINE.sub(one, text)
 
-def header_blocks_render(key: str, blocks: Sequence[HeaderBlock]) -> str:
-    body = ""
-    for index, block in enumerate(blocks):
-        if not block.pairs:
-            continue
-        body += f"<h2>{html_escape(block.label)}</h2>" + header_table(f"{key}.{index}", block.pairs)
-    return body
+    def timing(self, args: TimingArgs) -> None:
+        body = '<div class="page">' + self.header_table("timing.header", self.header_parse_pairs(args.header))
+        output = self.time_humanize(self.file_read(args.output_file).rstrip())
+        body += f"<h2>output</h2><pre>{html_escape(output)}</pre></div>"
+        self.page_write(args.output, theme.page_document(f"{args.test} / native timing", body))
 
-
-def header_parse_blocks(items: Sequence[str]) -> list[HeaderBlock]:
-    out: list[HeaderBlock] = []
-    for item in items:
-        if "=" not in item:
-            sys.exit(f"error: --header-block expects LABEL=FILE, got {item!r}")
-        label, _, path = item.partition("=")
-        out.append(HeaderBlock(label.strip(), header_read_file(path)))
-    return out
-
-
-def header_table(key: str, pairs: Sequence[Header]) -> str:
-    if not pairs:
-        return ""
-    rows: list[list[CellOrText]] = [[Cell(pair.label, cls="dim"), pair.value] for pair in pairs]
-    return theme.table_render(key, [Column("label"), Column("value", grow=True)], rows, fill=True, header=False)
-
-
-def page_write(path: str, page: str) -> None:
-    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
-    with open(path, "w", encoding="utf-8") as handle:
-        handle.write(page)
-    print(f"wrote {path} ({len(page.encode('utf-8')):,} bytes)", file=sys.stderr)
-
-
-def rawdata_section(paths: Sequence[str], out_dir: str) -> str:
-    if not paths:
-        return ""
-    items = "".join(f'<li><a href="{html_escape(os.path.relpath(path, out_dir))}">'
-                    f'{html_escape(os.path.basename(path))}</a></li>' for path in paths)
-    return f'<details class="sec"><summary><h2>raw data</h2></summary><ul class="rawdata">{items}</ul></details>'
-
-
-def report_page(args: TestArgs, views: Sequence[View], heading: str, table: str) -> None:
-    links = [StripLink("", "summary", "#", args.test)] + \
-        [StripLink(view.key, view.label, view.path, f"{args.test} / {view.label}") for view in views]
-    body = strip_render(args.test, links, help_href=args.help_href)
-    out_dir = os.path.dirname(os.path.abspath(args.output))
-    body += '<main id="home"><div class="page">' + header_table("report.header", header_parse_pairs(args.header))
-    if not args.no_log:
-        body += log_section(args.log)
-    body += rawdata_section(args.raw_data, out_dir)
-    body += f"<h2>{heading}</h2>" + table
-    body += '</div></main><iframe id="view" hidden title="report page"></iframe>'
-    page_write(args.output, theme.page_document(args.test, body, extra_js=FRAME_JS, body_class="frame"))
-
-
-def report_test(args: TestArgs) -> None:
-    profile = callgrind.profile_load(args.callgrind_file)
-    report_page(args, VIEWS, f"top {TOP} functions by self", functions_table(profile))
-
-
-def overview_page(args: OverviewArgs, tests: Sequence[TestDirectory], columns: Sequence[Column],
-                  rows: Sequence[Sequence[CellOrText]]) -> None:
-    links = [StripLink("", "overview", "#", "overview")] + \
-        [StripLink(test.name, test.name, f"{test.name}/index.html", test.name, frame=True) for test in tests]
-    body = strip_render("overview", links)
-    pairs = header_parse_pairs(args.header) + (header_read_file(args.header_file) if args.header_file else [])
-    body = body + '<main id="home"><div class="page">' + header_table("overview.header", pairs)
-    body += header_blocks_render("overview.block", header_parse_blocks(args.header_block))
-    body += "<h2>test suites</h2>" + theme.table_render("overview.tests", columns, rows)
-    body += '</div></main><iframe id="view" hidden title="report page"></iframe>'
-    page_write(args.output, theme.page_document("overview", body, extra_js=FRAME_JS, body_class="frame"))
-
-
-def overview_tests(args: OverviewArgs) -> list[TestDirectory]:
-    out_dir = os.path.dirname(os.path.abspath(args.output))
-    tests = [TestDirectory(name, os.path.join(out_dir, name)) for name in args.test]
-    tests.sort()
-    return tests
-
-
-def report_overview(args: OverviewArgs) -> None:
-    tests = overview_tests(args)
-    keys: list[str] = []
-    numbers: dict[str, dict[str, str]] = {}
-    for test in tests:
-        values: dict[str, str] = {}
-        for line in file_read_text(os.path.join(test.directory, "perf-tool", "output.txt")).splitlines():
-            match = re.match(r"^([A-Za-z][^:]{0,30}):\s+(.+?)\s*$", line)
-            if match:
-                values[match.group(1)] = value_humanize(match.group(1), match.group(2))
-                if match.group(1) not in keys:
-                    keys.append(match.group(1))
-        numbers[test.name] = values
-    columns = [Column("one report per test")] + [Column(key, numeric=True) for key in keys]
-    rows: list[list[CellOrText]] = [
-        [Cell(test.name, html=f'<a href="{html_escape(test.name)}/index.html">{html_escape(test.name)}</a>')]
-        + [numbers[test.name].get(key, "") for key in keys]
-        for test in tests]
-    overview_page(args, tests, columns, rows)
-
-
-def report_timing(args: TimingArgs) -> None:
-    body = '<div class="page">' + header_table("timing.header", header_parse_pairs(args.header))
-    output = time_humanize(file_read_text(args.output_file).rstrip())
-    body += f"<h2>output</h2><pre>{html_escape(output)}</pre></div>"
-    page_write(args.output, theme.page_document(f"{args.test} / native timing", body))
-
-
-def strip_render(title: str, links: Sequence[StripLink], help_href: str = "README.md") -> str:
-    def separator() -> str:
-        return '<span class="sep">|</span>'
-    parts = [f'<b class="title" id="title">{html_escape(title)}</b>']
-    for index, link in enumerate(links):
-        if index:
-            parts.append(separator())
-        parts.append(f'<a href="{html_escape(link.href)}" data-view="{html_escape(link.key)}" '
-                     f'data-title="{html_escape(link.title)}"{" data-frame=1" if link.frame else ""}>'
-                     f'{html_escape(link.label)}</a>')
-    parts.append('<span class="sp"></span>')
-    parts.append('<span class="util" id="util">')
-    parts.append('<a href="#" id="reset-cols">reset columns</a>')
-    parts.append(separator())
-    parts.append(f'<a href="{html_escape(help_href)}" target="_blank">help</a>')
-    parts.append(separator())
-    parts.append(f'<a href="{PERF_CHART}" target="_blank" rel="noopener">curl.se/perf</a>')
-    parts.append("</span>")
-    return f'<nav id="bar" class="strip">{"".join(parts)}</nav>'
-
-
-def time_humanize(text: str) -> str:
-    def one(match: re.Match[str]) -> str:
-        scale = TIME_SCALE.get(match.group(3).lower())
-        return match.group(0) if scale is None else match.group(1) + theme.num_time(float(match.group(2)) * scale)
-    return TIME_LINE.sub(one, text)
-
-
-def value_humanize(label: str, value: str) -> str:
-    line = time_humanize(f"{label}: {value}")
-    return line.split(": ", 1)[1] if line != f"{label}: {value}" else value
+    def value_humanize(self, label: str, value: str) -> str:
+        line = self.time_humanize(f"{label}: {value}")
+        return line.split(": ", 1)[1] if line != f"{label}: {value}" else value
 
 
 def main() -> None:
@@ -527,19 +512,20 @@ def main() -> None:
                                       "instead of its native timing, which a diff does not have")
 
     namespace = parser.parse_args()
+    report = BuildReport()
     if namespace.cmd == "test":
         test_args = TestArgs(callgrind_file=namespace.callgrind_file, output=namespace.output, test=namespace.test,
                              raw_data=namespace.raw_data, log=namespace.log, no_log=namespace.no_log,
                              help_href=namespace.help_href, diff=namespace.diff, header=namespace.header)
-        (diff_report_test if namespace.diff else report_test)(test_args)
+        (report.diff_test if namespace.diff else report.test)(test_args)
     elif namespace.cmd == "timing":
-        report_timing(TimingArgs(output=namespace.output, test=namespace.test,
+        report.timing(TimingArgs(output=namespace.output, test=namespace.test,
                                  output_file=namespace.output_file, header=namespace.header))
     else:
         overview_args = OverviewArgs(output=namespace.output, test=namespace.test, header=namespace.header,
                                      header_file=namespace.header_file, header_block=namespace.header_block,
                                      diff=namespace.diff)
-        (diff_report_overview if namespace.diff else report_overview)(overview_args)
+        (report.diff_overview if namespace.diff else report.overview)(overview_args)
 
 
 if __name__ == "__main__":

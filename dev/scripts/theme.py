@@ -23,8 +23,6 @@ THEME: list[str] = ["#1AB6FF", "#0097E6", "#F5F6FA", "#DCDDE1", "#FBC531", "#E1B
 
 TITLE_COLUMNS = len("simpleformat diff / native timing")
 
-_HERE = os.path.dirname(os.path.abspath(__file__))
-
 
 class Cell(NamedTuple):
     text: str = ""
@@ -37,6 +35,11 @@ class Cell(NamedTuple):
 CellOrText: TypeAlias = Cell | str
 
 
+class ColorPair(NamedTuple):
+    light: str
+    dark: str
+
+
 class Column(NamedTuple):
     label: str
     title: str = ""
@@ -44,11 +47,6 @@ class Column(NamedTuple):
     width: int | None = None
     clip: int | None = None
     grow: bool = False
-
-
-class ColorPair(NamedTuple):
-    light: str
-    dark: str
 
 
 class Rgb(NamedTuple):
@@ -73,37 +71,73 @@ TIME_UNITS: tuple[TimeUnit, ...] = (TimeUnit("s", 1.0), TimeUnit("ms", 1e-3), Ti
                                     TimeUnit("ns", 1e-9), TimeUnit("ps", 1e-12))
 
 
-def _color_pairs() -> dict[str, ColorPair]:
-    names = ["blue", "white", "yellow", "gray", "navy", "steel", "slate"]
-    return {name: ColorPair(THEME[2 * index], THEME[2 * index + 1]) for index, name in enumerate(names)}
+class Numbers:
+    def human(self, number: float) -> str:
+        value, unit = float(number), ""
+        for candidate in ("K", "M", "G", "T"):
+            if value < 999.5:
+                break
+            value /= 1000
+            unit = candidate
+        return f"{value:.1f}{unit}" if unit and value < 9.95 else f"{value:.0f}{unit}"
+
+    def percent(self, percent: float) -> str:
+        if percent >= 9.95:
+            return f"{percent:.1f}%"
+        if percent >= 0.01:
+            return f"{percent:.2f}%"
+        return "<0.01%" if percent > 0 else ""
+
+    def signed(self, number: float) -> str:
+        if number == 0:
+            return ""
+        return ("+" if number > 0 else "-") + self.human(abs(number))
+
+    def signed_percent(self, percent: float) -> str:
+        if percent == 0:
+            return ""
+        return ("+" if percent > 0 else "-") + self.percent(abs(percent))
+
+    def time(self, seconds: float) -> str:
+        if seconds == 0:
+            return "0.00s"
+        sign = "-" if seconds < 0 else ""
+        magnitude = abs(seconds)
+        unit = next((candidate for candidate in TIME_UNITS if magnitude >= candidate.seconds), TIME_UNITS[-1])
+        return f"{sign}{magnitude / unit.seconds:.2f}{unit.suffix}"
 
 
-COLOR_PAIR: dict[str, ColorPair] = _color_pairs()
+class Palette:
+    DIRECTORY = os.path.dirname(os.path.abspath(__file__))
+    NAMES = ("blue", "white", "yellow", "gray", "navy", "steel", "slate")
+
+    def asset_read(self, name: str) -> str:
+        with open(os.path.join(self.DIRECTORY, name), encoding="utf-8") as handle:
+            return handle.read()
+
+    def contrast_foreground(self, color: Rgb) -> str:
+        return ROLE["bg"] if self.luminance(color) > 0.5 else ROLE["fg"]
+
+    def luminance(self, color: Rgb) -> float:
+        return (0.2126 * color.red + 0.7152 * color.green + 0.0722 * color.blue) / 255
+
+    def pairs(self) -> dict[str, ColorPair]:
+        return {name: ColorPair(THEME[2 * index], THEME[2 * index + 1])
+                for index, name in enumerate(self.NAMES)}
+
+    def rgb(self, hex_color: str) -> Rgb:
+        return Rgb(int(hex_color[1:3], 16), int(hex_color[3:5], 16), int(hex_color[5:7], 16))
+
+    def shade(self, hex_color: str, factor: float) -> str:
+        return "#" + "".join(f"{round(component * factor):02X}" for component in self.rgb(hex_color))
 
 
-def _contrast_foreground(color: Rgb) -> str:
-    return ROLE["bg"] if _luminance(color) > 0.5 else ROLE["fg"]
+PALETTE = Palette()
 
-
-def _luminance(color: Rgb) -> float:
-    return (0.2126 * color.red + 0.7152 * color.green + 0.0722 * color.blue) / 255
-
-
-def _read(name: str) -> str:
-    with open(os.path.join(_HERE, name), encoding="utf-8") as handle:
-        return handle.read()
-
-
-def _rgb(hex_color: str) -> Rgb:
-    return Rgb(int(hex_color[1:3], 16), int(hex_color[3:5], 16), int(hex_color[5:7], 16))
-
-
-def _shade(hex_color: str, factor: float) -> str:
-    return "#" + "".join(f"{round(component * factor):02X}" for component in _rgb(hex_color))
-
+COLOR_PAIR: dict[str, ColorPair] = PALETTE.pairs()
 
 ROLE: dict[str, str] = {
-    "bg": _shade(COLOR_PAIR["slate"].dark, 0.90),
+    "bg": PALETTE.shade(COLOR_PAIR["slate"].dark, 0.90),
     "bg-alt": COLOR_PAIR["slate"].light,
     "panel": COLOR_PAIR["navy"].dark,
     "nav": COLOR_PAIR["navy"].dark,
@@ -117,37 +151,136 @@ ROLE: dict[str, str] = {
 }
 
 
-def _cell(value: CellOrText) -> Cell:
-    return value if isinstance(value, Cell) else Cell(text=value)
+class Theme:
+    def cell(self, value: CellOrText) -> Cell:
+        return value if isinstance(value, Cell) else Cell(text=value)
+
+    def column_widths(self, columns: Sequence[Column], rows: Sequence[Sequence[Cell]]) -> list[int]:
+        widths: list[int] = []
+        for index, column in enumerate(columns):
+            width = len(column.label)
+            if column.width is not None:
+                width = max(width, column.width)
+            else:
+                for row in rows:
+                    if index < len(row):
+                        width = max(width, len(row[index].text))
+                if column.clip is not None:
+                    width = max(len(column.label), min(width, column.clip))
+            widths.append(width + PADDING_CHARS)
+        return widths
+
+    def css(self) -> str:
+        lines = [":root {"]
+        for name, pair in COLOR_PAIR.items():
+            lines.append(f"  --{name}: {pair.dark}; --{name}-l: {pair.light};")
+        for role, color in ROLE.items():
+            lines.append(f"  --{role}: {color};")
+        lines.append(f"  --hot: {HEAT[-1]};")
+        lines.append(f"  --hot-fg: {PALETTE.contrast_foreground(PALETTE.rgb(HEAT[-1]))};")
+        lines.append(f"  --title-bg: {HEAT[2]};")
+        lines.append(f"  --title-fg: {PALETTE.contrast_foreground(PALETTE.rgb(HEAT[2]))};")
+        lines.append(f"  --title-w: calc({TITLE_COLUMNS}ch + 16px);")
+        lines.append(f"  --font: {FONT};")
+        lines.append("}")
+        return "\n".join(lines) + "\n" + PALETTE.asset_read("theme.css")
+
+    def document(self, title: str, body: str, extra_js: str = "", body_class: str = "") -> str:
+        body_attr = f' class="{body_class}"' if body_class else ""
+        return ("<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n"
+                "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n"
+                f"<title>{html_escape(title)}</title>\n<style>\n{self.css()}</style>\n</head>\n"
+                f"<body{body_attr}>\n{body}\n"
+                f"<script>\n{self.js()}</script>\n"
+                + (f"<script>\n{extra_js}</script>\n" if extra_js else "")
+                + "</body>\n</html>\n")
+
+    def heat_style(self, heat: float, signed: bool = False) -> str:
+        magnitude = abs(heat)
+        if magnitude <= 0:
+            return ""
+        stops = [PALETTE.rgb(color) for color in HEAT]
+        if signed:
+            position = (heat + 1) * 0.5 * (len(stops) - 1)
+        else:
+            position = heat * (len(stops) - 1)
+        index = min(max(int(position), 0), len(stops) - 2)
+        fraction = position - index
+        amount = HEAT_ALPHA_LOW + (HEAT_ALPHA_HIGH - HEAT_ALPHA_LOW) * magnitude
+        background = PALETTE.rgb(ROLE["bg"])
+        mixed = Rgb(*(round(background[channel]
+                            + (stops[index][channel] + (stops[index + 1][channel] - stops[index][channel]) * fraction
+                               - background[channel]) * amount)
+                     for channel in range(3)))
+        return f"background:rgb({mixed.red},{mixed.green},{mixed.blue});color:{PALETTE.contrast_foreground(mixed)}"
+
+    def heat_t(self, share: float, max_share: float) -> float:
+        sign = -1.0 if share < 0 else 1.0
+        magnitude = abs(share)
+        if magnitude < HEAT_MINIMUM_SHARE:
+            return 0.0
+        top = max(max_share, HEAT_MINIMUM_SHARE * 10) / HEAT_MINIMUM_SHARE
+        return sign * min(1.0, math.log10(magnitude / HEAT_MINIMUM_SHARE) / math.log10(top))
+
+    def js(self) -> str:
+        return PALETTE.asset_read("theme.js")
+
+    def runtime(self) -> ThemeRuntime:
+        return {"heat": HEAT, "bg": ROLE["bg"], "fgLight": ROLE["fg"], "fgDark": ROLE["bg"]}
+
+    def table(self, key: str, columns: Sequence[Column], rows: Sequence[Sequence[CellOrText]], fill: bool = False,
+              header: bool = True) -> str:
+        cells = [[self.cell(value) for value in row] for row in rows]
+        for row in cells:
+            if len(row) > len(columns):
+                raise ValueError(f"table {key!r}: a row has {len(row)} cells for {len(columns)} columns")
+        grow_index = next((index for index, column in enumerate(columns) if column.grow), len(columns) - 1) \
+            if fill else -1
+        widths = self.column_widths(columns, cells)
+        out = [f'<div class="tbl{" fill" if fill else ""}">']
+        table_classes = "cols" + (" fill" if fill else "")
+        out.append(f'<div class="tbl-cols"><table class="{table_classes}" data-key="{html_escape(key)}"><colgroup>')
+        for index, width in enumerate(widths):
+            col_classes = " ".join(class_name for class_name in
+                                   ("alt" if index % 2 else "", "grow" if index == grow_index else "") if class_name)
+            attr = f' class="{col_classes}"' if col_classes else ""
+            floor = len(columns[index].label) + PADDING_CHARS
+            out.append(f'<col{attr} data-min="{floor}ch" style="width:{width}ch">')
+        out.append("</colgroup>")
+        if header:
+            out.append("<thead><tr>")
+            for column in columns:
+                attrs = (' class="n"' if column.numeric else "") + \
+                    (f' title="{html_escape(column.title)}"' if column.title else "")
+                out.append(f"<th{attrs}>{html_escape(column.label)}</th>")
+            out.append("</tr></thead>")
+        out.append("<tbody>")
+        for row in cells:
+            out.append("<tr>")
+            for column, width, cell in zip(columns, widths, row):
+                cell_classes = " ".join(class_name for class_name in
+                                        ("n" if column.numeric else "", cell.cls) if class_name)
+                title = cell.title or (cell.text if len(cell.text) + PADDING_CHARS > width else "")
+                attrs = (f' class="{cell_classes}"' if cell_classes else "") \
+                    + (f' style="{cell.style}"' if cell.style else "") \
+                    + (f' title="{html_escape(title)}"' if title else "")
+                out.append(f"<td{attrs}>{cell.html if cell.html is not None else html_escape(cell.text)}</td>")
+            out.append("</tr>")
+        out.append("</tbody></table></div>")
+        out.append("</div>")
+        return "".join(out)
+
+
+NUMBERS = Numbers()
+RENDERER = Theme()
 
 
 def heat_style(heat: float, signed: bool = False) -> str:
-    magnitude = abs(heat)
-    if magnitude <= 0:
-        return ""
-    stops = [_rgb(color) for color in HEAT]
-    if signed:
-        position = (heat + 1) * 0.5 * (len(stops) - 1)
-    else:
-        position = heat * (len(stops) - 1)
-    index = min(max(int(position), 0), len(stops) - 2)
-    fraction = position - index
-    amount = HEAT_ALPHA_LOW + (HEAT_ALPHA_HIGH - HEAT_ALPHA_LOW) * magnitude
-    background = _rgb(ROLE["bg"])
-    mixed = Rgb(*(round(background[channel]
-                        + (stops[index][channel] + (stops[index + 1][channel] - stops[index][channel]) * fraction
-                           - background[channel]) * amount)
-                 for channel in range(3)))
-    return f"background:rgb({mixed.red},{mixed.green},{mixed.blue});color:{_contrast_foreground(mixed)}"
+    return RENDERER.heat_style(heat, signed)
 
 
 def heat_t(share: float, max_share: float) -> float:
-    sign = -1.0 if share < 0 else 1.0
-    magnitude = abs(share)
-    if magnitude < HEAT_MINIMUM_SHARE:
-        return 0.0
-    top = max(max_share, HEAT_MINIMUM_SHARE * 10) / HEAT_MINIMUM_SHARE
-    return sign * min(1.0, math.log10(magnitude / HEAT_MINIMUM_SHARE) / math.log10(top))
+    return RENDERER.heat_t(share, max_share)
 
 
 def html_escape(value: object) -> str:
@@ -155,127 +288,41 @@ def html_escape(value: object) -> str:
 
 
 def num_human(number: float) -> str:
-    value, unit = float(number), ""
-    for candidate in ("K", "M", "G", "T"):
-        if value < 999.5:
-            break
-        value /= 1000
-        unit = candidate
-    return f"{value:.1f}{unit}" if unit and value < 9.95 else f"{value:.0f}{unit}"
+    return NUMBERS.human(number)
 
 
 def num_pct(percent: float) -> str:
-    if percent >= 9.95:
-        return f"{percent:.1f}%"
-    if percent >= 0.01:
-        return f"{percent:.2f}%"
-    return "<0.01%" if percent > 0 else ""
+    return NUMBERS.percent(percent)
 
 
 def num_signed(number: float) -> str:
-    if number == 0:
-        return ""
-    return ("+" if number > 0 else "-") + num_human(abs(number))
+    return NUMBERS.signed(number)
 
 
 def num_signed_pct(percent: float) -> str:
-    if percent == 0:
-        return ""
-    return ("+" if percent > 0 else "-") + num_pct(abs(percent))
+    return NUMBERS.signed_percent(percent)
 
 
 def num_time(seconds: float) -> str:
-    if seconds == 0:
-        return "0.00s"
-    sign = "-" if seconds < 0 else ""
-    magnitude = abs(seconds)
-    unit = next((candidate for candidate in TIME_UNITS if magnitude >= candidate.seconds), TIME_UNITS[-1])
-    return f"{sign}{magnitude / unit.seconds:.2f}{unit.suffix}"
+    return NUMBERS.time(seconds)
 
 
 def page_document(title: str, body: str, extra_js: str = "", body_class: str = "") -> str:
-    body_attr = f' class="{body_class}"' if body_class else ""
-    return ("<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n"
-            "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n"
-            f"<title>{html_escape(title)}</title>\n<style>\n{theme_css()}</style>\n</head>\n"
-            f"<body{body_attr}>\n{body}\n"
-            f"<script>\n{theme_js()}</script>\n"
-            + (f"<script>\n{extra_js}</script>\n" if extra_js else "")
-            + "</body>\n</html>\n")
+    return RENDERER.document(title, body, extra_js, body_class)
 
 
 def table_render(key: str, columns: Sequence[Column], rows: Sequence[Sequence[CellOrText]], fill: bool = False,
                  header: bool = True) -> str:
-    cells = [[_cell(value) for value in row] for row in rows]
-    for row in cells:
-        if len(row) > len(columns):
-            raise ValueError(f"table {key!r}: a row has {len(row)} cells for {len(columns)} columns")
-    grow_index = next((index for index, column in enumerate(columns) if column.grow), len(columns) - 1) \
-        if fill else -1
-    widths: list[int] = []
-    for index, column in enumerate(columns):
-        width = len(column.label)
-        if column.width is not None:
-            width = max(width, column.width)
-        else:
-            for row in cells:
-                if index < len(row):
-                    width = max(width, len(row[index].text))
-            if column.clip is not None:
-                width = max(len(column.label), min(width, column.clip))
-        widths.append(width + PADDING_CHARS)
-    out = [f'<div class="tbl{" fill" if fill else ""}">']
-    table_classes = "cols" + (" fill" if fill else "")
-    out.append(f'<div class="tbl-cols"><table class="{table_classes}" data-key="{html_escape(key)}"><colgroup>')
-    for index, width in enumerate(widths):
-        col_classes = " ".join(class_name for class_name in
-                               ("alt" if index % 2 else "", "grow" if index == grow_index else "") if class_name)
-        attr = f' class="{col_classes}"' if col_classes else ""
-        floor = len(columns[index].label) + PADDING_CHARS
-        out.append(f'<col{attr} data-min="{floor}ch" style="width:{width}ch">')
-    out.append("</colgroup>")
-    if header:
-        out.append("<thead><tr>")
-        for column in columns:
-            attrs = (' class="n"' if column.numeric else "") + \
-                (f' title="{html_escape(column.title)}"' if column.title else "")
-            out.append(f"<th{attrs}>{html_escape(column.label)}</th>")
-        out.append("</tr></thead>")
-    out.append("<tbody>")
-    for row in cells:
-        out.append("<tr>")
-        for column, width, cell in zip(columns, widths, row):
-            cell_classes = " ".join(class_name for class_name in ("n" if column.numeric else "", cell.cls) if class_name)
-            title = cell.title or (cell.text if len(cell.text) + PADDING_CHARS > width else "")
-            attrs = (f' class="{cell_classes}"' if cell_classes else "") \
-                + (f' style="{cell.style}"' if cell.style else "") \
-                + (f' title="{html_escape(title)}"' if title else "")
-            out.append(f"<td{attrs}>{cell.html if cell.html is not None else html_escape(cell.text)}</td>")
-        out.append("</tr>")
-    out.append("</tbody></table></div>")
-    out.append("</div>")
-    return "".join(out)
+    return RENDERER.table(key, columns, rows, fill, header)
 
 
 def theme_css() -> str:
-    lines = [":root {"]
-    for name, pair in COLOR_PAIR.items():
-        lines.append(f"  --{name}: {pair.dark}; --{name}-l: {pair.light};")
-    for role, color in ROLE.items():
-        lines.append(f"  --{role}: {color};")
-    lines.append(f"  --hot: {HEAT[-1]};")
-    lines.append(f"  --hot-fg: {_contrast_foreground(_rgb(HEAT[-1]))};")
-    lines.append(f"  --title-bg: {HEAT[2]};")
-    lines.append(f"  --title-fg: {_contrast_foreground(_rgb(HEAT[2]))};")
-    lines.append(f"  --title-w: calc({TITLE_COLUMNS}ch + 16px);")
-    lines.append(f"  --font: {FONT};")
-    lines.append("}")
-    return "\n".join(lines) + "\n" + _read("theme.css")
+    return RENDERER.css()
 
 
 def theme_js() -> str:
-    return _read("theme.js")
+    return RENDERER.js()
 
 
 def theme_runtime() -> ThemeRuntime:
-    return {"heat": HEAT, "bg": ROLE["bg"], "fgLight": ROLE["fg"], "fgDark": ROLE["bg"]}
+    return RENDERER.runtime()

@@ -35,32 +35,45 @@ class FlameArgs(NamedTuple):
     profile_json: str
 
 
+class BuildFlameGraph:
+    def bootstrap_write(self, args: FlameArgs, raw: bytes) -> None:
+        doc_name = json.loads(raw.decode("utf-8")).get("name") or os.path.basename(args.profile_json)
+        script = BOOTSTRAP.replace("__NAME__", json.dumps(doc_name)) \
+            .replace("__DATA__", json.dumps(base64.b64encode(raw).decode("ascii")))
+        with open(os.path.join(args.speedscope_dir, PROFILE_JS), "w", encoding="utf-8") as handle:
+            handle.write(script)
+
+    def build(self, args: FlameArgs) -> None:
+        index_html = os.path.join(args.speedscope_dir, "index.html")
+        html = self.page_read(index_html)
+        with open(args.profile_json, "rb") as handle:
+            raw = handle.read()
+        self.bootstrap_write(args, raw)
+        self.page_patch(index_html, html)
+        print(f"wrote {os.path.join(args.speedscope_dir, PROFILE_JS)} ({len(raw):,} bytes of profile) "
+              f"and patched {index_html}", file=sys.stderr)
+
+    def page_patch(self, index_html: str, html: str) -> None:
+        injection = ("<script>if (!location.hash) location.hash = '#localProfilePath=profile';</script>\n"
+                     f'    <script src="{PROFILE_JS}"></script>\n    ')
+        with open(index_html, "w", encoding="utf-8") as handle:
+            handle.write(html.replace('<script src="', injection + '<script src="', 1))
+
+    def page_read(self, index_html: str) -> str:
+        with open(index_html, encoding="utf-8") as handle:
+            html = handle.read()
+        if '<script src="' not in html:
+            sys.exit(f"error: {index_html}: no <script src=> to patch the profile in before")
+        return html
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--speedscope-dir", required=True,
                         help="a fresh copy of speedscope's dist/release, patched in place")
     parser.add_argument("--profile-json", required=True, help="the .speedscope.json to embed")
     namespace = parser.parse_args()
-    args = FlameArgs(speedscope_dir=namespace.speedscope_dir, profile_json=namespace.profile_json)
-
-    index_html = os.path.join(args.speedscope_dir, "index.html")
-    with open(index_html, encoding="utf-8") as handle:
-        html = handle.read()
-    if '<script src="' not in html:
-        sys.exit(f"error: {index_html}: no <script src=> to patch the profile in before")
-    with open(args.profile_json, "rb") as handle:
-        raw = handle.read()
-    doc_name = json.loads(raw.decode("utf-8")).get("name") or os.path.basename(args.profile_json)
-    script = BOOTSTRAP.replace("__NAME__", json.dumps(doc_name)) \
-        .replace("__DATA__", json.dumps(base64.b64encode(raw).decode("ascii")))
-    with open(os.path.join(args.speedscope_dir, PROFILE_JS), "w", encoding="utf-8") as handle:
-        handle.write(script)
-    injection = ("<script>if (!location.hash) location.hash = '#localProfilePath=profile';</script>\n"
-                 f'    <script src="{PROFILE_JS}"></script>\n    ')
-    with open(index_html, "w", encoding="utf-8") as handle:
-        handle.write(html.replace('<script src="', injection + '<script src="', 1))
-    print(f"wrote {os.path.join(args.speedscope_dir, PROFILE_JS)} ({len(raw):,} bytes of profile) "
-          f"and patched {index_html}", file=sys.stderr)
+    BuildFlameGraph().build(FlameArgs(speedscope_dir=namespace.speedscope_dir, profile_json=namespace.profile_json))
 
 
 if __name__ == "__main__":

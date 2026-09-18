@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 import json
 import os
@@ -75,41 +76,6 @@ class MetaModel(TypedDict):
     defaultEvent: str
     totals: Costs
     diff: bool
-
-
-@dataclass
-class _FileAccumulator:
-    group: Group
-    raw: str
-    self_cost: Costs
-    calls_cost: Costs
-    source: str | None = None
-    lines: dict[str, _LineAccumulator] = field(default_factory=dict)
-    line_function: dict[str, int] = field(default_factory=dict)
-    callees: dict[str, list[CallRow]] = field(default_factory=dict)
-
-    def emit(self) -> FileModel:
-        def first(row: CallRow) -> int:
-            return -(row.cost[0] if row.cost else 0)
-        return {"self": costs_trim(self.self_cost), "calls": costs_trim(self.calls_cost), "source": self.source,
-                "lines": {line: LineCost(costs_trim(record.self_cost), costs_trim(record.calls_cost), record.count)
-                          for line, record in self.lines.items()},
-                "lineFunction": self.line_function,
-                "callees": {line: sorted(rows, key=first) for line, rows in self.callees.items()},
-                "group": self.group, "raw": self.raw}
-
-    def line(self, line_number: int, event_count: int) -> _LineAccumulator:
-        record = self.lines.get(str(line_number))
-        if record is None:
-            record = self.lines[str(line_number)] = _LineAccumulator([0] * event_count, [0] * event_count)
-        return record
-
-
-@dataclass
-class _LineAccumulator:
-    self_cost: Costs
-    calls_cost: Costs
-    count: int = 0
 
 
 CSS = """\
@@ -925,125 +891,181 @@ route();
 """
 
 
-def costs_trim(costs: Costs) -> Costs:
-    length = len(costs)
-    while length and costs[length - 1] == 0:
-        length -= 1
-    return costs[:length]
+class CallgrindToHeatmap:
+    @dataclass
+    class _FileAccumulator:
+        group: Group
+        raw: str
+        self_cost: Costs
+        calls_cost: Costs
+        source: str | None = None
+        lines: dict[str, CallgrindToHeatmap._LineAccumulator] = field(default_factory=dict)
+        line_function: dict[str, int] = field(default_factory=dict)
+        callees: dict[str, list[CallRow]] = field(default_factory=dict)
 
+        def emit(self) -> FileModel:
+            def first(row: CallRow) -> int:
+                return -(row.cost[0] if row.cost else 0)
+            trim = CallgrindToHeatmap.costs_trim
+            return {"self": trim(self.self_cost), "calls": trim(self.calls_cost), "source": self.source,
+                    "lines": {line: LineCost(trim(record.self_cost), trim(record.calls_cost), record.count)
+                              for line, record in self.lines.items()},
+                    "lineFunction": self.line_function,
+                    "callees": {line: sorted(rows, key=first) for line, rows in self.callees.items()},
+                    "group": self.group, "raw": self.raw}
 
-def diff_model(model: HeatModel, profile: callgrind.Profile) -> None:
-    model["meta"]["totals"] = callgrind_diff.profile_magnitudes(profile)
-    model["meta"]["diff"] = True
+        def line(self, line_number: int, event_count: int) -> CallgrindToHeatmap._LineAccumulator:
+            record = self.lines.get(str(line_number))
+            if record is None:
+                record = self.lines[str(line_number)] = \
+                    CallgrindToHeatmap._LineAccumulator([0] * event_count, [0] * event_count)
+            return record
 
+    @dataclass
+    class _LineAccumulator:
+        self_cost: Costs
+        calls_cost: Costs
+        count: int = 0
 
-def heatmap_render(model: HeatModel, title: str) -> str:
-    data = json.dumps(model, separators=(",", ":"), ensure_ascii=False)
-    data = data.replace("</", "<\\/")
-    body = BODY.replace("__THEME_JS__", theme.theme_js()).replace("__DATA__", data)
-    return ("<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n"
-            "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n"
-            f"<title>{theme.html_escape(title)}</title>\n<style>\n{theme.theme_css()}{CSS}</style>\n</head>\n<body>\n"
-            + body + "</body>\n</html>\n")
+    @staticmethod
+    def costs_trim(costs: Costs) -> Costs:
+        length = len(costs)
+        while length and costs[length - 1] == 0:
+            length -= 1
+        return costs[:length]
 
+    def diff_model(self, model: HeatModel, profile: callgrind.Profile) -> None:
+        model["meta"]["totals"] = callgrind_diff.profile_magnitudes(profile)
+        model["meta"]["diff"] = True
 
-def model_build(profile: callgrind.Profile) -> HeatModel:
-    event_count = len(profile.events)
+    def display_paths(self, profile: callgrind.Profile,
+                      raw_files: Sequence[str]) -> dict[str, callgrind.PathInfo]:
+        info: dict[str, callgrind.PathInfo] = {}
+        for raw in raw_files:
+            path_info = callgrind.path_norm(raw)
+            if path_info.group == "external":
+                object_name = os.path.basename(profile.file_ob.get(raw, "")) or "(unknown object)"
+                path_info = path_info._replace(display=f"{object_name}/{path_info.display}")
+            info[raw] = path_info
+        return info
 
-    function_names = sorted(profile.function_home)
-    function_index = {name: i for i, name in enumerate(function_names)}
+    def files_model(self, profile: callgrind.Profile, info: dict[str, callgrind.PathInfo],
+                    function_index: dict[str, int]) -> dict[str, FileModel]:
+        event_count = len(profile.events)
+        display = {raw: path_info.display for raw, path_info in info.items()}
+        accumulators: dict[str, CallgrindToHeatmap._FileAccumulator] = {}
+        for raw, path_info in info.items():
+            entry = accumulators.get(path_info.display)
+            if entry is None:
+                entry = accumulators[path_info.display] = CallgrindToHeatmap._FileAccumulator(
+                    group=path_info.group, raw=raw if path_info.group == "external" else path_info.display,
+                    self_cost=[0] * event_count, calls_cost=[0] * event_count)
+            if entry.source is None and path_info.local:
+                entry.source = self.source_read(path_info.local)
+        for key, costs in profile.line_self.items():
+            entry = accumulators[display[key.file]]
+            callgrind.costs_add(entry.self_cost, costs)
+            callgrind.costs_add(entry.line(key.line, event_count).self_cost, costs)
+        for key, costs in profile.line_calls.items():
+            entry = accumulators[display[key.file]]
+            callgrind.costs_add(entry.calls_cost, costs)
+            record = entry.line(key.line, event_count)
+            callgrind.costs_add(record.calls_cost, costs)
+            record.count += profile.line_call_count[key]
+        for key, function in profile.line_function.items():
+            accumulators[display[key.file]].line_function[str(key.line)] = function_index[function]
+        for site, tally in profile.callees.items():
+            entry_line = profile.function_entry.get(
+                site.callee, callgrind.SourceLine(profile.function_home.get(site.callee, "???"), 0))
+            accumulators[display[site.file]].callees.setdefault(str(site.line), []).append(
+                CallRow(function_index[site.callee], display.get(entry_line.file, entry_line.file), entry_line.line,
+                        self.costs_trim(tally.costs), tally.count))
+        return {name: entry.emit() for name, entry in accumulators.items()}
 
-    raw_files = sorted({key.file for key in profile.line_self} | {key.file for key in profile.line_calls}
-                       | {entry.file for entry in profile.function_entry.values()})
-    info: dict[str, callgrind.PathInfo] = {}
-    for raw in raw_files:
-        path_info = callgrind.path_norm(raw)
-        if path_info.group == "external":
-            object_name = os.path.basename(profile.file_ob.get(raw, "")) or "(unknown object)"
-            path_info = path_info._replace(display=f"{object_name}/{path_info.display}")
-        info[raw] = path_info
-    display = {raw: path_info.display for raw, path_info in info.items()}
+    def functions_model(self, profile: callgrind.Profile, info: dict[str, callgrind.PathInfo],
+                        function_names: Sequence[str], function_index: dict[str, int]) -> list[FunctionModel]:
+        display = {raw: path_info.display for raw, path_info in info.items()}
+        functions: list[FunctionModel] = []
+        for name in function_names:
+            entry = profile.function_entry.get(name, callgrind.SourceLine(profile.function_home[name], 0))
+            callers = sorted(
+                (CallRow(function_index[caller.function], display.get(caller.file, caller.file), caller.line,
+                         self.costs_trim(tally.costs), tally.count)
+                 for caller, tally in profile.callers.get(name, {}).items()),
+                key=lambda row: -(row.cost[0] if row.cost else 0))
+            functions.append({
+                "name": name,
+                "file": display.get(entry.file, entry.file),
+                "line": entry.line,
+                "self": self.costs_trim(profile.function_self.get(name, [])),
+                "calls": self.costs_trim(profile.function_calls.get(name, [])),
+                "callers": callers,
+            })
+        return functions
 
-    accumulators: dict[str, _FileAccumulator] = {}
-    for raw in raw_files:
-        path_info = info[raw]
-        entry = accumulators.get(path_info.display)
-        if entry is None:
-            entry = accumulators[path_info.display] = _FileAccumulator(
-                group=path_info.group, raw=raw if path_info.group == "external" else path_info.display,
-                self_cost=[0] * event_count, calls_cost=[0] * event_count)
-        if entry.source is None and path_info.local:
-            entry.source = source_read(path_info.local)
-    for key, costs in profile.line_self.items():
-        entry = accumulators[display[key.file]]
-        callgrind.costs_add(entry.self_cost, costs)
-        callgrind.costs_add(entry.line(key.line, event_count).self_cost, costs)
-    for key, costs in profile.line_calls.items():
-        entry = accumulators[display[key.file]]
-        callgrind.costs_add(entry.calls_cost, costs)
-        record = entry.line(key.line, event_count)
-        callgrind.costs_add(record.calls_cost, costs)
-        record.count += profile.line_call_count[key]
-    for key, function in profile.line_function.items():
-        accumulators[display[key.file]].line_function[str(key.line)] = function_index[function]
-    for site, tally in profile.callees.items():
-        entry = profile.function_entry.get(site.callee, callgrind.SourceLine(profile.function_home.get(site.callee, "???"), 0))
-        accumulators[display[site.file]].callees.setdefault(str(site.line), []).append(
-            CallRow(function_index[site.callee], display.get(entry.file, entry.file), entry.line,
-                   costs_trim(tally.costs), tally.count))
-    files: dict[str, FileModel] = {name: entry.emit() for name, entry in accumulators.items()}
+    def model(self, profile: callgrind.Profile) -> HeatModel:
+        function_names = sorted(profile.function_home)
+        function_index = {name: i for i, name in enumerate(function_names)}
+        raw_files = sorted({key.file for key in profile.line_self} | {key.file for key in profile.line_calls}
+                           | {entry.file for entry in profile.function_entry.values()})
+        info = self.display_paths(profile, raw_files)
+        files = self.files_model(profile, info, function_index)
+        functions = self.functions_model(profile, info, function_names, function_index)
+        cold = sorted(relative for relative in self.repo_tracked_files() if relative not in files)
+        default_event = DEFAULT_EVENT if DEFAULT_EVENT in profile.event_names() else profile.events[0]
+        return {
+            "meta": {
+                "events": profile.events,
+                "eventLong": {name: profile.event_long.get(name, "") for name in profile.event_names()},
+                "derived": profile.resolved_derived_events(),
+                "defaultEvent": default_event,
+                "totals": profile.totals(),
+                "diff": False,
+            },
+            "theme": theme.theme_runtime(),
+            "files": files,
+            "functions": functions,
+            "cold": cold,
+        }
 
-    functions: list[FunctionModel] = []
-    for name in function_names:
-        entry = profile.function_entry.get(name, callgrind.SourceLine(profile.function_home[name], 0))
-        callers = sorted(
-            (CallRow(function_index[caller.function], display.get(caller.file, caller.file), caller.line,
-                     costs_trim(tally.costs), tally.count)
-             for caller, tally in profile.callers.get(name, {}).items()),
-            key=lambda row: -(row.cost[0] if row.cost else 0))
-        functions.append({
-            "name": name,
-            "file": display.get(entry.file, entry.file),
-            "line": entry.line,
-            "self": costs_trim(profile.function_self.get(name, [])),
-            "calls": costs_trim(profile.function_calls.get(name, [])),
-            "callers": callers,
-        })
+    def render(self, model: HeatModel, title: str) -> str:
+        data = json.dumps(model, separators=(",", ":"), ensure_ascii=False)
+        data = data.replace("</", "<\\/")
+        body = BODY.replace("__THEME_JS__", theme.theme_js()).replace("__DATA__", data)
+        return ("<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n"
+                "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n"
+                f"<title>{theme.html_escape(title)}</title>\n<style>\n{theme.theme_css()}{CSS}</style>\n"
+                "</head>\n<body>\n" + body + "</body>\n</html>\n")
 
-    cold = sorted(relative for relative in repo_tracked_files() if relative not in files)
-    default_event = DEFAULT_EVENT if DEFAULT_EVENT in profile.event_names() else profile.events[0]
-    return {
-        "meta": {
-            "events": profile.events,
-            "eventLong": {name: profile.event_long.get(name, "") for name in profile.event_names()},
-            "derived": profile.resolved_derived_events(),
-            "defaultEvent": default_event,
-            "totals": profile.totals(),
-            "diff": False,
-        },
-        "theme": theme.theme_runtime(),
-        "files": files,
-        "functions": functions,
-        "cold": cold,
-    }
+    def repo_tracked_files(self) -> list[str]:
+        try:
+            output = subprocess.run(["git", "-C", callgrind.REPO_ROOT, "ls-files", "--", *TREE],
+                                    check=True, capture_output=True, text=True).stdout
+        except (OSError, subprocess.CalledProcessError):
+            return []
+        return [line for line in output.split("\n") if line.endswith((".c", ".h"))]
 
+    def run(self, args: HeatArgs) -> None:
+        profile = callgrind.profile_load(args.callgrind_file)
+        model = self.model(profile)
+        if args.diff:
+            self.diff_model(model, profile)
+        html = self.render(model, args.title)
+        os.makedirs(os.path.dirname(os.path.abspath(args.output)), exist_ok=True)
+        with open(args.output, "w", encoding="utf-8") as handle:
+            handle.write(html)
+        embedded_count = sum(1 for entry in model["files"].values() if entry["source"] is not None)
+        print(f"files with samples: {len(model['files'])} ({embedded_count} with source embedded), "
+              f"cold files listed: {len(model['cold'])}, functions: {len(model['functions'])}", file=sys.stderr)
+        print(f"wrote {args.output} ({len(html.encode('utf-8')):,} bytes)", file=sys.stderr)
 
-def repo_tracked_files() -> list[str]:
-    try:
-        output = subprocess.run(["git", "-C", callgrind.REPO_ROOT, "ls-files", "--", *TREE],
-                                check=True, capture_output=True, text=True).stdout
-    except (OSError, subprocess.CalledProcessError):
-        return []
-    return [line for line in output.split("\n") if line.endswith((".c", ".h"))]
-
-
-def source_read(local: str) -> str | None:
-    try:
-        with open(local, "rb") as handle:
-            data = handle.read()
-    except OSError:
-        return None
-    return data.decode("utf-8", errors="replace")
+    def source_read(self, local: str) -> str | None:
+        try:
+            with open(local, "rb") as handle:
+                data = handle.read()
+        except OSError:
+            return None
+        return data.decode("utf-8", errors="replace")
 
 
 def main() -> None:
@@ -1056,21 +1078,8 @@ def main() -> None:
                         help="the callgrind file is a callgrind_diff.py delta: print signed numbers and take "
                              "shares against the summed magnitude of every change")
     namespace = parser.parse_args()
-    args = HeatArgs(callgrind_file=namespace.callgrind_file, output=namespace.output, title=namespace.title,
-                    diff=namespace.diff)
-
-    profile = callgrind.profile_load(args.callgrind_file)
-    model = model_build(profile)
-    if args.diff:
-        diff_model(model, profile)
-    html = heatmap_render(model, args.title)
-    os.makedirs(os.path.dirname(os.path.abspath(args.output)), exist_ok=True)
-    with open(args.output, "w", encoding="utf-8") as handle:
-        handle.write(html)
-    embedded_count = sum(1 for entry in model["files"].values() if entry["source"] is not None)
-    print(f"files with samples: {len(model['files'])} ({embedded_count} with source embedded), "
-          f"cold files listed: {len(model['cold'])}, functions: {len(model['functions'])}", file=sys.stderr)
-    print(f"wrote {args.output} ({len(html.encode('utf-8')):,} bytes)", file=sys.stderr)
+    CallgrindToHeatmap().run(HeatArgs(callgrind_file=namespace.callgrind_file, output=namespace.output,
+                                      title=namespace.title, diff=namespace.diff))
 
 
 if __name__ == "__main__":
