@@ -13,8 +13,8 @@ from callgrind import Costs
 
 
 class DiffArgs(NamedTuple):
-    baseline: str
-    modified: str
+    baseline: list[str]
+    modified: list[str]
     output: str
 
 
@@ -107,7 +107,8 @@ def diff_build(args: DiffArgs) -> None:
     baseline = callgrind.profile_load(args.baseline)
     modified = callgrind.profile_load(args.modified)
     diff = profile_diff(baseline, modified)
-    profile_write(diff, args.output, [f"Baseline: {args.baseline}", f"Modified: {args.modified}"])
+    profile_write(diff, args.output,
+                 [f"Baseline: {' '.join(args.baseline)}", f"Modified: {' '.join(args.modified)}"])
     changed = sum(1 for costs in diff.function_self.values() if any(costs))
     print(f"wrote {args.output} ({os.path.getsize(args.output):,} bytes): "
           f"{len(diff.line_self):,} lines in {changed:,} functions changed", file=sys.stderr)
@@ -115,8 +116,10 @@ def diff_build(args: DiffArgs) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("baseline", help="the 'before' callgrind file")
-    parser.add_argument("modified", help="the 'after' callgrind file")
+    parser.add_argument("--baseline", action="append", required=True, metavar="FILE",
+                        help="the 'before' callgrind file (repeatable; several are merged)")
+    parser.add_argument("--current", dest="modified", action="append", required=True, metavar="FILE",
+                        help="the 'after' callgrind file (repeatable; several are merged)")
     parser.add_argument("-o", "--output", required=True, help="the callgrind-format delta file to write")
     namespace = parser.parse_args()
     diff_build(DiffArgs(baseline=namespace.baseline, modified=namespace.modified, output=namespace.output))

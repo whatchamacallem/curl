@@ -131,8 +131,9 @@ class SampledProfile(TypedDict):
 
 
 class SpeedscopeArgs(NamedTuple):
-    callgrind_file: str
+    callgrind_file: list[str]
     output: str
+    name: str | None
 
 
 SpeedscopeDoc = TypedDict("SpeedscopeDoc", {
@@ -268,13 +269,15 @@ def graph_from_profile(profile: callgrind.Profile) -> Graph:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("callgrind_file")
+    parser.add_argument("callgrind_file", nargs="+",
+                        help="callgrind output file(s); several are merged into one profile")
     parser.add_argument("-o", "--output", required=True, help="output .speedscope.json path")
+    parser.add_argument("--name", default=None, help="document name (default: the file's basename)")
     namespace = parser.parse_args()
-    args = SpeedscopeArgs(callgrind_file=namespace.callgrind_file, output=namespace.output)
+    args = SpeedscopeArgs(callgrind_file=namespace.callgrind_file, output=namespace.output, name=namespace.name)
 
     profile = callgrind.profile_load(args.callgrind_file)
-    doc = document_build(profile, os.path.basename(args.callgrind_file))
+    doc = document_build(profile, args.name or os.path.basename(args.callgrind_file[0]))
     with open(args.output, "w", encoding="utf-8") as handle:
         json.dump(doc, handle)
     print(f"wrote {args.output} ({len(doc['shared']['frames'])} frames)", file=sys.stderr)

@@ -21,7 +21,7 @@ THEME: list[str] = ["#1AB6FF", "#0097E6", "#F5F6FA", "#DCDDE1", "#FBC531", "#E1B
                     "#7F8FA6", "#718093", "#273C75", "#192A56", "#487EB0", "#40739E",
                     "#353B48", "#2F3640"]
 
-TITLE_COLUMNS = len("urlparser diff / heat map")
+TITLE_COLUMNS = len("simpleformat diff / native timing")
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+from collections.abc import Sequence
 import os
 import re
 import sys
@@ -20,6 +21,9 @@ MIN_RAW_BYTES = 100
 class Layout(NamedTuple):
     subpages: tuple[str, ...]
     heading: str
+    header_blocks: tuple[str, ...]
+    manifest_version: str
+    manifest_labels: tuple[str, ...]
 
 
 class ValidateArgs(NamedTuple):
@@ -27,8 +31,11 @@ class ValidateArgs(NamedTuple):
     diff: bool
 
 
-LAYOUT_FULL = Layout(("flame-graph", "heat-map", "perf-tool"), r"<h2>top \d+ functions by self</h2>")
-LAYOUT_DIFF = Layout(("heat-map",), r"<h2>top \d+ functions by change in self</h2>")
+LAYOUT_FULL = Layout(("flame-graph", "heat-map", "perf-tool"), r"<h2>top \d+ functions by self</h2>", (),
+                     "curl/perf2html.sh v1", ("build", "timed"))
+LAYOUT_DIFF = Layout(("heat-map",), r"<h2>top \d+ functions by change in self</h2>",
+                     ("baseline", "modified"),
+                     "curl/perf2html_diff.sh v1", ("baseline", "modified"))
 
 errors: list[str] = []
 
@@ -94,6 +101,34 @@ def check_min_size(path: str, min_bytes: int, label: str) -> str:
     return text
 
 
+def check_overview(out_dir: str, tests: Sequence[str], layout: Layout) -> None:
+    path = os.path.join(out_dir, "index.html")
+    text = check_html_page(path, "index.html", MIN_INDEX_BYTES, "overview")
+    if not text:
+        return
+    if "<h2>test suites</h2>" not in text:
+        fail(f"overview index.html has no 'test suites' section: {path}")
+    for test_name in tests:
+        if f'href="{test_name}/index.html"' not in text:
+            fail(f"overview index.html is missing its {test_name} strip link: {path}")
+    for heading in layout.header_blocks:
+        if f"<h2>{heading}</h2>" not in text:
+            fail(f"overview index.html has no '{heading}' header block: {path}")
+
+
+def check_manifest(out_dir: str, layout: Layout) -> None:
+    path = os.path.join(out_dir, "MANIFEST.txt")
+    text = check_min_size(path, 40, "MANIFEST.txt")
+    if not text:
+        return
+    first = text.split("\n", 1)[0]
+    if first != layout.manifest_version:
+        fail(f"MANIFEST.txt starts with {first!r}, expected the version line {layout.manifest_version!r}: {path}")
+    for label in layout.manifest_labels:
+        if not re.search(rf"^{label}=.+$", text, re.M):
+            fail(f"MANIFEST.txt has no '{label}=' header row, so a reader of this report cannot show it: {path}")
+
+
 def check_perf_tool(out_dir: str, test_name: str) -> None:
     out_txt = os.path.join(out_dir, "perf-tool", "output.txt")
     text = check_min_size(out_txt, 20, "perf-tool/output.txt")
@@ -125,6 +160,33 @@ def fail(msg: str) -> None:
     errors.append(msg)
 
 
+def page_title(index_path: str) -> str:
+    with open(index_path, encoding="utf-8", errors="replace") as handle:
+        match = re.search(r"<title>(.*?)</title>", handle.read())
+    return match.group(1) if match else ""
+
+
+def check_test_report(out_dir: str, name: str, layout: Layout) -> None:
+    check_index(out_dir, name, layout)
+    check_heat_map(out_dir, name)
+    check_raw_dir(out_dir)
+    if "flame-graph" in layout.subpages:
+        check_flame_graph(out_dir)
+    if "perf-tool" in layout.subpages:
+        check_perf_tool(out_dir, name)
+
+
+def overview_test_names(index_path: str, out_dir: str) -> list[str]:
+    with open(index_path, encoding="utf-8", errors="replace") as handle:
+        text = handle.read()
+    names: list[str] = []
+    for match in re.finditer(r'href="([\w.-]+)/index\.html"', text):
+        test_name = match.group(1)
+        if os.path.isdir(os.path.join(out_dir, test_name)):
+            names.append(test_name)
+    return names
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("out_dir", help="a report directory")
@@ -137,18 +199,18 @@ def main() -> int:
     if not os.path.isfile(index_path):
         print(f"error: no index.html in {out_dir} -- not a report directory?", file=sys.stderr)
         return 1
-    with open(index_path, encoding="utf-8", errors="replace") as handle:
-        match = re.search(r"<title>(.*?)</title>", handle.read())
-    name = match.group(1) if match else os.path.basename(out_dir)
+    name = page_title(index_path)
     layout = LAYOUT_DIFF if args.diff else LAYOUT_FULL
 
-    check_index(out_dir, name, layout)
-    check_heat_map(out_dir, name)
-    check_raw_dir(out_dir)
-    if "flame-graph" in layout.subpages:
-        check_flame_graph(out_dir)
-    if "perf-tool" in layout.subpages:
-        check_perf_tool(out_dir, name)
+    check_manifest(out_dir, layout)
+    if name == "overview":
+        tests = overview_test_names(index_path, out_dir)
+        check_overview(out_dir, tests, layout)
+        for test_name in tests:
+            test_dir = os.path.join(out_dir, test_name)
+            check_test_report(test_dir, test_name, layout)
+    else:
+        check_test_report(out_dir, name or os.path.basename(out_dir), layout)
 
     if errors:
         print(f"validate_report: {len(errors)} problem(s) in {out_dir}:", file=sys.stderr)

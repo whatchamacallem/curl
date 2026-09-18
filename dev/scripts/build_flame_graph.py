@@ -50,7 +50,8 @@ def main() -> None:
         sys.exit(f"error: {index_html}: no <script src=> to patch the profile in before")
     with open(args.profile_json, "rb") as handle:
         raw = handle.read()
-    script = BOOTSTRAP.replace("__NAME__", json.dumps(os.path.basename(args.profile_json))) \
+    doc_name = json.loads(raw.decode("utf-8")).get("name") or os.path.basename(args.profile_json)
+    script = BOOTSTRAP.replace("__NAME__", json.dumps(doc_name)) \
         .replace("__DATA__", json.dumps(base64.b64encode(raw).decode("ascii")))
     with open(os.path.join(args.speedscope_dir, PROFILE_JS), "w", encoding="utf-8") as handle:
         handle.write(script)

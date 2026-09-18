@@ -5,6 +5,7 @@ import posixpath
 import re
 import sys
 from collections import defaultdict
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Literal, NamedTuple, TypeAlias, TypeVar
 
@@ -196,7 +197,7 @@ def path_norm(path: str) -> PathInfo:
     return PathInfo(posixpath.normpath(path), None, "external")
 
 
-def profile_load(path: str) -> Profile:
+def _profile_load_one(path: str) -> Profile:
     with open(path, encoding="utf-8", errors="replace") as handle:
         profile = profile_parse(handle.read())
     if not profile.events:
@@ -208,6 +209,61 @@ def profile_load(path: str) -> Profile:
     if total and abs(ratio - 1.0) > 1e-6:
         sys.exit(f"error: per-line self cost does not add up to callgrind's summary ({path})")
     return profile
+
+
+def profile_load(paths: Sequence[str]) -> Profile:
+    profiles = [_profile_load_one(path) for path in paths]
+    return profile_merge(profiles)
+
+
+def profile_merge(profiles: Sequence[Profile]) -> Profile:
+    if len(profiles) == 1:
+        return profiles[0]
+    first = profiles[0]
+    for other in profiles[1:]:
+        if other.events != first.events:
+            sys.exit(f"error: cannot merge profiles with different events: {first.events} vs {other.events}")
+    merged = Profile(events=list(first.events), event_long=dict(first.event_long), positions=list(first.positions))
+    commands = [other.command.split() for other in profiles]
+    if all(command and command[0] == commands[0][0] for command in commands):
+        merged.command = commands[0][0] + " " + ", ".join(" ".join(command[1:]) for command in commands)
+    else:
+        merged.command = " + ".join(other.command for other in profiles)
+    if all(other.summary for other in profiles):
+        merged.summary = [sum(other.summary[index] if index < len(other.summary) else 0 for other in profiles)
+                          for index in range(max(len(other.summary) for other in profiles))]
+    for other in profiles:
+        for key, costs in other.line_self.items():
+            costs_accumulate(merged.line_self, key, costs)
+        for key, costs in other.line_calls.items():
+            costs_accumulate(merged.line_calls, key, costs)
+        for key, count in other.line_call_count.items():
+            merged.line_call_count[key] += count
+        for key, function in other.line_function.items():
+            merged.line_function.setdefault(key, function)
+        for function, home in other.function_home.items():
+            merged.function_home.setdefault(function, home)
+        for function, costs in other.function_self.items():
+            costs_accumulate(merged.function_self, function, costs)
+        for function, lines in other.function_lines.items():
+            for key, costs in lines.items():
+                costs_accumulate(merged.function_lines[function], key, costs)
+        for function, costs in other.function_calls.items():
+            costs_accumulate(merged.function_calls, function, costs)
+        for function, entry in other.function_entry.items():
+            merged.function_entry.setdefault(function, entry)
+        for site, tally in other.callees.items():
+            tally_accumulate(merged.callees, site, tally.count, tally.costs)
+        for callee, callers in other.callers.items():
+            for caller, tally in callers.items():
+                tally_accumulate(merged.callers[callee], caller, tally.count, tally.costs)
+        for file, ob in other.file_ob.items():
+            merged.file_ob.setdefault(file, ob)
+    for name in merged.events:
+        merged.event_long[name] = EVENT_LONG.get(name, "")
+    for derived_event in merged.resolved_derived_events():
+        merged.event_long[derived_event.name] = derived_event.long
+    return merged
 
 
 def profile_parse(text: str) -> Profile:

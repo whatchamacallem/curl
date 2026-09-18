@@ -1,6 +1,6 @@
 trace/
 report/
 __pycache__/
-diff2html_baseline_report
-diff2html_modified_report
-diff2html_diff_report
+perf2html_baseline_report
+perf2html_modified_report
+perf2html_diff_report

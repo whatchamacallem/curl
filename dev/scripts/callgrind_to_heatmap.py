@@ -48,7 +48,7 @@ class FunctionModel(TypedDict):
 
 
 class HeatArgs(NamedTuple):
-    callgrind_file: str
+    callgrind_file: list[str]
     output: str
     title: str
     diff: bool
@@ -1048,7 +1048,8 @@ def source_read(local: str) -> str | None:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("callgrind_file")
+    parser.add_argument("callgrind_file", nargs="+",
+                        help="callgrind output file(s); several are merged into one profile")
     parser.add_argument("-o", "--output", required=True, help="output .html path (directories are created)")
     parser.add_argument("--title", required=True)
     parser.add_argument("--diff", action="store_true",
