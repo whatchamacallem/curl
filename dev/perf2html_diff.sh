@@ -33,6 +33,8 @@ RUN_LOG="$PWD/trace/diff.$STAMP.log"
 
 usage_show() { awk 'NR > 1 && !/^#/ { exit } NR > 1 { sub(/^# ?/, ""); print }' "$SCRIPT"; }
 
+path_display() { python3 -c 'import os,sys; print(os.path.relpath(sys.argv[1], sys.argv[2]))' "$1" "$PWD"; }
+
 log_say() { if [ "$VERBOSE" = 1 ]; then echo "$@"; fi; }
 
 test_run() {
@@ -105,7 +107,7 @@ manifest_check() {
 header_file_of() {
   local dir="$1" role="$2"
   local out="$PWD/trace/header.$role.$STAMP.txt"
-  { echo "report=$dir"
+  { echo "report=$(path_display "$dir")"
     grep '=' "$dir/MANIFEST.txt" || true; } >"$out"
   echo "$out"
 }
@@ -183,9 +185,12 @@ diff_one() {
   raw_name="${raw_name%.*}"
   cp "$diff_file" "$out/raw/$raw_name"
   [ "$MULTI" = 1 ] && help_args=(--help-href ../README.md)
+  local base_files_rel="" cur_files_rel="" file
+  for file in $base_files; do base_files_rel+="$(path_display "$file") "; done
+  for file in $cur_files; do cur_files_rel+="$(path_display "$file") "; done
   test_run python3 scripts/build_report.py test "$diff_file" -o "$out/index.html" --test "$name" --diff \
     --raw-data "$out/raw/$raw_name" \
-    --header "baseline=$(printf '%s' "${base_files% }")" --header "modified=$(printf '%s' "${cur_files% }")" \
+    --header "baseline=${base_files_rel% }" --header "modified=${cur_files_rel% }" \
     "${help_args[@]}"
   [ "$VERBOSE" = 1 ] || printf ' -> %s\n' "${out#"$PWD"/}/index.html"
 }
@@ -200,8 +205,8 @@ main() {
   mkdir -p "$OUT_DIR" trace
   cp README.md "$OUT_DIR/README.md"
   { printf '%s\n' "$MANIFEST_OURS"
-    echo "baseline=$BASE_DIR"
-    echo "modified=$MOD_DIR"; } >"$OUT_DIR/MANIFEST.txt"
+    echo "baseline=$(path_display "$BASE_DIR")"
+    echo "modified=$(path_display "$MOD_DIR")"; } >"$OUT_DIR/MANIFEST.txt"
   [ "$VERBOSE" = 1 ] || echo "dev/perf2html_diff.sh $STAMP: $BASE_DIR -> $MOD_DIR -> $OUT_DIR" >"$RUN_LOG"
 
   local tests test_name args

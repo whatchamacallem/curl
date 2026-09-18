@@ -32,7 +32,7 @@ class ValidateArgs(NamedTuple):
 
 
 LAYOUT_FULL = Layout(("flame-graph", "heat-map", "perf-tool"), r"<h2>top \d+ functions by self</h2>", (),
-                     "curl/perf2html.sh v1", ("build", "timed"))
+                     "curl/perf2html.sh v1", ("sampled", "revision", "cpu", "build", "executable"))
 LAYOUT_DIFF = Layout(("heat-map",), r"<h2>top \d+ functions by change in self</h2>",
                      ("baseline", "modified"),
                      "curl/perf2html_diff.sh v1", ("baseline", "modified"))
@@ -57,6 +57,22 @@ class ValidateReport:
         text = self.page_check(path, "heat-map/index.html", MIN_HEATMAP_BYTES, f"{test_name} / heat map")
         if text and "heatStyle" not in text:
             self.fail(f"heat-map/index.html is missing its runtime script (no heatStyle): {path}")
+
+    def home_dir_check(self, out_dir: str) -> None:
+        home = os.path.expanduser("~")
+        if home == "~":
+            return
+        for root, _dirs, names in os.walk(out_dir):
+            for name in names:
+                path = os.path.join(root, name)
+                try:
+                    with open(path, encoding="utf-8", errors="replace") as handle:
+                        text = handle.read()
+                except OSError:
+                    continue
+                if home in text:
+                    self.fail(f"{os.path.relpath(path, out_dir)} leaks the author's home directory {home!r} -- "
+                              f"reports are copied around and must not reveal who made them: {path}")
 
     def index_check(self, out_dir: str, test_name: str, layout: Layout) -> None:
         path = os.path.join(out_dir, "index.html")
@@ -167,6 +183,7 @@ class ValidateReport:
         name = self.page_title(index_path)
         layout = LAYOUT_DIFF if args.diff else LAYOUT_FULL
 
+        self.home_dir_check(out_dir)
         self.manifest_check(out_dir, layout)
         if name == "overview":
             tests = self.overview_test_names(index_path, out_dir)

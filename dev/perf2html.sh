@@ -14,7 +14,9 @@
 #   DIR/all/                 every test's callgrind data merged into one profile
 #   DIR/README.md         help
 #   DIR/MANIFEST.txt      "curl/perf2html.sh v1", then the overview's header rows
-#                          as LABEL=VALUE lines, for perf2html_diff.sh
+#                          as LABEL=VALUE lines, for perf2html_diff.sh -- sampled=
+#                          (local time the profile run started), revision= (git
+#                          hash, +-dirty), cpu= (lscpu model name)
 #
 # DIR defaults to perf2html_baseline_report, or perf2html_modified_report when
 # cmake_flags are given; a relative DIR is under dev/, ~/ is expanded. cmake_flags are passed
@@ -98,6 +100,15 @@ args_parse() {
   TESTS=($(sed -n '/^TESTS_C *=/,/^$/p' "$REPO/tests/perf/Makefile.inc" | grep -o '[A-Za-z0-9_]*\.c' | sed 's/\.c$//' | sort))
 }
 
+build_manifest() {
+  SAMPLED="$(date +'%Y/%m/%d %H:%M:%S %Z')"
+  REVISION="$(cd "$REPO" && git rev-parse --short HEAD 2>/dev/null || echo unknown)"
+  if [ "$REVISION" != unknown ] && ! (cd "$REPO" && git diff --quiet HEAD -- 2>/dev/null); then
+    REVISION="$REVISION-dirty"
+  fi
+  CPU_MODEL="$(lscpu | grep -E 'Model name' | head -1 | sed 's/^Model name:[[:space:]]*//')"
+}
+
 toolchain_check() {
   local tool
   for tool in cmake ninja ccache valgrind taskset python3 speedscope; do
@@ -117,6 +128,7 @@ build_compile() {
   test_run cmake --build "$REPO/$BUILD_DIR" --parallel --target perf
   [ "$VERBOSE" = 1 ] || printf ' | %s\n' "$(took "$start")"
   BIN="$REPO/$BUILD_DIR/tests/perf/perf"
+  BIN_REL="${BIN#"$REPO"/}"
   BUILD_DESC="$BUILD_DIR, ${CMAKE_FLAGS[*]}, $(cc --version | head -1)"
 }
 
@@ -141,7 +153,7 @@ report_render() {
   log_say "== [$name]: index -> $out/index.html =="
   test_run python3 scripts/build_report.py timing -o "$out/perf-tool/index.html" --test "$name" \
     --output-file "$out/perf-tool/output.txt" \
-    --header "binary=$BIN" --header "pinned to=CPU $CPU" --header "build=$BUILD_DESC"
+    --header "binary=$BIN_REL" --header "pinned to=CPU $CPU" --header "build=$BUILD_DESC"
   rm -rf "$out/raw"
   mkdir -p "$out/raw"
   for cg_file in "${CALLGRIND_FILES[@]}"; do
@@ -177,7 +189,7 @@ run_one() {
   [ "$VERBOSE" = 1 ] || printf ' | %s' "$(took "$start")"
 
   log_say "== [$test]: native timing, pinned to CPU $CPU -> $out/perf-tool/output.txt =="
-  { echo "\$ taskset -c $CPU $BIN $test"; taskset -c "$CPU" "$BIN" "$test" 2>&1; } >"$out/perf-tool/output.txt" \
+  { echo "\$ taskset -c $CPU $BIN_REL $test"; taskset -c "$CPU" "$BIN" "$test" 2>&1; } >"$out/perf-tool/output.txt" \
     || { echo "error: $BIN $test failed; its output is in $out/perf-tool/output.txt" >&2; exit 1; }
   if [ "$VERBOSE" = 1 ]; then
     cat "$out/perf-tool/output.txt"
@@ -218,7 +230,7 @@ run_all() {
     total=$(( total + ${usecs:-0} ))
   done
   {
-    echo "\$ taskset -c $CPU $BIN <test>   for every test, one after the other (each test's page has its full output)"
+    echo "\$ taskset -c $CPU $BIN_REL <test>   for every test, one after the other (each test's page has its full output)"
     printf '%s' "$rows"
     echo "Time:     $total usecs"
   } >"$out/perf-tool/output.txt"
@@ -228,8 +240,11 @@ run_all() {
 
   log_say "== overview -> $OUT_DIR/index.html =="
   { printf '%s\n' "$MANIFEST_VERSION"
+    echo "sampled=$SAMPLED"
+    echo "revision=$REVISION"
+    echo "cpu=$CPU_MODEL"
     echo "build=$BUILD_DESC"
-    echo "timed=$BIN <test>  (native, pinned to CPU $CPU)"; } >"$OUT_DIR/MANIFEST.txt"
+    echo "executable=$BIN_REL <test>  (native, pinned to CPU $CPU)"; } >"$OUT_DIR/MANIFEST.txt"
   args=(-o "$OUT_DIR/index.html" --header-file "$OUT_DIR/MANIFEST.txt")
   for test_name in "${TESTS[@]}"; do args+=(--test "$test_name"); done
   test_run python3 scripts/build_report.py overview "${args[@]}"
@@ -239,6 +254,7 @@ run_all() {
 main() {
   args_parse "$@"
   toolchain_check
+  build_manifest
   mkdir -p "$OUT_DIR" trace
   cp README.md "$OUT_DIR/README.md"
   [ "$VERBOSE" = 1 ] || echo "dev/perf2html.sh $STAMP: ${CMAKE_FLAGS[*]} -> $OUT_DIR" >"$RUN_LOG"
