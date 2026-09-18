@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# dev/perf2html_diff.sh [--verbose] [baseline-dir modified-dir] [report-dir]
+# dev/perf2html_diff.sh [--verbose] [baseline-dir] [modified-dir] [report-dir]
 #
 # Subtracts the callgrind data of two perf2html.sh reports (modified minus
 # baseline, per function and source line) and writes the change as a report:
@@ -13,11 +13,12 @@
 #   DIR/MANIFEST.txt       "curl/perf2html_diff.sh v1", then this run's header
 #                           rows as LABEL=VALUE lines
 #
-# With no directories, perf2html_baseline_report and perf2html_modified_report
-# are compared into perf2html_diff_report. One directory given is the
-# report-dir; two are the baseline and modified report-dirs; three are all of
-# them, in that order. Relative paths are under dev/, ~/ is expanded. --verbose (first)
-# streams every tool's output instead of logging it to dev/trace/diff.<ts>.log.
+# Positional args are baseline-dir, modified-dir, report-dir, each optional and
+# independently defaulted (perf2html_baseline_report, perf2html_modified_report,
+# perf2html_diff_report) -- e.g. one directory given sets baseline-dir alone,
+# the other two keep their defaults. Relative paths are under dev/, ~/ is
+# expanded. --verbose (first) streams every tool's output instead of logging it
+# to dev/trace/diff.<ts>.log.
 # The last line printed is the report's file:// URL. Nothing is validated
 # here -- dev/perf2html_batch.sh runs validate_report.py over the finished report.
 set -euo pipefail
@@ -59,7 +60,7 @@ args_parse() {
   OUT_DIR=perf2html_diff_report
   case $# in
     0) ;;
-    1) OUT_DIR="$1";;
+    1) BASE_DIR="$1";;
     2) BASE_DIR="$1"; MOD_DIR="$2";;
     3) BASE_DIR="$1"; MOD_DIR="$2"; OUT_DIR="$3";;
     *) usage_show >&2; exit 2;;
