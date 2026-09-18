@@ -51,6 +51,7 @@ FRAME_JS = """\
   const build = (key, sub) => key ? "#" + key + (sub ? "/" + sub.slice(1) : "") : "";
   function sync(hash) {
     if (hash !== location.hash) history.replaceState(null, "", hash || "#");
+    if (framed) window.parent.postMessage({ theme: "hash", hash: hash }, "*");
   }
   function show(hash) {
     const [key, sub] = parse(hash);
