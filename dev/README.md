@@ -1,6 +1,15 @@
 # README
 
-The HTML will open straight from disk, with no server.
+The HTML will open straight from disk, with no server. If you start by opening
+the top level `index.html` then bookmarks should work.
+
+## The Scripts
+
+```sh
+dev/perf2html.sh [--verbose] [--report=DIR] [cmake_flags...]
+dev/perf2html_diff.sh [--verbose] [baseline-dir] [modified-dir] [report-dir]
+dev/perf2html_batch.sh [--verbose] [--keep] [cmake_flags...]
+```
 
 ## Callgrind Events
 
@@ -31,10 +40,6 @@ mispredict, and `CEst` is a rough cycle estimate.
 See the [callgrind](https://valgrind.org/docs/manual/cl-manual.html) docs.
 GPL Version 3, 29 June 2007.
 
-## Links
-
-The address bar of `index.html` always links to what is on screen, so it can be
-bookmarked and reopened later.
 
 ## Diff Reports
 

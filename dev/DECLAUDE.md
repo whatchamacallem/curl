@@ -8,21 +8,19 @@ Theme Colors = `["#00A8FF", "#0097E6", "#E84118", "#C23616", "#9C88FF", "#8C7AE6
 
 ## Working rules
 
-1. More than one question/concern/option → terse numbered list, proceed in that order.
+1. More than one question/concern/option → terse numbered list, proceed in that order. Multiple lists become numbered sub-sections.
 2. Keep this file current: any tooling/report-layout/theme/findings change updates CLAUDE.md in the same change. Keep updates in this file's compact style — facts, commands, numbers, gotchas needed to act; no narrative, history, or rationale for rejected approaches. Prefer editing an existing line over appending a new paragraph.
 3. No source line numbers here (they silently rot) — refer to a function/identifier/grep-able snippet.
 4. `dev/` is throwaway profiling tooling, not upstream material: one shared parser, one shared theme, no dead code, no duplicate systems. Anything a script writes must open from `file://` with nothing fetched at view time.
 5. A request bundling several distinct changes → state a checklist up front, work in order, close with a short per-item report (done / changed from ask / not applicable) — no running narration.
 
-## Goal
+## The Scripts
 
-Optimize `tests/perf/urlparser.c` (and, as needed, `lib/urlapi.c` / `lib/uint-table.c` / `lib/idn.c`) to improve the "urlparser" perf chart: https://curl.se/perf/index.html#urlparser
-
+```sh
+dev/perf2html.sh [--verbose] [--report=DIR] [cmake_flags...]
+dev/perf2html_diff.sh [--verbose] [baseline-dir] [modified-dir] [report-dir]
+dev/perf2html_batch.sh [--verbose] [--keep] [cmake_flags...]
 ```
-./build/tests/perf/perf urlparser [loops]   # default loops=10000; use ~1000 for quick iteration
-```
-
-Don't change the corpus (`urls[]`, ~577 URLs) or the `CURLU_*` option cross-product in `tests/perf/urlparser.c` — invalidates comparison to the public chart. `Errors:` count must stay constant across changes (nonzero is expected/correct; a drop means URLs are being wrongly rejected, not "faster").
 
 ## Build
 
