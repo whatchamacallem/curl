@@ -15,10 +15,6 @@ Costs: TypeAlias = list[int]
 Group = Literal["repo", "system", "external"]
 _Key = TypeVar("_Key")
 
-# The curl checkout, three levels up from here -- every path is
-# reported relative to it.
-REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
 # What callgrind's terse event abbreviations mean, spelled out for tooltips.
 _EVENT_LONG: dict[str, str] = {
     "Bc": "conditional branches executed",
@@ -35,6 +31,10 @@ _EVENT_LONG: dict[str, str] = {
     "ILmr": "LL (last-level) instruction cache misses",
     "Ir": "instructions executed",
 }
+
+# The curl checkout, three levels up from here -- every path is
+# reported relative to it.
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
 # Caller - The one place a function was called from.

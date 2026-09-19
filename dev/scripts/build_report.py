@@ -19,34 +19,6 @@ from theme import Cell, CellOrText, Column, html_escape
 # The event the summary tables rank and colour by.
 _EVENT = "Ir"
 
-# Valgrind's own preamble, dropped from the log a page shows.
-_LOG_SKIP_LINES = 9
-
-# The "curl.se/perf" link in every page's util block.
-_PERF_CHART = "https://curl.se/perf/index.html"
-
-# Valgrind's "==1234== " line prefix, stripped so the log reads as output.
-_PID_PREFIX = re.compile(r"^==\d+==\s?")
-
-# How much of a long symbol a column shows before it clips.
-_SYMBOL_CHARS = 20
-
-# A "Something: 1.23 ms" line of the perf log, which is the only valid speed
-# number -- callgrind's wall clock never is.
-_TIME_LINE = re.compile(r"^(\s*[A-Za-z][\w/ ]*:\s*)"
-                        r"(-?\d+(?:\.\d+)?)\s*(usecs?|us|msecs?|ms|nsecs?|ns|secs?|s)\s*$",
-                        re.I | re.M)
-
-# What each of those suffixes is in seconds.
-_TIME_SCALE: dict[str, float] = {"usec": 1e-6, "usecs": 1e-6, "us": 1e-6,
-                                 "msec": 1e-3, "msecs": 1e-3, "ms": 1e-3,
-                                 "nsec": 1e-9, "nsecs": 1e-9, "ns": 1e-9,
-                                 "sec": 1.0, "secs": 1.0, "s": 1.0}
-
-# How many functions the summary's top table lists.
-_TOP = 50
-
-
 # The script every framing level runs, deciding what it is by whether it has
 # a parent. Named exactly this: check_js.py looks it up by name.
 FRAME_JS = """\
@@ -136,6 +108,33 @@ FRAME_JS = """\
   show(location.hash);
 })();
 """
+
+# Valgrind's own preamble, dropped from the log a page shows.
+_LOG_SKIP_LINES = 9
+
+# The "curl.se/perf" link in every page's util block.
+_PERF_CHART = "https://curl.se/perf/index.html"
+
+# Valgrind's "==1234== " line prefix, stripped so the log reads as output.
+_PID_PREFIX = re.compile(r"^==\d+==\s?")
+
+# How much of a long symbol a column shows before it clips.
+_SYMBOL_CHARS = 20
+
+# A "Something: 1.23 ms" line of the perf log, which is the only valid speed
+# number -- callgrind's wall clock never is.
+_TIME_LINE = re.compile(r"^(\s*[A-Za-z][\w/ ]*:\s*)"
+                        r"(-?\d+(?:\.\d+)?)\s*(usecs?|us|msecs?|ms|nsecs?|ns|secs?|s)\s*$",
+                        re.I | re.M)
+
+# What each of those suffixes is in seconds.
+_TIME_SCALE: dict[str, float] = {"usec": 1e-6, "usecs": 1e-6, "us": 1e-6,
+                                 "msec": 1e-3, "msecs": 1e-3, "ms": 1e-3,
+                                 "nsec": 1e-9, "nsecs": 1e-9, "ns": 1e-9,
+                                 "sec": 1.0, "secs": 1.0, "s": 1.0}
+
+# How many functions the summary's top table lists.
+_TOP = 50
 
 
 # BuildReport - Writes the overview page and every test's summary page, and

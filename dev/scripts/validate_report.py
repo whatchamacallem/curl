@@ -13,6 +13,10 @@ from typing import NamedTuple
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import callgrind
 
+# Only a flame graph our own tool exported counts -- a stale or hand-made one
+# must fail.
+_FLAME_EXPORTER = "dev/scripts/trace_to_speedscope.py"
+
 # Smallest a file can be before it is plainly a failed generate rather than a
 # small page.
 _MIN_FLAME_JS_BYTES = 200
@@ -20,10 +24,6 @@ _MIN_HEATMAP_BYTES = 5000
 _MIN_INDEX_BYTES = 2000
 _MIN_PAGE_BYTES = 500
 _MIN_RAW_BYTES = 100
-
-# Only a flame graph our own tool exported counts -- a stale or hand-made one
-# must fail.
-_FLAME_EXPORTER = "dev/scripts/trace_to_speedscope.py"
 
 # Anything outside plain ASCII, which the sources are not allowed to contain.
 _NON_ASCII_RE = re.compile(r"[^\x00-\x7F]")
@@ -351,17 +351,17 @@ class ValidateReport:
         return sorted(paths)
 
 
-# What a perf2html.sh report must contain.
-_LAYOUT_FULL = ValidateReport.ReportLayout(
-    ("flame-graph", "heat-map"), r"<h2>top \d+ functions by self</h2>", (),
-    "curl/perf2html.sh v1",
-    ("sampled", "revision", "cpu", "build", "executable", "stamp"), True)
-
 # What a perf2html_diff.sh report must contain: no flame graph, no timing.
 _LAYOUT_DIFF = ValidateReport.ReportLayout(
     ("heat-map",), r"<h2>top \d+ functions by change in self</h2>",
     ("baseline", "modified"),
     "curl/perf2html_diff.sh v1", ("baseline", "modified", "stamp"), False)
+
+# What a perf2html.sh report must contain.
+_LAYOUT_FULL = ValidateReport.ReportLayout(
+    ("flame-graph", "heat-map"), r"<h2>top \d+ functions by self</h2>", (),
+    "curl/perf2html.sh v1",
+    ("sampled", "revision", "cpu", "build", "executable", "stamp"), True)
 
 
 # main - Check the sources are ASCII, then check the given report.

@@ -317,19 +317,15 @@ class Theme:
         return "".join(out)
 
 
-# Time units, largest first -- num_time() picks the first one a value reaches.
-_TIME_UNITS: tuple[Theme.TimeUnit, ...] = (
-    Theme.TimeUnit("s", 1.0), Theme.TimeUnit("ms", 1e-3), Theme.TimeUnit("us", 1e-6),
-    Theme.TimeUnit("ns", 1e-9), Theme.TimeUnit("ps", 1e-12))
-
-# The one renderer every page goes through.
+# The one renderer every page goes through. Named first because the three
+# below are built from it.
 _RENDERER = Theme()
-
-# The one number formatter every printed number goes through.
-_NUMBERS = Theme.NumberFormat()
 
 # Every named colour, in both its light and dark form.
 _COLOR_PAIR: dict[str, Theme.ColorPair] = _RENDERER.pairs()
+
+# The one number formatter every printed number goes through.
+_NUMBERS = Theme.NumberFormat()
 
 # What each colour is actually for -- the names CSS and the pages use.
 _ROLE: dict[str, str] = {
@@ -345,6 +341,11 @@ _ROLE: dict[str, str] = {
     "accent": _COLOR_PAIR["yellow"].light,
     "bar": _COLOR_PAIR["steel"].dark,
 }
+
+# Time units, largest first -- num_time() picks the first one a value reaches.
+_TIME_UNITS: tuple[Theme.TimeUnit, ...] = (
+    Theme.TimeUnit("s", 1.0), Theme.TimeUnit("ms", 1e-3), Theme.TimeUnit("us", 1e-6),
+    Theme.TimeUnit("ns", 1e-9), Theme.TimeUnit("ps", 1e-12))
 
 
 # heat_style - The inline style one heat position paints a cell with.

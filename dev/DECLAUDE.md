@@ -180,6 +180,15 @@ types, then logic classes); methods alphabetical. Public free functions are
 one-line delegations (`profile_load(paths)` → `Callgrind().load(paths)`) so
 callers never name a class.
 
+**Constants are alphabetical ignoring the leading `_`** — so `BODY` sorts
+before `_CSS`, `_EVENT_LONG` before `REPO_ROOT`. The *only* constants allowed
+below the classes are the ones that can't be evaluated above them: a constant
+whose value names a class in the same file (`_DERIVED_DEFAULTS`, `_HOLDERS`,
+`_LAYOUT_FULL`/`_LAYOUT_DIFF`, `_FLAME_VIEW`/`_HEAT_VIEW`, `_TIME_UNITS`) or a
+singleton/derived value built from one (`theme.py`'s
+`_RENDERER`/`_NUMBERS`/`_COLOR_PAIR`/`_ROLE`). Those sit after the class that
+defines them, alphabetical among themselves where order allows.
+
 **Typing** (pyright `standard`, py3.11, 0 errors): everything annotated, no
 `Any`-shaped records. Record → `NamedTuple`; anything summed in place →
 `@dataclass`. JSON object → `TypedDict` (a NamedTuple would serialize as an
