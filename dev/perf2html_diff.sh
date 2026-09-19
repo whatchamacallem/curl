@@ -4,8 +4,8 @@ set -euo pipefail
 SCRIPT="$(readlink -f "$0")"
 cd "$(dirname "$SCRIPT")"
 
-MANIFEST_OURS='curl/perf2html_diff.sh v1'
-MANIFEST_THEIRS='curl/perf2html.sh v1'
+DIFF_MANIFEST='curl/perf2html_diff.sh v1'
+REPORT_MANIFEST='curl/perf2html.sh v1'
 
 STAMP="$(date +%s)"
 RUN_LOG="$PWD/trace/diff.$STAMP.log"
@@ -64,13 +64,13 @@ manifest_check() {
     exit 2
   fi
   version="$(head -1 "$manifest")"
-  if [ "$version" = "$MANIFEST_OURS" ]; then
+  if [ "$version" = "$DIFF_MANIFEST" ]; then
     echo "error: can't diff a diff -- the $role report was written by perf2html_diff.sh: $dir" >&2
     exit 2
   fi
-  if [ "$version" != "$MANIFEST_THEIRS" ]; then
+  if [ "$version" != "$REPORT_MANIFEST" ]; then
     echo "error: unrecognized file type -- $role report has an unrecognized MANIFEST.txt: $dir" >&2
-    echo "       expected its first line to be: $MANIFEST_THEIRS" >&2
+    echo "       expected its first line to be: $REPORT_MANIFEST" >&2
     exit 2
   fi
 }
@@ -163,7 +163,7 @@ main() {
 
   mkdir -p "$OUT_DIR" trace
   cp README.md "$OUT_DIR/README.md"
-  { printf '%s\n' "$MANIFEST_OURS"
+  { printf '%s\n' "$DIFF_MANIFEST"
     echo "baseline=$(path_display "$BASE_DIR")"
     echo "modified=$(path_display "$MOD_DIR")"; } >"$OUT_DIR/MANIFEST.txt"
   [ "$VERBOSE" = 1 ] || echo "dev/perf2html_diff.sh $STAMP: $BASE_DIR -> $MOD_DIR -> $OUT_DIR" >"$RUN_LOG"

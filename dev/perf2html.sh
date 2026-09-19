@@ -9,7 +9,7 @@ TRACE_BUILD_DIR=build-instr
 CPU=3
 LOOPS_DIVISOR=50
 SKIP_ALL=18446744073709551615
-MANIFEST_VERSION='curl/perf2html.sh v1'
+REPORT_MANIFEST='curl/perf2html.sh v1'
 
 REPO="$(cd .. && pwd)"
 STAMP="$(date +%s)"
@@ -259,7 +259,7 @@ run_all() {
   report_render all "$out" ""
 
   log_say "== overview -> $OUT_DIR/index.html =="
-  { printf '%s\n' "$MANIFEST_VERSION"
+  { printf '%s\n' "$REPORT_MANIFEST"
     echo "sampled=$SAMPLED"
     echo "revision=$REVISION"
     echo "cpu=$CPU_MODEL"
