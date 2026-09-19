@@ -24,8 +24,8 @@ DIR/MANIFEST.txt          Metadata.
 DIR defaults to `perf2html_baseline_report`, or `perf2html_modified_report`.
 
 `perf2html_diff.sh` subtracts the callgrind data of two `perf2html.sh` reports
-(modified minus baseline, per function and source line) and writes the change as
-a with the same files as `perf2html.sh`.
+(modified minus baseline, per function and source line) and writes the change
+as a with the same files as `perf2html.sh`.
 
 Positional args default to `perf2html_baseline_report`,
 `perf2html_modified_report`, and `perf2html_diff_report`.
@@ -45,11 +45,11 @@ Positional args default to `perf2html_baseline_report`,
 ## Callgrind Events
 
 These are the raw counters callgrind records and the derived ones this report
-adds. They show up as column headers and event picker choices in the summary and
-the heat map.
+adds. They show up as column headers and event picker choices in the summary
+and the heat map.
 
 | Event | Meaning                                  |
-|-------|------------------------------------------|
+| ----- | ---------------------------------------- |
 | Ir    | Instructions executed (I cache reads)    |
 | I1mr  | L1 instruction cache read misses         |
 | ILmr  | Last level cache instruction read misses |
@@ -64,26 +64,25 @@ the heat map.
 | Bi    | Indirect branches executed               |
 | Bim   | Indirect branches mispredicted           |
 
-Derived from the above: `D1m` is `D1mr + D1mw`, `DLm` is `DLmr + DLmw`,
-`L1m` is every L1 miss, `LLm` is every last level miss, `Bm` is every
-mispredict, and `CEst` is a rough cycle estimate.
+Derived from the above: `D1m` is `D1mr + D1mw`, `DLm` is `DLmr + DLmw`, `L1m`
+is every L1 miss, `LLm` is every last level miss, `Bm` is every mispredict, and
+`CEst` is a rough cycle estimate.
 
-See the [callgrind](https://valgrind.org/docs/manual/cl-manual.html) docs.
-GPL Version 3, 29 June 2007.
-
+See the [callgrind](https://valgrind.org/docs/manual/cl-manual.html) docs. GPL
+Version 3, 29 June 2007.
 
 ## Diff Reports
 
 A report built by `perf2html_diff.sh` compares two earlier reports, and every
-number in it is a difference: the modified run minus the baseline. `+4.3K` means
-four thousand more than the baseline, `-1,000` a thousand fewer. A share like
-`+16%` is that function's part of everything that changed, not its part of the
-program.
+number in it is a difference: the modified run minus the baseline. `+4.3K`
+means four thousand more than the baseline, `-1,000` a thousand fewer. A share
+like `+16%` is that function's part of everything that changed, not its part of
+the program.
 
 Tables are ranked by how large the change is, ignoring its direction, so the
 biggest improvements and the biggest regressions sit together at the top. The
-heat colours follow the same rule -- a large improvement is as bright as a large
-regression, and only the sign tells them apart.
+heat colours follow the same rule -- a large improvement is as bright as a
+large regression, and only the sign tells them apart.
 
 The differences are taken per source line, so the heat map's listing shows
 exactly where a function got cheaper or dearer. The summary table's calls/
@@ -101,10 +100,10 @@ time stamp counter at every function entry and exit. "Time Order" is the order
 the calls were made in.
 
 It shows up to 10 calls in a row, 10 KB at most, taken from the middle of the
-run, when caches are warm. Times are nanoseconds since the start of the
-run. Both hooks cost time too and that time is in the boxes, so a function of
-a few instructions looks slower than it is, and the traced run is slower than
-the perf log's native one. Use the perf log for speed and the flame graph for
+run, when caches are warm. Times are nanoseconds since the start of the run.
+Both hooks cost time too and that time is in the boxes, so a function of a few
+instructions looks slower than it is, and the traced run is slower than the
+perf log's native one. Use the perf log for speed and the flame graph for
 shape: what calls what, in which order, and which call was the slow one. The
 summary's "trace log" has the commands and the traced run's own output, and
 "raw data" links the same profile as a speedscope JSON file.
@@ -112,8 +111,8 @@ summary's "trace log" has the commands and the traced run's own output, and
 The merged "all" report and a diff have no flame graph: recordings neither add
 up nor subtract.
 
-Scroll to pan and pinch or Cmd/Ctrl+scroll to zoom, on both the minimap
-and the main view. Click a frame for its stats.
+Scroll to pan and pinch or Cmd/Ctrl+scroll to zoom, on both the minimap and the
+main view. Click a frame for its stats.
 
 The keybindings are:
 
@@ -130,6 +129,8 @@ The keybindings are:
 - n: Go to next profile/thread if one is available
 - p: Go to previous profile/thread if one is available
 - t: Open the profile/thread selector if available
-- Cmd+F/Ctrl+F: to open search. While open, Enter and Shift+Enter cycle through results
+- Cmd+F/Ctrl+F: to open search. While open, Enter and Shift+Enter cycle through
+  results
 
-[speedscope](https://github.com/jlfwong/speedscope) is Copyright (c) 2018 Jamie Wong
+[speedscope](https://github.com/jlfwong/speedscope) is Copyright (c) 2018 Jamie
+Wong

@@ -6,17 +6,17 @@
    tooling/layout/theme/findings change. `CLAUDE.md` is a symlink to
    `dev/DECLAUDE.md`. Compact style: facts, commands, numbers, gotchas. No line
    numbers (they rot) — name a function/identifier.
-2. `dev/` is throwaway profiling tooling: one shared parser, one shared theme,
-   no dead code, no duplicate systems. Everything a script writes must open from
-   `file://` with nothing fetched at view time.
-3. **No fake data.** Every value on a page is a recorded measurement or plain
+1. `dev/` is throwaway profiling tooling: one shared parser, one shared theme,
+   no dead code, no duplicate systems. Everything a script writes must open
+   from `file://` with nothing fetched at view time.
+1. **No fake data.** Every value on a page is a recorded measurement or plain
    arithmetic on one (sum, difference, share, `CEst`). No apportioning,
-   interpolation or "plausible" stacks. If a tool can't supply what a view needs
-   (callgrind: per-call stacks/time), the view isn't built.
-4. **Nothing test-specific, ever.** No test names, file lists or per-test cases
-   anywhere in `dev/`; every view is built for every test in `TESTS_C`. Examples
-   read `<test>`/`<file>`. (`urlparser`/`lib/urlapi.c` was a first trial only —
-   never single it out.)
+   interpolation or "plausible" stacks. If a tool can't supply what a view
+   needs (callgrind: per-call stacks/time), the view isn't built.
+1. **Nothing test-specific, ever.** No test names, file lists or per-test cases
+   anywhere in `dev/`; every view is built for every test in `TESTS_C`.
+   Examples read `<test>`/`<file>`. (`urlparser`/`lib/urlapi.c` was a first
+   trial only — never single it out.)
 
 ## Commands
 
@@ -41,7 +41,8 @@ cmake --build build --target perf      # EXCLUDE_FROM_ALL, must be named
 
 `CURL_USE_LIBPSL=OFF` is the only intentional deviation (libpsl-dev absent).
 Never profile `./build` (`-O0`: inlining differs, attribution wrong) — use
-`build-relwithdebinfo`. Always pin: WSL2 noise is ~106% unpinned, <1-3% pinned.
+`build-relwithdebinfo`. Always pin: WSL2 noise is ~106% unpinned, \<1-3%
+pinned.
 
 ```sh
 taskset -c 3 ./build-relwithdebinfo/tests/perf/perf <test> [loops]
@@ -53,7 +54,8 @@ taskset -c 3 ./build-relwithdebinfo/tests/perf/perf <test> [loops]
   `perf2html_baseline_report`, or `perf2html_modified_report` when any
   cmake_flags are given (after a *source*-only change, pass
   `--report=perf2html_modified_report` yourself). cwd-independent (cd's to
-  `dev/`); relative DIR is under `dev/`. Last line printed is the `file://` URL.
+  `dev/`); relative DIR is under `dev/`. Last line printed is the `file://`
+  URL.
 - `perf2html_diff.sh` — measures nothing; subtracts two reports' own `raw/`
   data.
 - `perf2html_batch.sh` — the only thing that runs checks. Five steps: 1 lint
@@ -74,18 +76,20 @@ Key behaviors worth knowing before touching them:
   validate step to a generator.
 - **The batch is the generators' test suite** — driving them over all three
   output dirs is the coverage. Don't grow a per-generator check.
-- Profiling: `taskset -c 3 valgrind --tool=callgrind --cache-sim=yes
-  --branch-sim=yes`. Timing is a *separate* native pinned `perf stat -x, -e
-  cycles:u,instructions:u` run — its `Time*` lines are the only valid speed
-  number; callgrind's wall clock never is.
-- Trace tree `build-instr` = same flags + `-finstrument-functions` + `dev/cyg.c`
-  linked in. Whole build instrumented, no file list.
+- Profiling:
+  `taskset -c 3 valgrind --tool=callgrind --cache-sim=yes --branch-sim=yes`.
+  Timing is a *separate* native pinned
+  `perf stat -x, -e cycles:u,instructions:u` run — its `Time*` lines are the
+  only valid speed number; callgrind's wall clock never is.
+- Trace tree `build-instr` = same flags + `-finstrument-functions` +
+  `dev/cyg.c` linked in. Whole build instrumented, no file list.
 - No env vars; constants live at the top of each shell script (`CPU=3`,
   `LOOPS_DIVISOR=50`, `SKIP_ALL`, `MANIFEST_VERSION`). `TESTS` comes from
   `tests/perf/Makefile.inc`; loops from `loops_of` grepping the test source.
 - Valgrind's LL cache auto-detects as direct-mapped and overstates conflict
   misses — `--LL=16777216,16,64` is on the `valgrind` line in `run_one`.
-- Quiet mode logs to `dev/trace/*.log`; a failing step prints its last 40 lines.
+- Quiet mode logs to `dev/trace/*.log`; a failing step prints its last 40
+  lines.
 
 ## Report layout
 
@@ -118,8 +122,8 @@ Exceptions to remember:
   `$REPO` stripping. `validate_report.py`'s `home_dir_check` walks every file
   and fails on the author's `$HOME`: a report must be copyable off-box.
 
-**Generated pages are deterministic** — same input ⇒ byte-identical output, so a
-page diff is always code, never sampling. Only `MANIFEST.txt`'s `stamp=` and
+**Generated pages are deterministic** — same input ⇒ byte-identical output, so
+a page diff is always code, never sampling. Only `MANIFEST.txt`'s `stamp=` and
 genuinely re-measured time (`perf-tool/output.txt`, `flame-graph/output.txt`,
 the trace) vary. Verify by running a generator twice on one input and `cmp`.
 
@@ -135,19 +139,19 @@ Raw data in `dev/trace/` (gitignored): `callgrind.out.<test>.<loops>.<ts>`,
 - The delta is a plain callgrind-format file with **no `calls=` lines** → no
   call graph → no call columns/caller tables in the heat map (`HAS_CALLS`). The
   summary's calls/callers columns come from a separate JSON sidecar
-  (`callgrind_diff.py --callers-output`, consumed via `build_report.py test
-  --diff --callers-data`).
-- Shares use `profile_magnitudes()` = Σ|per-function line delta| as denominator,
-  **not** the near-zero signed total. Ranking and heat are `abs()`, so winners
-  and losers interleave.
+  (`callgrind_diff.py --callers-output`, consumed via
+  `build_report.py test --diff --callers-data`).
+- Shares use `profile_magnitudes()` = Σ|per-function line delta| as
+  denominator, **not** the near-zero signed total. Ranking and heat are
+  `abs()`, so winners and losers interleave.
 - `summary:` in the delta = the signed total, so the parser's 1.0000 self-check
   holds on it too.
 
 **Core vs diff code.** The non-diff path stays byte-checkable against an older
 generator. Keep the split: `BuildReport.test`/`.functions_table` core vs
 `.diff_test`/`.diff_functions_table`; `CallgrindToHeatmap.model()` core vs
-`.diff_model()`; in heat-map JS every diff override sits in the one `if (DIFF)
-{...}` block; `validate_report.py` is data-driven by
+`.diff_model()`; in heat-map JS every diff override sits in the one
+`if (DIFF) {...}` block; `validate_report.py` is data-driven by
 `ValidateReport.ReportLayout` (`_LAYOUT_FULL`/`_LAYOUT_DIFF`).
 
 ## `dev/scripts/` conventions
@@ -158,19 +162,18 @@ and function gets one `# <Name> - what it is` line above it, wrapped to a
 second `#` line if it must be. Every field gets a one-line `#` comment **above
 it**, never trailing — no arg-by-arg docs, no `:param:`, no reStructuredText.
 Names carry the meaning; the comment only says what a name can't. Still no
-comments in JS/CSS embedded in string literals or in
-`theme.js`/`theme.css`. Shebangs stay. `ArgumentParser()` gets no description
-by design.
+comments in JS/CSS embedded in string literals or in `theme.js`/`theme.css`.
+Shebangs stay. `ArgumentParser()` gets no description by design.
 
 **Class names read like a how-to, not an abbreviation** — `CompressedNames`,
 `PositionDecoder`, `FileTally`, `ExecutableMapping`, `TraceRecording`,
 `ReportLayout`. A name needing a comment to be legible is the wrong name.
 
 **Naming:** `object_method` lowercase C-identifier form (`args_parse`,
-`profile_parse`, `report_test`) for shell functions and public free functions; a
-method drops the prefix its class supplies (`Callgrind.parse`,
-`BuildReport.report_page`). Entry point is always `main()`, directly above `if
-__name__ == "__main__":`.
+`profile_parse`, `report_test`) for shell functions and public free functions;
+a method drops the prefix its class supplies (`Callgrind.parse`,
+`BuildReport.report_page`). Entry point is always `main()`, directly above
+`if __name__ == "__main__":`.
 
 **File shape:** constants → classes → public free functions → `main()`. One
 enclosing class per script, named after it in PascalCase, holding **every**
@@ -192,55 +195,58 @@ defines them, alphabetical among themselves where order allows.
 **Typing** (pyright `standard`, py3.11, 0 errors): everything annotated, no
 `Any`-shaped records. Record → `NamedTuple`; anything summed in place →
 `@dataclass`. JSON object → `TypedDict` (a NamedTuple would serialize as an
-array); JSON positional array → `NamedTuple`. Cost vectors are `callgrind.Costs`
-(`list[int]`), summed only via
+array); JSON positional array → `NamedTuple`. Cost vectors are
+`callgrind.Costs` (`list[int]`), summed only via
 `costs_add`/`costs_accumulate`/`tally_accumulate`. Each CLI converts argparse
-into a NamedTuple before calling anything. A field shadowing a base-class method
-gets a trailing underscore, never a synonym (`index_`, `count_`); a dataclass
-field with the same meaning stays plain.
+into a NamedTuple before calling anything. A field shadowing a base-class
+method gets a trailing underscore, never a synonym (`index_`, `count_`); a
+dataclass field with the same meaning stays plain.
 
-pyright is at `~/.local/bin/pyright` (`pip3 install --user
---break-system-packages pyright`; PEP-668 box, no pipx/uv). Pylance is not
-usable — LSP only, ignores argv.
+pyright is at `~/.local/bin/pyright`
+(`pip3 install --user --break-system-packages pyright`; PEP-668 box, no
+pipx/uv). Pylance is not usable — LSP only, ignores argv.
 
 ### The scripts
 
 - `callgrind.py` — the one parser. `profile_load(path)` exits unless the
-  self-check ratio (stderr) is exactly **1.0000** — re-verify after touching it.
-  It is cost conservation only, and says nothing about whether emitted structure
-  was observed (rule 3). `REPO_ROOT` + `path_norm() -> PathInfo(display, local,
-  group)` are the one path resolver every generator uses — no `--repo-root` flag
-  exists. Functions keyed by **name**, so a symbol in two objects is one
-  function. Derived events when inputs exist: `D1m`, `DLm`, `L1m`, `LLm`, `Bm`,
-  `CEst` (= Ir + 10·L1m + 100·LLm). `Profile.function_lines[fn][SourceLine]` is
-  the only per-context table. `function_entry` for an uncalled function = the
-  **first** cost line callgrind wrote in its home file (matched 505/505; lowest
-  line number does not — inlined helpers sit above the entry).
-- `build_report.py test|overview` — summary and overview pages. `_EVENT = "Ir"`,
-  `_TOP = 50`. `--perf-log`/`--trace-log`/`--raw-data` each render a section only
-  when given; the flame-graph strip link exists only with `--trace-log`.
-  `--diff` picks `diff_test` in `main()`. "header" here means the LABEL=VALUE
-  rows above a page's content (`Header`/`HeaderBlock`) — not the heat map's
-  `MetaModel`.
+  self-check ratio (stderr) is exactly **1.0000** — re-verify after touching
+  it. It is cost conservation only, and says nothing about whether emitted
+  structure was observed (rule 3). `REPO_ROOT` +
+  `path_norm() -> PathInfo(display, local, group)` are the one path resolver
+  every generator uses — no `--repo-root` flag exists. Functions keyed by
+  **name**, so a symbol in two objects is one function. Derived events when
+  inputs exist: `D1m`, `DLm`, `L1m`, `LLm`, `Bm`, `CEst` (= Ir + 10·L1m +
+  100·LLm). `Profile.function_lines[fn][SourceLine]` is the only per-context
+  table. `function_entry` for an uncalled function = the **first** cost line
+  callgrind wrote in its home file (matched 505/505; lowest line number does
+  not — inlined helpers sit above the entry).
+- `build_report.py test|overview` — summary and overview pages.
+  `_EVENT = "Ir"`, `_TOP = 50`. `--perf-log`/`--trace-log`/`--raw-data` each
+  render a section only when given; the flame-graph strip link exists only with
+  `--trace-log`. `--diff` picks `diff_test` in `main()`. "header" here means
+  the LABEL=VALUE rows above a page's content (`Header`/`HeaderBlock`) — not
+  the heat map's `MetaModel`.
 - `callgrind_diff.py` — the subtraction; also home of `profile_magnitudes()`,
   which generators import. `--callers-output` is required.
 - `callgrind_to_heatmap.py` — `_DEFAULT_EVENT = "CEst"`, `_TREE` = dirs whose
   tracked `.c/.h` are listed even without samples.
-- `dev/cyg.c` — the recorder. Hot path is `if(next < end) { next->fn = fn;
-  next->tsc = rdtsc | flag; ++next; }` — 11/12 instructions (check with `cc -O2
-  -fcf-protection=none -S -masm=intel dev/cyg.c`). `next` must stay a pointer,
-  `end` a variable. `next == end` = not sampling; everything else lives on that
-  cold path. Setup is a constructor (incl. `memset` of the buffer, so no page
-  fault lands in a timed call), teardown a destructor writing `CYG_OUT` +
-  `.maps`. Its header comment is the format reference. Single-threaded.
+- `dev/cyg.c` — the recorder. Hot path is
+  `if(next < end) { next->fn = fn; next->tsc = rdtsc | flag; ++next; }` — 11/12
+  instructions (check with
+  `cc -O2 -fcf-protection=none -S -masm=intel dev/cyg.c`). `next` must stay a
+  pointer, `end` a variable. `next == end` = not sampling; everything else
+  lives on that cold path. Setup is a constructor (incl. `memset` of the
+  buffer, so no page fault lands in a timed call), teardown a destructor
+  writing `CYG_OUT` + `.maps`. Its header comment is the format reference.
+  Single-threaded.
 - `trace_to_speedscope.py` — pairs enters/exits (mismatch = non-zero exit),
   takes the busiest run's first `_MAX_CALLS`=10 complete calls under
   `_MAX_BYTES`=10240. `at` is raw (hook cost included). Must run while
   `build-instr` still holds the traced binary (symbolization reads it). GCC
   instruments inlined bodies, so inlined helpers are frames.
 - `validate_report.py OUTDIR [--diff]` — structural smoke test only;
-  `flame_graph_check` requires exactly one `evented` profile whose `exporter` is
-  `_FLAME_EXPORTER`, so a synthesized or stale flame graph fails.
+  `flame_graph_check` requires exactly one `evented` profile whose `exporter`
+  is `_FLAME_EXPORTER`, so a synthesized or stale flame graph fails.
 - `check_js.py` — `node --check` on `theme.js` and every JS chunk embedded in a
   Python string (`_HOLDERS`). **Add a pair here when a generator grows new
   embedded JS.** This is what catches a `\n` that needed `\\n`.
@@ -267,18 +273,18 @@ pages must not assume more.
 - `theme.py`'s `_COLOR_PAIR` values are raw "User settings" THEME entries, odd
   index = dark member; `--<name>-l` is light. Exception: `--bg` is the slate
   dark member darkened 8% via `Theme.shade()` — page background, scrollbar
-  track, minimap band and heat blend all follow it, so change it only there. The
-  `_HEAT` ramp is exempt from the pair rule.
+  track, minimap band and heat blend all follow it, so change it only there.
+  The `_HEAT` ramp is exempt from the pair rule.
 - Heat = 12-stop `_HEAT` blended over `--bg`, alpha on log scale of magnitude,
   text color by resulting luminance. Non-diff indexes `0..1`; **diff indexes
   signed `-1..1` across the whole ramp** (savings → cold/blue, regressions →
   hot/red, 0 at midpoint) via `heat_style(signed=True)` / the JS `if (DIFF)`
   branch.
-- Call counts are their own metric, heat-colored by share of all recorded calls,
-  log-scaled, event-independent.
+- Call counts are their own metric, heat-colored by share of all recorded
+  calls, log-scaled, event-independent.
 - Numbers: `num_human()`/`fmtH()` → `2.1K`/`2.0G` (exact in tooltip);
-  `num_pct()`/`fmtP()` → `63.2%`, `<0.01%`. Diff wraps both in a sign (U+2212 in
-  the page; exact zero renders empty, not `+0`).
+  `num_pct()`/`fmtP()` → `63.2%`, `<0.01%`. Diff wraps both in a sign (U+2212
+  in the page; exact zero renders empty, not `+0`).
 - **No decorative borders.** The only drawn lines are drag targets (`.bar`,
   `.split`), invisible until hover/active. Everything else is separated by
   background shading (`--panel`/`--bg`/`--bg-alt`/`--nav`).
@@ -294,21 +300,21 @@ pages must not assume more.
   bails on a table with no layout (`offsetWidth` 0) — under `display:none`
   everything reads 0 and the grow column would be fitted to `0px`; `show()`
   calls `Theme.relayout(home)` on return to fix what changed while hidden.
-- Heat map's two home tables are plain (non-`fill`), sized to content, so a long
-  header can't stretch a heat-colored cell into a wide bar.
+- Heat map's two home tables are plain (non-`fill`), sized to content, so a
+  long header can't stretch a heat-colored cell into a wide bar.
 - A `<select>` whose option text varies with page state gets a fixed `ch` width
   at populate time so picking an option doesn't reflow siblings.
-- Scrollbars: square, unrounded `--blue` thumb, 14px, no arrows, no hover state;
-  track = the pane's own `--bg` (`pre.logbox` uses `--panel`).
+- Scrollbars: square, unrounded `--blue` thumb, 14px, no arrows, no hover
+  state; track = the pane's own `--bg` (`pre.logbox` uses `--panel`).
 - `theme.TITLE_COLUMNS` must stay ≥ the widest title any page can show (longest
-  `TESTS_C` name + longest view label + diff suffix) — `flex-wrap: nowrap` means
-  too small clips mid-word on exactly the pair nobody opens.
+  `TESTS_C` name + longest view label + diff suffix) — `flex-wrap: nowrap`
+  means too small clips mid-word on exactly the pair nobody opens.
 
 ### Frames and URL state
 
-Pages nest two deep: overview frames a test summary, which frames its heat map /
-flame graph. Both levels run the same `FRAME_JS`, deciding by `framed =
-window.parent !== window`.
+Pages nest two deep: overview frames a test summary, which frames its heat map
+/ flame graph. Both levels run the same `FRAME_JS`, deciding by
+`framed = window.parent !== window`.
 
 - Title badge printed only by the outermost strip (framed levels write `""` but
   keep the element, so the `--title-bg` block reads continuous and links line
@@ -323,16 +329,17 @@ window.parent !== window`.
   history entry each); `route()` renders, then canonicalizes via `replaceState`
   and posts up. Nothing is remembered outside the URL except
   `heat.scale`/`heat.sort` in localStorage.
-- `FRAME_JS` loads a page with `view.contentWindow.location.replace(href + (sub
-  || "#"))` — **never `iframe.src`**, which adds a history entry per load and
-  desyncs back. `"#"` not `""`: a fragment-less URL is a document reload.
+- `FRAME_JS` loads a page with
+  `view.contentWindow.location.replace(href + (sub || "#"))` — **never
+  `iframe.src`**, which adds a history entry per load and desyncs back. `"#"`
+  not `""`: a fragment-less URL is a document reload.
 - Four postMessages, all source-checked. Inward: `theme:reset-cols`,
   `theme:title?`. Outward: `{theme:"hash"}` (posted by the heat map *and* by a
   framed `FRAME_JS`'s own `sync()`, so a middle level relays its full hash up —
   without it the outer hash freezes at `#<test>`), `{theme:"title"}`.
-- Regression test for URL-as-state: click test → view → file → line → event, the
-  outer hash must end `#<test>/heat-map/f=<file>&l=<n>&e=<ev>`, and loading that
-  URL back must reproduce all three levels' hashes.
+- Regression test for URL-as-state: click test → view → file → line → event,
+  the outer hash must end `#<test>/heat-map/f=<file>&l=<n>&e=<ev>`, and loading
+  that URL back must reproduce all three levels' hashes.
 - Outer frame page never scrolls itself — `overflow: hidden` on
   `html:has(body.frame)` and `body.frame` (a real non-overlay scrollbar's
   sub-pixel gap doesn't repro headless).
@@ -343,26 +350,28 @@ window.parent !== window`.
   **No row-wide heat** — each cell carries its own, so no cell's text is
   contrast-colored against another cell's background.
 - `EVS`/`EXTRA` list every event the profile *can* produce, **not** filtered by
-  whether the total is zero — the dropdown and columns stay layout-stable across
-  profiles/diffs. An all-zero column renders blank, no heat, no `NaN`. Totals
-  guard `|| 1`.
-- `.fhead`, `.chips` and `.tbl-cols` sit in one `.srcwrap` (`width: max-content;
-  min-width: 100%`) so the wrapper equals the sideways scroll range. Bands/chips
-  need `contain: inline-size` or their unwrapped single-line width sets
-  max-content. **Order gotcha:** `minimapBuild()` runs *before* `Theme.init()` —
-  it narrows the pane by 110px and the fill measures it as-is at that moment.
-- `centerRow()` (vertical only) replaces `scrollIntoView`, which also pulled the
-  pane sideways.
+  whether the total is zero — the dropdown and columns stay layout-stable
+  across profiles/diffs. An all-zero column renders blank, no heat, no `NaN`.
+  Totals guard `|| 1`.
+- `.fhead`, `.chips` and `.tbl-cols` sit in one `.srcwrap`
+  (`width: max-content; min-width: 100%`) so the wrapper equals the sideways
+  scroll range. Bands/chips need `contain: inline-size` or their unwrapped
+  single-line width sets max-content. **Order gotcha:** `minimapBuild()` runs
+  *before* `Theme.init()` — it narrows the pane by 110px and the fill measures
+  it as-is at that moment.
+- `centerRow()` (vertical only) replaces `scrollIntoView`, which also pulled
+  the pane sideways.
 - Minimap: `#minimap` is never resized and never scrolls; scale pinned to
-  `MM_MIN_COLS`=80, never widened to the longest line. Clone needs `width: 100%`
-  + `table-layout: fixed`. `mmCloneH` readable only after `empty` is removed
-  (display:none measures 0). `mmGeom()` caches nothing. Only the `th` cells are
-  sticky, the `<thead>` scrolls away — **never measure the thead**.
-  `minimapSync()` also runs after a popup opens/closes.
-- Popup "copy" builds a plain-text twin in parallel with the HTML (`tableText()`
-  off the same `cols`/`rows`), never scraped `textContent`. **JS in a Python
-  triple-quoted string needs `\n` written `\\n`** or the generated `<script>`
-  breaks — `node --check` after touching it.
+  `MM_MIN_COLS`=80, never widened to the longest line. Clone needs
+  `width: 100%`
+  - `table-layout: fixed`. `mmCloneH` readable only after `empty` is removed
+    (display:none measures 0). `mmGeom()` caches nothing. Only the `th` cells
+    are sticky, the `<thead>` scrolls away — **never measure the thead**.
+    `minimapSync()` also runs after a popup opens/closes.
+- Popup "copy" builds a plain-text twin in parallel with the HTML
+  (`tableText()` off the same `cols`/`rows`), never scraped `textContent`. **JS
+  in a Python triple-quoted string needs `\n` written `\\n`** or the generated
+  `<script>` breaks — `node --check` after touching it.
 - Clickable-row hover cue is an underline on `td.ln`: an inline heat `color`
   beats any stylesheet color, so a `--link` recolor can't show on heated lines.
 
@@ -376,13 +385,13 @@ window.parent !== window`.
 
 `--dump-dom` instead for post-script DOM (append a probe `<script>` running on
 `load`, after `theme.js` init). For the frame page, copy `index.html` to
-`probe.html` beside it with an appended script that sets `location.hash`, awaits
-the canonical hash and writes a `<pre>`; run with `--dump-dom
---virtual-time-budget=30000`. Cross-origin `file://` frames are opaque
-**unless** `--allow-file-access-from-files` is passed — which is what lets one
-probe click through all three levels. **jsdom is not installed on this box** (no
-global or repo `node_modules`), and it can't do `location.replace` across
-documents or layout anyway — Chrome for anything geometric.
+`probe.html` beside it with an appended script that sets `location.hash`,
+awaits the canonical hash and writes a `<pre>`; run with
+`--dump-dom --virtual-time-budget=30000`. Cross-origin `file://` frames are
+opaque **unless** `--allow-file-access-from-files` is passed — which is what
+lets one probe click through all three levels. **jsdom is not installed on this
+box** (no global or repo `node_modules`), and it can't do `location.replace`
+across documents or layout anyway — Chrome for anything geometric.
 
 ## Measurement facts (2026-09-19)
 
@@ -393,35 +402,35 @@ documents or layout anyway — Chrome for anything geometric.
   chain.
 - Whole-build `-finstrument-functions` + `cyg.c`: one top-level library call is
   2–184 events depending on the test; 0 enter/exit mismatches in all 8 tests.
-  Perturbation native → traced, one run: 152 → 154 ns/call at 2 events/call, 304
-  → 746 at 184. The box's native speed itself moves ~1.9× with host state, so
-  only compare numbers from one run. Hook cost is inside every traced duration →
-  **flame graph is for shape and outliers, perf log for speed.**
+  Perturbation native → traced, one run: 152 → 154 ns/call at 2 events/call,
+  304 → 746 at 184. The box's native speed itself moves ~1.9× with host state,
+  so only compare numbers from one run. Hook cost is inside every traced
+  duration → **flame graph is for shape and outliers, perf log for speed.**
 - `rdtsc` steps by 20 ticks = 10.02 ns here, so every flame-graph duration is a
   multiple of ~10 ns. The 28→11 instruction hook saving is verified in
   disassembly only — it's below the clock's step.
 - speedscope evented JSON ≈ 38 B/event: 10 KB ≈ 250 events.
 - TSC: `constant_tsc nonstop_tsc rdtscp tsc_reliable`; measured 1.9962 tsc/ns.
-- `perf stat -e cycles:u,instructions:u` works in this WSL2 (kernel 6.18 exposes
-  the CPU PMU). `perf record` works but samples.
-- uftrace is not installed (needs sudo); a `dpkg -x` copy hung in `uftrace
-  record`. It would cost more per call than the rdtsc hook.
+- `perf stat -e cycles:u,instructions:u` works in this WSL2 (kernel 6.18
+  exposes the CPU PMU). `perf record` works but samples.
+- uftrace is not installed (needs sudo); a `dpkg -x` copy hung in
+  `uftrace record`. It would cost more per call than the rdtsc hook.
 
 ## Current state
 
-No `lib/` change has come out of the profiling yet. Per-test numbers live in the
-reports (overview: native time, cycles, instructions), not here.
+No `lib/` change has come out of the profiling yet. Per-test numbers live in
+the reports (overview: native time, cycles, instructions), not here.
 
 ## Workflow
 
 1. Quick read: `./build/tests/perf/perf <test>`, median of 3–5 — but **real
    numbers only from the pinned RelWithDebInfo build**.
-2. Profile via `dev/perf2html.sh` on the RelWithDebInfo tree only.
-3. One focused change, rebuild, re-run.
-4. `dev/perf2html.sh --report=perf2html_modified_report` then
-   `dev/perf2html_diff.sh`. Keep only changes that measurably help **and** leave
-   everything else the test prints (counts, error totals) unchanged.
-5. Record before/after numbers in "Current state" as you go.
-6. Before calling anything final: full suite (`tests/runtests.pl`, or `ctest`
+1. Profile via `dev/perf2html.sh` on the RelWithDebInfo tree only.
+1. One focused change, rebuild, re-run.
+1. `dev/perf2html.sh --report=perf2html_modified_report` then
+   `dev/perf2html_diff.sh`. Keep only changes that measurably help **and**
+   leave everything else the test prints (counts, error totals) unchanged.
+1. Record before/after numbers in "Current state" as you go.
+1. Before calling anything final: full suite (`tests/runtests.pl`, or `ctest`
    from `build/` with `-DBUILD_TESTING=ON`) — the perf test doesn't validate
    correctness.

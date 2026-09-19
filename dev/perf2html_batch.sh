@@ -15,12 +15,13 @@ RUN_LOG="$PWD/trace/perf2html_batch.$STAMP.log"
 usage_show() { awk 'NR > 1 && !/^#/ { exit } NR > 1 { sub(/^# ?/, ""); print }' "$SCRIPT"; }
 
 took() {
-  local seconds=$(( SECONDS - $1 ))
+  local seconds=$((SECONDS - $1))
   if [ "$seconds" -ge 60 ]; then echo "$((seconds / 60))m$((seconds % 60))s"; else echo "${seconds}s"; fi
 }
 
 step_run() {
-  local number="$1" name="$2"; shift 2
+  local number="$1" name="$2"
+  shift 2
   local exit_code=0 from start=$SECONDS
   printf '%-2s%-11s' "$number" "$name"
   if [ "$VERBOSE" = 1 ]; then
@@ -40,9 +41,12 @@ step_run() {
   STATUS=1
   FAILED+=("$number $name")
   if [ "$VERBOSE" != 1 ]; then
-    { echo; echo "error: exit $exit_code from: $*"
+    {
+      echo
+      echo "error: exit $exit_code from: $*"
       tail -n +"$((from + 1))" "$RUN_LOG" | tail -n 40
-      echo "(last 40 lines; everything this run printed: $RUN_LOG)"; } >&2
+      echo "(last 40 lines; everything this run printed: $RUN_LOG)"
+    } >&2
   fi
   return 0
 }
@@ -53,12 +57,28 @@ args_parse() {
   PASS_ARGS=()
   while [ $# -gt 0 ]; do
     case "$1" in
-      -h|--help) usage_show; exit 0;;
-      --verbose) VERBOSE=1; shift;;
-      --keep) KEEP=1; shift;;
-      --keep-raw) PASS_ARGS+=(--keep-raw); shift;;
-      --regenerate) PASS_ARGS+=(--regenerate); KEEP=1; shift;;
-      *) break;;
+      -h | --help)
+        usage_show
+        exit 0
+        ;;
+      --verbose)
+        VERBOSE=1
+        shift
+        ;;
+      --keep)
+        KEEP=1
+        shift
+        ;;
+      --keep-raw)
+        PASS_ARGS+=(--keep-raw)
+        shift
+        ;;
+      --regenerate)
+        PASS_ARGS+=(--regenerate)
+        KEEP=1
+        shift
+        ;;
+      *) break ;;
     esac
   done
   CMAKE_FLAGS=("$@")
@@ -67,7 +87,10 @@ args_parse() {
 
 lint_run() {
   command -v pyright >/dev/null 2>&1 \
-    || { echo "error: pyright not found (pip3 install --user --break-system-packages pyright)" >&2; return 1; }
+    || {
+      echo "error: pyright not found (pip3 install --user --break-system-packages pyright)" >&2
+      return 1
+    }
   local status=0
   pyright --project . || status=1
   python3 scripts/check_js.py || status=1
@@ -91,8 +114,12 @@ main() {
   local child_args=("${PASS_ARGS[@]}")
   RAW_KEEP=1
   case " ${PASS_ARGS[*]} " in
-    *" --keep-raw "*|*" --regenerate "*) ;;
-    *) RAW_KEEP=0; rm -rf trace; child_args+=(--keep-raw);;
+    *" --keep-raw "* | *" --regenerate "*) ;;
+    *)
+      RAW_KEEP=0
+      rm -rf trace
+      child_args+=(--keep-raw)
+      ;;
   esac
   mkdir -p trace
   STATUS=0

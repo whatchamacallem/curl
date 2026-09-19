@@ -65,7 +65,7 @@ files_of() {
   for path in "$@"; do
     if [ -f "$path" ]; then
       case "$path" in
-      $pattern) echo "$path" ;;
+        $pattern) echo "$path" ;;
       esac
     else
       find "$path" -name "$pattern" -type f -not -path '*/trace/*' \
@@ -148,26 +148,26 @@ args_parse() {
   PATHS=()
   while [ $# -gt 0 ]; do
     case "$1" in
-    -h | --help)
-      usage_show
-      exit 0
-      ;;
-    --check)
-      CHECK=1
-      shift
-      ;;
-    --verbose)
-      VERBOSE=1
-      shift
-      ;;
-    -*)
-      echo "unknown option: $1" >&2
-      exit 2
-      ;;
-    *)
-      PATHS+=("$1")
-      shift
-      ;;
+      -h | --help)
+        usage_show
+        exit 0
+        ;;
+      --check)
+        CHECK=1
+        shift
+        ;;
+      --verbose)
+        VERBOSE=1
+        shift
+        ;;
+      -*)
+        echo "unknown option: $1" >&2
+        exit 2
+        ;;
+      *)
+        PATHS+=("$1")
+        shift
+        ;;
     esac
   done
 }

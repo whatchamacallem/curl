@@ -34,7 +34,9 @@ _EVENT_LONG: dict[str, str] = {
 
 # The curl checkout, three levels up from here -- every path is
 # reported relative to it.
-REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+REPO_ROOT = os.path.dirname(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+)
 
 
 # Caller - The one place a function was called from.
@@ -96,7 +98,9 @@ class Profile:
     # cost spent below the calls made from it
     line_calls: dict[SourceLine, Costs] = field(default_factory=dict)
     # how many calls the line made
-    line_call_count: defaultdict[SourceLine, int] = field(default_factory=lambda: defaultdict(int))
+    line_call_count: defaultdict[SourceLine, int] = field(
+        default_factory=lambda: defaultdict(int)
+    )
     # which function owns the line
     line_function: dict[SourceLine, str] = field(default_factory=dict)
     # the file a function is declared in
@@ -105,7 +109,9 @@ class Profile:
     function_self: dict[str, Costs] = field(default_factory=dict)
     # per (function, line) cost -- the only per-context table, and
     # what a diff subtracts
-    function_lines: defaultdict[str, dict[SourceLine, Costs]] = field(default_factory=lambda: defaultdict(dict))
+    function_lines: defaultdict[str, dict[SourceLine, Costs]] = field(
+        default_factory=lambda: defaultdict(dict)
+    )
     # cost below everything the function calls
     function_calls: dict[str, Costs] = field(default_factory=dict)
     # the line to jump to when opening a function
@@ -113,23 +119,38 @@ class Profile:
     # per call site, how many calls and what they cost
     callees: dict[CallSite, Tally] = field(default_factory=dict)
     # the same the other way round: per callee, who called it
-    callers: defaultdict[str, dict[Caller, Tally]] = field(default_factory=lambda: defaultdict(dict))
+    callers: defaultdict[str, dict[Caller, Tally]] = field(
+        default_factory=lambda: defaultdict(dict)
+    )
     # the binary each file was compiled into
     file_ob: dict[str, str] = field(default_factory=dict)
 
     # Every event a page may show: recorded first, then the ones we add up.
     def event_names(self) -> list[str]:
-        return list(self.events) + [derived_event.name for derived_event in self.resolved_derived_events()]
+        return list(self.events) + [
+            derived_event.name
+            for derived_event in self.resolved_derived_events()
+        ]
 
     # The derived events this run can supply, with names swapped for
     # cost-vector indexes.
     def resolved_derived_events(self) -> list[ResolvedDerivedEvent]:
-        return [ResolvedDerivedEvent(derived_event.name,
-                                     tuple(ResolvedTerm(term.coefficient, self.events.index(term.event_name))
-                                           for term in derived_event.terms),
-                                     derived_event.long)
-                for derived_event in _DERIVED_DEFAULTS
-                if all(term.event_name in self.events for term in derived_event.terms)]
+        return [
+            ResolvedDerivedEvent(
+                derived_event.name,
+                tuple(
+                    ResolvedTerm(
+                        term.coefficient, self.events.index(term.event_name)
+                    )
+                    for term in derived_event.terms
+                ),
+                derived_event.long,
+            )
+            for derived_event in _DERIVED_DEFAULTS
+            if all(
+                term.event_name in self.events for term in derived_event.terms
+            )
+        ]
 
     # The whole run's cost: callgrind's own summary, or every line
     # added up when it wrote none.
@@ -148,8 +169,15 @@ class Profile:
             return costs[event_index] if event_index < len(costs) else 0
         for derived_event in self.resolved_derived_events():
             if derived_event.name == name:
-                return sum(term.coefficient * (costs[term.event_index] if term.event_index < len(costs) else 0)
-                           for term in derived_event.terms)
+                return sum(
+                    term.coefficient
+                    * (
+                        costs[term.event_index]
+                        if term.event_index < len(costs)
+                        else 0
+                    )
+                    for term in derived_event.terms
+                )
         raise KeyError(name)
 
     # An all-zero cost vector of the right width for this profile.
@@ -203,14 +231,44 @@ class Term(NamedTuple):
 
 # The derived events we offer whenever the run recorded everything they need.
 _DERIVED_DEFAULTS: tuple[DerivedEvent, ...] = (
-    DerivedEvent("D1m", (Term(1, "D1mr"), Term(1, "D1mw")), "L1 data cache misses (D1mr + D1mw)"),
-    DerivedEvent("DLm", (Term(1, "DLmr"), Term(1, "DLmw")), "LL data cache misses (DLmr + DLmw)"),
-    DerivedEvent("L1m", (Term(1, "I1mr"), Term(1, "D1mr"), Term(1, "D1mw")), "L1 misses, all (I1mr + D1mr + D1mw)"),
-    DerivedEvent("LLm", (Term(1, "ILmr"), Term(1, "DLmr"), Term(1, "DLmw")), "LL misses, all (ILmr + DLmr + DLmw)"),
-    DerivedEvent("Bm", (Term(1, "Bcm"), Term(1, "Bim")), "branch mispredicts, all (Bcm + Bim)"),
-    DerivedEvent("CEst", (Term(1, "Ir"), Term(10, "I1mr"), Term(10, "D1mr"), Term(10, "D1mw"),
-                          Term(100, "ILmr"), Term(100, "DLmr"), Term(100, "DLmw")),
-                 "cycle estimate (Ir + 10 L1m + 100 LLm)"),
+    DerivedEvent(
+        "D1m",
+        (Term(1, "D1mr"), Term(1, "D1mw")),
+        "L1 data cache misses (D1mr + D1mw)",
+    ),
+    DerivedEvent(
+        "DLm",
+        (Term(1, "DLmr"), Term(1, "DLmw")),
+        "LL data cache misses (DLmr + DLmw)",
+    ),
+    DerivedEvent(
+        "L1m",
+        (Term(1, "I1mr"), Term(1, "D1mr"), Term(1, "D1mw")),
+        "L1 misses, all (I1mr + D1mr + D1mw)",
+    ),
+    DerivedEvent(
+        "LLm",
+        (Term(1, "ILmr"), Term(1, "DLmr"), Term(1, "DLmw")),
+        "LL misses, all (ILmr + DLmr + DLmw)",
+    ),
+    DerivedEvent(
+        "Bm",
+        (Term(1, "Bcm"), Term(1, "Bim")),
+        "branch mispredicts, all (Bcm + Bim)",
+    ),
+    DerivedEvent(
+        "CEst",
+        (
+            Term(1, "Ir"),
+            Term(10, "I1mr"),
+            Term(10, "D1mr"),
+            Term(10, "D1mw"),
+            Term(100, "ILmr"),
+            Term(100, "DLmr"),
+            Term(100, "DLmw"),
+        ),
+        "cycle estimate (Ir + 10 L1m + 100 LLm)",
+    ),
 )
 
 
@@ -223,7 +281,11 @@ class Callgrind:
     # "(7)" -- this remembers which is which.
     class CompressedNames:
         def __init__(self) -> None:
-            self.names: dict[str, dict[str, str]] = {"fl": {}, "fn": {}, "ob": {}}
+            self.names: dict[str, dict[str, str]] = {
+                "fl": {},
+                "fn": {},
+                "ob": {},
+            }
 
         # Expand one "(7)" back to its name, learning the name when
         # this is where it is spelled out.
@@ -269,14 +331,18 @@ class Callgrind:
         # holds the line number.
         def reset(self, names: Sequence[str]) -> None:
             self.count = len(names)
-            self.line_index = names.index("line") if "line" in names else self.count - 1
+            self.line_index = (
+                names.index("line") if "line" in names else self.count - 1
+            )
             self.previous = [0] * self.count
 
         # Advance past one cost line's positions and hand back the
         # line number it lands on.
         def step(self, tokens: Sequence[str]) -> int:
             for position in range(self.count):
-                self.previous[position] = self.decode(tokens[position], position)
+                self.previous[position] = self.decode(
+                    tokens[position], position
+                )
             return self.previous[self.line_index]
 
     # Give every still-unplaced function an entry line, so the pages
@@ -286,7 +352,9 @@ class Callgrind:
             home = profile.function_home.get(function)
             if function in profile.function_entry or home is None:
                 continue
-            line = next((key.line for key in lines if key.file == home and key.line), 0)
+            line = next(
+                (key.line for key in lines if key.file == home and key.line), 0
+            )
             if line:
                 profile.function_entry[function] = SourceLine(home, line)
 
@@ -307,13 +375,22 @@ class Callgrind:
         with open(path, encoding="utf-8", errors="replace") as handle:
             profile = self.parse(handle.read())
         if not profile.events:
-            sys.exit(f"error: no 'events:' line -- not a callgrind file? ({path})")
-        self_sum = sum(costs[0] for costs in profile.line_self.values() if costs)
+            sys.exit(
+                f"error: no 'events:' line -- not a callgrind file? ({path})"
+            )
+        self_sum = sum(
+            costs[0] for costs in profile.line_self.values() if costs
+        )
         total = profile.summary[0] if profile.summary else self_sum
         ratio = self_sum / total if total else float("nan")
-        print(f"ratio (must be 1.0000): {ratio:.4f}  {os.path.basename(path)}", file=sys.stderr)
+        print(
+            f"ratio (must be 1.0000): {ratio:.4f}  {os.path.basename(path)}",
+            file=sys.stderr,
+        )
         if total and abs(ratio - 1.0) > 1e-6:
-            sys.exit(f"error: per-line self cost does not add up to callgrind's summary ({path})")
+            sys.exit(
+                f"error: per-line self cost does not add up to callgrind's summary ({path})"
+            )
         return profile
 
     # Add several profiles of the same events together.
@@ -323,12 +400,25 @@ class Callgrind:
         first = profiles[0]
         for other in profiles[1:]:
             if other.events != first.events:
-                sys.exit(f"error: cannot merge profiles with different events: {first.events} vs {other.events}")
-        merged = Profile(events=list(first.events), event_long=dict(first.event_long), positions=list(first.positions))
+                sys.exit(
+                    f"error: cannot merge profiles with different events: {first.events} vs {other.events}"
+                )
+        merged = Profile(
+            events=list(first.events),
+            event_long=dict(first.event_long),
+            positions=list(first.positions),
+        )
         merged.command = self.merge_command(profiles)
         if all(other.summary for other in profiles):
-            merged.summary = [sum(other.summary[index] if index < len(other.summary) else 0 for other in profiles)
-                              for index in range(max(len(other.summary) for other in profiles))]
+            merged.summary = [
+                sum(
+                    other.summary[index] if index < len(other.summary) else 0
+                    for other in profiles
+                )
+                for index in range(
+                    max(len(other.summary) for other in profiles)
+                )
+            ]
         for other in profiles:
             self.merge_one(merged, other)
         self.labels_fill(merged)
@@ -338,8 +428,14 @@ class Callgrind:
     # name when they agree on it.
     def merge_command(self, profiles: Sequence[Profile]) -> str:
         commands = [other.command.split() for other in profiles]
-        if all(command and command[0] == commands[0][0] for command in commands):
-            return commands[0][0] + " " + ", ".join(" ".join(command[1:]) for command in commands)
+        if all(
+            command and command[0] == commands[0][0] for command in commands
+        ):
+            return (
+                commands[0][0]
+                + " "
+                + ", ".join(" ".join(command[1:]) for command in commands)
+            )
         return " + ".join(other.command for other in profiles)
 
     # Fold one profile's every table into the one being built.
@@ -367,7 +463,9 @@ class Callgrind:
             tally_accumulate(merged.callees, site, tally.count, tally.costs)
         for callee, callers in other.callers.items():
             for caller, tally in callers.items():
-                tally_accumulate(merged.callers[callee], caller, tally.count, tally.costs)
+                tally_accumulate(
+                    merged.callers[callee], caller, tally.count, tally.costs
+                )
         for file, ob in other.file_ob.items():
             merged.file_ob.setdefault(file, ob)
 
@@ -394,39 +492,67 @@ class Callgrind:
             if first_char.isdigit() or first_char in "+-*":
                 tokens = raw_line.split()
                 line = positions.step(tokens)
-                costs = [int(token) for token in tokens[positions.count:]]
+                costs = [int(token) for token in tokens[positions.count :]]
                 if len(costs) < event_count:
                     costs.extend([0] * (event_count - len(costs)))
                 key = SourceLine(cur_file, line)
                 if pending_call is not None:
                     callee = cur_callee_function or "???"
-                    callee_file = cur_callee_file if cur_callee_file is not None else cur_file
+                    callee_file = (
+                        cur_callee_file
+                        if cur_callee_file is not None
+                        else cur_file
+                    )
                     cur_callee_file = None
                     costs_accumulate(profile.line_calls, key, costs)
                     profile.line_call_count[key] += pending_call.call_count
                     profile.line_function.setdefault(key, cur_function)
-                    costs_accumulate(profile.function_calls, cur_function, costs)
-                    tally_accumulate(profile.callees, CallSite(cur_file, line, callee), pending_call.call_count, costs)
-                    tally_accumulate(profile.callers[callee], Caller(cur_function, cur_file, line),
-                                     pending_call.call_count, costs)
+                    costs_accumulate(
+                        profile.function_calls, cur_function, costs
+                    )
+                    tally_accumulate(
+                        profile.callees,
+                        CallSite(cur_file, line, callee),
+                        pending_call.call_count,
+                        costs,
+                    )
+                    tally_accumulate(
+                        profile.callers[callee],
+                        Caller(cur_function, cur_file, line),
+                        pending_call.call_count,
+                        costs,
+                    )
                     if callee not in profile.function_entry:
-                        profile.function_entry[callee] = SourceLine(callee_file, pending_call.target_line)
+                        profile.function_entry[callee] = SourceLine(
+                            callee_file, pending_call.target_line
+                        )
                     profile.function_home.setdefault(callee, callee_file)
-                    profile.file_ob.setdefault(callee_file, cur_callee_ob or cur_ob)
+                    profile.file_ob.setdefault(
+                        callee_file, cur_callee_ob or cur_ob
+                    )
                     cur_callee_ob = None
                     pending_call = None
                 else:
                     costs_accumulate(profile.line_self, key, costs)
                     profile.line_function.setdefault(key, cur_function)
-                    costs_accumulate(profile.function_self, cur_function, costs)
-                    costs_accumulate(profile.function_lines[cur_function], key, costs)
+                    costs_accumulate(
+                        profile.function_self, cur_function, costs
+                    )
+                    costs_accumulate(
+                        profile.function_lines[cur_function], key, costs
+                    )
                     profile.file_ob.setdefault(cur_file, cur_ob)
                 continue
 
             equals_index = raw_line.find("=")
             colon_index = raw_line.find(":")
-            if equals_index != -1 and (colon_index == -1 or equals_index < colon_index):
-                key, val = raw_line[:equals_index], raw_line[equals_index + 1:]
+            if equals_index != -1 and (
+                colon_index == -1 or equals_index < colon_index
+            ):
+                key, val = (
+                    raw_line[:equals_index],
+                    raw_line[equals_index + 1 :],
+                )
                 if key in ("fl", "fi", "fe"):
                     cur_file = names.uncompress("fl", val)
                 elif key == "fn":
@@ -443,13 +569,24 @@ class Callgrind:
                     cur_callee_function = names.uncompress("fn", val)
                 elif key == "calls":
                     parts = val.split()
-                    target_line = positions.decode(parts[1 + positions.line_index], positions.line_index) \
-                        if len(parts) > 1 + positions.line_index else 0
-                    pending_call = Callgrind.PendingCall(int(parts[0]), target_line)
+                    target_line = (
+                        positions.decode(
+                            parts[1 + positions.line_index],
+                            positions.line_index,
+                        )
+                        if len(parts) > 1 + positions.line_index
+                        else 0
+                    )
+                    pending_call = Callgrind.PendingCall(
+                        int(parts[0]), target_line
+                    )
                 continue
             if colon_index == -1:
                 continue
-            key, val = raw_line[:colon_index], raw_line[colon_index + 1:].strip()
+            key, val = (
+                raw_line[:colon_index],
+                raw_line[colon_index + 1 :].strip(),
+            )
             if key == "events":
                 profile.events = val.split()
                 event_count = len(profile.events)
@@ -476,9 +613,11 @@ class Callgrind:
         if os.path.isabs(path):
             path = posixpath.normpath(path)
         if path.startswith(root):
-            relative = path[len(root):]
+            relative = path[len(root) :]
             local = os.path.join(REPO_ROOT, relative)
-            return PathInfo(relative, local if os.path.isfile(local) else None, "repo")
+            return PathInfo(
+                relative, local if os.path.isfile(local) else None, "repo"
+            )
         if os.path.isabs(path):
             if os.path.isfile(path):
                 return PathInfo(path.lstrip("/"), path, "system")
@@ -490,7 +629,9 @@ class Callgrind:
 
 
 # Add a cost vector into a table, starting a fresh entry when the key is new.
-def costs_accumulate(table: dict[_Key, Costs], key: _Key, costs: Costs) -> None:
+def costs_accumulate(
+    table: dict[_Key, Costs], key: _Key, costs: Costs
+) -> None:
     current = table.get(key)
     if current is None:
         table[key] = list(costs)
@@ -527,7 +668,9 @@ def profile_parse(text: str) -> Profile:
 
 # Add a call count and its cost into a table, starting a fresh entry
 # when the key is new.
-def tally_accumulate(table: dict[_Key, Tally], key: _Key, count: int, costs: Costs) -> None:
+def tally_accumulate(
+    table: dict[_Key, Tally], key: _Key, count: int, costs: Costs
+) -> None:
     current = table.get(key)
     if current is None:
         table[key] = Tally(count, list(costs))

@@ -45,13 +45,20 @@ class BuildFlameGraph:
         profile_json: str
 
     # Write the bootstrap with the profile base64'd into it.
-    def bootstrap_write(self, args: BuildFlameGraph.FlameGraphArgs, raw: bytes) -> None:
-        doc_name = (json.loads(raw.decode("utf-8")).get("name")
-                    or os.path.basename(args.profile_json))
-        script = _BOOTSTRAP.replace("__NAME__", json.dumps(doc_name)) \
-            .replace("__DATA__", json.dumps(base64.b64encode(raw).decode("ascii")))
-        with open(os.path.join(args.speedscope_dir, _PROFILE_JS), "w",
-                  encoding="utf-8") as handle:
+    def bootstrap_write(
+        self, args: BuildFlameGraph.FlameGraphArgs, raw: bytes
+    ) -> None:
+        doc_name = json.loads(raw.decode("utf-8")).get(
+            "name"
+        ) or os.path.basename(args.profile_json)
+        script = _BOOTSTRAP.replace("__NAME__", json.dumps(doc_name)).replace(
+            "__DATA__", json.dumps(base64.b64encode(raw).decode("ascii"))
+        )
+        with open(
+            os.path.join(args.speedscope_dir, _PROFILE_JS),
+            "w",
+            encoding="utf-8",
+        ) as handle:
             handle.write(script)
 
     # Write the profile script, then point speedscope's own page at it.
@@ -62,37 +69,54 @@ class BuildFlameGraph:
             raw = handle.read()
         self.bootstrap_write(args, raw)
         self.page_patch(index_html, html)
-        print(f"wrote {os.path.join(args.speedscope_dir, _PROFILE_JS)} "
-              f"({len(raw):,} bytes of profile) and patched {index_html}", file=sys.stderr)
+        print(
+            f"wrote {os.path.join(args.speedscope_dir, _PROFILE_JS)} "
+            f"({len(raw):,} bytes of profile) and patched {index_html}",
+            file=sys.stderr,
+        )
 
     # Put the hash and the profile script ahead of speedscope's first script.
     def page_patch(self, index_html: str, html: str) -> None:
-        injection = ("<script>if (!location.hash) "
-                     "location.hash = '#localProfilePath=profile';</script>\n"
-                     f'    <script src="{_PROFILE_JS}"></script>\n    ')
+        injection = (
+            "<script>if (!location.hash) "
+            "location.hash = '#localProfilePath=profile';</script>\n"
+            f'    <script src="{_PROFILE_JS}"></script>\n    '
+        )
         with open(index_html, "w", encoding="utf-8") as handle:
-            handle.write(html.replace('<script src="', injection + '<script src="', 1))
+            handle.write(
+                html.replace('<script src="', injection + '<script src="', 1)
+            )
 
     # Read speedscope's page, and refuse it if there is nothing to patch.
     def page_read(self, index_html: str) -> str:
         with open(index_html, encoding="utf-8") as handle:
             html = handle.read()
         if '<script src="' not in html:
-            sys.exit(f"error: {index_html}: no <script src=> to patch the profile "
-                     "in before")
+            sys.exit(
+                f"error: {index_html}: no <script src=> to patch the profile "
+                "in before"
+            )
         return html
 
 
 # main - Bake the given profile into the given speedscope copy.
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--speedscope-dir", required=True,
-                        help="a fresh copy of speedscope's dist/release, patched in place")
-    parser.add_argument("--profile-json", required=True,
-                        help="the .speedscope.json to embed")
+    parser.add_argument(
+        "--speedscope-dir",
+        required=True,
+        help="a fresh copy of speedscope's dist/release, patched in place",
+    )
+    parser.add_argument(
+        "--profile-json", required=True, help="the .speedscope.json to embed"
+    )
     namespace = parser.parse_args()
-    BuildFlameGraph().build(BuildFlameGraph.FlameGraphArgs(
-        speedscope_dir=namespace.speedscope_dir, profile_json=namespace.profile_json))
+    BuildFlameGraph().build(
+        BuildFlameGraph.FlameGraphArgs(
+            speedscope_dir=namespace.speedscope_dir,
+            profile_json=namespace.profile_json,
+        )
+    )
 
 
 if __name__ == "__main__":

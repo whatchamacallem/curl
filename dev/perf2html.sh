@@ -9,7 +9,7 @@ TRACE_BUILD_DIR=build-instr
 CPU=3
 CALLGRIND_LOOPS=200
 TIMING_LOOPS=10000
-TRACE_SKIP_ALL=18446744073709551615  # UINT64_MAX: skip every event = count-only run
+TRACE_SKIP_ALL=18446744073709551615 # UINT64_MAX: skip every event = count-only run
 REPORT_MANIFEST='curl/perf2html.sh v1'
 
 REPO="$(cd .. && pwd)"
@@ -20,20 +20,26 @@ usage_show() { awk 'NR > 1 && !/^#/ { exit } NR > 1 { sub(/^# ?/, ""); print }' 
 log_say() { if [ "$VERBOSE" = 1 ]; then echo "$@"; fi; }
 
 took() {
-  local seconds=$(( SECONDS - $1 ))
+  local seconds=$((SECONDS - $1))
   if [ "$seconds" -ge 60 ]; then echo "$((seconds / 60))m$((seconds % 60))s"; else echo "${seconds}s"; fi
 }
 
 test_run() {
-  if [ "$VERBOSE" = 1 ]; then "$@"; return; fi
+  if [ "$VERBOSE" = 1 ]; then
+    "$@"
+    return
+  fi
   local exit_code=0 from
   printf '\n$ %s\n' "$*" >>"$RUN_LOG"
   from="$(wc -l <"$RUN_LOG")"
   "$@" >>"$RUN_LOG" 2>&1 || exit_code=$?
   if [ "$exit_code" != 0 ]; then
-    { echo; echo "error: exit $exit_code from: $*"
+    {
+      echo
+      echo "error: exit $exit_code from: $*"
       tail -n +"$((from + 1))" "$RUN_LOG" | tail -n 40
-      echo "(last 40 lines; everything this run printed: $RUN_LOG)"; } >&2
+      echo "(last 40 lines; everything this run printed: $RUN_LOG)"
+    } >&2
     exit "$exit_code"
   fi
 }
@@ -45,32 +51,54 @@ args_parse() {
   OUT_DIR=""
   while [ $# -gt 0 ]; do
     case "$1" in
-      -h|--help) usage_show; exit 0;;
-      --verbose) VERBOSE=1; shift;;
-      --keep-raw) KEEP_RAW=1; shift;;
-      --regenerate) REGENERATE=1; KEEP_RAW=1; shift;;
-      --report=*) OUT_DIR="${1#--report=}"; shift;;
-      *) break;;
+      -h | --help)
+        usage_show
+        exit 0
+        ;;
+      --verbose)
+        VERBOSE=1
+        shift
+        ;;
+      --keep-raw)
+        KEEP_RAW=1
+        shift
+        ;;
+      --regenerate)
+        REGENERATE=1
+        KEEP_RAW=1
+        shift
+        ;;
+      --report=*)
+        OUT_DIR="${1#--report=}"
+        shift
+        ;;
+      *) break ;;
     esac
   done
   CMAKE_FLAGS=("$@")
   if [ -z "$OUT_DIR" ]; then
     if [ $# -gt 0 ]; then OUT_DIR=perf2html_modified_report; else OUT_DIR=perf2html_baseline_report; fi
   fi
-  case "$OUT_DIR" in "~/"*) OUT_DIR="$HOME/${OUT_DIR#"~/"}";; /*) ;; *) OUT_DIR="$PWD/$OUT_DIR";; esac
+  case "$OUT_DIR" in "~/"*) OUT_DIR="$HOME/${OUT_DIR#"~/"}" ;; /*) ;; *) OUT_DIR="$PWD/$OUT_DIR" ;; esac
   local index seen=0 split=0 flag
   for index in "${!CMAKE_FLAGS[@]}"; do
     flag="${CMAKE_FLAGS[$index]}"
     if [ "$split" = 1 ]; then
       case "$flag" in
-        CMAKE_C_FLAGS=*) CMAKE_FLAGS[$index]="CMAKE_C_FLAGS=-O2 -g ${flag#CMAKE_C_FLAGS=}"; seen=1;;
+        CMAKE_C_FLAGS=*)
+          CMAKE_FLAGS[$index]="CMAKE_C_FLAGS=-O2 -g ${flag#CMAKE_C_FLAGS=}"
+          seen=1
+          ;;
       esac
       split=0
       continue
     fi
     case "$flag" in
-      -DCMAKE_C_FLAGS=*) CMAKE_FLAGS[$index]="-DCMAKE_C_FLAGS=-O2 -g ${flag#-DCMAKE_C_FLAGS=}"; seen=1;;
-      -D) split=1;;
+      -DCMAKE_C_FLAGS=*)
+        CMAKE_FLAGS[$index]="-DCMAKE_C_FLAGS=-O2 -g ${flag#-DCMAKE_C_FLAGS=}"
+        seen=1
+        ;;
+      -D) split=1 ;;
     esac
   done
   [ "$seen" = 1 ] || CMAKE_FLAGS+=("-DCMAKE_C_FLAGS=-O2 -g")
@@ -83,24 +111,32 @@ manifest_value() {
 
 stamp_reuse() {
   local manifest="$OUT_DIR/MANIFEST.txt"
-  [ -f "$manifest" ] || { echo "error: --regenerate needs a previous report at $OUT_DIR (no MANIFEST.txt)" >&2; exit 2; }
+  [ -f "$manifest" ] || {
+    echo "error: --regenerate needs a previous report at $OUT_DIR (no MANIFEST.txt)" >&2
+    exit 2
+  }
   STAMP="$(manifest_value stamp)"
-  [ -n "$STAMP" ] || { echo "error: $manifest has no stamp= row, so its raw data cannot be identified" >&2
-                       echo "       (it predates --regenerate; re-run perf2html.sh --keep-raw once)" >&2; exit 2; }
+  [ -n "$STAMP" ] || {
+    echo "error: $manifest has no stamp= row, so its raw data cannot be identified" >&2
+    echo "       (it predates --regenerate; re-run perf2html.sh --keep-raw once)" >&2
+    exit 2
+  }
   local test_name loops missing=()
   for test_name in "${TESTS[@]}"; do
     loops=$CALLGRIND_LOOPS
     for file in "trace/callgrind.out.$test_name.$loops.$STAMP" \
-                "trace/valgrind.$test_name.$loops.$STAMP.log" \
-                "trace/perf-stat.$test_name.$STAMP.csv" \
-                "trace/trace.$test_name.$loops.$STAMP.speedscope.json"; do
+      "trace/valgrind.$test_name.$loops.$STAMP.log" \
+      "trace/perf-stat.$test_name.$STAMP.csv" \
+      "trace/trace.$test_name.$loops.$STAMP.speedscope.json"; do
       [ -f "$file" ] || missing+=("$file")
     done
   done
   if [ "${#missing[@]}" != 0 ]; then
-    { echo "error: --regenerate is missing ${#missing[@]} raw file(s) for stamp $STAMP:"
+    {
+      echo "error: --regenerate is missing ${#missing[@]} raw file(s) for stamp $STAMP:"
       printf '       %s\n' "${missing[@]}"
-      echo "       (dev/trace/ was cleaned; re-run perf2html.sh --keep-raw to record them again)"; } >&2
+      echo "       (dev/trace/ was cleaned; re-run perf2html.sh --keep-raw to record them again)"
+    } >&2
     exit 2
   fi
 }
@@ -123,10 +159,16 @@ build_manifest() {
 toolchain_check() {
   local tool
   for tool in cmake ninja ccache cc valgrind perf taskset python3 addr2line readelf speedscope; do
-    command -v "$tool" >/dev/null 2>&1 || { echo "error: $tool not found on PATH" >&2; exit 1; }
+    command -v "$tool" >/dev/null 2>&1 || {
+      echo "error: $tool not found on PATH" >&2
+      exit 1
+    }
   done
   SPEEDSCOPE_RELEASE="$(dirname "$(dirname "$(readlink -f "$(command -v speedscope)")")")/dist/release"
-  [ -f "$SPEEDSCOPE_RELEASE/index.html" ] || { echo "error: no speedscope bundle at $SPEEDSCOPE_RELEASE" >&2; exit 1; }
+  [ -f "$SPEEDSCOPE_RELEASE/index.html" ] || {
+    echo "error: no speedscope bundle at $SPEEDSCOPE_RELEASE" >&2
+    exit 1
+  }
 }
 
 tree_build() {
@@ -157,7 +199,7 @@ build_compile() {
   local start=$SECONDS flag trace_flags=()
   tree_build "$BUILD_DIR" "${CMAKE_FLAGS[@]}"
   for flag in "${CMAKE_FLAGS[@]}"; do
-    case "$flag" in -DCMAKE_C_FLAGS=*|CMAKE_C_FLAGS=*) flag="$flag -finstrument-functions";; esac
+    case "$flag" in -DCMAKE_C_FLAGS=* | CMAKE_C_FLAGS=*) flag="$flag -finstrument-functions" ;; esac
     trace_flags+=("$flag")
   done
   mkdir -p "$REPO/$TRACE_BUILD_DIR"
@@ -197,15 +239,19 @@ trace_render() {
   rm -rf "$out/flame-graph"
   mkdir -p "$out/flame-graph"
   cp -r "$SPEEDSCOPE_RELEASE"/. "$out/flame-graph"/
-  { echo "# $TRACE_BUILD_DIR = this report's build flags + -finstrument-functions, linked with dev/cyg_callback.c,"
+  {
+    echo "# $TRACE_BUILD_DIR = this report's build flags + -finstrument-functions, linked with dev/cyg_callback.c,"
     echo "# which reads rdtsc at every function enter and exit. Run 1 counts the events, run 2 keeps"
     echo "# the ones right after the run's midpoint (CYG_CALLBACKS_MAX_REC in dev/cyg_callback.c)."
     trace_record "$test" "$loops" "$trace_file" "$TRACE_SKIP_ALL" \
       && seen="$(python3 scripts/trace_to_speedscope.py --seen "$trace_file")" \
       && trace_record "$test" "$loops" "$trace_file" "$((seen / 2))" \
       && python3 scripts/trace_to_speedscope.py "$trace_file" -o "$TRACE_JSON" --name "$test (loops=$loops)" 2>&1 \
-        | sed "s#$PWD/trace/##g; s#\\.$STAMP##g"
-  } >"$log" || { echo "error: the native trace of $test failed; its output is in $log" >&2; exit 1; }
+      | sed "s#$PWD/trace/##g; s#\\.$STAMP##g"
+  } >"$log" || {
+    echo "error: the native trace of $test failed; its output is in $log" >&2
+    exit 1
+  }
   if [ "$VERBOSE" = 1 ]; then cat "$log"; else cat "$log" >>"$RUN_LOG"; fi
   test_run python3 scripts/build_flame_graph.py --speedscope-dir "$out/flame-graph" --profile-json "$TRACE_JSON"
 }
@@ -271,12 +317,16 @@ run_one() {
   [ "$VERBOSE" = 1 ] || printf ' | %s' "$(took "$start")"
 
   log_say "== [$test]: native timing, pinned to CPU $CPU, loops=$TIMING_LOOPS -> $out/perf-tool/output.txt =="
-  { echo "\$ perf stat -e cycles:u,instructions:u taskset -c $CPU $BIN_REL $test $TIMING_LOOPS"
+  {
+    echo "\$ perf stat -e cycles:u,instructions:u taskset -c $CPU $BIN_REL $test $TIMING_LOOPS"
     perf stat -x, -o "$stat_file" -e cycles:u,instructions:u taskset -c "$CPU" "$BIN" "$test" "$TIMING_LOOPS" 2>&1 \
       && awk -F, '$3 ~ /cycles/ { printf "Cycles:    %s\n", $1 } $3 ~ /instructions/ { printf "Instructions: %s\n", $1 }' \
         "$stat_file"
   } >"$out/perf-tool/output.txt" \
-    || { echo "error: $BIN $test failed; its output is in $out/perf-tool/output.txt" >&2; exit 1; }
+    || {
+      echo "error: $BIN $test failed; its output is in $out/perf-tool/output.txt" >&2
+      exit 1
+    }
   if [ "$VERBOSE" = 1 ]; then
     cat "$out/perf-tool/output.txt"
   else
@@ -309,7 +359,7 @@ run_all() {
   for test_name in "${TESTS[@]}"; do
     usecs="$(awk '/^Time:/ { print $2; exit }' "$OUT_DIR/$test_name/perf-tool/output.txt")"
     rows+="$(printf '  %-14s %12s usecs' "$test_name:" "${usecs:-?}")"$'\n'
-    total=$(( total + ${usecs:-0} ))
+    total=$((total + ${usecs:-0}))
   done
   {
     echo "\$ taskset -c $CPU $BIN_REL <test>   for every test, one after the other (each test's page has its full output)"
@@ -322,13 +372,15 @@ run_all() {
   report_render all "$out" ""
 
   log_say "== overview -> $OUT_DIR/index.html =="
-  { printf '%s\n' "$REPORT_MANIFEST"
+  {
+    printf '%s\n' "$REPORT_MANIFEST"
     echo "sampled=$SAMPLED"
     echo "revision=$REVISION"
     echo "cpu=$CPU_MODEL"
     echo "build=$BUILD_DESC"
     echo "executable=$BIN_REL <test>  (native, pinned to CPU $CPU)"
-    echo "stamp=$STAMP"; } >"$OUT_DIR/MANIFEST.txt"
+    echo "stamp=$STAMP"
+  } >"$OUT_DIR/MANIFEST.txt"
   args=(-o "$OUT_DIR/index.html" --header-file "$OUT_DIR/MANIFEST.txt")
   for test_name in "${TESTS[@]}" all; do args+=(--test "$test_name"); done
   test_run python3 scripts/build_report.py overview "${args[@]}"

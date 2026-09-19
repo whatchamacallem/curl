@@ -16,15 +16,21 @@ path_display() { python3 -c 'import os,sys; print(os.path.relpath(sys.argv[1], s
 log_say() { if [ "$VERBOSE" = 1 ]; then echo "$@"; fi; }
 
 test_run() {
-  if [ "$VERBOSE" = 1 ]; then "$@"; return; fi
+  if [ "$VERBOSE" = 1 ]; then
+    "$@"
+    return
+  fi
   local exit_code=0 from
   printf '\n$ %s\n' "$*" >>"$RUN_LOG"
   from="$(wc -l <"$RUN_LOG")"
   "$@" >>"$RUN_LOG" 2>&1 || exit_code=$?
   if [ "$exit_code" != 0 ]; then
-    { echo; echo "error: exit $exit_code from: $*"
+    {
+      echo
+      echo "error: exit $exit_code from: $*"
       tail -n +"$((from + 1))" "$RUN_LOG" | tail -n 40
-      echo "(last 40 lines; everything this run printed: $RUN_LOG)"; } >&2
+      echo "(last 40 lines; everything this run printed: $RUN_LOG)"
+    } >&2
     exit "$exit_code"
   fi
 }
@@ -35,11 +41,24 @@ args_parse() {
   REGENERATE=0
   while [ $# -gt 0 ]; do
     case "$1" in
-      -h|--help) usage_show; exit 0;;
-      --verbose) VERBOSE=1; shift;;
-      --keep-raw) KEEP_RAW=1; shift;;
-      --regenerate) REGENERATE=1; KEEP_RAW=1; shift;;
-      *) break;;
+      -h | --help)
+        usage_show
+        exit 0
+        ;;
+      --verbose)
+        VERBOSE=1
+        shift
+        ;;
+      --keep-raw)
+        KEEP_RAW=1
+        shift
+        ;;
+      --regenerate)
+        REGENERATE=1
+        KEEP_RAW=1
+        shift
+        ;;
+      *) break ;;
     esac
   done
   BASE_DIR=perf2html_baseline_report
@@ -47,17 +66,27 @@ args_parse() {
   OUT_DIR=perf2html_diff_report
   case $# in
     0) ;;
-    1) BASE_DIR="$1";;
-    2) BASE_DIR="$1"; MOD_DIR="$2";;
-    3) BASE_DIR="$1"; MOD_DIR="$2"; OUT_DIR="$3";;
-    *) usage_show >&2; exit 2;;
+    1) BASE_DIR="$1" ;;
+    2)
+      BASE_DIR="$1"
+      MOD_DIR="$2"
+      ;;
+    3)
+      BASE_DIR="$1"
+      MOD_DIR="$2"
+      OUT_DIR="$3"
+      ;;
+    *)
+      usage_show >&2
+      exit 2
+      ;;
   esac
   local dir
   for dir in BASE_DIR MOD_DIR OUT_DIR; do
     case "${!dir}" in
-      "~/"*) printf -v "$dir" '%s' "$HOME/${!dir#"~/"}";;
+      "~/"*) printf -v "$dir" '%s' "$HOME/${!dir#"~/"}" ;;
       /*) ;;
-      *) printf -v "$dir" '%s' "$PWD/${!dir}";;
+      *) printf -v "$dir" '%s' "$PWD/${!dir}" ;;
     esac
   done
 }
@@ -84,8 +113,10 @@ manifest_check() {
 header_file_of() {
   local dir="$1" role="$2"
   local out="$PWD/trace/header.$role.$STAMP.txt"
-  { echo "report=$(path_display "$dir")"
-    grep '=' "$dir/MANIFEST.txt" || true; } >"$out"
+  {
+    echo "report=$(path_display "$dir")"
+    grep '=' "$dir/MANIFEST.txt" || true
+  } >"$out"
   echo "$out"
 }
 
@@ -162,7 +193,10 @@ diff_one() {
 
 main() {
   args_parse "$@"
-  command -v python3 >/dev/null 2>&1 || { echo "error: python3 not found on PATH" >&2; exit 1; }
+  command -v python3 >/dev/null 2>&1 || {
+    echo "error: python3 not found on PATH" >&2
+    exit 1
+  }
 
   manifest_check "$BASE_DIR" baseline
   manifest_check "$MOD_DIR" modified
@@ -176,15 +210,20 @@ main() {
   mkdir -p "$OUT_DIR" trace
   RUN_LOG="$PWD/trace/diff.$STAMP.log"
   cp README.md "$OUT_DIR/README.md"
-  { printf '%s\n' "$DIFF_MANIFEST"
+  {
+    printf '%s\n' "$DIFF_MANIFEST"
     echo "baseline=$(path_display "$BASE_DIR")"
     echo "modified=$(path_display "$MOD_DIR")"
-    echo "stamp=$STAMP"; } >"$OUT_DIR/MANIFEST.txt"
+    echo "stamp=$STAMP"
+  } >"$OUT_DIR/MANIFEST.txt"
   [ "$VERBOSE" = 1 ] || echo "dev/perf2html_diff.sh $STAMP: $BASE_DIR -> $MOD_DIR -> $OUT_DIR" >"$RUN_LOG"
 
   local tests test_name args
   tests="$(tests_pair)"
-  [ -n "$tests" ] || { echo "error: the two reports have no test in common" >&2; exit 2; }
+  [ -n "$tests" ] || {
+    echo "error: the two reports have no test in common" >&2
+    exit 2
+  }
   MULTI=1
   [ "$tests" = "." ] && MULTI=0
 
@@ -198,8 +237,8 @@ main() {
     diff_one . "$OUT_DIR" "$test_name diff"
   else
     args=(-o "$OUT_DIR/index.html" --diff
-          --header-block "baseline=$(header_file_of "$BASE_DIR" baseline)"
-          --header-block "modified=$(header_file_of "$MOD_DIR" modified)")
+      --header-block "baseline=$(header_file_of "$BASE_DIR" baseline)"
+      --header-block "modified=$(header_file_of "$MOD_DIR" modified)")
     for test_name in $tests; do
       diff_one "$test_name" "$OUT_DIR/$test_name" "$test_name"
       args+=(--test "$test_name")

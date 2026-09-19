@@ -41,10 +41,13 @@ class CheckJs:
             return [CheckJs.EmbeddedScript(label, src)]
         chunks: list[CheckJs.EmbeddedScript] = []
         for index, script in enumerate(
-                re.findall(r"<script[^>]*>(.*?)</script>", src, re.S)):
+            re.findall(r"<script[^>]*>(.*?)</script>", src, re.S)
+        ):
             if _PLACEHOLDER_RE.match(script):
                 continue
-            chunks.append(CheckJs.EmbeddedScript(f"{label} block {index}", script))
+            chunks.append(
+                CheckJs.EmbeddedScript(f"{label} block {index}", script)
+            )
         return chunks
 
     # Check theme.js and every holder, reporting every failure, not just the
@@ -60,9 +63,13 @@ class CheckJs:
     # Import one generator, pull its JavaScript string out by name and check
     # every chunk of it.
     def holder_check(self, holder: CheckJs.ScriptHolder) -> bool:
-        value: object = getattr(importlib.import_module(holder.module), holder.attr)
+        value: object = getattr(
+            importlib.import_module(holder.module), holder.attr
+        )
         if not isinstance(value, str):
-            print(f"{holder.module}.{holder.attr}: not a string", file=sys.stderr)
+            print(
+                f"{holder.module}.{holder.attr}: not a string", file=sys.stderr
+            )
             return False
         ok = True
         for chunk in self.chunks(f"{holder.module}.{holder.attr}", value):
@@ -71,18 +78,23 @@ class CheckJs:
 
     # Hand one chunk to node --check, via a temporary file it can open.
     def syntax_check(self, label: str, src: str) -> bool:
-        with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False,
-                                         encoding="utf-8") as handle:
+        with tempfile.NamedTemporaryFile(
+            "w", suffix=".js", delete=False, encoding="utf-8"
+        ) as handle:
             handle.write(src)
             path = handle.name
         try:
-            result = subprocess.run(["node", "--check", path], capture_output=True,
-                                    text=True)
+            result = subprocess.run(
+                ["node", "--check", path], capture_output=True, text=True
+            )
         finally:
             os.unlink(path)
         if result.returncode == 0:
             return True
-        print(f"{label}: {result.stderr.strip()}".replace(path, label), file=sys.stderr)
+        print(
+            f"{label}: {result.stderr.strip()}".replace(path, label),
+            file=sys.stderr,
+        )
         return False
 
 

@@ -2,19 +2,19 @@
 from __future__ import annotations
 
 import argparse
-from collections.abc import Sequence
-from dataclasses import dataclass, field
 import json
 import os
 import subprocess
 import sys
+from collections.abc import Sequence
+from dataclasses import dataclass, field
 from typing import NamedTuple, TypedDict
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import callgrind
-from callgrind import Costs, Group
 import callgrind_diff
 import theme
+from callgrind import Costs, Group
 
 # The whole page body and its script. Named exactly this: check_js.py looks
 # it up by name. JS in a triple-quoted string needs "\\n" written "\\\\n".
@@ -956,34 +956,54 @@ class CallgrindToHeatmap:
         # the source text once it has been read
         source: str | None = None
         # per line number, that line's tally
-        lines: dict[str, CallgrindToHeatmap.LineTally] = field(default_factory=dict)
+        lines: dict[str, CallgrindToHeatmap.LineTally] = field(
+            default_factory=dict
+        )
         # per line number, which function owns it
         line_function: dict[str, int] = field(default_factory=dict)
         # per line number, what that line calls
-        callees: dict[str, list[CallgrindToHeatmap.CallRow]] = field(default_factory=dict)
+        callees: dict[str, list[CallgrindToHeatmap.CallRow]] = field(
+            default_factory=dict
+        )
 
         # Freeze the tally into the page's own shape, trailing zeros dropped.
         def emit(self) -> CallgrindToHeatmap.FileModel:
             def first(row: CallgrindToHeatmap.CallRow) -> int:
                 return -(row.cost[0] if row.cost else 0)
+
             trim = CallgrindToHeatmap.costs_trim
-            return {"self": trim(self.self_cost), "calls": trim(self.calls_cost),
-                    "source": self.source,
-                    "lines": {line: CallgrindToHeatmap.LineCost(
-                        trim(record.self_cost), trim(record.calls_cost), record.count)
-                        for line, record in self.lines.items()},
-                    "lineFunction": self.line_function,
-                    "callees": {line: sorted(rows, key=first)
-                                for line, rows in self.callees.items()},
-                    "group": self.group, "raw": self.raw}
+            return {
+                "self": trim(self.self_cost),
+                "calls": trim(self.calls_cost),
+                "source": self.source,
+                "lines": {
+                    line: CallgrindToHeatmap.LineCost(
+                        trim(record.self_cost),
+                        trim(record.calls_cost),
+                        record.count,
+                    )
+                    for line, record in self.lines.items()
+                },
+                "lineFunction": self.line_function,
+                "callees": {
+                    line: sorted(rows, key=first)
+                    for line, rows in self.callees.items()
+                },
+                "group": self.group,
+                "raw": self.raw,
+            }
 
         # One line's tally, started at zero the first time it is asked for.
-        def line(self, line_number: int,
-                 event_count: int) -> CallgrindToHeatmap.LineTally:
+        def line(
+            self, line_number: int, event_count: int
+        ) -> CallgrindToHeatmap.LineTally:
             record = self.lines.get(str(line_number))
             if record is None:
-                record = self.lines[str(line_number)] = \
-                    CallgrindToHeatmap.LineTally([0] * event_count, [0] * event_count)
+                record = self.lines[str(line_number)] = (
+                    CallgrindToHeatmap.LineTally(
+                        [0] * event_count, [0] * event_count
+                    )
+                )
             return record
 
     # LineTally - One line's numbers while they are still being added up.
@@ -1007,46 +1027,62 @@ class CallgrindToHeatmap:
 
     # Turn a finished model into a diff one: shares go against the summed
     # magnitude of every change, since the signed total is near zero.
-    def diff_model(self, model: CallgrindToHeatmap.HeatModel,
-                   profile: callgrind.Profile) -> None:
+    def diff_model(
+        self, model: CallgrindToHeatmap.HeatModel, profile: callgrind.Profile
+    ) -> None:
         model["meta"]["totals"] = callgrind_diff.profile_magnitudes(profile)
         model["meta"]["diff"] = True
 
     # Resolve every path once, qualifying an external file by its object so
     # two libraries' same-named headers stay apart.
-    def display_paths(self, profile: callgrind.Profile,
-                      raw_files: Sequence[str]) -> dict[str, callgrind.PathInfo]:
+    def display_paths(
+        self, profile: callgrind.Profile, raw_files: Sequence[str]
+    ) -> dict[str, callgrind.PathInfo]:
         info: dict[str, callgrind.PathInfo] = {}
         for raw in raw_files:
             path_info = callgrind.path_norm(raw)
             if path_info.group == "external":
-                object_name = (os.path.basename(profile.file_ob.get(raw, ""))
-                               or "(unknown object)")
-                path_info = path_info._replace(display=f"{object_name}/{path_info.display}")
+                object_name = (
+                    os.path.basename(profile.file_ob.get(raw, ""))
+                    or "(unknown object)"
+                )
+                path_info = path_info._replace(
+                    display=f"{object_name}/{path_info.display}"
+                )
             info[raw] = path_info
         return info
 
     # Add every line, call and callee up per file, and read the source in.
-    def files_model(self, profile: callgrind.Profile,
-                    info: dict[str, callgrind.PathInfo],
-                    function_index: dict[str, int]
-                    ) -> dict[str, CallgrindToHeatmap.FileModel]:
+    def files_model(
+        self,
+        profile: callgrind.Profile,
+        info: dict[str, callgrind.PathInfo],
+        function_index: dict[str, int],
+    ) -> dict[str, CallgrindToHeatmap.FileModel]:
         event_count = len(profile.events)
         display = {raw: path_info.display for raw, path_info in info.items()}
         accumulators: dict[str, CallgrindToHeatmap.FileTally] = {}
         for raw, path_info in info.items():
             entry = accumulators.get(path_info.display)
             if entry is None:
-                entry = accumulators[path_info.display] = CallgrindToHeatmap.FileTally(
-                    group=path_info.group,
-                    raw=raw if path_info.group == "external" else path_info.display,
-                    self_cost=[0] * event_count, calls_cost=[0] * event_count)
+                entry = accumulators[path_info.display] = (
+                    CallgrindToHeatmap.FileTally(
+                        group=path_info.group,
+                        raw=raw
+                        if path_info.group == "external"
+                        else path_info.display,
+                        self_cost=[0] * event_count,
+                        calls_cost=[0] * event_count,
+                    )
+                )
             if entry.source is None and path_info.local:
                 entry.source = self.source_read(path_info.local)
         for key, costs in profile.line_self.items():
             entry = accumulators[display[key.file]]
             callgrind.costs_add(entry.self_cost, costs)
-            callgrind.costs_add(entry.line(key.line, event_count).self_cost, costs)
+            callgrind.costs_add(
+                entry.line(key.line, event_count).self_cost, costs
+            )
         for key, costs in profile.line_calls.items():
             entry = accumulators[display[key.file]]
             callgrind.costs_add(entry.calls_cost, costs)
@@ -1054,63 +1090,105 @@ class CallgrindToHeatmap:
             callgrind.costs_add(record.calls_cost, costs)
             record.count += profile.line_call_count[key]
         for key, function in profile.line_function.items():
-            accumulators[display[key.file]].line_function[str(key.line)] = function_index[function]
+            accumulators[display[key.file]].line_function[str(key.line)] = (
+                function_index[function]
+            )
         for site, tally in profile.callees.items():
             entry_line = profile.function_entry.get(
-                site.callee, callgrind.SourceLine(profile.function_home.get(site.callee, "???"), 0))
-            accumulators[display[site.file]].callees.setdefault(str(site.line), []).append(
+                site.callee,
+                callgrind.SourceLine(
+                    profile.function_home.get(site.callee, "???"), 0
+                ),
+            )
+            accumulators[display[site.file]].callees.setdefault(
+                str(site.line), []
+            ).append(
                 CallgrindToHeatmap.CallRow(
                     function_index[site.callee],
-                    display.get(entry_line.file, entry_line.file), entry_line.line,
-                    self.costs_trim(tally.costs), tally.count))
+                    display.get(entry_line.file, entry_line.file),
+                    entry_line.line,
+                    self.costs_trim(tally.costs),
+                    tally.count,
+                )
+            )
         return {name: entry.emit() for name, entry in accumulators.items()}
 
     # Every function with its entry point and its callers, dearest first.
-    def functions_model(self, profile: callgrind.Profile,
-                        info: dict[str, callgrind.PathInfo],
-                        function_names: Sequence[str], function_index: dict[str, int]
-                        ) -> list[CallgrindToHeatmap.FunctionModel]:
+    def functions_model(
+        self,
+        profile: callgrind.Profile,
+        info: dict[str, callgrind.PathInfo],
+        function_names: Sequence[str],
+        function_index: dict[str, int],
+    ) -> list[CallgrindToHeatmap.FunctionModel]:
         display = {raw: path_info.display for raw, path_info in info.items()}
         functions: list[CallgrindToHeatmap.FunctionModel] = []
         for name in function_names:
             entry = profile.function_entry.get(
-                name, callgrind.SourceLine(profile.function_home[name], 0))
+                name, callgrind.SourceLine(profile.function_home[name], 0)
+            )
             callers = sorted(
-                (CallgrindToHeatmap.CallRow(
-                    function_index[caller.function],
-                    display.get(caller.file, caller.file), caller.line,
-                    self.costs_trim(tally.costs), tally.count)
-                 for caller, tally in profile.callers.get(name, {}).items()),
-                key=lambda row: -(row.cost[0] if row.cost else 0))
-            functions.append({
-                "name": name,
-                "file": display.get(entry.file, entry.file),
-                "line": entry.line,
-                "self": self.costs_trim(profile.function_self.get(name, [])),
-                "calls": self.costs_trim(profile.function_calls.get(name, [])),
-                "callers": callers,
-            })
+                (
+                    CallgrindToHeatmap.CallRow(
+                        function_index[caller.function],
+                        display.get(caller.file, caller.file),
+                        caller.line,
+                        self.costs_trim(tally.costs),
+                        tally.count,
+                    )
+                    for caller, tally in profile.callers.get(name, {}).items()
+                ),
+                key=lambda row: -(row.cost[0] if row.cost else 0),
+            )
+            functions.append(
+                {
+                    "name": name,
+                    "file": display.get(entry.file, entry.file),
+                    "line": entry.line,
+                    "self": self.costs_trim(
+                        profile.function_self.get(name, [])
+                    ),
+                    "calls": self.costs_trim(
+                        profile.function_calls.get(name, [])
+                    ),
+                    "callers": callers,
+                }
+            )
         return functions
 
     # The whole page's data: every file, every function, and the cold list.
-    def model(self, profile: callgrind.Profile) -> CallgrindToHeatmap.HeatModel:
+    def model(
+        self, profile: callgrind.Profile
+    ) -> CallgrindToHeatmap.HeatModel:
         function_names = sorted(profile.function_home)
         function_index = {name: i for i, name in enumerate(function_names)}
-        raw_files = sorted({key.file for key in profile.line_self}
-                           | {key.file for key in profile.line_calls}
-                           | {entry.file for entry in profile.function_entry.values()})
+        raw_files = sorted(
+            {key.file for key in profile.line_self}
+            | {key.file for key in profile.line_calls}
+            | {entry.file for entry in profile.function_entry.values()}
+        )
         info = self.display_paths(profile, raw_files)
         files = self.files_model(profile, info, function_index)
-        functions = self.functions_model(profile, info, function_names, function_index)
-        cold = sorted(relative for relative in self.repo_tracked_files()
-                      if relative not in files)
-        default_event = (_DEFAULT_EVENT if _DEFAULT_EVENT in profile.event_names()
-                         else profile.events[0])
+        functions = self.functions_model(
+            profile, info, function_names, function_index
+        )
+        cold = sorted(
+            relative
+            for relative in self.repo_tracked_files()
+            if relative not in files
+        )
+        default_event = (
+            _DEFAULT_EVENT
+            if _DEFAULT_EVENT in profile.event_names()
+            else profile.events[0]
+        )
         return {
             "meta": {
                 "events": profile.events,
-                "eventLong": {name: profile.event_long.get(name, "")
-                              for name in profile.event_names()},
+                "eventLong": {
+                    name: profile.event_long.get(name, "")
+                    for name in profile.event_names()
+                },
                 "derived": profile.resolved_derived_events(),
                 "defaultEvent": default_event,
                 "totals": profile.totals(),
@@ -1127,22 +1205,31 @@ class CallgrindToHeatmap:
     def render(self, model: CallgrindToHeatmap.HeatModel, title: str) -> str:
         data = json.dumps(model, separators=(",", ":"), ensure_ascii=False)
         data = data.replace("</", "<\\/")
-        body = BODY.replace("__THEME_JS__", theme.theme_js()).replace("__DATA__", data)
-        return ("<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n"
-                "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n"
-                f"<title>{theme.html_escape(title)}</title>\n<style>\n"
-                f"{theme.theme_css()}{_CSS}</style>\n"
-                "</head>\n<body>\n" + body + "</body>\n</html>\n")
+        body = BODY.replace("__THEME_JS__", theme.theme_js()).replace(
+            "__DATA__", data
+        )
+        return (
+            '<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n'
+            '<meta name="viewport" content="width=device-width, initial-scale=1">\n'
+            f"<title>{theme.html_escape(title)}</title>\n<style>\n"
+            f"{theme.theme_css()}{_CSS}</style>\n"
+            "</head>\n<body>\n" + body + "</body>\n</html>\n"
+        )
 
     # Every tracked .c/.h under _TREE, so a file with no samples still shows.
     def repo_tracked_files(self) -> list[str]:
         try:
             output = subprocess.run(
                 ["git", "-C", callgrind.REPO_ROOT, "ls-files", "--", *_TREE],
-                check=True, capture_output=True, text=True).stdout
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout
         except (OSError, subprocess.CalledProcessError):
             return []
-        return [line for line in output.split("\n") if line.endswith((".c", ".h"))]
+        return [
+            line for line in output.split("\n") if line.endswith((".c", ".h"))
+        ]
 
     # Read the profile, build the model and write the one page.
     def run(self, args: CallgrindToHeatmap.HeatArgs) -> None:
@@ -1151,15 +1238,26 @@ class CallgrindToHeatmap:
         if args.diff:
             self.diff_model(model, profile)
         html = self.render(model, args.title)
-        os.makedirs(os.path.dirname(os.path.abspath(args.output)), exist_ok=True)
+        os.makedirs(
+            os.path.dirname(os.path.abspath(args.output)), exist_ok=True
+        )
         with open(args.output, "w", encoding="utf-8") as handle:
             handle.write(html)
-        embedded_count = sum(1 for entry in model["files"].values()
-                             if entry["source"] is not None)
-        print(f"files with samples: {len(model['files'])} ({embedded_count} with source "
-              f"embedded), cold files listed: {len(model['cold'])}, "
-              f"functions: {len(model['functions'])}", file=sys.stderr)
-        print(f"wrote {args.output} ({len(html.encode('utf-8')):,} bytes)", file=sys.stderr)
+        embedded_count = sum(
+            1
+            for entry in model["files"].values()
+            if entry["source"] is not None
+        )
+        print(
+            f"files with samples: {len(model['files'])} ({embedded_count} with source "
+            f"embedded), cold files listed: {len(model['cold'])}, "
+            f"functions: {len(model['functions'])}",
+            file=sys.stderr,
+        )
+        print(
+            f"wrote {args.output} ({len(html.encode('utf-8')):,} bytes)",
+            file=sys.stderr,
+        )
 
     # Read one source file to embed, or None when it is not on this box.
     def source_read(self, local: str) -> str | None:
@@ -1174,19 +1272,34 @@ class CallgrindToHeatmap:
 # main - Build one heat map page from the given callgrind file(s).
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("callgrind_file", nargs="+",
-                        help="callgrind output file(s); several are merged into one profile")
-    parser.add_argument("-o", "--output", required=True,
-                        help="output .html path (directories are created)")
+    parser.add_argument(
+        "callgrind_file",
+        nargs="+",
+        help="callgrind output file(s); several are merged into one profile",
+    )
+    parser.add_argument(
+        "-o",
+        "--output",
+        required=True,
+        help="output .html path (directories are created)",
+    )
     parser.add_argument("--title", required=True)
-    parser.add_argument("--diff", action="store_true",
-                        help="the callgrind file is a callgrind_diff.py delta: print "
-                             "signed numbers and take shares against the summed "
-                             "magnitude of every change")
+    parser.add_argument(
+        "--diff",
+        action="store_true",
+        help="the callgrind file is a callgrind_diff.py delta: print "
+        "signed numbers and take shares against the summed "
+        "magnitude of every change",
+    )
     namespace = parser.parse_args()
-    CallgrindToHeatmap().run(CallgrindToHeatmap.HeatArgs(
-        callgrind_file=namespace.callgrind_file, output=namespace.output,
-        title=namespace.title, diff=namespace.diff))
+    CallgrindToHeatmap().run(
+        CallgrindToHeatmap.HeatArgs(
+            callgrind_file=namespace.callgrind_file,
+            output=namespace.output,
+            title=namespace.title,
+            diff=namespace.diff,
+        )
+    )
 
 
 if __name__ == "__main__":
