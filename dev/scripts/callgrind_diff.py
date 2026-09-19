@@ -3,19 +3,35 @@ from __future__ import annotations
 
 import argparse
 from collections.abc import Sequence
+import json
 import os
 import sys
-from typing import NamedTuple, TextIO
+from typing import NamedTuple, TextIO, TypedDict
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import callgrind
 from callgrind import Costs
+
+EVENT = "Ir"
+
+
+class CallerDelta(NamedTuple):
+    function: str
+    count_: int
+    cost: int
+
+
+class CallersDoc(TypedDict):
+    event: str
+    callers: dict[str, list[list[object]]]
 
 
 class DiffArgs(NamedTuple):
     baseline: list[str]
     modified: list[str]
     output: str
+    callers_output: str
+    event: str
 
 
 class CallgrindDiff:
@@ -28,6 +44,38 @@ class CallgrindDiff:
         changed = sum(1 for costs in diff.function_self.values() if any(costs))
         print(f"wrote {args.output} ({os.path.getsize(args.output):,} bytes): "
               f"{len(diff.line_self):,} lines in {changed:,} functions changed", file=sys.stderr)
+        callers = self.callers_subtract(baseline, modified, args.event)
+        self.callers_write(callers, args.callers_output, args.event)
+        print(f"wrote {args.callers_output} ({os.path.getsize(args.callers_output):,} bytes): "
+              f"{len(callers):,} function(s) with a caller change", file=sys.stderr)
+
+    def callers_subtract(self, baseline: callgrind.Profile, modified: callgrind.Profile,
+                         event: str) -> dict[str, list[CallerDelta]]:
+        out: dict[str, list[CallerDelta]] = {}
+        for callee in sorted(set(baseline.callers) | set(modified.callers)):
+            before = {caller.function: tally for caller, tally in baseline.callers.get(callee, {}).items()}
+            after = {caller.function: tally for caller, tally in modified.callers.get(callee, {}).items()}
+            deltas: list[CallerDelta] = []
+            for caller_name in sorted(set(before) | set(after)):
+                before_tally = before.get(caller_name)
+                after_tally = after.get(caller_name)
+                count = (after_tally.count if after_tally else 0) - (before_tally.count if before_tally else 0)
+                cost = modified.value(after_tally.costs, event) if after_tally else 0
+                cost -= baseline.value(before_tally.costs, event) if before_tally else 0
+                if count or cost:
+                    deltas.append(CallerDelta(caller_name, count, cost))
+            if deltas:
+                deltas.sort(key=lambda delta: (-abs(delta.cost), -abs(delta.count_), delta.function))
+                out[callee] = deltas
+        return out
+
+    def callers_write(self, callers: dict[str, list[CallerDelta]], path: str, event: str) -> None:
+        doc: CallersDoc = {"event": event,
+                           "callers": {callee: [[delta.function, delta.count_, delta.cost] for delta in deltas]
+                                       for callee, deltas in callers.items()}}
+        os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump(doc, handle)
 
     def costs_sub(self, modified: Costs, baseline: Costs) -> Costs:
         return [(modified[index] if index < len(modified) else 0) - (baseline[index] if index < len(baseline) else 0)
@@ -121,8 +169,11 @@ def main() -> None:
     parser.add_argument("--current", dest="modified", action="append", required=True, metavar="FILE",
                         help="the 'after' callgrind file (repeatable; several are merged)")
     parser.add_argument("-o", "--output", required=True, help="the callgrind-format delta file to write")
+    parser.add_argument("--callers-output", required=True, metavar="FILE",
+                        help="the JSON file of per-function caller deltas to write")
     namespace = parser.parse_args()
-    CallgrindDiff().build(DiffArgs(baseline=namespace.baseline, modified=namespace.modified, output=namespace.output))
+    CallgrindDiff().build(DiffArgs(baseline=namespace.baseline, modified=namespace.modified,
+                                   output=namespace.output, callers_output=namespace.callers_output, event=EVENT))
 
 
 if __name__ == "__main__":

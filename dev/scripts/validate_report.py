@@ -30,6 +30,7 @@ class Layout(NamedTuple):
     header_blocks: tuple[str, ...]
     manifest_version: str
     manifest_labels: tuple[str, ...]
+    test_has_rawdata: bool
 
 
 class NonAsciiLine(NamedTuple):
@@ -43,11 +44,11 @@ class ValidateArgs(NamedTuple):
     diff: bool
 
 
-LAYOUT_FULL = Layout(("flame-graph", "heat-map", "perf-tool"), r"<h2>top \d+ functions by self</h2>", (),
-                     "curl/perf2html.sh v1", ("sampled", "revision", "cpu", "build", "executable"))
+LAYOUT_FULL = Layout(("flame-graph", "heat-map"), r"<h2>top \d+ functions by self</h2>", (),
+                     "curl/perf2html.sh v1", ("sampled", "revision", "cpu", "build", "executable"), True)
 LAYOUT_DIFF = Layout(("heat-map",), r"<h2>top \d+ functions by change in self</h2>",
                      ("baseline", "modified"),
-                     "curl/perf2html_diff.sh v1", ("baseline", "modified"))
+                     "curl/perf2html_diff.sh v1", ("baseline", "modified"), False)
 
 
 class ValidateReport:
@@ -96,8 +97,10 @@ class ValidateReport:
         for key in layout.subpages:
             if f'href="{key}/index.html"' not in text:
                 self.fail(f"index.html is missing its {key} strip link: {path}")
-        if "raw data" not in text:
+        if layout.test_has_rawdata and "raw data" not in text:
             self.fail(f"index.html has no 'raw data' section: {path}")
+        elif not layout.test_has_rawdata and "raw data" in text:
+            self.fail(f"index.html has a 'raw data' section, but a diff summary page should not: {path}")
 
     def manifest_check(self, out_dir: str, layout: Layout) -> None:
         path = os.path.join(out_dir, "MANIFEST.txt")
@@ -169,8 +172,9 @@ class ValidateReport:
                 self.fail(f"perf-tool/output.txt has no recognizable timing line: {out_txt}")
             if test_name == "urlparser" and "Errors:" not in text:
                 self.fail(f"perf-tool/output.txt has no 'Errors:' line (urlparser is expected to print one): {out_txt}")
-        self.page_check(os.path.join(out_dir, "perf-tool", "index.html"), "perf-tool/index.html",
-                        want_title=f"{test_name} / native timing")
+        index_text = self.size_check(os.path.join(out_dir, "index.html"), MIN_INDEX_BYTES, "index.html")
+        if index_text and "<h2>perf log</h2>" not in index_text:
+            self.fail(f"index.html has no 'perf log' section: {os.path.join(out_dir, 'index.html')}")
 
     def raw_dir_check(self, out_dir: str) -> None:
         raw_dir = os.path.join(out_dir, "raw")
@@ -231,7 +235,7 @@ class ValidateReport:
         self.raw_dir_check(out_dir)
         if "flame-graph" in layout.subpages:
             self.flame_graph_check(out_dir)
-        if "perf-tool" in layout.subpages:
+        if layout.test_has_rawdata:
             self.perf_tool_check(out_dir, name)
 
     def unicode_check(self) -> None:

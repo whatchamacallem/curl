@@ -122,14 +122,15 @@ profiles_of() {
 
 diff_one() {
   local test="$1" out="$2" name="$3"
-  local diff_file base_files cur_files args help_args=() raw_name
+  local diff_file callers_file base_files cur_files args help_args=() raw_name
   diff_file="$PWD/trace/callgrind.diff.$name.$STAMP"
+  callers_file="$PWD/trace/callgrind.diff.$name.$STAMP.callers.json"
   base_files="$(profiles_of "$BASE_DIR" "$test")"
   cur_files="$(profiles_of "$MOD_DIR" "$test")"
 
   log_say "== [$name]: diff -> $diff_file =="
   [ "$VERBOSE" = 1 ] || printf '%-13sdiff' "$name"
-  args=(python3 scripts/callgrind_diff.py -o "$diff_file")
+  args=(python3 scripts/callgrind_diff.py -o "$diff_file" --callers-output "$callers_file")
   # shellcheck disable=SC2086
   for file in $base_files; do args+=(--baseline "$file"); done
   # shellcheck disable=SC2086
@@ -147,12 +148,8 @@ diff_one() {
   raw_name="${raw_name%.*}"
   cp "$diff_file" "$out/raw/$raw_name"
   [ "$MULTI" = 1 ] && help_args=(--help-href ../README.md)
-  local base_files_rel="" cur_files_rel="" file
-  for file in $base_files; do base_files_rel+="$(path_display "$file") "; done
-  for file in $cur_files; do cur_files_rel+="$(path_display "$file") "; done
   test_run python3 scripts/build_report.py test "$diff_file" -o "$out/index.html" --test "$name" --diff \
-    --raw-data "$out/raw/$raw_name" \
-    --header "baseline=${base_files_rel% }" --header "modified=${cur_files_rel% }" \
+    --callers-data "$callers_file" \
     "${help_args[@]}"
   [ "$VERBOSE" = 1 ] || printf ' -> %s\n' "${out#"$PWD"/}/index.html"
 }

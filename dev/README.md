@@ -86,9 +86,11 @@ heat colours follow the same rule -- a large improvement is as bright as a large
 regression, and only the sign tells them apart.
 
 The differences are taken per source line, so the heat map's listing shows
-exactly where a function got cheaper or dearer. What a diff does not have is
-call data: no call counts, no callers, no flame graph, and no native timing,
-because none of those subtract into a meaningful single number.
+exactly where a function got cheaper or dearer. The summary table's calls/
+callers columns are synthesized separately (per-caller call count and cost
+deltas), signed the same way as everything else. What a diff still does not
+have is a flame graph or a perf log, because neither subtracts into a
+meaningful single number.
 
 ## Flame Graph Bindings (speedscope)
 

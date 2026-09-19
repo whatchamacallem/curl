@@ -118,9 +118,6 @@ report_render() {
     --title "$name / heat map"
 
   log_say "== [$name]: index -> $out/index.html =="
-  test_run python3 scripts/build_report.py timing -o "$out/perf-tool/index.html" --test "$name" \
-    --output-file "$out/perf-tool/output.txt" \
-    --header "binary=$BIN_REL" --header "pinned to=CPU $CPU" --header "build=$BUILD_DESC"
   rm -rf "$out/raw"
   mkdir -p "$out/raw"
   for cg_file in "${CALLGRIND_FILES[@]}"; do
@@ -134,7 +131,7 @@ report_render() {
   [ "$name" = all ] && log_args+=(--no-log)
   [ "${#TESTS[@]}" -gt 1 ] && help_args=(--help-href ../README.md)
   test_run python3 scripts/build_report.py test "${CALLGRIND_FILES[@]}" -o "$out/index.html" --test "$name" \
-    "${log_args[@]}" "${raw_args[@]}" "${help_args[@]}"
+    --perf-log "$out/perf-tool/output.txt" "${log_args[@]}" "${raw_args[@]}" "${help_args[@]}"
 }
 
 run_one() {
