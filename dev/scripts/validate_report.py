@@ -314,11 +314,10 @@ class ValidateReport:
     def perf_tool_check(self, out_dir: str, has_perf_log: bool) -> None:
         out_txt = os.path.join(out_dir, "perf-tool", "output.txt")
         text = self.size_check(out_txt, 20, "perf-tool/output.txt")
-        if text:
-            if not re.search(r"^Time(/\w+)?:\s+\d", text, re.M):
-                self.fail(
-                    f"perf-tool/output.txt has no recognizable timing line: {out_txt}"
-                )
+        if text and not re.search(r"^Time(/\w+)?:\s+\d", text, re.M):
+            self.fail(
+                f"perf-tool/output.txt has no recognizable timing line: {out_txt}"
+            )
         index_text = self.size_check(
             os.path.join(out_dir, "index.html"), _MIN_INDEX_BYTES, "index.html"
         )

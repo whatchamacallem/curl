@@ -402,7 +402,7 @@ class Theme:
         out.append("<tbody>")
         for row in cells:
             out.append("<tr>")
-            for column, width, cell in zip(columns, widths, row):
+            for column, width, cell in zip(columns, widths, row, strict=True):
                 cell_classes = " ".join(
                     class_name
                     for class_name in ("n" if column.numeric else "", cell.cls)
