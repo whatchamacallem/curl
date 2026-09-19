@@ -147,15 +147,24 @@ Raw data in `dev/trace/` (gitignored): `callgrind.out.<test>.<loops>.<ts>`,
 generator. Keep the split: `BuildReport.test`/`.functions_table` core vs
 `.diff_test`/`.diff_functions_table`; `CallgrindToHeatmap.model()` core vs
 `.diff_model()`; in heat-map JS every diff override sits in the one `if (DIFF)
-{...}` block; `validate_report.py` is data-driven by `Layout`
-(`LAYOUT_FULL`/`LAYOUT_DIFF`).
+{...}` block; `validate_report.py` is data-driven by
+`ValidateReport.ReportLayout` (`_LAYOUT_FULL`/`_LAYOUT_DIFF`).
 
 ## `dev/scripts/` conventions
 
-**No comments or docstrings anywhere** — not in the Python, not in JS/CSS
-embedded in string literals, not in `theme.js`/`theme.css`. Symbol names are the
-documentation; notes go here or in `dev/README.md`. Shebangs stay.
-`ArgumentParser()` gets no description by design.
+**Comments: short, tech-writer style, never docstrings.** 80 columns is the
+hard max for a comment (existing *code* lines predate the rule). Every class
+and function gets one `# <Name> - what it is` line above it, wrapped to a
+second `#` line if it must be. Every field gets a one-line `#` comment **above
+it**, never trailing — no arg-by-arg docs, no `:param:`, no reStructuredText.
+Names carry the meaning; the comment only says what a name can't. Still no
+comments in JS/CSS embedded in string literals or in
+`theme.js`/`theme.css`. Shebangs stay. `ArgumentParser()` gets no description
+by design.
+
+**Class names read like a how-to, not an abbreviation** — `CompressedNames`,
+`PositionDecoder`, `FileTally`, `ExecutableMapping`, `TraceRecording`,
+`ReportLayout`. A name needing a comment to be legible is the wrong name.
 
 **Naming:** `object_method` lowercase C-identifier form (`args_parse`,
 `profile_parse`, `report_test`) for shell functions and public free functions; a
@@ -198,15 +207,15 @@ usable — LSP only, ignores argv.
   the only per-context table. `function_entry` for an uncalled function = the
   **first** cost line callgrind wrote in its home file (matched 505/505; lowest
   line number does not — inlined helpers sit above the entry).
-- `build_report.py test|overview` — summary and overview pages. `EVENT = "Ir"`,
-  `TOP = 50`. `--perf-log`/`--trace-log`/`--raw-data` each render a section only
+- `build_report.py test|overview` — summary and overview pages. `_EVENT = "Ir"`,
+  `_TOP = 50`. `--perf-log`/`--trace-log`/`--raw-data` each render a section only
   when given; the flame-graph strip link exists only with `--trace-log`.
   `--diff` picks `diff_test` in `main()`. "header" here means the LABEL=VALUE
   rows above a page's content (`Header`/`HeaderBlock`) — not the heat map's
   `MetaModel`.
 - `callgrind_diff.py` — the subtraction; also home of `profile_magnitudes()`,
   which generators import. `--callers-output` is required.
-- `callgrind_to_heatmap.py` — `DEFAULT_EVENT = "CEst"`, `TREE` = dirs whose
+- `callgrind_to_heatmap.py` — `_DEFAULT_EVENT = "CEst"`, `_TREE` = dirs whose
   tracked `.c/.h` are listed even without samples.
 - `dev/cyg.c` — the recorder. Hot path is `if(next < end) { next->fn = fn;
   next->tsc = rdtsc | flag; ++next; }` — 11/12 instructions (check with `cc -O2
@@ -216,15 +225,15 @@ usable — LSP only, ignores argv.
   fault lands in a timed call), teardown a destructor writing `CYG_OUT` +
   `.maps`. Its header comment is the format reference. Single-threaded.
 - `trace_to_speedscope.py` — pairs enters/exits (mismatch = non-zero exit),
-  takes the busiest run's first `MAX_CALLS`=10 complete calls under
-  `MAX_BYTES`=10240. `at` is raw (hook cost included). Must run while
+  takes the busiest run's first `_MAX_CALLS`=10 complete calls under
+  `_MAX_BYTES`=10240. `at` is raw (hook cost included). Must run while
   `build-instr` still holds the traced binary (symbolization reads it). GCC
   instruments inlined bodies, so inlined helpers are frames.
 - `validate_report.py OUTDIR [--diff]` — structural smoke test only;
   `flame_graph_check` requires exactly one `evented` profile whose `exporter` is
-  `FLAME_EXPORTER`, so a synthesized or stale flame graph fails.
+  `_FLAME_EXPORTER`, so a synthesized or stale flame graph fails.
 - `check_js.py` — `node --check` on `theme.js` and every JS chunk embedded in a
-  Python string (`SOURCES`). **Add a pair here when a generator grows new
+  Python string (`_HOLDERS`). **Add a pair here when a generator grows new
   embedded JS.** This is what catches a `\n` that needed `\\n`.
 
 ## Why the heat map exists
@@ -246,12 +255,12 @@ before submitting upstream.
 One dark theme, Monaco/monospace everywhere. Target viewport **1366×768** —
 pages must not assume more.
 
-- `theme.py`'s `COLOR_PAIR` values are raw "User settings" THEME entries, odd
+- `theme.py`'s `_COLOR_PAIR` values are raw "User settings" THEME entries, odd
   index = dark member; `--<name>-l` is light. Exception: `--bg` is the slate
-  dark member darkened 8% via `Palette.shade()` — page background, scrollbar
+  dark member darkened 8% via `Theme.shade()` — page background, scrollbar
   track, minimap band and heat blend all follow it, so change it only there. The
-  `HEAT` ramp is exempt from the pair rule.
-- Heat = 12-stop `HEAT` blended over `--bg`, alpha on log scale of magnitude,
+  `_HEAT` ramp is exempt from the pair rule.
+- Heat = 12-stop `_HEAT` blended over `--bg`, alpha on log scale of magnitude,
   text color by resulting luminance. Non-diff indexes `0..1`; **diff indexes
   signed `-1..1` across the whole ramp** (savings → cold/blue, regressions →
   hot/red, 0 at midpoint) via `heat_style(signed=True)` / the JS `if (DIFF)`

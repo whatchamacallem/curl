@@ -1,0 +1,21 @@
+line-length = 79
+indent-width = 4
+target-version = "py311"
+
+[format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"
+skip-magic-trailing-comma = false
+docstring-code-format = false
+
+[lint]
+select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM", "RUF"]
+ignore = ["E501"]
+
+[lint.isort]
+known-first-party = [
+  "callgrind",
+  "callgrind_diff",
+  "theme",
+]
