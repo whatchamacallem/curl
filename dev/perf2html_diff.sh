@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# dev/perf2html_diff.sh [--verbose] [baseline-dir] [modified-dir] [report-dir]
+# dev/perf2html_diff.sh [--verbose] [--keep-raw] [--regenerate] [baseline-dir] [modified-dir] [report-dir]
 set -euo pipefail
 SCRIPT="$(readlink -f "$0")"
 cd "$(dirname "$SCRIPT")"
@@ -8,7 +8,6 @@ DIFF_MANIFEST='curl/perf2html_diff.sh v1'
 REPORT_MANIFEST='curl/perf2html.sh v1'
 
 STAMP="$(date +%s)"
-RUN_LOG="$PWD/trace/diff.$STAMP.log"
 
 usage_show() { awk 'NR > 1 && !/^#/ { exit } NR > 1 { sub(/^# ?/, ""); print }' "$SCRIPT"; }
 
@@ -32,10 +31,17 @@ test_run() {
 
 args_parse() {
   VERBOSE=0
-  case "${1:-}" in
-    -h|--help) usage_show; exit 0;;
-    --verbose) VERBOSE=1; shift;;
-  esac
+  KEEP_RAW=0
+  REGENERATE=0
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      -h|--help) usage_show; exit 0;;
+      --verbose) VERBOSE=1; shift;;
+      --keep-raw) KEEP_RAW=1; shift;;
+      --regenerate) REGENERATE=1; KEEP_RAW=1; shift;;
+      *) break;;
+    esac
+  done
   BASE_DIR=perf2html_baseline_report
   MOD_DIR=perf2html_modified_report
   OUT_DIR=perf2html_diff_report
@@ -161,11 +167,19 @@ main() {
   manifest_check "$BASE_DIR" baseline
   manifest_check "$MOD_DIR" modified
 
+  [ "$KEEP_RAW" = 1 ] || rm -rf trace
+  if [ "$REGENERATE" = 1 ]; then
+    local previous
+    previous="$(sed -n 's/^stamp=//p' "$OUT_DIR/MANIFEST.txt" 2>/dev/null | head -1)"
+    if [ -n "$previous" ]; then STAMP="$previous"; fi
+  fi
   mkdir -p "$OUT_DIR" trace
+  RUN_LOG="$PWD/trace/diff.$STAMP.log"
   cp README.md "$OUT_DIR/README.md"
   { printf '%s\n' "$DIFF_MANIFEST"
     echo "baseline=$(path_display "$BASE_DIR")"
-    echo "modified=$(path_display "$MOD_DIR")"; } >"$OUT_DIR/MANIFEST.txt"
+    echo "modified=$(path_display "$MOD_DIR")"
+    echo "stamp=$STAMP"; } >"$OUT_DIR/MANIFEST.txt"
   [ "$VERBOSE" = 1 ] || echo "dev/perf2html_diff.sh $STAMP: $BASE_DIR -> $MOD_DIR -> $OUT_DIR" >"$RUN_LOG"
 
   local tests test_name args
@@ -195,6 +209,7 @@ main() {
     [ "$VERBOSE" = 1 ] || printf '%-13s%s\n' overview "${OUT_DIR#"$PWD"/}/index.html"
   fi
 
+  if [ "$KEEP_RAW" != 1 ]; then rm -rf trace; fi
   echo "file://$OUT_DIR/index.html"
 }
 

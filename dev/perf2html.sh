@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# dev/perf2html.sh [--verbose] [--report=DIR] [cmake_flags...]
+# dev/perf2html.sh [--verbose] [--keep-raw] [--regenerate] [--report=DIR] [cmake_flags...]
 set -euo pipefail
 SCRIPT="$(readlink -f "$0")"
 cd "$(dirname "$SCRIPT")"
@@ -13,7 +13,6 @@ REPORT_MANIFEST='curl/perf2html.sh v1'
 
 REPO="$(cd .. && pwd)"
 STAMP="$(date +%s)"
-RUN_LOG="$PWD/trace/profile.$STAMP.log"
 
 usage_show() { awk 'NR > 1 && !/^#/ { exit } NR > 1 { sub(/^# ?/, ""); print }' "$SCRIPT"; }
 
@@ -40,11 +39,15 @@ test_run() {
 
 args_parse() {
   VERBOSE=0
+  KEEP_RAW=0
+  REGENERATE=0
   OUT_DIR=""
   while [ $# -gt 0 ]; do
     case "$1" in
       -h|--help) usage_show; exit 0;;
       --verbose) VERBOSE=1; shift;;
+      --keep-raw) KEEP_RAW=1; shift;;
+      --regenerate) REGENERATE=1; KEEP_RAW=1; shift;;
       --report=*) OUT_DIR="${1#--report=}"; shift;;
       *) break;;
     esac
@@ -73,7 +76,41 @@ args_parse() {
   TESTS=($(sed -n '/^TESTS_C *=/,/^$/p' "$REPO/tests/perf/Makefile.inc" | grep -o '[A-Za-z0-9_]*\.c' | sed 's/\.c$//' | sort))
 }
 
+manifest_value() {
+  sed -n "s/^$1=//p" "$OUT_DIR/MANIFEST.txt" | head -1
+}
+
+stamp_reuse() {
+  local manifest="$OUT_DIR/MANIFEST.txt"
+  [ -f "$manifest" ] || { echo "error: --regenerate needs a previous report at $OUT_DIR (no MANIFEST.txt)" >&2; exit 2; }
+  STAMP="$(manifest_value stamp)"
+  [ -n "$STAMP" ] || { echo "error: $manifest has no stamp= row, so its raw data cannot be identified" >&2
+                       echo "       (it predates --regenerate; re-run perf2html.sh --keep-raw once)" >&2; exit 2; }
+  local test_name loops missing=()
+  for test_name in "${TESTS[@]}"; do
+    loops="$(loops_of "$test_name")"
+    for file in "trace/callgrind.out.$test_name.$loops.$STAMP" \
+                "trace/valgrind.$test_name.$loops.$STAMP.log" \
+                "trace/perf-stat.$test_name.$STAMP.csv" \
+                "trace/trace.$test_name.$loops.$STAMP.speedscope.json"; do
+      [ -f "$file" ] || missing+=("$file")
+    done
+  done
+  if [ "${#missing[@]}" != 0 ]; then
+    { echo "error: --regenerate is missing ${#missing[@]} raw file(s) for stamp $STAMP:"
+      printf '       %s\n' "${missing[@]}"
+      echo "       (dev/trace/ was cleaned; re-run perf2html.sh --keep-raw to record them again)"; } >&2
+    exit 2
+  fi
+}
+
 build_manifest() {
+  if [ "$REGENERATE" = 1 ]; then
+    SAMPLED="$(manifest_value sampled)"
+    REVISION="$(manifest_value revision)"
+    CPU_MODEL="$(manifest_value cpu)"
+    return
+  fi
   SAMPLED="$(date +'%Y/%m/%d %H:%M:%S %Z')"
   REVISION="$(cd "$REPO" && git rev-parse --short HEAD 2>/dev/null || echo unknown)"
   if [ "$REVISION" != unknown ] && ! (cd "$REPO" && git diff --quiet HEAD -- 2>/dev/null); then
@@ -100,7 +137,20 @@ tree_build() {
   test_run cmake --build "$REPO/$dir" --parallel --target perf
 }
 
+build_paths() {
+  BIN="$REPO/$BUILD_DIR/tests/perf/perf"
+  BIN_REL="${BIN#"$REPO"/}"
+  TRACE_BIN="$REPO/$TRACE_BUILD_DIR/tests/perf/perf"
+  TRACE_BIN_REL="${TRACE_BIN#"$REPO"/}"
+}
+
 build_compile() {
+  if [ "$REGENERATE" = 1 ]; then
+    build_paths
+    BUILD_DESC="$(manifest_value build)"
+    [ "$VERBOSE" = 1 ] || printf '%-11s%s | reused\n' build "${CMAKE_FLAGS[*]}"
+    return
+  fi
   log_say "== 1: cmake + build $BUILD_DIR and $TRACE_BUILD_DIR: ${CMAKE_FLAGS[*]} =="
   [ "$VERBOSE" = 1 ] || printf '%-11s%s' build "${CMAKE_FLAGS[*]}"
   local start=$SECONDS flag trace_flags=()
@@ -115,10 +165,7 @@ build_compile() {
   tree_build "$TRACE_BUILD_DIR" "${trace_flags[@]}" \
     "-DCMAKE_EXE_LINKER_FLAGS=$REPO/$TRACE_BUILD_DIR/cyg_callback.o -Wl,--export-dynamic"
   [ "$VERBOSE" = 1 ] || printf ' | %s\n' "$(took "$start")"
-  BIN="$REPO/$BUILD_DIR/tests/perf/perf"
-  BIN_REL="${BIN#"$REPO"/}"
-  TRACE_BIN="$REPO/$TRACE_BUILD_DIR/tests/perf/perf"
-  TRACE_BIN_REL="${TRACE_BIN#"$REPO"/}"
+  build_paths
   BUILD_DESC="$BUILD_DIR, ${CMAKE_FLAGS[*]}, $(cc --version | head -1)"
 }
 
@@ -141,6 +188,18 @@ trace_render() {
   TRACE_JSON="$PWD/trace/trace.$test.$loops.$STAMP.speedscope.json"
 
   log_say "== [$test]: native trace, pinned to CPU $CPU, loops=$loops -> $out/flame-graph/index.html =="
+  if [ "$REGENERATE" = 1 ]; then
+    local saved
+    saved="$(mktemp)"
+    cp "$log" "$saved"
+    rm -rf "$out/flame-graph"
+    mkdir -p "$out/flame-graph"
+    cp -r "$SPEEDSCOPE_RELEASE"/. "$out/flame-graph"/
+    cp "$saved" "$log"
+    rm -f "$saved"
+    test_run python3 scripts/build_flame_graph.py --speedscope-dir "$out/flame-graph" --profile-json "$TRACE_JSON"
+    return
+  fi
   rm -rf "$out/flame-graph"
   mkdir -p "$out/flame-graph"
   cp -r "$SPEEDSCOPE_RELEASE"/. "$out/flame-graph"/
@@ -199,6 +258,16 @@ run_one() {
   cg_file="$PWD/trace/callgrind.out.$test.$loops.$STAMP"
   log="$PWD/trace/valgrind.$test.$loops.$STAMP.log"
   mkdir -p "$out/perf-tool"
+
+  if [ "$REGENERATE" = 1 ]; then
+    [ "$VERBOSE" = 1 ] || printf '%-13sloops=%s | reused' "$test" "$loops"
+    trace_render "$test" "$out" "$loops"
+    CALLGRIND_FILES=("$cg_file")
+    LOG_FILES=("$log")
+    report_render "$test" "$out" "$TRACE_JSON"
+    [ "$VERBOSE" = 1 ] || printf '\n'
+    return
+  fi
 
   log_say "== [$test]: callgrind, pinned to CPU $CPU, loops=$loops -> $cg_file =="
   [ "$VERBOSE" = 1 ] || printf '%-13sloops=%s' "$test" "$loops"
@@ -264,7 +333,8 @@ run_all() {
     echo "revision=$REVISION"
     echo "cpu=$CPU_MODEL"
     echo "build=$BUILD_DESC"
-    echo "executable=$BIN_REL <test>  (native, pinned to CPU $CPU)"; } >"$OUT_DIR/MANIFEST.txt"
+    echo "executable=$BIN_REL <test>  (native, pinned to CPU $CPU)"
+    echo "stamp=$STAMP"; } >"$OUT_DIR/MANIFEST.txt"
   args=(-o "$OUT_DIR/index.html" --header-file "$OUT_DIR/MANIFEST.txt")
   for test_name in "${TESTS[@]}" all; do args+=(--test "$test_name"); done
   test_run python3 scripts/build_report.py overview "${args[@]}"
@@ -274,8 +344,15 @@ run_all() {
 main() {
   args_parse "$@"
   toolchain_check
+  [ "$KEEP_RAW" = 1 ] || rm -rf trace
+  if [ "$REGENERATE" = 1 ]; then stamp_reuse; fi
   build_manifest
   mkdir -p "$OUT_DIR" trace
+  if [ "$REGENERATE" = 1 ]; then
+    RUN_LOG="$PWD/trace/regenerate.$STAMP.$(date +%s).log"
+  else
+    RUN_LOG="$PWD/trace/profile.$STAMP.log"
+  fi
   cp README.md "$OUT_DIR/README.md"
   [ "$VERBOSE" = 1 ] || echo "dev/perf2html.sh $STAMP: ${CMAKE_FLAGS[*]} -> $OUT_DIR" >"$RUN_LOG"
   build_compile
@@ -286,6 +363,7 @@ main() {
   done
   run_all "$OUT_DIR/all"
 
+  if [ "$KEEP_RAW" != 1 ]; then rm -rf trace; fi
   echo "file://$OUT_DIR/index.html"
 }
 

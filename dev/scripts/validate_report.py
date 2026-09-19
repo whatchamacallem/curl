@@ -48,10 +48,11 @@ class ValidateArgs(NamedTuple):
 
 
 LAYOUT_FULL = Layout(("flame-graph", "heat-map"), r"<h2>top \d+ functions by self</h2>", (),
-                     "curl/perf2html.sh v1", ("sampled", "revision", "cpu", "build", "executable"), True)
+                     "curl/perf2html.sh v1",
+                     ("sampled", "revision", "cpu", "build", "executable", "stamp"), True)
 LAYOUT_DIFF = Layout(("heat-map",), r"<h2>top \d+ functions by change in self</h2>",
                      ("baseline", "modified"),
-                     "curl/perf2html_diff.sh v1", ("baseline", "modified"), False)
+                     "curl/perf2html_diff.sh v1", ("baseline", "modified", "stamp"), False)
 
 
 class ValidateReport:

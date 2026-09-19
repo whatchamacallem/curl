@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# dev/perf2html_batch.sh [--verbose] [--keep] [cmake_flags...]
+# dev/perf2html_batch.sh [--verbose] [--keep] [--keep-raw] [--regenerate] [cmake_flags...]
 set -uo pipefail
 SCRIPT="$(readlink -f "$0")"
 cd "$(dirname "$SCRIPT")"
@@ -50,11 +50,14 @@ step_run() {
 args_parse() {
   VERBOSE=0
   KEEP=0
+  PASS_ARGS=()
   while [ $# -gt 0 ]; do
     case "$1" in
       -h|--help) usage_show; exit 0;;
       --verbose) VERBOSE=1; shift;;
       --keep) KEEP=1; shift;;
+      --keep-raw) PASS_ARGS+=(--keep-raw); shift;;
+      --regenerate) PASS_ARGS+=(--regenerate); KEEP=1; shift;;
       *) break;;
     esac
   done
@@ -85,6 +88,12 @@ validate_all() {
 
 main() {
   args_parse "$@"
+  local child_args=("${PASS_ARGS[@]}")
+  RAW_KEEP=1
+  case " ${PASS_ARGS[*]} " in
+    *" --keep-raw "*|*" --regenerate "*) ;;
+    *) RAW_KEEP=0; rm -rf trace; child_args+=(--keep-raw);;
+  esac
   mkdir -p trace
   STATUS=0
   FAILED=()
@@ -95,15 +104,19 @@ main() {
 
   [ "$KEEP" = 1 ] || reports_clean
   step_run 1 lint lint_run
-  step_run 2 baseline ./perf2html.sh "${verbose_args[@]}" "--report=$BASE_DIR"
-  step_run 3 modified ./perf2html.sh "${verbose_args[@]}" "--report=$MOD_DIR" "${CMAKE_FLAGS[@]}"
-  step_run 4 diff ./perf2html_diff.sh "${verbose_args[@]}" "$BASE_DIR" "$MOD_DIR" "$DIFF_DIR"
+  step_run 2 baseline ./perf2html.sh "${verbose_args[@]}" "${child_args[@]}" "--report=$BASE_DIR"
+  step_run 3 modified ./perf2html.sh "${verbose_args[@]}" "${child_args[@]}" "--report=$MOD_DIR" "${CMAKE_FLAGS[@]}"
+  step_run 4 diff ./perf2html_diff.sh "${verbose_args[@]}" "${child_args[@]}" "$BASE_DIR" "$MOD_DIR" "$DIFF_DIR"
   step_run 5 validate validate_all
 
   if [ "$STATUS" != 0 ]; then
     echo "perf2html_batch: ${#FAILED[@]} step(s) failed: ${FAILED[*]}" >&2
+    if [ "$RAW_KEEP" = 0 ]; then
+      echo "perf2html_batch: dev/trace/ kept for diagnosis (a clean run deletes it)" >&2
+    fi
     return 1
   fi
+  if [ "$RAW_KEEP" = 0 ]; then rm -rf trace; fi
   echo "file://$PWD/$DIFF_DIR/index.html"
   return 0
 }
