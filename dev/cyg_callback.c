@@ -34,18 +34,24 @@ typedef struct {
   uint64_t tsc;
 } cyg_callback_record_t;
 
-static cyg_callback_record_t s_cyg_callbacks_buf[CYG_CALLBACKS_MAX_REC];
-/* where the next record goes. == s_cyg_callbacks_end: not sampling */
-static cyg_callback_record_t *s_cyg_callbacks_next;
-/* s_cyg_callbacks_buf + CYG_CALLBACKS_MAX_REC once set up */
-static cyg_callback_record_t *s_cyg_callbacks_end;
-/* where sampling stopped, valid while next == end */
-static cyg_callback_record_t *s_cyg_callbacks_final = s_cyg_callbacks_buf;
-/* cyg_callback_pause() calls not yet undone */
-static unsigned s_cyg_callbacks_holds = 1;
-static uint64_t s_cyg_callbacks_idle, s_cyg_callbacks_skip;
-static uint64_t s_cyg_callbacks_t0_ns, s_cyg_callbacks_t0_tsc;
-static const char *s_cyg_callbacks_out;
+typedef struct {
+  cyg_callback_record_t buf[CYG_CALLBACKS_MAX_REC];
+  /* where the next record goes. == end: not sampling */
+  cyg_callback_record_t *next;
+  /* buf + CYG_CALLBACKS_MAX_REC once set up */
+  cyg_callback_record_t *end;
+  /* where sampling stopped, valid while next == end */
+  cyg_callback_record_t *final;
+  /* cyg_callback_pause() calls not yet undone */
+  unsigned holds;
+  uint64_t idle, skip;
+  uint64_t t0_ns, t0_tsc;
+  const char *out;
+} cyg_callbacks_t;
+
+static cyg_callbacks_t s_cyg_callbacks = {
+  { { 0, 0 } }, NULL, NULL, s_cyg_callbacks.buf, 1, 0, 0, 0, 0, NULL
+};
 
 __attribute__((cold))
 static uint64_t cyg_callback_now_ns(void)
@@ -58,31 +64,34 @@ static uint64_t cyg_callback_now_ns(void)
 __attribute__((cold))
 static void cyg_callback_pause(void)
 {
-  if(!s_cyg_callbacks_holds++) {
-    s_cyg_callbacks_final = s_cyg_callbacks_next;
-    s_cyg_callbacks_next = s_cyg_callbacks_end;
+  cyg_callbacks_t *cb = &s_cyg_callbacks;
+  if(!cb->holds++) {
+    cb->final = cb->next;
+    cb->next = cb->end;
   }
 }
 
 __attribute__((cold))
 static void cyg_callback_resume(void)
 {
-  if(!--s_cyg_callbacks_holds) {
-    s_cyg_callbacks_next = s_cyg_callbacks_final;
-    s_cyg_callbacks_final = s_cyg_callbacks_end;
+  cyg_callbacks_t *cb = &s_cyg_callbacks;
+  if(!--cb->holds) {
+    cb->next = cb->final;
+    cb->final = cb->end;
   }
 }
 
 __attribute__((always_inline, hot))
 static inline void cyg_callback_record(void *fn, uint64_t flag)
 {
+  cyg_callbacks_t *cb = &s_cyg_callbacks;
   // next == end when recording is disabled.
-  if(s_cyg_callbacks_next < s_cyg_callbacks_end) {
-    s_cyg_callbacks_next->fn = (uint64_t)fn;
-    s_cyg_callbacks_next->tsc = __rdtsc() | flag;
-    ++s_cyg_callbacks_next;
+  if(cb->next < cb->end) {
+    cb->next->fn = (uint64_t)fn;
+    cb->next->tsc = __rdtsc() | flag;
+    ++cb->next;
   }
-  else if(++s_cyg_callbacks_idle == s_cyg_callbacks_skip) {
+  else if(++cb->idle == cb->skip) {
     cyg_callback_resume();
   }
 }
@@ -107,32 +116,33 @@ void __cyg_profile_func_exit(void *fn, void *site)
 __attribute__((cold))
 static void cyg_callback_smoketest(void)
 {
+  cyg_callbacks_t *cb = &s_cyg_callbacks;
   const char *bad = NULL;
-  cyg_callback_record_t *fn0 = (cyg_callback_record_t *)&s_cyg_callbacks_buf;
+  cyg_callback_record_t *fn0 = (cyg_callback_record_t *)&cb->buf;
   uint64_t tsc_a, tsc_b;
 
-  if(s_cyg_callbacks_next != s_cyg_callbacks_end)
+  if(cb->next != cb->end)
     bad = "sampling is already on";
-  else if(s_cyg_callbacks_holds != 1)
+  else if(cb->holds != 1)
     bad = "holds is not 1";
-  else if(s_cyg_callbacks_end != s_cyg_callbacks_buf + CYG_CALLBACKS_MAX_REC)
+  else if(cb->end != cb->buf + CYG_CALLBACKS_MAX_REC)
     bad = "end does not close the buffer";
 
   /* an event while paused only bumps idle, it records nothing */
   if(!bad) {
-    s_cyg_callbacks_skip = 0; /* cannot match ++idle below */
+    cb->skip = 0; /* cannot match ++idle below */
     __cyg_profile_func_enter(fn0, NULL);
-    if(s_cyg_callbacks_idle != 1)
+    if(cb->idle != 1)
       bad = "a paused event did not count as idle";
-    else if(s_cyg_callbacks_next != s_cyg_callbacks_end)
+    else if(cb->next != cb->end)
       bad = "a paused event turned sampling on";
   }
 
   /* idle reaching skip opens the window at final, i.e. at buf */
   if(!bad) {
-    s_cyg_callbacks_skip = 2;
+    cb->skip = 2;
     __cyg_profile_func_enter(fn0, NULL);
-    if(s_cyg_callbacks_next != s_cyg_callbacks_buf)
+    if(cb->next != cb->buf)
       bad = "reaching skip did not open the window";
   }
 
@@ -142,18 +152,17 @@ static void cyg_callback_smoketest(void)
     __cyg_profile_func_enter(fn0, NULL);
     __cyg_profile_func_exit(fn0, NULL);
     tsc_b = __rdtsc();
-    if(s_cyg_callbacks_next != s_cyg_callbacks_buf + 2)
+    if(cb->next != cb->buf + 2)
       bad = "two events did not store two records";
-    else if(s_cyg_callbacks_buf[0].fn != (uint64_t)fn0)
+    else if(cb->buf[0].fn != (uint64_t)fn0)
       bad = "a record did not keep its function address";
-    else if(s_cyg_callbacks_buf[0].tsc & CYG_CALLBACKS_EXIT_BIT)
+    else if(cb->buf[0].tsc & CYG_CALLBACKS_EXIT_BIT)
       bad = "an enter was flagged as an exit";
-    else if(!(s_cyg_callbacks_buf[1].tsc & CYG_CALLBACKS_EXIT_BIT))
+    else if(!(cb->buf[1].tsc & CYG_CALLBACKS_EXIT_BIT))
       bad = "an exit was not flagged as one";
-    else if(s_cyg_callbacks_buf[0].tsc < tsc_a ||
-            (s_cyg_callbacks_buf[1].tsc & ~CYG_CALLBACKS_EXIT_BIT) > tsc_b ||
-            (s_cyg_callbacks_buf[1].tsc & ~CYG_CALLBACKS_EXIT_BIT) <=
-              s_cyg_callbacks_buf[0].tsc)
+    else if(cb->buf[0].tsc < tsc_a ||
+            (cb->buf[1].tsc & ~CYG_CALLBACKS_EXIT_BIT) > tsc_b ||
+            (cb->buf[1].tsc & ~CYG_CALLBACKS_EXIT_BIT) <= cb->buf[0].tsc)
       bad = "stamps are not rising inside the call";
   }
 
@@ -162,10 +171,10 @@ static void cyg_callback_smoketest(void)
     cyg_callback_pause();
     cyg_callback_pause();
     cyg_callback_resume();
-    if(s_cyg_callbacks_next != s_cyg_callbacks_end)
+    if(cb->next != cb->end)
       bad = "a nested pause/resume left sampling on";
     cyg_callback_resume();
-    if(s_cyg_callbacks_next != s_cyg_callbacks_buf + 2)
+    if(cb->next != cb->buf + 2)
       bad = "the outer resume did not restore the window";
   }
 
@@ -175,31 +184,32 @@ static void cyg_callback_smoketest(void)
   }
 
   cyg_callback_pause();
-  s_cyg_callbacks_next = s_cyg_callbacks_end;
-  s_cyg_callbacks_final = s_cyg_callbacks_buf;
-  s_cyg_callbacks_holds = 1;
-  s_cyg_callbacks_idle = 0;
-  s_cyg_callbacks_skip = 0;
-  memset(s_cyg_callbacks_buf, 0xff, 2 * sizeof(*s_cyg_callbacks_buf));
+  cb->next = cb->end;
+  cb->final = cb->buf;
+  cb->holds = 1;
+  cb->idle = 0;
+  cb->skip = 0;
+  memset(cb->buf, 0xff, 2 * sizeof(*cb->buf));
 }
 
 __attribute__((constructor))
 static void cyg_callback_init(void)
 {
+  cyg_callbacks_t *cb = &s_cyg_callbacks;
   const char *skip_str = getenv("PERF_TRACE_SKIP");
-  s_cyg_callbacks_out = getenv("PERF_TRACE_OUT");
-  if(!s_cyg_callbacks_out)
+  cb->out = getenv("PERF_TRACE_OUT");
+  if(!cb->out)
     return;
   /* fault the pages in before timing */
-  memset(s_cyg_callbacks_buf, 0xff, sizeof(s_cyg_callbacks_buf));
-  s_cyg_callbacks_end = s_cyg_callbacks_buf + CYG_CALLBACKS_MAX_REC;
-  s_cyg_callbacks_next = s_cyg_callbacks_end;
+  memset(cb->buf, 0xff, sizeof(cb->buf));
+  cb->end = cb->buf + CYG_CALLBACKS_MAX_REC;
+  cb->next = cb->end;
   cyg_callback_smoketest();
-  s_cyg_callbacks_skip = skip_str ? strtoull(skip_str, NULL, 10) : 0;
-  s_cyg_callbacks_t0_ns = cyg_callback_now_ns();
-  s_cyg_callbacks_t0_tsc = __rdtsc();
-  if(s_cyg_callbacks_skip <= s_cyg_callbacks_idle) { /* nothing left to pass */
-    s_cyg_callbacks_skip = s_cyg_callbacks_idle;
+  cb->skip = skip_str ? strtoull(skip_str, NULL, 10) : 0;
+  cb->t0_ns = cyg_callback_now_ns();
+  cb->t0_tsc = __rdtsc();
+  if(cb->skip <= cb->idle) { /* nothing left to pass */
+    cb->skip = cb->idle;
     cyg_callback_resume();
   }
 }
@@ -207,27 +217,28 @@ static void cyg_callback_init(void)
 __attribute__((destructor))
 static void cyg_callback_dump(void)
 {
+  cyg_callbacks_t *cb = &s_cyg_callbacks;
   uint64_t hdr[8];
   char path[4096], line[4096];
   FILE *f, *maps, *copy;
-  if(!s_cyg_callbacks_out)
+  if(!cb->out)
     return;
   cyg_callback_pause();
   hdr[0] = CYG_CALLBACKS_MAGIC;
-  hdr[1] = (uint64_t)(s_cyg_callbacks_final - s_cyg_callbacks_buf);
-  hdr[2] = s_cyg_callbacks_idle + hdr[1];
-  hdr[3] = s_cyg_callbacks_skip;
-  hdr[4] = s_cyg_callbacks_t0_ns;
-  hdr[5] = s_cyg_callbacks_t0_tsc;
+  hdr[1] = (uint64_t)(cb->final - cb->buf);
+  hdr[2] = cb->idle + hdr[1];
+  hdr[3] = cb->skip;
+  hdr[4] = cb->t0_ns;
+  hdr[5] = cb->t0_tsc;
   hdr[7] = __rdtsc();
   hdr[6] = cyg_callback_now_ns();
-  f = fopen(s_cyg_callbacks_out, "wb");
+  f = fopen(cb->out, "wb");
   if(!f)
     return;
   fwrite(hdr, sizeof(hdr), 1, f);
-  fwrite(s_cyg_callbacks_buf, sizeof(cyg_callback_record_t), (size_t)hdr[1], f);
+  fwrite(cb->buf, sizeof(cyg_callback_record_t), (size_t)hdr[1], f);
   fclose(f);
-  snprintf(path, sizeof(path), "%s.maps", s_cyg_callbacks_out);
+  snprintf(path, sizeof(path), "%s.maps", cb->out);
   maps = fopen("/proc/self/maps", "r");
   copy = fopen(path, "w");
   if(maps && copy) {
