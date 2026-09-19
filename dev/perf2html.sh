@@ -7,8 +7,9 @@ cd "$(dirname "$SCRIPT")"
 BUILD_DIR=build-relwithdebinfo
 TRACE_BUILD_DIR=build-instr
 CPU=3
-LOOPS_DIVISOR=50
-SKIP_ALL=18446744073709551615
+CALLGRIND_LOOPS=200
+TIMING_LOOPS=10000
+TRACE_SKIP_ALL=18446744073709551615  # UINT64_MAX: skip every event = count-only run
 REPORT_MANIFEST='curl/perf2html.sh v1'
 
 REPO="$(cd .. && pwd)"
@@ -88,7 +89,7 @@ stamp_reuse() {
                        echo "       (it predates --regenerate; re-run perf2html.sh --keep-raw once)" >&2; exit 2; }
   local test_name loops missing=()
   for test_name in "${TESTS[@]}"; do
-    loops="$(loops_of "$test_name")"
+    loops=$CALLGRIND_LOOPS
     for file in "trace/callgrind.out.$test_name.$loops.$STAMP" \
                 "trace/valgrind.$test_name.$loops.$STAMP.log" \
                 "trace/perf-stat.$test_name.$STAMP.csv" \
@@ -169,13 +170,6 @@ build_compile() {
   BUILD_DESC="$BUILD_DIR, ${CMAKE_FLAGS[*]}, $(cc --version | head -1)"
 }
 
-loops_of() {
-  local default
-  default="$(sed -n 's/^ *curl_off_t loops = \([0-9]*\),.*/\1/p' "$REPO/tests/perf/$1.c" | head -1)"
-  [ -n "$default" ] || { echo "error: no 'curl_off_t loops = N,' default in tests/perf/$1.c" >&2; exit 1; }
-  echo $(( default / LOOPS_DIVISOR ))
-}
-
 trace_record() {
   local test="$1" loops="$2" trace_file="$3" skip="$4"
   echo "\$ PERF_TRACE_OUT=$(basename "${trace_file/.$STAMP/}") PERF_TRACE_SKIP=$skip taskset -c $CPU $TRACE_BIN_REL $test $loops"
@@ -206,7 +200,7 @@ trace_render() {
   { echo "# $TRACE_BUILD_DIR = this report's build flags + -finstrument-functions, linked with dev/cyg_callback.c,"
     echo "# which reads rdtsc at every function enter and exit. Run 1 counts the events, run 2 keeps"
     echo "# the ones right after the run's midpoint (CYG_CALLBACKS_MAX_REC in dev/cyg_callback.c)."
-    trace_record "$test" "$loops" "$trace_file" "$SKIP_ALL" \
+    trace_record "$test" "$loops" "$trace_file" "$TRACE_SKIP_ALL" \
       && seen="$(python3 scripts/trace_to_speedscope.py --seen "$trace_file")" \
       && trace_record "$test" "$loops" "$trace_file" "$((seen / 2))" \
       && python3 scripts/trace_to_speedscope.py "$trace_file" -o "$TRACE_JSON" --name "$test (loops=$loops)" 2>&1 \
@@ -254,7 +248,7 @@ report_render() {
 run_one() {
   local test="$1" out="$2"
   local loops cg_file log start stat_file="$PWD/trace/perf-stat.$test.$STAMP.csv"
-  loops="$(loops_of "$test")"
+  loops=$CALLGRIND_LOOPS
   cg_file="$PWD/trace/callgrind.out.$test.$loops.$STAMP"
   log="$PWD/trace/valgrind.$test.$loops.$STAMP.log"
   mkdir -p "$out/perf-tool"
@@ -276,9 +270,9 @@ run_one() {
     --callgrind-out-file="$cg_file" --log-file="$log" "$BIN" "$test" "$loops"
   [ "$VERBOSE" = 1 ] || printf ' | %s' "$(took "$start")"
 
-  log_say "== [$test]: native timing, pinned to CPU $CPU -> $out/perf-tool/output.txt =="
-  { echo "\$ perf stat -e cycles:u,instructions:u taskset -c $CPU $BIN_REL $test"
-    perf stat -x, -o "$stat_file" -e cycles:u,instructions:u taskset -c "$CPU" "$BIN" "$test" 2>&1 \
+  log_say "== [$test]: native timing, pinned to CPU $CPU, loops=$TIMING_LOOPS -> $out/perf-tool/output.txt =="
+  { echo "\$ perf stat -e cycles:u,instructions:u taskset -c $CPU $BIN_REL $test $TIMING_LOOPS"
+    perf stat -x, -o "$stat_file" -e cycles:u,instructions:u taskset -c "$CPU" "$BIN" "$test" "$TIMING_LOOPS" 2>&1 \
       && awk -F, '$3 ~ /cycles/ { printf "Cycles:    %s\n", $1 } $3 ~ /instructions/ { printf "Instructions: %s\n", $1 }' \
         "$stat_file"
   } >"$out/perf-tool/output.txt" \
@@ -306,7 +300,7 @@ run_all() {
   CALLGRIND_FILES=()
   LOG_FILES=()
   for test_name in "${TESTS[@]}"; do
-    loops="$(loops_of "$test_name")"
+    loops=$CALLGRIND_LOOPS
     CALLGRIND_FILES+=("$PWD/trace/callgrind.out.$test_name.$loops.$STAMP")
     LOG_FILES+=("$PWD/trace/valgrind.$test_name.$loops.$STAMP.log")
   done
