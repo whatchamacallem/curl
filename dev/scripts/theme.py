@@ -67,7 +67,7 @@ class TimeUnit(NamedTuple):
     seconds: float
 
 
-TIME_UNITS: tuple[TimeUnit, ...] = (TimeUnit("s", 1.0), TimeUnit("ms", 1e-3), TimeUnit("µs", 1e-6),
+TIME_UNITS: tuple[TimeUnit, ...] = (TimeUnit("s", 1.0), TimeUnit("ms", 1e-3), TimeUnit("us", 1e-6),
                                     TimeUnit("ns", 1e-9), TimeUnit("ps", 1e-12))
 
 

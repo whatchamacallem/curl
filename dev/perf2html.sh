@@ -1,32 +1,5 @@
 #!/usr/bin/env bash
 # dev/perf2html.sh [--verbose] [--report=DIR] [cmake_flags...]
-#
-# Builds curl (-O2 -g, ccache), runs every perf test (tests/perf/*.c) under
-# callgrind and then natively, each pinned to one core, and writes one HTML
-# report:
-#
-#   DIR/index.html       overview: cross-test strip, test suites table
-#   DIR/<test>/index.html    one test's summary: top functions, valgrind log, raw data
-#   DIR/<test>/flame-graph/  speedscope, opens on the profile
-#   DIR/<test>/heat-map/     per-line source heat map
-#   DIR/<test>/perf-tool/    native timing output
-#   DIR/<test>/raw/          the callgrind file
-#   DIR/all/                 every test's callgrind data merged into one profile
-#   DIR/README.md         help
-#   DIR/MANIFEST.txt      "curl/perf2html.sh v1", then the overview's header rows
-#                          as LABEL=VALUE lines, for perf2html_diff.sh -- sampled=
-#                          (local time the profile run started), revision= (git
-#                          hash, +-dirty), cpu= (lscpu model name)
-#
-# DIR defaults to perf2html_baseline_report, or perf2html_modified_report when
-# cmake_flags are given; a relative DIR is under dev/, ~/ is expanded. cmake_flags are passed
-# to cmake as they are, after "-O2 -g" is prepended to a CMAKE_C_FLAGS setting
-# among them (either spelling: -DCMAKE_C_FLAGS=... or -D CMAKE_C_FLAGS=...) or
-# one is added. The build's CMake cache is reset every run, so
-# only the flags given apply. --verbose streams every tool's output instead
-# of logging it to dev/trace/profile.<ts>.log. The last line printed is the
-# report's file:// URL. Nothing is validated here -- dev/perf2html_batch.sh runs
-# validate_report.py over the finished report.
 set -euo pipefail
 SCRIPT="$(readlink -f "$0")"
 cd "$(dirname "$SCRIPT")"
@@ -78,9 +51,6 @@ args_parse() {
     if [ $# -gt 0 ]; then OUT_DIR=perf2html_modified_report; else OUT_DIR=perf2html_baseline_report; fi
   fi
   case "$OUT_DIR" in "~/"*) OUT_DIR="$HOME/${OUT_DIR#"~/"}";; /*) ;; *) OUT_DIR="$PWD/$OUT_DIR";; esac
-  # cmake takes a cache entry as one word (-DCMAKE_C_FLAGS=-Os) or two
-  # (-D CMAKE_C_FLAGS=-Os); both spellings get "-O2 -g" prepended in place,
-  # keeping whichever spelling was written.
   local index seen=0 split=0 flag
   for index in "${!CMAKE_FLAGS[@]}"; do
     flag="${CMAKE_FLAGS[$index]}"
@@ -132,9 +102,6 @@ build_compile() {
   BUILD_DESC="$BUILD_DIR, ${CMAKE_FLAGS[*]}, $(cc --version | head -1)"
 }
 
-# One test's pages: flame graph, heat map, native timing, index -- from the
-# callgrind file(s) in CALLGRIND_FILES, the valgrind log(s) in LOG_FILES and
-# the native output already written to $out/perf-tool/output.txt.
 report_render() {
   local name="$1" out="$2" json="$3" speedscope_name="$4"
   local log_args=() raw_args=() help_args=() log_file cg_file raw_name
@@ -206,8 +173,6 @@ run_one() {
   report_render "$test" "$out" "$PWD/trace/$test.$loops.$STAMP.speedscope.json" "curl perf $test (loops=$loops)"
 }
 
-# Every test's callgrind run merged into one profile, native timing summed
-# (the per-test pages have already been built), then the overview index.
 run_all() {
   local out="$1"
   local test_name loops usecs total=0 rows="" args
@@ -226,7 +191,7 @@ run_all() {
   log_say "== [all]: native timing, every test's run above summed =="
   for test_name in "${TESTS[@]}"; do
     usecs="$(awk '/^Time:/ { print $2; exit }' "$OUT_DIR/$test_name/perf-tool/output.txt")"
-    rows+="$(printf '%-14s %12s usecs' "$test_name:" "${usecs:-?}")"$'\n'
+    rows+="$(printf '  %-14s %12s usecs' "$test_name:" "${usecs:-?}")"$'\n'
     total=$(( total + ${usecs:-0} ))
   done
   {
@@ -246,7 +211,7 @@ run_all() {
     echo "build=$BUILD_DESC"
     echo "executable=$BIN_REL <test>  (native, pinned to CPU $CPU)"; } >"$OUT_DIR/MANIFEST.txt"
   args=(-o "$OUT_DIR/index.html" --header-file "$OUT_DIR/MANIFEST.txt")
-  for test_name in "${TESTS[@]}"; do args+=(--test "$test_name"); done
+  for test_name in "${TESTS[@]}" all; do args+=(--test "$test_name"); done
   test_run python3 scripts/build_report.py overview "${args[@]}"
   [ "$VERBOSE" = 1 ] || printf '%-13s%d profiles merged -> %s\n' all "${#TESTS[@]}" "${OUT_DIR#"$REPO"/}/index.html"
 }

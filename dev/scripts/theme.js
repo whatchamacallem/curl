@@ -83,6 +83,7 @@ window.Theme = (function () {
   }
 
 
+  const splitters = [];
   function resetCols(root) {
     root = root || document.body;
     for (const table of root.querySelectorAll("table.cols")) {
@@ -92,6 +93,12 @@ window.Theme = (function () {
       if (table.classList.contains("fill")) fillTable(table);
       layoutBars(table);
     }
+    for (const entry of splitters) {
+      if (!root.contains(entry.pane)) continue;
+      entry.pane.style.width = "";
+      store.set(entry.key, null);
+    }
+    relayout(root);
   }
 
   function alignSticky(scroller) {
@@ -125,6 +132,7 @@ window.Theme = (function () {
   };
   function splitter(bar, pane, key, min) {
     key = "split." + key;
+    splitters.push({ pane, key });
     const saved = store.get(key);
     if (saved) pane.style.width = saved + "px";
     bar.addEventListener("pointerdown", event => {

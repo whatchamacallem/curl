@@ -21,9 +21,9 @@ PERF_CHART = "https://curl.se/perf/index.html"
 PID_PREFIX = re.compile(r"^==\d+==\s?")
 SYMBOL_CHARS = 20
 TIME_LINE = re.compile(r"^(\s*[A-Za-z][\w/ ]*:\s*)"
-                       r"(-?\d+(?:\.\d+)?)\s*(usecs?|us|µs|msecs?|ms|nsecs?|ns|secs?|s)\s*$",
+                       r"(-?\d+(?:\.\d+)?)\s*(usecs?|us|msecs?|ms|nsecs?|ns|secs?|s)\s*$",
                        re.I | re.M)
-TIME_SCALE: dict[str, float] = {"usec": 1e-6, "usecs": 1e-6, "us": 1e-6, "µs": 1e-6,
+TIME_SCALE: dict[str, float] = {"usec": 1e-6, "usecs": 1e-6, "us": 1e-6,
                                 "msec": 1e-3, "msecs": 1e-3, "ms": 1e-3,
                                 "nsec": 1e-9, "nsecs": 1e-9, "ns": 1e-9,
                                 "sec": 1.0, "secs": 1.0, "s": 1.0}
@@ -375,7 +375,7 @@ class BuildReport:
                     if match.group(1) not in keys:
                         keys.append(match.group(1))
             numbers[test.name] = values
-        columns = [Column("one report per test")] + [Column(key, numeric=True) for key in keys]
+        columns = [Column("report")] + [Column(key, numeric=True) for key in keys]
         rows: list[list[CellOrText]] = [
             [Cell(test.name, html=f'<a href="{html_escape(test.name)}/index.html">{html_escape(test.name)}</a>')]
             + [numbers[test.name].get(key, "") for key in keys]
@@ -410,7 +410,7 @@ class BuildReport:
     def rawdata_section(self, paths: Sequence[str], out_dir: str) -> str:
         if not paths:
             return ""
-        items = "".join(f'<li><a href="{html_escape(os.path.relpath(path, out_dir))}">'
+        items = "".join(f'<li><a href="{html_escape(os.path.relpath(path, out_dir))}" target="_blank">'
                         f'{html_escape(os.path.basename(path))}</a></li>' for path in paths)
         return f'<details class="sec"><summary><h2>raw data</h2></summary><ul class="rawdata">{items}</ul></details>'
 

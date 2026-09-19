@@ -195,7 +195,7 @@ class CallgrindToSpeedscope:
                     long = derived_event.long
                     break
             long = long or " + ".join(profile.event_long.get(name) or name for name in names)
-        return f"{expr} — {long}" if long else expr
+        return f"{expr} - {long}" if long else expr
 
     def expr_resolve(self, profile: callgrind.Profile, expr: str) -> list[int] | None:
         indexes: list[int] = []

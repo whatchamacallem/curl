@@ -17,6 +17,12 @@ MIN_INDEX_BYTES = 2000
 MIN_PAGE_BYTES = 500
 MIN_RAW_BYTES = 100
 
+NON_ASCII_RE = re.compile(r"[^\x00-\x7F]")
+UNICODE_SCAN_EXTS = (".py", ".js", ".css", ".sh")
+UNICODE_SCAN_NAMES = ("README.md",)
+UNICODE_SCAN_SKIP_DIRS = ("__pycache__", "perf2html_baseline_report", "perf2html_modified_report",
+                         "perf2html_diff_report")
+
 
 class Layout(NamedTuple):
     subpages: tuple[str, ...]
@@ -24,6 +30,12 @@ class Layout(NamedTuple):
     header_blocks: tuple[str, ...]
     manifest_version: str
     manifest_labels: tuple[str, ...]
+
+
+class NonAsciiLine(NamedTuple):
+    path: str
+    line_no: int
+    line: str
 
 
 class ValidateArgs(NamedTuple):
@@ -222,13 +234,39 @@ class ValidateReport:
         if "perf-tool" in layout.subpages:
             self.perf_tool_check(out_dir, name)
 
+    def unicode_check(self) -> None:
+        for path in self.unicode_scan_paths():
+            try:
+                with open(path, encoding="utf-8", errors="replace") as handle:
+                    lines = handle.readlines()
+            except OSError:
+                continue
+            for line_no, line in enumerate(lines, start=1):
+                match = NON_ASCII_RE.search(line)
+                if match:
+                    found = NonAsciiLine(path=path, line_no=line_no, line=line.rstrip("\n"))
+                    self.fail(f"{os.path.relpath(found.path, callgrind.REPO_ROOT)}:{found.line_no} "
+                              f"contains a non-ASCII character {match.group()!r}: {found.line.strip()}")
+
+    def unicode_scan_paths(self) -> list[str]:
+        dev_dir = os.path.join(callgrind.REPO_ROOT, "dev")
+        paths: list[str] = []
+        for root, dirs, names in os.walk(dev_dir):
+            dirs[:] = [d for d in dirs if d not in UNICODE_SCAN_SKIP_DIRS and not d.startswith(".")]
+            for name in names:
+                if name.endswith(UNICODE_SCAN_EXTS) or name in UNICODE_SCAN_NAMES:
+                    paths.append(os.path.join(root, name))
+        return sorted(paths)
+
 
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("out_dir", help="a report directory")
     parser.add_argument("--diff", action="store_true", help="a perf2html_diff.sh report: heat map only")
     namespace = parser.parse_args()
-    return ValidateReport().run(ValidateArgs(out_dir=namespace.out_dir, diff=namespace.diff))
+    validator = ValidateReport()
+    validator.unicode_check()
+    return validator.run(ValidateArgs(out_dir=namespace.out_dir, diff=namespace.diff))
 
 
 if __name__ == "__main__":

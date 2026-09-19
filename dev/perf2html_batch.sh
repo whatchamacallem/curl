@@ -1,27 +1,5 @@
 #!/usr/bin/env bash
 # dev/perf2html_batch.sh [--verbose] [--keep] [cmake_flags...]
-#
-# Every check the dev/ tooling has, in one run:
-#
-#   1 lint      pyright over dev/scripts (dev/pyrightconfig.json, must stay at
-#                0 errors) and node --check over theme.js plus the JS embedded
-#                in the generators (scripts/check_js.py)
-#   2 baseline  perf2html.sh            -> perf2html_baseline_report
-#   3 modified  perf2html.sh <flags>    -> perf2html_modified_report
-#   4 diff      perf2html_diff.sh       -> perf2html_diff_report
-#   5 validate  validate_report.py on all three reports
-#
-# The three report directories are deleted before step 2, so a stale page from
-# an earlier run can never be validated instead of a fresh one; --keep skips
-# that. cmake_flags are the modified build's flags, passed to perf2html.sh as
-# they are; without any, -D CMAKE_C_FLAGS=-Os is used. --verbose streams every
-# tool's output instead of logging it to dev/trace/perf2html_batch.<ts>.log.
-#
-# This is where the dev/ tooling is tested. The two generators run no checks of
-# their own -- being driven here, over all three of their output directories,
-# is their coverage -- and step 5 is the only validate_report.py run anywhere,
-# so one failure list covers the lot. Every step runs even if an earlier one
-# failed; the exit status is 1 if any of them did.
 set -uo pipefail
 SCRIPT="$(readlink -f "$0")"
 cd "$(dirname "$SCRIPT")"
@@ -41,9 +19,6 @@ took() {
   if [ "$seconds" -ge 60 ]; then echo "$((seconds / 60))m$((seconds % 60))s"; else echo "${seconds}s"; fi
 }
 
-# Runs one step, prints "<n> <name> | ok|FAILED | <time>" and remembers a
-# failure without stopping the run. Quiet mode logs the step's output and
-# shows the last 40 lines of a failing one.
 step_run() {
   local number="$1" name="$2"; shift 2
   local exit_code=0 from start=$SECONDS

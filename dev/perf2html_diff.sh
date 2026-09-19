@@ -1,26 +1,5 @@
 #!/usr/bin/env bash
 # dev/perf2html_diff.sh [--verbose] [baseline-dir] [modified-dir] [report-dir]
-#
-# Subtracts the callgrind data of two perf2html.sh reports (modified minus
-# baseline, per function and source line) and writes the change as a report:
-#
-#   DIR/index.html        summary: top functions by change in self cost, or
-#                          (two multi-test reports) an overview across tests
-#   DIR/<test>/            one test's diff, same shape, under a multi-test diff
-#   DIR/heat-map/          per-line change heat map
-#   DIR/raw/               the delta, a callgrind-format file
-#   DIR/README.md          help
-#   DIR/MANIFEST.txt       "curl/perf2html_diff.sh v1", then this run's header
-#                           rows as LABEL=VALUE lines
-#
-# Positional args are baseline-dir, modified-dir, report-dir, each optional and
-# independently defaulted (perf2html_baseline_report, perf2html_modified_report,
-# perf2html_diff_report) -- e.g. one directory given sets baseline-dir alone,
-# the other two keep their defaults. Relative paths are under dev/, ~/ is
-# expanded. --verbose (first) streams every tool's output instead of logging it
-# to dev/trace/diff.<ts>.log.
-# The last line printed is the report's file:// URL. Nothing is validated
-# here -- dev/perf2html_batch.sh runs validate_report.py over the finished report.
 set -euo pipefail
 SCRIPT="$(readlink -f "$0")"
 cd "$(dirname "$SCRIPT")"
@@ -77,10 +56,6 @@ args_parse() {
   done
 }
 
-# A report directory is usable only if the first line of its top-level
-# MANIFEST.txt is the version string perf2html.sh writes. The LABEL=VALUE
-# header rows below that line are not our business here. Our own output carries
-# a different version: a diff cannot be used to make a diff.
 manifest_check() {
   local dir="$1" role="$2" manifest="$1/MANIFEST.txt" version
   if [ ! -f "$manifest" ]; then
@@ -100,10 +75,6 @@ manifest_check() {
   fi
 }
 
-# One side's header rows, as a file of LABEL=VALUE lines for --header-block:
-# the source report's own overview rows, which perf2html.sh writes below the
-# version line of its MANIFEST.txt, under the directory they came from. A
-# report whose manifest is the version line alone contributes the directory.
 header_file_of() {
   local dir="$1" role="$2"
   local out="$PWD/trace/header.$role.$STAMP.txt"
@@ -112,10 +83,6 @@ header_file_of() {
   echo "$out"
 }
 
-# Every <test>/raw/callgrind.out.* under a report directory, plus the top-level
-# raw/ of a single-test report, printed as "<test> <file>[ <file>...]" lines.
-# The test name is the directory the raw/ sits in ("." for a single-test
-# report).
 profiles_list() {
   local dir="$1" raw test files
   for raw in "$dir"/raw "$dir"/*/raw; do
@@ -128,8 +95,6 @@ profiles_list() {
   done
 }
 
-# The tests both reports have, as "<name>" lines; a test only one side has is
-# reported and skipped.
 tests_pair() {
   local base_tests cur_tests name
   base_tests="$(profiles_list "$BASE_DIR" | cut -d' ' -f1 | sort -u)"
@@ -155,9 +120,6 @@ profiles_of() {
   profiles_list "$1" | awk -v want="$2" 'found { next } $1 == want { $1 = ""; print substr($0, 2); found = 1 }'
 }
 
-# One test's pages: the per-line delta (a callgrind-format file), its heat map
-# and its summary. No flame graph (a delta has no call graph) and no native
-# timing (two runs' wall clocks do not subtract).
 diff_one() {
   local test="$1" out="$2" name="$3"
   local diff_file base_files cur_files args help_args=() raw_name
@@ -168,7 +130,7 @@ diff_one() {
   log_say "== [$name]: diff -> $diff_file =="
   [ "$VERBOSE" = 1 ] || printf '%-13sdiff' "$name"
   args=(python3 scripts/callgrind_diff.py -o "$diff_file")
-  # shellcheck disable=SC2086  # the file lists are deliberately word-split
+  # shellcheck disable=SC2086
   for file in $base_files; do args+=(--baseline "$file"); done
   # shellcheck disable=SC2086
   for file in $cur_files; do args+=(--current "$file"); done

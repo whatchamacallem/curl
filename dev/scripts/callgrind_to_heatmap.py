@@ -613,7 +613,10 @@ function coverH(table) {
 function centerRow(rowEl) {
   const cover = coverH(rowEl.closest("table"));
   const rowRect = rowEl.getBoundingClientRect(), mainRect = mainEl.getBoundingClientRect();
-  mainEl.scrollTop += rowRect.top - mainRect.top - cover - (mainEl.clientHeight - cover - rowRect.height) / 2;
+  const detailEl = rowEl.nextElementSibling;
+  const blockBottom = (detailEl && detailEl.classList.contains("detail")) ? detailEl.getBoundingClientRect().bottom : rowRect.bottom;
+  const blockHeight = blockBottom - rowRect.top;
+  mainEl.scrollTop += rowRect.top - mainRect.top - cover - (mainEl.clientHeight - cover - blockHeight) / 2;
 }
 
 function srctailFit() {
@@ -872,7 +875,7 @@ function route() {
 }
 window.addEventListener("hashchange", route);
 window.addEventListener("message", messageEvent => {
-  if (messageEvent.data === "theme:reset-cols") Theme.resetCols(mainEl);
+  if (messageEvent.data === "theme:reset-cols") Theme.resetCols();
 });
 
 let mmResizeTimer = null;
