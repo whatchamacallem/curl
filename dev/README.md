@@ -96,9 +96,9 @@ meaningful single number.
 
 The flame graph is a recording, not a model: every box is one call that
 happened, as wide as it took. The test runs in a build with
-`-finstrument-functions`, where a hook (`dev/cyg.c`) reads the CPU's time stamp
-counter at every function entry and exit. "Time Order" is the order the calls
-were made in.
+`-finstrument-functions`, where a hook (`dev/cyg_callback.c`) reads the CPU's
+time stamp counter at every function entry and exit. "Time Order" is the order
+the calls were made in.
 
 It shows up to 10 calls in a row, 10 KB at most, taken from the middle of the
 run, when caches are warm. Times are nanoseconds since the start of the

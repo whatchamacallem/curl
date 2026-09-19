@@ -110,10 +110,10 @@ build_compile() {
     trace_flags+=("$flag")
   done
   mkdir -p "$REPO/$TRACE_BUILD_DIR"
-  test_run cc -O2 -fcf-protection=none -c cyg.c -o "$REPO/$TRACE_BUILD_DIR/cyg.o"
+  test_run cc -O2 -fcf-protection=none -c cyg_callback.c -o "$REPO/$TRACE_BUILD_DIR/cyg_callback.o"
   rm -f "$REPO/$TRACE_BUILD_DIR/tests/perf/perf"
   tree_build "$TRACE_BUILD_DIR" "${trace_flags[@]}" \
-    "-DCMAKE_EXE_LINKER_FLAGS=$REPO/$TRACE_BUILD_DIR/cyg.o -Wl,--export-dynamic"
+    "-DCMAKE_EXE_LINKER_FLAGS=$REPO/$TRACE_BUILD_DIR/cyg_callback.o -Wl,--export-dynamic"
   [ "$VERBOSE" = 1 ] || printf ' | %s\n' "$(took "$start")"
   BIN="$REPO/$BUILD_DIR/tests/perf/perf"
   BIN_REL="${BIN#"$REPO"/}"
@@ -131,8 +131,8 @@ loops_of() {
 
 trace_record() {
   local test="$1" loops="$2" trace_file="$3" skip="$4"
-  echo "\$ CYG_OUT=$(basename "${trace_file/.$STAMP/}") CYG_SKIP=$skip taskset -c $CPU $TRACE_BIN_REL $test $loops"
-  CYG_OUT="$trace_file" CYG_SKIP="$skip" taskset -c "$CPU" "$TRACE_BIN" "$test" "$loops" 2>&1
+  echo "\$ PERF_TRACE_OUT=$(basename "${trace_file/.$STAMP/}") PERF_TRACE_SKIP=$skip taskset -c $CPU $TRACE_BIN_REL $test $loops"
+  PERF_TRACE_OUT="$trace_file" PERF_TRACE_SKIP="$skip" taskset -c "$CPU" "$TRACE_BIN" "$test" "$loops" 2>&1
 }
 
 trace_render() {
@@ -144,9 +144,9 @@ trace_render() {
   rm -rf "$out/flame-graph"
   mkdir -p "$out/flame-graph"
   cp -r "$SPEEDSCOPE_RELEASE"/. "$out/flame-graph"/
-  { echo "# $TRACE_BUILD_DIR = this report's build flags + -finstrument-functions, linked with dev/cyg.c,"
+  { echo "# $TRACE_BUILD_DIR = this report's build flags + -finstrument-functions, linked with dev/cyg_callback.c,"
     echo "# which reads rdtsc at every function enter and exit. Run 1 counts the events, run 2 keeps"
-    echo "# the ones right after the run's midpoint (MAX_REC in dev/cyg.c)."
+    echo "# the ones right after the run's midpoint (CYG_CALLBACKS_MAX_REC in dev/cyg_callback.c)."
     trace_record "$test" "$loops" "$trace_file" "$SKIP_ALL" \
       && seen="$(python3 scripts/trace_to_speedscope.py --seen "$trace_file")" \
       && trace_record "$test" "$loops" "$trace_file" "$((seen / 2))" \

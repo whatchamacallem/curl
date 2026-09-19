@@ -150,7 +150,7 @@ class TraceToSpeedscope:
         with open(trace_file, "rb") as handle:
             words.frombytes(handle.read())
         if len(words) < HEADER_WORDS or words[0] != MAGIC:
-            sys.exit(f"error: {trace_file}: not a dev/cyg.c trace")
+            sys.exit(f"error: {trace_file}: not a dev/cyg_callback.c trace")
         _, kept, seen, skip, t0_ns, t0_tsc, t1_ns, t1_tsc = words[:HEADER_WORDS]
         records = words[HEADER_WORDS:]
         if len(records) != kept * RECORD_WORDS or t1_ns <= t0_ns:
@@ -211,7 +211,7 @@ class TraceToSpeedscope:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("trace_file", help="a dev/cyg.c trace; its .maps file sits beside it")
+    parser.add_argument("trace_file", help="a dev/cyg_callback.c trace; its .maps file sits beside it")
     parser.add_argument("-o", "--output", default="", help="output .speedscope.json path")
     parser.add_argument("--name", default="", help="document name")
     parser.add_argument("--seen", action="store_true",
