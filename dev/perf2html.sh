@@ -128,10 +128,15 @@ report_render() {
   done
   sed -i "s#$REPO/##g" "$out"/raw/*
   for log_file in "${LOG_FILES[@]}"; do log_args+=(--log "$log_file"); done
-  [ "$name" = all ] && log_args+=(--no-log)
+  local perf_log_args=(--perf-log "$out/perf-tool/output.txt")
+  if [ "$name" = all ]; then
+    log_args+=(--no-log)
+    raw_args=()
+    perf_log_args=()
+  fi
   [ "${#TESTS[@]}" -gt 1 ] && help_args=(--help-href ../README.md)
   test_run python3 scripts/build_report.py test "${CALLGRIND_FILES[@]}" -o "$out/index.html" --test "$name" \
-    --perf-log "$out/perf-tool/output.txt" "${log_args[@]}" "${raw_args[@]}" "${help_args[@]}"
+    "${perf_log_args[@]}" "${log_args[@]}" "${raw_args[@]}" "${help_args[@]}"
 }
 
 run_one() {

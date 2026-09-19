@@ -87,7 +87,7 @@ class ValidateReport:
                     self.fail(f"{os.path.relpath(path, out_dir)} leaks the author's home directory {home!r} -- "
                               f"reports are copied around and must not reveal who made them: {path}")
 
-    def index_check(self, out_dir: str, test_name: str, layout: Layout) -> None:
+    def index_check(self, out_dir: str, test_name: str, layout: Layout, has_rawdata: bool) -> None:
         path = os.path.join(out_dir, "index.html")
         text = self.page_check(path, "index.html", MIN_INDEX_BYTES, test_name)
         if not text:
@@ -97,10 +97,10 @@ class ValidateReport:
         for key in layout.subpages:
             if f'href="{key}/index.html"' not in text:
                 self.fail(f"index.html is missing its {key} strip link: {path}")
-        if layout.test_has_rawdata and "raw data" not in text:
+        if has_rawdata and "raw data" not in text:
             self.fail(f"index.html has no 'raw data' section: {path}")
-        elif not layout.test_has_rawdata and "raw data" in text:
-            self.fail(f"index.html has a 'raw data' section, but a diff summary page should not: {path}")
+        elif not has_rawdata and "raw data" in text:
+            self.fail(f"index.html has a 'raw data' section, but it should not: {path}")
 
     def manifest_check(self, out_dir: str, layout: Layout) -> None:
         path = os.path.join(out_dir, "MANIFEST.txt")
@@ -164,7 +164,7 @@ class ValidateReport:
             match = re.search(r"<title>(.*?)</title>", handle.read())
         return match.group(1) if match else ""
 
-    def perf_tool_check(self, out_dir: str, test_name: str) -> None:
+    def perf_tool_check(self, out_dir: str, test_name: str, has_perf_log: bool) -> None:
         out_txt = os.path.join(out_dir, "perf-tool", "output.txt")
         text = self.size_check(out_txt, 20, "perf-tool/output.txt")
         if text:
@@ -173,8 +173,12 @@ class ValidateReport:
             if test_name == "urlparser" and "Errors:" not in text:
                 self.fail(f"perf-tool/output.txt has no 'Errors:' line (urlparser is expected to print one): {out_txt}")
         index_text = self.size_check(os.path.join(out_dir, "index.html"), MIN_INDEX_BYTES, "index.html")
-        if index_text and "<h2>perf log</h2>" not in index_text:
-            self.fail(f"index.html has no 'perf log' section: {os.path.join(out_dir, 'index.html')}")
+        if index_text:
+            if has_perf_log and "<h2>perf log</h2>" not in index_text:
+                self.fail(f"index.html has no 'perf log' section: {os.path.join(out_dir, 'index.html')}")
+            elif not has_perf_log and "<h2>perf log</h2>" in index_text:
+                self.fail(f"index.html has a 'perf log' section, but it should not: "
+                          f"{os.path.join(out_dir, 'index.html')}")
 
     def raw_dir_check(self, out_dir: str) -> None:
         raw_dir = os.path.join(out_dir, "raw")
@@ -230,13 +234,14 @@ class ValidateReport:
         return text
 
     def test_report_check(self, out_dir: str, name: str, layout: Layout) -> None:
-        self.index_check(out_dir, name, layout)
+        has_rawdata = layout.test_has_rawdata and name != "all"
+        self.index_check(out_dir, name, layout, has_rawdata)
         self.heat_map_check(out_dir, name)
         self.raw_dir_check(out_dir)
         if "flame-graph" in layout.subpages:
             self.flame_graph_check(out_dir)
         if layout.test_has_rawdata:
-            self.perf_tool_check(out_dir, name)
+            self.perf_tool_check(out_dir, name, has_rawdata)
 
     def unicode_check(self) -> None:
         for path in self.unicode_scan_paths():
