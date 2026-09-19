@@ -350,7 +350,7 @@ class BuildReport:
             Column(
                 "% self",
                 f"the function's own {_EVENT} delta, as a share of every line's {_EVENT} change "
-                "added up; + is more than the baseline, - is less",
+                "added up. + is more than the baseline, - is less",
                 numeric=True,
             ),
             Column(
@@ -368,7 +368,7 @@ class BuildReport:
             Column(
                 "callers",
                 "who its call count changed with, signed by change in "
-                f"{_EVENT}; cut off at the edge, hover for all",
+                f"{_EVENT}. cut off at the edge, hover for all",
                 grow=True,
             ),
         ]
@@ -537,7 +537,7 @@ class BuildReport:
             ),
             Column(
                 "symbol",
-                f"the function, first {_SYMBOL_CHARS} characters (drag the bar for more); "
+                f"the function, first {_SYMBOL_CHARS} characters (drag the bar for more). "
                 "opens the heat map at its first line",
                 width=_SYMBOL_CHARS,
             ),
@@ -549,7 +549,7 @@ class BuildReport:
             Column("calls", "times the function was entered", numeric=True),
             Column(
                 "callers",
-                "who called it, with the share of those calls; cut off at the edge, "
+                "who called it, with the share of those calls. cut off at the edge, "
                 "hover for all",
                 grow=True,
             ),
@@ -917,7 +917,7 @@ def main() -> None:
     test_parser.add_argument(
         "callgrind_file",
         nargs="+",
-        help="callgrind output file(s); several are merged into one profile",
+        help="callgrind output file(s). several are merged into one profile",
     )
     test_parser.add_argument("-o", "--output", required=True)
     test_parser.add_argument("--test", required=True, help="the page's title")
@@ -926,7 +926,7 @@ def main() -> None:
         action="append",
         default=[],
         metavar="FILE",
-        help="raw data file to link (repeatable); listed relative to -o",
+        help="raw data file to link (repeatable). listed relative to -o",
     )
     test_parser.add_argument(
         "--log",
@@ -955,7 +955,7 @@ def main() -> None:
     test_parser.add_argument(
         "--help-href",
         default="README.md",
-        help="the strip's 'help' target, relative to this page (default: README.md; "
+        help="the strip's 'help' target, relative to this page (default: README.md. "
         "a per-test page under an overview needs ../README.md)",
     )
     test_parser.add_argument(
@@ -993,7 +993,7 @@ def main() -> None:
         "--header-file",
         default="",
         metavar="FILE",
-        help="a file of LABEL=VALUE lines, appended to the --header rows; any other "
+        help="a file of LABEL=VALUE lines, appended to the --header rows. any other "
         "line (a MANIFEST.txt version line) is ignored",
     )
     overview_parser.add_argument(
