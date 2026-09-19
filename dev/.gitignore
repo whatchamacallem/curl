@@ -1,5 +1,5 @@
+build/
 trace/
-report/
 __pycache__/
 perf2html_baseline_report
 perf2html_modified_report

@@ -5,7 +5,10 @@ SCRIPT="$(readlink -f "$0")"
 cd "$(dirname "$SCRIPT")"
 
 BUILD_DIR=build-relwithdebinfo
+TRACE_BUILD_DIR=build-instr
 CPU=3
+LOOPS_DIVISOR=50
+SKIP_ALL=18446744073709551615
 MANIFEST_VERSION='curl/perf2html.sh v1'
 
 REPO="$(cd .. && pwd)"
@@ -81,37 +84,82 @@ build_manifest() {
 
 toolchain_check() {
   local tool
-  for tool in cmake ninja ccache valgrind taskset python3 speedscope; do
+  for tool in cmake ninja ccache cc valgrind perf taskset python3 addr2line readelf speedscope; do
     command -v "$tool" >/dev/null 2>&1 || { echo "error: $tool not found on PATH" >&2; exit 1; }
   done
   SPEEDSCOPE_RELEASE="$(dirname "$(dirname "$(readlink -f "$(command -v speedscope)")")")/dist/release"
   [ -f "$SPEEDSCOPE_RELEASE/index.html" ] || { echo "error: no speedscope bundle at $SPEEDSCOPE_RELEASE" >&2; exit 1; }
 }
 
+tree_build() {
+  local dir="$1"
+  shift
+  rm -f "$REPO/$dir/CMakeCache.txt"
+  test_run cmake -S "$REPO" -B "$REPO/$dir" -G Ninja -DCURL_USE_LIBPSL=OFF \
+    -DCMAKE_C_COMPILER_LAUNCHER=ccache "$@"
+  test_run cmake --build "$REPO/$dir" --parallel --target perf
+}
+
 build_compile() {
-  log_say "== 1: cmake + build $BUILD_DIR: ${CMAKE_FLAGS[*]} =="
+  log_say "== 1: cmake + build $BUILD_DIR and $TRACE_BUILD_DIR: ${CMAKE_FLAGS[*]} =="
   [ "$VERBOSE" = 1 ] || printf '%-11s%s' build "${CMAKE_FLAGS[*]}"
-  local start=$SECONDS
-  rm -f "$REPO/$BUILD_DIR/CMakeCache.txt"
-  test_run cmake -S "$REPO" -B "$REPO/$BUILD_DIR" -G Ninja -DCURL_USE_LIBPSL=OFF \
-    -DCMAKE_C_COMPILER_LAUNCHER=ccache "${CMAKE_FLAGS[@]}"
-  test_run cmake --build "$REPO/$BUILD_DIR" --parallel --target perf
+  local start=$SECONDS flag trace_flags=()
+  tree_build "$BUILD_DIR" "${CMAKE_FLAGS[@]}"
+  for flag in "${CMAKE_FLAGS[@]}"; do
+    case "$flag" in -DCMAKE_C_FLAGS=*|CMAKE_C_FLAGS=*) flag="$flag -finstrument-functions";; esac
+    trace_flags+=("$flag")
+  done
+  mkdir -p "$REPO/$TRACE_BUILD_DIR"
+  test_run cc -O2 -fcf-protection=none -c cyg.c -o "$REPO/$TRACE_BUILD_DIR/cyg.o"
+  rm -f "$REPO/$TRACE_BUILD_DIR/tests/perf/perf"
+  tree_build "$TRACE_BUILD_DIR" "${trace_flags[@]}" \
+    "-DCMAKE_EXE_LINKER_FLAGS=$REPO/$TRACE_BUILD_DIR/cyg.o -Wl,--export-dynamic"
   [ "$VERBOSE" = 1 ] || printf ' | %s\n' "$(took "$start")"
   BIN="$REPO/$BUILD_DIR/tests/perf/perf"
   BIN_REL="${BIN#"$REPO"/}"
+  TRACE_BIN="$REPO/$TRACE_BUILD_DIR/tests/perf/perf"
+  TRACE_BIN_REL="${TRACE_BIN#"$REPO"/}"
   BUILD_DESC="$BUILD_DIR, ${CMAKE_FLAGS[*]}, $(cc --version | head -1)"
 }
 
-report_render() {
-  local name="$1" out="$2" json="$3" speedscope_name="$4"
-  local log_args=() raw_args=() help_args=() log_file cg_file raw_name
+loops_of() {
+  local default
+  default="$(sed -n 's/^ *curl_off_t loops = \([0-9]*\),.*/\1/p' "$REPO/tests/perf/$1.c" | head -1)"
+  [ -n "$default" ] || { echo "error: no 'curl_off_t loops = N,' default in tests/perf/$1.c" >&2; exit 1; }
+  echo $(( default / LOOPS_DIVISOR ))
+}
 
-  log_say "== [$name]: flame graph -> $out/flame-graph/index.html =="
-  test_run python3 scripts/callgrind_to_speedscope.py "${CALLGRIND_FILES[@]}" -o "$json" --name "$speedscope_name"
+trace_record() {
+  local test="$1" loops="$2" trace_file="$3" skip="$4"
+  echo "\$ CYG_OUT=$(basename "${trace_file/.$STAMP/}") CYG_SKIP=$skip taskset -c $CPU $TRACE_BIN_REL $test $loops"
+  CYG_OUT="$trace_file" CYG_SKIP="$skip" taskset -c "$CPU" "$TRACE_BIN" "$test" "$loops" 2>&1
+}
+
+trace_render() {
+  local test="$1" out="$2" loops="$3"
+  local trace_file="$PWD/trace/trace.$test.$loops.$STAMP.bin" log="$out/flame-graph/output.txt" seen
+  TRACE_JSON="$PWD/trace/trace.$test.$loops.$STAMP.speedscope.json"
+
+  log_say "== [$test]: native trace, pinned to CPU $CPU, loops=$loops -> $out/flame-graph/index.html =="
   rm -rf "$out/flame-graph"
   mkdir -p "$out/flame-graph"
   cp -r "$SPEEDSCOPE_RELEASE"/. "$out/flame-graph"/
-  test_run python3 scripts/build_flame_graph.py --speedscope-dir "$out/flame-graph" --profile-json "$json"
+  { echo "# $TRACE_BUILD_DIR = this report's build flags + -finstrument-functions, linked with dev/cyg.c,"
+    echo "# which reads rdtsc at every function enter and exit. Run 1 counts the events, run 2 keeps"
+    echo "# the ones right after the run's midpoint (MAX_REC in dev/cyg.c)."
+    trace_record "$test" "$loops" "$trace_file" "$SKIP_ALL" \
+      && seen="$(python3 scripts/trace_to_speedscope.py --seen "$trace_file")" \
+      && trace_record "$test" "$loops" "$trace_file" "$((seen / 2))" \
+      && python3 scripts/trace_to_speedscope.py "$trace_file" -o "$TRACE_JSON" --name "$test (loops=$loops)" 2>&1 \
+        | sed "s#$PWD/trace/##g; s#\\.$STAMP##g"
+  } >"$log" || { echo "error: the native trace of $test failed; its output is in $log" >&2; exit 1; }
+  if [ "$VERBOSE" = 1 ]; then cat "$log"; else cat "$log" >>"$RUN_LOG"; fi
+  test_run python3 scripts/build_flame_graph.py --speedscope-dir "$out/flame-graph" --profile-json "$TRACE_JSON"
+}
+
+report_render() {
+  local name="$1" out="$2" json="$3"
+  local log_args=() raw_args=() help_args=() log_file cg_file raw_name
 
   log_say "== [$name]: heat map -> $out/heat-map/index.html =="
   test_run python3 scripts/callgrind_to_heatmap.py "${CALLGRIND_FILES[@]}" -o "$out/heat-map/index.html" \
@@ -128,11 +176,16 @@ report_render() {
   done
   sed -i "s#$REPO/##g" "$out"/raw/*
   for log_file in "${LOG_FILES[@]}"; do log_args+=(--log "$log_file"); done
-  local perf_log_args=(--perf-log "$out/perf-tool/output.txt")
+  local perf_log_args=(--perf-log "$out/perf-tool/output.txt" --trace-log "$out/flame-graph/output.txt")
   if [ "$name" = all ]; then
     log_args+=(--no-log)
     raw_args=()
     perf_log_args=()
+  else
+    raw_name="$(basename "$json")"
+    raw_name="${raw_name/.$STAMP/}"
+    cp "$json" "$out/raw/$raw_name"
+    raw_args+=(--raw-data "$out/raw/$raw_name")
   fi
   [ "${#TESTS[@]}" -gt 1 ] && help_args=(--help-href ../README.md)
   test_run python3 scripts/build_report.py test "${CALLGRIND_FILES[@]}" -o "$out/index.html" --test "$name" \
@@ -141,11 +194,8 @@ report_render() {
 
 run_one() {
   local test="$1" out="$2"
-  local loops cg_file log start
-  case "$test" in
-    urlparser) loops=200;;
-    *) loops=200000;;
-  esac
+  local loops cg_file log start stat_file="$PWD/trace/perf-stat.$test.$STAMP.csv"
+  loops="$(loops_of "$test")"
   cg_file="$PWD/trace/callgrind.out.$test.$loops.$STAMP"
   log="$PWD/trace/valgrind.$test.$loops.$STAMP.log"
   mkdir -p "$out/perf-tool"
@@ -158,7 +208,11 @@ run_one() {
   [ "$VERBOSE" = 1 ] || printf ' | %s' "$(took "$start")"
 
   log_say "== [$test]: native timing, pinned to CPU $CPU -> $out/perf-tool/output.txt =="
-  { echo "\$ taskset -c $CPU $BIN_REL $test"; taskset -c "$CPU" "$BIN" "$test" 2>&1; } >"$out/perf-tool/output.txt" \
+  { echo "\$ perf stat -e cycles:u,instructions:u taskset -c $CPU $BIN_REL $test"
+    perf stat -x, -o "$stat_file" -e cycles:u,instructions:u taskset -c "$CPU" "$BIN" "$test" 2>&1 \
+      && awk -F, '$3 ~ /cycles/ { printf "Cycles:    %s\n", $1 } $3 ~ /instructions/ { printf "Instructions: %s\n", $1 }' \
+        "$stat_file"
+  } >"$out/perf-tool/output.txt" \
     || { echo "error: $BIN $test failed; its output is in $out/perf-tool/output.txt" >&2; exit 1; }
   if [ "$VERBOSE" = 1 ]; then
     cat "$out/perf-tool/output.txt"
@@ -170,9 +224,10 @@ run_one() {
       END { print s }' "$out/perf-tool/output.txt")"
   fi
 
+  trace_render "$test" "$out" "$loops"
   CALLGRIND_FILES=("$cg_file")
   LOG_FILES=("$log")
-  report_render "$test" "$out" "$PWD/trace/$test.$loops.$STAMP.speedscope.json" "curl perf $test (loops=$loops)"
+  report_render "$test" "$out" "$TRACE_JSON"
 }
 
 run_all() {
@@ -182,10 +237,7 @@ run_all() {
   CALLGRIND_FILES=()
   LOG_FILES=()
   for test_name in "${TESTS[@]}"; do
-    case "$test_name" in
-      urlparser) loops=200;;
-      *) loops=200000;;
-    esac
+    loops="$(loops_of "$test_name")"
     CALLGRIND_FILES+=("$PWD/trace/callgrind.out.$test_name.$loops.$STAMP")
     LOG_FILES+=("$PWD/trace/valgrind.$test_name.$loops.$STAMP.log")
   done
@@ -203,7 +255,8 @@ run_all() {
   } >"$out/perf-tool/output.txt"
   [ "$VERBOSE" = 1 ] && cat "$out/perf-tool/output.txt"
 
-  report_render all "$out" "$PWD/trace/all.$STAMP.speedscope.json" "curl perf all"
+  rm -rf "$out/flame-graph"
+  report_render all "$out" ""
 
   log_say "== overview -> $OUT_DIR/index.html =="
   { printf '%s\n' "$MANIFEST_VERSION"

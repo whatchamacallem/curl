@@ -165,6 +165,7 @@ class TestArgs(NamedTuple):
     raw_data: list[str]
     log: list[str]
     perf_log: str
+    trace_log: str
     no_log: bool
     help_href: str
     diff: bool
@@ -183,14 +184,8 @@ class View(NamedTuple):
     path: str
 
 
-VIEWS: tuple[View, ...] = (
-    View("flame-graph", "flame graph",   "flame-graph/index.html"),
-    View("heat-map",    "heat map",      "heat-map/index.html"),
-)
-
-DIFF_VIEWS: tuple[View, ...] = (
-    View("heat-map", "heat map", "heat-map/index.html"),
-)
+FLAME_VIEW = View("flame-graph", "flame graph", "flame-graph/index.html")
+HEAT_VIEW = View("heat-map", "heat map", "heat-map/index.html")
 
 
 class BuildReport:
@@ -291,7 +286,7 @@ class BuildReport:
     def diff_test(self, args: TestArgs) -> None:
         profile = callgrind.profile_load(args.callgrind_file)
         callers_data = self.callers_data_load(args.callers_data)
-        self.report_page(args, DIFF_VIEWS, f"top {TOP} functions by change in self",
+        self.report_page(args, [HEAT_VIEW], f"top {TOP} functions by change in self",
                          self.diff_functions_table(profile, callers_data))
 
     def entry_link(self, profile: callgrind.Profile, function: str) -> str:
@@ -402,12 +397,12 @@ class BuildReport:
             body += self.log_block(path)
         return '<details class="sec"><summary><h2>valgrind log</h2></summary>' + body + "</details>"
 
-    def perf_log_section(self, path: str) -> str:
+    def output_section(self, title: str, path: str) -> str:
         if not path:
             return ""
         output = self.time_humanize(self.file_read(path).rstrip())
         body = f'<div class="tbl"><pre class="logbox">{html_escape(output)}</pre></div>'
-        return '<details class="sec"><summary><h2>perf log</h2></summary>' + body + "</details>"
+        return f'<details class="sec"><summary><h2>{title}</h2></summary>' + body + "</details>"
 
     def overview(self, args: OverviewArgs) -> None:
         tests = self.overview_tests(args)
@@ -468,7 +463,8 @@ class BuildReport:
         out_dir = os.path.dirname(os.path.abspath(args.output))
         body += '<main id="home"><div class="page">' + \
             self.header_table("report.header", self.header_parse_pairs(args.header))
-        body += self.perf_log_section(args.perf_log)
+        body += self.output_section("perf log", args.perf_log)
+        body += self.output_section("trace log", args.trace_log)
         if not args.no_log:
             body += self.log_section(args.log)
         body += self.rawdata_section(args.raw_data, out_dir)
@@ -497,7 +493,8 @@ class BuildReport:
 
     def test(self, args: TestArgs) -> None:
         profile = callgrind.profile_load(args.callgrind_file)
-        self.report_page(args, VIEWS, f"top {TOP} functions by self", self.functions_table(profile))
+        views = [FLAME_VIEW, HEAT_VIEW] if args.trace_log else [HEAT_VIEW]
+        self.report_page(args, views, f"top {TOP} functions by self", self.functions_table(profile))
 
     def time_humanize(self, text: str) -> str:
         def one(match: re.Match[str]) -> str:
@@ -520,10 +517,13 @@ def main() -> None:
     test_parser.add_argument("-o", "--output", required=True)
     test_parser.add_argument("--test", required=True, help="the page's title")
     test_parser.add_argument("--raw-data", action="append", default=[], metavar="FILE",
-                             help="callgrind trace file to link (repeatable); listed relative to -o")
+                             help="raw data file to link (repeatable); listed relative to -o")
     test_parser.add_argument("--log", action="append", default=[], help="valgrind log to include (repeatable)")
     test_parser.add_argument("--perf-log", default="", metavar="FILE",
                              help="the perf tool's captured stdout, shown in a collapsed 'perf log' section")
+    test_parser.add_argument("--trace-log", default="", metavar="FILE",
+                             help="the native trace run's captured output (flame-graph/output.txt), shown in a "
+                                  "collapsed 'trace log' section; without it the page has no flame graph link")
     test_parser.add_argument("--no-log", action="store_true",
                              help="omit the valgrind log section even if --log was given")
     test_parser.add_argument("--help-href", default="README.md",
@@ -557,7 +557,7 @@ def main() -> None:
     if namespace.cmd == "test":
         test_args = TestArgs(callgrind_file=namespace.callgrind_file, output=namespace.output, test=namespace.test,
                              raw_data=namespace.raw_data, log=namespace.log, perf_log=namespace.perf_log,
-                             no_log=namespace.no_log, help_href=namespace.help_href, diff=namespace.diff,
+                             trace_log=namespace.trace_log, no_log=namespace.no_log, help_href=namespace.help_href, diff=namespace.diff,
                              header=namespace.header, callers_data=namespace.callers_data)
         (report.diff_test if namespace.diff else report.test)(test_args)
     else:

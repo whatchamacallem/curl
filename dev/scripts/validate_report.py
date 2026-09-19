@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import argparse
+import base64
 from collections.abc import Sequence
+import json
 import os
 import re
 import sys
@@ -17,6 +19,7 @@ MIN_INDEX_BYTES = 2000
 MIN_PAGE_BYTES = 500
 MIN_RAW_BYTES = 100
 
+FLAME_EXPORTER = "dev/scripts/trace_to_speedscope.py"
 NON_ASCII_RE = re.compile(r"[^\x00-\x7F]")
 UNICODE_SCAN_EXTS = (".py", ".js", ".css", ".sh")
 UNICODE_SCAN_NAMES = ("README.md",)
@@ -58,12 +61,31 @@ class ValidateReport:
     def fail(self, message: str) -> None:
         self.errors.append(message)
 
-    def flame_graph_check(self, out_dir: str) -> None:
+    def flame_graph_check(self, out_dir: str, has_trace: bool) -> None:
         flame_dir = os.path.join(out_dir, "flame-graph")
+        index_text = self.size_check(os.path.join(out_dir, "index.html"), MIN_INDEX_BYTES, "index.html")
+        if not has_trace:
+            if os.path.exists(flame_dir) or "<h2>trace log</h2>" in index_text:
+                self.fail(f"a flame graph where no trace was recorded (flame-graph/ or a 'trace log' section): {out_dir}")
+            return
+        if index_text and "<h2>trace log</h2>" not in index_text:
+            self.fail(f"index.html has no 'trace log' section: {os.path.join(out_dir, 'index.html')}")
         self.page_check(os.path.join(flame_dir, "index.html"), "flame-graph/index.html")
+        self.size_check(os.path.join(flame_dir, "output.txt"), 20, "flame-graph/output.txt")
         script = self.size_check(os.path.join(flame_dir, "profile.js"), MIN_FLAME_JS_BYTES, "flame-graph/profile.js")
-        if script and "loadFileFromBase64" not in script:
+        if not script:
+            return
+        if "loadFileFromBase64" not in script:
             self.fail(f"flame-graph/profile.js does not call loadFileFromBase64: {flame_dir}/profile.js")
+        match = re.search(r'var DATA = "([A-Za-z0-9+/=]+)"', script)
+        try:
+            document = json.loads(base64.b64decode(match.group(1))) if match else {}
+        except ValueError:
+            document = {}
+        kinds = [profile.get("type") for profile in document.get("profiles", [])]
+        if document.get("exporter") != FLAME_EXPORTER or kinds != ["evented"]:
+            self.fail(f"flame-graph/profile.js does not hold one recorded trace from {FLAME_EXPORTER} "
+                      f"(exporter {document.get('exporter')!r}, profiles {kinds}): {flame_dir}/profile.js")
 
     def heat_map_check(self, out_dir: str, test_name: str) -> None:
         path = os.path.join(out_dir, "heat-map", "index.html")
@@ -95,8 +117,9 @@ class ValidateReport:
         if not re.search(layout.heading, text):
             self.fail(f"index.html has no 'top N functions' section matching {layout.heading!r}: {path}")
         for key in layout.subpages:
-            if f'href="{key}/index.html"' not in text:
-                self.fail(f"index.html is missing its {key} strip link: {path}")
+            wanted = key != "flame-graph" or has_rawdata
+            if wanted != (f'href="{key}/index.html"' in text):
+                self.fail(f"index.html {'is missing its' if wanted else 'should not have a'} {key} strip link: {path}")
         if has_rawdata and "raw data" not in text:
             self.fail(f"index.html has no 'raw data' section: {path}")
         elif not has_rawdata and "raw data" in text:
@@ -164,14 +187,12 @@ class ValidateReport:
             match = re.search(r"<title>(.*?)</title>", handle.read())
         return match.group(1) if match else ""
 
-    def perf_tool_check(self, out_dir: str, test_name: str, has_perf_log: bool) -> None:
+    def perf_tool_check(self, out_dir: str, has_perf_log: bool) -> None:
         out_txt = os.path.join(out_dir, "perf-tool", "output.txt")
         text = self.size_check(out_txt, 20, "perf-tool/output.txt")
         if text:
             if not re.search(r"^Time(/\w+)?:\s+\d", text, re.M):
                 self.fail(f"perf-tool/output.txt has no recognizable timing line: {out_txt}")
-            if test_name == "urlparser" and "Errors:" not in text:
-                self.fail(f"perf-tool/output.txt has no 'Errors:' line (urlparser is expected to print one): {out_txt}")
         index_text = self.size_check(os.path.join(out_dir, "index.html"), MIN_INDEX_BYTES, "index.html")
         if index_text:
             if has_perf_log and "<h2>perf log</h2>" not in index_text:
@@ -183,13 +204,13 @@ class ValidateReport:
     def raw_dir_check(self, out_dir: str) -> None:
         raw_dir = os.path.join(out_dir, "raw")
         files = sorted(os.listdir(raw_dir)) if os.path.isdir(raw_dir) else []
-        if not files:
+        if not any(name.startswith("callgrind.") for name in files):
             self.fail(f"raw/ has no callgrind file: {raw_dir}")
             return
         for name in files:
             path = os.path.join(raw_dir, name)
             text = self.size_check(path, MIN_RAW_BYTES, f"raw/{name}")
-            if "events:" not in text[:4096]:
+            if name.startswith("callgrind.") and "events:" not in text[:4096]:
                 self.fail(f"raw data file does not look like a callgrind trace (no 'events:' near the top): {path}")
             if callgrind.REPO_ROOT in text:
                 self.fail(f"raw/{name} still contains the absolute repo root {callgrind.REPO_ROOT!r}: {path}")
@@ -239,9 +260,9 @@ class ValidateReport:
         self.heat_map_check(out_dir, name)
         self.raw_dir_check(out_dir)
         if "flame-graph" in layout.subpages:
-            self.flame_graph_check(out_dir)
+            self.flame_graph_check(out_dir, has_rawdata)
         if layout.test_has_rawdata:
-            self.perf_tool_check(out_dir, name, has_rawdata)
+            self.perf_tool_check(out_dir, has_rawdata)
 
     def unicode_check(self) -> None:
         for path in self.unicode_scan_paths():

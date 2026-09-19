@@ -11,9 +11,9 @@ dev/perf2html_diff.sh [--verbose] [baseline-dir] [modified-dir] [report-dir]
 dev/perf2html_batch.sh [--verbose] [--keep] [cmake_flags...]
 ```
 
-`perf2html.sh` builds curl (`-O2 -g` by default, ccache), runs every perf test
-(`tests/perf/*.c`) under callgrind and then natively, each pinned to one core,
-and writes one HTML report:
+`perf2html.sh` builds curl twice (`-O2 -g`+ccache by default, the second tree
+adds `-finstrument-functions` and exists only for the flame graph), runs every
+perf test under each, and writes one HTML report:
 
 ```text
 DIR/index.html            Open this.
@@ -92,10 +92,25 @@ deltas), signed the same way as everything else. What a diff still does not
 have is a flame graph or a perf log, because neither subtracts into a
 meaningful single number.
 
-## Flame Graph Bindings (speedscope)
+## Flame Graph (speedscope)
 
-Open the flame graph and remain with "Time Order" in the view menu. The
-other views require familiarity with the tool.
+The flame graph is a recording, not a model: every box is one call that
+happened, as wide as it took. The test runs in a build with
+`-finstrument-functions`, where a hook (`dev/cyg.c`) reads the CPU's time stamp
+counter at every function entry and exit. "Time Order" is the order the calls
+were made in.
+
+It shows up to 10 calls in a row, 10 KB at most, taken from the middle of the
+run, when caches are warm. Times are nanoseconds since the start of the
+run. Both hooks cost time too and that time is in the boxes, so a function of
+a few instructions looks slower than it is, and the traced run is slower than
+the perf log's native one. Use the perf log for speed and the flame graph for
+shape: what calls what, in which order, and which call was the slow one. The
+summary's "trace log" has the commands and the traced run's own output, and
+"raw data" links the same profile as a speedscope JSON file.
+
+The merged "all" report and a diff have no flame graph: recordings neither add
+up nor subtract.
 
 Scroll to pan and pinch or Cmd/Ctrl+scroll to zoom, on both the minimap
 and the main view. Click a frame for its stats.
