@@ -156,14 +156,20 @@ generator. Keep the split: `BuildReport.test`/`.functions_table` core vs
 
 ## `dev/scripts/` conventions
 
-**Comments: short, tech-writer style, never docstrings.** 80 columns is the
-hard max for a comment (existing *code* lines predate the rule). Every class
-and function gets one `# <Name> - what it is` line above it, wrapped to a
-second `#` line if it must be. Every field gets a one-line `#` comment **above
-it**, never trailing — no arg-by-arg docs, no `:param:`, no reStructuredText.
-Names carry the meaning; the comment only says what a name can't. Still no
-comments in JS/CSS embedded in string literals or in `theme.js`/`theme.css`.
-Shebangs stay. `ArgumentParser()` gets no description by design.
+**79 columns is the hard max** for every line of `dev/` source — code and
+comment alike, in every language. `scripts/reformat.sh` enforces it; the lines
+no formatter can reach are categorized in `lines.txt`. Not to be confused with
+the **80-column source *view*** in the heat map (`SRC_COLS`, `MM_MIN_COLS`),
+which is the standard width the profiled `lib/` source is rendered at — that
+stays 80 and has nothing to do with how `dev/` is written.
+
+**Comments: short, tech-writer style, never docstrings.** Every class and
+function gets one `# <Name> - what it is` line above it, wrapped to a second
+`#` line if it must be. Every field gets a one-line `#` comment **above it**,
+never trailing — no arg-by-arg docs, no `:param:`, no reStructuredText. Names
+carry the meaning; the comment only says what a name can't. Still no comments
+in JS/CSS embedded in string literals or in `theme.js`/`theme.css`. Shebangs
+stay. `ArgumentParser()` gets no description by design.
 
 **Class names read like a how-to, not an abbreviation** — `CompressedNames`,
 `PositionDecoder`, `FileTally`, `ExecutableMapping`, `TraceRecording`,
@@ -361,9 +367,12 @@ Pages nest two deep: overview frames a test summary, which frames its heat map
   it as-is at that moment.
 - `centerRow()` (vertical only) replaces `scrollIntoView`, which also pulled
   the pane sideways.
+- The source view is **80 columns** — `SRC_COLS`=80 is the `source` column's
+  `ch` width, the standard width for rendering C. It is not the `dev/` source
+  limit (79) and must never be changed to match it.
 - Minimap: `#minimap` is never resized and never scrolls; scale pinned to
-  `MM_MIN_COLS`=80, never widened to the longest line. Clone needs
-  `width: 100%`
+  `MM_MIN_COLS`=80 (the same 80-column view), never widened to the longest
+  line. Clone needs `width: 100%`
   - `table-layout: fixed`. `mmCloneH` readable only after `empty` is removed
     (display:none measures 0). `mmGeom()` caches nothing. Only the `th` cells
     are sticky, the `<thead>` scrolls away — **never measure the thead**.
