@@ -20,18 +20,13 @@ from callgrind import Costs, Group
 # it up by name. JS in a triple-quoted string needs "\\n" written "\\\\n".
 BODY = """<div id="hdr" class="strip">
   <label>event: <select id="event"></select></label>
-  <label>scale: <select id="scale">
-    <option value="global">log, global</option>
-    <option value="file">log, per file</option>
-    <option value="function">log, per function</option>
-    <option value="linear">linear, global</option>
-  </select></label>
+  <label>scale: <select id="scale"></select></label>
   <label>tree: <select id="sort">
     <option value="heat">by heat</option>
     <option value="name">by name</option>
   </select></label>
   <label>search:
-    <input id="q" type="search" placeholder="file name\u2026"></label>
+    <input id="q" type="search" placeholder="file name…"></label>
 </div>
 <div id="layout">
   <nav id="tree"></nav>
@@ -54,10 +49,8 @@ const minimapEl = document.getElementById("minimap");
 const mmBox = document.getElementById("mmBox");
 const mmViewport = document.getElementById("mmViewport");
 const store = Theme.store;
-let scale = store.get("heat.scale") || "global";
 let sortMode = store.get("heat.sort") || "heat";
 let curFile = null, query = "";
-document.getElementById("scale").value = scale;
 document.getElementById("sort").value = sortMode;
 Theme.splitter(document.getElementById("split"), treeEl, "heat.tree", 120);
 
@@ -111,7 +104,7 @@ for (const event of EVS) {
   const option = document.createElement("option");
   option.value = event.key;
   option.textContent =
-    event.key + (event.long ? " \\u2014 " + event.long : "");
+    event.key + (event.long ? " - " + event.long : "");
   evMaxLen = Math.max(evMaxLen, option.textContent.length);
   evSel.appendChild(option);
 }
@@ -191,19 +184,19 @@ if (DIFF) {
   const plainP = fmtP, plainH = fmtH;
   const mult = percent => percent / 100 < 99.99
     ? (percent / 100).toFixed(2) + "x" : ">1000x";
-  const body = percent => percent < 0.01 ? "\\u22480.00%"
+  const body = percent => percent < 0.01 ? "≈0.00%"
     : percent > 100 ? mult(percent) : plainP(percent);
-  const signed = (percent, text) => text[0] === ">" || text[0] === "\\u2248"
-    ? text : (percent < 0 ? "\\u2212" : "") + text;
-  fmtP = percent => percent ? (percent < 0 ? "\\u25bc" : "\\u25b2")
+  const signed = (percent, text) => text[0] === ">" || text[0] === "≈"
+    ? text : (percent < 0 ? "-" : "") + text;
+  fmtP = percent => percent ? (percent < 0 ? "▼" : "▲")
     + signed(percent, body(mag(percent))) : "";
   fmtH = value => !value ? "0"
-    : (value < 0 ? "\\u2212" : "") + plainH(mag(value));
+    : (value < 0 ? "-" : "") + plainH(mag(value));
   HOT = "Most changed";
   HOT_LINES = "most changed lines";
   SELF.title = "the line/function's own change against what it cost in"
-    + " the baseline; \\u25b2 is more, \\u25bc is less, \\u25bc\\u2212100%"
-    + " is gone entirely, \\u25b2100% is all new";
+    + " the baseline; ▲ is more, ▼ is less, ▼-100%"
+    + " is gone entirely, ▲100% is all new";
   baseOf = vector => {
     if (!vector) return null;
     const base = mag(currentEvent.get(vector));
@@ -219,6 +212,33 @@ const lineBase = (path, lineNumber) => {
 };
 const fnBase = funcIndex => baseOf(FN_BASE[funcIndex]);
 
+const scaleSel = document.getElementById("scale");
+const SCOPES = DIFF
+  ? [["line", "per line"]]
+  : [["global", "global"], ["file", "per file"],
+     ["function", "per function"]];
+const SCALES = [];
+["log", "linear"].forEach(curve => {
+  SCOPES.forEach(scope => SCALES.push({
+    value: curve + "/" + scope[0],
+    curve: curve,
+    scope: scope[0],
+    label: SCOPES.length > 1 ? curve + ", " + scope[1] : curve,
+  }));
+});
+let scale = SCALES.find(entry => entry.value === store.get("heat.scale"))
+  || SCALES[0];
+let scaleMaxLen = 0;
+SCALES.forEach(entry => {
+  const option = document.createElement("option");
+  option.value = entry.value;
+  option.textContent = entry.label;
+  scaleSel.appendChild(option);
+  scaleMaxLen = Math.max(scaleMaxLen, entry.label.length);
+});
+scaleSel.value = scale.value;
+scaleSel.style.width = (scaleMaxLen + 4) + "ch";
+
 const PMIN = 0.001;
 const PFULL = 100;
 function heatP(percent, maxP) {
@@ -229,7 +249,7 @@ function heatP(percent, maxP) {
     maxP = Math.min(maxP, PFULL);
   }
   if (percent <= 0) return 0;
-  if (scale === "linear") return sign * Math.min(1, percent / maxP);
+  if (scale.curve === "linear") return sign * Math.min(1, percent / maxP);
   if (percent < PMIN) return 0;
   const span = Math.log10(Math.max(maxP, PMIN * 10) / PMIN);
   return sign * Math.min(1, Math.log10(percent / PMIN) / span);
@@ -666,30 +686,24 @@ function renderFile(path, line) {
   curFile = path;
   revealInTree(path);
   const lines = file.lines;
-  let fileMax = 0, filePctMax = 0;
-  for (const [lineNumber, rec] of Object.entries(lines)) {
+  let fileMax = 0;
+  for (const rec of Object.values(lines)) {
     const self = mag(val(rec[0]));
     if (self > fileMax) fileMax = self;
-    if (DIFF) {
-      const base = lineBase(path, lineNumber);
-      filePctMax = Math.max(filePctMax, mag(pctOf(val(rec[0]), base)));
-    }
   }
-  const maxP = scale === "file"
-    ? Math.max(DIFF ? filePctMax : pct(fileMax), 0.0001) : MAXP;
+  const maxP = scale.scope === "line" ? PFULL
+    : scale.scope === "file" ? Math.max(pct(fileMax), 0.0001) : MAXP;
   const fnMaxP = {};
-  if (scale === "function") {
+  if (scale.scope === "function") {
     for (const [lineNumber, rec] of Object.entries(lines)) {
       const owner = file.lineFunction[lineNumber];
       if (owner == null) continue;
-      const share = DIFF
-        ? mag(pctOf(val(rec[0]), lineBase(path, lineNumber)))
-        : mag(pct(val(rec[0])));
-      fnMaxP[owner] = Math.max(fnMaxP[owner] || 0.0001, share);
+      fnMaxP[owner] = Math.max(fnMaxP[owner] || 0.0001,
+        mag(pct(val(rec[0]))));
     }
   }
   const maxPfor = lineNumber => {
-    if (scale !== "function") return maxP;
+    if (scale.scope !== "function") return maxP;
     const owner = file.lineFunction[lineNumber];
     return owner != null ? fnMaxP[owner] || 0.0001 : maxP;
   };
@@ -757,7 +771,7 @@ function renderFile(path, line) {
     const callsNote = HAS_CALLS
       ? `, ${fmtN(calls)} in calls${over}` : "";
     const inFn = funcIndex != null
-      ? " \\u2014 in " + fnName(funcIndex) : "";
+      ? " - in " + fnName(funcIndex) : "";
     const title = rec
       ? `${fmtN(self)} ${currentEvent.key} self${callsNote}${inFn}` : "";
     const cls = [rec ? "clickable" : "",
@@ -1102,7 +1116,7 @@ function detailOpen(path, lineNumber, row) {
       html += table("heat.detail.callers", cols, rows);
       textParts.push(heading + "\\n" + tableText(cols, rows));
     } else if (HAS_CALLS) {
-      const none = "(no recorded caller \\u2014 a root or a resolver stub)";
+      const none = "(no recorded caller - a root or a resolver stub)";
       html += `<div class="dim">${none}</div>`;
       textParts.push(heading + "\\n" + none);
     } else {
@@ -1200,7 +1214,7 @@ function route() {
   if (file && !files[file]) { file = null; line = 0; }
 
   const key = (file ? "file\\n" + file : "home")
-    + "\\n" + currentEvent.key + "\\n" + scale;
+    + "\\n" + currentEvent.key + "\\n" + scale.value;
   if (key !== shown) {
     shown = key;
     if (file) renderFile(file, line);
@@ -1227,9 +1241,9 @@ evSel.addEventListener("change", changeEvent => {
   location.hash = hashOf(
     Object.assign({}, state, { ev: changeEvent.target.value }));
 });
-document.getElementById("scale").addEventListener("change", changeEvent => {
-  scale = changeEvent.target.value;
-  store.set("heat.scale", scale);
+scaleSel.addEventListener("change", changeEvent => {
+  scale = SCALES.find(entry => entry.value === changeEvent.target.value);
+  store.set("heat.scale", scale.value);
   shown = "";
   route();
 });

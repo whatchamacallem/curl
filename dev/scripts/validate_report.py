@@ -29,8 +29,19 @@ _MIN_INDEX_BYTES = 2000
 _MIN_PAGE_BYTES = 500
 _MIN_RAW_BYTES = 100
 
-# Anything outside plain ASCII, which the sources are not allowed to contain.
-_NON_ASCII_RE = re.compile(r"[^\x00-\x7F]")
+# The diff vocabulary, spelled the same everywhere a reader sees it. These
+# are the only non-ASCII characters a source file may contain.
+_ALLOWED_UNICODE = (
+    "≈",  # almost equal to
+    "▲",  # up-pointing triangle
+    "▼",  # down-pointing triangle
+    "…",  # horizontal ellipsis
+)
+
+# Anything outside plain ASCII that is not in the allow list above.
+_NON_ASCII_RE = re.compile(
+    r"[^\x00-\x7F" + "".join(_ALLOWED_UNICODE) + r"]"
+)
 
 # Which files under dev/ the ASCII scan reads.
 _UNICODE_SCAN_EXTS = (".py", ".js", ".css", ".sh")
