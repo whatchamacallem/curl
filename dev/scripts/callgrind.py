@@ -11,7 +11,7 @@ from typing import Literal, NamedTuple, TypeAlias, TypeVar
 
 # One cost number per event, in the order the file's "events:" line names them.
 Costs: TypeAlias = list[int]
-# Where a source file came from, which decides whether the heat map can show it.
+# Where a source file came from, deciding whether the heat map shows it.
 Group = Literal["repo", "system", "external"]
 _Key = TypeVar("_Key")
 
@@ -389,7 +389,8 @@ class Callgrind:
         )
         if total and abs(ratio - 1.0) > 1e-6:
             sys.exit(
-                f"error: per-line self cost does not add up to callgrind's summary ({path})"
+                "error: per-line self cost does not add up to"
+                f" callgrind's summary ({path})"
             )
         return profile
 
@@ -401,7 +402,8 @@ class Callgrind:
         for other in profiles[1:]:
             if other.events != first.events:
                 sys.exit(
-                    f"error: cannot merge profiles with different events: {first.events} vs {other.events}"
+                    "error: cannot merge profiles with different events:"
+                    f" {first.events} vs {other.events}"
                 )
         merged = Profile(
             events=list(first.events),
@@ -651,7 +653,7 @@ def path_norm(path: str) -> PathInfo:
     return Callgrind().path_norm(path)
 
 
-# Read callgrind files into one profile, refusing any whose costs do not add up.
+# Read callgrind files into one profile, refusing any that do not add up.
 def profile_load(paths: Sequence[str]) -> Profile:
     return Callgrind().load(paths)
 

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# dev/perf2html_diff.sh [--verbose] [--keep-raw] [--regenerate] [baseline-dir] [modified-dir] [report-dir]
+# dev/perf2html_diff.sh [--verbose] [--keep-raw] [--regenerate]
+#     [baseline-dir] [modified-dir] [report-dir]
 set -euo pipefail
 SCRIPT="$(readlink -f "$0")"
 cd "$(dirname "$SCRIPT")"
@@ -9,9 +10,14 @@ REPORT_MANIFEST='curl/perf2html.sh v1'
 
 STAMP="$(date +%s)"
 
-usage_show() { awk 'NR > 1 && !/^#/ { exit } NR > 1 { sub(/^# ?/, ""); print }' "$SCRIPT"; }
+usage_show() {
+  awk 'NR > 1 && !/^#/ { exit } NR > 1 { sub(/^# ?/, ""); print }' "$SCRIPT"
+}
 
-path_display() { python3 -c 'import os,sys; print(os.path.relpath(sys.argv[1], sys.argv[2]))' "$1" "$PWD"; }
+path_display() {
+  python3 -c 'import os, sys
+print(os.path.relpath(sys.argv[1], sys.argv[2]))' "$1" "$PWD"
+}
 
 log_say() { if [ "$VERBOSE" = 1 ]; then echo "$@"; fi; }
 
@@ -94,17 +100,21 @@ args_parse() {
 manifest_check() {
   local dir="$1" role="$2" manifest="$1/MANIFEST.txt" version
   if [ ! -f "$manifest" ]; then
-    echo "error: $role report has no MANIFEST.txt, so it is not a recognized input: $dir" >&2
-    echo "       (perf2html.sh writes one; reports made before it did must be regenerated)" >&2
+    echo "error: $role report has no MANIFEST.txt, so it is not a" \
+      "recognized input: $dir" >&2
+    echo "       (perf2html.sh writes one; reports made before it did" \
+      "must be regenerated)" >&2
     exit 2
   fi
   version="$(head -1 "$manifest")"
   if [ "$version" = "$DIFF_MANIFEST" ]; then
-    echo "error: can't diff a diff -- the $role report was written by perf2html_diff.sh: $dir" >&2
+    echo "error: can't diff a diff -- the $role report was written by" \
+      "perf2html_diff.sh: $dir" >&2
     exit 2
   fi
   if [ "$version" != "$REPORT_MANIFEST" ]; then
-    echo "error: unrecognized file type -- $role report has an unrecognized MANIFEST.txt: $dir" >&2
+    echo "error: unrecognized file type -- $role report has an" \
+      "unrecognized MANIFEST.txt: $dir" >&2
     echo "       expected its first line to be: $REPORT_MANIFEST" >&2
     exit 2
   fi
@@ -124,7 +134,8 @@ profiles_list() {
   local dir="$1" raw test files
   for raw in "$dir"/raw "$dir"/*/raw; do
     [ -d "$raw" ] || continue
-    files=$(find "$raw" -maxdepth 1 -type f -name 'callgrind.out.*' | sort | tr '\n' ' ')
+    files=$(find "$raw" -maxdepth 1 -type f -name 'callgrind.out.*' \
+      | sort | tr '\n' ' ')
     [ -n "$files" ] || continue
     test="$(basename "$(dirname "$raw")")"
     [ "$test" = "$(basename "$dir")" ] && test=.
@@ -137,11 +148,13 @@ tests_pair() {
   base_tests="$(profiles_list "$BASE_DIR" | cut -d' ' -f1 | sort -u)"
   cur_tests="$(profiles_list "$MOD_DIR" | cut -d' ' -f1 | sort -u)"
   if [ -z "$base_tests" ]; then
-    echo "error: no */raw/callgrind.out.* files in the baseline report: $BASE_DIR" >&2
+    echo "error: no */raw/callgrind.out.* files in the baseline" \
+      "report: $BASE_DIR" >&2
     exit 2
   fi
   if [ -z "$cur_tests" ]; then
-    echo "error: no */raw/callgrind.out.* files in the modified report: $MOD_DIR" >&2
+    echo "error: no */raw/callgrind.out.* files in the modified" \
+      "report: $MOD_DIR" >&2
     exit 2
   fi
   for name in $(comm -23 <(echo "$base_tests") <(echo "$cur_tests")); do
@@ -154,7 +167,9 @@ tests_pair() {
 }
 
 profiles_of() {
-  profiles_list "$1" | awk -v want="$2" 'found { next } $1 == want { $1 = ""; print substr($0, 2); found = 1 }'
+  profiles_list "$1" | awk -v want="$2" \
+    'found { next }
+     $1 == want { $1 = ""; print substr($0, 2); found = 1 }'
 }
 
 diff_one() {
@@ -167,7 +182,8 @@ diff_one() {
 
   log_say "== [$name]: diff -> $diff_file =="
   [ "$VERBOSE" = 1 ] || printf '%-13sdiff' "$name"
-  args=(python3 scripts/callgrind_diff.py -o "$diff_file" --callers-output "$callers_file")
+  args=(python3 scripts/callgrind_diff.py -o "$diff_file"
+    --callers-output "$callers_file")
   # shellcheck disable=SC2086
   for file in $base_files; do args+=(--baseline "$file"); done
   # shellcheck disable=SC2086
@@ -175,7 +191,8 @@ diff_one() {
   test_run "${args[@]}"
 
   log_say "== [$name]: heat map -> $out/heat-map/index.html =="
-  test_run python3 scripts/callgrind_to_heatmap.py "$diff_file" -o "$out/heat-map/index.html" \
+  test_run python3 scripts/callgrind_to_heatmap.py "$diff_file" \
+    -o "$out/heat-map/index.html" \
     --title "$name / heat map" --diff
 
   log_say "== [$name]: index -> $out/index.html =="
@@ -185,7 +202,8 @@ diff_one() {
   raw_name="${raw_name%.*}"
   cp "$diff_file" "$out/raw/$raw_name"
   [ "$MULTI" = 1 ] && help_args=(--help-href ../README.md)
-  test_run python3 scripts/build_report.py test "$diff_file" -o "$out/index.html" --test "$name" --diff \
+  test_run python3 scripts/build_report.py test "$diff_file" \
+    -o "$out/index.html" --test "$name" --diff \
     --callers-data "$callers_file" \
     "${help_args[@]}"
   [ "$VERBOSE" = 1 ] || printf ' -> %s\n' "${out#"$PWD"/}/index.html"
@@ -204,7 +222,8 @@ main() {
   [ "$KEEP_RAW" = 1 ] || rm -rf trace
   if [ "$REGENERATE" = 1 ]; then
     local previous
-    previous="$(sed -n 's/^stamp=//p' "$OUT_DIR/MANIFEST.txt" 2>/dev/null | head -1)"
+    previous="$(sed -n 's/^stamp=//p' "$OUT_DIR/MANIFEST.txt" 2>/dev/null \
+      | head -1)"
     if [ -n "$previous" ]; then STAMP="$previous"; fi
   fi
   mkdir -p "$OUT_DIR" trace
@@ -216,7 +235,9 @@ main() {
     echo "modified=$(path_display "$MOD_DIR")"
     echo "stamp=$STAMP"
   } >"$OUT_DIR/MANIFEST.txt"
-  [ "$VERBOSE" = 1 ] || echo "dev/perf2html_diff.sh $STAMP: $BASE_DIR -> $MOD_DIR -> $OUT_DIR" >"$RUN_LOG"
+  [ "$VERBOSE" = 1 ] \
+    || echo "dev/perf2html_diff.sh $STAMP: $BASE_DIR -> $MOD_DIR ->" \
+      "$OUT_DIR" >"$RUN_LOG"
 
   local tests test_name args
   tests="$(tests_pair)"
@@ -227,7 +248,9 @@ main() {
   MULTI=1
   [ "$tests" = "." ] && MULTI=0
 
-  [ "$VERBOSE" = 1 ] || echo "dev/perf2html_diff.sh $STAMP: $(basename "$BASE_DIR") -> $(basename "$MOD_DIR")"
+  [ "$VERBOSE" = 1 ] \
+    || echo "dev/perf2html_diff.sh $STAMP: $(basename "$BASE_DIR") ->" \
+      "$(basename "$MOD_DIR")"
   if [ "$MULTI" = 0 ]; then
     local base_file test_name
     base_file="$(profiles_of "$BASE_DIR" .)"
@@ -245,7 +268,8 @@ main() {
     done
     log_say "== overview -> $OUT_DIR/index.html =="
     test_run python3 scripts/build_report.py overview "${args[@]}"
-    [ "$VERBOSE" = 1 ] || printf '%-13s%s\n' overview "${OUT_DIR#"$PWD"/}/index.html"
+    [ "$VERBOSE" = 1 ] \
+      || printf '%-13s%s\n' overview "${OUT_DIR#"$PWD"/}/index.html"
   fi
 
   if [ "$KEEP_RAW" != 1 ]; then rm -rf trace; fi

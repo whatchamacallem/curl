@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# dev/perf2html_batch.sh [--verbose] [--keep] [--keep-raw] [--regenerate] [cmake_flags...]
+# dev/perf2html_batch.sh [--verbose] [--keep] [--keep-raw] [--regenerate]
+#     [cmake_flags...]
 set -uo pipefail
 SCRIPT="$(readlink -f "$0")"
 cd "$(dirname "$SCRIPT")"
@@ -12,11 +13,17 @@ DEFAULT_FLAGS=(-D CMAKE_C_FLAGS=-Os)
 STAMP="$(date +%s)"
 RUN_LOG="$PWD/trace/perf2html_batch.$STAMP.log"
 
-usage_show() { awk 'NR > 1 && !/^#/ { exit } NR > 1 { sub(/^# ?/, ""); print }' "$SCRIPT"; }
+usage_show() {
+  awk 'NR > 1 && !/^#/ { exit } NR > 1 { sub(/^# ?/, ""); print }' "$SCRIPT"
+}
 
 took() {
   local seconds=$((SECONDS - $1))
-  if [ "$seconds" -ge 60 ]; then echo "$((seconds / 60))m$((seconds % 60))s"; else echo "${seconds}s"; fi
+  if [ "$seconds" -ge 60 ]; then
+    echo "$((seconds / 60))m$((seconds % 60))s"
+  else
+    echo "${seconds}s"
+  fi
 }
 
 step_run() {
@@ -88,7 +95,8 @@ args_parse() {
 lint_run() {
   command -v pyright >/dev/null 2>&1 \
     || {
-      echo "error: pyright not found (pip3 install --user --break-system-packages pyright)" >&2
+      echo "error: pyright not found (pip3 install --user" \
+        "--break-system-packages pyright)" >&2
       return 1
     }
   local status=0
@@ -126,20 +134,25 @@ main() {
   FAILED=()
   local verbose_args=()
   [ "$VERBOSE" = 1 ] && verbose_args=(--verbose)
-  [ "$VERBOSE" = 1 ] || echo "dev/perf2html_batch.sh $STAMP: ${CMAKE_FLAGS[*]}" >"$RUN_LOG"
+  [ "$VERBOSE" = 1 ] \
+    || echo "dev/perf2html_batch.sh $STAMP: ${CMAKE_FLAGS[*]}" >"$RUN_LOG"
   echo "dev/perf2html_batch.sh $STAMP: modified build flags: ${CMAKE_FLAGS[*]}"
 
   [ "$KEEP" = 1 ] || reports_clean
   step_run 1 lint lint_run
-  step_run 2 baseline ./perf2html.sh "${verbose_args[@]}" "${child_args[@]}" "--report=$BASE_DIR"
-  step_run 3 modified ./perf2html.sh "${verbose_args[@]}" "${child_args[@]}" "--report=$MOD_DIR" "${CMAKE_FLAGS[@]}"
-  step_run 4 diff ./perf2html_diff.sh "${verbose_args[@]}" "${child_args[@]}" "$BASE_DIR" "$MOD_DIR" "$DIFF_DIR"
+  step_run 2 baseline ./perf2html.sh "${verbose_args[@]}" \
+    "${child_args[@]}" "--report=$BASE_DIR"
+  step_run 3 modified ./perf2html.sh "${verbose_args[@]}" \
+    "${child_args[@]}" "--report=$MOD_DIR" "${CMAKE_FLAGS[@]}"
+  step_run 4 diff ./perf2html_diff.sh "${verbose_args[@]}" \
+    "${child_args[@]}" "$BASE_DIR" "$MOD_DIR" "$DIFF_DIR"
   step_run 5 validate validate_all
 
   if [ "$STATUS" != 0 ]; then
     echo "perf2html_batch: ${#FAILED[@]} step(s) failed: ${FAILED[*]}" >&2
     if [ "$RAW_KEEP" = 0 ]; then
-      echo "perf2html_batch: dev/trace/ kept for diagnosis (a clean run deletes it)" >&2
+      echo "perf2html_batch: dev/trace/ kept for diagnosis (a clean run" \
+        "deletes it)" >&2
     fi
     return 1
   fi

@@ -5,26 +5,30 @@ body { background: var(--bg); color: var(--fg); font: 12px/1.5 var(--font); }
 a { color: var(--link); text-decoration: none; }
 a:hover { text-decoration: underline; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-h2 { font-size: 12px; font-weight: 600; color: var(--fg-dim); margin: 22px 0 6px; }
+h2 { font-size: 12px; font-weight: 600; color: var(--fg-dim);
+  margin: 22px 0 6px; }
 p { margin: 4px 0; color: var(--muted); max-width: 96ch; }
 b { color: var(--fg); font-weight: 600; }
 pre { font: inherit; margin: 0; white-space: pre; overflow-x: auto; }
 
-select, input { font: inherit; color: var(--fg); background: var(--bg); padding: 2px 6px;
-  border: 0; border-radius: 0; }
+select, input { font: inherit; color: var(--fg); background: var(--bg);
+  padding: 2px 6px; border: 0; border-radius: 0; }
 
 
 .strip { display: flex; flex-wrap: nowrap; align-items: center; flex: none;
   padding: 5px 12px; background: var(--nav); overflow: hidden; }
-.strip a { padding: 2px 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  max-width: 40ch; flex: none; }
+.strip a { padding: 2px 6px; white-space: nowrap; overflow: hidden;
+  text-overflow: ellipsis; max-width: 40ch; flex: none; }
 .strip .sep { flex: none; margin: 0 8px; color: var(--muted); }
-.strip a:hover { background: var(--link); color: var(--nav); text-decoration: none; }
+.strip a:hover { background: var(--link); color: var(--nav);
+  text-decoration: none; }
 .strip a.on { background: var(--hot); color: var(--hot-fg); }
 
-.strip .title { font-size: 13px; font-weight: 600; color: var(--title-fg); background: var(--title-bg);
+.strip .title { font-size: 13px; font-weight: 600;
+  color: var(--title-fg); background: var(--title-bg);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  padding: 3px 8px; margin: -5px 6px -5px -12px; align-self: stretch; display: flex; align-items: center;
+  padding: 3px 8px; margin: -5px 6px -5px -12px; align-self: stretch;
+  display: flex; align-items: center;
   flex: none; width: var(--title-w); }
 .strip .sp { flex: 1 0 0; min-width: 0; }
 
@@ -34,25 +38,30 @@ select, input { font: inherit; color: var(--fg); background: var(--bg); padding:
 html:has(body.frame), body.frame { overflow: hidden; }
 body.frame { display: flex; flex-direction: column; height: 100vh; }
 body.frame > main { flex: 1; min-height: 0; overflow: auto; }
-body.frame > iframe { flex: 1; min-height: 0; width: 100%; border: 0; background: var(--bg); }
+body.frame > iframe { flex: 1; min-height: 0; width: 100%; border: 0;
+  background: var(--bg); }
 .page { padding: 24px 36px 48px; }
 
 
 .tbl { position: relative; width: fit-content; margin: 4px 14px 14px 0; }
 .band { position: sticky; top: 0; z-index: 2; }
 .tbl-cols { position: relative; width: fit-content; }
-table.cols { table-layout: fixed; border-collapse: separate; border-spacing: 0; width: 0; }
+table.cols { table-layout: fixed; border-collapse: separate;
+  border-spacing: 0; width: 0; }
 table.cols col.alt { background: var(--bg-alt); }
-table.cols th, table.cols td { padding: 1px 1ch; white-space: nowrap; overflow: hidden;
-  text-overflow: ellipsis; vertical-align: top; border: 0; }
-table.cols th { position: sticky; top: 0; z-index: 1; text-align: left; font-weight: 600;
-  color: var(--fg-dim); background: var(--panel); }
+table.cols th, table.cols td { padding: 1px 1ch; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; vertical-align: top;
+  border: 0; }
+table.cols th { position: sticky; top: 0; z-index: 1; text-align: left;
+  font-weight: 600; color: var(--fg-dim); background: var(--panel); }
 table.cols .n { text-align: right; font-variant-numeric: tabular-nums; }
 table.cols .dim { color: var(--muted); }
 
-.bar { position: absolute; top: 0; bottom: 0; width: 9px; margin-left: -5px; z-index: 1;
-  cursor: col-resize; touch-action: none; }
-.bar::before { content: ""; position: absolute; top: 0; bottom: 0; left: 2.5px; width: 4px; }
+.bar { position: absolute; top: 0; bottom: 0; width: 9px;
+  margin-left: -5px; z-index: 1; cursor: col-resize;
+  touch-action: none; }
+.bar::before { content: ""; position: absolute; top: 0; bottom: 0;
+  left: 2.5px; width: 4px; }
 .bar:hover::before, .bar.active::before { background: var(--bar); }
 
 .bar:last-child { margin-left: -9px; }
@@ -65,12 +74,15 @@ details.sec summary { cursor: pointer; color: var(--fg-dim); }
 details.sec summary::marker { color: var(--fg-dim); }
 details.sec summary h2 { display: inline; margin: 22px 0 6px; color: inherit; }
 details.sec[open] summary { margin-bottom: 2px; }
-pre.logbox { padding: 8px 12px; background: var(--panel); max-height: 60vh; overflow: auto; }
+pre.logbox { padding: 8px 12px; background: var(--panel); max-height: 60vh;
+  overflow: auto; }
 
 
-.split { flex: none; width: 7px; cursor: col-resize; touch-action: none; background: none; }
+.split { flex: none; width: 7px; cursor: col-resize; touch-action: none;
+  background: none; }
 .split:hover, .split.active {
-  background: linear-gradient(90deg, transparent 1.5px, var(--bar) 1.5px, var(--bar) 5.5px, transparent 5.5px); }
+  background: linear-gradient(90deg, transparent 1.5px, var(--bar) 1.5px,
+    var(--bar) 5.5px, transparent 5.5px); }
 
 
 * { scrollbar-color: var(--blue) var(--bg); }
@@ -80,4 +92,5 @@ pre.logbox { padding: 8px 12px; background: var(--panel); max-height: 60vh; over
 ::-webkit-scrollbar-corner { background: var(--bg); }
 
 pre.logbox { scrollbar-color: var(--blue) var(--panel); }
-pre.logbox::-webkit-scrollbar-track, pre.logbox::-webkit-scrollbar-corner { background: var(--panel); }
+pre.logbox::-webkit-scrollbar-track,
+pre.logbox::-webkit-scrollbar-corner { background: var(--panel); }

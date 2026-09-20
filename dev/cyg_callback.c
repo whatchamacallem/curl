@@ -1,10 +1,12 @@
-/* dev/cyg_callback.c -- enter/exit recorder for a -finstrument-functions build.
+/* dev/cyg_callback.c -- enter/exit recorder for an
+ * -finstrument-functions build.
  *
  * Linked into the perf executable by dev/perf2html.sh and exported
  * (-Wl,--export-dynamic), so libcurl.so binds to this copy of the hooks
  * instead of glibc's empty ones. Single-threaded, like the perf tests.
  *
- *   PERF_TRACE_OUT=FILE   write the trace here at exit; unset = nothing is recorded
+ *   PERF_TRACE_OUT=FILE   write the trace here at exit; unset records
+ *                         nothing
  *   PERF_TRACE_SKIP=N     let the first N events pass without recording them
  *
  * While sampling, the hook is a range check, two stores and a pointer bump:

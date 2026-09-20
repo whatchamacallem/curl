@@ -3,6 +3,10 @@
 #
 # Formats every dev/ source to 79 columns: *.sh with shfmt, scripts/*.py with
 # ruff, *.c/*.h with clang-format, *.md with mdformat. No path = all of dev/.
+# Any line still over 79 after that is an error: it prints file:line, the
+# width and the whole line, and exits 1. No formatter reaches those -- a
+# heredoc, an embedded JS/CSS string, a fenced block -- so they are rewritten
+# by hand.
 # --check reports what would change and exits 1 instead of writing.
 # cwd-independent: paths are relative to dev/, like the perf2html scripts.
 set -uo pipefail
@@ -131,15 +135,16 @@ long_lines_report() {
   if [ "${#files[@]}" = 0 ]; then return 0; fi
   local over
   over="$(awk -v max="$COLUMNS_MAX" \
-    'length > max { print FILENAME ":" FNR ": " length " cols" }' \
+    'length > max { print FILENAME ":" FNR ": " length " cols\n  " $0 }' \
     "${files[@]}")"
   if [ -z "$over" ]; then
     printf '%-12s| ok      | none over %s\n' "columns" "$COLUMNS_MAX"
     return 0
   fi
-  printf '%-12s| note    | %s line(s) over %s\n' \
-    "columns" "$(echo "$over" | wc -l)" "$COLUMNS_MAX"
+  printf '%-12s| TOO_LONG| %s line(s) over %s\n' \
+    "columns" "$(echo "$over" | grep -c ' cols$')" "$COLUMNS_MAX"
   echo "$over" >&2
+  STATUS=1
 }
 
 args_parse() {

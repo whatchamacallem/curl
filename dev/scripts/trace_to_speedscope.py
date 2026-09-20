@@ -160,8 +160,8 @@ class TraceToSpeedscope:
                 first = open_records.pop()
                 if trace.functions[first] != function:
                     sys.exit(
-                        f"error: record {record}: exit of {function:#x} closes "
-                        f"{trace.functions[first]:#x}"
+                        f"error: record {record}: exit of {function:#x}"
+                        f" closes {trace.functions[first]:#x}"
                     )
                 if not open_records:
                     runs[-1].append(TraceToSpeedscope.CallSpan(first, record))
@@ -195,8 +195,9 @@ class TraceToSpeedscope:
                 }
             )
         profile_name = (
-            f"rdtsc trace (-finstrument-functions), {len(calls)} calls, events "
-            f"{trace.skip + first + 1:,}..{trace.skip + last + 1:,} of {trace.seen:,}"
+            f"rdtsc trace (-finstrument-functions), {len(calls)} calls,"
+            f" events {trace.skip + first + 1:,}"
+            f"..{trace.skip + last + 1:,} of {trace.seen:,}"
         )
         return {
             "$schema": _SCHEMA,
@@ -273,8 +274,8 @@ class TraceToSpeedscope:
         records = words[_HEADER_WORDS:]
         if len(records) != kept * _RECORD_WORDS or t1_ns <= t0_ns:
             sys.exit(
-                f"error: {trace_file}: truncated, or no time passed between its "
-                "two clock readings"
+                f"error: {trace_file}: truncated, or no time passed"
+                " between its two clock readings"
             )
         return TraceToSpeedscope.TraceRecording(
             seen=seen,
@@ -313,15 +314,16 @@ class TraceToSpeedscope:
     def run(self, args: TraceToSpeedscope.TraceArgs) -> None:
         trace = self.load(args.trace_file)
         print(
-            f"{args.trace_file}: {trace.seen:,} events in the run, {trace.skip:,} skipped, "
-            f"{len(trace.functions):,} kept, {trace.tsc_per_ns:.6f} tsc/ns",
+            f"{args.trace_file}: {trace.seen:,} events in the run,"
+            f" {trace.skip:,} skipped, {len(trace.functions):,} kept,"
+            f" {trace.tsc_per_ns:.6f} tsc/ns",
             file=sys.stderr,
         )
         calls = self.calls(trace)[:_MAX_CALLS]
         if not calls:
             sys.exit(
-                f"error: {args.trace_file}: no call both starts and ends inside "
-                "the kept events"
+                f"error: {args.trace_file}: no call both starts and ends"
+                " inside the kept events"
             )
         frames = self.frames(
             args.trace_file,
@@ -389,8 +391,8 @@ class TraceToSpeedscope:
             if segment.offset <= offset < segment.offset + segment.size:
                 return offset - segment.offset + segment.address
         sys.exit(
-            f"error: {address:#x} (file offset {offset:#x}) is in no LOAD segment "
-            f"of {mapping.path}"
+            f"error: {address:#x} (file offset {offset:#x}) is in no"
+            f" LOAD segment of {mapping.path}"
         )
 
 

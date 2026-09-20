@@ -24,30 +24,39 @@ _EVENT = "Ir"
 FRAME_JS = """\
 
 (function () {
-  const bar = document.getElementById("bar"), home = document.getElementById("home"), view = document.getElementById("view");
-  const titleElement = document.getElementById("title"), links = [...bar.querySelectorAll("a[data-view]")];
-  const util = document.getElementById("util"), framed = window.parent !== window;
+  const bar = document.getElementById("bar");
+  const home = document.getElementById("home");
+  const view = document.getElementById("view");
+  const titleElement = document.getElementById("title");
+  const links = [...bar.querySelectorAll("a[data-view]")];
+  const util = document.getElementById("util");
+  const framed = window.parent !== window;
   let page = "", state = "", title = titleElement.textContent;
   function setTitle(newTitle) {
     title = newTitle;
     titleElement.textContent = framed ? "" : newTitle;
     document.title = newTitle;
-    if (framed) window.parent.postMessage({ theme: "title", title: newTitle }, "*");
+    if (!framed) return;
+    window.parent.postMessage({ theme: "title", title: newTitle }, "*");
   }
 
   function parse(hash) {
     const match = /^#([\\w-]*)(?:\\/(.*))?$/.exec(hash || "");
     return match ? [match[1], match[2] ? "#" + match[2] : ""] : ["", ""];
   }
-  const build = (key, sub) => key ? "#" + key + (sub ? "/" + sub.slice(1) : "") : "";
+  const build = (key, sub) =>
+    key ? "#" + key + (sub ? "/" + sub.slice(1) : "") : "";
   function sync(hash) {
     if (hash !== location.hash) history.replaceState(null, "", hash || "#");
     if (framed) window.parent.postMessage({ theme: "hash", hash: hash }, "*");
   }
   function show(hash) {
     const [key, sub] = parse(hash);
-    const link = links.find(anchor => anchor.dataset.view === key), current = link || links[0];
-    for (const anchor of links) anchor.classList.toggle("on", anchor === current);
+    const link = links.find(anchor => anchor.dataset.view === key);
+    const current = link || links[0];
+    for (const anchor of links) {
+      anchor.classList.toggle("on", anchor === current);
+    }
     setTitle(current.dataset.title);
     util.hidden = !framed && !!(link && key && link.dataset.frame);
     if (!link || !key) {
@@ -56,8 +65,9 @@ FRAME_JS = """\
       sync(""); return;
     }
     const href = link.getAttribute("href");
-    if (href !== page || sub !== state) view.contentWindow.location.replace(href + (sub || "#"));
-    else view.contentWindow.postMessage("theme:title?", "*");
+    if (href !== page || sub !== state) {
+      view.contentWindow.location.replace(href + (sub || "#"));
+    } else view.contentWindow.postMessage("theme:title?", "*");
     page = href; state = sub;
     home.hidden = true; view.hidden = false;
     sync(build(key, sub));
@@ -83,9 +93,12 @@ FRAME_JS = """\
   });
   document.addEventListener("click", event => {
     const anchor = event.target.closest("a[href]");
-    if (!anchor || anchor === resetCols || anchor.target || event.ctrlKey || event.metaKey || event.shiftKey || event.button) return;
+    if (!anchor || anchor === resetCols || anchor.target) return;
+    if (event.ctrlKey || event.metaKey || event.shiftKey) return;
+    if (event.button) return;
     const href = anchor.getAttribute("href");
-    const hash = anchor.dataset.view != null ? build(anchor.dataset.view, "") : hashFor(href);
+    const hash = anchor.dataset.view != null
+      ? build(anchor.dataset.view, "") : hashFor(href);
     if (hash == null) return;
     event.preventDefault();
     if (hash === (location.hash || "")) show(hash); else location.hash = hash;
@@ -276,7 +289,11 @@ class BuildReport:
             )
             parts.append(text)
             href = self.entry_link(profile, delta.function)
-            label = f"{theme.num_signed(delta.cost)} {html_escape(delta.function)}{html_escape(count_text)}"
+            label = (
+                f"{theme.num_signed(delta.cost)}"
+                f" {html_escape(delta.function)}"
+                f"{html_escape(count_text)}"
+            )
             html_parts.append(
                 f'<a href="{href}">{label}</a>' if href else label
             )
@@ -291,7 +308,8 @@ class BuildReport:
         call_count: int,
     ) -> str:
         href = self.entry_link(profile, caller_name)
-        label = f"{html_escape(caller_name)} ({theme.num_pct(100.0 * count / call_count)})"
+        share = theme.num_pct(100.0 * count / call_count)
+        label = f"{html_escape(caller_name)} ({share})"
         return f'<a href="{href}">{label}</a>' if href else label
 
     def callers_data_load(
@@ -349,14 +367,15 @@ class BuildReport:
             ),
             Column(
                 "% self",
-                f"the function's own {_EVENT} delta, as a share of every line's {_EVENT} change "
-                "added up. + is more than the baseline, - is less",
+                f"the function's own {_EVENT} delta, as a share of every"
+                f" line's {_EVENT} change added up. + is more than the"
+                " baseline, - is less",
                 numeric=True,
             ),
             Column(
                 "symbol",
-                f"the function, first {_SYMBOL_CHARS} characters (drag the bar for more); "
-                "opens the heat map at its first line",
+                f"the function, first {_SYMBOL_CHARS} characters (drag"
+                " the bar for more); opens the heat map at its first line",
                 width=_SYMBOL_CHARS,
             ),
             Column(_EVENT, f"the signed {_EVENT} delta itself", numeric=True),
@@ -391,7 +410,8 @@ class BuildReport:
                     Cell(
                         ranked_function.function,
                         title=ranked_function.function,
-                        html=f'<a href="{href}">{html_escape(ranked_function.function)}</a>'
+                        html=f'<a href="{href}">'
+                        f"{html_escape(ranked_function.function)}</a>"
                         if href
                         else None,
                     ),
@@ -427,7 +447,8 @@ class BuildReport:
             Column(_EVENT, f"the whole run's {_EVENT} delta", numeric=True),
             Column(
                 "% of change",
-                f"that delta against every function's {_EVENT} change added up",
+                f"that delta against every function's {_EVENT} change"
+                " added up",
                 numeric=True,
             ),
             Column(
@@ -448,7 +469,8 @@ class BuildReport:
             )
             link = Cell(
                 test.name,
-                html=f'<a href="{html_escape(test.name)}/index.html">{html_escape(test.name)}</a>',
+                html=f'<a href="{html_escape(test.name)}/index.html">'
+                f"{html_escape(test.name)}</a>",
             )
             if not files:
                 rows.append([link, "", "", ""])
@@ -532,13 +554,14 @@ class BuildReport:
             Column("#", "rank", numeric=True),
             Column(
                 "% self",
-                f"share of all {_EVENT} spent in the function itself, not in what it calls",
+                f"share of all {_EVENT} spent in the function itself,"
+                " not in what it calls",
                 numeric=True,
             ),
             Column(
                 "symbol",
-                f"the function, first {_SYMBOL_CHARS} characters (drag the bar for more). "
-                "opens the heat map at its first line",
+                f"the function, first {_SYMBOL_CHARS} characters (drag"
+                " the bar for more). opens the heat map at its first line",
                 width=_SYMBOL_CHARS,
             ),
             Column(
@@ -549,8 +572,8 @@ class BuildReport:
             Column("calls", "times the function was entered", numeric=True),
             Column(
                 "callers",
-                "who called it, with the share of those calls. cut off at the edge, "
-                "hover for all",
+                "who called it, with the share of those calls. cut off"
+                " at the edge, hover for all",
                 grow=True,
             ),
         ]
@@ -587,7 +610,8 @@ class BuildReport:
                     Cell(
                         ranked_function.function,
                         title=ranked_function.function,
-                        html=f'<a href="{href}">{html_escape(ranked_function.function)}</a>'
+                        html=f'<a href="{href}">'
+                        f"{html_escape(ranked_function.function)}</a>"
                         if href
                         else None,
                     ),
@@ -680,7 +704,10 @@ class BuildReport:
     def log_block(self, path: str) -> str:
         lines = self.file_read(path).rstrip().split("\n")[_LOG_SKIP_LINES:]
         text = "\n".join(_PID_PREFIX.sub("", line) for line in lines)
-        return f'<div class="tbl"><pre class="logbox">{html_escape(text)}</pre></div>'
+        return (
+            f'<div class="tbl"><pre class="logbox">{html_escape(text)}'
+            "</pre></div>"
+        )
 
     def log_section(self, paths: Sequence[str]) -> str:
         if not paths:
@@ -700,7 +727,10 @@ class BuildReport:
         if not path:
             return ""
         output = self.time_humanize(self.file_read(path).rstrip())
-        body = f'<div class="tbl"><pre class="logbox">{html_escape(output)}</pre></div>'
+        body = (
+            f'<div class="tbl"><pre class="logbox">{html_escape(output)}'
+            "</pre></div>"
+        )
         return (
             f'<details class="sec"><summary><h2>{title}</h2></summary>'
             + body
@@ -731,7 +761,8 @@ class BuildReport:
             [
                 Cell(
                     test.name,
-                    html=f'<a href="{html_escape(test.name)}/index.html">{html_escape(test.name)}</a>',
+                    html=f'<a href="{html_escape(test.name)}/index.html">'
+                    f"{html_escape(test.name)}</a>",
                 )
             ]
             + [numbers[test.name].get(key, "") for key in keys]
@@ -771,7 +802,10 @@ class BuildReport:
         body += "<h2>test suites</h2>" + theme.table_render(
             "overview.tests", columns, rows
         )
-        body += '</div></main><iframe id="view" hidden title="report page"></iframe>'
+        body += (
+            '</div></main><iframe id="view" hidden'
+            ' title="report page"></iframe>'
+        )
         self.page_write(
             args.output,
             theme.page_document(
@@ -803,11 +837,15 @@ class BuildReport:
         if not paths:
             return ""
         items = "".join(
-            f'<li><a href="{html_escape(os.path.relpath(path, out_dir))}" target="_blank">'
+            f'<li><a href="{html_escape(os.path.relpath(path, out_dir))}"'
+            ' target="_blank">'
             f"{html_escape(os.path.basename(path))}</a></li>"
             for path in paths
         )
-        return f'<details class="sec"><summary><h2>raw data</h2></summary><ul class="rawdata">{items}</ul></details>'
+        return (
+            '<details class="sec"><summary><h2>raw data</h2></summary>'
+            f'<ul class="rawdata">{items}</ul></details>'
+        )
 
     def report_page(
         self,
@@ -833,7 +871,10 @@ class BuildReport:
             body += self.log_section(args.log)
         body += self.rawdata_section(args.raw_data, out_dir)
         body += f"<h2>{heading}</h2>" + table
-        body += '</div></main><iframe id="view" hidden title="report page"></iframe>'
+        body += (
+            '</div></main><iframe id="view" hidden'
+            ' title="report page"></iframe>'
+        )
         self.page_write(
             args.output,
             theme.page_document(
@@ -853,8 +894,10 @@ class BuildReport:
             if index:
                 parts.append(separator)
             parts.append(
-                f'<a href="{html_escape(link.href)}" data-view="{html_escape(link.key)}" '
-                f'data-title="{html_escape(link.title)}"{" data-frame=1" if link.frame else ""}>'
+                f'<a href="{html_escape(link.href)}"'
+                f' data-view="{html_escape(link.key)}"'
+                f' data-title="{html_escape(link.title)}"'
+                f"{' data-frame=1' if link.frame else ''}>"
                 f"{html_escape(link.label)}</a>"
             )
         parts.append('<span class="sp"></span>')
@@ -866,7 +909,8 @@ class BuildReport:
         )
         parts.append(separator)
         parts.append(
-            f'<a href="{_PERF_CHART}" target="_blank" rel="noopener">curl.se/perf</a>'
+            f'<a href="{_PERF_CHART}" target="_blank" rel="noopener">'
+            "curl.se/perf</a>"
         )
         parts.append("</span>")
         return f'<nav id="bar" class="strip">{"".join(parts)}</nav>'
@@ -938,14 +982,16 @@ def main() -> None:
         "--perf-log",
         default="",
         metavar="FILE",
-        help="the perf tool's captured stdout, shown in a collapsed 'perf log' section",
+        help="the perf tool's captured stdout, shown in a collapsed"
+        " 'perf log' section",
     )
     test_parser.add_argument(
         "--trace-log",
         default="",
         metavar="FILE",
-        help="the native trace run's captured output (flame-graph/output.txt), shown in a "
-        "collapsed 'trace log' section; without it the page has no flame graph link",
+        help="the native trace run's captured output"
+        " (flame-graph/output.txt), shown in a collapsed 'trace log'"
+        " section; without it the page has no flame graph link",
     )
     test_parser.add_argument(
         "--no-log",
@@ -955,13 +1001,15 @@ def main() -> None:
     test_parser.add_argument(
         "--help-href",
         default="README.md",
-        help="the strip's 'help' target, relative to this page (default: README.md. "
+        help="the strip's 'help' target, relative to this page"
+        " (default: README.md. "
         "a per-test page under an overview needs ../README.md)",
     )
     test_parser.add_argument(
         "--diff",
         action="store_true",
-        help="the callgrind file is a callgrind_diff.py delta: rank by |change|, print "
+        help="the callgrind file is a callgrind_diff.py delta: rank by"
+        " |change|, print "
         "signed numbers, and drop the views a diff has no data for",
     )
     test_parser.add_argument(
@@ -984,7 +1032,8 @@ def main() -> None:
         action="append",
         metavar="NAME",
         required=True,
-        help="a test, whose report directory sits next to the output (repeatable)",
+        help="a test, whose report directory sits next to the output"
+        " (repeatable)",
     )
     overview_parser.add_argument(
         "--header", action="append", metavar="LABEL=VALUE", default=[]
@@ -993,7 +1042,8 @@ def main() -> None:
         "--header-file",
         default="",
         metavar="FILE",
-        help="a file of LABEL=VALUE lines, appended to the --header rows. any other "
+        help="a file of LABEL=VALUE lines, appended to the --header rows."
+        " any other "
         "line (a MANIFEST.txt version line) is ignored",
     )
     overview_parser.add_argument(
@@ -1001,13 +1051,15 @@ def main() -> None:
         action="append",
         metavar="LABEL=FILE",
         default=[],
-        help="a further header table under its own heading, read from such a file "
+        help="a further header table under its own heading, read from"
+        " such a file "
         "(repeatable)",
     )
     overview_parser.add_argument(
         "--diff",
         action="store_true",
-        help="the reports are callgrind_diff.py deltas: summarize each test's change "
+        help="the reports are callgrind_diff.py deltas: summarize each"
+        " test's change "
         "instead of its native timing, which a diff does not have",
     )
 

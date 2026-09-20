@@ -21,9 +21,12 @@
 ## Commands
 
 ```sh
-dev/perf2html.sh [--verbose] [--keep-raw] [--regenerate] [--report=DIR] [cmake_flags...]
-dev/perf2html_diff.sh [--verbose] [--keep-raw] [--regenerate] [baseline-dir] [modified-dir] [report-dir]
-dev/perf2html_batch.sh [--verbose] [--keep] [--keep-raw] [--regenerate] [cmake_flags...]
+dev/perf2html.sh [--verbose] [--keep-raw] [--regenerate] [--report=DIR]
+    [cmake_flags...]
+dev/perf2html_diff.sh [--verbose] [--keep-raw] [--regenerate]
+    [baseline-dir] [modified-dir] [report-dir]
+dev/perf2html_batch.sh [--verbose] [--keep] [--keep-raw] [--regenerate]
+    [cmake_flags...]
 ```
 
 **Iterating on generators: `dev/perf2html_batch.sh --regenerate`** — rebuilds
@@ -95,16 +98,20 @@ Key behaviors worth knowing before touching them:
 
 ```text
 OUTDIR/
-index.html          overview: strip + header table + "test suites" table (one row per
-                    test, its native timing numbers, name links to its report)
-<test>/index.html   summary: strip + collapsed perf log / trace log / valgrind log /
-                    raw-data links + "top 50 functions by self"
+index.html          overview: strip + header table + "test suites" table
+                    (one row per test, its native timing numbers, name
+                    links to its report)
+<test>/index.html   summary: strip + collapsed perf log / trace log /
+                    valgrind log / raw-data links + "top 50 functions
+                    by self"
 <test>/flame-graph/ speedscope bundle + profile.js (recorded rdtsc trace)
 <test>/heat-map/    per-line source heat map
 <test>/perf-tool/   output.txt only (rendered as the summary's "perf log")
-<test>/raw/         callgrind file (repo root stripped) + the trace's speedscope JSON
+<test>/raw/         callgrind file (repo root stripped) + the trace's
+                    speedscope JSON
 all/                every test's callgrind data merged, same shape
-README.md           glossary + notes; copied from dev/README.md every run ("help" link)
+README.md           glossary + notes; copied from dev/README.md every
+                    run ("help" link)
 MANIFEST.txt        line 1 = version string; then LABEL=VALUE header rows
 ```
 
@@ -157,11 +164,24 @@ generator. Keep the split: `BuildReport.test`/`.functions_table` core vs
 ## `dev/scripts/` conventions
 
 **79 columns is the hard max** for every line of `dev/` source — code and
-comment alike, in every language. `scripts/reformat.sh` enforces it; the lines
-no formatter can reach are categorized in `lines.txt`. Not to be confused with
-the **80-column source *view*** in the heat map (`SRC_COLS`, `MM_MIN_COLS`),
-which is the standard width the profiled `lib/` source is rendered at — that
-stays 80 and has nothing to do with how `dev/` is written.
+comment alike, in every language. `scripts/reformat.sh` enforces it, and a line
+still over 79 after the formatters run is an **error**, not a note:
+`long_lines_report` prints `file:line`, the width and the whole line, and the
+script exits 1. The formatters cannot reach those lines — embedded JS/CSS in a
+Python string literal, `echo` text in a shell script, a fenced block in `.md` —
+so they are rewrapped by hand. Whole tree is at 0.
+
+Rewrapping an embedded block changes every generated page (the CSS and JS are
+inlined into each one), so a page diff after such an edit is expected;
+`perf2html_batch.sh --regenerate` then a diff against a snapshot is how you
+check that only the inlined `<style>`/`<script>` moved. Text a script `echo`s
+into `perf-tool/output.txt` is *page content*, so rewrapping it does change the
+report — split it into extra `#` lines rather than letting it overflow.
+
+Not to be confused with the **80-column source *view*** in the heat map
+(`SRC_COLS`, `MM_MIN_COLS`), which is the standard width the profiled `lib/`
+source is rendered at — that stays 80 and has nothing to do with how `dev/` is
+written.
 
 **Comments: short, tech-writer style, never docstrings.** Every class and
 function gets one `# <Name> - what it is` line above it, wrapped to a second
@@ -265,7 +285,8 @@ it per source line; the flame graph shows inlined bodies as own frames.
 Cross-check:
 
 ```sh
-callgrind_annotate --show-percs=yes dev/trace/callgrind.out.<test>.<loops>.<ts> <file>
+callgrind_annotate --show-percs=yes \
+  dev/trace/callgrind.out.<test>.<loops>.<ts> <file>
 ```
 
 `/* perf #N: X.XX% */` comments in `lib/` are stale dev annotations — drop
@@ -387,9 +408,12 @@ Pages nest two deep: overview frames a test summary, which frames its heat map
 ## Checking pages in a browser (no browser in WSL2)
 
 ```sh
-"/mnt/c/Program Files/Google/Chrome/Application/chrome.exe" --headless=new --disable-gpu \
-  --window-size=1366,768 --screenshot="\\\\wsl.localhost\\$WSL_DISTRO_NAME\\tmp\\x.png" \
-  "file://wsl.localhost/$WSL_DISTRO_NAME/home/t/curl/dev/perf2html_baseline_report/index.html#heat-map"
+CHROME="/mnt/c/Program Files/Google/Chrome/Application/chrome.exe"
+SHOT="\\\\wsl.localhost\\$WSL_DISTRO_NAME\\tmp\\x.png"
+PAGE="file://wsl.localhost/$WSL_DISTRO_NAME/home/t/curl/dev"
+"$CHROME" --headless=new --disable-gpu --window-size=1366,768 \
+  --screenshot="$SHOT" \
+  "$PAGE/perf2html_baseline_report/index.html#heat-map"
 ```
 
 `--dump-dom` instead for post-script DOM (append a probe `<script>` running on

@@ -93,8 +93,8 @@ class ValidateReport:
         if not has_trace:
             if os.path.exists(flame_dir) or "<h2>trace log</h2>" in index_text:
                 self.fail(
-                    "a flame graph where no trace was recorded (flame-graph/ or "
-                    f"a 'trace log' section): {out_dir}"
+                    "a flame graph where no trace was recorded"
+                    f" (flame-graph/ or a 'trace log' section): {out_dir}"
                 )
             return
         if index_text and "<h2>trace log</h2>" not in index_text:
@@ -148,8 +148,8 @@ class ValidateReport:
         )
         if text and "heatStyle" not in text:
             self.fail(
-                "heat-map/index.html is missing its runtime script (no heatStyle): "
-                f"{path}"
+                "heat-map/index.html is missing its runtime script"
+                f" (no heatStyle): {path}"
             )
 
     # Nothing anywhere may name the author's home directory -- a report gets
@@ -170,9 +170,10 @@ class ValidateReport:
                     continue
                 if home in text:
                     self.fail(
-                        f"{os.path.relpath(path, out_dir)} leaks the author's home "
-                        f"directory {home!r} -- reports are copied around and must "
-                        f"not reveal who made them: {path}"
+                        f"{os.path.relpath(path, out_dir)} leaks the"
+                        f" author's home directory {home!r} -- reports are"
+                        f" copied around and must not reveal who made"
+                        f" them: {path}"
                     )
 
     # One test's summary page: its top-N table, its view links, its raw data.
@@ -195,15 +196,14 @@ class ValidateReport:
         for key in layout.subpages:
             wanted = key != "flame-graph" or has_rawdata
             if wanted != (f'href="{key}/index.html"' in text):
-                self.fail(
-                    f"index.html {'is missing its' if wanted else 'should not have a'}"
-                    f" {key} strip link: {path}"
-                )
+                lack = "is missing its" if wanted else "should not have a"
+                self.fail(f"index.html {lack} {key} strip link: {path}")
         if has_rawdata and "raw data" not in text:
             self.fail(f"index.html has no 'raw data' section: {path}")
         elif not has_rawdata and "raw data" in text:
             self.fail(
-                f"index.html has a 'raw data' section, but it should not: {path}"
+                "index.html has a 'raw data' section, but it should"
+                f" not: {path}"
             )
 
     # MANIFEST.txt's first line is what makes a directory a diff input, so it
@@ -218,14 +218,14 @@ class ValidateReport:
         first = text.split("\n", 1)[0]
         if first != layout.manifest_version:
             self.fail(
-                f"MANIFEST.txt starts with {first!r}, expected the version line "
-                f"{layout.manifest_version!r}: {path}"
+                f"MANIFEST.txt starts with {first!r}, expected the"
+                f" version line {layout.manifest_version!r}: {path}"
             )
         for label in layout.manifest_labels:
             if not re.search(rf"^{label}=.+$", text, re.M):
                 self.fail(
-                    f"MANIFEST.txt has no '{label}=' header row, so a reader of "
-                    f"this report cannot show it: {path}"
+                    f"MANIFEST.txt has no '{label}=' header row, so a"
+                    f" reader of this report cannot show it: {path}"
                 )
 
     # The overview page: its test-suites table, one link per test, its blocks.
@@ -248,12 +248,14 @@ class ValidateReport:
         for test_name in tests:
             if f'href="{test_name}/index.html"' not in text:
                 self.fail(
-                    f"overview index.html is missing its {test_name} strip link: {path}"
+                    "overview index.html is missing its"
+                    f" {test_name} strip link: {path}"
                 )
         for heading in layout.header_blocks:
             if f"<h2>{heading}</h2>" not in text:
                 self.fail(
-                    f"overview index.html has no '{heading}' header block: {path}"
+                    f"overview index.html has no '{heading}'"
+                    f" header block: {path}"
                 )
 
     # Which tests this report holds, taken from the overview's own links.
@@ -285,7 +287,8 @@ class ValidateReport:
             got = match.group(1) if match else ""
             if got != want_title:
                 self.fail(
-                    f"{label} title is {got!r}, expected {want_title!r}: {path}"
+                    f"{label} title is {got!r}, expected"
+                    f" {want_title!r}: {path}"
                 )
         if "</html>" not in text:
             self.fail(
@@ -316,7 +319,8 @@ class ValidateReport:
         text = self.size_check(out_txt, 20, "perf-tool/output.txt")
         if text and not re.search(r"^Time(/\w+)?:\s+\d", text, re.M):
             self.fail(
-                f"perf-tool/output.txt has no recognizable timing line: {out_txt}"
+                "perf-tool/output.txt has no recognizable timing"
+                f" line: {out_txt}"
             )
         index_text = self.size_check(
             os.path.join(out_dir, "index.html"), _MIN_INDEX_BYTES, "index.html"
@@ -361,7 +365,8 @@ class ValidateReport:
         index_path = os.path.join(out_dir, "index.html")
         if not os.path.isfile(index_path):
             print(
-                f"error: no index.html in {out_dir} -- not a report directory?",
+                f"error: no index.html in {out_dir}"
+                " -- not a report directory?",
                 file=sys.stderr,
             )
             return 1
@@ -384,7 +389,8 @@ class ValidateReport:
 
         if self.errors:
             print(
-                f"validate_report: {len(self.errors)} problem(s) in {out_dir}:",
+                f"validate_report: {len(self.errors)} problem(s)"
+                f" in {out_dir}:",
                 file=sys.stderr,
             )
             for error in self.errors:
@@ -404,7 +410,8 @@ class ValidateReport:
             return ""
         if size < min_bytes:
             self.fail(
-                f"{label} suspiciously small ({size} bytes < {min_bytes}): {path}"
+                f"{label} suspiciously small ({size} bytes <"
+                f" {min_bytes}): {path}"
             )
         return text
 

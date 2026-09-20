@@ -240,15 +240,18 @@ class Theme:
         lines.append("}")
         return "\n".join(lines) + "\n" + self.asset_read("theme.css")
 
-    # One whole standalone page, with its CSS and JS inlined -- nothing fetched.
+    # One standalone page, CSS and JS inlined -- nothing fetched.
     def document(
         self, title: str, body: str, extra_js: str = "", body_class: str = ""
     ) -> str:
         body_attr = f' class="{body_class}"' if body_class else ""
         return (
-            '<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n'
-            '<meta name="viewport" content="width=device-width, initial-scale=1">\n'
-            f"<title>{html_escape(title)}</title>\n<style>\n{self.css()}</style>\n</head>\n"
+            '<!doctype html>\n<html lang="en">\n'
+            '<head>\n<meta charset="utf-8">\n'
+            '<meta name="viewport"'
+            ' content="width=device-width, initial-scale=1">\n'
+            f"<title>{html_escape(title)}</title>\n"
+            f"<style>\n{self.css()}</style>\n</head>\n"
             f"<body{body_attr}>\n{body}\n"
             f"<script>\n{self.js()}</script>\n"
             + (f"<script>\n{extra_js}</script>\n" if extra_js else "")
@@ -418,10 +421,12 @@ class Theme:
                     + (f' style="{cell.style}"' if cell.style else "")
                     + (f' title="{html_escape(title)}"' if title else "")
                 )
-                out.append(
-                    f"<td{attrs}>"
-                    f"{cell.html if cell.html is not None else html_escape(cell.text)}</td>"
+                inner = (
+                    cell.html
+                    if cell.html is not None
+                    else html_escape(cell.text)
                 )
+                out.append(f"<td{attrs}>{inner}</td>")
             out.append("</tr>")
         out.append("</tbody></table></div>")
         out.append("</div>")
