@@ -402,6 +402,15 @@ Pages nest two deep: overview frames a test summary, which frames its heat map
   (`tableText()` off the same `cols`/`rows`), never scraped `textContent`. **JS
   in a Python triple-quoted string needs `\n` written `\\n`** or the generated
   `<script>` breaks — `node --check` after touching it.
+- The popup opens with a `metric | share | amount` stats table
+  (`heat.detail.stats`), not a sentence: one row for self (`line self` when the
+  line isn't a function entry), `calls` + `call count` rows only when the line
+  has call cost, then one row per `EXTRA` event with a non-zero value. Zero
+  rows are dropped, so the table's height varies. `num()`/`numCalls()` cells
+  keep the exact value in the tooltip; `tableText()` turns the same
+  `cols`/`rows` into the copied markdown.
+- The tree's cold-file expander is labelled just `no samples` — no count, no
+  event name.
 - Clickable-row hover cue is an underline on `td.ln`: an inline heat `color`
   beats any stylesheet color, so a `--link` recolor can't show on heated lines.
 

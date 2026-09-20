@@ -470,9 +470,7 @@ function renderTree() {
       out.push(`<div class="node more" data-more="${esc(node.path)}"`
         + ` style="padding-left:${6 + depth * 14}px">`
         + `<span class="caret">${show ? "\\u25BC" : "\\u25B6"}</span>`
-        + `<span class="name">${zero.length}`
-        + ` file${zero.length > 1 ? "s" : ""} without`
-        + ` ${esc(evLabel(currentEvent))}</span>`
+        + `<span class="name">no samples</span>`
         + `<span class="pct"></span></div>`);
       if (show) for (const file of zero) fileRow(file);
     }
@@ -935,38 +933,36 @@ function detailOpen(path, lineNumber, row) {
     clip: 48,
   };
   const callCost = val(rec[1]);
-  const callsClause = callCost
-    ? `, calls ${fmtH(callCost)} (${fmtPct(callCost)})`
-      + ` over ${fmtH(rec[2])} calls`
-    : "";
-  const extraStats = extras => extras.map(extra => {
-    const self = extra.get(rec[0]);
-    if (!self) return "";
-    const share = fmtP(100 * self / MAXPX[extra.key].total);
-    return `, ${evLabel(extra)} ${share} (${fmtH(self)})`;
-  }).join("");
-
   const self = val(rec[0]);
-  const selfPct = fmtPct(self) || "0%";
-  const stats = `${callsClause}${extraStats(EXTRA)}`;
+  const selfLabel = funcIndex != null ? "self" : "line self";
+  const statCols = [{ label: "metric" }, { label: "share", num: true },
+                    { label: "amount", num: true }];
+  const statRows = [[
+    { text: `${selfLabel} ${evLabel(currentEvent)}`,
+      title: SELF.title },
+    fmtPct(self) || "0%",
+    num(self),
+  ]];
+  if (callCost) {
+    statRows.push([{ text: "calls" }, fmtPct(callCost), num(callCost)]);
+    statRows.push([{ text: "call count" }, "", numCalls(rec[2])]);
+  }
+  for (const extra of EXTRA) {
+    const extraSelf = extra.get(rec[0]);
+    if (!extraSelf) continue;
+    statRows.push([{ text: evLabel(extra), title: extra.long },
+                   fmtP(100 * extraSelf / MAXPX[extra.key].total),
+                   num(extraSelf)]);
+  }
   const inFn = lineFuncIndex != null ? " in " + fnName(lineFuncIndex) : "";
-  const headLine = (funcIndex != null)
-    ? `${path}:${lineNumber} self ${selfPct} by ${evLong(currentEvent)},`
-      + ` ${fmtH(self)} ${currentEvent.key}.${stats}`
-    : `${path}:${lineNumber}${inFn}: line self ${selfPct}`
-      + ` ${evLong(currentEvent)}, ${fmtH(self)} ${currentEvent.key}${stats}`;
+  const headLine = `${path}:${lineNumber}${inFn}`;
   const inFnHtml = lineFuncIndex != null
     ? " in <b>" + esc(fnName(lineFuncIndex)) + "</b>" : "";
   let html = `<div class="dbox">`;
   html += `<a href="#" class="dclose" title="close">[X]</a>`;
-  html += (funcIndex != null)
-    ? `<div>${esc(path)}:${lineNumber} self ${selfPct}`
-      + ` by ${esc(evLong(currentEvent))}, ${fmtH(self)}`
-      + ` ${esc(currentEvent.key)}.${esc(stats)}</div>`
-    : `<div>${esc(path)}:${lineNumber}${inFnHtml}: line self ${selfPct}`
-      + ` ${esc(evLong(currentEvent))}, ${fmtH(self)}`
-      + ` ${esc(currentEvent.key)}${esc(stats)}</div>`;
-  const textParts = [headLine];
+  html += `<div>${esc(path)}:${lineNumber}${inFnHtml}</div>`;
+  html += table("heat.detail.stats", statCols, statRows);
+  const textParts = [headLine + "\\n" + tableText(statCols, statRows)];
   if (callees.length) {
     const cols = [{ label: "% of total", num: true }, evCol(currentEvent),
                   { label: "call count", num: true }, fnCol("callee"),

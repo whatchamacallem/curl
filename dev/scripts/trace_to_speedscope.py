@@ -22,10 +22,10 @@ _HEADER_WORDS = 8
 _MAGIC = 0x32475943
 
 # Size budget for the written document, so the page stays quick to open.
-_MAX_BYTES = 10240
+_MAX_BYTES = 204800
 
 # The most complete calls to keep, before the byte budget trims further.
-_MAX_CALLS = 10
+_MAX_CALLS = 200
 
 # How many 64-bit words one recorded event takes: the function, then the stamp.
 _RECORD_WORDS = 2
