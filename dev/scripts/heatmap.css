@@ -1,0 +1,93 @@
+body { display: flex; flex-direction: column; height: 100vh; }
+#hdr { gap: 4px 14px; }
+#hdr label { color: var(--muted); white-space: nowrap; }
+#hdr input { width: 36ch; }
+#layout { display: flex; flex: 1; min-height: 0; }
+#tree { width: 280px; min-width: 120px; flex: none; overflow: auto;
+  padding: 4px 0 24px; }
+#main { flex: 1; min-width: 0; overflow: auto; background: var(--bg); }
+
+.srcwrap { width: max-content; min-width: 100%; }
+
+.srctail { height: 50vh; }
+
+.srcwrap > :not(.tbl-cols) { contain: inline-size; }
+
+#minimap { width: 110px; flex: none; overflow: hidden; position: relative;
+  background: var(--bg); cursor: pointer; }
+#minimap.empty { display: none; }
+#mmBox { position: absolute; top: 0; left: 0; }
+
+#mmBox table.src { border-collapse: collapse; table-layout: fixed;
+  width: 100%; }
+#mmBox table.src td { padding: 0; border: 0; white-space: pre;
+  overflow: visible; }
+#mmViewport { position: absolute; left: 0; right: 0;
+  background: rgba(245, 246, 250, 0.36);
+  border: 1px solid rgba(245, 246, 250, 0.55); cursor: grab; }
+#mmViewport.drag { cursor: grabbing; }
+.node { display: flex; align-items: center; gap: 4px; padding-right: 8px;
+  cursor: pointer; white-space: nowrap; }
+.node:hover { outline: 1px solid var(--link); outline-offset: -1px; }
+.node.sel { background: var(--sel); }
+.node .caret { width: 12px; flex: none; text-align: center;
+  color: var(--muted); font-size: 9px; }
+.node.file .caret { visibility: hidden; }
+.node .name { flex: 1; min-width: 0; overflow: hidden;
+  text-overflow: ellipsis; }
+.node.dir .name { font-weight: 600; }
+.node.cold .name { color: var(--muted); font-weight: 400; }
+.node .pct { flex: none; width: 7ch; text-align: right;
+  font-variant-numeric: tabular-nums; color: var(--muted); }
+.node.heat .pct, .node.heat .caret { color: inherit; }
+.node.cold .pct { visibility: hidden; }
+.node.more .name { color: var(--muted); font-style: italic; }
+.kids { display: none; }
+.kids.open { display: block; }
+.fhead { background: var(--sel); padding: 5px 14px;
+  display: flex; gap: 4px 18px; align-items: baseline; flex-wrap: wrap; }
+.fhead .path { font-weight: 600; }
+.fhead .stat { color: var(--muted); }
+
+.chips { display: flex; gap: 4px; flex-wrap: nowrap; padding: 5px 14px;
+  background: var(--sel); overflow: hidden; }
+.chips .lbl { color: var(--muted); align-self: center; margin-right: 4px;
+  flex: none; }
+.chip { padding: 0 7px; background: var(--bg-alt); cursor: pointer;
+  flex: none; white-space: nowrap; }
+.chip:hover { outline: 1px solid var(--link); outline-offset: -1px; }
+.nosrc { padding: 8px 14px; color: var(--muted); }
+table.src th { background: var(--sel); }
+table.src > tbody > tr > td { padding-top: 0; padding-bottom: 0; }
+table.src td.ln { color: var(--muted); user-select: none; }
+tr.rowlink { cursor: pointer; }
+table.src tr.clickable { cursor: pointer; }
+
+table.src tr.clickable:hover td.ln { text-decoration: underline; }
+
+table.src td.self, table.src td.incl, table.src td.x { color: var(--muted); }
+table.src td.hot { font-weight: 600; }
+
+table.src td.code { text-overflow: clip; white-space: pre; tab-size: 4; }
+table.src tr.hasc td.ln::before { content: "\25B8 "; color: var(--link); }
+
+table.src tr.detail > td { white-space: normal; overflow: visible;
+  padding: 0; }
+.dbox { position: relative; margin: 3px 12px 8px; padding: 6px 12px;
+  background: var(--panel); }
+.dbox h4 { margin: 6px 0 2px; font-size: 12px; color: var(--muted);
+  font-weight: 600; }
+.dbox .dclose { position: absolute; top: 6px; right: 10px;
+  color: var(--muted); }
+.dbox .dclose:hover { color: var(--link); text-decoration: none; }
+.dbox .tbl { background: var(--bg); }
+.dactions { margin-top: 8px; }
+.dactions a { color: var(--link); margin-right: 14px; }
+.home { padding: 12px 14px 40px; }
+.home h2:first-of-type { margin-top: 10px; }
+@media (max-width: 720px) {
+  #layout { flex-direction: column; }
+  #tree { width: auto !important; max-height: 38vh; background: var(--panel); }
+  .split, #minimap { display: none; }
+  #hdr input { width: 12ch; }
+}

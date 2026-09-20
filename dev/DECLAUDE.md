@@ -30,7 +30,7 @@ dev/perf2html_diff.sh [--verbose] [--keep-raw] [--regenerate]
     [baseline-dir] [modified-dir] [report-dir]
 dev/perf2html_batch.sh [--verbose] [--keep] [--keep-raw] [--regenerate]
     [cmake_flags...]
-dev/scripts/reformat.sh [--check] [--verbose] [report-dir] [path...]
+dev/scripts/reformat.sh [--check] [--verbose] [report-dir]
 ```
 
 **Verification is two runs, in this order:** `dev/perf2html_batch.sh` measures
@@ -75,13 +75,19 @@ taskset -c 3 ./build-relwithdebinfo/tests/perf/perf <test> [loops]
   step runs even after a failure; exit 1 names the failed ones.
 - `scripts/reformat.sh` - **the one hook that verifies `dev/` and its output.**
   Lint, then format, then validate, every stage running even after an earlier
-  one failed. Lint is pyright (**0 errors**) + `check_js.py`. Validation is
-  `validate_report.py` over the first argument when that is a report, else over
-  whichever of the three default report dirs exist; a directory counts as a
-  report by holding a `MANIFEST.txt`, and line 1 of it decides `--diff`. An
-  argument that is *not* a report is an ordinary path to format, so
-  `reformat.sh scripts` still formats and still validates the defaults. No
-  report named and none of the defaults present is an **error**.
+  one failed. **It takes no path argument**: the directories are fixed by
+  convention, `..` (dev/ itself) for `*.sh`/`*.c`/`*.h`/`*.md` and `.`
+  (scripts/) for everything else, and the header carries an ASCII table of
+  which tool runs over which kind. Lint is pyright (**0 errors**) +
+  `check_js.py` + `check_html.py`. Its one optional argument is a report dir; a
+  relative one resolves against the caller's cwd, not `scripts/`. Validation is
+  `validate_report.py` over that report, else over whichever of the three
+  defaults exist. A directory is a report by holding a `MANIFEST.txt` whose
+  line 1 is `curl/perf2html.sh v1` or `curl/perf2html_diff.sh v1`; that line
+  also decides `--diff`. Anything else is an **error naming the version string
+  it expected** - a missing directory, a missing `MANIFEST.txt`, a foreign
+  version string, or no argument with the default `perf2html_baseline_report`
+  absent.
 
 Key behaviors worth knowing before touching them:
 
@@ -92,10 +98,11 @@ Key behaviors worth knowing before touching them:
 - `--regenerate` implies `--keep-raw`, and in the batch also `--keep`. It reads
   `stamp=` back from the report's own `MANIFEST.txt` and rebuilds
   byte-identically when no generator changed.
-- **`reformat.sh` is the only `validate_report.py` and `pyright` call
-  anywhere.** Don't add a lint or validate step to a generator or to the batch.
-  Validation reads the report dirs only, never `dev/trace/`, so the batch
-  deleting `trace/` on a clean flagless run doesn't affect it.
+- **`reformat.sh` is the only `validate_report.py`, `pyright`, `check_js.py`
+  and `check_html.py` call anywhere.** Don't add a lint or validate step to a
+  generator or to the batch. Validation reads the report dirs only, never
+  `dev/trace/`, so the batch deleting `trace/` on a clean flagless run doesn't
+  affect it.
 - **The batch plus `reformat.sh` is the generators' test suite** - driving them
   over all three output dirs is the coverage. Don't grow a per-generator check.
 - Profiling:
@@ -199,11 +206,11 @@ generator. Keep the split: `BuildReport.test`/`.functions_table` core vs
 comment alike, in every language. `scripts/reformat.sh` enforces it, and a line
 still over 79 after the formatters run is an **error**, not a note:
 `long_lines_report` prints `file:line`, the width and the whole line, and the
-script exits 1. It scans `.sh`, `.py`, `.c`, `.h`, `.md` and `.html`. The
-formatters cannot reach some of those lines - embedded JS/CSS in a Python
-string literal, `echo` text in a shell script, a fenced block in `.md`, all of
-`scripts/heatmap.html` (there is no HTML formatter) - so they are rewrapped by
-hand. Whole tree is at 0.
+script exits 1. It scans `.sh`, `.c`, `.h`, `.md` under `dev/` and `.py`,
+`.js`, `.css`, `.html` under `scripts/`. The formatters cannot reach some of
+those lines - `echo` text in a shell script, a fenced block in `.md`, and all
+of `scripts/*.js`, `scripts/*.css` and `scripts/*.html`, none of which has a
+formatter installed here - so they are rewrapped by hand. Whole tree is at 0.
 
 **`dev/` source is ASCII plus a short allow list.** `validate_report.py`'s
 `unicode_check` walks every `.py`/`.js`/`.css`/`.sh`/`.html` and `README.md`
@@ -216,13 +223,14 @@ would be double-escaped into visible text by the JS `esc()` and by `theme.py`'s
 means adding it to `_ALLOWED_UNICODE` with a `#` comment naming it.
 `DECLAUDE.md` is not scanned.
 
-Rewrapping an embedded block, or `scripts/heatmap.html`, changes every
-generated page (the CSS and JS are inlined into each one), so a page diff after
-such an edit is expected; `perf2html_batch.sh --regenerate` then a diff against
-a snapshot is how you check that only the inlined `<style>`/`<script>` moved.
-Text a script `echo`s into `perf-tool/output.txt` is *page content*, so
-rewrapping it does change the report - split it into extra `#` lines rather
-than letting it overflow.
+Rewrapping any of `scripts/heatmap.html`, `heatmap.css`, `frame.js`,
+`flame_bootstrap.js`, `theme.css` or `theme.js` changes every generated page
+(they are all inlined into each one), so a page diff after such an edit is
+expected; `perf2html_batch.sh --regenerate` then a diff against a snapshot is
+how you check that only the inlined `<style>`/`<script>` moved. Text a script
+`echo`s into `perf-tool/output.txt` is *page content*, so rewrapping it does
+change the report - split it into extra `#` lines rather than letting it
+overflow.
 
 Not to be confused with the **80-column source *view*** in the heat map
 (`SRC_COLS`, `MM_MIN_COLS`), which is the standard width the profiled `lib/`
@@ -234,8 +242,8 @@ function gets one `# <Name> - what it is` line above it, wrapped to a second
 `#` line if it must be. Every field gets a one-line `#` comment **above it**,
 never trailing - no arg-by-arg docs, no `:param:`, no reStructuredText. Names
 carry the meaning; the comment only says what a name can't. Still no comments
-in JS/CSS embedded in string literals or in `theme.js`/`theme.css`. Shebangs
-stay. `ArgumentParser()` gets no description by design.
+in any of the `scripts/` page assets - the `.js`, `.css` and `.html` files.
+Shebangs stay. `ArgumentParser()` gets no description by design.
 
 **Class names read like a how-to, not an abbreviation** - `CompressedNames`,
 `PositionDecoder`, `FileTally`, `ExecutableMapping`, `TraceRecording`,
@@ -299,23 +307,30 @@ pipx/uv). Pylance is not usable - LSP only, ignores argv.
   above a page's content are `ManifestRow`/`ManifestBlock` (methods
   `manifest_*`) - not the heat map's `HeatMapTotals`, and not a table's
   column-title row (`theme.table_render(column_titles=...)`). **Never call any
-  of them just "header".**
+  of them just "header".** Its `FRAME_JS` is `theme.theme_asset("frame.js")`.
 - `callgrind_diff.py` - the subtraction; also home of `profile_magnitudes()`,
   which generators import. `--callers-output` is required, and carries the
   baselines every diff share divides by. `perf2html_diff.sh` copies it into the
   report's `raw/` as `<delta>.callers.json` so the overview can reach it;
   `validate_report.py` skips it in `raw_dir_check` (`_CALLERS_SUFFIX`).
 - `callgrind_to_heatmap.py` - `_DEFAULT_EVENT = "CEst"`, `_TREE` = dirs whose
-  tracked `.c/.h` are listed even without samples. Its `BODY` is no longer a
-  string literal: it is `theme.theme_asset("heatmap.html")`, read at import
-  time from the file beside it. `theme_asset()` is `Theme.asset_read()` exposed
-  as a free function, the same door `theme.css`/`theme.js` come through.
-- `scripts/heatmap.html` - the heat map's whole page body and script, as a real
-  file. Being off the Python side, **its JS is written plainly** - `\n` is
-  `\n`, not `\\n`; that gotcha is gone here and still applies to
-  `build_report.py`'s `FRAME_JS`. Still reached by `check_js.py` (via `BODY`)
-  and by the 79-column and ASCII scans, so nothing was given up by moving it.
-  No formatter touches it - rewrap by hand.
+  tracked `.c/.h` are listed even without samples. Its `BODY` and `_CSS` are
+  `theme.theme_asset("heatmap.html")` and `theme.theme_asset("heatmap.css")`.
+- **No generator holds a multi-line HTML/CSS/JS literal any more.** Each one is
+  a real file in `scripts/`, read at import through `theme.theme_asset()` -
+  `Theme.asset_read()` exposed as a free function, the same door
+  `theme.css`/`theme.js` come through. The files and their holders:
+  `heatmap.html` → `callgrind_to_heatmap.BODY`, `heatmap.css` →
+  `callgrind_to_heatmap._CSS`, `frame.js` → `build_report.FRAME_JS`,
+  `flame_bootstrap.js` → `build_flame_graph._BOOTSTRAP`. Being off the Python
+  side, **their JS is written plainly** - `\n` is `\n`, not `\\n`; that gotcha
+  is gone from `dev/` entirely. They keep their coverage: `check_js.py` via the
+  holder name, `check_html.py` over the `.html`, and the 79-column and ASCII
+  scans over all of them. No formatter touches any of them - rewrap by hand. A
+  holder constant is still **named exactly** what `check_js.py` expects.
+- `flame_bootstrap.js` keeps its `__NAME__`/`__DATA__` markers, which
+  `build_flame_graph.py` substitutes at generate time; they are bare
+  identifiers, so `node --check` accepts the file as written.
 - `dev/cyg_callback.c` - the recorder. Hot path is
   `if(next < end) { next->fn = fn; next->tsc = rdtsc | flag; ++next; }` - 11/12
   instructions (check with
@@ -341,9 +356,15 @@ pipx/uv). Pylance is not usable - LSP only, ignores argv.
   is `_FLAME_EXPORTER`, so a synthesized or stale flame graph fails.
 - `check_js.py` - `node --check` on `theme.js` and every JS chunk a generator
   holds in a module-level string (`_HOLDERS`), whichever way that string was
-  filled - `callgrind_to_heatmap.BODY` now reads `heatmap.html` off disk and is
-  checked exactly as before. **Add a pair here when a generator grows new
-  embedded JS.** This is what catches a `\n` that needed `\\n`.
+  filled - each holder now reads its `.js`/`.html` off disk and is checked
+  exactly as before. **Add a pair here when a generator grows new embedded
+  JS**; a `.js` file no generator holds is checked by nothing. This is what
+  catches a `\n` that needed `\\n`.
+- `check_html.py` - `html.parser` tag balance over every `scripts/*.html`,
+  reporting a `</tag>` that closes the wrong element and a tag never closed.
+  There is no HTML formatter on this box, so this is what stops a stray
+  `</div>` shipping into every generated page. `_VOID` lists the tags that
+  close themselves.
 
 ## Why the heat map exists
 
@@ -498,9 +519,9 @@ Pages nest two deep: overview frames a test summary, which frames its heat map
     are sticky, the `<thead>` scrolls away - **never measure the thead**.
     `minimapSync()` also runs after a popup opens/closes.
 - Popup "copy" builds a plain-text twin in parallel with the HTML
-  (`tableText()` off the same `cols`/`rows`), never scraped `textContent`. **JS
-  in a Python triple-quoted string needs `\n` written `\\n`** or the generated
-  `<script>` breaks - `node --check` after touching it.
+  (`tableText()` off the same `cols`/`rows`), never scraped `textContent`. It
+  lives in `scripts/heatmap.html`, so its `\n` is written plainly; the
+  double-backslash gotcha died with the last Python JS literal.
 - The popup opens with a `metric | share | amount` stats table
   (`heat.detail.stats`), not a sentence: one row for self (`line self` when the
   line isn't a function entry), `calls` + `call count` rows only when the line

@@ -8,27 +8,14 @@ import os
 import sys
 from typing import NamedTuple
 
-# The script that hands the embedded profile to speedscope once it has
-# loaded -- it polls, because script order is not guaranteed.
-_BOOTSTRAP = """\
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import theme
 
-(function () {
-  var NAME = __NAME__;
-  var DATA = __DATA__;
-  function load() {
-    if (window.speedscope && window.speedscope.loadFileFromBase64) {
-      window.speedscope.loadFileFromBase64(NAME, DATA);
-      return true;
-    }
-    return false;
-  }
-  if (!load()) {
-    var tries = 0, timer = setInterval(function () {
-      if (load() || ++tries >= 200) clearInterval(timer);
-    }, 50);
-  }
-})();
-"""
+# The script that hands the embedded profile to speedscope once it has
+# loaded -- it polls, because script order is not guaranteed. Read from
+# scripts/flame_bootstrap.js at generate time. Named exactly this:
+# check_js.py looks it up by name.
+_BOOTSTRAP = theme.theme_asset("flame_bootstrap.js")
 
 # What the bootstrap plus its embedded profile gets written as.
 _PROFILE_JS = "profile.js"

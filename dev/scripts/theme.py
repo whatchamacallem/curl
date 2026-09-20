@@ -203,7 +203,7 @@ class Theme:
             )
             return f"{sign}{magnitude / unit.seconds:.2f}{unit.suffix}"
 
-    # Read theme.css or theme.js off disk, to inline into a page.
+    # Read one scripts/ file off disk, to inline into a page.
     def asset_read(self, name: str) -> str:
         with open(
             os.path.join(self.DIRECTORY, name), encoding="utf-8"
@@ -542,6 +542,7 @@ def table_render(
     return _RENDERER.table(key, columns, rows, fill, column_titles)
 
 
+# theme_asset - One file from scripts/, to inline into a page.
 def theme_asset(name: str) -> str:
     return _RENDERER.asset_read(name)
 

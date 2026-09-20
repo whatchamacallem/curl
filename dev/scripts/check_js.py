@@ -101,6 +101,7 @@ class CheckJs:
 # Every generator string that holds JavaScript. Add a pair here when a
 # generator grows new embedded JS -- these names are resolved as written.
 _HOLDERS: tuple[CheckJs.ScriptHolder, ...] = (
+    CheckJs.ScriptHolder("build_flame_graph", "_BOOTSTRAP"),
     CheckJs.ScriptHolder("build_report", "FRAME_JS"),
     CheckJs.ScriptHolder("callgrind_to_heatmap", "BODY"),
 )
