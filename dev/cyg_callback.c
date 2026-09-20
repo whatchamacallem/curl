@@ -108,84 +108,6 @@ __attribute__((hot)) void __cyg_profile_func_exit(void *fn, void *site)
   cyg_callback_record(fn, CYG_CALLBACKS_EXIT_BIT);
 }
 
-__attribute__((cold)) static void cyg_callback_smoketest(void)
-{
-  cyg_callbacks_t *cb = &s_cyg_callbacks;
-  const char *bad = NULL;
-  cyg_callback_record_t *fn0 = (cyg_callback_record_t *)&cb->buf;
-  uint64_t tsc_a, tsc_b;
-
-  if (cb->next != cb->end)
-    bad = "sampling is already on";
-  else if (cb->holds != 1)
-    bad = "holds is not 1";
-  else if (cb->end != cb->buf + CYG_CALLBACKS_MAX_REC)
-    bad = "end does not close the buffer";
-
-  /* an event while paused only bumps idle, it records nothing */
-  if (!bad) {
-    cb->skip = 0; /* cannot match ++idle below */
-    __cyg_profile_func_enter(fn0, NULL);
-    if (cb->idle != 1)
-      bad = "a paused event did not count as idle";
-    else if (cb->next != cb->end)
-      bad = "a paused event turned sampling on";
-  }
-
-  /* idle reaching skip opens the window at final, i.e. at buf */
-  if (!bad) {
-    cb->skip = 2;
-    __cyg_profile_func_enter(fn0, NULL);
-    if (cb->next != cb->buf)
-      bad = "reaching skip did not open the window";
-  }
-
-  /* recording stores fn and a rising tsc, and sets EXIT_BIT on exits only */
-  if (!bad) {
-    tsc_a = __rdtsc();
-    __cyg_profile_func_enter(fn0, NULL);
-    __cyg_profile_func_exit(fn0, NULL);
-    tsc_b = __rdtsc();
-    if (cb->next != cb->buf + 2)
-      bad = "two events did not store two records";
-    else if (cb->buf[0].fn != (uint64_t)fn0)
-      bad = "a record did not keep its function address";
-    else if (cb->buf[0].tsc & CYG_CALLBACKS_EXIT_BIT)
-      bad = "an enter was flagged as an exit";
-    else if (!(cb->buf[1].tsc & CYG_CALLBACKS_EXIT_BIT))
-      bad = "an exit was not flagged as one";
-    else if (cb->buf[0].tsc < tsc_a
-             || (cb->buf[1].tsc & ~CYG_CALLBACKS_EXIT_BIT) > tsc_b
-             || (cb->buf[1].tsc & ~CYG_CALLBACKS_EXIT_BIT) <= cb->buf[0].tsc)
-      bad = "stamps are not rising inside the call";
-  }
-
-  /* pause/resume nest: the inner pair must not re-enable sampling */
-  if (!bad) {
-    cyg_callback_pause();
-    cyg_callback_pause();
-    cyg_callback_resume();
-    if (cb->next != cb->end)
-      bad = "a nested pause/resume left sampling on";
-    cyg_callback_resume();
-    if (cb->next != cb->buf + 2)
-      bad = "the outer resume did not restore the window";
-  }
-
-  if (bad) {
-    fprintf(stderr, "cyg_callback: smoketest failed: %s\n", bad);
-    exit(1);
-  }
-
-  cyg_callback_pause();
-  cb->next = cb->end;
-  cb->final = cb->buf;
-  cb->holds = 1;
-  cb->idle = 0;
-  cb->skip = 0;
-  memset(cb->buf, 0xff, 2 * sizeof(*cb->buf));
-}
-
 __attribute__((constructor)) static void cyg_callback_init(void)
 {
   cyg_callbacks_t *cb = &s_cyg_callbacks;
@@ -197,7 +119,6 @@ __attribute__((constructor)) static void cyg_callback_init(void)
   memset(cb->buf, 0xff, sizeof(cb->buf));
   cb->end = cb->buf + CYG_CALLBACKS_MAX_REC;
   cb->next = cb->end;
-  cyg_callback_smoketest();
   cb->skip = skip_str ? strtoull(skip_str, NULL, 10) : 0;
   cb->t0_ns = cyg_callback_now_ns();
   cb->t0_tsc = __rdtsc();

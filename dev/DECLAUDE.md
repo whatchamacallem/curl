@@ -85,7 +85,7 @@ Key behaviors worth knowing before touching them:
   `perf stat -x, -e cycles:u,instructions:u` run — its `Time*` lines are the
   only valid speed number; callgrind's wall clock never is.
 - Trace tree `build-instr` = same flags + `-finstrument-functions` +
-  `dev/cyg.c` linked in. Whole build instrumented, no file list.
+  `dev/cyg_callback.c` linked in. Whole build instrumented, no file list.
 - No env vars; constants live at the top of each shell script (`CPU=3`,
   `LOOPS_DIVISOR=50`, `SKIP_ALL`, `MANIFEST_VERSION`). `TESTS` comes from
   `tests/perf/Makefile.inc`; loops from `loops_of` grepping the test source.
@@ -256,18 +256,21 @@ pipx/uv). Pylance is not usable — LSP only, ignores argv.
   which generators import. `--callers-output` is required.
 - `callgrind_to_heatmap.py` — `_DEFAULT_EVENT = "CEst"`, `_TREE` = dirs whose
   tracked `.c/.h` are listed even without samples.
-- `dev/cyg.c` — the recorder. Hot path is
+- `dev/cyg_callback.c` — the recorder. Hot path is
   `if(next < end) { next->fn = fn; next->tsc = rdtsc | flag; ++next; }` — 11/12
   instructions (check with
-  `cc -O2 -fcf-protection=none -S -masm=intel dev/cyg.c`). `next` must stay a
-  pointer, `end` a variable. `next == end` = not sampling; everything else
-  lives on that cold path. Setup is a constructor (incl. `memset` of the
-  buffer, so no page fault lands in a timed call), teardown a destructor
+  `cc -O2 -fcf-protection=none -S -masm=intel dev/cyg_callback.c`). `next`
+  must stay a pointer, `end` a variable. `next == end` = not sampling;
+  everything else lives on that cold path. Setup is a constructor (incl.
+  `memset` of the buffer, so no page fault lands in a timed call; the
+  buffer holds `CYG_CALLBACKS_MAX_REC`=16384 records), teardown a destructor
   writing `CYG_OUT` + `.maps`. Its header comment is the format reference.
   Single-threaded.
 - `trace_to_speedscope.py` — pairs enters/exits (mismatch = non-zero exit),
-  takes the busiest run's first `_MAX_CALLS`=10 complete calls under
-  `_MAX_BYTES`=10240. `at` is raw (hook cost included). Must run while
+  takes the busiest run's first `_MAX_CALLS`=200 complete calls under
+  `_MAX_BYTES`=204800. No test is bound by `_MAX_CALLS` — the byte budget
+  alone sets capture length, so bytes/call decides how many calls land
+  (31–196 across `TESTS_C`). `at` is raw (hook cost included). Must run while
   `build-instr` still holds the traced binary (symbolization reads it). GCC
   instruments inlined bodies, so inlined helpers are frames.
 - `validate_report.py OUTDIR [--diff]` — structural smoke test only;
@@ -442,8 +445,9 @@ across documents or layout anyway — Chrome for anything geometric.
   `--separate-callers=N` is exact but still aggregated and orderless — **never
   feed such a file to the summary/heat map**, functions come out named by full
   chain.
-- Whole-build `-finstrument-functions` + `cyg.c`: one top-level library call is
-  2–184 events depending on the test; 0 enter/exit mismatches in all 8 tests.
+- Whole-build `-finstrument-functions` + `cyg_callback.c`: one top-level
+  library call is 2–184 events depending on the test; 0 enter/exit
+  mismatches in all 8 tests.
   Perturbation native → traced, one run: 152 → 154 ns/call at 2 events/call,
   304 → 746 at 184. The box's native speed itself moves ~1.9× with host state,
   so only compare numbers from one run. Hook cost is inside every traced
@@ -451,7 +455,7 @@ across documents or layout anyway — Chrome for anything geometric.
 - `rdtsc` steps by 20 ticks = 10.02 ns here, so every flame-graph duration is a
   multiple of ~10 ns. The 28→11 instruction hook saving is verified in
   disassembly only — it's below the clock's step.
-- speedscope evented JSON ≈ 38 B/event: 10 KB ≈ 250 events.
+- speedscope evented JSON ≈ 38 B/event: 200 KB ≈ 5,000 events.
 - TSC: `constant_tsc nonstop_tsc rdtscp tsc_reliable`; measured 1.9962 tsc/ns.
 - `perf stat -e cycles:u,instructions:u` works in this WSL2 (kernel 6.18
   exposes the CPU PMU). `perf record` works but samples.
