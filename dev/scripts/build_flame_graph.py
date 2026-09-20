@@ -13,8 +13,7 @@ import theme
 
 # The script that hands the embedded profile to speedscope once it has
 # loaded -- it polls, because script order is not guaranteed. Read from
-# scripts/flame_bootstrap.js at generate time. Named exactly this:
-# check_js.py looks it up by name.
+# scripts/flame_bootstrap.js at generate time.
 _BOOTSTRAP = theme.theme_asset("flame_bootstrap.js")
 
 # What the bootstrap plus its embedded profile gets written as.

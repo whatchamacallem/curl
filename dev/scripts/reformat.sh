@@ -6,28 +6,30 @@
 #
 # What runs over what:
 #
-#   source           dir  format        lint             cols  ascii
-#   ---------------- ---- ------------- ---------------- ----- ------
-#   *.sh             ..   shfmt         --               yes   yes
-#   *.c *.h          ..   clang-format  --               yes   --
-#   *.md             ..   mdformat      --               yes   yes(1)
-#   scripts/*.py     .    ruff          pyright, ruff    yes   yes
-#   scripts/*.js     .    --            check_js.py      yes   yes
-#   scripts/*.css    .    --            --               yes   yes
-#   scripts/*.html   .    --            check_js.py(2),  yes   yes
-#                                       check_html.py
+#   source            format        lint             cols  ascii
+#   ----------------- ------------- ---------------- ----- ------
+#   *.sh              shfmt         --               yes   yes
+#   *.c *.h           clang-format  --               yes   --
+#   *.md *.json       prettier      prettier         yes   yes(1)
+#   scripts/*.py      ruff          pyright, ruff    yes   yes
+#   scripts/*.js      prettier      prettier         yes   yes
+#   scripts/*.css     prettier      prettier         yes   yes
+#   scripts/*.html    prettier      prettier         yes   yes
 #
 #   (1) README.md only; DECLAUDE.md is not scanned.
-#   (2) node --check over each <script>, reached through the generator
-#       constant that reads the file.
 #
 # The dirs are fixed by convention: ".." is dev/ itself, where the shell
 # scripts, the C recorder and the markdown live, and "." is scripts/, where
 # every generator and page asset lives. There is no path argument.
 #
-# .js/.css/.html have no formatter on this box, so they are written by hand
-# and only checked. A line still over 79 columns after the formatters run is
-# an error: it prints file:line, the width and the whole line, and exits 1.
+# prettier both formats and lints its kinds: it reparses what it writes, so
+# a syntax error cannot survive it. Each page asset is read verbatim into a
+# generator constant (theme.theme_asset), so formatting the file on disk is
+# what covers the string the generator ships. Settings live in
+# dev/.prettierrc.json -- print width 79, so a line still over 79 columns
+# after the formatters run is an error: it prints file:line, the width and
+# the whole line, and exits 1. prettier cannot break a long template
+# literal, so those few are split by hand.
 #
 # Validation runs validate_report.py over the report named as the argument,
 # or over whichever default reports exist when none is named. A directory is
@@ -50,6 +52,7 @@ DIR_DEV=..
 DIR_SCRIPTS=.
 
 COLUMNS_MAX=79
+PRETTIER_CONFIG=../.prettierrc.json
 SHELL_INDENT=2
 RUFF_CONFIG=ruff.toml
 
@@ -74,7 +77,8 @@ log_say() { if [ "$VERBOSE" = 1 ]; then echo "$@"; fi; }
 tool_find() {
   local name="$1" found
 
-  for found in "$name" "$HOME/.local/bin/$name"; do
+  for found in "$name" "$HOME/.local/bin/$name" \
+    "$HOME/.npm-global/bin/$name"; do
     if command -v "$found" >/dev/null 2>&1; then
       echo "$found"
       return 0
@@ -168,18 +172,30 @@ format_c() {
   tool_run clang-format c "${files[@]}"
 }
 
-format_markdown() {
-  local files
-  mapfile -t files < <(files_of "$DIR_DEV" '*.md')
+# Markdown, JSON and YAML under dev/, and every page asset under scripts/.
+# prettier reparses what it writes, so this is the lint for these kinds too:
+# a stray </div> or a bad backslash fails here rather than shipping into
+# every generated page.
+format_prettier() {
+  local files=() extra kind
 
-  TOOL_ARGS=(--wrap "$COLUMNS_MAX" --end-of-line lf)
-  if [ "$CHECK" = 1 ]; then TOOL_ARGS+=(--check); fi
+  for kind in '*.md' '*.json' '*.yml' '*.yaml'; do
+    mapfile -t extra < <(files_of "$DIR_DEV" "$kind")
+    files+=("${extra[@]}")
+  done
+  for kind in '*.js' '*.css' '*.html'; do
+    mapfile -t extra < <(files_of "$DIR_SCRIPTS" "$kind")
+    files+=("${extra[@]}")
+  done
 
-  tool_run mdformat markdown "${files[@]}"
+  TOOL_ARGS=(--config "$PRETTIER_CONFIG" --log-level warn)
+  if [ "$CHECK" = 1 ]; then TOOL_ARGS+=(--check); else TOOL_ARGS+=(--write); fi
+
+  tool_run prettier prettier "${files[@]}"
 }
 
-# pyright over the generators, then check_js.py, which is what reaches the
-# .js files and every <script> inside scripts/*.html.
+# pyright over the generators. The page assets are prettier's, which parses
+# every one of them.
 lint_run() {
   local binary
 
@@ -191,32 +207,14 @@ lint_run() {
 
   local output exit_code=0
   output="$("$binary" --project "$DIR_DEV" 2>&1)" || exit_code=$?
-  output="$output"$'\n'"$(python3 check_js.py 2>&1)" || exit_code=$?
 
   if [ "$exit_code" = 0 ]; then
-    printf '%-12s| ok      | pyright + check_js\n' "lint"
+    printf '%-12s| ok      | pyright\n' "lint"
     log_say "$output"
     return 0
   fi
 
-  printf '%-12s| FAILED  | pyright + check_js\n' "lint"
-  echo "$output" >&2
-  STATUS=1
-}
-
-# Tag balance of every scripts/*.html, since no HTML formatter is installed
-# and a stray </div> would otherwise ship into every generated page.
-html_check() {
-  local output exit_code=0
-  output="$(python3 check_html.py 2>&1)" || exit_code=$?
-
-  if [ "$exit_code" = 0 ]; then
-    printf '%-12s| ok      | tags balanced\n' "html"
-    log_say "$output"
-    return 0
-  fi
-
-  printf '%-12s| FAILED  | unbalanced tags\n' "html"
+  printf '%-12s| FAILED  | pyright\n' "lint"
   echo "$output" >&2
   STATUS=1
 }
@@ -387,12 +385,11 @@ main() {
   report_find
 
   lint_run
-  html_check
 
   format_shell
   format_python
   format_c
-  format_markdown
+  format_prettier
 
   long_lines_report
   validate_run
@@ -402,8 +399,8 @@ main() {
       echo
       echo "not installed: ${MISSING[*]}"
       echo "  sudo apt-get install -y shfmt clang-format"
-      echo "  pip3 install --user --break-system-packages ruff mdformat" \
-        "mdformat-gfm"
+      echo "  pip3 install --user --break-system-packages ruff"
+      echo "  npm install -g prettier"
     } >&2
     STATUS=1
   fi

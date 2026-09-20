@@ -64,7 +64,7 @@ taskset -c 3 ./build-relwithdebinfo/tests/perf/perf <test> [loops]
 
 - `perf2html.sh` - builds + profiles + generates one report. Default DIR
   `perf2html_baseline_report`, or `perf2html_modified_report` when any
-  cmake_flags are given (after a *source*-only change, pass
+  cmake_flags are given (after a _source_-only change, pass
   `--report=perf2html_modified_report` yourself). cwd-independent (cd's to
   `dev/`); relative DIR is under `dev/`. Last line printed is the `file://`
   URL.
@@ -78,9 +78,9 @@ taskset -c 3 ./build-relwithdebinfo/tests/perf/perf <test> [loops]
   one failed. **It takes no path argument**: the directories are fixed by
   convention, `..` (dev/ itself) for `*.sh`/`*.c`/`*.h`/`*.md` and `.`
   (scripts/) for everything else, and the header carries an ASCII table of
-  which tool runs over which kind. Lint is pyright (**0 errors**) +
-  `check_js.py` + `check_html.py`. Its one optional argument is a report dir; a
-  relative one resolves against the caller's cwd, not `scripts/`. Validation is
+  which tool runs over which kind. Lint is pyright (**0 errors**) + ruff +
+  `prettier`. Its one optional argument is a report dir; a relative one
+  resolves against the caller's cwd, not `scripts/`. Validation is
   `validate_report.py` over that report, else over whichever of the three
   defaults exist. A directory is a report by holding a `MANIFEST.txt` whose
   line 1 is `curl/perf2html.sh v1` or `curl/perf2html_diff.sh v1`; that line
@@ -94,20 +94,19 @@ Key behaviors worth knowing before touching them:
 - `--keep-raw` keeps `dev/trace/`; otherwise it's deleted at startup. **The
   batch owns every `dev/trace/` deletion** - it passes `--keep-raw` down so a
   child can't unlink the batch log mid-run, and deletes after step 3. A failed
-  flagless batch *keeps* `dev/trace/` (the step logs are the evidence).
+  flagless batch _keeps_ `dev/trace/` (the step logs are the evidence).
 - `--regenerate` implies `--keep-raw`, and in the batch also `--keep`. It reads
   `stamp=` back from the report's own `MANIFEST.txt` and rebuilds
   byte-identically when no generator changed.
-- **`reformat.sh` is the only `validate_report.py`, `pyright`, `check_js.py`
-  and `check_html.py` call anywhere.** Don't add a lint or validate step to a
-  generator or to the batch. Validation reads the report dirs only, never
-  `dev/trace/`, so the batch deleting `trace/` on a clean flagless run doesn't
-  affect it.
+- **`reformat.sh` is the only `validate_report.py`, `pyright`, `ruff` and
+  `prettier` call anywhere.** Don't add a lint or validate step to a generator
+  or to the batch. Validation reads the report dirs only, never `dev/trace/`,
+  so the batch deleting `trace/` on a clean flagless run doesn't affect it.
 - **The batch plus `reformat.sh` is the generators' test suite** - driving them
   over all three output dirs is the coverage. Don't grow a per-generator check.
 - Profiling:
   `taskset -c 3 valgrind --tool=callgrind --cache-sim=yes --branch-sim=yes`.
-  Timing is a *separate* native pinned
+  Timing is a _separate_ native pinned
   `perf stat -x, -e cycles:u,instructions:u` run - its `Time*` lines are the
   only valid speed number; callgrind's wall clock never is.
 - Trace tree `build-instr` = same flags + `-finstrument-functions` +
@@ -147,7 +146,7 @@ Exceptions to remember:
   no flame graph (the files still exist on disk, just unlinked).
 - A **diff report**: no flame graph, no native timing, and per-test pages have
   no preamble at all - strip straight to the table.
-- `MANIFEST.txt` line 1 is the *only* thing that makes a directory a diff input
+- `MANIFEST.txt` line 1 is the _only_ thing that makes a directory a diff input
   (`head -1`; a diff's own version string names `perf2html_diff.sh`, so diffs
   can't be diffed). Written by `run_all` after every test, so an aborted run
   leaves none.
@@ -208,9 +207,9 @@ still over 79 after the formatters run is an **error**, not a note:
 `long_lines_report` prints `file:line`, the width and the whole line, and the
 script exits 1. It scans `.sh`, `.c`, `.h`, `.md` under `dev/` and `.py`,
 `.js`, `.css`, `.html` under `scripts/`. The formatters cannot reach some of
-those lines - `echo` text in a shell script, a fenced block in `.md`, and all
-of `scripts/*.js`, `scripts/*.css` and `scripts/*.html`, none of which has a
-formatter installed here - so they are rewrapped by hand. Whole tree is at 0.
+those lines - `echo` text in a shell script, a fenced block in `.md`, and a
+template literal too long to fit, which `prettier` will not break - so those
+few are split by hand. Whole tree is at 0.
 
 **`dev/` source is ASCII plus a short allow list.** `validate_report.py`'s
 `unicode_check` walks every `.py`/`.js`/`.css`/`.sh`/`.html` and `README.md`
@@ -223,16 +222,16 @@ would be double-escaped into visible text by the JS `esc()` and by `theme.py`'s
 means adding it to `_ALLOWED_UNICODE` with a `#` comment naming it.
 `DECLAUDE.md` is not scanned.
 
-Rewrapping any of `scripts/heatmap.html`, `heatmap.css`, `frame.js`,
+Reformatting any of `scripts/heatmap.html`, `heatmap.css`, `frame.js`,
 `flame_bootstrap.js`, `theme.css` or `theme.js` changes every generated page
 (they are all inlined into each one), so a page diff after such an edit is
 expected; `perf2html_batch.sh --regenerate` then a diff against a snapshot is
 how you check that only the inlined `<style>`/`<script>` moved. Text a script
-`echo`s into `perf-tool/output.txt` is *page content*, so rewrapping it does
+`echo`s into `perf-tool/output.txt` is _page content_, so rewrapping it does
 change the report - split it into extra `#` lines rather than letting it
 overflow.
 
-Not to be confused with the **80-column source *view*** in the heat map
+Not to be confused with the **80-column source _view_** in the heat map
 (`SRC_COLS`, `MM_MIN_COLS`), which is the standard width the profiled `lib/`
 source is rendered at - that stays 80 and has nothing to do with how `dev/` is
 written.
@@ -264,9 +263,9 @@ one-line delegations (`profile_load(paths)` → `Callgrind().load(paths)`) so
 callers never name a class.
 
 **Constants are alphabetical ignoring the leading `_`** - so `BODY` sorts
-before `_CSS`, `_EVENT_LONG` before `REPO_ROOT`. The *only* constants allowed
+before `_CSS`, `_EVENT_LONG` before `REPO_ROOT`. The _only_ constants allowed
 below the classes are the ones that can't be evaluated above them: a constant
-whose value names a class in the same file (`_DERIVED_DEFAULTS`, `_HOLDERS`,
+whose value names a class in the same file (`_DERIVED_DEFAULTS`,
 `_LAYOUT_FULL`/`_LAYOUT_DIFF`, `_FLAME_VIEW`/`_HEAT_VIEW`, `_TIME_UNITS`) or a
 singleton/derived value built from one (`theme.py`'s
 `_RENDERER`/`_NUMBERS`/`_COLOR_PAIR`/`_ROLE`). Those sit after the class that
@@ -324,10 +323,10 @@ pipx/uv). Pylance is not usable - LSP only, ignores argv.
   `callgrind_to_heatmap._CSS`, `frame.js` → `build_report.FRAME_JS`,
   `flame_bootstrap.js` → `build_flame_graph._BOOTSTRAP`. Being off the Python
   side, **their JS is written plainly** - `\n` is `\n`, not `\\n`; that gotcha
-  is gone from `dev/` entirely. They keep their coverage: `check_js.py` via the
-  holder name, `check_html.py` over the `.html`, and the 79-column and ASCII
-  scans over all of them. No formatter touches any of them - rewrap by hand. A
-  holder constant is still **named exactly** what `check_js.py` expects.
+  is gone from `dev/` entirely. They keep their coverage: `prettier` formats
+  and parses each file on disk, which is the same string the holder reads, and
+  the 79-column and ASCII scans run over all of them. Holder names are now
+  free - nothing looks a constant up by name any more.
 - `flame_bootstrap.js` keeps its `__NAME__`/`__DATA__` markers, which
   `build_flame_graph.py` substitutes at generate time; they are bare
   identifiers, so `node --check` accepts the file as written.
@@ -354,17 +353,17 @@ pipx/uv). Pylance is not usable - LSP only, ignores argv.
 - `validate_report.py OUTDIR [--diff]` - structural smoke test only;
   `flame_graph_check` requires exactly one `evented` profile whose `exporter`
   is `_FLAME_EXPORTER`, so a synthesized or stale flame graph fails.
-- `check_js.py` - `node --check` on `theme.js` and every JS chunk a generator
-  holds in a module-level string (`_HOLDERS`), whichever way that string was
-  filled - each holder now reads its `.js`/`.html` off disk and is checked
-  exactly as before. **Add a pair here when a generator grows new embedded
-  JS**; a `.js` file no generator holds is checked by nothing. This is what
-  catches a `\n` that needed `\\n`.
-- `check_html.py` - `html.parser` tag balance over every `scripts/*.html`,
-  reporting a `</tag>` that closes the wrong element and a tag never closed.
-  There is no HTML formatter on this box, so this is what stops a stray
-  `</div>` shipping into every generated page. `_VOID` lists the tags that
-  close themselves.
+- `prettier` - formats **and** lints JS, CSS, HTML, Markdown, JSON and YAML,
+  replacing the former `check_js.py`/`check_html.py` and `mdformat`. It
+  reparses what it writes, so a syntax error or an unbalanced `</div>` fails
+  the run instead of shipping into every generated page; both cases are
+  reported as `[error] <file>: SyntaxError` with a line/column. Config is
+  `dev/.prettierrc.json` (`printWidth` 79, `proseWrap: always` - that last one
+  is what keeps markdown wrapped the way `mdformat --wrap` did; without it
+  prose is left on one line). A new `.js`/`.css`/`.html`/`.md` under the two
+  scanned dirs is picked up with no list to edit. Install:
+  `npm install -g prettier` (lands in `~/.npm-global/bin`, which `tool_find`
+  now searches alongside `~/.local/bin`).
 
 ## Why the heat map exists
 
@@ -481,7 +480,7 @@ Pages nest two deep: overview frames a test summary, which frames its heat map
   `iframe.src`**, which adds a history entry per load and desyncs back. `"#"`
   not `""`: a fragment-less URL is a document reload.
 - Four postMessages, all source-checked. Inward: `theme:reset-cols`,
-  `theme:title?`. Outward: `{theme:"hash"}` (posted by the heat map *and* by a
+  `theme:title?`. Outward: `{theme:"hash"}` (posted by the heat map _and_ by a
   framed `FRAME_JS`'s own `sync()`, so a middle level relays its full hash up -
   without it the outer hash freezes at `#<test>`), `{theme:"title"}`.
 - Regression test for URL-as-state: click test → view → file → line → event,
@@ -496,7 +495,7 @@ Pages nest two deep: overview frames a test summary, which frames its heat map
 - Source table columns: `<event>`, `line`, `source`, `calls`, D1m, DLm, Bcm.
   **No row-wide heat** - each cell carries its own, so no cell's text is
   contrast-colored against another cell's background.
-- `EVS`/`EXTRA` list every event the profile *can* produce, **not** filtered by
+- `EVS`/`EXTRA` list every event the profile _can_ produce, **not** filtered by
   whether the total is zero - the dropdown and columns stay layout-stable
   across profiles/diffs. An all-zero column renders blank, no heat, no `NaN`.
   Totals guard `|| 1`.
@@ -504,7 +503,7 @@ Pages nest two deep: overview frames a test summary, which frames its heat map
   (`width: max-content; min-width: 100%`) so the wrapper equals the sideways
   scroll range. Bands/chips need `contain: inline-size` or their unwrapped
   single-line width sets max-content. **Order gotcha:** `minimapBuild()` runs
-  *before* `Theme.init()` - it narrows the pane by 110px and the fill measures
+  _before_ `Theme.init()` - it narrows the pane by 110px and the fill measures
   it as-is at that moment.
 - `centerRow()` (vertical only) replaces `scrollIntoView`, which also pulled
   the pane sideways.

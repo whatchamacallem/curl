@@ -17,7 +17,7 @@ import theme
 from callgrind import Costs, Group
 
 # The page body and its script, read from scripts/heatmap.html at generate
-# time. Named exactly this: check_js.py looks it up by name.
+# time.
 BODY = theme.theme_asset("heatmap.html")
 
 # The extra stylesheet the heat map needs on top of the shared theme,

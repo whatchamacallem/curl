@@ -6,7 +6,9 @@
   const links = [...bar.querySelectorAll("a[data-view]")];
   const util = document.getElementById("util");
   const framed = window.parent !== window;
-  let page = "", state = "", title = titleElement.textContent;
+  let page = "",
+    state = "",
+    title = titleElement.textContent;
   function setTitle(newTitle) {
     title = newTitle;
     titleElement.textContent = framed ? "" : newTitle;
@@ -27,7 +29,7 @@
   }
   function show(hash) {
     const [key, sub] = parse(hash);
-    const link = links.find(anchor => anchor.dataset.view === key);
+    const link = links.find((anchor) => anchor.dataset.view === key);
     const current = link || links[0];
     for (const anchor of links) {
       anchor.classList.toggle("on", anchor === current);
@@ -35,16 +37,20 @@
     setTitle(current.dataset.title);
     util.hidden = !framed && !!(link && key && link.dataset.frame);
     if (!link || !key) {
-      view.hidden = true; home.hidden = false;
+      view.hidden = true;
+      home.hidden = false;
       window.Theme.relayout(home);
-      sync(""); return;
+      sync("");
+      return;
     }
     const href = link.getAttribute("href");
     if (href !== page || sub !== state) {
       view.contentWindow.location.replace(href + (sub || "#"));
     } else view.contentWindow.postMessage("theme:title?", "*");
-    page = href; state = sub;
-    home.hidden = true; view.hidden = false;
+    page = href;
+    state = sub;
+    home.hidden = true;
+    view.hidden = false;
     sync(build(key, sub));
   }
   function hashFor(href) {
@@ -62,23 +68,26 @@
     window.Theme.resetCols(home);
     if (page) view.contentWindow.postMessage("theme:reset-cols", "*");
   }
-  resetCols.addEventListener("click", event => {
+  resetCols.addEventListener("click", (event) => {
     event.preventDefault();
     resetAll();
   });
-  document.addEventListener("click", event => {
+  document.addEventListener("click", (event) => {
     const anchor = event.target.closest("a[href]");
     if (!anchor || anchor === resetCols || anchor.target) return;
     if (event.ctrlKey || event.metaKey || event.shiftKey) return;
     if (event.button) return;
     const href = anchor.getAttribute("href");
-    const hash = anchor.dataset.view != null
-      ? build(anchor.dataset.view, "") : hashFor(href);
+    const hash =
+      anchor.dataset.view != null
+        ? build(anchor.dataset.view, "")
+        : hashFor(href);
     if (hash == null) return;
     event.preventDefault();
-    if (hash === (location.hash || "")) show(hash); else location.hash = hash;
+    if (hash === (location.hash || "")) show(hash);
+    else location.hash = hash;
   });
-  window.addEventListener("message", event => {
+  window.addEventListener("message", (event) => {
     if (event.source === view.contentWindow && event.data) {
       if (event.data.theme === "title") setTitle(event.data.title);
       else if (event.data.theme === "hash" && page) {

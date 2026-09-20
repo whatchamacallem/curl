@@ -29,7 +29,7 @@ window.Theme = (function () {
       bar.hidden = !cells[index];
       if (!cells[index]) return;
       const right = cells[index].getBoundingClientRect().right;
-      bar.style.left = (right - left0) + "px";
+      bar.style.left = right - left0 + "px";
     });
   }
   function drag(event, table, index, bar) {
@@ -37,11 +37,12 @@ window.Theme = (function () {
     const cell = headerCells(table)[index];
     if (!col || !cell) return;
     table._dragged = true;
-    const x0 = event.clientX, floor = floorPx(col);
+    const x0 = event.clientX,
+      floor = floorPx(col);
     const width0 = cell.getBoundingClientRect().width;
     bar.classList.add("active");
     if (bar.setPointerCapture) bar.setPointerCapture(event.pointerId);
-    const move = moveEvent => {
+    const move = (moveEvent) => {
       const width = width0 + moveEvent.clientX - x0;
       col.style.width = Math.max(floor, width) + "px";
       layoutBars(table);
@@ -54,7 +55,6 @@ window.Theme = (function () {
     event.preventDefault();
   }
 
-
   function scrollerOf(el) {
     let ancestor = el.parentElement;
     for (; ancestor; ancestor = ancestor.parentElement) {
@@ -64,24 +64,23 @@ window.Theme = (function () {
     return document.documentElement;
   }
 
-
   function fillTable(table) {
     if (!table.offsetWidth) return;
     const cols = [...table.querySelectorAll("colgroup > col")];
     if (!cols.length) return;
-    const grow = cols.find(col => col.classList.contains("grow"))
-      || cols[cols.length - 1];
+    const grow =
+      cols.find((col) => col.classList.contains("grow")) ||
+      cols[cols.length - 1];
     grow.style.width = grow.dataset.w;
     const floor = floorPx(grow);
     const scroller = scrollerOf(table);
     const box = table.getBoundingClientRect();
-    const inset = box.left - scroller.getBoundingClientRect().left
-      + scroller.scrollLeft;
+    const inset =
+      box.left - scroller.getBoundingClientRect().left + scroller.scrollLeft;
     const target = Math.floor(scroller.clientWidth - 2 * inset);
     const others = box.width - grow.getBoundingClientRect().width;
     grow.style.width = Math.max(floor, target - others) + "px";
   }
-
 
   function initTable(table) {
     if (table._bars) return;
@@ -94,13 +93,13 @@ window.Theme = (function () {
       const bar = document.createElement("div");
       bar.className = "bar";
       bar.title = "drag to resize";
-      bar.addEventListener("pointerdown",
-        event => drag(event, table, index, bar));
+      bar.addEventListener("pointerdown", (event) =>
+        drag(event, table, index, bar),
+      );
       wrap.appendChild(bar);
       table._bars.push(bar);
     }
   }
-
 
   const splitters = [];
   function resetCols(root) {
@@ -144,14 +143,13 @@ window.Theme = (function () {
       layoutBars(table);
     }
     const bands = [...root.querySelectorAll(".band")];
-    new Set(bands.map(band => band.parentElement)).forEach(alignSticky);
+    new Set(bands.map((band) => band.parentElement)).forEach(alignSticky);
   }
   function init(root) {
     root = root || document.body;
     for (const table of root.querySelectorAll("table.cols")) initTable(table);
     relayout(root);
   }
-
 
   const store = {
     get(key) {
@@ -173,17 +171,20 @@ window.Theme = (function () {
     splitters.push({ pane, key });
     const saved = store.get(key);
     if (saved) pane.style.width = saved + "px";
-    bar.addEventListener("pointerdown", event => {
+    bar.addEventListener("pointerdown", (event) => {
       const x0 = event.clientX;
       const width0 = pane.getBoundingClientRect().width;
       bar.classList.add("active");
       if (bar.setPointerCapture) bar.setPointerCapture(event.pointerId);
       let frame = 0;
-      const move = moveEvent => {
+      const move = (moveEvent) => {
         const want = Math.max(min || 120, width0 + moveEvent.clientX - x0);
         pane.style.width = Math.min(window.innerWidth * 0.6, want) + "px";
         if (frame) return;
-        frame = requestAnimationFrame(() => { frame = 0; relayout(); });
+        frame = requestAnimationFrame(() => {
+          frame = 0;
+          relayout();
+        });
       };
       const up = () => {
         bar.classList.remove("active");

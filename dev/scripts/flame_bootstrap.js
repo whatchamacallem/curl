@@ -9,8 +9,9 @@
     return false;
   }
   if (!load()) {
-    var tries = 0, timer = setInterval(function () {
-      if (load() || ++tries >= 200) clearInterval(timer);
-    }, 50);
+    var tries = 0,
+      timer = setInterval(function () {
+        if (load() || ++tries >= 200) clearInterval(timer);
+      }, 50);
   }
 })();

@@ -11,11 +11,7 @@
       "WebSearch(*)",
       "Write(*)"
     ],
-    "deny": [
-      "Edit(/mnt/**)",
-      "Read(/mnt/**)",
-      "Write(/mnt/**)"
-    ],
+    "deny": ["Edit(/mnt/**)", "Read(/mnt/**)", "Write(/mnt/**)"],
     "defaultMode": "auto"
   }
 }

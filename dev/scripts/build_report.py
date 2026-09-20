@@ -27,8 +27,7 @@ _EVENT = "Ir"
 _FULL_HEAT_PCT = 100.0
 
 # The script every framing level runs, deciding what it is by whether it has
-# a parent, read from scripts/frame.js at generate time. Named exactly this:
-# check_js.py looks it up by name.
+# a parent, read from scripts/frame.js at generate time.
 FRAME_JS = theme.theme_asset("frame.js")
 
 # Valgrind's own preamble, dropped from the log a page shows.
