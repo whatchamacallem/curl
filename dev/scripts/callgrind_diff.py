@@ -30,12 +30,21 @@ class CallgrindDiff:
         cost: int
 
     # CallersDoc - The JSON sidecar, because a delta file has no calls= lines
-    # and so no call graph at all.
+    # and so no call graph at all, and no baseline to be a share of.
     class CallersDoc(TypedDict):
         # which event the costs are counted in
         event: str
+        # the baseline vectors' event order, so a reader can find a slot
+        events: list[str]
         # per callee, its changed callers as [name, count, cost] rows
         callers: dict[str, list[list[object]]]
+        # what every share divides by: the baseline cost vector per
+        # "<function>" and per "<function>\n<file>\n<line>"
+        baseline: dict[str, Costs]
+        # the baseline's summed cost vector, the overview's denominator
+        baselineTotal: Costs
+        # per callee, how many times the baseline called it
+        baselineCalls: dict[str, int]
 
     # DiffArgs - The two sides to subtract, and the two files to write.
     class DiffArgs(NamedTuple):
@@ -49,6 +58,29 @@ class CallgrindDiff:
         callers_output: str
         # which event the sidecar counts in
         event: str
+
+    # The baseline cost of every function and of every one of its lines --
+    # the denominator each share is taken against. Keyed the same way the
+    # subtraction is, so an inlined body is never charged to its neighbour.
+    def baseline_costs(
+        self, baseline: callgrind.Profile
+    ) -> dict[str, Costs]:
+        out: dict[str, Costs] = {}
+        for function, costs in baseline.function_self.items():
+            if any(costs):
+                out[function] = self.costs_trim(costs)
+        for function, lines in baseline.function_lines.items():
+            for key, costs in lines.items():
+                if any(costs):
+                    out[self.baseline_key(function, key.file, key.line)] = (
+                        self.costs_trim(costs)
+                    )
+        return out
+
+    # How the page spells one line's baseline slot -- the display path, the
+    # same one the heat map keys its files by.
+    def baseline_key(self, function: str, file: str, line: int) -> str:
+        return f"{function}\n{callgrind.path_norm(file).display}\n{line}"
 
     # Read both sides, write the delta, then write the caller sidecar.
     def build(self, args: CallgrindDiff.DiffArgs) -> None:
@@ -70,7 +102,9 @@ class CallgrindDiff:
             file=sys.stderr,
         )
         callers = self.callers_subtract(baseline, modified, args.event)
-        self.callers_write(callers, args.callers_output, args.event)
+        self.callers_write(
+            callers, args.callers_output, args.event, baseline
+        )
         print(
             f"wrote {args.callers_output} "
             f"({os.path.getsize(args.callers_output):,} bytes): "
@@ -133,15 +167,23 @@ class CallgrindDiff:
         callers: dict[str, list[CallgrindDiff.CallerDelta]],
         path: str,
         event: str,
+        baseline: callgrind.Profile,
     ) -> None:
         doc: CallgrindDiff.CallersDoc = {
             "event": event,
+            "events": list(baseline.events),
             "callers": {
                 callee: [
                     [delta.function, delta.count_, delta.cost]
                     for delta in deltas
                 ]
                 for callee, deltas in callers.items()
+            },
+            "baseline": self.baseline_costs(baseline),
+            "baselineTotal": self.costs_trim(baseline.totals()),
+            "baselineCalls": {
+                callee: sum(tally.count for tally in tallies.values())
+                for callee, tallies in baseline.callers.items()
             },
         }
         os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
@@ -155,6 +197,14 @@ class CallgrindDiff:
             - (baseline[index] if index < len(baseline) else 0)
             for index in range(max(len(modified), len(baseline)))
         ]
+
+    # Drop trailing zeros -- the sidecar carries one vector per line, so the
+    # slots nothing would divide by are not worth the bytes.
+    def costs_trim(self, costs: Costs) -> Costs:
+        length = len(costs)
+        while length and costs[length - 1] == 0:
+            length -= 1
+        return costs[:length]
 
     # Sum of every line delta's absolute value -- what a diff's shares divide
     # by, since the signed total is near zero.

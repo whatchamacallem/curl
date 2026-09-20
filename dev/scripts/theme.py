@@ -151,6 +151,14 @@ class Theme:
                 else f"{value:.0f}{unit}"
             )
 
+        # An unsigned share, as a percentage up to 100% and a multiple
+        # above it: 1.30x. Anything past 99.99x is just ">1000x".
+        def multiple(self, percent: float) -> str:
+            if percent <= 100:
+                return self.percent(percent)
+            times = percent / 100
+            return f"{times:.2f}x" if times < 99.99 else ">1000x"
+
         # 63.2% / <0.01%, and an empty cell rather than a bare 0%.
         def percent(self, percent: float) -> str:
             if percent >= 9.95:
@@ -159,17 +167,25 @@ class Theme:
                 return f"{percent:.2f}%"
             return "<0.01%" if percent > 0 else ""
 
-        # A diff number: same as human(), with a sign, and empty at zero.
+        # A diff number: same as human(), and empty at zero. Only a drop
+        # is marked, with "-"; a rise carries no "+".
         def signed(self, number: float) -> str:
             if number == 0:
                 return ""
-            return ("+" if number > 0 else "-") + self.human(abs(number))
+            return ("-" if number < 0 else "") + self.human(abs(number))
 
-        # A diff share: same as percent(), with a sign, and empty at zero.
+        # A diff share: same as percent(), and empty at zero. An arrow
+        # leads and a drop keeps its "-". Too small to print is
+        # "~0.00%" and ">1000x" is a bound, so neither takes a sign.
         def signed_percent(self, percent: float) -> str:
             if percent == 0:
                 return ""
-            return ("+" if percent > 0 else "-") + self.percent(abs(percent))
+            arrow = "▼" if percent < 0 else "▲"
+            if abs(percent) < 0.01:
+                return arrow + "≈0.00%"
+            body = self.multiple(abs(percent))
+            sign = "-" if percent < 0 and body[0] != ">" else ""
+            return arrow + sign + body
 
         # A duration in the largest unit it reaches, e.g. 1.25ms.
         def time(self, seconds: float) -> str:
@@ -353,7 +369,7 @@ class Theme:
         columns: Sequence[Column],
         rows: Sequence[Sequence[CellOrText]],
         fill: bool = False,
-        header: bool = True,
+        column_titles: bool = True,
     ) -> str:
         cells = [[self.cell(value) for value in row] for row in rows]
         for row in cells:
@@ -392,7 +408,7 @@ class Theme:
                 f'<col{attr} data-min="{floor}ch" style="width:{width}ch">'
             )
         out.append("</colgroup>")
-        if header:
+        if column_titles:
             out.append("<thead><tr>")
             for column in columns:
                 attrs = (' class="n"' if column.numeric else "") + (
@@ -521,9 +537,9 @@ def table_render(
     columns: Sequence[Column],
     rows: Sequence[Sequence[CellOrText]],
     fill: bool = False,
-    header: bool = True,
+    column_titles: bool = True,
 ) -> str:
-    return _RENDERER.table(key, columns, rows, fill, header)
+    return _RENDERER.table(key, columns, rows, fill, column_titles)
 
 
 # theme_css - The whole stylesheet, colour variables first.

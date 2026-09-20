@@ -8,7 +8,7 @@ import subprocess
 import sys
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import NamedTuple, TypedDict
+from typing import NamedTuple, NotRequired, TypedDict
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import callgrind
@@ -23,6 +23,7 @@ BODY = """<div id="hdr" class="strip">
   <label>scale: <select id="scale">
     <option value="global">log, global</option>
     <option value="file">log, per file</option>
+    <option value="function">log, per function</option>
     <option value="linear">linear, global</option>
   </select></label>
   <label>tree: <select id="sort">
@@ -63,25 +64,25 @@ Theme.splitter(document.getElementById("split"), treeEl, "heat.tree", 120);
 const at = (vector, index) =>
   (vector && index < vector.length) ? vector[index] : 0;
 const EVS = [];
-model.meta.events.forEach((name, index) => {
+model.heatMapTotals.events.forEach((name, index) => {
   EVS.push({
     key: name,
-    long: model.meta.eventLong[name] || "",
+    long: model.heatMapTotals.eventLong[name] || "",
     get: vector => at(vector, index),
   });
 });
-for (const [name, terms, long] of model.meta.derived) {
+for (const [name, terms, long] of model.heatMapTotals.derived) {
   const get = vector =>
     terms.reduce((sum, term) => sum + term[0] * at(vector, term[1]), 0);
   EVS.push({
     key: name,
-    long: long || model.meta.eventLong[name] || "",
+    long: long || model.heatMapTotals.eventLong[name] || "",
     get,
     derived: true,
   });
 }
 const evByKey = key => EVS.find(event => event.key === key);
-let currentEvent = evByKey(model.meta.defaultEvent) || EVS[0];
+let currentEvent = evByKey(model.heatMapTotals.defaultEvent) || EVS[0];
 const EXTRA = ["D1m", "DLm", "Bcm"].map(evByKey).filter(Boolean);
 
 const EVENT_SHORT = {
@@ -122,15 +123,19 @@ const val = vector => currentEvent.get(vector);
 const mag = Math.abs;
 
 function recomputeScale() {
-  TOTAL = currentEvent.get(model.meta.totals) || 1;
-  let max = 0;
-  for (const file of Object.values(files)) {
-    for (const rec of Object.values(file.lines)) {
+  TOTAL = currentEvent.get(model.heatMapTotals.totals) || 1;
+  let max = 0, maxPct = 0;
+  for (const [path, file] of Object.entries(files)) {
+    for (const [lineNumber, rec] of Object.entries(file.lines)) {
       const self = mag(val(rec[0]));
       if (self > max) max = self;
+      if (DIFF) {
+        const base = lineBase(path, lineNumber);
+        maxPct = Math.max(maxPct, mag(pctOf(val(rec[0]), base)));
+      }
     }
   }
-  MAXP = Math.max(100 * max / TOTAL, 0.0001);
+  MAXP = Math.max(DIFF ? maxPct : 100 * max / TOTAL, 0.0001);
   MAXPX = {};
   for (const extra of EXTRA) {
     let extraMax = 0;
@@ -140,7 +145,7 @@ function recomputeScale() {
         if (self > extraMax) extraMax = self;
       }
     }
-    const extraTotal = extra.get(model.meta.totals) || 1;
+    const extraTotal = extra.get(model.heatMapTotals.totals) || 1;
     MAXPX[extra.key] = {
       total: extraTotal,
       maxP: Math.max(100 * extraMax / extraTotal, 0.0001),
@@ -177,22 +182,52 @@ const SELF = {
 };
 const HAS_CALLS = functions.some(func => func.callers.length > 0);
 
-const DIFF = !!model.meta.diff;
+const DIFF = !!model.heatMapTotals.diff;
+const FN_BASE = model.functionBaseline || [];
+let baseOf = () => null;
+let pctOf = (value, base) => pct(value);
+let fmtPctOf = (value, base) => fmtPct(value);
 if (DIFF) {
-  const sign = value => value > 0 ? "+" : "\\u2212";
   const plainP = fmtP, plainH = fmtH;
-  fmtP = percent => percent ? sign(percent) + plainP(mag(percent)) : "";
-  fmtH = value => value ? sign(value) + plainH(mag(value)) : "0";
+  const mult = percent => percent / 100 < 99.99
+    ? (percent / 100).toFixed(2) + "x" : ">1000x";
+  const body = percent => percent < 0.01 ? "\\u22480.00%"
+    : percent > 100 ? mult(percent) : plainP(percent);
+  const signed = (percent, text) => text[0] === ">" || text[0] === "\\u2248"
+    ? text : (percent < 0 ? "\\u2212" : "") + text;
+  fmtP = percent => percent ? (percent < 0 ? "\\u25bc" : "\\u25b2")
+    + signed(percent, body(mag(percent))) : "";
+  fmtH = value => !value ? "0"
+    : (value < 0 ? "\\u2212" : "") + plainH(mag(value));
   HOT = "Most changed";
   HOT_LINES = "most changed lines";
-  SELF.title = "the line/function's own change, as a share of every"
-    + " change added up; + is more than the baseline, \\u2212 is less";
+  SELF.title = "the line/function's own change against what it cost in"
+    + " the baseline; \\u25b2 is more, \\u25bc is less, \\u25bc\\u2212100%"
+    + " is gone entirely, \\u25b2100% is all new";
+  baseOf = vector => {
+    if (!vector) return null;
+    const base = mag(currentEvent.get(vector));
+    return base ? base : null;
+  };
+  pctOf = (value, base) => base ? 100 * value / base : (value ? 100 : 0);
+  fmtPctOf = (value, base) =>
+    base ? fmtP(100 * value / base) : (value ? fmtP(100) : "");
 }
+const lineBase = (path, lineNumber) => {
+  const table = files[path] && files[path].baseline;
+  return baseOf(table && table[lineNumber]);
+};
+const fnBase = funcIndex => baseOf(FN_BASE[funcIndex]);
 
 const PMIN = 0.001;
+const PFULL = 100;
 function heatP(percent, maxP) {
   const sign = DIFF && percent < 0 ? -1 : 1;
   percent = mag(percent);
+  if (DIFF) {
+    percent = Math.min(percent, PFULL);
+    maxP = Math.min(maxP, PFULL);
+  }
   if (percent <= 0) return 0;
   if (scale === "linear") return sign * Math.min(1, percent / maxP);
   if (percent < PMIN) return 0;
@@ -200,6 +235,9 @@ function heatP(percent, maxP) {
   return sign * Math.min(1, Math.log10(percent / PMIN) / span);
 }
 function heatT(cost, maxP) { return heatP(pct(cost), maxP); }
+function heatTOf(cost, base, maxP) {
+  return heatP(pctOf(cost, base), maxP);
+}
 
 const RGB = hex =>
   [1, 3, 5].map(index => parseInt(hex.slice(index, index + 2), 16));
@@ -383,7 +421,7 @@ function extraCells(vec) {
 let TREE = null;
 function buildTree() {
   const root = { name: "", path: "", dirs: new Map(), files: [], self: 0 };
-  function insert(path, self, cold) {
+  function insert(path, self, base, cold) {
     const parts = path.split("/");
     let node = root;
     for (let partIndex = 0; partIndex < parts.length - 1; partIndex++) {
@@ -395,23 +433,36 @@ function buildTree() {
           dirs: new Map(),
           files: [],
           self: 0,
+          base: 0,
         });
       }
       node = node.dirs.get(segment);
     }
     node.files.push({
-      name: parts[parts.length - 1], path, self, cold, zero: self === 0,
+      name: parts[parts.length - 1], path, self, base, cold,
+      zero: self === 0,
     });
   }
   for (const path of Object.keys(files)) {
-    insert(path, val(files[path].self), false);
+    let base = 0;
+    if (DIFF) {
+      const table = files[path].baseline || {};
+      for (const vector of Object.values(table)) {
+        base += mag(currentEvent.get(vector));
+      }
+    }
+    insert(path, val(files[path].self), base, false);
   }
-  for (const path of model.cold) insert(path, 0, true);
+  for (const path of model.cold) insert(path, 0, 0, true);
   (function sum(node) {
-    let total = 0;
-    for (const dir of node.dirs.values()) total += sum(dir);
-    for (const file of node.files) total += file.self;
+    let total = 0, base = 0;
+    for (const dir of node.dirs.values()) {
+      total += sum(dir);
+      base += dir.base;
+    }
+    for (const file of node.files) { total += file.self; base += file.base; }
     node.self = total;
+    node.base = base;
     return total;
   })(root);
   return root;
@@ -436,14 +487,15 @@ function renderTree() {
     const dirs = [...node.dirs.values()].filter(subtreeMatches).sort(cmp);
     for (const dir of dirs) {
       const open = query ? true : openDirs.has(dir.path);
-      const heatStyleAttr = heatBgSoft(heatT(dir.self, MAXPDIR));
+      const heatStyleAttr = heatBgSoft(heatTOf(dir.self, dir.base, MAXPDIR));
       out.push(`<div class="node dir${heatStyleAttr ? " heat" : ""}"`
         + ` data-dir="${esc(dir.path)}"`
         + ` style="padding-left:${6 + depth * 14}px;${heatStyleAttr}">`
         + `<span class="caret">${open ? "\\u25BC" : "\\u25B6"}</span>`
         + `<span class="name" title="${esc(dir.path)}">`
         + `${esc(dir.name)}/</span>`
-        + `<span class="pct">${fmtPct(dir.self)}</span></div>`);
+        + `<span class="pct">${fmtPctOf(dir.self, dir.base)}`
+        + `</span></div>`);
       out.push(`<div class="kids${open ? " open" : ""}">`);
       rec(dir, depth + 1);
       out.push(`</div>`);
@@ -452,7 +504,7 @@ function renderTree() {
     const fileRow = file => {
       const sel = file.path === curFile ? " sel" : "";
       const heatStyleAttr = file.cold ? ""
-        : heatBgSoft(heatT(file.self, MAXPDIR));
+        : heatBgSoft(heatTOf(file.self, file.base, MAXPDIR));
       const cold = file.cold ? " (no samples; source not embedded)" : "";
       out.push(`<div class="node file${file.cold ? " cold" : ""}`
         + `${heatStyleAttr ? " heat" : ""}${sel}"`
@@ -461,7 +513,8 @@ function renderTree() {
         + `<span class="caret">\\u25B6</span>`
         + `<span class="name" title="${esc(file.path)}${cold}">`
         + `${esc(file.name)}</span>`
-        + `<span class="pct">${fmtPct(file.self)}</span></div>`);
+        + `<span class="pct">${fmtPctOf(file.self, file.base)}`
+        + `</span></div>`);
     };
     const zero = fileList.filter(file => file.zero);
     for (const file of fileList) if (!file.zero) fileRow(file);
@@ -552,8 +605,10 @@ function renderHome() {
       const [path, lineNumber, cost, funcIndex, snip] = entry;
       const rec = files[path].lines[lineNumber];
       const loc = path + ":" + lineNumber;
+      const base = lineBase(path, lineNumber);
       return [String(index + 1),
-              { text: fmtPct(cost), style: heatBg(heatT(cost, MAXP)) },
+              { text: fmtPctOf(cost, base),
+                style: heatBg(heatTOf(cost, base, MAXP)) },
               { text: fnName(funcIndex), title: fnName(funcIndex) },
               { text: loc, html: link(path, lineNumber, loc) },
               snip, num(cost), ...extraCells(rec[0])];
@@ -563,6 +618,10 @@ function renderHome() {
     .filter(entry => mag(entry[1]) > 0)
     .sort((entryA, entryB) => mag(entryB[1]) - mag(entryA[1]))
     .slice(0, 60);
+  const FN_MAXP = DIFF
+    ? Math.max(...topFunctions.map(([funcIndex, self]) =>
+        mag(pctOf(self, fnBase(funcIndex)))), 0.0001)
+    : MAXP;
   const callCols = HAS_CALLS ? [
     { label: "calls", title: "times the function was entered", num: true },
     { label: "incl", title: "total: self plus everything it calls",
@@ -580,10 +639,13 @@ function renderHome() {
     topFunctions.map(([funcIndex, self], index) => {
       const func = functions[funcIndex];
       const loc = func.line ? func.file + ":" + func.line : func.file;
+      const base = fnBase(funcIndex);
       const calls = HAS_CALLS
-        ? [numCalls(fnCalls[funcIndex]), fmtPct(self + val(func.calls))] : [];
+        ? [numCalls(fnCalls[funcIndex]),
+           fmtPctOf(self + val(func.calls), base)] : [];
       return [String(index + 1),
-              { text: fmtPct(self), style: heatBg(heatT(self, MAXP)) },
+              { text: fmtPctOf(self, base),
+                style: heatBg(heatTOf(self, base, FN_MAXP)) },
               { text: func.name, title: func.name },
               { text: loc, html: linkFn(funcIndex, loc) },
               ...calls, ...extraCells(func.self)];
@@ -604,17 +666,44 @@ function renderFile(path, line) {
   curFile = path;
   revealInTree(path);
   const lines = file.lines;
-  let fileMax = 0;
-  for (const rec of Object.values(lines)) {
+  let fileMax = 0, filePctMax = 0;
+  for (const [lineNumber, rec] of Object.entries(lines)) {
     const self = mag(val(rec[0]));
     if (self > fileMax) fileMax = self;
+    if (DIFF) {
+      const base = lineBase(path, lineNumber);
+      filePctMax = Math.max(filePctMax, mag(pctOf(val(rec[0]), base)));
+    }
   }
-  const maxP = scale === "file" ? Math.max(pct(fileMax), 0.0001) : MAXP;
+  const maxP = scale === "file"
+    ? Math.max(DIFF ? filePctMax : pct(fileMax), 0.0001) : MAXP;
+  const fnMaxP = {};
+  if (scale === "function") {
+    for (const [lineNumber, rec] of Object.entries(lines)) {
+      const owner = file.lineFunction[lineNumber];
+      if (owner == null) continue;
+      const share = DIFF
+        ? mag(pctOf(val(rec[0]), lineBase(path, lineNumber)))
+        : mag(pct(val(rec[0])));
+      fnMaxP[owner] = Math.max(fnMaxP[owner] || 0.0001, share);
+    }
+  }
+  const maxPfor = lineNumber => {
+    if (scale !== "function") return maxP;
+    const owner = file.lineFunction[lineNumber];
+    return owner != null ? fnMaxP[owner] || 0.0001 : maxP;
+  };
   let html = `<div class="srcwrap"><div class="fhead band">`
     + `<span class="path">${esc(path)}</span>`;
   const fileSelf = val(file.self);
+  let fileBase = 0;
+  if (DIFF) {
+    for (const vector of Object.values(file.baseline || {})) {
+      fileBase += mag(currentEvent.get(vector));
+    }
+  }
   html += `<span class="stat" title="${fmtN(fileSelf)}">`
-    + `self <b>${fmtPct(fileSelf) || "0%"}</b>`
+    + `self <b>${fmtPctOf(fileSelf, fileBase) || "0%"}</b>`
     + ` (${fmtH(fileSelf)} ${esc(evLabel(currentEvent))})</span>`;
   for (const extra of EXTRA) {
     const self = extra.get(file.self);
@@ -642,14 +731,16 @@ function renderFile(path, line) {
     .map(lineKey => [+lineKey, val(lines[lineKey][0])])
     .filter(entry => mag(entry[1]) > 0)
     .sort((entryA, entryB) => mag(entryB[1]) - mag(entryA[1]));
-  const chips = hot.filter(entry => mag(pct(entry[1])) >= 0.01)
+  const chips = hot.filter(entry =>
+      mag(pctOf(entry[1], lineBase(path, entry[0]))) >= 0.01)
     .slice(0, HOT_CHIPS);
   if (chips.length) {
     html += `<div class="chips"><span class="lbl">${HOT_LINES}</span>`;
     for (const [lineNumber, cost] of chips) {
+      const base = lineBase(path, lineNumber);
       html += `<span class="chip" data-goto="${lineNumber}"`
-        + ` style="${heatBg(heatT(cost, maxP))}">`
-        + `${lineNumber} \\u00b7 ${fmtPct(cost)}</span>`;
+        + ` style="${heatBg(heatTOf(cost, base, maxPfor(lineNumber)))}">`
+        + `${lineNumber} \\u00b7 ${fmtPctOf(cost, base)}</span>`;
     }
     html += `</div>`;
   }
@@ -658,7 +749,9 @@ function renderFile(path, line) {
   const emitRow = (lineNumber, text) => {
     const rec = lines[lineNumber];
     const self = rec ? val(rec[0]) : 0, calls = rec ? val(rec[1]) : 0;
-    const heat = heatT(self, maxP), heatStyleAttr = heatBg(heat);
+    const base = lineBase(path, lineNumber);
+    const rowMaxP = maxPfor(lineNumber);
+    const heat = heatTOf(self, base, rowMaxP), heatStyleAttr = heatBg(heat);
     const funcIndex = file.lineFunction[lineNumber];
     const over = rec && rec[2] ? " over " + fmtH(rec[2]) + " calls" : "";
     const callsNote = HAS_CALLS
@@ -674,10 +767,10 @@ function renderFile(path, line) {
       + ` data-ln="${lineNumber}"`
       + `${title ? ` title="${esc(title)}"` : ""}`);
     const callCell = HAS_CALLS ? [{
-      text: calls ? fmtPct(calls) : "",
-      style: heatBg(heatT(calls, maxP)),
+      text: calls ? fmtPctOf(calls, base) : "",
+      style: heatBg(heatTOf(calls, base, rowMaxP)),
     }] : [];
-    rows.push([{ text: self ? fmtPct(self) : "", style: heatStyleAttr,
+    rows.push([{ text: self ? fmtPctOf(self, base) : "", style: heatStyleAttr,
                  cls: heat > 0.45 ? "hot" : "" },
                { text: String(lineNumber), style: heatStyleAttr },
                { text, style: heatStyleAttr },
@@ -934,17 +1027,19 @@ function detailOpen(path, lineNumber, row) {
   };
   const callCost = val(rec[1]);
   const self = val(rec[0]);
+  const lineBaseline = lineBase(path, lineNumber);
   const selfLabel = funcIndex != null ? "self" : "line self";
   const statCols = [{ label: "metric" }, { label: "share", num: true },
                     { label: "amount", num: true }];
   const statRows = [[
     { text: `${selfLabel} ${evLabel(currentEvent)}`,
       title: SELF.title },
-    fmtPct(self) || "0%",
+    fmtPctOf(self, lineBaseline) || "0%",
     num(self),
   ]];
   if (callCost) {
-    statRows.push([{ text: "calls" }, fmtPct(callCost), num(callCost)]);
+    statRows.push([{ text: "calls" },
+                   fmtPctOf(callCost, lineBaseline), num(callCost)]);
     statRows.push([{ text: "call count" }, "", numCalls(rec[2])]);
   }
   for (const extra of EXTRA) {
@@ -983,8 +1078,10 @@ function detailOpen(path, lineNumber, row) {
     const func = functions[funcIndex];
     const callers = func.callers.slice()
       .sort((callerA, callerB) => callerB[4] - callerA[4]);
-    const fnSelf = fmtPct(val(func.self)) || "0%";
-    const fnTotal = fmtPct(val(func.self) + val(func.calls)) || "0%";
+    const funcBaseline = fnBase(funcIndex);
+    const fnSelf = fmtPctOf(val(func.self), funcBaseline) || "0%";
+    const fnTotal =
+      fmtPctOf(val(func.self) + val(func.calls), funcBaseline) || "0%";
     const heading = HAS_CALLS
       ? `${func.name} by call count: self ${fnSelf}, total ${fnTotal}.`
       : `${func.name}: self ${fnSelf}.`;
@@ -1089,7 +1186,7 @@ function syncHash() {
 function route() {
   const parsed = stateOf(location.hash);
   const event = evByKey(parsed.ev)
-    || evByKey(model.meta.defaultEvent) || EVS[0];
+    || evByKey(model.heatMapTotals.defaultEvent) || EVS[0];
   if (event.key !== currentEvent.key) applyEvent(event.key);
   let file = parsed.file, line = parsed.line, fn = parsed.fn;
   if (fn) {
@@ -1259,6 +1356,14 @@ _TREE = ("lib", "include", "src", "tests/perf")
 # CallgrindToHeatmap - Turns one profile into a single self-contained page
 # that shows cost per source line, with the source itself embedded.
 class CallgrindToHeatmap:
+    # BaselineSidecar - The part of callgrind_diff.py's sidecar this tool
+    # reads: what every share on a diff page divides by.
+    class BaselineSidecar(TypedDict):
+        # keyed by function, and by "<function>\n<file>\n<line>"
+        baseline: dict[str, Costs]
+        # the baseline run's summed cost vector
+        baselineTotal: Costs
+
     # CallRow - One end of one call edge, as the page's script reads it. Used
     # for a line's callees and for a function's callers alike.
     class CallRow(NamedTuple):
@@ -1294,6 +1399,9 @@ class CallgrindToHeatmap:
         lines: dict[str, CallgrindToHeatmap.LineCost]
         # per line number, which function owns it
         lineFunction: dict[str, int]
+        # per line number, its baseline cost vector -- a diff's denominator,
+        # absent on a non-diff page and on a line the baseline never had
+        baseline: NotRequired[dict[str, Costs]]
         # per line number, what that line calls
         callees: dict[str, list[CallgrindToHeatmap.CallRow]]
         # repo, system or external
@@ -1316,9 +1424,10 @@ class CallgrindToHeatmap:
         # who calls it, most expensive first
         callers: list[CallgrindToHeatmap.CallRow]
 
-    # MetaModel - What the page needs to label and scale everything. Not the
-    # report's LABEL=VALUE header -- that is build_report.py's Header.
-    class MetaModel(TypedDict):
+    # HeatMapTotals - What the heat map needs to label and scale everything.
+    # Not the report's LABEL=VALUE rows -- those are build_report.py's
+    # ManifestRow.
+    class HeatMapTotals(TypedDict):
         # the recorded events, in cost-vector order
         events: list[str]
         # each event spelled out, for tooltips
@@ -1331,11 +1440,13 @@ class CallgrindToHeatmap:
         totals: Costs
         # signed numbers and a signed heat ramp
         diff: bool
+        # the baseline run's total, what the page's own totals compare to
+        baselineTotal: NotRequired[Costs]
 
     # HeatModel - The whole page's data, in one JSON blob.
     class HeatModel(TypedDict):
         # labels, totals and which event to show
-        meta: CallgrindToHeatmap.MetaModel
+        heatMapTotals: CallgrindToHeatmap.HeatMapTotals
         # the few theme values the script needs
         theme: theme.ThemeRuntime
         # every file that has samples, by display path
@@ -1344,6 +1455,8 @@ class CallgrindToHeatmap:
         functions: list[CallgrindToHeatmap.FunctionModel]
         # tracked files with no samples at all
         cold: list[str]
+        # per function, its baseline cost vector, indexed like functions
+        functionBaseline: NotRequired[list[Costs]]
 
     # HeatArgs - What this tool reads, and the page it writes.
     class HeatArgs(NamedTuple):
@@ -1355,6 +1468,8 @@ class CallgrindToHeatmap:
         title: str
         # the input is a callgrind_diff.py delta
         diff: bool
+        # that delta's sidecar, holding what each share divides by
+        baseline_data: str
 
     # FileTally - One file's numbers while they are still being added up.
     @dataclass
@@ -1442,10 +1557,29 @@ class CallgrindToHeatmap:
     # Turn a finished model into a diff one: shares go against the summed
     # magnitude of every change, since the signed total is near zero.
     def diff_model(
-        self, model: CallgrindToHeatmap.HeatModel, profile: callgrind.Profile
+        self,
+        model: CallgrindToHeatmap.HeatModel,
+        profile: callgrind.Profile,
+        baseline_data: str,
     ) -> None:
-        model["meta"]["totals"] = callgrind_diff.profile_magnitudes(profile)
-        model["meta"]["diff"] = True
+        sidecar = self.sidecar_load(baseline_data)
+        totals = model["heatMapTotals"]
+        totals["totals"] = callgrind_diff.profile_magnitudes(profile)
+        totals["diff"] = True
+        totals["baselineTotal"] = sidecar["baselineTotal"]
+        baseline = sidecar["baseline"]
+        functions = model["functions"]
+        model["functionBaseline"] = [
+            baseline.get(func["name"], []) for func in functions
+        ]
+        for path, entry in model["files"].items():
+            lines: dict[str, Costs] = {}
+            for line, index in entry["lineFunction"].items():
+                costs = baseline.get(f"{functions[index]['name']}\n{path}\n"
+                                     f"{line}")
+                if costs:
+                    lines[line] = costs
+            entry["baseline"] = lines
 
     # Resolve every path once, qualifying an external file by its object so
     # two libraries' same-named headers stay apart.
@@ -1597,7 +1731,7 @@ class CallgrindToHeatmap:
             else profile.events[0]
         )
         return {
-            "meta": {
+            "heatMapTotals": {
                 "events": profile.events,
                 "eventLong": {
                     name: profile.event_long.get(name, "")
@@ -1652,7 +1786,7 @@ class CallgrindToHeatmap:
         profile = callgrind.profile_load(args.callgrind_file)
         model = self.model(profile)
         if args.diff:
-            self.diff_model(model, profile)
+            self.diff_model(model, profile, args.baseline_data)
         html = self.render(model, args.title)
         os.makedirs(
             os.path.dirname(os.path.abspath(args.output)), exist_ok=True
@@ -1677,6 +1811,21 @@ class CallgrindToHeatmap:
         )
 
     # Read one source file to embed, or None when it is not on this box.
+    # Read callgrind_diff.py's sidecar, or nothing when there is none -- a
+    # diff built without one simply has no share to show.
+    def sidecar_load(
+        self, path: str
+    ) -> CallgrindToHeatmap.BaselineSidecar:
+        empty: CallgrindToHeatmap.BaselineSidecar = {
+            "baseline": {},
+            "baselineTotal": [],
+        }
+        if not path or not os.path.isfile(path):
+            return empty
+        with open(path, encoding="utf-8") as handle:
+            doc: CallgrindToHeatmap.BaselineSidecar = json.load(handle)
+        return doc
+
     def source_read(self, local: str) -> str | None:
         try:
             with open(local, "rb") as handle:
@@ -1705,8 +1854,15 @@ def main() -> None:
         "--diff",
         action="store_true",
         help="the callgrind file is a callgrind_diff.py delta: print "
-        "signed numbers and take shares against the summed magnitude "
-        "of every change",
+        "signed numbers and take every share against what the same "
+        "function or line cost in the baseline",
+    )
+    parser.add_argument(
+        "--baseline-data",
+        default="",
+        metavar="FILE",
+        help="callgrind_diff.py's sidecar, holding the baseline cost each "
+        "share divides by (--diff only)",
     )
     namespace = parser.parse_args()
     CallgrindToHeatmap().run(
@@ -1715,6 +1871,7 @@ def main() -> None:
             output=namespace.output,
             title=namespace.title,
             diff=namespace.diff,
+            baseline_data=namespace.baseline_data,
         )
     )
 

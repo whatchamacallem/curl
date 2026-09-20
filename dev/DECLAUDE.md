@@ -17,6 +17,9 @@
    anywhere in `dev/`; every view is built for every test in `TESTS_C`.
    Examples read `<test>`/`<file>`. (`urlparser`/`lib/urlapi.c` was a first
    trial only — never single it out.)
+1. Don't use the word "meta". that is a "header" or a "manifest".
+1. On any run where more than one goal was given conclude with a checklist of
+   what was and was not accomplished. Also include any relevant bug reports.
 
 ## Commands
 
@@ -148,9 +151,23 @@ Raw data in `dev/trace/` (gitignored): `callgrind.out.<test>.<loops>.<ts>`,
   summary's calls/callers columns come from a separate JSON sidecar
   (`callgrind_diff.py --callers-output`, consumed via
   `build_report.py test --diff --callers-data`).
-- Shares use `profile_magnitudes()` = Σ|per-function line delta| as
-  denominator, **not** the near-zero signed total. Ranking and heat are
-  `abs()`, so winners and losers interleave.
+- **Every share divides by that same thing's own baseline cost**, never by a
+  global budget: a function by its baseline self, a line by its baseline
+  cost, a file/dir by its summed baseline, the overview by that test's
+  baseline total. `(new - old)/old`, so 1→0 is -100%, 100→90 is -10%, 90→100
+  is +11.1%, 1→1 is 0% (rendered empty). Something the baseline never had is
+  **+100%**. Baselines ride in the `--callers-output` sidecar
+  (`baseline`, keyed by `<fn>` and `<fn>\n<display path>\n<line>`,
+  `baselineTotal`, `baselineCalls`, `events`); the heat map reads it via
+  `--baseline-data`. Ranking and heat are `abs()`, so winners and losers
+  interleave.
+- **Per-line baselines are wildly skewed** — median line is ~18 Ir and 72%
+  are under 1,000, so a line that cost 1 and moved 200K reads 20,360,300%.
+  Only ~1.8% of lines exceed ±1000%, but a max-based colour scale is set by
+  exactly those. That is what `log, per function` is for.
+- `profile_magnitudes()` (Σ|per-function line delta|) still exists and is
+  what `heatMapTotals.totals` carries, but it is no longer what shares
+  divide by.
 - `summary:` in the delta = the signed total, so the parser's 1.0000 self-check
   holds on it too.
 
@@ -249,11 +266,16 @@ pipx/uv). Pylance is not usable — LSP only, ignores argv.
 - `build_report.py test|overview` — summary and overview pages.
   `_EVENT = "Ir"`, `_TOP = 50`. `--perf-log`/`--trace-log`/`--raw-data` each
   render a section only when given; the flame-graph strip link exists only with
-  `--trace-log`. `--diff` picks `diff_test` in `main()`. "header" here means
-  the LABEL=VALUE rows above a page's content (`Header`/`HeaderBlock`) — not
-  the heat map's `MetaModel`.
+  `--trace-log`. `--diff` picks `diff_test` in `main()`. The LABEL=VALUE rows
+  above a page's content are `ManifestRow`/`ManifestBlock` (methods
+  `manifest_*`) — not the heat map's `HeatMapTotals`, and not a table's
+  column-title row (`theme.table_render(column_titles=...)`). **Never call
+  any of them just "header".**
 - `callgrind_diff.py` — the subtraction; also home of `profile_magnitudes()`,
-  which generators import. `--callers-output` is required.
+  which generators import. `--callers-output` is required, and carries the
+  baselines every diff share divides by. `perf2html_diff.sh` copies it into
+  the report's `raw/` as `<delta>.callers.json` so the overview can reach it;
+  `validate_report.py` skips it in `raw_dir_check` (`_CALLERS_SUFFIX`).
 - `callgrind_to_heatmap.py` — `_DEFAULT_EVENT = "CEst"`, `_TREE` = dirs whose
   tracked `.c/.h` are listed even without samples.
 - `dev/cyg_callback.c` — the recorder. Hot path is
@@ -309,15 +331,33 @@ pages must not assume more.
   track, minimap band and heat blend all follow it, so change it only there.
   The `_HEAT` ramp is exempt from the pair rule.
 - Heat = 12-stop `_HEAT` blended over `--bg`, alpha on log scale of magnitude,
-  text color by resulting luminance. Non-diff indexes `0..1`; **diff indexes
-  signed `-1..1` across the whole ramp** (savings → cold/blue, regressions →
-  hot/red, 0 at midpoint) via `heat_style(signed=True)` / the JS `if (DIFF)`
-  branch.
+  text color by resulting luminance. The scale dropdown picks what `maxP`
+  (the hottest end) is measured over: `log, global` (`MAXP`, every line of
+  every file), `log, per file`, `log, per function` (each line against the
+  hottest line of the function that owns it — `maxPfor()`; what keeps one
+  blown-up line from flattening a whole file), `linear, global`. Non-diff
+  indexes `0..1`; **diff indexes signed `-1..1` across the whole ramp**
+  (savings → cold/blue, regressions → hot/red, 0 at midpoint) via
+  `heat_style(signed=True)` / the JS `if (DIFF)` branch. **A diff clamps
+  both the share and `maxP` to 100%** (`_FULL_HEAT_PCT` / `PFULL`,
+  applied in `BuildReport.diff_heat` and in `heatP`), so a change the size
+  of the thing's own baseline is already fully lit and the 1.8% of lines
+  reading millions of percent can't set a scale nothing else registers on:
+  `c(100%) == c(10000000%)`, `c(90%) != c(10000000%)`. Non-diff is
+  untouched — `heat_t()`/`heatP()` clamp nothing without `DIFF`.
 - Call counts are their own metric, heat-colored by share of all recorded
   calls, log-scaled, event-independent.
 - Numbers: `num_human()`/`fmtH()` → `2.1K`/`2.0G` (exact in tooltip);
-  `num_pct()`/`fmtP()` → `63.2%`, `<0.01%`. Diff wraps both in a sign (U+2212
-  in the page; exact zero renders empty, not `+0`).
+  `num_pct()`/`fmtP()` → `63.2%`, `<0.01%`. Exact zero renders empty.
+  **A diff never prints `+`.** A share leads with an arrow and keeps a
+  negative's sign, Bloomberg style — `▲11.1%` up, `▼-100.0%` down
+  (`num_signed_pct()` / the JS `fmtP()`); an amount
+  carries only a minus when negative, nothing when positive
+  (`num_signed()` / `fmtH()`, U+2212 in the page). **A diff share past
+  100% switches to a multiple** — `▲1.30x` — and at or past `99.99x` it is
+  just `>1000x`, deliberately approximate (`Numbers.multiple()` / the JS
+  `mult()`; both sides kept in step and tested on the same cases).
+  Tooltips keep an explicit `+`/`-` on the exact value.
 - **No decorative borders.** The only drawn lines are drag targets (`.bar`,
   `.split`), invisible until hover/active. Everything else is separated by
   background shading (`--panel`/`--bg`/`--bg-alt`/`--nav`).

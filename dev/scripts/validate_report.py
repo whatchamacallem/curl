@@ -13,6 +13,10 @@ from typing import NamedTuple
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import callgrind
 
+# callgrind_diff.py's JSON sidecar, which sits in a diff's raw/ beside the
+# delta but is not itself a callgrind trace.
+_CALLERS_SUFFIX = ".callers.json"
+
 # Only a flame graph our own tool exported counts -- a stale or hand-made one
 # must fail.
 _FLAME_EXPORTER = "dev/scripts/trace_to_speedscope.py"
@@ -341,13 +345,21 @@ class ValidateReport:
     def raw_dir_check(self, out_dir: str) -> None:
         raw_dir = os.path.join(out_dir, "raw")
         files = sorted(os.listdir(raw_dir)) if os.path.isdir(raw_dir) else []
-        if not any(name.startswith("callgrind.") for name in files):
+        if not any(
+            name.startswith("callgrind.")
+            and not name.endswith(_CALLERS_SUFFIX)
+            for name in files
+        ):
             self.fail(f"raw/ has no callgrind file: {raw_dir}")
             return
         for name in files:
             path = os.path.join(raw_dir, name)
             text = self.size_check(path, _MIN_RAW_BYTES, f"raw/{name}")
-            if name.startswith("callgrind.") and "events:" not in text[:4096]:
+            if (
+                name.startswith("callgrind.")
+                and not name.endswith(_CALLERS_SUFFIX)
+                and "events:" not in text[:4096]
+            ):
                 self.fail(
                     "raw data file does not look like a callgrind trace (no "
                     f"'events:' near the top): {path}"

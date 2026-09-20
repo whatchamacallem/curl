@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import re
 import sys
@@ -12,12 +13,18 @@ from urllib.parse import quote
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import callgrind
-import callgrind_diff
 import theme
 from theme import Cell, CellOrText, Column, html_escape
 
+# What callgrind_diff.py's sidecar is named, next to the delta it describes.
+_CALLERS_SUFFIX = ".callers.json"
+
 # The event the summary tables rank and colour by.
 _EVENT = "Ir"
+
+# The diff share that paints the hottest colour. A change the size of the
+# thing's own baseline is as lit as a cell gets.
+_FULL_HEAT_PCT = 100.0
 
 # The script every framing level runs, deciding what it is by whether it has
 # a parent. Named exactly this: check_js.py looks it up by name.
@@ -175,6 +182,16 @@ class BuildReport:
         # how much more (or less) those calls cost
         cost: int
 
+    # CallersData - callgrind_diff.py's sidecar, read back: the call graph a
+    # delta file cannot carry, and the baseline every share divides by.
+    class CallersData(NamedTuple):
+        # per function, who called it and how that changed
+        callers: dict[str, list[BuildReport.CallerDelta]]
+        # per function, its baseline cost in the sidecar's event
+        baseline: dict[str, int]
+        # per function, how many times the baseline called it
+        baseline_calls: dict[str, int]
+
     # FunctionCost - One function and one number, for ranking the top table.
     class FunctionCost(NamedTuple):
         # what it is ranked on
@@ -182,20 +199,20 @@ class BuildReport:
         # whose cost it is
         function: str
 
-    # Header - One LABEL=VALUE row above a page's content. Not the heat map's
-    # MetaModel, which is its data rather than its provenance.
-    class Header(NamedTuple):
+    # ManifestBlock - A named group of those rows, e.g. "baseline".
+    class ManifestBlock(NamedTuple):
+        # the heading above the group
+        label: str
+        # the rows themselves
+        pairs: list[BuildReport.ManifestRow]
+
+    # ManifestRow - One LABEL=VALUE row above a page's content. Not the heat
+    # map's HeatMapTotals, which is its data rather than where it came from.
+    class ManifestRow(NamedTuple):
         # the left column
         label: str
         # the right column
         value: str
-
-    # HeaderBlock - A named group of those rows, e.g. "baseline".
-    class HeaderBlock(NamedTuple):
-        # the heading above the group
-        label: str
-        # the rows themselves
-        pairs: list[BuildReport.Header]
 
     # OverviewArgs - What the overview page is built from.
     class OverviewArgs(NamedTuple):
@@ -269,6 +286,22 @@ class BuildReport:
         # where the page sits
         path: str
 
+    # The baseline run's total in this page's event, read from the sidecar
+    # the diff left beside the delta file. None when there is none to divide
+    # by, which is what an empty share cell means.
+    def baseline_total_load(self, paths: Sequence[str]) -> int | None:
+        total = 0
+        found = False
+        for path in paths:
+            with open(path, encoding="utf-8") as handle:
+                doc = json.load(handle)
+            events: list[str] = doc.get("events", [])
+            costs: list[int] = doc.get("baselineTotal", [])
+            slot = events.index(_EVENT) if _EVENT in events else 0
+            total += costs[slot] if slot < len(costs) else 0
+            found = True
+        return total if found else None
+
     def caller_delta_cell(
         self,
         profile: callgrind.Profile,
@@ -312,30 +345,35 @@ class BuildReport:
         label = f"{html_escape(caller_name)} ({share})"
         return f'<a href="{href}">{label}</a>' if href else label
 
-    def callers_data_load(
-        self, path: str
-    ) -> dict[str, list[BuildReport.CallerDelta]]:
+    def callers_data_load(self, path: str) -> BuildReport.CallersData:
         if not path:
-            return {}
+            return BuildReport.CallersData({}, {}, {})
         with open(path, encoding="utf-8") as handle:
             doc = json.load(handle)
-        return {
-            callee: [
-                BuildReport.CallerDelta(function, count, cost)
-                for function, count, cost in deltas
-            ]
-            for callee, deltas in doc["callers"].items()
-        }
+        index = doc["event"]
+        events: list[str] = doc.get("events", [])
+        slot = events.index(index) if index in events else 0
+        return BuildReport.CallersData(
+            callers={
+                callee: [
+                    BuildReport.CallerDelta(function, count, cost)
+                    for function, count, cost in deltas
+                ]
+                for callee, deltas in doc["callers"].items()
+            },
+            baseline={
+                name: costs[slot] if slot < len(costs) else 0
+                for name, costs in doc["baseline"].items()
+                if "\n" not in name
+            },
+            baseline_calls=doc["baselineCalls"],
+        )
 
     def diff_functions_table(
         self,
         profile: callgrind.Profile,
-        callers_data: dict[str, list[BuildReport.CallerDelta]],
+        callers_data: BuildReport.CallersData,
     ) -> str:
-        total = (
-            profile.value(callgrind_diff.profile_magnitudes(profile), _EVENT)
-            or 1
-        )
         ranked = sorted(
             (
                 BuildReport.FunctionCost(
@@ -346,18 +384,32 @@ class BuildReport:
             ),
             key=lambda t: (-abs(t.cost), t.function),
         )[:_TOP]
-        max_pct = 100.0 * abs(ranked[0].cost) / total if ranked else 1.0
+        shares = [
+            self.diff_share(
+                cost.cost, callers_data.baseline.get(cost.function)
+            )
+            for cost in ranked
+        ]
+        max_pct = max(
+            (abs(share) for share in shares if share is not None), default=1.0
+        )
         call_counts = {
             callee: sum(delta.count_ for delta in deltas)
-            for callee, deltas in callers_data.items()
+            for callee, deltas in callers_data.callers.items()
         }
-        calls_magnitude = (
-            sum(abs(count) for count in call_counts.values()) or 1
-        )
-        calls_max_pct = (
-            100.0
-            * max((abs(count) for count in call_counts.values()), default=0)
-            / calls_magnitude
+        call_shares = {
+            callee: self.diff_share(
+                count, callers_data.baseline_calls.get(callee)
+            )
+            for callee, count in call_counts.items()
+        }
+        calls_max_pct = max(
+            (
+                abs(share)
+                for share in call_shares.values()
+                if share is not None
+            ),
+            default=1.0,
         )
         columns = [
             Column(
@@ -367,9 +419,9 @@ class BuildReport:
             ),
             Column(
                 "% self",
-                f"the function's own {_EVENT} delta, as a share of every"
-                f" line's {_EVENT} change added up. + is more than the"
-                " baseline, - is less",
+                f"the function's own {_EVENT} delta, against what it cost"
+                " in the baseline. + is more than the baseline, - is less;"
+                " -100% is gone entirely, +100% is all new",
                 numeric=True,
             ),
             Column(
@@ -393,19 +445,23 @@ class BuildReport:
         ]
         rows: list[list[CellOrText]] = []
         for rank, ranked_function in enumerate(ranked, 1):
-            share = 100.0 * ranked_function.cost / total
+            share = shares[rank - 1]
             href = self.entry_link(profile, ranked_function.function)
-            deltas = callers_data.get(ranked_function.function, [])
+            deltas = callers_data.callers.get(ranked_function.function, [])
             call_count = call_counts.get(ranked_function.function, 0)
-            call_share = 100.0 * call_count / calls_magnitude
+            call_share = call_shares.get(ranked_function.function)
             rows.append(
                 [
                     str(rank),
                     Cell(
-                        theme.num_signed_pct(share),
+                        theme.num_signed_pct(share)
+                        if share is not None
+                        else "",
                         style=theme.heat_style(
-                            theme.heat_t(share, max_pct), signed=True
-                        ),
+                            self.diff_heat(share, max_pct), signed=True
+                        )
+                        if share is not None
+                        else "",
                     ),
                     Cell(
                         ranked_function.function,
@@ -423,9 +479,11 @@ class BuildReport:
                         theme.num_signed(call_count),
                         title=f"{call_count:+,} calls",
                         style=theme.heat_style(
-                            theme.heat_t(call_share, calls_max_pct),
+                            self.diff_heat(call_share, calls_max_pct),
                             signed=True,
-                        ),
+                        )
+                        if call_share is not None
+                        else "",
                     )
                     if call_count
                     else "",
@@ -433,6 +491,15 @@ class BuildReport:
                 ]
             )
         return theme.table_render("report.functions", columns, rows, fill=True)
+
+    # Where a diff share sits on the heat ramp. Anything at or past its own
+    # baseline is fully lit, so a line that cost 1 and moved 200K does not
+    # set a scale that leaves every honest change colourless.
+    def diff_heat(self, share: float, max_share: float) -> float:
+        return theme.heat_t(
+            math.copysign(min(abs(share), _FULL_HEAT_PCT), share),
+            min(max_share, _FULL_HEAT_PCT),
+        )
 
     def diff_overview(self, args: BuildReport.OverviewArgs) -> None:
         tests = self.overview_tests(args)
@@ -447,8 +514,8 @@ class BuildReport:
             Column(_EVENT, f"the whole run's {_EVENT} delta", numeric=True),
             Column(
                 "% of change",
-                f"that delta against every function's {_EVENT} change"
-                " added up",
+                f"that delta against the whole baseline run's {_EVENT}:"
+                " how much cheaper or dearer the test got",
                 numeric=True,
             ),
             Column(
@@ -460,13 +527,21 @@ class BuildReport:
         rows: list[list[CellOrText]] = []
         for test in tests:
             raw_dir = os.path.join(test.directory, "raw")
-            files = (
-                sorted(
-                    os.path.join(raw_dir, name) for name in os.listdir(raw_dir)
-                )
+            names = (
+                sorted(os.listdir(raw_dir))
                 if os.path.isdir(raw_dir)
                 else []
             )
+            files = [
+                os.path.join(raw_dir, name)
+                for name in names
+                if not name.endswith(_CALLERS_SUFFIX)
+            ]
+            sidecars = [
+                os.path.join(raw_dir, name)
+                for name in names
+                if name.endswith(_CALLERS_SUFFIX)
+            ]
             link = Cell(
                 test.name,
                 html=f'<a href="{html_escape(test.name)}/index.html">'
@@ -482,8 +557,8 @@ class BuildReport:
                 for costs in profile.function_self.values()
                 if profile.value(costs, _EVENT) != 0
             )
-            magnitude = profile.value(
-                callgrind_diff.profile_magnitudes(profile), _EVENT
+            share = self.diff_share(
+                delta, self.baseline_total_load(sidecars)
             )
             rows.append(
                 [
@@ -491,13 +566,20 @@ class BuildReport:
                     Cell(
                         theme.num_signed(delta), title=f"{delta:+,} {_EVENT}"
                     ),
-                    theme.num_signed_pct(100.0 * delta / magnitude)
-                    if magnitude
-                    else "",
+                    theme.num_signed_pct(share) if share is not None else "",
                     theme.num_human(changed),
                 ]
             )
         return columns, rows
+
+    # A delta as a percentage of what the same thing cost in the baseline, so
+    # a cost that went away entirely reads -100% and one that doubled +100%.
+    # Something the baseline never had is +100%, all of it new. None only
+    # when there is no change at all to take a share of.
+    def diff_share(self, delta: int, baseline: int | None) -> float | None:
+        if not baseline:
+            return 100.0 if delta else None
+        return 100.0 * delta / abs(baseline)
 
     def diff_test(self, args: BuildReport.TestArgs) -> None:
         profile = callgrind.profile_load(args.callgrind_file)
@@ -637,22 +719,24 @@ class BuildReport:
             )
         return theme.table_render("report.functions", columns, rows, fill=True)
 
-    def header_blocks_render(
-        self, key: str, blocks: Sequence[BuildReport.HeaderBlock]
+    def manifest_blocks_render(
+        self, key: str, blocks: Sequence[BuildReport.ManifestBlock]
     ) -> str:
         body = ""
         for index, block in enumerate(blocks):
             if not block.pairs:
                 continue
-            body += f"<h2>{html_escape(block.label)}</h2>" + self.header_table(
+            body += (
+                f"<h2>{html_escape(block.label)}</h2>"
+            ) + self.manifest_table(
                 f"{key}.{index}", block.pairs
             )
         return body
 
-    def header_parse_blocks(
+    def manifest_parse_blocks(
         self, items: Sequence[str]
-    ) -> list[BuildReport.HeaderBlock]:
-        out: list[BuildReport.HeaderBlock] = []
+    ) -> list[BuildReport.ManifestBlock]:
+        out: list[BuildReport.ManifestBlock] = []
         for item in items:
             if "=" not in item:
                 sys.exit(
@@ -660,33 +744,33 @@ class BuildReport:
                 )
             label, _, path = item.partition("=")
             out.append(
-                BuildReport.HeaderBlock(
-                    label.strip(), self.header_read_file(path)
+                BuildReport.ManifestBlock(
+                    label.strip(), self.manifest_read_file(path)
                 )
             )
         return out
 
-    def header_parse_pairs(
+    def manifest_parse_rows(
         self, items: Sequence[str]
-    ) -> list[BuildReport.Header]:
-        out: list[BuildReport.Header] = []
+    ) -> list[BuildReport.ManifestRow]:
+        out: list[BuildReport.ManifestRow] = []
         for item in items:
             if "=" not in item:
                 sys.exit(f"error: --header expects LABEL=VALUE, got {item!r}")
             label, _, value = item.partition("=")
-            out.append(BuildReport.Header(label.strip(), value))
+            out.append(BuildReport.ManifestRow(label.strip(), value))
         return out
 
-    def header_read_file(self, path: str) -> list[BuildReport.Header]:
+    def manifest_read_file(self, path: str) -> list[BuildReport.ManifestRow]:
         lines = [
             line
             for line in self.file_read(path).splitlines()
             if line.strip() and "=" in line
         ]
-        return self.header_parse_pairs(lines)
+        return self.manifest_parse_rows(lines)
 
-    def header_table(
-        self, key: str, pairs: Sequence[BuildReport.Header]
+    def manifest_table(
+        self, key: str, pairs: Sequence[BuildReport.ManifestRow]
     ) -> str:
         if not pairs:
             return ""
@@ -698,7 +782,7 @@ class BuildReport:
             [Column("label"), Column("value", grow=True)],
             rows,
             fill=True,
-            header=False,
+            column_titles=False,
         )
 
     def log_block(self, path: str) -> str:
@@ -788,16 +872,18 @@ class BuildReport:
             for test in tests
         ]
         body = self.strip_render("overview", links)
-        pairs = self.header_parse_pairs(args.header) + (
-            self.header_read_file(args.header_file) if args.header_file else []
+        pairs = self.manifest_parse_rows(args.header) + (
+            self.manifest_read_file(args.header_file)
+            if args.header_file
+            else []
         )
         body = (
             body
             + '<main id="home"><div class="page">'
-            + self.header_table("overview.header", pairs)
+            + self.manifest_table("overview.header", pairs)
         )
-        body += self.header_blocks_render(
-            "overview.block", self.header_parse_blocks(args.header_block)
+        body += self.manifest_blocks_render(
+            "overview.block", self.manifest_parse_blocks(args.header_block)
         )
         body += "<h2>test suites</h2>" + theme.table_render(
             "overview.tests", columns, rows
@@ -862,8 +948,8 @@ class BuildReport:
         ]
         body = self.strip_render(args.test, links, help_href=args.help_href)
         out_dir = os.path.dirname(os.path.abspath(args.output))
-        body += '<main id="home"><div class="page">' + self.header_table(
-            "report.header", self.header_parse_pairs(args.header)
+        body += '<main id="home"><div class="page">' + self.manifest_table(
+            "report.header", self.manifest_parse_rows(args.header)
         )
         body += self.output_section("perf log", args.perf_log)
         body += self.output_section("trace log", args.trace_log)

@@ -65,15 +65,29 @@ Version 3, 29 June 2007.
 ## Diff Reports
 
 A report built by `perf2html_diff.sh` compares two earlier reports, and every
-number in it is a difference: the modified run minus the baseline. `+4.3K`
+number in it is a difference: the modified run minus the baseline. `4.3K`
 means four thousand more than the baseline, `-1,000` a thousand fewer. A share
-like `+16%` is that function's part of everything that changed, not its part of
-the program.
+is relative to that function or line's previous cost, and leads with an
+up arrow when it grew or a down arrow when it shrank. A drop keeps its minus
+sign as well, so going from 1 call to 0 calls shows a down arrow and `-100%`,
+100 to 90 a down arrow and `-10%`, 90 to 100 an up arrow and `11.1%`, and no
+change at all is blank. Something the baseline never had is an up arrow and
+`100%`, all of it new.
+
+Past 100% the share is written as a multiple instead, so a line that cost 10
+and now costs 130 reads `1.30x`, and one that fell that far reads `-1.30x`.
+Anything past `99.99x` just reads
+`>1000x` -- the amount next to it is the number that still means something.
+Cheap lines make enormous shares: half the lines in a run cost under 20
+instructions, so one that cost 1 and moved 200,000 is millions of percent,
+true but useless. For the same reason the colours stop at 100%: any change at
+least as large as what the thing cost before is painted at full brightness,
+and a 90% change still looks different from a 10,000% one.
 
 Tables are ranked by how large the change is, ignoring its direction, so the
 biggest improvements and the biggest regressions sit together at the top. The
 heat colours follow the same rule -- a large improvement is as bright as a
-large regression, and only the sign tells them apart.
+large regression, and only the arrow and the colour tell them apart.
 
 The differences are taken per source line, so the heat map's listing shows
 exactly where a function got cheaper or dearer. The summary table's calls/

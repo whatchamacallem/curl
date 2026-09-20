@@ -193,7 +193,8 @@ diff_one() {
   log_say "== [$name]: heat map -> $out/heat-map/index.html =="
   test_run python3 scripts/callgrind_to_heatmap.py "$diff_file" \
     -o "$out/heat-map/index.html" \
-    --title "$name / heat map" --diff
+    --title "$name / heat map" --diff \
+    --baseline-data "$callers_file"
 
   log_say "== [$name]: index -> $out/index.html =="
   rm -rf "$out/raw"
@@ -201,6 +202,7 @@ diff_one() {
   raw_name="$(basename "$diff_file")"
   raw_name="${raw_name%.*}"
   cp "$diff_file" "$out/raw/$raw_name"
+  cp "$callers_file" "$out/raw/$raw_name.callers.json"
   [ "$MULTI" = 1 ] && help_args=(--help-href ../README.md)
   test_run python3 scripts/build_report.py test "$diff_file" \
     -o "$out/index.html" --test "$name" --diff \
