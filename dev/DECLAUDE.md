@@ -88,7 +88,16 @@ taskset -c 3 ./build-relwithdebinfo/tests/perf/perf <test> [loops]
   data.
 - `perf2html_batch.sh` - measures and generates, and runs **no** checks. Three
   steps: 1 baseline, 2 modified (default `-D CMAKE_C_FLAGS=-Os`), 3 diff. Every
-  step runs even after a failure; exit 1 names the failed ones.
+  step runs even after a failure; exit 1 names the failed ones. **Quiet mode
+  prints whole lines only**, each one an `[N.NNs]`-prefixed entry in a single
+  timeline: the flags line, `running step 1 baseline: <cmd>` _before_ a call
+  that can take minutes, `done: step 1 baseline in 1m23s` after it, the
+  `removing ...` lines, and the closing `file://` URL. A step's duration rides
+  in its own `done:` line, so no stat depends on a half-written line - nothing
+  is ever left unterminated, because an unflushed partial line can sit
+  unforwarded for minutes. `--verbose` is unchanged: `== N name: cmd ==`
+  banners with a matching `done in`/`FAILED` banner, no `[Ns]` prefix, the
+  child's own output in between.
 - `scripts/reformat.sh` - **the one hook that verifies `dev/` and its output.**
   Lint, then format, then validate, every stage running even after an earlier
   one failed. **It takes no path argument**: the directories are fixed by
@@ -135,7 +144,13 @@ Key behaviors worth knowing before touching them:
 - Valgrind's LL cache auto-detects as direct-mapped and overstates conflict
   misses - `--LL=16777216,16,64` is on the `valgrind` line in `run_one`.
 - Quiet mode logs to `dev/temporary_artifacts/*.log`; a failing step prints its
-  last 40 lines.
+  last 40 lines, under an `[N.NNs] FAILED: step N name, exit C, after 12s` line
+  on stderr.
+- The batch's `[N.NNs]` clock is elapsed time since `main()` started, from the
+  `EPOCHREALTIME` builtin - `SECONDS` is integer-only, and a builtin keeps the
+  script free of the toolchain check it doesn't have. `now_us()` strips every
+  non-digit, so the locale's decimal separator can't corrupt the arithmetic;
+  `took()` still renders a step's own duration as `1m23s`/`12s`.
 
 ## Report layout
 
@@ -200,7 +215,12 @@ Raw data in `dev/temporary_artifacts/` (gitignored):
   1→1 is 0% (rendered empty). Something the baseline never had is **+100%**.
   Baselines ride in the synthesized callers diff (`baseline`, keyed by `<fn>`
   and `<fn>\n<display path>\n<line>`, `baselineTotal`, `baselineCalls`,
-  `events`); the heat map reads it via `--baseline-data`. Ranking and heat are
+  `events`); the heat map reads it via `--baseline-data`. **`events` names the
+  derived events too** - recorded slots keep the indices they always had and
+  `costs_emit()` appends one slot per derived event to every vector it writes,
+  so `events.index("CEst")` resolves like any other and the diff is no longer
+  pinned to a recorded event. The heat map ignores the appended slots: its JS
+  resolves a derived event from the recorded ones itself. Ranking and heat are
   `abs()`, so winners and losers interleave.
 - **Per-line baselines are wildly skewed** - median line is ~18 Ir and 72% are
   under 1,000, so a line that cost 1 and moved 200K reads 20,360,300%. Only
@@ -245,14 +265,14 @@ vocabulary means adding it to `_ALLOWED_UNICODE` with a `#` comment naming it.
 `DECLAUDE.md` is not scanned, and neither is any `.json` - `reformat.sh`'s
 table pairs `*.md` with `*.json` only because `prettier` handles both.
 
-Reformatting any of `scripts/heatmap.html`, `heatmap.css`, `frame.js`,
-`flame_bootstrap.js`, `theme.css` or `theme.js` changes every generated page
-(they are all inlined into each one), so a page diff after such an edit is
-expected; `perf2html_batch.sh --regenerate` then a diff against a snapshot is
-how you check that only the inlined `<style>`/`<script>` moved. Text a script
-`echo`s into `perf-tool/output.txt` is _page content_, so rewrapping it does
-change the report - split it into extra `#` lines rather than letting it
-overflow.
+Reformatting any of `scripts/heatmap.html`, `heatmap.js`, `heatmap.css`,
+`frame.js`, `flame_bootstrap.js`, `theme.css` or `theme.js` changes every
+generated page (they are all inlined into each one), so a page diff after such
+an edit is expected; `perf2html_batch.sh --regenerate` then a diff against a
+snapshot is how you check that only the inlined `<style>`/`<script>` moved.
+Text a script `echo`s into `perf-tool/output.txt` is _page content_, so
+rewrapping it does change the report - split it into extra `#` lines rather
+than letting it overflow.
 
 Not to be confused with the **80-column source _view_** in the heat map
 (`SOURCE_WIDTH`, `MINIMUM_COLUMNS`), which is the standard width the profiled
@@ -323,47 +343,55 @@ pipx/uv). Pylance is not usable - LSP only, ignores argv.
   callgrind wrote in its home file (matched 505/505; lowest line number does
   not - inlined helpers sit above the entry).
 - `build_report.py test|overview` - summary and overview pages. `_TOP = 50`.
-  **Two event constants, one per side of the core/diff split.** The non-diff
-  summary's "top 50 functions by self" ranks and titles by `_EVENT = "CEst"`,
-  resolved per profile through `event_of()`: `CEst` when the run recorded
-  everything it derives from, else `_EVENT_FALLBACK = "Ir"`, else the first
-  recorded event - `Profile.value()` **raises `KeyError`** on an event a
-  profile can't supply, so the guard is required, and the resolved name is a
-  local that both the column label and the ranking key read. Every diff path
-  plus the diff overview stays on `_DIFF_EVENT = "Ir"`. CEst _is_ derivable
-  from a delta (the delta file carries all recorded events and CEst is linear,
-  so `CEst(mod-base) == CEst(mod)-CEst(base)`, verified); what pins the diff to
-  a recorded event is the **denominator**, not the numerator
-  - `callers_data_load()`/`baseline_total_load()` locate a baseline by
-    `events.index(...)` slot in the synthesized callers diff's cost vector, and
-    a derived event has no slot. Moving the diff to CEst means changing
-    `callgrind_diff.py`'s synthesized callers diff format.
-    `--perf-log`/`--trace-log`/`--raw-data` each render a section only when
-    given; the flame-graph strip link exists only with `--trace-log`. `--diff`
-    picks `diff_test` in `main()`. The LABEL=VALUE rows above a page's content
-    are `ManifestRow`/`ManifestBlock` (methods `manifest_*`) - not the heat
-    map's `HeatMapTotals`, and not a table's column-title row
-    (`theme.table_render(column_titles=...)`). **Never call any of them just
-    "header".** Its `FRAME_JS` is `theme.theme_asset("frame.js")`.
+  **One event constant, `_EVENT = "CEst"`, for every table on both sides of the
+  core/diff split** - the non-diff summary's "top 50 functions by self", every
+  diff path and the diff overview alike. It may name a recorded or a derived
+  event, and can be pointed at any event `callgrind.py` knows with no other
+  edit. `event_of()` resolves it per profile - `_EVENT` when
+  `Profile.event_names()` carries it, else that profile's first recorded
+  event - because `Profile.value()` **raises `KeyError`** on an event a profile
+  can't supply; the resolved name is a local that both the column label and the
+  ranking key read. There is **no second named fallback**. The numerator was
+  never the obstacle (CEst is linear, so
+  `CEst(mod-base) == CEst(mod)-CEst(base)`, verified); the **denominator** was,
+  and the synthesized callers diff now gives a derived event its own slot, so
+  `callers_data_load()`/`baseline_total_load()` find one by `events.index(...)`
+  exactly like a recorded event. `--perf-log`/`--trace-log`/`--raw-data` each
+  render a section only when given; the flame-graph strip link exists only with
+  `--trace-log`. `--diff` picks `diff_test` in `main()`. The LABEL=VALUE rows
+  above a page's content are `ManifestRow`/`ManifestBlock` (methods
+  `manifest_*`) - not the heat map's `HeatMapTotals`, and not a table's
+  column-title row (`theme.table_render(column_titles=...)`). **Never call any
+  of them just "header".** Its `FRAME_JS` is `theme.theme_asset("frame.js")`.
 - `callgrind_diff.py` - the subtraction; also home of `profile_magnitudes()`,
-  which generators import. `--callers-output` is required, and writes the
-  **synthesized callers diff** (`CallersDoc`), carrying the baselines every
-  diff share divides by. `perf2html_diff.sh` copies it into the report's `raw/`
-  as `<delta>.callers.json` so the overview can reach it; `validate_report.py`
+  which generators import. Its own `_EVENT` is `CEst`, the same one knob, and
+  `event_of()` drops to the first recorded event when a side can't supply it.
+  `--callers-output` is required, and writes the **synthesized callers diff**
+  (`CallersDoc`), carrying the baselines every diff share divides by; every
+  vector it writes goes through `costs_emit()`, which pads to the recorded
+  width, appends one slot per derived event in `events_all()` order and only
+  then trims trailing zeros - so a slot's index never moves and a short vector
+  still means zeros. `perf2html_diff.sh` copies it into the report's `raw/` as
+  `<delta>.callers.json` so the overview can reach it; `validate_report.py`
   skips it in `raw_dir_check` (`_CALLERS_SUFFIX`). The file name, the flags and
   the JSON keys are contract - only the prose and the Python names say
   "synthesized callers diff": `CallgrindToHeatmap`'s `SynthesizedCallers` +
   `synthesized_callers_load()` read it, `BuildReport.CallersData` +
   `callers_data_load()` read it back whole.
 - `callgrind_to_heatmap.py` - `_DEFAULT_EVENT = "CEst"`, `_TREE` = dirs whose
-  tracked `.c/.h` are listed even without samples. Its `BODY` and `_CSS` are
-  `theme.theme_asset("heatmap.html")` and `theme.theme_asset("heatmap.css")`.
+  tracked `.c/.h` are listed even without samples. Its `BODY`, `_CSS` and
+  `_HEAT_MAP_JS` are `theme.theme_asset()` of `heatmap.html`, `heatmap.css` and
+  `heatmap.js`. `render()` substitutes `__THEME_JS__` and `__HEATMAP_JS__`
+  **before** `__DATA__`: the two scripts are our own files and carry no marker,
+  while `__DATA__` is profiled source text, so it is the one replacement whose
+  result must never be scanned again.
 - **No generator holds a multi-line HTML/CSS/JS literal any more.** Each one is
   a real file in `scripts/`, read at import through `theme.theme_asset()` -
   `Theme.asset_read()` exposed as a free function, the same door
   `theme.css`/`theme.js` come through. The files and their holders:
   `heatmap.html` → `callgrind_to_heatmap.BODY`, `heatmap.css` →
-  `callgrind_to_heatmap._CSS`, `frame.js` → `build_report.FRAME_JS`,
+  `callgrind_to_heatmap._CSS`, `heatmap.js` →
+  `callgrind_to_heatmap._HEAT_MAP_JS`, `frame.js` → `build_report.FRAME_JS`,
   `flame_bootstrap.js` → `build_flame_graph._BOOTSTRAP`. Being off the Python
   side, **their JS is written plainly** - `\n` is `\n`, not `\\n`; that gotcha
   is gone from `dev/` entirely. They keep their coverage: `prettier` formats
@@ -554,8 +582,8 @@ and unrelated. The stored keys themselves are boundary names, so they keep
 their dotted spelling - `heat.scale`, `heat.sort`, `split.<pane>` and
 `perf2html.version`, the last holding the store version that `theme.js` sweeps
 on. `flame_bootstrap.js`'s `__NAME__`/`__DATA__` and `heatmap.html`'s
-`__DATA__`/`__THEME_JS__` are substitution markers Python matches literally -
-never rename them.
+`__DATA__`/`__THEME_JS__`/`__HEATMAP_JS__` are substitution markers Python
+matches literally - never rename them.
 
 ### Frames and URL state
 
@@ -650,9 +678,9 @@ Pages nest two deep: overview frames a test summary, which frames its heat map
     measure the thead**. `minimap_sync()` also runs after a popup opens/closes.
 - Popup "copy" builds a plain-text twin in parallel with the HTML
   (`table_markdown()` off the same `cols`/`rows`), never scraped `textContent`.
-  It lives in `scripts/heatmap.html`, so its `\n` is written plainly; the
+  It lives in `scripts/heatmap.js`, so its `\n` is written plainly; the
   double-backslash gotcha died with the last Python JS literal.
-- The popup opens with a `event | share | amount` stats table
+- The popup opens with a `event | global % | count` stats table
   (`heat.detail.stats`), not a sentence: one row for self (`line self` when the
   line isn't a function entry), `calls` + `call count` rows only when the line
   has call cost, then one row per `secondary_events` event with a non-zero

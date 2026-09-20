@@ -20,18 +20,12 @@ from theme import Cell, CellOrText, Column, html_escape
 # delta it describes.
 _CALLERS_SUFFIX = ".callers.json"
 
-# The event the diff tables rank and colour by, and the one their baselines
-# are read in. It stays a recorded event: the synthesized callers diff locates
-# a baseline by slot in the cost vector, which a derived event like CEst has
-# none of.
-_DIFF_EVENT = "Ir"
-
-# The event the non-diff summary's top table ranks and colours by. Derived,
-# so a profile missing its inputs falls back -- see event_of().
+# The one event every table here ranks and colours by, diff or not, and the
+# one a diff's baselines are read in. Recorded or derived either way: the
+# synthesized callers diff gives every derived event its own slot, so this
+# can be set to any event callgrind.py knows with no other edit. A profile
+# that cannot supply it falls back -- see event_of().
 _EVENT = "CEst"
-
-# What the non-diff top table ranks by when the profile cannot derive _EVENT.
-_EVENT_FALLBACK = "Ir"
 
 # The diff share that paints the hottest colour. A change the size of the
 # thing's own baseline is as lit as a cell gets.
@@ -201,8 +195,10 @@ class BuildReport:
         path: str
 
     # The baseline run's total in this page's event, read from the synthesized
-    # callers diff left beside the delta file. None when there is none to
-    # divide by, which is what an empty share cell means.
+    # callers diff left beside the delta file. Its "events" list names the
+    # derived events too, so _EVENT resolves to a slot whichever kind it is.
+    # None when there is none to divide by, which is what an empty share
+    # cell means.
     def baseline_total_load(self, paths: Sequence[str]) -> int | None:
         total = 0
         found = False
@@ -211,7 +207,7 @@ class BuildReport:
                 doc = json.load(handle)
             events: list[str] = doc.get("events", [])
             costs: list[int] = doc.get("baselineTotal", [])
-            slot = events.index(_DIFF_EVENT) if _DIFF_EVENT in events else 0
+            slot = events.index(_EVENT) if _EVENT in events else 0
             total += costs[slot] if slot < len(costs) else 0
             found = True
         return total if found else None
@@ -259,6 +255,10 @@ class BuildReport:
         label = f"{html_escape(caller_name)} ({share})"
         return f'<a href="{href}">{label}</a>' if href else label
 
+    # Read the synthesized callers diff back: the call graph a delta file
+    # cannot carry, plus the baselines. It names the event it counted in and
+    # lists derived events alongside recorded ones, so that name resolves to
+    # a slot whichever kind it is.
     def callers_data_load(self, path: str) -> BuildReport.CallersData:
         if not path:
             return BuildReport.CallersData({}, {}, {})
@@ -288,13 +288,12 @@ class BuildReport:
         profile: callgrind.Profile,
         callers_data: BuildReport.CallersData,
     ) -> str:
+        event = self.event_of(profile)
         ranked = sorted(
             (
-                BuildReport.FunctionCost(
-                    profile.value(costs, _DIFF_EVENT), function
-                )
+                BuildReport.FunctionCost(profile.value(costs, event), function)
                 for function, costs in profile.function_self.items()
-                if profile.value(costs, _DIFF_EVENT) != 0
+                if profile.value(costs, event) != 0
             ),
             key=lambda t: (-abs(t.cost), t.function),
         )[:_TOP]
@@ -329,7 +328,7 @@ class BuildReport:
             Column("#", numeric=True),
             Column("% self", numeric=True),
             Column("symbol", width=_SYMBOL_CHARS),
-            Column(_DIFF_EVENT, numeric=True),
+            Column(event, numeric=True),
             Column("calls", numeric=True),
             Column("callers", grow=True),
         ]
@@ -396,7 +395,7 @@ class BuildReport:
     ) -> tuple[list[Column], list[list[CellOrText]]]:
         columns = [
             Column("one report per test"),
-            Column(_DIFF_EVENT, numeric=True),
+            Column(_EVENT, numeric=True),
             Column("% of change", numeric=True),
             Column("functions changed", numeric=True),
         ]
@@ -425,11 +424,12 @@ class BuildReport:
                 rows.append([link, "", "", ""])
                 continue
             profile = callgrind.profile_load(files)
-            delta = profile.value(profile.totals(), _DIFF_EVENT)
+            event = self.event_of(profile)
+            delta = profile.value(profile.totals(), event)
             changed = sum(
                 1
                 for costs in profile.function_self.values()
-                if profile.value(costs, _DIFF_EVENT) != 0
+                if profile.value(costs, event) != 0
             )
             share = self.diff_share(
                 delta, self.baseline_total_load(synthesized_callers)
@@ -475,15 +475,14 @@ class BuildReport:
             quote(function, safe="/-_.!~*'()")
         )
 
-    # What the non-diff top table ranks by: _EVENT when the run recorded
-    # everything it is derived from, else the recorded fallback. A profile
-    # that cannot supply an event raises rather than scoring it zero.
+    # What every table here ranks by: _EVENT when the profile can supply it,
+    # recorded or derived, else whatever it records first. Profile.value()
+    # raises on an event a profile has not got, so nothing asks it blind.
     def event_of(self, profile: callgrind.Profile) -> str:
         names = profile.event_names()
-        for name in (_EVENT, _EVENT_FALLBACK):
-            if name in names:
-                return name
-        return names[0] if names else _EVENT_FALLBACK
+        if _EVENT in names:
+            return _EVENT
+        return names[0] if names else _EVENT
 
     def file_read(self, path: str) -> str:
         try:

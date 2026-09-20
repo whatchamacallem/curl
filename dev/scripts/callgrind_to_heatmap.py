@@ -16,8 +16,8 @@ import callgrind_diff
 import theme
 from callgrind import Costs, Group
 
-# The page body and its script, read from scripts/heatmap.html at generate
-# time.
+# The page markup and its substitution markers, read from
+# scripts/heatmap.html at generate time.
 BODY = theme.theme_asset("heatmap.html")
 
 # The extra stylesheet the heat map needs on top of the shared theme,
@@ -26,6 +26,9 @@ _CSS = theme.theme_asset("heatmap.css")
 
 # The event the page opens on, when the profile can supply it.
 _DEFAULT_EVENT = "CEst"
+
+# The page's own runtime, read from scripts/heatmap.js at generate time.
+_HEAT_MAP_JS = theme.theme_asset("heatmap.js")
 
 # Directories whose tracked .c/.h are listed even when nothing sampled them,
 # so a file with no cost is visibly cold rather than simply missing.
@@ -144,7 +147,10 @@ class CallgrindToHeatmap:
         baseline_data: str
 
     # SynthesizedCallers - The part of callgrind_diff.py's synthesized callers
-    # diff this tool reads: what every share on a diff page divides by.
+    # diff this tool reads: what every share on a diff page divides by. Its
+    # vectors carry the recorded slots first and the derived events after, but
+    # the page resolves either kind from the recorded slots alone, so the
+    # appended ones go unread here.
     class SynthesizedCallers(TypedDict):
         # keyed by function, and by "<function>\n<file>\n<line>"
         baseline: dict[str, Costs]
@@ -430,12 +436,16 @@ class CallgrindToHeatmap:
         }
 
     # Bake the model into the page. "</" is escaped so no embedded source can
-    # close the script tag early.
+    # close the script tag early. The script markers go in before __DATA__,
+    # which carries profiled source text and so is the one substitution whose
+    # result must never be scanned again.
     def render(self, model: CallgrindToHeatmap.HeatModel, title: str) -> str:
         data = json.dumps(model, separators=(",", ":"), ensure_ascii=False)
         data = data.replace("</", "<\\/")
-        body = BODY.replace("__THEME_JS__", theme.theme_js()).replace(
-            "__DATA__", data
+        body = (
+            BODY.replace("__THEME_JS__", theme.theme_js())
+            .replace("__HEATMAP_JS__", _HEAT_MAP_JS)
+            .replace("__DATA__", data)
         )
         return (
             '<!doctype html>\n<html lang="en">\n'

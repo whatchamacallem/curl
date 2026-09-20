@@ -12,9 +12,10 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import callgrind
 from callgrind import Costs
 
-# The event the synthesized callers diff counts in -- the delta file itself
-# carries all of them.
-_EVENT = "Ir"
+# The one event every tool here defaults to, recorded or derived -- the
+# delta file itself carries all of them, and the synthesized callers diff
+# gives every derived event a slot so this can name any of them.
+_EVENT = "CEst"
 
 
 # CallgrindDiff - Subtracts one profile from another, per (function, file,
@@ -34,7 +35,8 @@ class CallgrindDiff:
     class CallersDoc(TypedDict):
         # which event the costs are counted in
         event: str
-        # the baseline vectors' event order, so a reader can find a slot
+        # the baseline vectors' event order, recorded events first and the
+        # derived ones appended, so a reader can find a slot for either
         events: list[str]
         # per callee, its changed callers as [name, count, cost] rows
         callers: dict[str, list[list[object]]]
@@ -56,7 +58,8 @@ class CallgrindDiff:
         output: str
         # where the synthesized callers diff goes
         callers_output: str
-        # which event the synthesized callers diff counts in
+        # which event the synthesized callers diff counts in, recorded or
+        # derived
         event: str
 
     # The baseline cost of every function and of every one of its lines --
@@ -66,12 +69,12 @@ class CallgrindDiff:
         out: dict[str, Costs] = {}
         for function, costs in baseline.function_self.items():
             if any(costs):
-                out[function] = self.costs_trim(costs)
+                out[function] = self.costs_emit(baseline, costs)
         for function, lines in baseline.function_lines.items():
             for key, costs in lines.items():
                 if any(costs):
                     out[self.baseline_key(function, key.file, key.line)] = (
-                        self.costs_trim(costs)
+                        self.costs_emit(baseline, costs)
                     )
         return out
 
@@ -99,8 +102,9 @@ class CallgrindDiff:
             f"{len(diff.line_self):,} lines in {changed:,} functions changed",
             file=sys.stderr,
         )
-        callers = self.callers_subtract(baseline, modified, args.event)
-        self.callers_write(callers, args.callers_output, args.event, baseline)
+        event = self.event_of(baseline, modified, args.event)
+        callers = self.callers_subtract(baseline, modified, event)
+        self.callers_write(callers, args.callers_output, event, baseline)
         print(
             f"wrote {args.callers_output} "
             f"({os.path.getsize(args.callers_output):,} bytes): "
@@ -168,7 +172,7 @@ class CallgrindDiff:
     ) -> None:
         doc: CallgrindDiff.CallersDoc = {
             "event": event,
-            "events": list(baseline.events),
+            "events": self.events_all(baseline),
             "callers": {
                 callee: [
                     [delta.function, delta.count_, delta.cost]
@@ -177,7 +181,7 @@ class CallgrindDiff:
                 for callee, deltas in callers.items()
             },
             "baseline": self.baseline_costs(baseline),
-            "baselineTotal": self.costs_trim(baseline.totals()),
+            "baselineTotal": self.costs_emit(baseline, baseline.totals()),
             "baselineCalls": {
                 callee: sum(tally.count for tally in tallies.values())
                 for callee, tallies in baseline.callers.items()
@@ -186,6 +190,21 @@ class CallgrindDiff:
         os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
         with open(path, "w", encoding="utf-8") as handle:
             json.dump(doc, handle)
+
+    # One vector as the synthesized callers diff writes it: the recorded
+    # slots at the indices they already had, then every derived event in
+    # events_all() order, so a reader finds a derived event by slot exactly
+    # like a recorded one. Trailing zeros go last, since every reader treats
+    # a missing slot as zero.
+    def costs_emit(self, profile: callgrind.Profile, costs: Costs) -> Costs:
+        padded = list(costs) + [0] * (len(profile.events) - len(costs))
+        return self.costs_trim(
+            padded
+            + [
+                profile.value(costs, derived_event.name)
+                for derived_event in profile.resolved_derived_events()
+            ]
+        )
 
     # Subtract two cost vectors, treating a missing slot as zero.
     def costs_sub(self, modified: Costs, baseline: Costs) -> Costs:
@@ -202,6 +221,24 @@ class CallgrindDiff:
         while length and costs[length - 1] == 0:
             length -= 1
         return costs[:length]
+
+    # The wanted event when both sides can supply it, else the first event
+    # they share -- Profile.value() raises on one a profile cannot supply.
+    def event_of(
+        self,
+        baseline: callgrind.Profile,
+        modified: callgrind.Profile,
+        wanted: str,
+    ) -> str:
+        names = self.events_all(baseline)
+        if wanted in names and wanted in self.events_all(modified):
+            return wanted
+        return names[0]
+
+    # Every event a written vector has a slot for: the recorded ones at the
+    # indices they already had, then the derived ones costs_emit() appends.
+    def events_all(self, profile: callgrind.Profile) -> list[str]:
+        return profile.event_names()
 
     # Sum of every line delta's absolute value -- what a diff's shares divide
     # by, since the signed total is near zero.
