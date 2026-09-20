@@ -263,7 +263,8 @@ pipx/uv). Pylance is not usable — LSP only, ignores argv.
   must stay a pointer, `end` a variable. `next == end` = not sampling;
   everything else lives on that cold path. Setup is a constructor (incl.
   `memset` of the buffer, so no page fault lands in a timed call; the
-  buffer holds `CYG_CALLBACKS_MAX_REC`=16384 records), teardown a destructor
+  buffer holds `CYG_CALLBACKS_MAX_REC`=327680 records, 5MB static, and no
+  test fills it), teardown a destructor
   writing `CYG_OUT` + `.maps`. Its header comment is the format reference.
   Single-threaded.
 - `trace_to_speedscope.py` — pairs enters/exits (mismatch = non-zero exit),

@@ -28,7 +28,7 @@
 #include <x86intrin.h>
 
 #define CYG_CALLBACKS_MAGIC 0x32475943ull
-#define CYG_CALLBACKS_MAX_REC 16384u
+#define CYG_CALLBACKS_MAX_REC 327680u
 #define CYG_CALLBACKS_EXIT_BIT (1ull << 63)
 
 typedef struct {
