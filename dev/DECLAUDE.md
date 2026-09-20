@@ -169,9 +169,9 @@ Raw data in `dev/trace/` (gitignored): `callgrind.out.<test>.<loops>.<ts>`,
   per (file, line) alone, which hands half an inlined function's cost to its
   neighbour.
 - The delta is a plain callgrind-format file with **no `calls=` lines** → no
-  call graph → no call columns/caller tables in the heat map (`HAS_CALLS`). The
-  summary's calls/callers columns come from a separate JSON sidecar
-  (`callgrind_diff.py --callers-output`, consumed via
+  call graph → no call columns/caller tables in the heat map
+  (`HAS_CALL_GRAPH`). The summary's calls/callers columns come from a separate
+  JSON sidecar (`callgrind_diff.py --callers-output`, consumed via
   `build_report.py test --diff --callers-data`).
 - **Every share divides by that same thing's own baseline cost**, never by a
   global budget: a function by its baseline self, a line by its baseline cost,
@@ -185,8 +185,9 @@ Raw data in `dev/trace/` (gitignored): `callgrind.out.<test>.<loops>.<ts>`,
 - **Per-line baselines are wildly skewed** - median line is ~18 Ir and 72% are
   under 1,000, so a line that cost 1 and moved 200K reads 20,360,300%. Only
   ~1.8% of lines exceed ±1000%, but a max-based colour scale is set by exactly
-  those. In a diff the `PFULL` clamp handles it (a diff has no per-function
-  scope); in a non-diff report that is what `log, per function` is for.
+  those. In a diff the `FULL_HEAT_PERCENT` clamp handles it (a diff has no
+  per-function scope); in a non-diff report that is what `log, per function` is
+  for.
 - `profile_magnitudes()` (Σ|per-function line delta|) still exists and is what
   `heatMapTotals.totals` carries, but it is no longer what shares divide by.
 - `summary:` in the delta = the signed total, so the parser's 1.0000 self-check
@@ -196,7 +197,7 @@ Raw data in `dev/trace/` (gitignored): `callgrind.out.<test>.<loops>.<ts>`,
 generator. Keep the split: `BuildReport.test`/`.functions_table` core vs
 `.diff_test`/`.diff_functions_table`; `CallgrindToHeatmap.model()` core vs
 `.diff_model()`; in heat-map JS every diff override sits in the one
-`if (DIFF) {...}` block; `validate_report.py` is data-driven by
+`if (IS_DIFF) {...}` block; `validate_report.py` is data-driven by
 `ValidateReport.ReportLayout` (`_LAYOUT_FULL`/`_LAYOUT_DIFF`).
 
 ## `dev/scripts/` conventions
@@ -214,13 +215,13 @@ few are split by hand. Whole tree is at 0.
 **`dev/` source is ASCII plus a short allow list.** `validate_report.py`'s
 `unicode_check` walks every `.py`/`.js`/`.css`/`.sh`/`.html` and `README.md`
 under `dev/` and fails on any character outside `_NON_ASCII_RE`, which is ASCII
-plus `_ALLOWED_UNICODE`: `≈`, `▲`, `▼`, `…`. Those are the diff vocabulary and
-they are **written literally** - not `▼`, and not an HTML entity. An entity
-would be double-escaped into visible text by the JS `esc()` and by `theme.py`'s
-`html_escape()` (both escape `&`), and its length would corrupt the
-`text.length` column-width math. Adding a character to the page's vocabulary
-means adding it to `_ALLOWED_UNICODE` with a `#` comment naming it.
-`DECLAUDE.md` is not scanned.
+plus `_ALLOWED_UNICODE`: `≈`, `▲`, `▶`, `▼`, `…`. Those are the diff vocabulary
+plus the heat map tree's carets, and they are **written literally** - not `▼`,
+not a `▼` escape, and not an HTML entity. An entity would be double-escaped
+into visible text by the JS `html_escape()` and by `theme.py`'s `html_escape()`
+(both escape `&`), and its length would corrupt the `text.length` column-width
+math. Adding a character to the page's vocabulary means adding it to
+`_ALLOWED_UNICODE` with a `#` comment naming it. `DECLAUDE.md` is not scanned.
 
 Reformatting any of `scripts/heatmap.html`, `heatmap.css`, `frame.js`,
 `flame_bootstrap.js`, `theme.css` or `theme.js` changes every generated page
@@ -232,9 +233,9 @@ change the report - split it into extra `#` lines rather than letting it
 overflow.
 
 Not to be confused with the **80-column source _view_** in the heat map
-(`SRC_COLS`, `MM_MIN_COLS`), which is the standard width the profiled `lib/`
-source is rendered at - that stays 80 and has nothing to do with how `dev/` is
-written.
+(`SOURCE_WIDTH`, `MINIMUM_COLUMNS`), which is the standard width the profiled
+`lib/` source is rendered at - that stays 80 and has nothing to do with how
+`dev/` is written.
 
 **Comments: short, tech-writer style, never docstrings.** Every class and
 function gets one `# <Name> - what it is` line above it, wrapped to a second
@@ -352,7 +353,14 @@ pipx/uv). Pylance is not usable - LSP only, ignores argv.
   instruments inlined bodies, so inlined helpers are frames.
 - `validate_report.py OUTDIR [--diff]` - structural smoke test only;
   `flame_graph_check` requires exactly one `evented` profile whose `exporter`
-  is `_FLAME_EXPORTER`, so a synthesized or stale flame graph fails.
+  is `_FLAME_EXPORTER`, so a synthesized or stale flame graph fails. **It greps
+  generated pages for three JS names**, so those three are contract, not
+  private: `loadFileFromBase64` (speedscope's own API),
+  `var document_base64 = "..."` (the regex `flame_graph_check` pulls the base64
+  profile out of `flame_bootstrap.js` with) and `report_ui.layout_activate`
+  (`heat_map_check`'s proof the heat map carries its runtime). Rename one of
+  those in the JS and every page fails validation while looking perfectly
+  correct in a browser - change both sides together.
 - `prettier` - formats **and** lints JS, CSS, HTML, Markdown, JSON and YAML,
   replacing the former `check_js.py`/`check_html.py` and `mdformat`. It
   reparses what it writes, so a syntax error or an unbalanced `</div>` fails
@@ -392,60 +400,65 @@ pages must not assume more.
   The `_HEAT` ramp is exempt from the pair rule.
 - Heat = 12-stop `_HEAT` blended over `--bg`, alpha on log scale of magnitude,
   text color by resulting luminance. **The scale dropdown is a curve × scope
-  product, built at runtime** - `SCALES` from `{log, linear}` × `SCOPES`, and
-  `scale` is the chosen entry (`.curve`, `.scope`, `.value`), never a bare
-  string. `heatP()` reads `.curve`; `maxP`/`maxPfor()` read `.scope`. Non-diff
-  `SCOPES` is all three, so the dropdown carries **all six** permutations:
-  `global` (`MAXP`, every line of every file), `per file`, `per function` (each
-  line against the hottest line of the function that owns it - `maxPfor()`;
-  what keeps one blown-up line from flattening a whole file). **A diff has
-  exactly one scope, `per line`**, so its dropdown is just `log`/`linear` with
-  no scope suffix: a diff share already divides by that line's own baseline, so
-  there is no global, file or function delta to scale against and `maxP` is
-  simply `PFULL`. Because `file` and `function` scope can no longer be reached
-  in a diff, both `maxP` arms use plain `pct()` - no `DIFF ? pctOf(...)`
-  branch, and no per-file percentage max. An unknown stored `heat.scale` falls
-  back to `SCALES[0]`, which is how old values survive. Non-diff indexes
-  `0..1`; **diff indexes signed `-1..1` across the ramp** (savings → cold/blue,
+  product, built at runtime** - `SCALE_CHOICES` from `{log, linear}` ×
+  `SCOPE_CHOICES`, and `scale` is the chosen entry (`.curve`, `.scope`,
+  `.value`), never a bare string. `heat_of_share()` reads `.curve`;
+  `max_share`/`max_share_for_line()` read `.scope`. Non-diff `SCOPE_CHOICES` is
+  all three, so the dropdown carries **all six** permutations: `global`
+  (`maximum_share`, every line of every file), `per file`, `per function` (each
+  line against the hottest line of the function that owns it -
+  `max_share_for_line()`; what keeps one blown-up line from flattening a whole
+  file). **A diff has exactly one scope, `per line`**, so its dropdown is just
+  `log`/`linear` with no scope suffix: a diff share already divides by that
+  line's own baseline, so there is no global, file or function delta to scale
+  against and `max_share` is simply `FULL_HEAT_PERCENT`. Because `file` and
+  `function` scope can no longer be reached in a diff, both `max_share` arms
+  use plain `share_of_total()` - no `IS_DIFF ? share_of_baseline(...)` branch,
+  and no per-file percentage max. An unknown stored `heat.scale` falls back to
+  `SCALE_CHOICES[0]`, which is how old values survive. Non-diff indexes `0..1`;
+  **diff indexes signed `-1..1` across the ramp** (savings → cold/blue,
   regressions → hot/red, 0 at midpoint) via `heat_style(signed=True)` / the JS
-  `if (DIFF)` branch. **A diff clamps both the share and `maxP` to 100%**
-  (`_FULL_HEAT_PCT` / `PFULL`, applied in `BuildReport.diff_heat` and in
-  `heatP`), so a change the size of the thing's own baseline is already fully
-  lit and the 1.8% of lines reading millions of percent can't set a scale
-  nothing else registers on: `c(100%) == c(10000000%)`,
-  `c(90%) != c(10000000%)`. Non-diff is untouched - `heat_t()`/`heatP()` clamp
-  nothing without `DIFF`.
+  `if (IS_DIFF)` branch. **A diff clamps both the share and `max_share` to
+  100%** (`_FULL_HEAT_PCT` / `FULL_HEAT_PERCENT`, applied in
+  `BuildReport.diff_heat` and in `heat_of_share`), so a change the size of the
+  thing's own baseline is already fully lit and the 1.8% of lines reading
+  millions of percent can't set a scale nothing else registers on:
+  `c(100%) == c(10000000%)`, `c(90%) != c(10000000%)`. Non-diff is untouched -
+  `heat_of_cost()`/`heat_of_share()` clamp nothing without `IS_DIFF`.
 - Call counts are their own metric, heat-colored by share of all recorded
   calls, log-scaled, event-independent.
-- Numbers: `num_human()`/`fmtH()` → `2.1K`/`2.0G` (exact in tooltip);
-  `num_pct()`/`fmtP()` → `63.2%`, `<0.01%`. Exact zero renders empty. **A diff
-  never prints `+`.** A share leads with an arrow and keeps a negative's sign,
-  Bloomberg style - `▲11.1%` up, `▼-100.0%` down (`num_signed_pct()` / the JS
-  `fmtP()`); an amount carries only a minus when negative, nothing when
-  positive (`num_signed()` / `fmtH()`, U+2212 in the page). Under 0.01% it is
-  `▲≈0.00%`/`▼≈0.00%` - direction kept, size marginal. **A diff share past 100%
-  switches to a multiple** - `▲1.30x` - and at or past `99.99x` it is just
-  `>1000x`, deliberately approximate (`Numbers.multiple()` / the JS `mult()`;
-  both sides kept in step and tested on the same cases). `≈0.00%` and `>1000x`
-  state a bound, not a value, so neither takes a sign. **A drop can't pass
-  -100%** - `(new-old)/old` bottoms out when the cost reaches zero - so the
-  multiple branch is reachable only for a rise; don't "fix" negative multiples,
-  they can't occur. Tooltips keep an explicit `+`/`-` on the exact value.
+- Numbers: `num_human()`/`human_text()` → `2.1K`/`2.0G` (exact in tooltip);
+  `num_pct()`/`share_text()` → `63.2%`, `<0.01%`. Exact zero renders empty. **A
+  diff never prints `+`.** A share leads with an arrow and keeps a negative's
+  sign, Bloomberg style - `▲11.1%` up, `▼-100.0%` down (`num_signed_pct()` /
+  the JS `share_text()`); an amount carries only a minus when negative, nothing
+  when positive (`num_signed()` / `human_text()`, U+2212 in the page). Under
+  0.01% it is `▲≈0.00%`/`▼≈0.00%` - direction kept, size marginal. **A diff
+  share past 100% switches to a multiple** - `▲1.30x` - and at or past `99.99x`
+  it is just `>1000x`, deliberately approximate (`Numbers.multiple()` / the JS
+  `multiple_text()`; both sides kept in step and tested on the same cases).
+  `≈0.00%` and `>1000x` state a bound, not a value, so neither takes a sign.
+  **A drop can't pass -100%** - `(new-old)/old` bottoms out when the cost
+  reaches zero - so the multiple branch is reachable only for a rise; don't
+  "fix" negative multiples, they can't occur. Tooltips keep an explicit `+`/`-`
+  on the exact value.
 - **No decorative borders.** The only drawn lines are drag targets (`.bar`,
   `.split`), invisible until hover/active. Everything else is separated by
   background shading (`--panel`/`--bg`/`--bg-alt`/`--nav`).
 - Column widths: exact `ch` counts; the header label is every column's floor -
   **no column is ever narrower than its own title**, not at rest, after a drag,
-  or after a fill. One rule in two places, `colWidths()` (heat map JS) and
+  or after a fill. One rule in two places, `column_widths()` (heat map JS) and
   `table_render()` (theme.py) - keep them in step. Widths are **never
   persisted**; reload resets.
 - `fill` tables end with the right edge at the same inset from the scrolling
-  pane as the left edge - `fillTable()` measures it live against `scrollerOf()`
-  (never `window.innerWidth`). The `grow` column's runtime minimum is its
-  **title** alone, so it squeezes before a pane scrolls sideways. `fillTable()`
-  bails on a table with no layout (`offsetWidth` 0) - under `display:none`
-  everything reads 0 and the grow column would be fitted to `0px`; `show()`
-  calls `Theme.relayout(home)` on return to fix what changed while hidden.
+  pane as the left edge - `grow_column_fill()` measures it live against
+  `nearest_scroller()` (never `window.innerWidth`). The `grow` column's runtime
+  minimum is its **title** alone, so it squeezes before a pane scrolls
+  sideways. `grow_column_fill()` bails on a table with no layout
+  (`offsetWidth` 0) - under `display:none` everything reads 0 and the grow
+  column would be fitted to `0px`; `view_show()` calls
+  `report_ui.layout_refresh(home_panel)` on return to fix what changed while
+  hidden.
 - Heat map's two home tables are plain (non-`fill`), sized to content, so a
   long header can't stretch a heat-colored cell into a wide bar.
 - A `<select>` whose option text varies with page state gets a fixed `ch` width
@@ -456,33 +469,49 @@ pages must not assume more.
   `TESTS_C` name + longest view label + diff suffix) - `flex-wrap: nowrap`
   means too small clips mid-word on exactly the pair nobody opens.
 
+### JS naming: snake_case is ours, camelCase is theirs
+
+Every identifier in `dev/scripts`' JavaScript that we own is `snake_case` and
+unabbreviated; anything still camelCase is a name the browser or Python owns -
+a DOM API member, a CSS class, a `data-*` attribute, a localStorage or URL key,
+or a JSON key from `callgrind_to_heatmap.py`'s TypedDicts (`heatMapTotals`,
+`lineFunction`, `defaultEvent`, `fgDark`, ...). The split is the documentation:
+a camelCase name is the signal that it crosses a boundary and cannot be renamed
+freely. The shared runtime global is `window.report_ui` (`layout_activate`,
+`layout_refresh`, `layout_reset`, `pane_splitter.attach`,
+`view_storage.value_read`/`.value_write`); `theme.py`'s `Theme` class is Python
+and unrelated. `flame_bootstrap.js`'s `__NAME__`/`__DATA__` and
+`heatmap.html`'s `__DATA__`/`__THEME_JS__` are substitution markers Python
+matches literally - never rename them.
+
 ### Frames and URL state
 
 Pages nest two deep: overview frames a test summary, which frames its heat map
 / flame graph. Both levels run the same `FRAME_JS`, deciding by
-`framed = window.parent !== window`.
+`is_framed = window.parent !== window`.
 
 - Title badge printed only by the outermost strip (framed levels write `""` but
   keep the element, so the `--title-bg` block reads continuous and links line
   up). `document.title` is set at every level.
 - Util block (`reset columns | help | curl.se/perf`) lives on the lowest strip
   that has one.
-- "reset columns" walks the whole nest via `theme:reset-cols`, and also resets
-  `Theme.splitter` panes back to authored width.
+- "reset columns" walks the whole nest via `report_ui:reset_columns`, and also
+  resets `report_ui.pane_splitter.attach` panes back to authored width.
 - **URL is the whole state.** Frame: `#<view>[/<inner hash>]`. Heat map:
   `f=<file>`, `f=<file>&l=<n>` (popup), `fn=<name>`, none = home, `&e=<event>`
   always spelled out when >1 event. Every click is `location.hash =` (one
-  history entry each); `route()` renders, then canonicalizes via `replaceState`
-  and posts up. Nothing is remembered outside the URL except
+  history entry each); `route_render()` renders, then canonicalizes via
+  `replaceState` and posts up. Nothing is remembered outside the URL except
   `heat.scale`/`heat.sort` in localStorage.
-- `FRAME_JS` loads a page with
-  `view.contentWindow.location.replace(href + (sub || "#"))` - **never
-  `iframe.src`**, which adds a history entry per load and desyncs back. `"#"`
-  not `""`: a fragment-less URL is a document reload.
-- Four postMessages, all source-checked. Inward: `theme:reset-cols`,
-  `theme:title?`. Outward: `{theme:"hash"}` (posted by the heat map _and_ by a
-  framed `FRAME_JS`'s own `sync()`, so a middle level relays its full hash up -
-  without it the outer hash freezes at `#<test>`), `{theme:"title"}`.
+- `FRAME_JS` loads a page with `view_frame.contentWindow.location.replace()`,
+  passing `link_href + (inner_hash || "#")` - **never `iframe.src`**, which
+  adds a history entry per load and desyncs back. `"#"` not `""`: a
+  fragment-less URL is a document reload.
+- Four postMessages, all source-checked. Inward: `report_ui:reset_columns`,
+  `report_ui:title_request`. Outward: `{report_ui:"hash_changed"}` (posted by
+  the heat map _and_ by a framed `FRAME_JS`'s own `hash_canonicalize()`, so a
+  middle level relays its full hash up - without it the outer hash freezes at
+  `#<test>`), `{report_ui:"title_changed"}`.
 - Regression test for URL-as-state: click test → view → file → line → event,
   the outer hash must end `#<test>/heat-map/f=<file>&l=<n>&e=<ev>`, and loading
   that URL back must reproduce all three levels' hashes.
@@ -495,39 +524,40 @@ Pages nest two deep: overview frames a test summary, which frames its heat map
 - Source table columns: `<event>`, `line`, `source`, `calls`, D1m, DLm, Bcm.
   **No row-wide heat** - each cell carries its own, so no cell's text is
   contrast-colored against another cell's background.
-- `EVS`/`EXTRA` list every event the profile _can_ produce, **not** filtered by
-  whether the total is zero - the dropdown and columns stay layout-stable
-  across profiles/diffs. An all-zero column renders blank, no heat, no `NaN`.
-  Totals guard `|| 1`.
+- `event_list`/`secondary_events` list every event the profile _can_ produce,
+  **not** filtered by whether the total is zero - the dropdown and columns stay
+  layout-stable across profiles/diffs. An all-zero column renders blank, no
+  heat, no `NaN`. Totals guard `|| 1`.
 - `.fhead`, `.chips` and `.tbl-cols` sit in one `.srcwrap`
   (`width: max-content; min-width: 100%`) so the wrapper equals the sideways
   scroll range. Bands/chips need `contain: inline-size` or their unwrapped
-  single-line width sets max-content. **Order gotcha:** `minimapBuild()` runs
-  _before_ `Theme.init()` - it narrows the pane by 110px and the fill measures
-  it as-is at that moment.
-- `centerRow()` (vertical only) replaces `scrollIntoView`, which also pulled
+  single-line width sets max-content. **Order gotcha:** `minimap_build()` runs
+  _before_ `report_ui.layout_activate()` - it narrows the pane by 110px and the
+  fill measures it as-is at that moment.
+- `row_center()` (vertical only) replaces `scrollIntoView`, which also pulled
   the pane sideways.
-- The source view is **80 columns** - `SRC_COLS`=80 is the `source` column's
-  `ch` width, the standard width for rendering C. It is not the `dev/` source
-  limit (79) and must never be changed to match it.
+- The source view is **80 columns** - `SOURCE_WIDTH`=80 is the `source`
+  column's `ch` width, the standard width for rendering C. It is not the `dev/`
+  source limit (79) and must never be changed to match it.
 - Minimap: `#minimap` is never resized and never scrolls; scale pinned to
-  `MM_MIN_COLS`=80 (the same 80-column view), never widened to the longest
+  `MINIMUM_COLUMNS`=80 (the same 80-column view), never widened to the longest
   line. Clone needs `width: 100%`
-  - `table-layout: fixed`. `mmCloneH` readable only after `empty` is removed
-    (display:none measures 0). `mmGeom()` caches nothing. Only the `th` cells
-    are sticky, the `<thead>` scrolls away - **never measure the thead**.
-    `minimapSync()` also runs after a popup opens/closes.
+  - `table-layout: fixed`. `clone_height_px` readable only after `empty` is
+    removed (display:none measures 0). `geometry_measure()` caches nothing.
+    Only the `th` cells are sticky, the `<thead>` scrolls away - **never
+    measure the thead**. `minimap_sync()` also runs after a popup opens/closes.
 - Popup "copy" builds a plain-text twin in parallel with the HTML
-  (`tableText()` off the same `cols`/`rows`), never scraped `textContent`. It
-  lives in `scripts/heatmap.html`, so its `\n` is written plainly; the
+  (`table_markdown()` off the same `cols`/`rows`), never scraped `textContent`.
+  It lives in `scripts/heatmap.html`, so its `\n` is written plainly; the
   double-backslash gotcha died with the last Python JS literal.
 - The popup opens with a `metric | share | amount` stats table
   (`heat.detail.stats`), not a sentence: one row for self (`line self` when the
   line isn't a function entry), `calls` + `call count` rows only when the line
-  has call cost, then one row per `EXTRA` event with a non-zero value. Zero
-  rows are dropped, so the table's height varies. `num()`/`numCalls()` cells
-  keep the exact value in the tooltip; `tableText()` turns the same
-  `cols`/`rows` into the copied markdown.
+  has call cost, then one row per `secondary_events` event with a non-zero
+  value. Zero rows are dropped, so the table's height varies.
+  `cell_number()`/`call_count_cell()` cells keep the exact value in the
+  tooltip; `table_markdown()` turns the same `cols`/`rows` into the copied
+  markdown.
 - The tree's cold-file expander is labelled just `no samples` - no count, no
   event name.
 - Clickable-row hover cue is an underline on `td.ln`: an inline heat `color`

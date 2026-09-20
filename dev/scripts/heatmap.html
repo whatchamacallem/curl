@@ -36,46 +36,60 @@
 <script>
   (function () {
     "use strict";
-    const model = JSON.parse(document.getElementById("heatdata").textContent);
-    const files = model.files,
-      functions = model.functions;
-    const treeEl = document.getElementById("tree");
-    const mainEl = document.getElementById("main");
-    const minimapEl = document.getElementById("minimap");
-    const mmBox = document.getElementById("mmBox");
-    const mmViewport = document.getElementById("mmViewport");
-    const store = Theme.store;
-    let sortMode = store.get("heat.sort") || "heat";
-    let curFile = null,
-      query = "";
-    document.getElementById("sort").value = sortMode;
-    Theme.splitter(document.getElementById("split"), treeEl, "heat.tree", 120);
+    const profile_model = JSON.parse(
+      document.getElementById("heatdata").textContent,
+    );
+    const file_table = profile_model.files,
+      function_table = profile_model.functions;
+    const tree_panel = document.getElementById("tree");
+    const main_panel = document.getElementById("main");
+    const minimap_panel = document.getElementById("minimap");
+    const minimap_box = document.getElementById("mmBox");
+    const minimap_viewport = document.getElementById("mmViewport");
+    const view_storage = report_ui.view_storage;
+    let sort_mode = view_storage.value_read("heat.sort") || "heat";
+    let current_file_path = null,
+      search_query = "";
+    document.getElementById("sort").value = sort_mode;
+    report_ui.pane_splitter.attach(
+      document.getElementById("split"),
+      tree_panel,
+      "heat.tree",
+      120,
+    );
 
-    const at = (vector, index) =>
-      vector && index < vector.length ? vector[index] : 0;
-    const EVS = [];
-    model.heatMapTotals.events.forEach((name, index) => {
-      EVS.push({
+    const vector_at = (cost_vector, index) =>
+      cost_vector && index < cost_vector.length ? cost_vector[index] : 0;
+    const event_list = [];
+    profile_model.heatMapTotals.events.forEach((name, index) => {
+      event_list.push({
         key: name,
-        long: model.heatMapTotals.eventLong[name] || "",
-        get: (vector) => at(vector, index),
+        long: profile_model.heatMapTotals.eventLong[name] || "",
+        get: (cost_vector) => vector_at(cost_vector, index),
       });
     });
-    for (const [name, terms, long] of model.heatMapTotals.derived) {
-      const get = (vector) =>
-        terms.reduce((sum, term) => sum + term[0] * at(vector, term[1]), 0);
-      EVS.push({
+    for (const [name, terms, long] of profile_model.heatMapTotals.derived) {
+      const get = (cost_vector) =>
+        terms.reduce(
+          (running_total, term) =>
+            running_total + term[0] * vector_at(cost_vector, term[1]),
+          0,
+        );
+      event_list.push({
         key: name,
-        long: long || model.heatMapTotals.eventLong[name] || "",
+        long: long || profile_model.heatMapTotals.eventLong[name] || "",
         get,
         derived: true,
       });
     }
-    const evByKey = (key) => EVS.find((event) => event.key === key);
-    let currentEvent = evByKey(model.heatMapTotals.defaultEvent) || EVS[0];
-    const EXTRA = ["D1m", "DLm", "Bcm"].map(evByKey).filter(Boolean);
+    const event_find = (key) => event_list.find((event) => event.key === key);
+    let current_event =
+      event_find(profile_model.heatMapTotals.defaultEvent) || event_list[0];
+    const secondary_events = ["D1m", "DLm", "Bcm"]
+      .map(event_find)
+      .filter(Boolean);
 
-    const EVENT_SHORT = {
+    const EVENT_DESCRIPTIONS = {
       Ir: "instructions",
       Dr: "data reads",
       Dw: "data writes",
@@ -107,70 +121,87 @@
       Bm: "misprediction, all",
       CEst: "cycle estimate",
     };
-    const evLabel = (event) =>
-      EVENT_SHORT[event.key]
-        ? EVENT_SHORT[event.key] + " / " + event.key
+    const event_label = (event) =>
+      EVENT_DESCRIPTIONS[event.key]
+        ? EVENT_DESCRIPTIONS[event.key] + " / " + event.key
         : event.key;
-    const evLong = (event) =>
-      EVENT_SHORT[event.key] || event.long || event.key;
-    const evSel = document.getElementById("event");
-    let evMaxLen = 0;
-    for (const event of EVS) {
+    const event_description = (event) =>
+      EVENT_DESCRIPTIONS[event.key] || event.long || event.key;
+    const event_select = document.getElementById("event");
+    let event_label_width = 0;
+    for (const event of event_list) {
       const option = document.createElement("option");
       option.value = event.key;
       option.textContent = event.key + (event.long ? " - " + event.long : "");
-      evMaxLen = Math.max(evMaxLen, option.textContent.length);
-      evSel.appendChild(option);
+      event_label_width = Math.max(
+        event_label_width,
+        option.textContent.length,
+      );
+      event_select.appendChild(option);
     }
-    evSel.value = currentEvent.key;
+    event_select.value = current_event.key;
 
-    evSel.style.width = evMaxLen + 4 + "ch";
-    let TOTAL = 1,
-      MAXP = 1,
-      MAXPX = {};
-    const val = (vector) => currentEvent.get(vector);
-    const mag = Math.abs;
+    event_select.style.width = event_label_width + 4 + "ch";
+    let total_cost = 1,
+      maximum_share = 1,
+      secondary_maximums = {};
+    const current_value = (cost_vector) => current_event.get(cost_vector);
+    const absolute = Math.abs;
 
-    function recomputeScale() {
-      TOTAL = currentEvent.get(model.heatMapTotals.totals) || 1;
-      let max = 0,
-        maxPct = 0;
-      for (const [path, file] of Object.entries(files)) {
-        for (const [lineNumber, rec] of Object.entries(file.lines)) {
-          const self = mag(val(rec[0]));
-          if (self > max) max = self;
-          if (DIFF) {
-            const base = lineBase(path, lineNumber);
-            maxPct = Math.max(maxPct, mag(pctOf(val(rec[0]), base)));
+    function scale_recompute() {
+      total_cost = current_event.get(profile_model.heatMapTotals.totals) || 1;
+      let maximum = 0,
+        maximum_percent = 0;
+      for (const [file_path, file] of Object.entries(file_table)) {
+        for (const [line_number, line_costs] of Object.entries(file.lines)) {
+          const self_cost = absolute(current_value(line_costs[0]));
+          if (self_cost > maximum) maximum = self_cost;
+          if (IS_DIFF) {
+            const baseline_cost = line_baseline(file_path, line_number);
+            maximum_percent = Math.max(
+              maximum_percent,
+              absolute(
+                share_of_baseline(current_value(line_costs[0]), baseline_cost),
+              ),
+            );
           }
         }
       }
-      MAXP = Math.max(DIFF ? maxPct : (100 * max) / TOTAL, 0.0001);
-      MAXPX = {};
-      for (const extra of EXTRA) {
-        let extraMax = 0;
-        for (const file of Object.values(files)) {
-          for (const rec of Object.values(file.lines)) {
-            const self = mag(extra.get(rec[0]));
-            if (self > extraMax) extraMax = self;
+      maximum_share = Math.max(
+        IS_DIFF ? maximum_percent : (100 * maximum) / total_cost,
+        0.0001,
+      );
+      secondary_maximums = {};
+      for (const secondary of secondary_events) {
+        let secondary_maximum = 0;
+        for (const file of Object.values(file_table)) {
+          for (const line_costs of Object.values(file.lines)) {
+            const self_cost = absolute(secondary.get(line_costs[0]));
+            if (self_cost > secondary_maximum) {
+              secondary_maximum = self_cost;
+            }
           }
         }
-        const extraTotal = extra.get(model.heatMapTotals.totals) || 1;
-        MAXPX[extra.key] = {
-          total: extraTotal,
-          maxP: Math.max((100 * extraMax) / extraTotal, 0.0001),
+        const secondary_total =
+          secondary.get(profile_model.heatMapTotals.totals) || 1;
+        secondary_maximums[secondary.key] = {
+          total: secondary_total,
+          max_share: Math.max(
+            (100 * secondary_maximum) / secondary_total,
+            0.0001,
+          ),
         };
       }
     }
 
-    const esc = (value) =>
+    const html_escape = (value) =>
       String(value)
         .replace(/&/g, "&amp;")
         .replace(/</g, "&lt;")
         .replace(/>/g, "&gt;")
         .replace(/"/g, "&quot;");
-    const pct = (value) => (100 * value) / TOTAL;
-    let fmtP = (percent) =>
+    const share_of_total = (value) => (100 * value) / total_cost;
+    let share_text = (percent) =>
       percent >= 9.95
         ? percent.toFixed(1) + "%"
         : percent >= 0.01
@@ -178,299 +209,378 @@
           : percent > 0
             ? "<0.01%"
             : "";
-    const fmtPct = (value) => fmtP(pct(value));
-    const fmtN = (value) => value.toLocaleString("en-US");
+    const share_of_total_text = (value) => share_text(share_of_total(value));
+    const exact_text = (value) => value.toLocaleString("en-US");
 
-    let fmtH = (value) => {
+    let human_text = (value) => {
       let unit = "";
-      for (const nextUnit of ["K", "M", "G", "T"]) {
+      for (const next_unit of ["K", "M", "G", "T"]) {
         if (value < 999.5) break;
         value /= 1000;
-        unit = nextUnit;
+        unit = next_unit;
       }
       return (
         (unit && value < 9.95 ? value.toFixed(1) : value.toFixed(0)) + unit
       );
     };
-    const num = (value) => ({ text: fmtH(value), title: fmtN(value) });
-    let HOT = "Hottest",
-      HOT_LINES = "hottest lines";
-    const SELF = {
+    const cell_number = (value) => ({
+      text: human_text(value),
+      title: exact_text(value),
+    });
+    let HEADING_PREFIX = "Hottest",
+      CHIP_HEADING = "hottest lines";
+    const SELF_COLUMN = {
       label: "self",
       title:
         "share of the total spent on this line/function itself," +
         " not in what it calls",
       num: true,
     };
-    const HAS_CALLS = functions.some((func) => func.callers.length > 0);
+    const HAS_CALL_GRAPH = function_table.some(
+      (function_entry) => function_entry.callers.length > 0,
+    );
 
-    const DIFF = !!model.heatMapTotals.diff;
-    const FN_BASE = model.functionBaseline || [];
-    let baseOf = () => null;
-    let pctOf = (value, base) => pct(value);
-    let fmtPctOf = (value, base) => fmtPct(value);
-    if (DIFF) {
-      const plainP = fmtP,
-        plainH = fmtH;
-      const mult = (percent) =>
+    const IS_DIFF = !!profile_model.heatMapTotals.diff;
+    const function_baselines = profile_model.functionBaseline || [];
+    let baseline_of = () => null;
+    let share_of_baseline = (value, baseline_cost) => share_of_total(value);
+    let share_of_baseline_text = (value, baseline_cost) =>
+      share_of_total_text(value);
+    if (IS_DIFF) {
+      const plain_share_text = share_text,
+        plain_human_text = human_text;
+      const multiple_text = (percent) =>
         percent / 100 < 99.99 ? (percent / 100).toFixed(2) + "x" : ">1000x";
-      const body = (percent) =>
+      const magnitude_text = (percent) =>
         percent < 0.01
           ? "≈0.00%"
           : percent > 100
-            ? mult(percent)
-            : plainP(percent);
-      const signed = (percent, text) =>
+            ? multiple_text(percent)
+            : plain_share_text(percent);
+      const signed_text = (percent, text) =>
         text[0] === ">" || text[0] === "≈"
           ? text
           : (percent < 0 ? "-" : "") + text;
-      fmtP = (percent) =>
+      share_text = (percent) =>
         percent
-          ? (percent < 0 ? "▼" : "▲") + signed(percent, body(mag(percent)))
+          ? (percent < 0 ? "▼" : "▲") +
+            signed_text(percent, magnitude_text(absolute(percent)))
           : "";
-      fmtH = (value) =>
-        !value ? "0" : (value < 0 ? "-" : "") + plainH(mag(value));
-      HOT = "Most changed";
-      HOT_LINES = "most changed lines";
-      SELF.title =
+      human_text = (value) =>
+        !value
+          ? "0"
+          : (value < 0 ? "-" : "") + plain_human_text(absolute(value));
+      HEADING_PREFIX = "Most changed";
+      CHIP_HEADING = "most changed lines";
+      SELF_COLUMN.title =
         "the line/function's own change against what it cost in" +
         " the baseline; ▲ is more, ▼ is less, ▼-100%" +
         " is gone entirely, ▲100% is all new";
-      baseOf = (vector) => {
-        if (!vector) return null;
-        const base = mag(currentEvent.get(vector));
-        return base ? base : null;
+      baseline_of = (cost_vector) => {
+        if (!cost_vector) return null;
+        const baseline_cost = absolute(current_event.get(cost_vector));
+        return baseline_cost ? baseline_cost : null;
       };
-      pctOf = (value, base) => (base ? (100 * value) / base : value ? 100 : 0);
-      fmtPctOf = (value, base) =>
-        base ? fmtP((100 * value) / base) : value ? fmtP(100) : "";
+      share_of_baseline = (value, baseline_cost) =>
+        baseline_cost ? (100 * value) / baseline_cost : value ? 100 : 0;
+      share_of_baseline_text = (value, baseline_cost) =>
+        baseline_cost
+          ? share_text((100 * value) / baseline_cost)
+          : value
+            ? share_text(100)
+            : "";
     }
-    const lineBase = (path, lineNumber) => {
-      const table = files[path] && files[path].baseline;
-      return baseOf(table && table[lineNumber]);
+    const line_baseline = (file_path, line_number) => {
+      const baseline_table =
+        file_table[file_path] && file_table[file_path].baseline;
+      return baseline_of(baseline_table && baseline_table[line_number]);
     };
-    const fnBase = (funcIndex) => baseOf(FN_BASE[funcIndex]);
+    const function_baseline_of = (function_index) =>
+      baseline_of(function_baselines[function_index]);
 
-    const scaleSel = document.getElementById("scale");
-    const SCOPES = DIFF
+    const scale_select = document.getElementById("scale");
+    const SCOPE_CHOICES = IS_DIFF
       ? [["line", "per line"]]
       : [
           ["global", "global"],
           ["file", "per file"],
           ["function", "per function"],
         ];
-    const SCALES = [];
+    const SCALE_CHOICES = [];
     ["log", "linear"].forEach((curve) => {
-      SCOPES.forEach((scope) =>
-        SCALES.push({
+      SCOPE_CHOICES.forEach((scope) =>
+        SCALE_CHOICES.push({
           value: curve + "/" + scope[0],
           curve: curve,
           scope: scope[0],
-          label: SCOPES.length > 1 ? curve + ", " + scope[1] : curve,
+          label: SCOPE_CHOICES.length > 1 ? curve + ", " + scope[1] : curve,
         }),
       );
     });
-    let scale =
-      SCALES.find((entry) => entry.value === store.get("heat.scale")) ||
-      SCALES[0];
-    let scaleMaxLen = 0;
-    SCALES.forEach((entry) => {
+    let active_scale =
+      SCALE_CHOICES.find(
+        (entry) => entry.value === view_storage.value_read("heat.scale"),
+      ) || SCALE_CHOICES[0];
+    let scale_label_width = 0;
+    SCALE_CHOICES.forEach((entry) => {
       const option = document.createElement("option");
       option.value = entry.value;
       option.textContent = entry.label;
-      scaleSel.appendChild(option);
-      scaleMaxLen = Math.max(scaleMaxLen, entry.label.length);
+      scale_select.appendChild(option);
+      scale_label_width = Math.max(scale_label_width, entry.label.length);
     });
-    scaleSel.value = scale.value;
-    scaleSel.style.width = scaleMaxLen + 4 + "ch";
+    scale_select.value = active_scale.value;
+    scale_select.style.width = scale_label_width + 4 + "ch";
 
-    const PMIN = 0.001;
-    const PFULL = 100;
-    function heatP(percent, maxP) {
-      const sign = DIFF && percent < 0 ? -1 : 1;
-      percent = mag(percent);
-      if (DIFF) {
-        percent = Math.min(percent, PFULL);
-        maxP = Math.min(maxP, PFULL);
+    const MINIMUM_SHARE = 0.001;
+    const FULL_HEAT_PERCENT = 100;
+    function heat_of_share(percent, max_share) {
+      const heat_sign = IS_DIFF && percent < 0 ? -1 : 1;
+      percent = absolute(percent);
+      if (IS_DIFF) {
+        percent = Math.min(percent, FULL_HEAT_PERCENT);
+        max_share = Math.min(max_share, FULL_HEAT_PERCENT);
       }
       if (percent <= 0) return 0;
-      if (scale.curve === "linear") return sign * Math.min(1, percent / maxP);
-      if (percent < PMIN) return 0;
-      const span = Math.log10(Math.max(maxP, PMIN * 10) / PMIN);
-      return sign * Math.min(1, Math.log10(percent / PMIN) / span);
+      if (active_scale.curve === "linear") {
+        return heat_sign * Math.min(1, percent / max_share);
+      }
+      if (percent < MINIMUM_SHARE) return 0;
+      const log_span = Math.log10(
+        Math.max(max_share, MINIMUM_SHARE * 10) / MINIMUM_SHARE,
+      );
+      return (
+        heat_sign * Math.min(1, Math.log10(percent / MINIMUM_SHARE) / log_span)
+      );
     }
-    function heatT(cost, maxP) {
-      return heatP(pct(cost), maxP);
+    function heat_of_cost(cost, max_share) {
+      return heat_of_share(share_of_total(cost), max_share);
     }
-    function heatTOf(cost, base, maxP) {
-      return heatP(pctOf(cost, base), maxP);
+    function heat_of_delta(cost, baseline_cost, max_share) {
+      return heat_of_share(share_of_baseline(cost, baseline_cost), max_share);
     }
 
-    const RGB = (hex) =>
+    const channels_of = (hex) =>
       [1, 3, 5].map((index) => parseInt(hex.slice(index, index + 2), 16));
-    const STOPS = model.theme.heat.map(RGB),
-      BG = RGB(model.theme.bg);
-    function heatStyle(heat, aMin, aMax) {
-      const magnitude = mag(heat);
+    const COLOR_STOPS = profile_model.theme.heat.map(channels_of),
+      BACKGROUND_COLOR = channels_of(profile_model.theme.bg);
+    function cell_style(heat_value, alpha_minimum, alpha_maximum) {
+      const magnitude = absolute(heat_value);
       if (magnitude <= 0) return "";
-      const scaled = (DIFF ? (heat + 1) * 0.5 : heat) * (STOPS.length - 1);
+      const scaled_position =
+        (IS_DIFF ? (heat_value + 1) * 0.5 : heat_value) *
+        (COLOR_STOPS.length - 1);
       const index = Math.min(
-        Math.max(Math.floor(scaled), 0),
-        STOPS.length - 2,
+        Math.max(Math.floor(scaled_position), 0),
+        COLOR_STOPS.length - 2,
       );
-      const frac = scaled - index;
-      const alpha = aMin + (aMax - aMin) * magnitude;
-      const mixed = [0, 1, 2].map((channel) => {
-        const lo = STOPS[index][channel],
-          hi = STOPS[index + 1][channel];
+      const fraction = scaled_position - index;
+      const alpha_value =
+        alpha_minimum + (alpha_maximum - alpha_minimum) * magnitude;
+      const mixed_channels = [0, 1, 2].map((channel) => {
+        const low_channel = COLOR_STOPS[index][channel],
+          high_channel = COLOR_STOPS[index + 1][channel];
         return Math.round(
-          BG[channel] + (lo + (hi - lo) * frac - BG[channel]) * alpha,
+          BACKGROUND_COLOR[channel] +
+            (low_channel +
+              (high_channel - low_channel) * fraction -
+              BACKGROUND_COLOR[channel]) *
+              alpha_value,
         );
       });
-      const lum =
-        (0.2126 * mixed[0] + 0.7152 * mixed[1] + 0.0722 * mixed[2]) / 255;
-      const fg = lum > 0.5 ? model.theme.fgDark : model.theme.fgLight;
-      return `background:rgb(${mixed.join(",")});color:${fg}`;
+      const luminance =
+        (0.2126 * mixed_channels[0] +
+          0.7152 * mixed_channels[1] +
+          0.0722 * mixed_channels[2]) /
+        255;
+      const foreground_color =
+        luminance > 0.5
+          ? profile_model.theme.fgDark
+          : profile_model.theme.fgLight;
+      return (
+        `background:rgb(${mixed_channels.join(",")});` +
+        `color:${foreground_color}`
+      );
     }
-    const heatBg = (heat) => heatStyle(heat, 0.18, 0.92);
-    const heatBgSoft = (heat) => heatStyle(heat, 0.12, 0.55);
+    const cell_style_strong = (heat_value) =>
+      cell_style(heat_value, 0.18, 0.92);
+    const cell_style_soft = (heat_value) => cell_style(heat_value, 0.12, 0.55);
 
-    const fnCalls = functions.map((func) =>
-      func.callers.reduce((sum, caller) => sum + caller[4], 0),
+    const per_function_calls = function_table.map((function_entry) =>
+      function_entry.callers.reduce(
+        (running_total, caller) => running_total + caller[4],
+        0,
+      ),
     );
-    const CALLS_TOTAL = fnCalls.reduce((sum, count) => sum + count, 0) || 1;
-    const CALLS_MAX = fnCalls.reduce((max, count) => Math.max(max, count), 0);
-    const CALLS_MAXP = Math.max((100 * CALLS_MAX) / CALLS_TOTAL, 0.0001);
-    const numCalls = (count) =>
-      count
+    const CALLS_TOTAL =
+      per_function_calls.reduce(
+        (running_total, call_count) => running_total + call_count,
+        0,
+      ) || 1;
+    const CALLS_MAXIMUM = per_function_calls.reduce(
+      (maximum, call_count) => Math.max(maximum, call_count),
+      0,
+    );
+    const CALLS_MAX_SHARE = Math.max(
+      (100 * CALLS_MAXIMUM) / CALLS_TOTAL,
+      0.0001,
+    );
+    const call_count_cell = (call_count) =>
+      call_count
         ? {
-            text: fmtH(count),
-            title: fmtN(count) + " calls",
-            style: heatBg(heatP((100 * count) / CALLS_TOTAL, CALLS_MAXP)),
+            text: human_text(call_count),
+            title: exact_text(call_count) + " calls",
+            style: cell_style_strong(
+              heat_of_share((100 * call_count) / CALLS_TOTAL, CALLS_MAX_SHARE),
+            ),
           }
         : "";
 
-    const enc = (value) => encodeURIComponent(value).replace(/%2F/g, "/");
-    function hashOf(state) {
-      const parts = [];
-      if (state.fn) parts.push("fn=" + enc(state.fn));
+    const hash_encode = (value) =>
+      encodeURIComponent(value).replace(/%2F/g, "/");
+    function hash_of_state(state) {
+      const hash_parts = [];
+      if (state.fn) hash_parts.push("fn=" + hash_encode(state.fn));
       else if (state.file) {
-        parts.push("f=" + enc(state.file));
-        if (state.line) parts.push("l=" + state.line);
+        hash_parts.push("f=" + hash_encode(state.file));
+        if (state.line) hash_parts.push("l=" + state.line);
       }
-      if (EVS.length > 1) parts.push("e=" + enc(state.ev || currentEvent.key));
-      return parts.length ? "#" + parts.join("&") : "";
+      if (event_list.length > 1) {
+        hash_parts.push("e=" + hash_encode(state.ev || current_event.key));
+      }
+      return hash_parts.length ? "#" + hash_parts.join("&") : "";
     }
-    const hashFor = (path, line) => hashOf({ file: path, line: line });
-    const hashForFn = (name) => hashOf({ fn: name });
-    function fnName(index) {
-      return index != null && functions[index] ? functions[index].name : "?";
+    const hash_for_line = (file_path, line) =>
+      hash_of_state({ file: file_path, line: line });
+    const hash_for_function = (name) => hash_of_state({ fn: name });
+    function function_name(index) {
+      return index != null && function_table[index]
+        ? function_table[index].name
+        : "?";
     }
 
-    function link(path, line, text) {
-      if (!files[path] || !line) return esc(text);
-      return `<a href="${hashFor(path, line)}">${esc(text)}</a>`;
+    function line_link(file_path, line, text) {
+      if (!file_table[file_path] || !line) return html_escape(text);
+      return (
+        `<a href="${hash_for_line(file_path, line)}">` +
+        `${html_escape(text)}</a>`
+      );
     }
 
-    const fnLinkable = (funcIndex) =>
-      funcIndex != null &&
-      functions[funcIndex] &&
-      functions[funcIndex].line &&
-      files[functions[funcIndex].file];
-    function linkFn(funcIndex, text) {
-      if (!fnLinkable(funcIndex)) return esc(text);
-      const href = hashForFn(functions[funcIndex].name);
-      return `<a href="${href}">${esc(text)}</a>`;
+    const function_is_linkable = (function_index) =>
+      function_index != null &&
+      function_table[function_index] &&
+      function_table[function_index].line &&
+      file_table[function_table[function_index].file];
+    function function_link(function_index, text) {
+      if (!function_is_linkable(function_index)) return html_escape(text);
+      const href = hash_for_function(function_table[function_index].name);
+      return `<a href="${href}">${html_escape(text)}</a>`;
     }
-    const SYMBOL_CHARS = 20;
-    const SRC_COLS = 80;
-    const HOT_CHIPS = 10;
+    const SYMBOL_WIDTH = 20;
+    const SOURCE_WIDTH = 80;
+    const HOT_CHIP_LIMIT = 10;
 
-    const PAD = 3;
+    const COLUMN_PADDING = 3;
 
-    const cellOf = (value) =>
+    const cell_normalize = (value) =>
       value && typeof value === "object"
         ? value
         : { text: value == null ? "" : String(value) };
 
-    function colWidths(cols, cellRows) {
-      return cols.map((col, colIndex) => {
-        let width = col.label.length;
-        if (col.width != null) width = Math.max(width, col.width);
+    function column_widths(columns, cell_rows) {
+      return columns.map((column, column_index) => {
+        let width = column.label.length;
+        if (column.width != null) width = Math.max(width, column.width);
         else {
-          for (const row of cellRows) {
-            if (!row[colIndex]) continue;
-            width = Math.max(width, (row[colIndex].text || "").length);
+          for (const row of cell_rows) {
+            if (!row[column_index]) continue;
+            width = Math.max(width, (row[column_index].text || "").length);
           }
-          if (col.clip != null) {
-            width = Math.max(col.label.length, Math.min(width, col.clip));
+          if (column.clip != null) {
+            width = Math.max(
+              column.label.length,
+              Math.min(width, column.clip),
+            );
           }
         }
-        return width + PAD;
+        return width + COLUMN_PADDING;
       });
     }
-    function table(key, cols, rows, opts) {
-      opts = opts || {};
-      const cellRows = rows.map((row) => row.map(cellOf));
-      const widths = colWidths(cols, cellRows);
-      const tableCls = ["cols", opts.fill ? "fill" : "", opts.cls || ""]
+    function table_html(key, columns, rows, options) {
+      options = options || {};
+      const cell_rows = rows.map((row) => row.map(cell_normalize));
+      const column_width_list = column_widths(columns, cell_rows);
+      const table_classes = [
+        "cols",
+        options.fill ? "fill" : "",
+        options.cls || "",
+      ]
         .filter(Boolean)
         .join(" ");
-      let html = opts.bare ? "" : `<div class="tbl">`;
-      html +=
-        `<div class="tbl-cols"><table class="${tableCls}"` +
-        ` data-key="${esc(key)}"><colgroup>`;
-      cols.forEach((col, colIndex) => {
-        const colCls = [colIndex % 2 ? "alt" : "", col.grow ? "grow" : ""]
+      let markup = options.bare ? "" : `<div class="tbl">`;
+      markup +=
+        `<div class="tbl-cols"><table class="${table_classes}"` +
+        ` data-key="${html_escape(key)}"><colgroup>`;
+      columns.forEach((column, column_index) => {
+        const column_classes = [
+          column_index % 2 ? "alt" : "",
+          column.grow ? "grow" : "",
+        ]
           .filter(Boolean)
           .join(" ");
-        html +=
-          `<col${colCls ? ` class="${colCls}"` : ""}` +
-          ` data-min="${col.label.length + PAD}ch"` +
-          ` style="width:${widths[colIndex]}ch">`;
+        markup +=
+          `<col${column_classes ? ` class="${column_classes}"` : ""}` +
+          ` data-min="${column.label.length + COLUMN_PADDING}ch"` +
+          ` style="width:${column_width_list[column_index]}ch">`;
       });
-      html += `</colgroup><thead><tr>`;
-      for (const col of cols) {
-        html +=
-          `<th${col.num ? ' class="n"' : ""}` +
-          `${col.title ? ` title="${esc(col.title)}"` : ""}>` +
-          `${esc(col.label)}</th>`;
+      markup += `</colgroup><thead><tr>`;
+      for (const column of columns) {
+        markup +=
+          `<th${column.num ? ' class="n"' : ""}` +
+          `${column.title ? ` title="${html_escape(column.title)}"` : ""}>` +
+          `${html_escape(column.label)}</th>`;
       }
-      html += `</tr></thead><tbody>`;
-      cellRows.forEach((row, rowIndex) => {
-        const href = opts.rowHref && opts.rowHref[rowIndex];
-        html += href
-          ? `<tr class="rowlink" data-href="${esc(href)}">`
-          : opts.rowAttrs
-            ? `<tr ${opts.rowAttrs[rowIndex]}>`
+      markup += `</tr></thead><tbody>`;
+      cell_rows.forEach((row, row_index) => {
+        const href = options.row_href && options.row_href[row_index];
+        markup += href
+          ? `<tr class="rowlink" data-href="${html_escape(href)}">`
+          : options.row_attributes
+            ? `<tr ${options.row_attributes[row_index]}>`
             : "<tr>";
-        row.forEach((cellValue, colIndex) => {
-          const col = cols[colIndex] || {};
-          const cls = [col.num ? "n" : "", col.cls || "", cellValue.cls || ""]
+        row.forEach((cell, column_index) => {
+          const column = columns[column_index] || {};
+          const class_names = [
+            column.num ? "n" : "",
+            column.cls || "",
+            cell.cls || "",
+          ]
             .filter(Boolean)
             .join(" ");
-          const text = cellValue.text || "";
-          const clipped = text.length + PAD > widths[colIndex];
-          const title = cellValue.title || (clipped ? text : "");
-          html +=
-            `<td${cls ? ` class="${cls}"` : ""}` +
-            `${cellValue.style ? ` style="${cellValue.style}"` : ""}` +
-            `${title ? ` title="${esc(title)}"` : ""}>` +
-            `${cellValue.html != null ? cellValue.html : esc(text)}</td>`;
+          const text = cell.text || "";
+          const clipped =
+            text.length + COLUMN_PADDING > column_width_list[column_index];
+          const title = cell.title || (clipped ? text : "");
+          markup +=
+            `<td${class_names ? ` class="${class_names}"` : ""}` +
+            `${cell.style ? ` style="${cell.style}"` : ""}` +
+            `${title ? ` title="${html_escape(title)}"` : ""}>` +
+            `${cell.html != null ? cell.html : html_escape(text)}</td>`;
         });
-        html += "</tr>";
+        markup += "</tr>";
       });
-      html += `</tbody></table></div>`;
-      return opts.bare ? html : html + `</div>`;
+      markup += `</tbody></table></div>`;
+      return options.bare ? markup : markup + `</div>`;
     }
 
-    function tableText(cols, rows) {
-      const cellRows = rows.map((row) => row.map(cellOf));
-      const widths = cols.map((col, colIndex) => {
-        let width = col.label.length;
-        for (const row of cellRows) {
-          if (!row[colIndex]) continue;
-          width = Math.max(width, (row[colIndex].text || "").length);
+    function table_markdown(columns, rows) {
+      const cell_rows = rows.map((row) => row.map(cell_normalize));
+      const column_width_list = columns.map((column, column_index) => {
+        let width = column.label.length;
+        for (const row of cell_rows) {
+          if (!row[column_index]) continue;
+          width = Math.max(width, (row[column_index].text || "").length);
         }
         return width;
       });
@@ -479,266 +589,325 @@
       const line = (cells) =>
         "| " +
         cells
-          .map((text, colIndex) =>
-            pad(text, widths[colIndex], cols[colIndex].num),
+          .map((text, column_index) =>
+            pad(
+              text,
+              column_width_list[column_index],
+              columns[column_index].num,
+            ),
           )
           .join(" | ") +
         " |";
-      const out = [line(cols.map((col) => col.label))];
-      const rule = cols.map((col, colIndex) =>
-        col.num
-          ? "-".repeat(widths[colIndex] - 1) + ":"
-          : "-".repeat(widths[colIndex]),
+      const output_parts = [line(columns.map((column) => column.label))];
+      const rule = columns.map((column, column_index) =>
+        column.num
+          ? "-".repeat(column_width_list[column_index] - 1) + ":"
+          : "-".repeat(column_width_list[column_index]),
       );
-      out.push("| " + rule.join(" | ") + " |");
-      for (const row of cellRows) {
-        out.push(
+      output_parts.push("| " + rule.join(" | ") + " |");
+      for (const row of cell_rows) {
+        output_parts.push(
           line(
-            cols.map(
-              (col, colIndex) => (row[colIndex] && row[colIndex].text) || "",
+            columns.map(
+              (column, column_index) =>
+                (row[column_index] && row[column_index].text) || "",
             ),
           ),
         );
       }
-      return out.join("\n");
+      return output_parts.join("\n");
     }
-    const evCol = (event, extra) =>
+    const event_column = (event, extra) =>
       Object.assign(
         { label: event.key, title: event.long, num: true },
         extra || {},
       );
-    const extraCols = () =>
-      EXTRA.map((extra) =>
-        evCol(extra, {
-          label: evLabel(extra),
-          title: extra.long + " (share of that event's total)",
+    const secondary_columns = () =>
+      secondary_events.map((secondary) =>
+        event_column(secondary, {
+          label: event_label(secondary),
+          title: secondary.long + " (share of that event's total)",
           cls: "x",
         }),
       );
-    function extraCells(vec) {
-      return EXTRA.map((extra) => {
-        const self = extra.get(vec),
-          maxEntry = MAXPX[extra.key];
-        const percent = (100 * self) / maxEntry.total;
-        const heat = heatP(percent, maxEntry.maxP);
+    function secondary_cells(cost_vector) {
+      return secondary_events.map((secondary) => {
+        const self_cost = secondary.get(cost_vector),
+          maximum_entry = secondary_maximums[secondary.key];
+        const percent = (100 * self_cost) / maximum_entry.total;
+        const heat_value = heat_of_share(percent, maximum_entry.max_share);
         return {
-          text: self ? fmtP(percent) : "",
-          style: heatBg(heat),
-          cls: heat > 0.45 ? "hot" : "",
-          title: extra.key + ": " + fmtN(self),
+          text: self_cost ? share_text(percent) : "",
+          style: cell_style_strong(heat_value),
+          cls: heat_value > 0.45 ? "hot" : "",
+          title: secondary.key + ": " + exact_text(self_cost),
         };
       });
     }
 
-    let TREE = null;
-    function buildTree() {
+    let tree_root = null;
+    function tree_build() {
       const root = { name: "", path: "", dirs: new Map(), files: [], self: 0 };
-      function insert(path, self, base, cold) {
-        const parts = path.split("/");
-        let node = root;
-        for (let partIndex = 0; partIndex < parts.length - 1; partIndex++) {
-          const segment = parts[partIndex];
-          if (!node.dirs.has(segment)) {
-            node.dirs.set(segment, {
+      function node_insert(file_path, self_cost, baseline_cost, cold) {
+        const path_parts = file_path.split("/");
+        let tree_node = root;
+        for (
+          let part_index = 0;
+          part_index < path_parts.length - 1;
+          part_index++
+        ) {
+          const segment = path_parts[part_index];
+          if (!tree_node.dirs.has(segment)) {
+            tree_node.dirs.set(segment, {
               name: segment,
-              path: node.path ? node.path + "/" + segment : segment,
+              path: tree_node.path ? tree_node.path + "/" + segment : segment,
               dirs: new Map(),
               files: [],
               self: 0,
               base: 0,
             });
           }
-          node = node.dirs.get(segment);
+          tree_node = tree_node.dirs.get(segment);
         }
-        node.files.push({
-          name: parts[parts.length - 1],
-          path,
-          self,
-          base,
+        tree_node.files.push({
+          name: path_parts[path_parts.length - 1],
+          path: file_path,
+          self: self_cost,
+          base: baseline_cost,
           cold,
-          zero: self === 0,
+          zero: self_cost === 0,
         });
       }
-      for (const path of Object.keys(files)) {
-        let base = 0;
-        if (DIFF) {
-          const table = files[path].baseline || {};
-          for (const vector of Object.values(table)) {
-            base += mag(currentEvent.get(vector));
+      for (const file_path of Object.keys(file_table)) {
+        let baseline_cost = 0;
+        if (IS_DIFF) {
+          const baseline_table = file_table[file_path].baseline || {};
+          for (const cost_vector of Object.values(baseline_table)) {
+            baseline_cost += absolute(current_event.get(cost_vector));
           }
         }
-        insert(path, val(files[path].self), base, false);
+        node_insert(
+          file_path,
+          current_value(file_table[file_path].self),
+          baseline_cost,
+          false,
+        );
       }
-      for (const path of model.cold) insert(path, 0, 0, true);
-      (function sum(node) {
-        let total = 0,
-          base = 0;
-        for (const dir of node.dirs.values()) {
-          total += sum(dir);
-          base += dir.base;
+      for (const file_path of profile_model.cold) {
+        node_insert(file_path, 0, 0, true);
+      }
+      (function subtree_sum(tree_node) {
+        let running_total = 0,
+          baseline_cost = 0;
+        for (const directory_node of tree_node.dirs.values()) {
+          running_total += subtree_sum(directory_node);
+          baseline_cost += directory_node.base;
         }
-        for (const file of node.files) {
-          total += file.self;
-          base += file.base;
+        for (const file of tree_node.files) {
+          running_total += file.self;
+          baseline_cost += file.base;
         }
-        node.self = total;
-        node.base = base;
-        return total;
+        tree_node.self = running_total;
+        tree_node.base = baseline_cost;
+        return running_total;
       })(root);
       return root;
     }
-    const openDirs = new Set(),
-      coldOpen = new Set();
-    function cmp(nodeA, nodeB) {
-      const byName = nodeA.name.localeCompare(nodeB.name);
-      if (sortMode !== "heat") return byName;
-      return mag(nodeB.self) - mag(nodeA.self) || byName;
+    const expanded_directories = new Set(),
+      expanded_cold_groups = new Set();
+    function node_compare(node_a, node_b) {
+      const by_name = node_a.name.localeCompare(node_b.name);
+      if (sort_mode !== "heat") return by_name;
+      return absolute(node_b.self) - absolute(node_a.self) || by_name;
     }
-    function matches(path) {
-      return !query || path.toLowerCase().includes(query);
+    function path_matches(file_path) {
+      return !search_query || file_path.toLowerCase().includes(search_query);
     }
-    function subtreeMatches(node) {
-      if (!query) return true;
-      for (const file of node.files) if (matches(file.path)) return true;
-      for (const dir of node.dirs.values())
-        if (subtreeMatches(dir)) return true;
+    function subtree_matches(tree_node) {
+      if (!search_query) return true;
+      for (const file of tree_node.files) {
+        if (path_matches(file.path)) return true;
+      }
+      for (const directory_node of tree_node.dirs.values())
+        if (subtree_matches(directory_node)) return true;
       return false;
     }
-    const MAXPDIR = 100;
-    function renderTree() {
-      const out = [];
-      function rec(node, depth) {
-        const dirs = [...node.dirs.values()].filter(subtreeMatches).sort(cmp);
-        for (const dir of dirs) {
-          const open = query ? true : openDirs.has(dir.path);
-          const heatStyleAttr = heatBgSoft(
-            heatTOf(dir.self, dir.base, MAXPDIR),
+    const DIRECTORY_MAX_SHARE = 100;
+    function tree_render() {
+      const output_parts = [];
+      function nodes_emit(tree_node, depth) {
+        const directories = [...tree_node.dirs.values()]
+          .filter(subtree_matches)
+          .sort(node_compare);
+        for (const directory_node of directories) {
+          const is_expanded = search_query
+            ? true
+            : expanded_directories.has(directory_node.path);
+          const heat_style_attribute = cell_style_soft(
+            heat_of_delta(
+              directory_node.self,
+              directory_node.base,
+              DIRECTORY_MAX_SHARE,
+            ),
           );
-          out.push(
-            `<div class="node dir${heatStyleAttr ? " heat" : ""}"` +
-              ` data-dir="${esc(dir.path)}"` +
-              ` style="padding-left:${6 + depth * 14}px;${heatStyleAttr}">` +
-              `<span class="caret">${open ? "\u25BC" : "\u25B6"}</span>` +
-              `<span class="name" title="${esc(dir.path)}">` +
-              `${esc(dir.name)}/</span>` +
-              `<span class="pct">${fmtPctOf(dir.self, dir.base)}` +
+          output_parts.push(
+            `<div class="node dir${heat_style_attribute ? " heat" : ""}"` +
+              ` data-dir="${html_escape(directory_node.path)}"` +
+              ` style="padding-left:${6 + depth * 14}px;` +
+              `${heat_style_attribute}">` +
+              `<span class="caret">` +
+              `${is_expanded ? "▼" : "▶"}</span>` +
+              `<span class="name"` +
+              ` title="${html_escape(directory_node.path)}">` +
+              `${html_escape(directory_node.name)}/</span>` +
+              `<span class="pct">` +
+              `${share_of_baseline_text(
+                directory_node.self,
+                directory_node.base,
+              )}` +
               `</span></div>`,
           );
-          out.push(`<div class="kids${open ? " open" : ""}">`);
-          rec(dir, depth + 1);
-          out.push(`</div>`);
+          output_parts.push(`<div class="kids${is_expanded ? " open" : ""}">`);
+          nodes_emit(directory_node, depth + 1);
+          output_parts.push(`</div>`);
         }
-        const fileList = node.files
-          .filter((file) => matches(file.path))
-          .sort(cmp);
-        const fileRow = (file) => {
-          const sel = file.path === curFile ? " sel" : "";
-          const heatStyleAttr = file.cold
+        const file_list = tree_node.files
+          .filter((file) => path_matches(file.path))
+          .sort(node_compare);
+        const file_row_emit = (file) => {
+          const selected_class = file.path === current_file_path ? " sel" : "";
+          const heat_style_attribute = file.cold
             ? ""
-            : heatBgSoft(heatTOf(file.self, file.base, MAXPDIR));
+            : cell_style_soft(
+                heat_of_delta(file.self, file.base, DIRECTORY_MAX_SHARE),
+              );
           const cold = file.cold ? " (no samples; source not embedded)" : "";
-          out.push(
+          output_parts.push(
             `<div class="node file${file.cold ? " cold" : ""}` +
-              `${heatStyleAttr ? " heat" : ""}${sel}"` +
-              ` data-file="${esc(file.path)}"` +
-              ` style="padding-left:${6 + depth * 14}px;${heatStyleAttr}">` +
-              `<span class="caret">\u25B6</span>` +
-              `<span class="name" title="${esc(file.path)}${cold}">` +
-              `${esc(file.name)}</span>` +
-              `<span class="pct">${fmtPctOf(file.self, file.base)}` +
+              `${heat_style_attribute ? " heat" : ""}${selected_class}"` +
+              ` data-file="${html_escape(file.path)}"` +
+              ` style="padding-left:${6 + depth * 14}px;` +
+              `${heat_style_attribute}">` +
+              `<span class="caret">▶</span>` +
+              `<span class="name"` +
+              ` title="${html_escape(file.path)}${cold}">` +
+              `${html_escape(file.name)}</span>` +
+              `<span class="pct">` +
+              `${share_of_baseline_text(file.self, file.base)}` +
               `</span></div>`,
           );
         };
-        const zero = fileList.filter((file) => file.zero);
-        for (const file of fileList) if (!file.zero) fileRow(file);
-        if (zero.length) {
-          const show = query ? true : coldOpen.has(node.path);
-          out.push(
-            `<div class="node more" data-more="${esc(node.path)}"` +
+        const zero_cost_files = file_list.filter((file) => file.zero);
+        for (const file of file_list) if (!file.zero) file_row_emit(file);
+        if (zero_cost_files.length) {
+          const is_expanded = search_query
+            ? true
+            : expanded_cold_groups.has(tree_node.path);
+          output_parts.push(
+            `<div class="node more"` +
+              ` data-more="${html_escape(tree_node.path)}"` +
               ` style="padding-left:${6 + depth * 14}px">` +
-              `<span class="caret">${show ? "\u25BC" : "\u25B6"}</span>` +
+              `<span class="caret">` +
+              `${is_expanded ? "▼" : "▶"}</span>` +
               `<span class="name">no samples</span>` +
               `<span class="pct"></span></div>`,
           );
-          if (show) for (const file of zero) fileRow(file);
-        }
-      }
-      rec(TREE, 0);
-      treeEl.innerHTML = out.join("");
-    }
-    treeEl.addEventListener("click", (clickEvent) => {
-      const node = clickEvent.target.closest(".node");
-      if (!node) return;
-      if (node.dataset.dir != null) {
-        const path = node.dataset.dir;
-        if (openDirs.has(path)) openDirs.delete(path);
-        else openDirs.add(path);
-        renderTree();
-      } else if (node.dataset.more != null) {
-        const path = node.dataset.more;
-        if (coldOpen.has(path)) coldOpen.delete(path);
-        else coldOpen.add(path);
-        renderTree();
-      } else if (node.dataset.file != null) {
-        if (node.classList.contains("cold")) return;
-        location.hash = hashFor(node.dataset.file);
-      }
-    });
-    function revealInTree(path) {
-      const parts = path.split("/");
-      let acc = "";
-      for (let partIndex = 0; partIndex < parts.length - 1; partIndex++) {
-        acc = acc ? acc + "/" + parts[partIndex] : parts[partIndex];
-        openDirs.add(acc);
-      }
-    }
-
-    const entryIdx = {};
-    functions.forEach((func, index) => {
-      if (!func.line) return;
-      entryIdx[func.file] = entryIdx[func.file] || {};
-      entryIdx[func.file][func.line] = index;
-    });
-
-    function topLines(count) {
-      const all = [];
-      for (const [path, file] of Object.entries(files)) {
-        for (const [lineNumber, rec] of Object.entries(file.lines)) {
-          const self = val(rec[0]);
-          if (mag(self) <= 0) continue;
-          all.push([path, +lineNumber, self, file.lineFunction[lineNumber]]);
-        }
-      }
-      all.sort((rowA, rowB) => mag(rowB[2]) - mag(rowA[2]));
-      return all.slice(0, count).map((entry) => {
-        const file = files[entry[0]];
-        let snip = "";
-        if (file.source != null) {
-          const sourceLines = file.source.split("\n");
-          if (entry[1] >= 1 && entry[1] <= sourceLines.length) {
-            snip = sourceLines[entry[1] - 1].trim().slice(0, 110);
+          if (is_expanded) {
+            for (const file of zero_cost_files) file_row_emit(file);
           }
         }
-        return [entry[0], entry[1], entry[2], entry[3], snip];
+      }
+      nodes_emit(tree_root, 0);
+      tree_panel.innerHTML = output_parts.join("");
+    }
+    tree_panel.addEventListener("click", (click_event) => {
+      const tree_node = click_event.target.closest(".node");
+      if (!tree_node) return;
+      if (tree_node.dataset.dir != null) {
+        const file_path = tree_node.dataset.dir;
+        if (expanded_directories.has(file_path)) {
+          expanded_directories.delete(file_path);
+        } else expanded_directories.add(file_path);
+        tree_render();
+      } else if (tree_node.dataset.more != null) {
+        const file_path = tree_node.dataset.more;
+        if (expanded_cold_groups.has(file_path)) {
+          expanded_cold_groups.delete(file_path);
+        } else expanded_cold_groups.add(file_path);
+        tree_render();
+      } else if (tree_node.dataset.file != null) {
+        if (tree_node.classList.contains("cold")) return;
+        location.hash = hash_for_line(tree_node.dataset.file);
+      }
+    });
+    function tree_reveal(file_path) {
+      const path_parts = file_path.split("/");
+      let accumulated_path = "";
+      for (
+        let part_index = 0;
+        part_index < path_parts.length - 1;
+        part_index++
+      ) {
+        accumulated_path = accumulated_path
+          ? accumulated_path + "/" + path_parts[part_index]
+          : path_parts[part_index];
+        expanded_directories.add(accumulated_path);
+      }
+    }
+
+    const entry_line_index = {};
+    function_table.forEach((function_entry, index) => {
+      if (!function_entry.line) return;
+      entry_line_index[function_entry.file] =
+        entry_line_index[function_entry.file] || {};
+      entry_line_index[function_entry.file][function_entry.line] = index;
+    });
+
+    function top_lines(count) {
+      const all = [];
+      for (const [file_path, file] of Object.entries(file_table)) {
+        for (const [line_number, line_costs] of Object.entries(file.lines)) {
+          const self_cost = current_value(line_costs[0]);
+          if (absolute(self_cost) <= 0) continue;
+          all.push([
+            file_path,
+            +line_number,
+            self_cost,
+            file.lineFunction[line_number],
+          ]);
+        }
+      }
+      all.sort((row_a, row_b) => absolute(row_b[2]) - absolute(row_a[2]));
+      return all.slice(0, count).map((entry) => {
+        const file = file_table[entry[0]];
+        let source_snippet = "";
+        if (file.source != null) {
+          const source_lines = file.source.split("\n");
+          if (entry[1] >= 1 && entry[1] <= source_lines.length) {
+            source_snippet = source_lines[entry[1] - 1].trim().slice(0, 110);
+          }
+        }
+        return [entry[0], entry[1], entry[2], entry[3], source_snippet];
       });
     }
-    function renderHome() {
-      curFile = null;
-      let html = `<div class="home">`;
-      const lineRows = topLines(60);
-      html +=
-        `<h2>${HOT} lines by ${esc(evLabel(currentEvent))}</h2>` +
-        table(
+    function home_render() {
+      current_file_path = null;
+      let markup = `<div class="home">`;
+      const line_rows = top_lines(60);
+      markup +=
+        `<h2>${HEADING_PREFIX} lines by ` +
+        `${html_escape(event_label(current_event))}</h2>` +
+        table_html(
           "heat.home.lines",
           [
             { label: "#", title: "rank", num: true },
-            SELF,
+            SELF_COLUMN,
             {
               label: "function",
               title:
-                `the function the line belongs to (first ${SYMBOL_CHARS}` +
+                `the function the line belongs to (first ${SYMBOL_WIDTH}` +
                 ` characters; drag the bar for more)`,
-              width: SYMBOL_CHARS,
+              width: SYMBOL_WIDTH,
             },
             {
               label: "defined at",
@@ -750,43 +919,71 @@
               title: "the source line, trimmed; drag the bar for more",
               clip: 36,
             },
-            evCol(currentEvent),
-            ...extraCols(),
+            event_column(current_event),
+            ...secondary_columns(),
           ],
-          lineRows.map((entry, index) => {
-            const [path, lineNumber, cost, funcIndex, snip] = entry;
-            const rec = files[path].lines[lineNumber];
-            const loc = path + ":" + lineNumber;
-            const base = lineBase(path, lineNumber);
+          line_rows.map((entry, index) => {
+            const [
+              file_path,
+              line_number,
+              cost,
+              function_index,
+              source_snippet,
+            ] = entry;
+            const line_costs = file_table[file_path].lines[line_number];
+            const location_text = file_path + ":" + line_number;
+            const baseline_cost = line_baseline(file_path, line_number);
             return [
               String(index + 1),
               {
-                text: fmtPctOf(cost, base),
-                style: heatBg(heatTOf(cost, base, MAXP)),
+                text: share_of_baseline_text(cost, baseline_cost),
+                style: cell_style_strong(
+                  heat_of_delta(cost, baseline_cost, maximum_share),
+                ),
               },
-              { text: fnName(funcIndex), title: fnName(funcIndex) },
-              { text: loc, html: link(path, lineNumber, loc) },
-              snip,
-              num(cost),
-              ...extraCells(rec[0]),
+              {
+                text: function_name(function_index),
+                title: function_name(function_index),
+              },
+              {
+                text: location_text,
+                html: line_link(file_path, line_number, location_text),
+              },
+              source_snippet,
+              cell_number(cost),
+              ...secondary_cells(line_costs[0]),
             ];
           }),
-          { rowHref: lineRows.map((entry) => hashFor(entry[0], entry[1])) },
+          {
+            row_href: line_rows.map((entry) =>
+              hash_for_line(entry[0], entry[1]),
+            ),
+          },
         );
-      const topFunctions = functions
-        .map((func, index) => [index, val(func.self)])
-        .filter((entry) => mag(entry[1]) > 0)
-        .sort((entryA, entryB) => mag(entryB[1]) - mag(entryA[1]))
+      const top_functions = function_table
+        .map((function_entry, index) => [
+          index,
+          current_value(function_entry.self),
+        ])
+        .filter((entry) => absolute(entry[1]) > 0)
+        .sort(
+          (entry_a, entry_b) => absolute(entry_b[1]) - absolute(entry_a[1]),
+        )
         .slice(0, 60);
-      const FN_MAXP = DIFF
+      const function_max_share = IS_DIFF
         ? Math.max(
-            ...topFunctions.map(([funcIndex, self]) =>
-              mag(pctOf(self, fnBase(funcIndex))),
+            ...top_functions.map(([function_index, self_cost]) =>
+              absolute(
+                share_of_baseline(
+                  self_cost,
+                  function_baseline_of(function_index),
+                ),
+              ),
             ),
             0.0001,
           )
-        : MAXP;
-      const callCols = HAS_CALLS
+        : maximum_share;
+      const call_columns = HAS_CALL_GRAPH
         ? [
             {
               label: "calls",
@@ -800,228 +997,291 @@
             },
           ]
         : [];
-      html +=
-        `<h2>${HOT} functions by self ${esc(evLabel(currentEvent))}</h2>` +
-        table(
+      markup +=
+        `<h2>${HEADING_PREFIX} functions by self ` +
+        `${html_escape(event_label(current_event))}</h2>` +
+        table_html(
           "heat.home.functions",
           [
             { label: "#", title: "rank", num: true },
-            SELF,
+            SELF_COLUMN,
             {
               label: "function",
-              title: `first ${SYMBOL_CHARS} characters; drag the bar for more`,
-              width: SYMBOL_CHARS,
+              title: `first ${SYMBOL_WIDTH} characters; drag the bar for more`,
+              width: SYMBOL_WIDTH,
             },
             {
               label: "defined at",
               title: "file:line of the function's first executed line",
               clip: 48,
             },
-            ...callCols,
-            ...extraCols(),
+            ...call_columns,
+            ...secondary_columns(),
           ],
-          topFunctions.map(([funcIndex, self], index) => {
-            const func = functions[funcIndex];
-            const loc = func.line ? func.file + ":" + func.line : func.file;
-            const base = fnBase(funcIndex);
-            const calls = HAS_CALLS
+          top_functions.map(([function_index, self_cost], index) => {
+            const function_entry = function_table[function_index];
+            const location_text = function_entry.line
+              ? function_entry.file + ":" + function_entry.line
+              : function_entry.file;
+            const baseline_cost = function_baseline_of(function_index);
+            const calls = HAS_CALL_GRAPH
               ? [
-                  numCalls(fnCalls[funcIndex]),
-                  fmtPctOf(self + val(func.calls), base),
+                  call_count_cell(per_function_calls[function_index]),
+                  share_of_baseline_text(
+                    self_cost + current_value(function_entry.calls),
+                    baseline_cost,
+                  ),
                 ]
               : [];
             return [
               String(index + 1),
               {
-                text: fmtPctOf(self, base),
-                style: heatBg(heatTOf(self, base, FN_MAXP)),
+                text: share_of_baseline_text(self_cost, baseline_cost),
+                style: cell_style_strong(
+                  heat_of_delta(self_cost, baseline_cost, function_max_share),
+                ),
               },
-              { text: func.name, title: func.name },
-              { text: loc, html: linkFn(funcIndex, loc) },
+              { text: function_entry.name, title: function_entry.name },
+              {
+                text: location_text,
+                html: function_link(function_index, location_text),
+              },
               ...calls,
-              ...extraCells(func.self),
+              ...secondary_cells(function_entry.self),
             ];
           }),
           {
-            rowHref: topFunctions.map(([funcIndex]) =>
-              fnLinkable(funcIndex)
-                ? hashForFn(functions[funcIndex].name)
+            row_href: top_functions.map(([function_index]) =>
+              function_is_linkable(function_index)
+                ? hash_for_function(function_table[function_index].name)
                 : "",
             ),
           },
         );
-      html += `</div>`;
-      mainEl.innerHTML = html;
-      mainEl.scrollTop = 0;
-      renderTree();
-      Theme.init(mainEl);
-      minimapClear();
+      markup += `</div>`;
+      main_panel.innerHTML = markup;
+      main_panel.scrollTop = 0;
+      tree_render();
+      report_ui.layout_activate(main_panel);
+      minimap_clear();
     }
 
-    function renderFile(path, line) {
-      const file = files[path];
+    function file_render(file_path, line) {
+      const file = file_table[file_path];
       if (!file) {
-        renderHome();
+        home_render();
         return;
       }
-      const first = curFile !== path,
-        keepTop = first ? -1 : mainEl.scrollTop;
-      curFile = path;
-      revealInTree(path);
+      const is_first_view = current_file_path !== file_path,
+        kept_scroll_top = is_first_view ? -1 : main_panel.scrollTop;
+      current_file_path = file_path;
+      tree_reveal(file_path);
       const lines = file.lines;
-      let fileMax = 0;
-      for (const rec of Object.values(lines)) {
-        const self = mag(val(rec[0]));
-        if (self > fileMax) fileMax = self;
+      let file_maximum_cost = 0;
+      for (const line_costs of Object.values(lines)) {
+        const self_cost = absolute(current_value(line_costs[0]));
+        if (self_cost > file_maximum_cost) file_maximum_cost = self_cost;
       }
-      const maxP =
-        scale.scope === "line"
-          ? PFULL
-          : scale.scope === "file"
-            ? Math.max(pct(fileMax), 0.0001)
-            : MAXP;
-      const fnMaxP = {};
-      if (scale.scope === "function") {
-        for (const [lineNumber, rec] of Object.entries(lines)) {
-          const owner = file.lineFunction[lineNumber];
+      const max_share =
+        active_scale.scope === "line"
+          ? FULL_HEAT_PERCENT
+          : active_scale.scope === "file"
+            ? Math.max(share_of_total(file_maximum_cost), 0.0001)
+            : maximum_share;
+      const function_max_shares = {};
+      if (active_scale.scope === "function") {
+        for (const [line_number, line_costs] of Object.entries(lines)) {
+          const owner = file.lineFunction[line_number];
           if (owner == null) continue;
-          fnMaxP[owner] = Math.max(
-            fnMaxP[owner] || 0.0001,
-            mag(pct(val(rec[0]))),
+          function_max_shares[owner] = Math.max(
+            function_max_shares[owner] || 0.0001,
+            absolute(share_of_total(current_value(line_costs[0]))),
           );
         }
       }
-      const maxPfor = (lineNumber) => {
-        if (scale.scope !== "function") return maxP;
-        const owner = file.lineFunction[lineNumber];
-        return owner != null ? fnMaxP[owner] || 0.0001 : maxP;
+      const max_share_for_line = (line_number) => {
+        if (active_scale.scope !== "function") return max_share;
+        const owner = file.lineFunction[line_number];
+        return owner != null
+          ? function_max_shares[owner] || 0.0001
+          : max_share;
       };
-      let html =
+      let markup =
         `<div class="srcwrap"><div class="fhead band">` +
-        `<span class="path">${esc(path)}</span>`;
-      const fileSelf = val(file.self);
-      let fileBase = 0;
-      if (DIFF) {
-        for (const vector of Object.values(file.baseline || {})) {
-          fileBase += mag(currentEvent.get(vector));
+        `<span class="path">${html_escape(file_path)}</span>`;
+      const file_self_cost = current_value(file.self);
+      let file_baseline_cost = 0;
+      if (IS_DIFF) {
+        for (const cost_vector of Object.values(file.baseline || {})) {
+          file_baseline_cost += absolute(current_event.get(cost_vector));
         }
       }
-      html +=
-        `<span class="stat" title="${fmtN(fileSelf)}">` +
-        `self <b>${fmtPctOf(fileSelf, fileBase) || "0%"}</b>` +
-        ` (${fmtH(fileSelf)} ${esc(evLabel(currentEvent))})</span>`;
-      for (const extra of EXTRA) {
-        const self = extra.get(file.self);
-        if (!self) continue;
-        html +=
+      markup +=
+        `<span class="stat" title="${exact_text(file_self_cost)}">` +
+        `self <b>` +
+        `${
+          share_of_baseline_text(file_self_cost, file_baseline_cost) || "0%"
+        }` +
+        `</b>` +
+        ` (${human_text(file_self_cost)}` +
+        ` ${html_escape(event_label(current_event))})</span>`;
+      for (const secondary of secondary_events) {
+        const self_cost = secondary.get(file.self);
+        if (!self_cost) continue;
+        markup +=
           `<span class="stat"` +
-          ` title="${esc(extra.long)}: ${fmtN(self)}">` +
-          `${esc(evLabel(extra))}` +
-          ` <b>${fmtP((100 * self) / MAXPX[extra.key].total)}</b>` +
-          ` (${fmtH(self)})</span>`;
+          ` title="${html_escape(secondary.long)}:` +
+          ` ${exact_text(self_cost)}">` +
+          `${html_escape(event_label(secondary))}` +
+          ` <b>${share_text(
+            (100 * self_cost) / secondary_maximums[secondary.key].total,
+          )}</b>` +
+          ` (${human_text(self_cost)})</span>`;
       }
       if (file.group === "external") {
-        const raw = esc(file.raw);
-        html += `<span class="stat">not in this repo (${raw})</span>`;
+        const raw = html_escape(file.raw);
+        markup += `<span class="stat">not in this repo (${raw})</span>`;
       }
-      html += `</div>`;
+      markup += `</div>`;
       if (file.source == null) {
-        html += `<div class="nosrc">Source not available.</div></div>`;
-        mainEl.innerHTML = html;
-        renderTree();
-        Theme.init(mainEl);
-        minimapClear();
+        markup += `<div class="nosrc">Source not available.</div></div>`;
+        main_panel.innerHTML = markup;
+        tree_render();
+        report_ui.layout_activate(main_panel);
+        minimap_clear();
         return;
       }
 
-      const hot = Object.keys(lines)
-        .map((lineKey) => [+lineKey, val(lines[lineKey][0])])
-        .filter((entry) => mag(entry[1]) > 0)
-        .sort((entryA, entryB) => mag(entryB[1]) - mag(entryA[1]));
-      const chips = hot
+      const hot_lines = Object.keys(lines)
+        .map((line_key) => [+line_key, current_value(lines[line_key][0])])
+        .filter((entry) => absolute(entry[1]) > 0)
+        .sort(
+          (entry_a, entry_b) => absolute(entry_b[1]) - absolute(entry_a[1]),
+        );
+      const chip_lines = hot_lines
         .filter(
-          (entry) => mag(pctOf(entry[1], lineBase(path, entry[0]))) >= 0.01,
+          (entry) =>
+            absolute(
+              share_of_baseline(entry[1], line_baseline(file_path, entry[0])),
+            ) >= 0.01,
         )
-        .slice(0, HOT_CHIPS);
-      if (chips.length) {
-        html += `<div class="chips"><span class="lbl">${HOT_LINES}</span>`;
-        for (const [lineNumber, cost] of chips) {
-          const base = lineBase(path, lineNumber);
-          html +=
-            `<span class="chip" data-goto="${lineNumber}"` +
-            ` style="${heatBg(heatTOf(cost, base, maxPfor(lineNumber)))}">` +
-            `${lineNumber} \u00b7 ${fmtPctOf(cost, base)}</span>`;
+        .slice(0, HOT_CHIP_LIMIT);
+      if (chip_lines.length) {
+        markup +=
+          `<div class="chips">` + `<span class="lbl">${CHIP_HEADING}</span>`;
+        for (const [line_number, cost] of chip_lines) {
+          const baseline_cost = line_baseline(file_path, line_number);
+          markup +=
+            `<span class="chip" data-goto="${line_number}"` +
+            ` style="${cell_style_strong(
+              heat_of_delta(
+                cost,
+                baseline_cost,
+                max_share_for_line(line_number),
+              ),
+            )}">` +
+            `${line_number} -` +
+            ` ${share_of_baseline_text(cost, baseline_cost)}</span>`;
         }
-        html += `</div>`;
+        markup += `</div>`;
       }
 
       const rows = [],
         attrs = [];
-      const emitRow = (lineNumber, text) => {
-        const rec = lines[lineNumber];
-        const self = rec ? val(rec[0]) : 0,
-          calls = rec ? val(rec[1]) : 0;
-        const base = lineBase(path, lineNumber);
-        const rowMaxP = maxPfor(lineNumber);
-        const heat = heatTOf(self, base, rowMaxP),
-          heatStyleAttr = heatBg(heat);
-        const funcIndex = file.lineFunction[lineNumber];
-        const over = rec && rec[2] ? " over " + fmtH(rec[2]) + " calls" : "";
-        const callsNote = HAS_CALLS ? `, ${fmtN(calls)} in calls${over}` : "";
-        const inFn = funcIndex != null ? " - in " + fnName(funcIndex) : "";
-        const title = rec
-          ? `${fmtN(self)} ${currentEvent.key} self${callsNote}${inFn}`
+      const source_row_emit = (line_number, text) => {
+        const line_costs = lines[line_number];
+        const self_cost = line_costs ? current_value(line_costs[0]) : 0,
+          calls = line_costs ? current_value(line_costs[1]) : 0;
+        const baseline_cost = line_baseline(file_path, line_number);
+        const row_max_share = max_share_for_line(line_number);
+        const heat_value = heat_of_delta(
+            self_cost,
+            baseline_cost,
+            row_max_share,
+          ),
+          heat_style_attribute = cell_style_strong(heat_value);
+        const function_index = file.lineFunction[line_number];
+        const over =
+          line_costs && line_costs[2]
+            ? " over " + human_text(line_costs[2]) + " calls"
+            : "";
+        const calls_note = HAS_CALL_GRAPH
+          ? `, ${exact_text(calls)} in calls${over}`
           : "";
-        const cls = [
-          rec ? "clickable" : "",
-          file.callees[lineNumber] ? "hasc" : "",
+        const in_function_note =
+          function_index != null
+            ? " - in " + function_name(function_index)
+            : "";
+        const title = line_costs
+          ? `${exact_text(self_cost)} ${current_event.key} self` +
+            `${calls_note}${in_function_note}`
+          : "";
+        const class_names = [
+          line_costs ? "clickable" : "",
+          file.callees[line_number] ? "hasc" : "",
         ]
           .filter(Boolean)
           .join(" ");
         attrs.push(
-          `id="L${lineNumber}"${cls ? ` class="${cls}"` : ""}` +
-            ` data-ln="${lineNumber}"` +
-            `${title ? ` title="${esc(title)}"` : ""}`,
+          `id="L${line_number}"` +
+            `${class_names ? ` class="${class_names}"` : ""}` +
+            ` data-ln="${line_number}"` +
+            `${title ? ` title="${html_escape(title)}"` : ""}`,
         );
-        const callCell = HAS_CALLS
+        const call_cell = HAS_CALL_GRAPH
           ? [
               {
-                text: calls ? fmtPctOf(calls, base) : "",
-                style: heatBg(heatTOf(calls, base, rowMaxP)),
+                text: calls
+                  ? share_of_baseline_text(calls, baseline_cost)
+                  : "",
+                style: cell_style_strong(
+                  heat_of_delta(calls, baseline_cost, row_max_share),
+                ),
               },
             ]
           : [];
         rows.push([
           {
-            text: self ? fmtPctOf(self, base) : "",
-            style: heatStyleAttr,
-            cls: heat > 0.45 ? "hot" : "",
+            text: self_cost
+              ? share_of_baseline_text(self_cost, baseline_cost)
+              : "",
+            style: heat_style_attribute,
+            cls: heat_value > 0.45 ? "hot" : "",
           },
-          { text: String(lineNumber), style: heatStyleAttr },
-          { text, style: heatStyleAttr },
-          ...callCell,
-          ...(rec ? extraCells(rec[0]) : EXTRA.map(() => "")),
+          { text: String(line_number), style: heat_style_attribute },
+          { text, style: heat_style_attribute },
+          ...call_cell,
+          ...(line_costs
+            ? secondary_cells(line_costs[0])
+            : secondary_events.map(() => "")),
         ]);
       };
-      const sourceLines = file.source.split("\n");
-      if (sourceLines.length && sourceLines[sourceLines.length - 1] === "") {
-        sourceLines.pop();
+      const source_lines = file.source.split("\n");
+      if (
+        source_lines.length &&
+        source_lines[source_lines.length - 1] === ""
+      ) {
+        source_lines.pop();
       }
-      let nlines = sourceLines.length;
-      for (let lineIndex = 0; lineIndex < sourceLines.length; lineIndex++) {
-        emitRow(lineIndex + 1, sourceLines[lineIndex]);
+      let line_count = source_lines.length;
+      for (
+        let line_index = 0;
+        line_index < source_lines.length;
+        line_index++
+      ) {
+        source_row_emit(line_index + 1, source_lines[line_index]);
       }
-      for (const lineKey of Object.keys(lines)) {
-        if (+lineKey <= sourceLines.length) continue;
-        nlines = Math.max(nlines, +lineKey);
-        emitRow(
-          +lineKey,
+      for (const line_key of Object.keys(lines)) {
+        if (+line_key <= source_lines.length) continue;
+        line_count = Math.max(line_count, +line_key);
+        source_row_emit(
+          +line_key,
           "(line beyond end of file: source changed since" +
             " the profile was taken)",
         );
       }
 
-      const callCol = HAS_CALLS
+      const call_column = HAS_CALL_GRAPH
         ? [
             {
               label: "calls",
@@ -1032,501 +1292,589 @@
             },
           ]
         : [];
-      const cols = [
-        evCol(currentEvent, {
+      const columns = [
+        event_column(current_event, {
           title:
-            currentEvent.long + ", share of total, spent on the line itself",
+            current_event.long + ", share of total, spent on the line itself",
           cls: "self",
         }),
         {
           label: "line",
           num: true,
-          width: String(nlines).length + 2,
+          width: String(line_count).length + 2,
           cls: "ln",
         },
-        { label: "source", width: SRC_COLS, grow: true, cls: "code" },
-        ...callCol,
-        ...extraCols(),
+        { label: "source", width: SOURCE_WIDTH, grow: true, cls: "code" },
+        ...call_column,
+        ...secondary_columns(),
       ];
-      html += table("heat.src", cols, rows, {
-        rowAttrs: attrs,
+      markup += table_html("heat.src", columns, rows, {
+        row_attributes: attrs,
         fill: 1,
         cls: "src",
         bare: true,
       });
-      html += `<div class="srctail"></div></div>`;
-      mainEl.innerHTML = html;
-      renderTree();
+      markup += `<div class="srctail"></div></div>`;
+      main_panel.innerHTML = markup;
+      tree_render();
 
-      minimapBuild();
-      Theme.init(mainEl);
-      srctailFit();
-      if (!first) mainEl.scrollTop = keepTop;
+      minimap_build();
+      report_ui.layout_activate(main_panel);
+      tail_fit();
+      if (!is_first_view) main_panel.scrollTop = kept_scroll_top;
       else if (!line) {
-        const hottest = hot.length ? hot[0][0] : 0;
-        const hottestRow = hottest
+        const hottest = hot_lines.length ? hot_lines[0][0] : 0;
+        const hottest_row = hottest
           ? document.getElementById("L" + hottest)
           : null;
-        if (hottestRow) centerRow(hottestRow);
-        else mainEl.scrollTop = 0;
+        if (hottest_row) row_center(hottest_row);
+        else main_panel.scrollTop = 0;
       }
-      minimapSync();
+      minimap_sync();
     }
 
-    function rowOnScreen(rowEl) {
-      const rowRect = rowEl.getBoundingClientRect();
-      const mainRect = mainEl.getBoundingClientRect();
+    function row_is_visible(row_element) {
+      const row_rect = row_element.getBoundingClientRect();
+      const main_rect = main_panel.getBoundingClientRect();
       return (
-        rowRect.top >= mainRect.top + coverH(rowEl.closest("table")) &&
-        rowRect.bottom <= mainRect.top + mainEl.clientHeight
+        row_rect.top >=
+          main_rect.top + covered_height(row_element.closest("table")) &&
+        row_rect.bottom <= main_rect.top + main_panel.clientHeight
       );
     }
 
-    function coverH(table) {
-      let height = table.tHead.rows[0].cells[0].getBoundingClientRect().height;
-      for (const band of mainEl.querySelectorAll(".band")) {
+    function covered_height(table_element) {
+      let height =
+        table_element.tHead.rows[0].cells[0].getBoundingClientRect().height;
+      for (const band of main_panel.querySelectorAll(".band")) {
         height += band.getBoundingClientRect().height;
       }
       return height;
     }
 
-    function centerRow(rowEl) {
-      const cover = coverH(rowEl.closest("table"));
-      const rowRect = rowEl.getBoundingClientRect();
-      const mainRect = mainEl.getBoundingClientRect();
-      const detailEl = rowEl.nextElementSibling;
-      const blockBottom =
-        detailEl && detailEl.classList.contains("detail")
-          ? detailEl.getBoundingClientRect().bottom
-          : rowRect.bottom;
-      const blockHeight = blockBottom - rowRect.top;
-      const slack = (mainEl.clientHeight - cover - blockHeight) / 2;
-      mainEl.scrollTop += rowRect.top - mainRect.top - cover - slack;
+    function row_center(row_element) {
+      const cover = covered_height(row_element.closest("table"));
+      const row_rect = row_element.getBoundingClientRect();
+      const main_rect = main_panel.getBoundingClientRect();
+      const detail_element = row_element.nextElementSibling;
+      const block_bottom_px =
+        detail_element && detail_element.classList.contains("detail")
+          ? detail_element.getBoundingClientRect().bottom
+          : row_rect.bottom;
+      const block_height_px = block_bottom_px - row_rect.top;
+      const slack = (main_panel.clientHeight - cover - block_height_px) / 2;
+      main_panel.scrollTop += row_rect.top - main_rect.top - cover - slack;
     }
 
-    function srctailFit() {
-      const tail = mainEl.querySelector(".srctail");
-      const table = mainEl.querySelector("table.src");
-      if (!tail || !table) return;
-      const rows = table.tBodies[0].rows,
+    function tail_fit() {
+      const tail = main_panel.querySelector(".srctail");
+      const table_element = main_panel.querySelector("table.src");
+      if (!tail || !table_element) return;
+      const rows = table_element.tBodies[0].rows,
         last = rows[rows.length - 1];
       if (!last) return;
-      const cover = coverH(table),
-        rowHeight = last.getBoundingClientRect().height;
+      const cover = covered_height(table_element),
+        row_height_px = last.getBoundingClientRect().height;
       tail.style.height =
-        Math.max(0, (mainEl.clientHeight - cover - rowHeight) / 2) + "px";
+        Math.max(0, (main_panel.clientHeight - cover - row_height_px) / 2) +
+        "px";
     }
 
-    const MM_MIN_COLS = 80;
-    const MM_MIN_LINES = 40;
-    let mmChPx = 0,
-      mmScale = 1,
-      mmCloneH = 0;
-    function minimapClear() {
-      minimapEl.classList.add("empty");
-      mmBox.innerHTML = "";
-      mmViewport.hidden = true;
+    const MINIMUM_COLUMNS = 80;
+    const MINIMUM_LINES = 40;
+    let character_width_px = 0,
+      scale_factor = 1,
+      clone_height_px = 0;
+    function minimap_clear() {
+      minimap_panel.classList.add("empty");
+      minimap_box.innerHTML = "";
+      minimap_viewport.hidden = true;
     }
-    function minimapBuild() {
-      const table = mainEl.querySelector("table.src");
-      const tbody = table && table.tBodies[0];
-      if (!tbody || tbody.rows.length < MM_MIN_LINES) {
-        minimapClear();
+    function minimap_build() {
+      const table_element = main_panel.querySelector("table.src");
+      const table_body = table_element && table_element.tBodies[0];
+      if (!table_body || table_body.rows.length < MINIMUM_LINES) {
+        minimap_clear();
         return;
       }
 
-      const probeCell = tbody.rows[0].querySelector("td.code");
-      if (!probeCell) {
-        minimapClear();
+      const probe_cell = table_body.rows[0].querySelector("td.code");
+      if (!probe_cell) {
+        minimap_clear();
         return;
       }
-      const span = document.createElement("span");
-      span.textContent = "0123456789";
-      span.style.cssText =
+      const probe_span = document.createElement("span");
+      probe_span.textContent = "0123456789";
+      probe_span.style.cssText =
         "position:absolute;visibility:hidden;white-space:pre;font:inherit";
-      probeCell.appendChild(span);
-      mmChPx = span.getBoundingClientRect().width / 10 || 7.2;
-      probeCell.removeChild(span);
+      probe_cell.appendChild(probe_span);
+      character_width_px =
+        probe_span.getBoundingClientRect().width / 10 || 7.2;
+      probe_cell.removeChild(probe_span);
 
-      const clone = document.createElement("table");
-      clone.className = "src";
-      const body = document.createElement("tbody");
-      for (const row of tbody.rows) {
+      const clone_table = document.createElement("table");
+      clone_table.className = "src";
+      const clone_body = document.createElement("tbody");
+      for (const row of table_body.rows) {
         if (row.classList.contains("detail")) continue;
         const code = row.querySelector("td.code");
         if (!code) continue;
-        const cloneRow = document.createElement("tr");
-        cloneRow.className = row.className;
-        cloneRow.appendChild(code.cloneNode(true));
-        body.appendChild(cloneRow);
+        const clone_row = document.createElement("tr");
+        clone_row.className = row.className;
+        clone_row.appendChild(code.cloneNode(true));
+        clone_body.appendChild(clone_row);
       }
-      clone.appendChild(body);
-      mmBox.innerHTML = "";
-      mmBox.appendChild(clone);
-      minimapEl.classList.remove("empty");
-      mmViewport.hidden = false;
-      mmCloneH = clone.offsetHeight;
-      minimapLayout();
+      clone_table.appendChild(clone_body);
+      minimap_box.innerHTML = "";
+      minimap_box.appendChild(clone_table);
+      minimap_panel.classList.remove("empty");
+      minimap_viewport.hidden = false;
+      clone_height_px = clone_table.offsetHeight;
+      minimap_layout();
     }
 
-    function minimapLayout() {
-      if (minimapEl.classList.contains("empty")) return;
-      const bandW = minimapEl.clientWidth,
-        bandH = minimapEl.clientHeight;
+    function minimap_layout() {
+      if (minimap_panel.classList.contains("empty")) return;
+      const band_width_px = minimap_panel.clientWidth,
+        band_height_px = minimap_panel.clientHeight;
 
-      mmScale = Math.min(1, bandW / (MM_MIN_COLS * mmChPx), bandH / mmCloneH);
-      mmBox.style.transform = `scale(${mmScale})`;
-      mmBox.style.transformOrigin = "top left";
-      mmBox.style.width = bandW / mmScale + "px";
-      minimapSync();
+      scale_factor = Math.min(
+        1,
+        band_width_px / (MINIMUM_COLUMNS * character_width_px),
+        band_height_px / clone_height_px,
+      );
+      minimap_box.style.transform = `scale(${scale_factor})`;
+      minimap_box.style.transformOrigin = "top left";
+      minimap_box.style.width = band_width_px / scale_factor + "px";
+      minimap_sync();
     }
 
-    function mmGeom() {
-      const table = mainEl.querySelector("table.src"),
-        tbody = table.tBodies[0];
-      const main = mainEl.getBoundingClientRect();
-      const body = tbody.getBoundingClientRect();
-      const detailEl = tbody.querySelector("tr.detail");
-      const detail = detailEl && detailEl.getBoundingClientRect();
-      const rows = body.height - (detail ? detail.height : 0);
-      const above = (yCoord) => {
-        let pixels = yCoord - body.top;
+    function geometry_measure() {
+      const table_element = main_panel.querySelector("table.src"),
+        table_body = table_element.tBodies[0];
+      const main = main_panel.getBoundingClientRect();
+      const clone_body = table_body.getBoundingClientRect();
+      const detail_element = table_body.querySelector("tr.detail");
+      const detail = detail_element && detail_element.getBoundingClientRect();
+      const rows = clone_body.height - (detail ? detail.height : 0);
+      const rows_above = (y_position_px) => {
+        let pixels = y_position_px - clone_body.top;
         if (detail) {
-          pixels -= Math.max(0, Math.min(yCoord, detail.bottom) - detail.top);
+          pixels -= Math.max(
+            0,
+            Math.min(y_position_px, detail.bottom) - detail.top,
+          );
         }
         return Math.max(0, Math.min(rows, pixels));
       };
       return {
         rows,
-        above,
-        cover: coverH(table),
-        body,
+        above: rows_above,
+        cover: covered_height(table_element),
+        body: clone_body,
         detail,
         top: main.top,
-        bottom: main.top + mainEl.clientHeight,
-        head: table.tHead.rows[0].cells[0].getBoundingClientRect().bottom,
+        bottom: main.top + main_panel.clientHeight,
+        head: table_element.tHead.rows[0].cells[0].getBoundingClientRect()
+          .bottom,
       };
     }
-    function minimapSync() {
-      if (minimapEl.classList.contains("empty")) return;
-      const geom = mmGeom(),
-        scaledH = mmCloneH * mmScale;
-      const rowStart = geom.above(geom.head),
-        rowEnd = geom.above(geom.bottom);
-      const boxHeight = Math.max(
+    function minimap_sync() {
+      if (minimap_panel.classList.contains("empty")) return;
+      const geometry = geometry_measure(),
+        scaled_height_px = clone_height_px * scale_factor;
+      const row_start = geometry.above(geometry.head),
+        row_end = geometry.above(geometry.bottom);
+      const box_height_px = Math.max(
         8,
-        (scaledH * (rowEnd - rowStart)) / geom.rows,
+        (scaled_height_px * (row_end - row_start)) / geometry.rows,
       );
-      const boxTop = Math.min(
-        scaledH - boxHeight,
-        (scaledH * rowStart) / geom.rows,
+      const box_top_px = Math.min(
+        scaled_height_px - box_height_px,
+        (scaled_height_px * row_start) / geometry.rows,
       );
-      mmViewport.style.top = Math.max(0, boxTop) + "px";
-      mmViewport.style.height = boxHeight + "px";
+      minimap_viewport.style.top = Math.max(0, box_top_px) + "px";
+      minimap_viewport.style.height = box_height_px + "px";
     }
 
-    function mmScrollTo(row) {
-      const geom = mmGeom();
-      row = Math.max(0, Math.min(geom.rows, row));
-      let yCoord =
-        geom.body.top - geom.top + mainEl.scrollTop + row - geom.cover;
-      if (geom.detail && geom.detail.top - geom.body.top < row) {
-        yCoord += geom.detail.height;
+    function scroll_to_row(row) {
+      const geometry = geometry_measure();
+      row = Math.max(0, Math.min(geometry.rows, row));
+      let y_position_px =
+        geometry.body.top -
+        geometry.top +
+        main_panel.scrollTop +
+        row -
+        geometry.cover;
+      if (geometry.detail && geometry.detail.top - geometry.body.top < row) {
+        y_position_px += geometry.detail.height;
       }
-      const most = mainEl.scrollHeight - mainEl.clientHeight;
-      mainEl.scrollTop = Math.max(0, Math.min(most, yCoord));
+      const maximum_scroll_px =
+        main_panel.scrollHeight - main_panel.clientHeight;
+      main_panel.scrollTop = Math.max(
+        0,
+        Math.min(maximum_scroll_px, y_position_px),
+      );
     }
-    mainEl.addEventListener("scroll", minimapSync);
-    minimapEl.addEventListener("click", (clickEvent) => {
-      if (clickEvent.target.closest("#mmViewport")) return;
-      const geom = mmGeom(),
-        scaledH = mmCloneH * mmScale;
+    main_panel.addEventListener("scroll", minimap_sync);
+    minimap_panel.addEventListener("click", (click_event) => {
+      if (click_event.target.closest("#mmViewport")) return;
+      const geometry = geometry_measure(),
+        scaled_height_px = clone_height_px * scale_factor;
       const offsetY =
-        clickEvent.clientY - minimapEl.getBoundingClientRect().top;
-      const row = (offsetY / scaledH) * geom.rows;
-      mmScrollTo(row - (mainEl.clientHeight - geom.cover) / 2);
+        click_event.clientY - minimap_panel.getBoundingClientRect().top;
+      const row = (offsetY / scaled_height_px) * geometry.rows;
+      scroll_to_row(row - (main_panel.clientHeight - geometry.cover) / 2);
     });
-    mmViewport.addEventListener("pointerdown", (downEvent) => {
-      const startY = downEvent.clientY,
-        startTop = mmViewport.offsetTop;
-      const scaledH = mmCloneH * mmScale;
-      mmViewport.classList.add("drag");
-      if (mmViewport.setPointerCapture) {
-        mmViewport.setPointerCapture(downEvent.pointerId);
+    minimap_viewport.addEventListener("pointerdown", (down_event) => {
+      const start_client_y = down_event.clientY,
+        start_top_px = minimap_viewport.offsetTop;
+      const scaled_height_px = clone_height_px * scale_factor;
+      minimap_viewport.classList.add("drag");
+      if (minimap_viewport.setPointerCapture) {
+        minimap_viewport.setPointerCapture(down_event.pointerId);
       }
-      const move = (moveEvent) =>
-        mmScrollTo(
-          ((startTop + moveEvent.clientY - startY) / scaledH) * mmGeom().rows,
+      const move = (move_event) =>
+        scroll_to_row(
+          ((start_top_px + move_event.clientY - start_client_y) /
+            scaled_height_px) *
+            geometry_measure().rows,
         );
       const drag = (on) => {
         const method = on ? "addEventListener" : "removeEventListener";
-        mmViewport[method]("pointermove", move);
-        mmViewport[method]("pointerup", release);
-        mmViewport[method]("pointercancel", release);
+        minimap_viewport[method]("pointermove", move);
+        minimap_viewport[method]("pointerup", release);
+        minimap_viewport[method]("pointercancel", release);
       };
       const release = () => {
-        mmViewport.classList.remove("drag");
+        minimap_viewport.classList.remove("drag");
         drag(false);
       };
       drag(true);
-      downEvent.preventDefault();
-      downEvent.stopPropagation();
+      down_event.preventDefault();
+      down_event.stopPropagation();
     });
 
-    function detailLine() {
-      const detailRow = mainEl.querySelector("tr.detail");
-      return detailRow ? +detailRow.previousElementSibling.dataset.ln : 0;
+    function detail_line() {
+      const detail_row = main_panel.querySelector("tr.detail");
+      return detail_row ? +detail_row.previousElementSibling.dataset.ln : 0;
     }
 
-    function detailSet(line) {
-      if (line === detailLine()) return;
-      for (const detailRow of mainEl.querySelectorAll("tr.detail")) {
-        detailRow.remove();
+    function detail_set(line) {
+      if (line === detail_line()) return;
+      for (const detail_row of main_panel.querySelectorAll("tr.detail")) {
+        detail_row.remove();
       }
       const row = line ? document.getElementById("L" + line) : null;
       if (row) {
-        detailOpen(curFile, line, row);
-        if (!rowOnScreen(row)) centerRow(row);
+        detail_open(current_file_path, line, row);
+        if (!row_is_visible(row)) row_center(row);
       }
-      minimapSync();
+      minimap_sync();
     }
-    function detailOpen(path, lineNumber, row) {
-      const file = files[path];
-      const callees = (file.callees[lineNumber] || [])
+    function detail_open(file_path, line_number, row) {
+      const file = file_table[file_path];
+      const callees = (file.callees[line_number] || [])
         .slice()
-        .sort((calleeA, calleeB) => val(calleeB[3]) - val(calleeA[3]));
-      const funcIndex = (entryIdx[path] || {})[lineNumber];
-      const lineFuncIndex = file.lineFunction[lineNumber];
-      const rec = file.lines[lineNumber] || [[], [], 0];
-      const fnCol = (label) => ({
+        .sort(
+          (callee_a, callee_b) =>
+            current_value(callee_b[3]) - current_value(callee_a[3]),
+        );
+      const function_index = (entry_line_index[file_path] || {})[line_number];
+      const line_function_index = file.lineFunction[line_number];
+      const line_costs = file.lines[line_number] || [[], [], 0];
+      const function_column = (label) => ({
         label,
-        title: `first ${SYMBOL_CHARS} characters; drag the bar for more`,
-        width: SYMBOL_CHARS,
+        title: `first ${SYMBOL_WIDTH} characters; drag the bar for more`,
+        width: SYMBOL_WIDTH,
       });
-      const locCol = {
+      const location_column = {
         label: "defined at",
         title: "file:line of the function's first executed line",
         clip: 48,
       };
-      const callCost = val(rec[1]);
-      const self = val(rec[0]);
-      const lineBaseline = lineBase(path, lineNumber);
-      const selfLabel = funcIndex != null ? "self" : "line self";
-      const statCols = [
+      const call_cost = current_value(line_costs[1]);
+      const self_cost = current_value(line_costs[0]);
+      const line_baseline_cost = line_baseline(file_path, line_number);
+      const self_label = function_index != null ? "self" : "line self";
+      const stat_columns = [
         { label: "metric" },
         { label: "share", num: true },
         { label: "amount", num: true },
       ];
-      const statRows = [
+      const stat_rows = [
         [
-          { text: `${selfLabel} ${evLabel(currentEvent)}`, title: SELF.title },
-          fmtPctOf(self, lineBaseline) || "0%",
-          num(self),
+          {
+            text: `${self_label} ${event_label(current_event)}`,
+            title: SELF_COLUMN.title,
+          },
+          share_of_baseline_text(self_cost, line_baseline_cost) || "0%",
+          cell_number(self_cost),
         ],
       ];
-      if (callCost) {
-        statRows.push([
+      if (call_cost) {
+        stat_rows.push([
           { text: "calls" },
-          fmtPctOf(callCost, lineBaseline),
-          num(callCost),
+          share_of_baseline_text(call_cost, line_baseline_cost),
+          cell_number(call_cost),
         ]);
-        statRows.push([{ text: "call count" }, "", numCalls(rec[2])]);
-      }
-      for (const extra of EXTRA) {
-        const extraSelf = extra.get(rec[0]);
-        if (!extraSelf) continue;
-        statRows.push([
-          { text: evLabel(extra), title: extra.long },
-          fmtP((100 * extraSelf) / MAXPX[extra.key].total),
-          num(extraSelf),
+        stat_rows.push([
+          { text: "call count" },
+          "",
+          call_count_cell(line_costs[2]),
         ]);
       }
-      const inFn = lineFuncIndex != null ? " in " + fnName(lineFuncIndex) : "";
-      const headLine = `${path}:${lineNumber}${inFn}`;
-      const inFnHtml =
-        lineFuncIndex != null
-          ? " in <b>" + esc(fnName(lineFuncIndex)) + "</b>"
+      for (const secondary of secondary_events) {
+        const secondary_self = secondary.get(line_costs[0]);
+        if (!secondary_self) continue;
+        stat_rows.push([
+          { text: event_label(secondary), title: secondary.long },
+          share_text(
+            (100 * secondary_self) / secondary_maximums[secondary.key].total,
+          ),
+          cell_number(secondary_self),
+        ]);
+      }
+      const in_function_note =
+        line_function_index != null
+          ? " in " + function_name(line_function_index)
           : "";
-      let html = `<div class="dbox">`;
-      html += `<a href="#" class="dclose" title="close">[X]</a>`;
-      html += `<div>${esc(path)}:${lineNumber}${inFnHtml}</div>`;
-      html += table("heat.detail.stats", statCols, statRows);
-      const textParts = [headLine + "\n" + tableText(statCols, statRows)];
+      const heading_line = `${file_path}:${line_number}${in_function_note}`;
+      const in_function_html =
+        line_function_index != null
+          ? " in <b>" +
+            html_escape(function_name(line_function_index)) +
+            "</b>"
+          : "";
+      let markup = `<div class="dbox">`;
+      markup += `<a href="#" class="dclose" title="close">[X]</a>`;
+      markup +=
+        `<div>${html_escape(file_path)}:` +
+        `${line_number}${in_function_html}</div>`;
+      markup += table_html("heat.detail.stats", stat_columns, stat_rows);
+      const text_parts = [
+        heading_line + "\n" + table_markdown(stat_columns, stat_rows),
+      ];
       if (callees.length) {
-        const cols = [
+        const columns = [
           { label: "% of total", num: true },
-          evCol(currentEvent),
+          event_column(current_event),
           { label: "call count", num: true },
-          fnCol("callee"),
-          locCol,
+          function_column("callee"),
+          location_column,
         ];
         const rows = callees.map(
-          ([calleeIndex, callFile, callLine, vec, count]) => {
-            const loc = callLine ? callFile + ":" + callLine : callFile;
+          ([callee_index, call_file, call_line, cost_vector, call_count]) => {
+            const location_text = call_line
+              ? call_file + ":" + call_line
+              : call_file;
             return [
-              fmtPct(val(vec)),
-              num(val(vec)),
-              numCalls(count),
-              { text: fnName(calleeIndex), title: fnName(calleeIndex) },
-              { text: loc, html: linkFn(calleeIndex, loc) },
+              share_of_total_text(current_value(cost_vector)),
+              cell_number(current_value(cost_vector)),
+              call_count_cell(call_count),
+              {
+                text: function_name(callee_index),
+                title: function_name(callee_index),
+              },
+              {
+                text: location_text,
+                html: function_link(callee_index, location_text),
+              },
             ];
           },
         );
-        const ev = evLabel(currentEvent);
-        const heading = `calls from this line (total ${ev})`;
-        html +=
-          `<h4>${esc(heading)}</h4>` +
-          table("heat.detail.callees", cols, rows);
-        textParts.push(heading + "\n" + tableText(cols, rows));
+        const event_text = event_label(current_event);
+        const heading = `calls from this line (total ${event_text})`;
+        markup +=
+          `<h4>${html_escape(heading)}</h4>` +
+          table_html("heat.detail.callees", columns, rows);
+        text_parts.push(heading + "\n" + table_markdown(columns, rows));
       }
-      if (funcIndex != null) {
-        const func = functions[funcIndex];
-        const callers = func.callers
+      if (function_index != null) {
+        const function_entry = function_table[function_index];
+        const callers = function_entry.callers
           .slice()
-          .sort((callerA, callerB) => callerB[4] - callerA[4]);
-        const funcBaseline = fnBase(funcIndex);
-        const fnSelf = fmtPctOf(val(func.self), funcBaseline) || "0%";
-        const fnTotal =
-          fmtPctOf(val(func.self) + val(func.calls), funcBaseline) || "0%";
-        const heading = HAS_CALLS
-          ? `${func.name} by call count: self ${fnSelf}, total ${fnTotal}.`
-          : `${func.name}: self ${fnSelf}.`;
-        html += `<h4>${esc(heading)}</h4>`;
+          .sort((caller_a, caller_b) => caller_b[4] - caller_a[4]);
+        const function_baseline_cost = function_baseline_of(function_index);
+        const function_self_text =
+          share_of_baseline_text(
+            current_value(function_entry.self),
+            function_baseline_cost,
+          ) || "0%";
+        const function_total_text =
+          share_of_baseline_text(
+            current_value(function_entry.self) +
+              current_value(function_entry.calls),
+            function_baseline_cost,
+          ) || "0%";
+        const heading = HAS_CALL_GRAPH
+          ? `${function_entry.name} by call count:` +
+            ` self ${function_self_text}, total ${function_total_text}.`
+          : `${function_entry.name}: self ${function_self_text}.`;
+        markup += `<h4>${html_escape(heading)}</h4>`;
         if (callers.length) {
-          const cols = [
+          const columns = [
             { label: "call count", num: true },
             { label: "% of total", num: true },
-            evCol(currentEvent),
-            fnCol("caller"),
+            event_column(current_event),
+            function_column("caller"),
             { label: "called at", title: "file:line of the call", clip: 48 },
           ];
           const rows = callers.map(
-            ([callerIndex, callFile, callLine, vec, count]) => {
-              const loc = callLine ? callFile + ":" + callLine : callFile;
+            ([
+              caller_index,
+              call_file,
+              call_line,
+              cost_vector,
+              call_count,
+            ]) => {
+              const location_text = call_line
+                ? call_file + ":" + call_line
+                : call_file;
               return [
-                numCalls(count),
-                fmtPct(val(vec)),
-                num(val(vec)),
-                { text: fnName(callerIndex), title: fnName(callerIndex) },
-                { text: loc, html: link(callFile, callLine, loc) },
+                call_count_cell(call_count),
+                share_of_total_text(current_value(cost_vector)),
+                cell_number(current_value(cost_vector)),
+                {
+                  text: function_name(caller_index),
+                  title: function_name(caller_index),
+                },
+                {
+                  text: location_text,
+                  html: line_link(call_file, call_line, location_text),
+                },
               ];
             },
           );
-          html += table("heat.detail.callers", cols, rows);
-          textParts.push(heading + "\n" + tableText(cols, rows));
-        } else if (HAS_CALLS) {
+          markup += table_html("heat.detail.callers", columns, rows);
+          text_parts.push(heading + "\n" + table_markdown(columns, rows));
+        } else if (HAS_CALL_GRAPH) {
           const none = "(no recorded caller - a root or a resolver stub)";
-          html += `<div class="dim">${none}</div>`;
-          textParts.push(heading + "\n" + none);
+          markup += `<div class="dim">${none}</div>`;
+          text_parts.push(heading + "\n" + none);
         } else {
-          textParts.push(heading);
+          text_parts.push(heading);
         }
       }
-      html +=
+      markup +=
         `<div class="dactions"><a href="#" class="dcopy">copy</a>` +
         ` <a href="#" class="dclose2">close</a></div>`;
-      html += `</div>`;
-      const detailRow = document.createElement("tr");
-      detailRow.className = "detail";
-      detailRow.innerHTML = `<td colspan="${row.cells.length}">${html}</td>`;
-      detailRow._copyText = textParts.join("\n\n");
-      row.after(detailRow);
-      Theme.init(detailRow);
+      markup += `</div>`;
+      const detail_row = document.createElement("tr");
+      detail_row.className = "detail";
+      detail_row.innerHTML =
+        `<td colspan="${row.cells.length}">` + `${markup}</td>`;
+      detail_row.detail_copy_text = text_parts.join("\n\n");
+      row.after(detail_row);
+      report_ui.layout_activate(detail_row);
     }
 
-    mainEl.addEventListener("click", (clickEvent) => {
-      const chip = clickEvent.target.closest(".chip");
+    main_panel.addEventListener("click", (click_event) => {
+      const chip = click_event.target.closest(".chip");
       if (chip) {
-        location.hash = hashFor(curFile, +chip.dataset.goto);
+        location.hash = hash_for_line(current_file_path, +chip.dataset.goto);
         return;
       }
-      const copy = clickEvent.target.closest(".dcopy");
+      const copy = click_event.target.closest(".dcopy");
       if (copy) {
-        clickEvent.preventDefault();
-        navigator.clipboard.writeText(copy.closest("tr.detail")._copyText);
+        click_event.preventDefault();
+        navigator.clipboard.writeText(
+          copy.closest("tr.detail").detail_copy_text,
+        );
         return;
       }
-      const close = clickEvent.target.closest(".dclose, .dclose2");
+      const close = click_event.target.closest(".dclose, .dclose2");
       if (close) {
-        clickEvent.preventDefault();
-        location.hash = hashFor(curFile);
+        click_event.preventDefault();
+        location.hash = hash_for_line(current_file_path);
         return;
       }
-      if (clickEvent.target.closest("a")) return;
-      const linkRow = clickEvent.target.closest("tr.rowlink");
-      if (linkRow) {
-        location.hash = linkRow.dataset.href;
+      if (click_event.target.closest("a")) return;
+      const link_row = click_event.target.closest("tr.rowlink");
+      if (link_row) {
+        location.hash = link_row.dataset.href;
         return;
       }
-      const row = clickEvent.target.closest("tr.clickable");
-      if (row && curFile) {
-        const lineNumber = +row.dataset.ln;
+      const row = click_event.target.closest("tr.clickable");
+      if (row && current_file_path) {
+        const line_number = +row.dataset.ln;
         location.hash =
-          lineNumber === detailLine()
-            ? hashFor(curFile)
-            : hashFor(curFile, lineNumber);
+          line_number === detail_line()
+            ? hash_for_line(current_file_path)
+            : hash_for_line(current_file_path, line_number);
       }
     });
 
-    let state = { file: null, line: 0, fn: null };
-    let shown = "";
-    function stateOf(hash) {
-      const parsed = { file: null, line: 0, fn: null, ev: null };
+    let current_state = { file: null, line: 0, fn: null };
+    let rendered_key = "";
+    function state_of_hash(hash) {
+      const parsed_state = { file: null, line: 0, fn: null, ev: null };
       for (const part of (hash || "").replace(/^#/, "").split("&")) {
-        const eqIndex = part.indexOf("=");
-        if (eqIndex < 0) continue;
+        const equals_index = part.indexOf("=");
+        if (equals_index < 0) continue;
         let value;
         try {
-          value = decodeURIComponent(part.slice(eqIndex + 1));
-        } catch (decodeError) {
+          value = decodeURIComponent(part.slice(equals_index + 1));
+        } catch (decode_error) {
           continue;
         }
-        const key = part.slice(0, eqIndex);
-        if (key === "f") parsed.file = value;
-        else if (key === "l") parsed.line = +value || 0;
-        else if (key === "fn") parsed.fn = value;
-        else if (key === "e") parsed.ev = value;
+        const key = part.slice(0, equals_index);
+        if (key === "f") parsed_state.file = value;
+        else if (key === "l") parsed_state.line = +value || 0;
+        else if (key === "fn") parsed_state.fn = value;
+        else if (key === "e") parsed_state.ev = value;
       }
-      return parsed;
+      return parsed_state;
     }
-    function applyEvent(key) {
-      currentEvent = evByKey(key) || EVS[0];
-      evSel.value = currentEvent.key;
-      recomputeScale();
-      TREE = buildTree();
-      for (const dir of TREE.dirs.values()) {
-        if (mag(dir.self) / TOTAL > 0.05) openDirs.add(dir.path);
+    function event_apply(key) {
+      current_event = event_find(key) || event_list[0];
+      event_select.value = current_event.key;
+      scale_recompute();
+      tree_root = tree_build();
+      for (const directory_node of tree_root.dirs.values()) {
+        if (absolute(directory_node.self) / total_cost > 0.05) {
+          expanded_directories.add(directory_node.path);
+        }
       }
     }
-    function syncHash() {
-      const hash = hashOf(state);
+    function hash_canonicalize() {
+      const hash = hash_of_state(current_state);
       if (hash !== location.hash) history.replaceState(null, "", hash || "#");
       if (window.parent !== window) {
-        window.parent.postMessage({ theme: "hash", hash: hash }, "*");
+        window.parent.postMessage(
+          { report_ui: "hash_changed", hash: hash },
+          "*",
+        );
       }
     }
-    function route() {
-      const parsed = stateOf(location.hash);
+    function route_render() {
+      const parsed_state = state_of_hash(location.hash);
       const event =
-        evByKey(parsed.ev) ||
-        evByKey(model.heatMapTotals.defaultEvent) ||
-        EVS[0];
-      if (event.key !== currentEvent.key) applyEvent(event.key);
-      let file = parsed.file,
-        line = parsed.line,
-        fn = parsed.fn;
+        event_find(parsed_state.ev) ||
+        event_find(profile_model.heatMapTotals.defaultEvent) ||
+        event_list[0];
+      if (event.key !== current_event.key) event_apply(event.key);
+      let file = parsed_state.file,
+        line = parsed_state.line,
+        fn = parsed_state.fn;
       if (fn) {
-        const func = functions.find((candidate) => candidate.name === fn);
-        if (func && func.line && files[func.file]) {
-          file = func.file;
-          line = func.line;
+        const function_entry = function_table.find(
+          (candidate) => candidate.name === fn,
+        );
+        if (
+          function_entry &&
+          function_entry.line &&
+          file_table[function_entry.file]
+        ) {
+          file = function_entry.file;
+          line = function_entry.line;
         } else {
           fn = null;
           file = null;
           line = 0;
         }
       }
-      if (file && !files[file]) {
+      if (file && !file_table[file]) {
         file = null;
         line = 0;
       }
@@ -1534,57 +1882,61 @@
       const key =
         (file ? "file\n" + file : "home") +
         "\n" +
-        currentEvent.key +
+        current_event.key +
         "\n" +
-        scale.value;
-      if (key !== shown) {
-        shown = key;
-        if (file) renderFile(file, line);
-        else renderHome();
+        active_scale.value;
+      if (key !== rendered_key) {
+        rendered_key = key;
+        if (file) file_render(file, line);
+        else home_render();
       }
       if (file) {
         if (line && !document.getElementById("L" + line)) line = 0;
-        detailSet(line);
+        detail_set(line);
       }
-      state = { file: file, line: line, fn: fn };
-      syncHash();
+      current_state = { file: file, line: line, fn: fn };
+      hash_canonicalize();
     }
-    window.addEventListener("hashchange", route);
-    window.addEventListener("message", (messageEvent) => {
-      if (messageEvent.data === "theme:reset-cols") Theme.resetCols();
+    window.addEventListener("hashchange", route_render);
+    window.addEventListener("message", (message_event) => {
+      if (message_event.data === "report_ui:reset_columns") {
+        report_ui.layout_reset();
+      }
     });
 
-    let mmResizeTimer = null;
+    let resize_debounce_timer = null;
     window.addEventListener("resize", () => {
-      clearTimeout(mmResizeTimer);
-      mmResizeTimer = setTimeout(() => {
-        srctailFit();
-        minimapLayout();
+      clearTimeout(resize_debounce_timer);
+      resize_debounce_timer = setTimeout(() => {
+        tail_fit();
+        minimap_layout();
       }, 120);
     });
-    evSel.addEventListener("change", (changeEvent) => {
-      location.hash = hashOf(
-        Object.assign({}, state, { ev: changeEvent.target.value }),
+    event_select.addEventListener("change", (change_event) => {
+      location.hash = hash_of_state(
+        Object.assign({}, current_state, { ev: change_event.target.value }),
       );
     });
-    scaleSel.addEventListener("change", (changeEvent) => {
-      scale = SCALES.find((entry) => entry.value === changeEvent.target.value);
-      store.set("heat.scale", scale.value);
-      shown = "";
-      route();
+    scale_select.addEventListener("change", (change_event) => {
+      active_scale = SCALE_CHOICES.find(
+        (entry) => entry.value === change_event.target.value,
+      );
+      view_storage.value_write("heat.scale", active_scale.value);
+      rendered_key = "";
+      route_render();
     });
     document
       .getElementById("sort")
-      .addEventListener("change", (changeEvent) => {
-        sortMode = changeEvent.target.value;
-        store.set("heat.sort", sortMode);
-        renderTree();
+      .addEventListener("change", (change_event) => {
+        sort_mode = change_event.target.value;
+        view_storage.value_write("heat.sort", sort_mode);
+        tree_render();
       });
-    document.getElementById("q").addEventListener("input", (inputEvent) => {
-      query = inputEvent.target.value.trim().toLowerCase();
-      renderTree();
+    document.getElementById("q").addEventListener("input", (input_event) => {
+      search_query = input_event.target.value.trim().toLowerCase();
+      tree_render();
     });
-    applyEvent(currentEvent.key);
-    route();
+    event_apply(current_event.key);
+    route_render();
   })();
 </script>

@@ -1,106 +1,145 @@
 (function () {
-  const bar = document.getElementById("bar");
-  const home = document.getElementById("home");
-  const view = document.getElementById("view");
-  const titleElement = document.getElementById("title");
-  const links = [...bar.querySelectorAll("a[data-view]")];
-  const util = document.getElementById("util");
-  const framed = window.parent !== window;
-  let page = "",
-    state = "",
-    title = titleElement.textContent;
-  function setTitle(newTitle) {
-    title = newTitle;
-    titleElement.textContent = framed ? "" : newTitle;
-    document.title = newTitle;
-    if (!framed) return;
-    window.parent.postMessage({ theme: "title", title: newTitle }, "*");
+  const strip_bar = document.getElementById("bar");
+  const home_panel = document.getElementById("home");
+  const view_frame = document.getElementById("view");
+  const title_badge = document.getElementById("title");
+  const view_links = [...strip_bar.querySelectorAll("a[data-view]")];
+  const utility_block = document.getElementById("util");
+  const is_framed = window.parent !== window;
+  let current_page_href = "",
+    current_inner_hash = "",
+    current_title = title_badge.textContent;
+  function title_publish(new_title) {
+    current_title = new_title;
+    title_badge.textContent = is_framed ? "" : new_title;
+    document.title = new_title;
+    if (!is_framed) return;
+    window.parent.postMessage(
+      { report_ui: "title_changed", title: new_title },
+      "*",
+    );
   }
 
-  function parse(hash) {
-    const match = /^#([\w-]*)(?:\/(.*))?$/.exec(hash || "");
-    return match ? [match[1], match[2] ? "#" + match[2] : ""] : ["", ""];
+  function hash_parse(hash_text) {
+    const hash_match = /^#([\w-]*)(?:\/(.*))?$/.exec(hash_text || "");
+    return hash_match
+      ? [hash_match[1], hash_match[2] ? "#" + hash_match[2] : ""]
+      : ["", ""];
   }
-  const build = (key, sub) =>
-    key ? "#" + key + (sub ? "/" + sub.slice(1) : "") : "";
-  function sync(hash) {
-    if (hash !== location.hash) history.replaceState(null, "", hash || "#");
-    if (framed) window.parent.postMessage({ theme: "hash", hash: hash }, "*");
+  const hash_build = (view_key, inner_hash) =>
+    view_key
+      ? "#" + view_key + (inner_hash ? "/" + inner_hash.slice(1) : "")
+      : "";
+  function hash_canonicalize(canonical_hash) {
+    if (canonical_hash !== location.hash)
+      history.replaceState(null, "", canonical_hash || "#");
+    if (is_framed)
+      window.parent.postMessage(
+        { report_ui: "hash_changed", hash: canonical_hash },
+        "*",
+      );
   }
-  function show(hash) {
-    const [key, sub] = parse(hash);
-    const link = links.find((anchor) => anchor.dataset.view === key);
-    const current = link || links[0];
-    for (const anchor of links) {
-      anchor.classList.toggle("on", anchor === current);
+  function view_show(target_hash) {
+    const [view_key, inner_hash] = hash_parse(target_hash);
+    const matched_link = view_links.find(
+      (link_element) => link_element.dataset.view === view_key,
+    );
+    const active_link = matched_link || view_links[0];
+    for (const link_element of view_links) {
+      link_element.classList.toggle("on", link_element === active_link);
     }
-    setTitle(current.dataset.title);
-    util.hidden = !framed && !!(link && key && link.dataset.frame);
-    if (!link || !key) {
-      view.hidden = true;
-      home.hidden = false;
-      window.Theme.relayout(home);
-      sync("");
+    title_publish(active_link.dataset.title);
+    utility_block.hidden =
+      !is_framed && !!(matched_link && view_key && matched_link.dataset.frame);
+    if (!matched_link || !view_key) {
+      view_frame.hidden = true;
+      home_panel.hidden = false;
+      window.report_ui.layout_refresh(home_panel);
+      hash_canonicalize("");
       return;
     }
-    const href = link.getAttribute("href");
-    if (href !== page || sub !== state) {
-      view.contentWindow.location.replace(href + (sub || "#"));
-    } else view.contentWindow.postMessage("theme:title?", "*");
-    page = href;
-    state = sub;
-    home.hidden = true;
-    view.hidden = false;
-    sync(build(key, sub));
+    const link_href = matched_link.getAttribute("href");
+    if (link_href !== current_page_href || inner_hash !== current_inner_hash) {
+      view_frame.contentWindow.location.replace(
+        link_href + (inner_hash || "#"),
+      );
+    } else
+      view_frame.contentWindow.postMessage("report_ui:title_request", "*");
+    current_page_href = link_href;
+    current_inner_hash = inner_hash;
+    home_panel.hidden = true;
+    view_frame.hidden = false;
+    hash_canonicalize(hash_build(view_key, inner_hash));
   }
-  function hashFor(href) {
-    for (const anchor of links) {
-      const base = anchor.getAttribute("href");
-      if (anchor.dataset.view && href.startsWith(base)) {
-        const rest = href.slice(base.length);
-        return build(anchor.dataset.view, rest.startsWith("#") ? rest : "");
+  function hash_for_href(link_href) {
+    for (const link_element of view_links) {
+      const link_base = link_element.getAttribute("href");
+      if (link_element.dataset.view && link_href.startsWith(link_base)) {
+        const remaining_hash = link_href.slice(link_base.length);
+        return hash_build(
+          link_element.dataset.view,
+          remaining_hash.startsWith("#") ? remaining_hash : "",
+        );
       }
     }
     return null;
   }
-  const resetCols = document.getElementById("reset-cols");
-  function resetAll() {
-    window.Theme.resetCols(home);
-    if (page) view.contentWindow.postMessage("theme:reset-cols", "*");
+  const reset_columns_link = document.getElementById("reset-cols");
+  function reset_broadcast() {
+    window.report_ui.layout_reset(home_panel);
+    if (current_page_href)
+      view_frame.contentWindow.postMessage("report_ui:reset_columns", "*");
   }
-  resetCols.addEventListener("click", (event) => {
-    event.preventDefault();
-    resetAll();
+  reset_columns_link.addEventListener("click", (pointer_event) => {
+    pointer_event.preventDefault();
+    reset_broadcast();
   });
-  document.addEventListener("click", (event) => {
-    const anchor = event.target.closest("a[href]");
-    if (!anchor || anchor === resetCols || anchor.target) return;
-    if (event.ctrlKey || event.metaKey || event.shiftKey) return;
-    if (event.button) return;
-    const href = anchor.getAttribute("href");
-    const hash =
-      anchor.dataset.view != null
-        ? build(anchor.dataset.view, "")
-        : hashFor(href);
-    if (hash == null) return;
-    event.preventDefault();
-    if (hash === (location.hash || "")) show(hash);
-    else location.hash = hash;
+  document.addEventListener("click", (click_event) => {
+    const link_element = click_event.target.closest("a[href]");
+    if (
+      !link_element ||
+      link_element === reset_columns_link ||
+      link_element.target
+    )
+      return;
+    if (click_event.ctrlKey || click_event.metaKey || click_event.shiftKey)
+      return;
+    if (click_event.button) return;
+    const link_href = link_element.getAttribute("href");
+    const target_hash =
+      link_element.dataset.view != null
+        ? hash_build(link_element.dataset.view, "")
+        : hash_for_href(link_href);
+    if (target_hash == null) return;
+    click_event.preventDefault();
+    if (target_hash === (location.hash || "")) view_show(target_hash);
+    else location.hash = target_hash;
   });
-  window.addEventListener("message", (event) => {
-    if (event.source === view.contentWindow && event.data) {
-      if (event.data.theme === "title") setTitle(event.data.title);
-      else if (event.data.theme === "hash" && page) {
-        state = event.data.hash;
-        sync(build(parse(location.hash)[0], state));
+  window.addEventListener("message", (message_event) => {
+    if (
+      message_event.source === view_frame.contentWindow &&
+      message_event.data
+    ) {
+      if (message_event.data.report_ui === "title_changed")
+        title_publish(message_event.data.title);
+      else if (
+        message_event.data.report_ui === "hash_changed" &&
+        current_page_href
+      ) {
+        current_inner_hash = message_event.data.hash;
+        hash_canonicalize(
+          hash_build(hash_parse(location.hash)[0], current_inner_hash),
+        );
       }
       return;
     }
-    if (framed && event.source === window.parent) {
-      if (event.data === "theme:title?") setTitle(title);
-      else if (event.data === "theme:reset-cols") resetAll();
+    if (is_framed && message_event.source === window.parent) {
+      if (message_event.data === "report_ui:title_request")
+        title_publish(current_title);
+      else if (message_event.data === "report_ui:reset_columns")
+        reset_broadcast();
     }
   });
-  window.addEventListener("hashchange", () => show(location.hash));
-  show(location.hash);
+  window.addEventListener("hashchange", () => view_show(location.hash));
+  view_show(location.hash);
 })();

@@ -34,6 +34,7 @@ _MIN_RAW_BYTES = 100
 _ALLOWED_UNICODE = (
     "≈",  # almost equal to
     "▲",  # up-pointing triangle
+    "▶",  # right-pointing triangle, the heat map's collapsed caret
     "▼",  # down-pointing triangle
     "…",  # horizontal ellipsis
 )
@@ -133,7 +134,7 @@ class ValidateReport:
                 "flame-graph/profile.js does not call loadFileFromBase64: "
                 f"{flame_dir}/profile.js"
             )
-        match = re.search(r'var DATA = "([A-Za-z0-9+/=]+)"', script)
+        match = re.search(r'var document_base64 = "([A-Za-z0-9+/=]+)"', script)
         try:
             document = (
                 json.loads(base64.b64decode(match.group(1))) if match else {}
@@ -159,10 +160,10 @@ class ValidateReport:
             _MIN_HEATMAP_BYTES,
             f"{test_name} / heat map",
         )
-        if text and "heatStyle" not in text:
+        if text and "report_ui.layout_activate" not in text:
             self.fail(
                 "heat-map/index.html is missing its runtime script"
-                f" (no heatStyle): {path}"
+                f" (no report_ui.layout_activate): {path}"
             )
 
     # Nothing anywhere may name the author's home directory -- a report gets
