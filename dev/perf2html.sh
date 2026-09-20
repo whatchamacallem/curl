@@ -141,13 +141,13 @@ stamp_reuse() {
       "--keep-raw once)" >&2
     exit 2
   }
-  local test_name loops missing=()
+  local test_name loops missing=() raw=temporary_artifacts
   for test_name in "${TESTS[@]}"; do
     loops=$CALLGRIND_LOOPS
-    for file in "trace/callgrind.out.$test_name.$loops.$STAMP" \
-      "trace/valgrind.$test_name.$loops.$STAMP.log" \
-      "trace/perf-stat.$test_name.$STAMP.csv" \
-      "trace/trace.$test_name.$loops.$STAMP.speedscope.json"; do
+    for file in "$raw/callgrind.out.$test_name.$loops.$STAMP" \
+      "$raw/valgrind.$test_name.$loops.$STAMP.log" \
+      "$raw/perf-stat.$test_name.$STAMP.csv" \
+      "$raw/trace.$test_name.$loops.$STAMP.speedscope.json"; do
       [ -f "$file" ] || missing+=("$file")
     done
   done
@@ -156,8 +156,8 @@ stamp_reuse() {
       echo "error: --regenerate is missing ${#missing[@]} raw file(s)" \
         "for stamp $STAMP:"
       printf '       %s\n' "${missing[@]}"
-      echo "       (dev/trace/ was cleaned; re-run perf2html.sh" \
-        "--keep-raw to record them again)"
+      echo "       (dev/temporary_artifacts/ was cleaned; re-run" \
+        "perf2html.sh --keep-raw to record them again)"
     } >&2
     exit 2
   fi
@@ -181,19 +181,48 @@ build_manifest() {
     | sed 's/^Model name:[[:space:]]*//')"
 }
 
+install_hint() {
+  case "$1" in
+    cmake) echo "sudo apt install cmake" ;;
+    ninja) echo "sudo apt install ninja-build" ;;
+    ccache) echo "sudo apt install ccache" ;;
+    cc) echo "sudo apt install build-essential" ;;
+    valgrind) echo "sudo apt install valgrind" ;;
+    perf) echo "sudo apt install linux-tools-generic" ;;
+    addr2line | readelf) echo "sudo apt install binutils" ;;
+    speedscope) echo "npm install -g speedscope" ;;
+    *) echo "sudo apt install $1" ;;
+  esac
+}
+
 toolchain_check() {
-  local tool
+  local tool missing=()
   for tool in cmake ninja ccache cc valgrind perf taskset python3 \
     addr2line readelf speedscope; do
-    command -v "$tool" >/dev/null 2>&1 || {
-      echo "error: $tool not found on PATH" >&2
-      exit 1
-    }
+    command -v "$tool" >/dev/null 2>&1 || missing+=("$tool")
   done
+  if [ "${#missing[@]}" != 0 ]; then
+    {
+      echo "error: ${#missing[@]} tool(s) not found on PATH:"
+      for tool in "${missing[@]}"; do
+        printf '  %-12s %s\n' "$tool" "$(install_hint "$tool")"
+      done
+      case " ${missing[*]} " in
+        *" perf "*)
+          echo "note: on WSL2 the linux-tools-generic perf is built for an"
+          echo "      Ubuntu kernel WSL does not run, so it may refuse to"
+          echo "      start; 'sudo apt install linux-perf' installs a"
+          echo "      kernel-independent build."
+          ;;
+      esac
+    } >&2
+    exit 1
+  fi
   SPEEDSCOPE_RELEASE="$(dirname \
     "$(dirname "$(readlink -f "$(command -v speedscope)")")")/dist/release"
   [ -f "$SPEEDSCOPE_RELEASE/index.html" ] || {
     echo "error: no speedscope bundle at $SPEEDSCOPE_RELEASE" >&2
+    echo "       (reinstall it: npm install -g speedscope)" >&2
     exit 1
   }
 }
@@ -256,9 +285,11 @@ trace_record() {
 
 trace_render() {
   local test="$1" out="$2" loops="$3"
-  local trace_file="$PWD/trace/trace.$test.$loops.$STAMP.bin" seen
+  local seen
+  local trace_file="$PWD/temporary_artifacts/trace.$test.$loops.$STAMP.bin"
   local log="$out/flame-graph/output.txt"
-  TRACE_JSON="$PWD/trace/trace.$test.$loops.$STAMP.speedscope.json"
+  TRACE_JSON="$PWD/temporary_artifacts/trace.$test.$loops"
+  TRACE_JSON="$TRACE_JSON.$STAMP.speedscope.json"
 
   log_say "== [$test]: native trace, pinned to CPU $CPU, loops=$loops" \
     "-> $out/flame-graph/index.html =="
@@ -290,7 +321,7 @@ trace_render() {
       && trace_record "$test" "$loops" "$trace_file" "$((seen / 2))" \
       && python3 scripts/trace_to_speedscope.py "$trace_file" \
         -o "$TRACE_JSON" --name "$test (loops=$loops)" 2>&1 \
-      | sed "s#$PWD/trace/##g; s#\\.$STAMP##g"
+      | sed "s#$PWD/temporary_artifacts/##g; s#\\.$STAMP##g"
   } >"$log" || {
     echo "error: the native trace of $test failed; its output is in $log" >&2
     exit 1
@@ -341,10 +372,10 @@ report_render() {
 run_one() {
   local test="$1" out="$2"
   local loops cg_file log start
-  local stat_file="$PWD/trace/perf-stat.$test.$STAMP.csv"
+  local stat_file="$PWD/temporary_artifacts/perf-stat.$test.$STAMP.csv"
   loops=$CALLGRIND_LOOPS
-  cg_file="$PWD/trace/callgrind.out.$test.$loops.$STAMP"
-  log="$PWD/trace/valgrind.$test.$loops.$STAMP.log"
+  cg_file="$PWD/temporary_artifacts/callgrind.out.$test.$loops.$STAMP"
+  log="$PWD/temporary_artifacts/valgrind.$test.$loops.$STAMP.log"
   mkdir -p "$out/perf-tool"
 
   if [ "$REGENERATE" = 1 ]; then
@@ -414,8 +445,12 @@ run_all() {
   LOG_FILES=()
   for test_name in "${TESTS[@]}"; do
     loops=$CALLGRIND_LOOPS
-    CALLGRIND_FILES+=("$PWD/trace/callgrind.out.$test_name.$loops.$STAMP")
-    LOG_FILES+=("$PWD/trace/valgrind.$test_name.$loops.$STAMP.log")
+    CALLGRIND_FILES+=(
+      "$PWD/temporary_artifacts/callgrind.out.$test_name.$loops.$STAMP"
+    )
+    LOG_FILES+=(
+      "$PWD/temporary_artifacts/valgrind.$test_name.$loops.$STAMP.log"
+    )
   done
 
   log_say "== [all]: native timing, every test's run above summed =="
@@ -458,14 +493,14 @@ run_all() {
 main() {
   args_parse "$@"
   toolchain_check
-  [ "$KEEP_RAW" = 1 ] || rm -rf trace
+  [ "$KEEP_RAW" = 1 ] || rm -rf temporary_artifacts
   if [ "$REGENERATE" = 1 ]; then stamp_reuse; fi
   build_manifest
-  mkdir -p "$OUT_DIR" trace
+  mkdir -p "$OUT_DIR" temporary_artifacts
   if [ "$REGENERATE" = 1 ]; then
-    RUN_LOG="$PWD/trace/regenerate.$STAMP.$(date +%s).log"
+    RUN_LOG="$PWD/temporary_artifacts/regenerate.$STAMP.$(date +%s).log"
   else
-    RUN_LOG="$PWD/trace/profile.$STAMP.log"
+    RUN_LOG="$PWD/temporary_artifacts/profile.$STAMP.log"
   fi
   cp README.md "$OUT_DIR/README.md"
   [ "$VERBOSE" = 1 ] \
@@ -479,7 +514,7 @@ main() {
   done
   run_all "$OUT_DIR/all"
 
-  if [ "$KEEP_RAW" != 1 ]; then rm -rf trace; fi
+  if [ "$KEEP_RAW" != 1 ]; then rm -rf temporary_artifacts; fi
   echo "file://$OUT_DIR/index.html"
 }
 

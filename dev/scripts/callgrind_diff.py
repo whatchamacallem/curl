@@ -12,8 +12,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import callgrind
 from callgrind import Costs
 
-# The event the caller sidecar counts in -- the delta file itself carries all
-# of them.
+# The event the synthesized callers diff counts in -- the delta file itself
+# carries all of them.
 _EVENT = "Ir"
 
 
@@ -29,8 +29,8 @@ class CallgrindDiff:
         # how much more (or less) those calls cost
         cost: int
 
-    # CallersDoc - The JSON sidecar, because a delta file has no calls= lines
-    # and so no call graph at all, and no baseline to be a share of.
+    # CallersDoc - The synthesized callers diff, because a delta file has no
+    # calls= lines and so no call graph, and no baseline to be a share of.
     class CallersDoc(TypedDict):
         # which event the costs are counted in
         event: str
@@ -54,9 +54,9 @@ class CallgrindDiff:
         modified: list[str]
         # where the delta callgrind file goes
         output: str
-        # where the caller sidecar goes
+        # where the synthesized callers diff goes
         callers_output: str
-        # which event the sidecar counts in
+        # which event the synthesized callers diff counts in
         event: str
 
     # The baseline cost of every function and of every one of its lines --
@@ -80,7 +80,7 @@ class CallgrindDiff:
     def baseline_key(self, function: str, file: str, line: int) -> str:
         return f"{function}\n{callgrind.path_norm(file).display}\n{line}"
 
-    # Read both sides, write the delta, then write the caller sidecar.
+    # Read both sides, write the delta, then the synthesized callers diff.
     def build(self, args: CallgrindDiff.DiffArgs) -> None:
         baseline = callgrind.profile_load(args.baseline)
         modified = callgrind.profile_load(args.modified)
@@ -157,7 +157,8 @@ class CallgrindDiff:
                 out[callee] = deltas
         return out
 
-    # Write the caller sidecar, as rows rather than objects to keep it small.
+    # Write the synthesized callers diff, as rows rather than objects to keep
+    # it small.
     def callers_write(
         self,
         callers: dict[str, list[CallgrindDiff.CallerDelta]],
@@ -194,8 +195,8 @@ class CallgrindDiff:
             for index in range(max(len(modified), len(baseline)))
         ]
 
-    # Drop trailing zeros -- the sidecar carries one vector per line, so the
-    # slots nothing would divide by are not worth the bytes.
+    # Drop trailing zeros -- the synthesized callers diff carries one vector
+    # per line, so the slots nothing would divide by are not worth the bytes.
     def costs_trim(self, costs: Costs) -> Costs:
         length = len(costs)
         while length and costs[length - 1] == 0:

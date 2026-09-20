@@ -54,8 +54,11 @@ _THEME: list[str] = [
     "#2F3640",
 ]
 
-# The title badge must fit the longest test name plus view label, or it
-# clips mid-word.
+# Width of a strip's status row, its first cell. The outer one says
+# "perf2html"; the inner one says the selection path, so the budget is
+# the longest test name plus separator plus the longest view label --
+# "simpleformat / flame graph" is 26 today, and "<test> / summary" is
+# shorter. flex-wrap: nowrap means too small clips mid-word.
 TITLE_COLUMNS = len("|-------------------------------|")
 
 
@@ -69,20 +72,16 @@ class Cell(NamedTuple):
     style: str = ""
     # extra CSS classes for this one cell
     cls: str = ""
-    # hover text, defaulting to the full text when the column clips it
-    title: str = ""
 
 
 # Either a dressed-up Cell or bare text that becomes one.
 CellOrText: TypeAlias = Cell | str
 
 
-# Column - One table column: its title and how wide it is allowed to get.
+# Column - One table column: its label and how wide it is allowed to get.
 class Column(NamedTuple):
     # the header text, and every column's width floor
     label: str
-    # hover text on the header
-    title: str = ""
     # right-align this column, because it holds numbers
     numeric: bool = False
     # a fixed width in characters, instead of measuring the rows
@@ -137,7 +136,7 @@ class Theme:
 
     # NumberFormat - Every number a page prints, in its page-ready form.
     class NumberFormat:
-        # 2.1K / 2.0G -- short enough to fit a column, exact in the tooltip.
+        # 2.1K / 2.0G -- short enough to fit a column.
         def human(self, number: float) -> str:
             value, unit = float(number), ""
             for candidate in ("K", "M", "G", "T"):
@@ -411,32 +410,21 @@ class Theme:
         if column_titles:
             out.append("<thead><tr>")
             for column in columns:
-                attrs = (' class="n"' if column.numeric else "") + (
-                    f' title="{html_escape(column.title)}"'
-                    if column.title
-                    else ""
-                )
+                attrs = ' class="n"' if column.numeric else ""
                 out.append(f"<th{attrs}>{html_escape(column.label)}</th>")
             out.append("</tr></thead>")
         out.append("<tbody>")
         for row in cells:
             out.append("<tr>")
-            for column, width, cell in zip(columns, widths, row, strict=True):
+            for column, cell in zip(columns, row, strict=True):
                 cell_classes = " ".join(
                     class_name
                     for class_name in ("n" if column.numeric else "", cell.cls)
                     if class_name
                 )
-                title = cell.title or (
-                    cell.text
-                    if len(cell.text) + _PADDING_CHARS > width
-                    else ""
-                )
                 attrs = (
-                    (f' class="{cell_classes}"' if cell_classes else "")
-                    + (f' style="{cell.style}"' if cell.style else "")
-                    + (f' title="{html_escape(title)}"' if title else "")
-                )
+                    f' class="{cell_classes}"' if cell_classes else ""
+                ) + (f' style="{cell.style}"' if cell.style else "")
                 inner = (
                     cell.html
                     if cell.html is not None

@@ -60,6 +60,12 @@ is every L1 miss, `LLm` is every last level miss, `Bm` is every mispredict, and
 See the [callgrind](https://valgrind.org/docs/manual/cl-manual.html) docs. GPL
 Version 3, 29 June 2007.
 
+## Reading a Diff Report
+
+Every number in a diff report is **modified minus baseline**, for each function,
+file and line compared against itself. There is no separate "before", "after" or
+percentage of a larger change. Positive is more, negative is less.
+
 ## Flame Graph (speedscope)
 
 The flame graph is a recording, not a model: every box is one call that

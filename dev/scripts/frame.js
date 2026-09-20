@@ -6,12 +6,23 @@
   const view_links = [...strip_bar.querySelectorAll("a[data-view]")];
   const utility_block = document.getElementById("util");
   const is_framed = window.parent !== window;
+  const OUTER_STATUS_TEXT = "perf2html";
+  const SELECTION_SEPARATOR = " / ";
+  const HOME_VIEW_LABEL = "summary";
   let current_page_href = "",
     current_inner_hash = "",
     current_title = title_badge.textContent;
+  if (!is_framed) title_badge.textContent = OUTER_STATUS_TEXT;
+  function selection_path(new_title) {
+    return new_title && !new_title.includes(SELECTION_SEPARATOR)
+      ? new_title + SELECTION_SEPARATOR + HOME_VIEW_LABEL
+      : new_title;
+  }
   function title_publish(new_title) {
     current_title = new_title;
-    title_badge.textContent = is_framed ? "" : new_title;
+    title_badge.textContent = is_framed
+      ? selection_path(new_title)
+      : OUTER_STATUS_TEXT;
     document.title = new_title;
     if (!is_framed) return;
     window.parent.postMessage(

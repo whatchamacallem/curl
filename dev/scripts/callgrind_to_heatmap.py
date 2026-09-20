@@ -35,14 +35,6 @@ _TREE = ("lib", "include", "src", "tests/perf")
 # CallgrindToHeatmap - Turns one profile into a single self-contained page
 # that shows cost per source line, with the source itself embedded.
 class CallgrindToHeatmap:
-    # BaselineSidecar - The part of callgrind_diff.py's sidecar this tool
-    # reads: what every share on a diff page divides by.
-    class BaselineSidecar(TypedDict):
-        # keyed by function, and by "<function>\n<file>\n<line>"
-        baseline: dict[str, Costs]
-        # the baseline run's summed cost vector
-        baselineTotal: Costs
-
     # CallRow - One end of one call edge, as the page's script reads it. Used
     # for a line's callees and for a function's callers alike.
     class CallRow(NamedTuple):
@@ -109,7 +101,7 @@ class CallgrindToHeatmap:
     class HeatMapTotals(TypedDict):
         # the recorded events, in cost-vector order
         events: list[str]
-        # each event spelled out, for tooltips
+        # each event spelled out, for the event dropdown
         eventLong: dict[str, str]
         # the events the page adds up itself
         derived: list[callgrind.ResolvedDerivedEvent]
@@ -147,8 +139,17 @@ class CallgrindToHeatmap:
         title: str
         # the input is a callgrind_diff.py delta
         diff: bool
-        # that delta's sidecar, holding what each share divides by
+        # that delta's synthesized callers diff, holding what each share
+        # divides by
         baseline_data: str
+
+    # SynthesizedCallers - The part of callgrind_diff.py's synthesized callers
+    # diff this tool reads: what every share on a diff page divides by.
+    class SynthesizedCallers(TypedDict):
+        # keyed by function, and by "<function>\n<file>\n<line>"
+        baseline: dict[str, Costs]
+        # the baseline run's summed cost vector
+        baselineTotal: Costs
 
     # FileTally - One file's numbers while they are still being added up.
     @dataclass
@@ -241,12 +242,12 @@ class CallgrindToHeatmap:
         profile: callgrind.Profile,
         baseline_data: str,
     ) -> None:
-        sidecar = self.sidecar_load(baseline_data)
+        synthesized = self.synthesized_callers_load(baseline_data)
         totals = model["heatMapTotals"]
         totals["totals"] = callgrind_diff.profile_magnitudes(profile)
         totals["diff"] = True
-        totals["baselineTotal"] = sidecar["baselineTotal"]
-        baseline = sidecar["baseline"]
+        totals["baselineTotal"] = synthesized["baselineTotal"]
+        baseline = synthesized["baseline"]
         functions = model["functions"]
         model["functionBaseline"] = [
             baseline.get(func["name"], []) for func in functions
@@ -491,19 +492,6 @@ class CallgrindToHeatmap:
         )
 
     # Read one source file to embed, or None when it is not on this box.
-    # Read callgrind_diff.py's sidecar, or nothing when there is none -- a
-    # diff built without one simply has no share to show.
-    def sidecar_load(self, path: str) -> CallgrindToHeatmap.BaselineSidecar:
-        empty: CallgrindToHeatmap.BaselineSidecar = {
-            "baseline": {},
-            "baselineTotal": [],
-        }
-        if not path or not os.path.isfile(path):
-            return empty
-        with open(path, encoding="utf-8") as handle:
-            doc: CallgrindToHeatmap.BaselineSidecar = json.load(handle)
-        return doc
-
     def source_read(self, local: str) -> str | None:
         try:
             with open(local, "rb") as handle:
@@ -511,6 +499,21 @@ class CallgrindToHeatmap:
         except OSError:
             return None
         return data.decode("utf-8", errors="replace")
+
+    # Read callgrind_diff.py's synthesized callers diff, or nothing when there
+    # is none -- a diff built without one simply has no share to show.
+    def synthesized_callers_load(
+        self, path: str
+    ) -> CallgrindToHeatmap.SynthesizedCallers:
+        empty: CallgrindToHeatmap.SynthesizedCallers = {
+            "baseline": {},
+            "baselineTotal": [],
+        }
+        if not path or not os.path.isfile(path):
+            return empty
+        with open(path, encoding="utf-8") as handle:
+            doc: CallgrindToHeatmap.SynthesizedCallers = json.load(handle)
+        return doc
 
 
 # main - Build one heat map page from the given callgrind file(s).
@@ -539,8 +542,8 @@ def main() -> None:
         "--baseline-data",
         default="",
         metavar="FILE",
-        help="callgrind_diff.py's sidecar, holding the baseline cost each "
-        "share divides by (--diff only)",
+        help="callgrind_diff.py's synthesized callers diff, holding the "
+        "baseline cost each share divides by (--diff only)",
     )
     namespace = parser.parse_args()
     CallgrindToHeatmap().run(

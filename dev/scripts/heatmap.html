@@ -20,7 +20,7 @@
 </div>
 <div id="layout">
   <nav id="tree"></nav>
-  <div id="split" class="split" title="drag to resize"></div>
+  <div id="split" class="split"></div>
   <section id="main"></section>
   <div id="minimap" class="empty">
     <div id="mmBox"></div>
@@ -210,7 +210,6 @@
             ? "<0.01%"
             : "";
     const share_of_total_text = (value) => share_text(share_of_total(value));
-    const exact_text = (value) => value.toLocaleString("en-US");
 
     let human_text = (value) => {
       let unit = "";
@@ -225,15 +224,11 @@
     };
     const cell_number = (value) => ({
       text: human_text(value),
-      title: exact_text(value),
     });
     let HEADING_PREFIX = "Hottest",
       CHIP_HEADING = "hottest lines";
     const SELF_COLUMN = {
       label: "self",
-      title:
-        "share of the total spent on this line/function itself," +
-        " not in what it calls",
       num: true,
     };
     const HAS_CALL_GRAPH = function_table.some(
@@ -272,10 +267,6 @@
           : (value < 0 ? "-" : "") + plain_human_text(absolute(value));
       HEADING_PREFIX = "Most changed";
       CHIP_HEADING = "most changed lines";
-      SELF_COLUMN.title =
-        "the line/function's own change against what it cost in" +
-        " the baseline; ▲ is more, ▼ is less, ▼-100%" +
-        " is gone entirely, ▲100% is all new";
       baseline_of = (cost_vector) => {
         if (!cost_vector) return null;
         const baseline_cost = absolute(current_event.get(cost_vector));
@@ -429,7 +420,6 @@
       call_count
         ? {
             text: human_text(call_count),
-            title: exact_text(call_count) + " calls",
             style: cell_style_strong(
               heat_of_share((100 * call_count) / CALLS_TOTAL, CALLS_MAX_SHARE),
             ),
@@ -537,8 +527,7 @@
       markup += `</colgroup><thead><tr>`;
       for (const column of columns) {
         markup +=
-          `<th${column.num ? ' class="n"' : ""}` +
-          `${column.title ? ` title="${html_escape(column.title)}"` : ""}>` +
+          `<th${column.num ? ' class="n"' : ""}>` +
           `${html_escape(column.label)}</th>`;
       }
       markup += `</tr></thead><tbody>`;
@@ -559,13 +548,9 @@
             .filter(Boolean)
             .join(" ");
           const text = cell.text || "";
-          const clipped =
-            text.length + COLUMN_PADDING > column_width_list[column_index];
-          const title = cell.title || (clipped ? text : "");
           markup +=
             `<td${class_names ? ` class="${class_names}"` : ""}` +
-            `${cell.style ? ` style="${cell.style}"` : ""}` +
-            `${title ? ` title="${html_escape(title)}"` : ""}>` +
+            `${cell.style ? ` style="${cell.style}"` : ""}>` +
             `${cell.html != null ? cell.html : html_escape(text)}</td>`;
         });
         markup += "</tr>";
@@ -618,15 +603,11 @@
       return output_parts.join("\n");
     }
     const event_column = (event, extra) =>
-      Object.assign(
-        { label: event.key, title: event.long, num: true },
-        extra || {},
-      );
+      Object.assign({ label: event.key, num: true }, extra || {});
     const secondary_columns = () =>
       secondary_events.map((secondary) =>
         event_column(secondary, {
           label: event_label(secondary),
-          title: secondary.long + " (share of that event's total)",
           cls: "x",
         }),
       );
@@ -640,7 +621,6 @@
           text: self_cost ? share_text(percent) : "",
           style: cell_style_strong(heat_value),
           cls: heat_value > 0.45 ? "hot" : "",
-          title: secondary.key + ": " + exact_text(self_cost),
         };
       });
     }
@@ -757,8 +737,7 @@
               `${heat_style_attribute}">` +
               `<span class="caret">` +
               `${is_expanded ? "▼" : "▶"}</span>` +
-              `<span class="name"` +
-              ` title="${html_escape(directory_node.path)}">` +
+              `<span class="name">` +
               `${html_escape(directory_node.name)}/</span>` +
               `<span class="pct">` +
               `${share_of_baseline_text(
@@ -781,7 +760,6 @@
             : cell_style_soft(
                 heat_of_delta(file.self, file.base, DIRECTORY_MAX_SHARE),
               );
-          const cold = file.cold ? " (no samples; source not embedded)" : "";
           output_parts.push(
             `<div class="node file${file.cold ? " cold" : ""}` +
               `${heat_style_attribute ? " heat" : ""}${selected_class}"` +
@@ -789,8 +767,7 @@
               ` style="padding-left:${6 + depth * 14}px;` +
               `${heat_style_attribute}">` +
               `<span class="caret">▶</span>` +
-              `<span class="name"` +
-              ` title="${html_escape(file.path)}${cold}">` +
+              `<span class="name">` +
               `${html_escape(file.name)}</span>` +
               `<span class="pct">` +
               `${share_of_baseline_text(file.self, file.base)}` +
@@ -900,23 +877,18 @@
         table_html(
           "heat.home.lines",
           [
-            { label: "#", title: "rank", num: true },
+            { label: "#", num: true },
             SELF_COLUMN,
             {
               label: "function",
-              title:
-                `the function the line belongs to (first ${SYMBOL_WIDTH}` +
-                ` characters; drag the bar for more)`,
               width: SYMBOL_WIDTH,
             },
             {
               label: "defined at",
-              title: "file:line; opens the listing there",
               clip: 28,
             },
             {
               label: "source",
-              title: "the source line, trimmed; drag the bar for more",
               clip: 36,
             },
             event_column(current_event),
@@ -943,7 +915,6 @@
               },
               {
                 text: function_name(function_index),
-                title: function_name(function_index),
               },
               {
                 text: location_text,
@@ -987,12 +958,10 @@
         ? [
             {
               label: "calls",
-              title: "times the function was entered",
               num: true,
             },
             {
               label: "incl",
-              title: "total: self plus everything it calls",
               num: true,
             },
           ]
@@ -1003,16 +972,14 @@
         table_html(
           "heat.home.functions",
           [
-            { label: "#", title: "rank", num: true },
+            { label: "#", num: true },
             SELF_COLUMN,
             {
               label: "function",
-              title: `first ${SYMBOL_WIDTH} characters; drag the bar for more`,
               width: SYMBOL_WIDTH,
             },
             {
               label: "defined at",
-              title: "file:line of the function's first executed line",
               clip: 48,
             },
             ...call_columns,
@@ -1041,7 +1008,7 @@
                   heat_of_delta(self_cost, baseline_cost, function_max_share),
                 ),
               },
-              { text: function_entry.name, title: function_entry.name },
+              { text: function_entry.name },
               {
                 text: location_text,
                 html: function_link(function_index, location_text),
@@ -1117,7 +1084,7 @@
         }
       }
       markup +=
-        `<span class="stat" title="${exact_text(file_self_cost)}">` +
+        `<span class="stat">` +
         `self <b>` +
         `${
           share_of_baseline_text(file_self_cost, file_baseline_cost) || "0%"
@@ -1129,9 +1096,7 @@
         const self_cost = secondary.get(file.self);
         if (!self_cost) continue;
         markup +=
-          `<span class="stat"` +
-          ` title="${html_escape(secondary.long)}:` +
-          ` ${exact_text(self_cost)}">` +
+          `<span class="stat">` +
           `${html_escape(event_label(secondary))}` +
           ` <b>${share_text(
             (100 * self_cost) / secondary_maximums[secondary.key].total,
@@ -1200,22 +1165,6 @@
             row_max_share,
           ),
           heat_style_attribute = cell_style_strong(heat_value);
-        const function_index = file.lineFunction[line_number];
-        const over =
-          line_costs && line_costs[2]
-            ? " over " + human_text(line_costs[2]) + " calls"
-            : "";
-        const calls_note = HAS_CALL_GRAPH
-          ? `, ${exact_text(calls)} in calls${over}`
-          : "";
-        const in_function_note =
-          function_index != null
-            ? " - in " + function_name(function_index)
-            : "";
-        const title = line_costs
-          ? `${exact_text(self_cost)} ${current_event.key} self` +
-            `${calls_note}${in_function_note}`
-          : "";
         const class_names = [
           line_costs ? "clickable" : "",
           file.callees[line_number] ? "hasc" : "",
@@ -1225,8 +1174,7 @@
         attrs.push(
           `id="L${line_number}"` +
             `${class_names ? ` class="${class_names}"` : ""}` +
-            ` data-ln="${line_number}"` +
-            `${title ? ` title="${html_escape(title)}"` : ""}`,
+            ` data-ln="${line_number}"`,
         );
         const call_cell = HAS_CALL_GRAPH
           ? [
@@ -1285,8 +1233,6 @@
         ? [
             {
               label: "calls",
-              title:
-                "total cost of the calls made from the line, share of total",
               num: true,
               cls: "incl",
             },
@@ -1294,8 +1240,6 @@
         : [];
       const columns = [
         event_column(current_event, {
-          title:
-            current_event.long + ", share of total, spent on the line itself",
           cls: "self",
         }),
         {
@@ -1585,12 +1529,10 @@
       const line_costs = file.lines[line_number] || [[], [], 0];
       const function_column = (label) => ({
         label,
-        title: `first ${SYMBOL_WIDTH} characters; drag the bar for more`,
         width: SYMBOL_WIDTH,
       });
       const location_column = {
         label: "defined at",
-        title: "file:line of the function's first executed line",
         clip: 48,
       };
       const call_cost = current_value(line_costs[1]);
@@ -1598,7 +1540,7 @@
       const line_baseline_cost = line_baseline(file_path, line_number);
       const self_label = function_index != null ? "self" : "line self";
       const stat_columns = [
-        { label: "metric" },
+        { label: "event" },
         { label: "share", num: true },
         { label: "amount", num: true },
       ];
@@ -1606,7 +1548,6 @@
         [
           {
             text: `${self_label} ${event_label(current_event)}`,
-            title: SELF_COLUMN.title,
           },
           share_of_baseline_text(self_cost, line_baseline_cost) || "0%",
           cell_number(self_cost),
@@ -1628,7 +1569,7 @@
         const secondary_self = secondary.get(line_costs[0]);
         if (!secondary_self) continue;
         stat_rows.push([
-          { text: event_label(secondary), title: secondary.long },
+          { text: event_label(secondary) },
           share_text(
             (100 * secondary_self) / secondary_maximums[secondary.key].total,
           ),
@@ -1647,7 +1588,7 @@
             "</b>"
           : "";
       let markup = `<div class="dbox">`;
-      markup += `<a href="#" class="dclose" title="close">[X]</a>`;
+      markup += `<a href="#" class="dclose">[X]</a>`;
       markup +=
         `<div>${html_escape(file_path)}:` +
         `${line_number}${in_function_html}</div>`;
@@ -1674,7 +1615,6 @@
               call_count_cell(call_count),
               {
                 text: function_name(callee_index),
-                title: function_name(callee_index),
               },
               {
                 text: location_text,
@@ -1718,7 +1658,7 @@
             { label: "% of total", num: true },
             event_column(current_event),
             function_column("caller"),
-            { label: "called at", title: "file:line of the call", clip: 48 },
+            { label: "called at", clip: 48 },
           ];
           const rows = callers.map(
             ([
@@ -1737,7 +1677,6 @@
                 cell_number(current_value(cost_vector)),
                 {
                   text: function_name(caller_index),
-                  title: function_name(caller_index),
                 },
                 {
                   text: location_text,

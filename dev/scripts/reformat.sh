@@ -9,14 +9,15 @@
 #   source            format        lint             cols  ascii
 #   ----------------- ------------- ---------------- ----- ------
 #   *.sh              shfmt         --               yes   yes
-#   *.c *.h           clang-format  --               yes   --
+#   *.c *.h           clang-format  --               yes   yes
 #   *.md *.json       prettier      prettier         yes   yes(1)
 #   scripts/*.py      ruff          pyright, ruff    yes   yes
 #   scripts/*.js      prettier      prettier         yes   yes
 #   scripts/*.css     prettier      prettier         yes   yes
 #   scripts/*.html    prettier      prettier         yes   yes
 #
-#   (1) README.md only; DECLAUDE.md is not scanned.
+#   (1) README.md only. DECLAUDE.md is not scanned, and no *.json is:
+#       json shares the row because prettier handles both kinds.
 #
 # The dirs are fixed by convention: ".." is dev/ itself, where the shell
 # scripts, the C recorder and the markdown live, and "." is scripts/, where
@@ -124,7 +125,8 @@ tool_run() {
 files_of() {
   local dir="$1" pattern="$2"
 
-  find "$dir" -name "$pattern" -type f -not -path '*/trace/*' \
+  find "$dir" -name "$pattern" -type f \
+    -not -path '*/temporary_artifacts/*' \
     -not -path '*_report/*' -not -path '*/node_modules/*' \
     -not -path '*/__pycache__/*' | sort
 }

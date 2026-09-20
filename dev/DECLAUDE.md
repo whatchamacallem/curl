@@ -40,9 +40,9 @@ has to invoke **both**.
 
 **Iterating on generators: `dev/perf2html_batch.sh --regenerate`** - rebuilds
 all three reports' pages from their last run's raw data. Seconds, not ~2.5min.
-Needs `dev/trace/` to still exist, i.e. the recording run used `--keep-raw`.
-Re-measure only when the measured thing changed (`lib/` edit, different flags,
-new test).
+Needs `dev/temporary_artifacts/` to still exist, i.e. the recording run used
+`--keep-raw`. Re-measure only when the measured thing changed (`lib/` edit,
+different flags, new test).
 
 Build (plain tree, debugging only):
 
@@ -67,7 +67,23 @@ taskset -c 3 ./build-relwithdebinfo/tests/perf/perf <test> [loops]
   cmake_flags are given (after a _source_-only change, pass
   `--report=perf2html_modified_report` yourself). cwd-independent (cd's to
   `dev/`); relative DIR is under `dev/`. Last line printed is the `file://`
-  URL.
+  URL. `toolchain_check` is the **only** toolchain check the user-facing
+  scripts have (the batch reaches it by calling this script; the diff only
+  probes `python3` inline). It collects **every** missing tool before exiting
+  1, printing one `tool -> official install command` line each from
+  `install_hint`: `sudo apt install` for what Ubuntu ships (`cmake`,
+  `ninja-build`, `ccache`, `build-essential` for `cc`, `valgrind`,
+  `linux-tools-generic` for `perf`, `binutils` for `addr2line`/`readelf`) and
+  the project's own command for what it does not (`npm install -g speedscope`).
+  **Official instructions only** - no PPAs, no hand-rolled recipes. A missing
+  `perf` also prints a WSL2 note: `linux-tools-generic` is built against an
+  Ubuntu kernel WSL does not run, so `linux-perf` is the kernel-independent
+  build. Tools a desktop Ubuntu already has are deliberately hint-free beyond
+  the default `apt` line - `taskset` (util-linux), `python3`, and
+  `git`/`lscpu`/`awk`/`sed`/`find`, which aren't probed at all. `reformat.sh`'s
+  tools (pyright, ruff, prettier, shfmt, clang-format, node) are **out of
+  scope** here: `dev/*.sh` is for tool users, `reformat.sh` for tool
+  development.
 - `perf2html_diff.sh` - measures nothing; subtracts two reports' own `raw/`
   data.
 - `perf2html_batch.sh` - measures and generates, and runs **no** checks. Three
@@ -91,17 +107,19 @@ taskset -c 3 ./build-relwithdebinfo/tests/perf/perf <test> [loops]
 
 Key behaviors worth knowing before touching them:
 
-- `--keep-raw` keeps `dev/trace/`; otherwise it's deleted at startup. **The
-  batch owns every `dev/trace/` deletion** - it passes `--keep-raw` down so a
-  child can't unlink the batch log mid-run, and deletes after step 3. A failed
-  flagless batch _keeps_ `dev/trace/` (the step logs are the evidence).
+- `--keep-raw` keeps `dev/temporary_artifacts/`; otherwise it's deleted at
+  startup. **The batch owns every `dev/temporary_artifacts/` deletion** - it
+  passes `--keep-raw` down so a child can't unlink the batch log mid-run, and
+  deletes after step 3. A failed flagless batch _keeps_
+  `dev/temporary_artifacts/` (the step logs are the evidence).
 - `--regenerate` implies `--keep-raw`, and in the batch also `--keep`. It reads
   `stamp=` back from the report's own `MANIFEST.txt` and rebuilds
   byte-identically when no generator changed.
 - **`reformat.sh` is the only `validate_report.py`, `pyright`, `ruff` and
   `prettier` call anywhere.** Don't add a lint or validate step to a generator
-  or to the batch. Validation reads the report dirs only, never `dev/trace/`,
-  so the batch deleting `trace/` on a clean flagless run doesn't affect it.
+  or to the batch. Validation reads the report dirs only, never
+  `dev/temporary_artifacts/`, so the batch deleting `temporary_artifacts/` on a
+  clean flagless run doesn't affect it.
 - **The batch plus `reformat.sh` is the generators' test suite** - driving them
   over all three output dirs is the coverage. Don't grow a per-generator check.
 - Profiling:
@@ -116,8 +134,8 @@ Key behaviors worth knowing before touching them:
   `tests/perf/Makefile.inc`; loops from `loops_of` grepping the test source.
 - Valgrind's LL cache auto-detects as direct-mapped and overstates conflict
   misses - `--LL=16777216,16,64` is on the `valgrind` line in `run_one`.
-- Quiet mode logs to `dev/trace/*.log`; a failing step prints its last 40
-  lines.
+- Quiet mode logs to `dev/temporary_artifacts/*.log`; a failing step prints its
+  last 40 lines.
 
 ## Report layout
 
@@ -159,9 +177,10 @@ a page diff is always code, never sampling. Only `MANIFEST.txt`'s `stamp=` and
 genuinely re-measured time (`perf-tool/output.txt`, `flame-graph/output.txt`,
 the trace) vary. Verify by running a generator twice on one input and `cmp`.
 
-Raw data in `dev/trace/` (gitignored): `callgrind.out.<test>.<loops>.<ts>`,
-`valgrind.<test>.<loops>.<ts>.log`, `trace.<test>.<loops>.<ts>.bin` (+`.maps`),
-`.speedscope.json`, `perf-stat.<test>.<ts>.csv`, `profile.<ts>.log`.
+Raw data in `dev/temporary_artifacts/` (gitignored):
+`callgrind.out.<test>.<loops>.<ts>`, `valgrind.<test>.<loops>.<ts>.log`,
+`trace.<test>.<loops>.<ts>.bin` (+`.maps`), `.speedscope.json`,
+`perf-stat.<test>.<ts>.csv`, `profile.<ts>.log`.
 
 ## Diff semantics
 
@@ -170,15 +189,16 @@ Raw data in `dev/trace/` (gitignored): `callgrind.out.<test>.<loops>.<ts>`,
   neighbour.
 - The delta is a plain callgrind-format file with **no `calls=` lines** → no
   call graph → no call columns/caller tables in the heat map
-  (`HAS_CALL_GRAPH`). The summary's calls/callers columns come from a separate
-  JSON sidecar (`callgrind_diff.py --callers-output`, consumed via
+  (`HAS_CALL_GRAPH`). The summary's calls/callers columns come from the
+  **synthesized callers diff**, a separate JSON file written beside the delta
+  (`callgrind_diff.py --callers-output`, consumed via
   `build_report.py test --diff --callers-data`).
 - **Every share divides by that same thing's own baseline cost**, never by a
   global budget: a function by its baseline self, a line by its baseline cost,
   a file/dir by its summed baseline, the overview by that test's baseline
   total. `(new - old)/old`, so 1→0 is -100%, 100→90 is -10%, 90→100 is +11.1%,
   1→1 is 0% (rendered empty). Something the baseline never had is **+100%**.
-  Baselines ride in the `--callers-output` sidecar (`baseline`, keyed by `<fn>`
+  Baselines ride in the synthesized callers diff (`baseline`, keyed by `<fn>`
   and `<fn>\n<display path>\n<line>`, `baselineTotal`, `baselineCalls`,
   `events`); the heat map reads it via `--baseline-data`. Ranking and heat are
   `abs()`, so winners and losers interleave.
@@ -213,15 +233,17 @@ template literal too long to fit, which `prettier` will not break - so those
 few are split by hand. Whole tree is at 0.
 
 **`dev/` source is ASCII plus a short allow list.** `validate_report.py`'s
-`unicode_check` walks every `.py`/`.js`/`.css`/`.sh`/`.html` and `README.md`
-under `dev/` and fails on any character outside `_NON_ASCII_RE`, which is ASCII
-plus `_ALLOWED_UNICODE`: `≈`, `▲`, `▶`, `▼`, `…`. Those are the diff vocabulary
-plus the heat map tree's carets, and they are **written literally** - not `▼`,
-not a `▼` escape, and not an HTML entity. An entity would be double-escaped
-into visible text by the JS `html_escape()` and by `theme.py`'s `html_escape()`
-(both escape `&`), and its length would corrupt the `text.length` column-width
-math. Adding a character to the page's vocabulary means adding it to
-`_ALLOWED_UNICODE` with a `#` comment naming it. `DECLAUDE.md` is not scanned.
+`unicode_check` walks every `.py`/`.js`/`.css`/`.sh`/`.html`/`.c`/`.h` and
+`README.md` under `dev/` and fails on any character outside `_NON_ASCII_RE`,
+which is ASCII plus `_ALLOWED_UNICODE`: `≈`, `▲`, `▶`, `▼`, `…`. Those are the
+diff vocabulary plus the heat map tree's carets, and they are **written
+literally** - not `▼`, not a `▼` escape, and not an HTML entity. An entity
+would be double-escaped into visible text by the JS `html_escape()` and by
+`theme.py`'s `html_escape()` (both escape `&`), and its length would corrupt
+the `text.length` column-width math. Adding a character to the page's
+vocabulary means adding it to `_ALLOWED_UNICODE` with a `#` comment naming it.
+`DECLAUDE.md` is not scanned, and neither is any `.json` - `reformat.sh`'s
+table pairs `*.md` with `*.json` only because `prettier` handles both.
 
 Reformatting any of `scripts/heatmap.html`, `heatmap.css`, `frame.js`,
 `flame_bootstrap.js`, `theme.css` or `theme.js` changes every generated page
@@ -300,19 +322,39 @@ pipx/uv). Pylance is not usable - LSP only, ignores argv.
   table. `function_entry` for an uncalled function = the **first** cost line
   callgrind wrote in its home file (matched 505/505; lowest line number does
   not - inlined helpers sit above the entry).
-- `build_report.py test|overview` - summary and overview pages.
-  `_EVENT = "Ir"`, `_TOP = 50`. `--perf-log`/`--trace-log`/`--raw-data` each
-  render a section only when given; the flame-graph strip link exists only with
-  `--trace-log`. `--diff` picks `diff_test` in `main()`. The LABEL=VALUE rows
-  above a page's content are `ManifestRow`/`ManifestBlock` (methods
-  `manifest_*`) - not the heat map's `HeatMapTotals`, and not a table's
-  column-title row (`theme.table_render(column_titles=...)`). **Never call any
-  of them just "header".** Its `FRAME_JS` is `theme.theme_asset("frame.js")`.
+- `build_report.py test|overview` - summary and overview pages. `_TOP = 50`.
+  **Two event constants, one per side of the core/diff split.** The non-diff
+  summary's "top 50 functions by self" ranks and titles by `_EVENT = "CEst"`,
+  resolved per profile through `event_of()`: `CEst` when the run recorded
+  everything it derives from, else `_EVENT_FALLBACK = "Ir"`, else the first
+  recorded event - `Profile.value()` **raises `KeyError`** on an event a
+  profile can't supply, so the guard is required, and the resolved name is a
+  local that both the column label and the ranking key read. Every diff path
+  plus the diff overview stays on `_DIFF_EVENT = "Ir"`. CEst _is_ derivable
+  from a delta (the delta file carries all recorded events and CEst is linear,
+  so `CEst(mod-base) == CEst(mod)-CEst(base)`, verified); what pins the diff to
+  a recorded event is the **denominator**, not the numerator
+  - `callers_data_load()`/`baseline_total_load()` locate a baseline by
+    `events.index(...)` slot in the synthesized callers diff's cost vector, and
+    a derived event has no slot. Moving the diff to CEst means changing
+    `callgrind_diff.py`'s synthesized callers diff format.
+    `--perf-log`/`--trace-log`/`--raw-data` each render a section only when
+    given; the flame-graph strip link exists only with `--trace-log`. `--diff`
+    picks `diff_test` in `main()`. The LABEL=VALUE rows above a page's content
+    are `ManifestRow`/`ManifestBlock` (methods `manifest_*`) - not the heat
+    map's `HeatMapTotals`, and not a table's column-title row
+    (`theme.table_render(column_titles=...)`). **Never call any of them just
+    "header".** Its `FRAME_JS` is `theme.theme_asset("frame.js")`.
 - `callgrind_diff.py` - the subtraction; also home of `profile_magnitudes()`,
-  which generators import. `--callers-output` is required, and carries the
-  baselines every diff share divides by. `perf2html_diff.sh` copies it into the
-  report's `raw/` as `<delta>.callers.json` so the overview can reach it;
-  `validate_report.py` skips it in `raw_dir_check` (`_CALLERS_SUFFIX`).
+  which generators import. `--callers-output` is required, and writes the
+  **synthesized callers diff** (`CallersDoc`), carrying the baselines every
+  diff share divides by. `perf2html_diff.sh` copies it into the report's `raw/`
+  as `<delta>.callers.json` so the overview can reach it; `validate_report.py`
+  skips it in `raw_dir_check` (`_CALLERS_SUFFIX`). The file name, the flags and
+  the JSON keys are contract - only the prose and the Python names say
+  "synthesized callers diff": `CallgrindToHeatmap`'s `SynthesizedCallers` +
+  `synthesized_callers_load()` read it, `BuildReport.CallersData` +
+  `callers_data_load()` read it back whole.
 - `callgrind_to_heatmap.py` - `_DEFAULT_EVENT = "CEst"`, `_TREE` = dirs whose
   tracked `.c/.h` are listed even without samples. Its `BODY` and `_CSS` are
   `theme.theme_asset("heatmap.html")` and `theme.theme_asset("heatmap.css")`.
@@ -342,12 +384,15 @@ pipx/uv). Pylance is not usable - LSP only, ignores argv.
   teardown a destructor writing `CYG_OUT` + `.maps`. Its header comment is the
   format reference. Single-threaded.
 - `trace_to_speedscope.py` - pairs enters/exits (mismatch = non-zero exit),
-  takes the busiest run's first `_MAX_CALLS`=512 complete calls and writes
+  takes the busiest run's first `_MAX_CALLS`=200 complete calls and writes
   them, with no byte budget - one `json.dumps`, and `frames` symbolizes only
-  what is written. 512 is hard-coded for the current `TESTS_C`: seven of the
-  eight record fewer calls than that and emit their whole trace (79–202 calls);
-  the one that is cut records 3,180 cheap calls, of which 512 still span
-  0.69ms. Spans run 0.10–0.69ms, documents up to ~2MB. Retune the constant if a
+  what is written. 200 is hard-coded for the current `TESTS_C`, whose recorded
+  call counts run 79–202 for seven of the eight; the eighth records 3,180 cheap
+  calls. So the cut lands right on the top of that range - a test at 202 loses
+  its last two calls, and anything at or under 200 emits its whole trace. The
+  numbers below the constant were measured at 512 and have not been re-measured
+  since: spans ran 0.10–0.69ms and documents up to ~2MB, both of which 200 can
+  only shrink. **Re-measure before trusting either.** Retune the constant if a
   test's shape changes. `at` is raw (hook cost included). Must run while
   `build-instr` still holds the traced binary (symbolization reads it). GCC
   instruments inlined bodies, so inlined helpers are frames.
@@ -382,7 +427,7 @@ Cross-check:
 
 ```sh
 callgrind_annotate --show-percs=yes \
-  dev/trace/callgrind.out.<test>.<loops>.<ts> <file>
+  dev/temporary_artifacts/callgrind.out.<test>.<loops>.<ts> <file>
 ```
 
 `/* perf #N: X.XX% */` comments in `lib/` are stale dev annotations - drop
@@ -425,9 +470,9 @@ pages must not assume more.
   millions of percent can't set a scale nothing else registers on:
   `c(100%) == c(10000000%)`, `c(90%) != c(10000000%)`. Non-diff is untouched -
   `heat_of_cost()`/`heat_of_share()` clamp nothing without `IS_DIFF`.
-- Call counts are their own metric, heat-colored by share of all recorded
-  calls, log-scaled, event-independent.
-- Numbers: `num_human()`/`human_text()` → `2.1K`/`2.0G` (exact in tooltip);
+- Call counts are their own event, heat-colored by share of all recorded calls,
+  log-scaled, event-independent.
+- Numbers: `num_human()`/`human_text()` → `2.1K`/`2.0G`;
   `num_pct()`/`share_text()` → `63.2%`, `<0.01%`. Exact zero renders empty. **A
   diff never prints `+`.** A share leads with an arrow and keeps a negative's
   sign, Bloomberg style - `▲11.1%` up, `▼-100.0%` down (`num_signed_pct()` /
@@ -440,11 +485,32 @@ pages must not assume more.
   `≈0.00%` and `>1000x` state a bound, not a value, so neither takes a sign.
   **A drop can't pass -100%** - `(new-old)/old` bottoms out when the cost
   reaches zero - so the multiple branch is reachable only for a rise; don't
-  "fix" negative multiples, they can't occur. Tooltips keep an explicit `+`/`-`
-  on the exact value.
+  "fix" negative multiples, they can't occur. **There are no tooltips** - the
+  rounded, arrow-signed text is all a page shows, so the exact value is not on
+  the page at all. The popup's "copy" markdown carries the same rounded text,
+  not the raw number.
 - **No decorative borders.** The only drawn lines are drag targets (`.bar`,
   `.split`), invisible until hover/active. Everything else is separated by
   background shading (`--panel`/`--bg`/`--bg-alt`/`--nav`).
+- **No tooltips.** Nothing a page renders carries a `title=` attribute -
+  neither `Cell` nor `Column` has a field for one, and `table_render()` / the
+  heat map's `table_html()` emit none. What a cell can't fit is simply not
+  shown; widen the column or drag the bar. The only `title=` left in a
+  generator is the `<iframe title="report page">` accessibility label, and
+  `<title>`/`document.title`/`data-title` are the page title and the status
+  row, not hover text. If a header needs explaining, that is a caption or a
+  `README.md` section, never a `title=`. **A page that can only be read by
+  hovering is a broken page** - that is the whole reason the attribute is gone,
+  so "put it back in a `title=`" is never the fix.
+- **"Reading a Diff Report" in `README.md` is where diff notation is
+  explained** - the arrows, the minus-only amounts, the empty zero cell, the
+  per-baseline denominator, the multiple form and `>1000x`, the signed heat
+  ramp and the `abs()` ranking. It replaced the diff `self` description, which
+  had been the only on-page statement of how to read a diff. The README is
+  copied into every report every run and the strip's "help" link opens it, so a
+  diff page reaches it in one click. Keep it in step with "Diff semantics"
+  above: that section is the implementation, this one is the same rules in the
+  user's words, and a change to the notation is a change to both.
 - Column widths: exact `ch` counts; the header label is every column's floor -
   **no column is ever narrower than its own title**, not at rest, after a drag,
   or after a fill. One rule in two places, `column_widths()` (heat map JS) and
@@ -465,9 +531,13 @@ pages must not assume more.
   at populate time so picking an option doesn't reflow siblings.
 - Scrollbars: square, unrounded `--blue` thumb, 14px, no arrows, no hover
   state; track = the pane's own `--bg` (`pre.logbox` uses `--panel`).
-- `theme.TITLE_COLUMNS` must stay ≥ the widest title any page can show (longest
-  `TESTS_C` name + longest view label + diff suffix) - `flex-wrap: nowrap`
-  means too small clips mid-word on exactly the pair nobody opens.
+- `theme.TITLE_COLUMNS` must stay ≥ the widest string a **status row** can
+  show. The inner status row carries the selection path, so the budget is
+  longest `TESTS_C` name + `" / "` + longest view label + diff suffix. Today
+  that is `simpleformat / flame graph` = 26 and the `<test> / summary` form is
+  shorter, so 33 still holds with room to spare. `flex-wrap: nowrap` means too
+  small clips mid-word on exactly the pair nobody opens. Both status rows
+  center their text (`justify-content: center` on `.strip .title`).
 
 ### JS naming: snake_case is ours, camelCase is theirs
 
@@ -480,9 +550,12 @@ a camelCase name is the signal that it crosses a boundary and cannot be renamed
 freely. The shared runtime global is `window.report_ui` (`layout_activate`,
 `layout_refresh`, `layout_reset`, `pane_splitter.attach`,
 `view_storage.value_read`/`.value_write`); `theme.py`'s `Theme` class is Python
-and unrelated. `flame_bootstrap.js`'s `__NAME__`/`__DATA__` and
-`heatmap.html`'s `__DATA__`/`__THEME_JS__` are substitution markers Python
-matches literally - never rename them.
+and unrelated. The stored keys themselves are boundary names, so they keep
+their dotted spelling - `heat.scale`, `heat.sort`, `split.<pane>` and
+`perf2html.version`, the last holding the store version that `theme.js` sweeps
+on. `flame_bootstrap.js`'s `__NAME__`/`__DATA__` and `heatmap.html`'s
+`__DATA__`/`__THEME_JS__` are substitution markers Python matches literally -
+never rename them.
 
 ### Frames and URL state
 
@@ -490,9 +563,17 @@ Pages nest two deep: overview frames a test summary, which frames its heat map
 / flame graph. Both levels run the same `FRAME_JS`, deciding by
 `is_framed = window.parent !== window`.
 
-- Title badge printed only by the outermost strip (framed levels write `""` but
-  keep the element, so the `--title-bg` block reads continuous and links line
-  up). `document.title` is set at every level.
+- **Status rows** are the two strips' first cells, the `#title` element in the
+  `--title-bg` block, `--title-w` wide and centered. The outermost one always
+  reads the literal `perf2html`, whatever is selected. A framed level's status
+  row reads the **selection path** instead - what the outer one used to show -
+  so the second strip says which page is open. Both levels keep the element, so
+  the block reads continuous and the links line up. `document.title` is still
+  set at every level, from the unrendered title, which is why the outer level
+  keeps taking `title_changed` even though its own status row ignores it.
+- A selection path with no `" / "` in it is a summary page, so `frame.js`'s
+  `selection_path()` appends `" / summary"` - `all` renders `all / summary`.
+  That is a general rule about one-segment paths, not a case for one test name.
 - Util block (`reset columns | help | curl.se/perf`) lives on the lowest strip
   that has one.
 - "reset columns" walks the whole nest via `report_ui:reset_columns`, and also
@@ -502,7 +583,28 @@ Pages nest two deep: overview frames a test summary, which frames its heat map
   always spelled out when >1 event. Every click is `location.hash =` (one
   history entry each); `route_render()` renders, then canonicalizes via
   `replaceState` and posts up. Nothing is remembered outside the URL except
-  `heat.scale`/`heat.sort` in localStorage.
+  `heat.scale`/`heat.sort` and the `split.<pane>` pane widths in localStorage,
+  all of them guarded by the store version below.
+- **The local store is versioned.** `theme.js` holds `STORAGE_VERSION` =
+  `perf2html v1` under the key `perf2html.version`, written as a bare string,
+  not JSON, so it stays readable whatever the stored formats do. The first
+  `view_storage.value_read`/`.value_write` in a document calls
+  `storage_version_check()` once (`storage_is_checked` latches it): the stored
+  version not being **exactly** the current string - absent, stale or garbage -
+  sweeps every key this report owns and writes the current one, then reads
+  carry on normally. **Bumping the string is how a stored-format change is
+  rolled out** - change a value's shape and change `STORAGE_VERSION` in the
+  same edit, and every browser drops the old data on its next page load.
+- **What the sweep owns** is `STORAGE_OWNED_KEYS` (`heat.scale`, `heat.sort`)
+  plus `STORAGE_OWNED_PREFIXES` (`split.`, which `pane_splitter.attach`
+  generates one key per pane under). It walks `localStorage.key(i)`, so a
+  generated pane key needs no list. Existing key spellings were deliberately
+  **not** moved under one shared prefix: renaming them would orphan exactly the
+  data the version check exists to clean, and v1 cannot sweep what it has no
+  name for, since the pre-version data carries no version to match on. A new
+  key must be added to one of those two constants or its data outlives every
+  bump. The whole check sits inside the same `try`/`catch` the accessors use,
+  so a private-mode `localStorage` that throws leaves the page working.
 - `FRAME_JS` loads a page with `view_frame.contentWindow.location.replace()`,
   passing `link_href + (inner_hash || "#")` - **never `iframe.src`**, which
   adds a history entry per load and desyncs back. `"#"` not `""`: a
@@ -550,14 +652,13 @@ Pages nest two deep: overview frames a test summary, which frames its heat map
   (`table_markdown()` off the same `cols`/`rows`), never scraped `textContent`.
   It lives in `scripts/heatmap.html`, so its `\n` is written plainly; the
   double-backslash gotcha died with the last Python JS literal.
-- The popup opens with a `metric | share | amount` stats table
+- The popup opens with a `event | share | amount` stats table
   (`heat.detail.stats`), not a sentence: one row for self (`line self` when the
   line isn't a function entry), `calls` + `call count` rows only when the line
   has call cost, then one row per `secondary_events` event with a non-zero
   value. Zero rows are dropped, so the table's height varies.
-  `cell_number()`/`call_count_cell()` cells keep the exact value in the
-  tooltip; `table_markdown()` turns the same `cols`/`rows` into the copied
-  markdown.
+  `cell_number()`/`call_count_cell()` print the rounded value only;
+  `table_markdown()` turns the same `cols`/`rows` into the copied markdown.
 - The tree's cold-file expander is labelled just `no samples` - no count, no
   event name.
 - Clickable-row hover cue is an underline on `td.ln`: an inline heat `color`

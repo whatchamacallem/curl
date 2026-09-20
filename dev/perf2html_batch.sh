@@ -11,7 +11,7 @@ DIFF_DIR=perf2html_diff_report
 DEFAULT_FLAGS=(-D CMAKE_C_FLAGS=-Os)
 
 STAMP="$(date +%s)"
-RUN_LOG="$PWD/trace/perf2html_batch.$STAMP.log"
+RUN_LOG="$PWD/temporary_artifacts/perf2html_batch.$STAMP.log"
 
 usage_show() {
   awk 'NR > 1 && !/^#/ { exit } NR > 1 { sub(/^# ?/, ""); print }' "$SCRIPT"
@@ -104,11 +104,11 @@ main() {
     *" --keep-raw "* | *" --regenerate "*) ;;
     *)
       RAW_KEEP=0
-      rm -rf trace
+      rm -rf temporary_artifacts
       child_args+=(--keep-raw)
       ;;
   esac
-  mkdir -p trace
+  mkdir -p temporary_artifacts
   STATUS=0
   FAILED=()
   local verbose_args=()
@@ -128,12 +128,12 @@ main() {
   if [ "$STATUS" != 0 ]; then
     echo "perf2html_batch: ${#FAILED[@]} step(s) failed: ${FAILED[*]}" >&2
     if [ "$RAW_KEEP" = 0 ]; then
-      echo "perf2html_batch: dev/trace/ kept for diagnosis (a clean run" \
-        "deletes it)" >&2
+      echo "perf2html_batch: dev/temporary_artifacts/ kept for" \
+        "diagnosis (a clean run deletes it)" >&2
     fi
     return 1
   fi
-  if [ "$RAW_KEEP" = 0 ]; then rm -rf trace; fi
+  if [ "$RAW_KEEP" = 0 ]; then rm -rf temporary_artifacts; fi
   echo "file://$PWD/$DIFF_DIR/index.html"
   return 0
 }

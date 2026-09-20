@@ -213,8 +213,43 @@ window.report_ui = (function () {
     layout_refresh(root_element);
   }
 
+  const STORAGE_VERSION = "perf2html v1";
+  const STORAGE_VERSION_KEY = "perf2html.version";
+  const STORAGE_OWNED_KEYS = ["heat.scale", "heat.sort"];
+  const STORAGE_OWNED_PREFIXES = ["split."];
+
+  let storage_is_checked = false;
+  function storage_sweep() {
+    const doomed_keys = [];
+    for (let index = 0; index < localStorage.length; index++) {
+      const storage_key = localStorage.key(index);
+      if (storage_key === null) continue;
+      const is_owned =
+        STORAGE_OWNED_KEYS.indexOf(storage_key) !== -1 ||
+        STORAGE_OWNED_PREFIXES.some((prefix) =>
+          storage_key.startsWith(prefix),
+        );
+      if (is_owned) doomed_keys.push(storage_key);
+    }
+    for (const storage_key of doomed_keys) {
+      localStorage.removeItem(storage_key);
+    }
+  }
+  function storage_version_check() {
+    if (storage_is_checked) return;
+    storage_is_checked = true;
+    try {
+      if (localStorage.getItem(STORAGE_VERSION_KEY) === STORAGE_VERSION) {
+        return;
+      }
+      storage_sweep();
+      localStorage.setItem(STORAGE_VERSION_KEY, STORAGE_VERSION);
+    } catch (storage_error) {}
+  }
+
   const view_storage = {
     value_read(storage_key) {
+      storage_version_check();
       try {
         return JSON.parse(localStorage.getItem(storage_key));
       } catch (storage_error) {
@@ -222,6 +257,7 @@ window.report_ui = (function () {
       }
     },
     value_write(storage_key, stored_value) {
+      storage_version_check();
       try {
         if (stored_value == null) localStorage.removeItem(storage_key);
         else {

@@ -13,8 +13,8 @@ from typing import NamedTuple
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import callgrind
 
-# callgrind_diff.py's JSON sidecar, which sits in a diff's raw/ beside the
-# delta but is not itself a callgrind trace.
+# callgrind_diff.py's synthesized callers diff, which sits in a diff's raw/
+# beside the delta but is not itself a callgrind trace.
 _CALLERS_SUFFIX = ".callers.json"
 
 # Only a flame graph our own tool exported counts -- a stale or hand-made one
@@ -43,7 +43,7 @@ _ALLOWED_UNICODE = (
 _NON_ASCII_RE = re.compile(r"[^\x00-\x7F" + "".join(_ALLOWED_UNICODE) + r"]")
 
 # Which files under dev/ the ASCII scan reads.
-_UNICODE_SCAN_EXTS = (".py", ".js", ".css", ".sh", ".html")
+_UNICODE_SCAN_EXTS = (".py", ".js", ".css", ".sh", ".html", ".c", ".h")
 _UNICODE_SCAN_NAMES = ("README.md",)
 
 # Generated output and caches, which the ASCII scan walks straight past.

@@ -16,11 +16,22 @@ import callgrind
 import theme
 from theme import Cell, CellOrText, Column, html_escape
 
-# What callgrind_diff.py's sidecar is named, next to the delta it describes.
+# What callgrind_diff.py's synthesized callers diff is named, next to the
+# delta it describes.
 _CALLERS_SUFFIX = ".callers.json"
 
-# The event the summary tables rank and colour by.
-_EVENT = "Ir"
+# The event the diff tables rank and colour by, and the one their baselines
+# are read in. It stays a recorded event: the synthesized callers diff locates
+# a baseline by slot in the cost vector, which a derived event like CEst has
+# none of.
+_DIFF_EVENT = "Ir"
+
+# The event the non-diff summary's top table ranks and colours by. Derived,
+# so a profile missing its inputs falls back -- see event_of().
+_EVENT = "CEst"
+
+# What the non-diff top table ranks by when the profile cannot derive _EVENT.
+_EVENT_FALLBACK = "Ir"
 
 # The diff share that paints the hottest colour. A change the size of the
 # thing's own baseline is as lit as a cell gets.
@@ -74,7 +85,7 @@ _TOP = 50
 # the strip of links that frames the views.
 class BuildReport:
     # CallerDelta - How one caller's calls into one function changed, read back
-    # from callgrind_diff.py's sidecar.
+    # from callgrind_diff.py's synthesized callers diff.
     class CallerDelta(NamedTuple):
         # who does the calling
         function: str
@@ -83,12 +94,14 @@ class BuildReport:
         # how much more (or less) those calls cost
         cost: int
 
-    # CallersData - callgrind_diff.py's sidecar, read back: the call graph a
-    # delta file cannot carry, and the baseline every share divides by.
+    # CallersData - callgrind_diff.py's synthesized callers diff, read back:
+    # the call graph a delta file cannot carry, and the baseline every share
+    # divides by.
     class CallersData(NamedTuple):
         # per function, who called it and how that changed
         callers: dict[str, list[BuildReport.CallerDelta]]
-        # per function, its baseline cost in the sidecar's event
+        # per function, its baseline cost in the synthesized callers diff's
+        # event
         baseline: dict[str, int]
         # per function, how many times the baseline called it
         baseline_calls: dict[str, int]
@@ -168,7 +181,7 @@ class BuildReport:
         diff: bool
         # extra LABEL=VALUE rows
         header: list[str]
-        # callgrind_diff.py's caller sidecar, for the diff call columns
+        # callgrind_diff.py's synthesized callers diff, for the call columns
         callers_data: str
 
     # TestDirectory - One test of the overview, and where its report sits.
@@ -187,9 +200,9 @@ class BuildReport:
         # where the page sits
         path: str
 
-    # The baseline run's total in this page's event, read from the sidecar
-    # the diff left beside the delta file. None when there is none to divide
-    # by, which is what an empty share cell means.
+    # The baseline run's total in this page's event, read from the synthesized
+    # callers diff left beside the delta file. None when there is none to
+    # divide by, which is what an empty share cell means.
     def baseline_total_load(self, paths: Sequence[str]) -> int | None:
         total = 0
         found = False
@@ -198,7 +211,7 @@ class BuildReport:
                 doc = json.load(handle)
             events: list[str] = doc.get("events", [])
             costs: list[int] = doc.get("baselineTotal", [])
-            slot = events.index(_EVENT) if _EVENT in events else 0
+            slot = events.index(_DIFF_EVENT) if _DIFF_EVENT in events else 0
             total += costs[slot] if slot < len(costs) else 0
             found = True
         return total if found else None
@@ -232,7 +245,7 @@ class BuildReport:
                 f'<a href="{href}">{label}</a>' if href else label
             )
         joined = ", ".join(parts)
-        return Cell(joined, title=joined, html=", ".join(html_parts))
+        return Cell(joined, html=", ".join(html_parts))
 
     def caller_link(
         self,
@@ -278,10 +291,10 @@ class BuildReport:
         ranked = sorted(
             (
                 BuildReport.FunctionCost(
-                    profile.value(costs, _EVENT), function
+                    profile.value(costs, _DIFF_EVENT), function
                 )
                 for function, costs in profile.function_self.items()
-                if profile.value(costs, _EVENT) != 0
+                if profile.value(costs, _DIFF_EVENT) != 0
             ),
             key=lambda t: (-abs(t.cost), t.function),
         )[:_TOP]
@@ -313,36 +326,12 @@ class BuildReport:
             default=1.0,
         )
         columns = [
-            Column(
-                "#",
-                "rank by how much the function changed, largest first",
-                numeric=True,
-            ),
-            Column(
-                "% self",
-                f"the function's own {_EVENT} delta, against what it cost"
-                " in the baseline. + is more than the baseline, - is less;"
-                " -100% is gone entirely, +100% is all new",
-                numeric=True,
-            ),
-            Column(
-                "symbol",
-                f"the function, first {_SYMBOL_CHARS} characters (drag"
-                " the bar for more); opens the heat map at its first line",
-                width=_SYMBOL_CHARS,
-            ),
-            Column(_EVENT, f"the signed {_EVENT} delta itself", numeric=True),
-            Column(
-                "calls",
-                "change in how many times the function was entered",
-                numeric=True,
-            ),
-            Column(
-                "callers",
-                "who its call count changed with, signed by change in"
-                f" {_EVENT}. cut off at the edge, hover for all",
-                grow=True,
-            ),
+            Column("#", numeric=True),
+            Column("% self", numeric=True),
+            Column("symbol", width=_SYMBOL_CHARS),
+            Column(_DIFF_EVENT, numeric=True),
+            Column("calls", numeric=True),
+            Column("callers", grow=True),
         ]
         rows: list[list[CellOrText]] = []
         for rank, ranked_function in enumerate(ranked, 1):
@@ -366,19 +355,14 @@ class BuildReport:
                     ),
                     Cell(
                         ranked_function.function,
-                        title=ranked_function.function,
                         html=f'<a href="{href}">'
                         f"{html_escape(ranked_function.function)}</a>"
                         if href
                         else None,
                     ),
-                    Cell(
-                        theme.num_signed(ranked_function.cost),
-                        title=f"{ranked_function.cost:+,} {_EVENT}",
-                    ),
+                    theme.num_signed(ranked_function.cost),
                     Cell(
                         theme.num_signed(call_count),
-                        title=f"{call_count:+,} calls",
                         style=theme.heat_style(
                             self.diff_heat(call_share, calls_max_pct),
                             signed=True,
@@ -412,18 +396,9 @@ class BuildReport:
     ) -> tuple[list[Column], list[list[CellOrText]]]:
         columns = [
             Column("one report per test"),
-            Column(_EVENT, f"the whole run's {_EVENT} delta", numeric=True),
-            Column(
-                "% of change",
-                f"that delta against the whole baseline run's {_EVENT}:"
-                " how much cheaper or dearer the test got",
-                numeric=True,
-            ),
-            Column(
-                "functions changed",
-                f"functions whose {_EVENT} moved at all",
-                numeric=True,
-            ),
+            Column(_DIFF_EVENT, numeric=True),
+            Column("% of change", numeric=True),
+            Column("functions changed", numeric=True),
         ]
         rows: list[list[CellOrText]] = []
         for test in tests:
@@ -436,7 +411,7 @@ class BuildReport:
                 for name in names
                 if not name.endswith(_CALLERS_SUFFIX)
             ]
-            sidecars = [
+            synthesized_callers = [
                 os.path.join(raw_dir, name)
                 for name in names
                 if name.endswith(_CALLERS_SUFFIX)
@@ -450,19 +425,19 @@ class BuildReport:
                 rows.append([link, "", "", ""])
                 continue
             profile = callgrind.profile_load(files)
-            delta = profile.value(profile.totals(), _EVENT)
+            delta = profile.value(profile.totals(), _DIFF_EVENT)
             changed = sum(
                 1
                 for costs in profile.function_self.values()
-                if profile.value(costs, _EVENT) != 0
+                if profile.value(costs, _DIFF_EVENT) != 0
             )
-            share = self.diff_share(delta, self.baseline_total_load(sidecars))
+            share = self.diff_share(
+                delta, self.baseline_total_load(synthesized_callers)
+            )
             rows.append(
                 [
                     link,
-                    Cell(
-                        theme.num_signed(delta), title=f"{delta:+,} {_EVENT}"
-                    ),
+                    theme.num_signed(delta),
                     theme.num_signed_pct(share) if share is not None else "",
                     theme.num_human(changed),
                 ]
@@ -500,6 +475,16 @@ class BuildReport:
             quote(function, safe="/-_.!~*'()")
         )
 
+    # What the non-diff top table ranks by: _EVENT when the run recorded
+    # everything it is derived from, else the recorded fallback. A profile
+    # that cannot supply an event raises rather than scoring it zero.
+    def event_of(self, profile: callgrind.Profile) -> str:
+        names = profile.event_names()
+        for name in (_EVENT, _EVENT_FALLBACK):
+            if name in names:
+                return name
+        return names[0] if names else _EVENT_FALLBACK
+
     def file_read(self, path: str) -> str:
         try:
             with open(path, encoding="utf-8", errors="replace") as handle:
@@ -509,14 +494,13 @@ class BuildReport:
             return f"(missing: {path})"
 
     def functions_table(self, profile: callgrind.Profile) -> str:
-        total = profile.value(profile.totals(), _EVENT) or 1
+        event = self.event_of(profile)
+        total = profile.value(profile.totals(), event) or 1
         ranked = sorted(
             (
-                BuildReport.FunctionCost(
-                    profile.value(costs, _EVENT), function
-                )
+                BuildReport.FunctionCost(profile.value(costs, event), function)
                 for function, costs in profile.function_self.items()
-                if profile.value(costs, _EVENT) > 0
+                if profile.value(costs, event) > 0
             ),
             key=lambda t: (-t.cost, t.function),
         )[:_TOP]
@@ -530,31 +514,12 @@ class BuildReport:
             100.0 * max(function_calls.values(), default=0) / calls_total
         )
         columns = [
-            Column("#", "rank", numeric=True),
-            Column(
-                "% self",
-                f"share of all {_EVENT} spent in the function itself,"
-                " not in what it calls",
-                numeric=True,
-            ),
-            Column(
-                "symbol",
-                f"the function, first {_SYMBOL_CHARS} characters (drag"
-                " the bar for more). opens the heat map at its first line",
-                width=_SYMBOL_CHARS,
-            ),
-            Column(
-                _EVENT,
-                f"the function's own {_EVENT}, self cost only",
-                numeric=True,
-            ),
-            Column("calls", "times the function was entered", numeric=True),
-            Column(
-                "callers",
-                "who called it, with the share of those calls. cut off"
-                " at the edge, hover for all",
-                grow=True,
-            ),
+            Column("#", numeric=True),
+            Column("% self", numeric=True),
+            Column("symbol", width=_SYMBOL_CHARS),
+            Column(event, numeric=True),
+            Column("calls", numeric=True),
+            Column("callers", grow=True),
         ]
         rows: list[list[CellOrText]] = []
         for rank, ranked_function in enumerate(ranked, 1):
@@ -588,19 +553,14 @@ class BuildReport:
                     ),
                     Cell(
                         ranked_function.function,
-                        title=ranked_function.function,
                         html=f'<a href="{href}">'
                         f"{html_escape(ranked_function.function)}</a>"
                         if href
                         else None,
                     ),
-                    Cell(
-                        theme.num_human(ranked_function.cost),
-                        title=f"{ranked_function.cost:,} {_EVENT}",
-                    ),
+                    theme.num_human(ranked_function.cost),
                     Cell(
                         theme.num_human(call_count),
-                        title=f"{call_count:,} calls",
                         style=theme.heat_style(
                             theme.heat_t(
                                 100.0 * call_count / calls_total, calls_max_pct
@@ -609,7 +569,7 @@ class BuildReport:
                     )
                     if call_count
                     else "",
-                    Cell(who, title=who, html=who_html)
+                    Cell(who, html=who_html)
                     if who
                     else Cell("(no recorded caller)", cls="dim"),
                 ]

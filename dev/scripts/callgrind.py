@@ -15,7 +15,8 @@ Costs: TypeAlias = list[int]
 Group = Literal["repo", "system", "external"]
 _Key = TypeVar("_Key")
 
-# What callgrind's terse event abbreviations mean, spelled out for tooltips.
+# What callgrind's terse event abbreviations mean, spelled out for the
+# heat map's event dropdown.
 _EVENT_LONG: dict[str, str] = {
     "Bc": "conditional branches executed",
     "Bcm": "conditional branches mispredicted",
@@ -65,7 +66,7 @@ class DerivedEvent(NamedTuple):
     name: str
     # the recorded events to add up, with weights
     terms: tuple[Term, ...]
-    # the spelled-out version, for tooltips
+    # the spelled-out version, for the event dropdown
     long: str
 
 
@@ -85,7 +86,7 @@ class PathInfo(NamedTuple):
 class Profile:
     # the recorded events, in cost-vector order
     events: list[str] = field(default_factory=list)
-    # each event spelled out, for tooltips
+    # each event spelled out, for the event dropdown
     event_long: dict[str, str] = field(default_factory=dict)
     # what a cost line's leading columns mean
     positions: list[str] = field(default_factory=lambda: ["line"])
@@ -358,7 +359,7 @@ class Callgrind:
             if line:
                 profile.function_entry[function] = SourceLine(home, line)
 
-    # Spell out every event name, recorded and derived, for the tooltips.
+    # Spell out every event name, recorded and derived, for the dropdown.
     def labels_fill(self, profile: Profile) -> None:
         for name in profile.events:
             profile.event_long[name] = _EVENT_LONG.get(name, "")

@@ -122,7 +122,7 @@ manifest_check() {
 
 header_file_of() {
   local dir="$1" role="$2"
-  local out="$PWD/trace/header.$role.$STAMP.txt"
+  local out="$PWD/temporary_artifacts/header.$role.$STAMP.txt"
   {
     echo "report=$(path_display "$dir")"
     grep '=' "$dir/MANIFEST.txt" || true
@@ -175,8 +175,8 @@ profiles_of() {
 diff_one() {
   local test="$1" out="$2" name="$3"
   local diff_file callers_file base_files cur_files args help_args=() raw_name
-  diff_file="$PWD/trace/callgrind.diff.$name.$STAMP"
-  callers_file="$PWD/trace/callgrind.diff.$name.$STAMP.callers.json"
+  diff_file="$PWD/temporary_artifacts/callgrind.diff.$name.$STAMP"
+  callers_file="$diff_file.callers.json"
   base_files="$(profiles_of "$BASE_DIR" "$test")"
   cur_files="$(profiles_of "$MOD_DIR" "$test")"
 
@@ -214,22 +214,25 @@ diff_one() {
 main() {
   args_parse "$@"
   command -v python3 >/dev/null 2>&1 || {
-    echo "error: python3 not found on PATH" >&2
+    {
+      echo "error: 1 tool(s) not found on PATH:"
+      printf '  %-12s %s\n' python3 "sudo apt install python3"
+    } >&2
     exit 1
   }
 
   manifest_check "$BASE_DIR" baseline
   manifest_check "$MOD_DIR" modified
 
-  [ "$KEEP_RAW" = 1 ] || rm -rf trace
+  [ "$KEEP_RAW" = 1 ] || rm -rf temporary_artifacts
   if [ "$REGENERATE" = 1 ]; then
     local previous
     previous="$(sed -n 's/^stamp=//p' "$OUT_DIR/MANIFEST.txt" 2>/dev/null \
       | head -1)"
     if [ -n "$previous" ]; then STAMP="$previous"; fi
   fi
-  mkdir -p "$OUT_DIR" trace
-  RUN_LOG="$PWD/trace/diff.$STAMP.log"
+  mkdir -p "$OUT_DIR" temporary_artifacts
+  RUN_LOG="$PWD/temporary_artifacts/diff.$STAMP.log"
   cp README.md "$OUT_DIR/README.md"
   {
     printf '%s\n' "$DIFF_MANIFEST"
@@ -274,7 +277,7 @@ main() {
       || printf '%-13s%s\n' overview "${OUT_DIR#"$PWD"/}/index.html"
   fi
 
-  if [ "$KEEP_RAW" != 1 ]; then rm -rf trace; fi
+  if [ "$KEEP_RAW" != 1 ]; then rm -rf temporary_artifacts; fi
   echo "file://$OUT_DIR/index.html"
 }
 
