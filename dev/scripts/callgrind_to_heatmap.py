@@ -1695,7 +1695,7 @@ def main() -> None:
     parser.add_argument(
         "callgrind_file",
         nargs="+",
-        help="callgrind output file(s); several are merged into one profile",
+        help="callgrind output file(s). several are merged into one profile",
     )
     parser.add_argument(
         "-o",
@@ -1708,8 +1708,8 @@ def main() -> None:
         "--diff",
         action="store_true",
         help="the callgrind file is a callgrind_diff.py delta: print "
-        "signed numbers and take shares against the summed "
-        "magnitude of every change",
+        "signed numbers and take shares against the summed magnitude "
+        "of every change",
     )
     namespace = parser.parse_args()
     CallgrindToHeatmap().run(

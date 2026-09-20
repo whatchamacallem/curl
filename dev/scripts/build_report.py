@@ -386,8 +386,8 @@ class BuildReport:
             ),
             Column(
                 "callers",
-                "who its call count changed with, signed by change in "
-                f"{_EVENT}. cut off at the edge, hover for all",
+                "who its call count changed with, signed by change in"
+                f" {_EVENT}. cut off at the edge, hover for all",
                 grow=True,
             ),
         ]
@@ -1001,16 +1001,16 @@ def main() -> None:
     test_parser.add_argument(
         "--help-href",
         default="README.md",
-        help="the strip's 'help' target, relative to this page"
-        " (default: README.md. "
-        "a per-test page under an overview needs ../README.md)",
+        help="the strip's 'help' target, relative to this page (default:"
+        " README.md. a per-test page under an overview needs"
+        " ../README.md)",
     )
     test_parser.add_argument(
         "--diff",
         action="store_true",
         help="the callgrind file is a callgrind_diff.py delta: rank by"
-        " |change|, print "
-        "signed numbers, and drop the views a diff has no data for",
+        " |change|, print signed numbers, and drop the views a diff has"
+        " no data for",
     )
     test_parser.add_argument(
         "--header", action="append", metavar="LABEL=VALUE", default=[]
@@ -1019,8 +1019,8 @@ def main() -> None:
         "--callers-data",
         default="",
         metavar="FILE",
-        help="--diff only: a callgrind_diff.py --callers-output JSON file, "
-        "for the summary table's calls/callers columns",
+        help="--diff only: a callgrind_diff.py --callers-output JSON"
+        " file, for the summary table's calls/callers columns",
     )
 
     overview_parser = subparsers.add_parser(
@@ -1042,9 +1042,9 @@ def main() -> None:
         "--header-file",
         default="",
         metavar="FILE",
-        help="a file of LABEL=VALUE lines, appended to the --header rows."
-        " any other "
-        "line (a MANIFEST.txt version line) is ignored",
+        help="a file of LABEL=VALUE lines, appended to the --header"
+        " rows. any other line (a MANIFEST.txt version line) is"
+        " ignored",
     )
     overview_parser.add_argument(
         "--header-block",
@@ -1052,15 +1052,14 @@ def main() -> None:
         metavar="LABEL=FILE",
         default=[],
         help="a further header table under its own heading, read from"
-        " such a file "
-        "(repeatable)",
+        " such a file (repeatable)",
     )
     overview_parser.add_argument(
         "--diff",
         action="store_true",
         help="the reports are callgrind_diff.py deltas: summarize each"
-        " test's change "
-        "instead of its native timing, which a diff does not have",
+        " test's change instead of its native timing, which a diff does"
+        " not have",
     )
 
     namespace = parser.parse_args()
