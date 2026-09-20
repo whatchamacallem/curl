@@ -1203,19 +1203,20 @@ body { display: flex; flex-direction: column; height: 100vh; }
 .node.more .name { color: var(--muted); font-style: italic; }
 .kids { display: none; }
 .kids.open { display: block; }
-.fhead { background: var(--panel); padding: 5px 14px;
+.fhead { background: var(--sel); padding: 5px 14px;
   display: flex; gap: 4px 18px; align-items: baseline; flex-wrap: wrap; }
 .fhead .path { font-weight: 600; }
 .fhead .stat { color: var(--muted); }
 
 .chips { display: flex; gap: 4px; flex-wrap: nowrap; padding: 5px 14px;
-  background: var(--panel); overflow: hidden; }
+  background: var(--sel); overflow: hidden; }
 .chips .lbl { color: var(--muted); align-self: center; margin-right: 4px;
   flex: none; }
 .chip { padding: 0 7px; background: var(--bg-alt); cursor: pointer;
   flex: none; white-space: nowrap; }
 .chip:hover { outline: 1px solid var(--link); outline-offset: -1px; }
 .nosrc { padding: 8px 14px; color: var(--muted); }
+table.src th { background: var(--sel); }
 table.src > tbody > tr > td { padding-top: 0; padding-bottom: 0; }
 table.src td.ln { color: var(--muted); user-select: none; }
 tr.rowlink { cursor: pointer; }
