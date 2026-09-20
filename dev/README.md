@@ -1,14 +1,16 @@
-# README
+# perf2html README
+
+
 
 The HTML will open straight from disk, with no server. If you start by opening
-the top level `index.html` then bookmarks should work.
+the top level `index.html` in the report then bookmarks should work.
 
 ## The Scripts
 
 ```sh
-dev/perf2html.sh [--verbose] [--report=DIR] [cmake_flags...]
+dev/perf2html.sh [--verbose] [--report=DIR] [cmake-flags...]
 dev/perf2html_diff.sh [--verbose] [baseline-dir] [modified-dir] [report-dir]
-dev/perf2html_batch.sh [--verbose] [--keep] [cmake_flags...]
+dev/perf2html_batch.sh [--verbose] [cmake-flags...]
 ```
 
 `perf2html.sh` builds curl twice (`-O2 -g`+ccache by default, the second tree
@@ -18,29 +20,18 @@ perf test under each, and writes one HTML report:
 ```text
 DIR/index.html            Open this.
 DIR/README.md             You are reading this.
-DIR/MANIFEST.txt          Metadata.
+DIR/MANIFEST.txt          Describes contents.
 ```
 
 DIR defaults to `perf2html_baseline_report`, or `perf2html_modified_report`.
 
 `perf2html_diff.sh` subtracts the callgrind data of two `perf2html.sh` reports
-(modified minus baseline, per function and source line) and writes the change
-as a with the same files as `perf2html.sh`.
-
-Positional args default to `perf2html_baseline_report`,
+(modified minus baseline, per function and source line) and creates a diff
+report. The positional args default to `perf2html_baseline_report`,
 `perf2html_modified_report`, and `perf2html_diff_report`.
 
-`perf2html_batch.sh` runs every too and check the dev/ dir has, in one go:
-
-```text
-1 lint      pyright over dev/scripts (dev/pyrightconfig.json, must stay at
-             0 errors) and node --check over theme.js plus the JS embedded
-             in the generators (scripts/check_js.py)
-2 baseline  perf2html.sh            -> perf2html_baseline_report
-3 modified  perf2html.sh <flags>    -> perf2html_modified_report
-4 diff      perf2html_diff.sh       -> perf2html_diff_report
-5 validate  validate_report.py on all three reports
-```
+`perf2html_batch.sh` generates the baseline, modified and diff reports in one
+run using the default report directory names.
 
 ## Callgrind Events
 

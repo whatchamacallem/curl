@@ -259,19 +259,21 @@ pipx/uv). Pylance is not usable — LSP only, ignores argv.
 - `dev/cyg_callback.c` — the recorder. Hot path is
   `if(next < end) { next->fn = fn; next->tsc = rdtsc | flag; ++next; }` — 11/12
   instructions (check with
-  `cc -O2 -fcf-protection=none -S -masm=intel dev/cyg_callback.c`). `next`
-  must stay a pointer, `end` a variable. `next == end` = not sampling;
-  everything else lives on that cold path. Setup is a constructor (incl.
-  `memset` of the buffer, so no page fault lands in a timed call; the
-  buffer holds `CYG_CALLBACKS_MAX_REC`=327680 records, 5MB static, and no
-  test fills it), teardown a destructor
-  writing `CYG_OUT` + `.maps`. Its header comment is the format reference.
-  Single-threaded.
+  `cc -O2 -fcf-protection=none -S -masm=intel dev/cyg_callback.c`). `next` must
+  stay a pointer, `end` a variable. `next == end` = not sampling; everything
+  else lives on that cold path. Setup is a constructor (incl. `memset` of the
+  buffer, so no page fault lands in a timed call; the buffer holds
+  `CYG_CALLBACKS_MAX_REC`=327680 records, 5MB static, and no test fills it),
+  teardown a destructor writing `CYG_OUT` + `.maps`. Its header comment is the
+  format reference. Single-threaded.
 - `trace_to_speedscope.py` — pairs enters/exits (mismatch = non-zero exit),
-  takes the busiest run's first `_MAX_CALLS`=200 complete calls under
-  `_MAX_BYTES`=204800. No test is bound by `_MAX_CALLS` — the byte budget
-  alone sets capture length, so bytes/call decides how many calls land
-  (31–196 across `TESTS_C`). `at` is raw (hook cost included). Must run while
+  takes the busiest run's first `_MAX_CALLS`=512 complete calls and writes
+  them, with no byte budget — one `json.dumps`, and `frames` symbolizes only
+  what is written. 512 is hard-coded for the current `TESTS_C`: seven of the
+  eight record fewer calls than that and emit their whole trace (79–202 calls);
+  the one that is cut records 3,180 cheap calls, of which 512 still span
+  0.69ms. Spans run 0.10–0.69ms, documents up to ~2MB. Retune the constant if a
+  test's shape changes. `at` is raw (hook cost included). Must run while
   `build-instr` still holds the traced binary (symbolization reads it). GCC
   instruments inlined bodies, so inlined helpers are frames.
 - `validate_report.py OUTDIR [--diff]` — structural smoke test only;
@@ -447,16 +449,16 @@ across documents or layout anyway — Chrome for anything geometric.
   feed such a file to the summary/heat map**, functions come out named by full
   chain.
 - Whole-build `-finstrument-functions` + `cyg_callback.c`: one top-level
-  library call is 2–184 events depending on the test; 0 enter/exit
-  mismatches in all 8 tests.
-  Perturbation native → traced, one run: 152 → 154 ns/call at 2 events/call,
-  304 → 746 at 184. The box's native speed itself moves ~1.9× with host state,
-  so only compare numbers from one run. Hook cost is inside every traced
-  duration → **flame graph is for shape and outliers, perf log for speed.**
+  library call is 2–184 events depending on the test; 0 enter/exit mismatches
+  in all 8 tests. Perturbation native → traced, one run: 152 → 154 ns/call at 2
+  events/call, 304 → 746 at 184. The box's native speed itself moves ~1.9× with
+  host state, so only compare numbers from one run. Hook cost is inside every
+  traced duration → **flame graph is for shape and outliers, perf log for
+  speed.**
 - `rdtsc` steps by 20 ticks = 10.02 ns here, so every flame-graph duration is a
   multiple of ~10 ns. The 28→11 instruction hook saving is verified in
   disassembly only — it's below the clock's step.
-- speedscope evented JSON ≈ 38 B/event: 200 KB ≈ 5,000 events.
+- speedscope evented JSON ≈ 38 B/event: 1 MB ≈ 26,000 events.
 - TSC: `constant_tsc nonstop_tsc rdtscp tsc_reliable`; measured 1.9962 tsc/ns.
 - `perf stat -e cycles:u,instructions:u` works in this WSL2 (kernel 6.18
   exposes the CPU PMU). `perf record` works but samples.

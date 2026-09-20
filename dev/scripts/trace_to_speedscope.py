@@ -21,10 +21,7 @@ _HEADER_WORDS = 8
 # "CYG2" -- the first word of a trace cyg.c wrote.
 _MAGIC = 0x32475943
 
-# Size budget for the written document, so the page stays quick to open.
-_MAX_BYTES = 204800
-
-# The most complete calls to keep, before the byte budget trims further.
+# The most complete calls to keep..
 _MAX_CALLS = 200
 
 # How many 64-bit words one recorded event takes: the function, then the stamp.
@@ -90,7 +87,7 @@ SpeedscopeDoc = TypedDict(
 
 
 # TraceToSpeedscope - Turns one rdtsc trace into a speedscope document,
-# keeping the busiest run's first few complete calls.
+# keeping the busiest run's first _MAX_CALLS complete calls.
 class TraceToSpeedscope:
     # CallSpan - One top-level call, as a span of record numbers.
     class CallSpan(NamedTuple):
@@ -310,7 +307,7 @@ class TraceToSpeedscope:
                     )
         return mappings
 
-    # Read a trace and write the biggest document that fits the byte budget.
+    # Read a trace and write the document for its first _MAX_CALLS calls.
     def run(self, args: TraceToSpeedscope.TraceArgs) -> None:
         trace = self.load(args.trace_file)
         print(
@@ -334,24 +331,16 @@ class TraceToSpeedscope:
                 }
             ),
         )
-        text = ""
-        for count in range(1, len(calls) + 1):
-            longer = json.dumps(
-                self.document(trace, calls[:count], frames, args.name),
-                separators=(",", ":"),
-            )
-            if text and len(longer) > _MAX_BYTES:
-                break
-            text = longer
-        if len(text) > _MAX_BYTES:
-            print(
-                f"warning: one call alone is {len(text):,} bytes, over the "
-                f"{_MAX_BYTES:,} budget",
-                file=sys.stderr,
-            )
+        document = self.document(trace, calls, frames, args.name)
+        text = json.dumps(document, separators=(",", ":"))
         with open(args.output, "w", encoding="utf-8") as handle:
             handle.write(text)
-        print(f"wrote {args.output} ({len(text):,} bytes)", file=sys.stderr)
+        profile = document["profiles"][0]
+        print(
+            f"wrote {args.output} ({len(text):,} bytes, {len(calls):,} calls,"
+            f" {profile['endValue'] - profile['startValue']:,} ns)",
+            file=sys.stderr,
+        )
 
     # How many events the run counted, without writing anything.
     def seen(self, trace_file: str) -> int:
