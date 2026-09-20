@@ -3,10 +3,12 @@ from __future__ import annotations
 
 import argparse
 import base64
+import glob
 import json
 import os
 import re
 import sys
+import tarfile
 from collections.abc import Sequence
 from typing import NamedTuple
 
@@ -14,13 +16,29 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import callgrind
 import settings
 
+# What a report's raw data is stored as, one archive per test.
+_ARCHIVE_SUFFIX = ".tar.xz"
+
+# The report's one shared copy of speedscope, and the globs naming what it
+# must hold: the engine, its stylesheet and the font the stylesheet names.
+_FLAME_APP_DIR = "flame-graph-app"
+_FLAME_APP_GLOBS = ("speedscope-*.js", "speedscope-*.css", "*.woff2")
+
 # Only a flame graph our own tool exported counts -- a stale or hand-made one
 # must fail.
 _FLAME_EXPORTER = "dev/scripts/trace_to_speedscope.py"
 
+# All a per-test flame graph directory may hold: its own page, its own
+# recorded profile, and the trace log. Everything else lives in the one
+# shared bundle at the report root.
+_FLAME_GRAPH_FILES = ("index.html", "output.txt", "profile.js")
+
 # Smallest a file can be before it is plainly a failed generate rather than a
-# small page.
+# small page. The flame graph page is a loader -- two script tags and a
+# stylesheet link pointing at the shared bundle -- so it has a floor of its
+# own, well under the one a page carrying real content must clear.
 _MIN_FLAME_JS_BYTES = 200
+_MIN_FLAME_PAGE_BYTES = 300
 _MIN_HEATMAP_BYTES = 5000
 _MIN_INDEX_BYTES = 2000
 _MIN_PAGE_BYTES = 500
@@ -77,8 +95,12 @@ class ValidateReport:
         manifest_version: str
         # the LABEL= rows MANIFEST.txt must have
         manifest_labels: tuple[str, ...]
-        # whether per-test raw data is expected at all
+        # whether a test records runs of its own: a perf log, a trace, a
+        # flame graph. never true of the synthesized "all"
         test_has_rawdata: bool
+        # whether "all" stores an archive of its own, which it does only
+        # where its pages are built from data no other test's archive holds
+        all_has_archive: bool
 
     # ValidateArgs - Which report to check, and which layout to check it as.
     class ValidateArgs(NamedTuple):
@@ -93,6 +115,21 @@ class ValidateReport:
     # Record one problem -- every check runs, so one page cannot hide another.
     def fail(self, message: str) -> None:
         self.errors.append(message)
+
+    # The one shared speedscope bundle every flame graph page loads. It holds
+    # exactly one file per glob, so a page can name it without a version.
+    def flame_app_check(self, out_dir: str) -> None:
+        app_dir = os.path.join(out_dir, _FLAME_APP_DIR)
+        if not os.path.isdir(app_dir):
+            self.fail(f"no shared speedscope bundle: {app_dir}")
+            return
+        for pattern in _FLAME_APP_GLOBS:
+            found = sorted(glob.glob(os.path.join(app_dir, pattern)))
+            if len(found) != 1:
+                self.fail(
+                    f"{_FLAME_APP_DIR}/ holds {len(found)} files matching "
+                    f"{pattern}, expected exactly 1: {app_dir}"
+                )
 
     # A flame graph must hold exactly one evented profile our own tool wrote,
     # and must be absent entirely when no trace was recorded.
@@ -113,9 +150,24 @@ class ValidateReport:
                 "index.html has no 'trace log' section: "
                 f"{os.path.join(out_dir, 'index.html')}"
             )
-        self.page_check(
-            os.path.join(flame_dir, "index.html"), "flame-graph/index.html"
+        page = self.page_check(
+            os.path.join(flame_dir, "index.html"),
+            "flame-graph/index.html",
+            _MIN_FLAME_PAGE_BYTES,
         )
+        # the engine is not here, so the page is only a page if it reaches
+        # the shared bundle -- and every asset it names must exist
+        for href in re.findall(r'(?:src|href)="([^"]+)"', page):
+            if not os.path.isfile(os.path.join(flame_dir, href)):
+                self.fail(
+                    f"flame-graph/index.html names {href}, which is not"
+                    f" there: {flame_dir}"
+                )
+        if f"{_FLAME_APP_DIR}/" not in page:
+            self.fail(
+                "flame-graph/index.html does not load the shared "
+                f"{_FLAME_APP_DIR}/ bundle: {flame_dir}/index.html"
+            )
         self.size_check(
             os.path.join(flame_dir, "output.txt"), 20, "flame-graph/output.txt"
         )
@@ -147,6 +199,14 @@ class ValidateReport:
                 f"{_FLAME_EXPORTER} (exporter {document.get('exporter')!r}, "
                 f"profiles {kinds}): {flame_dir}/profile.js"
             )
+        # the engine is shared at the report root, so a copy of it here is
+        # the per-test duplication that sharing exists to remove
+        for stray in sorted(os.listdir(flame_dir)):
+            if stray not in _FLAME_GRAPH_FILES:
+                self.fail(
+                    f"flame-graph/{stray} duplicates the shared "
+                    f"{_FLAME_APP_DIR}/ bundle: {flame_dir}"
+                )
 
     # The heat map must be there, and must carry its own runtime script.
     def heat_map_check(self, out_dir: str, test_name: str) -> None:
@@ -157,7 +217,9 @@ class ValidateReport:
             _MIN_HEATMAP_BYTES,
             f"{test_name} / heat map",
         )
-        if text and "report_ui.layout_activate" not in text:
+        if text and "report_ui.layout_activate" not in self.page_scripts(
+            path, text
+        ):
             self.fail(
                 "heat-map/index.html is missing its runtime script"
                 f" (no report_ui.layout_activate): {path}"
@@ -194,6 +256,7 @@ class ValidateReport:
         test_name: str,
         layout: ValidateReport.ReportLayout,
         has_rawdata: bool,
+        has_archive: bool,
     ) -> None:
         path = os.path.join(out_dir, "index.html")
         text = self.page_check(path, "index.html", _MIN_INDEX_BYTES, test_name)
@@ -209,9 +272,9 @@ class ValidateReport:
             if wanted != (f'href="{key}/index.html"' in text):
                 lack = "is missing its" if wanted else "should not have a"
                 self.fail(f"index.html {lack} {key} strip link: {path}")
-        if has_rawdata and "raw data" not in text:
+        if has_archive and "raw data" not in text:
             self.fail(f"index.html has no 'raw data' section: {path}")
-        elif not has_rawdata and "raw data" in text:
+        elif not has_archive and "raw data" in text:
             self.fail(
                 "index.html has a 'raw data' section, but it should"
                 f" not: {path}"
@@ -238,6 +301,15 @@ class ValidateReport:
                     f"MANIFEST.txt has no '{label}=' header row, so a"
                     f" reader of this report cannot show it: {path}"
                 )
+
+    # One file out of an open archive, as text a scan can search.
+    def member_text(
+        self, archive: tarfile.TarFile, member: tarfile.TarInfo
+    ) -> str:
+        handle = archive.extractfile(member)
+        if handle is None:
+            return ""
+        return handle.read().decode("utf-8", errors="replace")
 
     # The overview page: its test-suites table, one link per test, its blocks.
     def overview_check(
@@ -318,6 +390,24 @@ class ValidateReport:
                 )
         return text
 
+    # Everything a page runs or styles itself with, inline or linked. A
+    # linked asset is read off disk and a missing one fails, so a page whose
+    # relative href into the shared theme is wrong cannot pass by looking
+    # like a page that simply inlines less.
+    def page_scripts(self, path: str, text: str) -> str:
+        parts = [text]
+        page_dir = os.path.dirname(path)
+        for href in re.findall(
+            r'<(?:script[^>]*\ssrc|link[^>]*\shref)="([^"]+)"', text
+        ):
+            asset = os.path.join(page_dir, href)
+            try:
+                with open(asset, encoding="utf-8", errors="replace") as handle:
+                    parts.append(handle.read())
+            except OSError as error:
+                self.fail(f"{path} links {href}, which is unreadable: {error}")
+        return "\n".join(parts)
+
     # A page's title, which is how we tell an overview from a test page.
     def page_title(self, index_path: str) -> str:
         with open(index_path, encoding="utf-8", errors="replace") as handle:
@@ -348,34 +438,61 @@ class ValidateReport:
                     f"{os.path.join(out_dir, 'index.html')}"
                 )
 
-    # The raw data must be a real callgrind file with the repo root stripped.
-    def raw_dir_check(self, out_dir: str) -> None:
-        raw_dir = os.path.join(out_dir, "raw")
-        files = sorted(os.listdir(raw_dir)) if os.path.isdir(raw_dir) else []
-        if not any(
-            name.startswith("callgrind.")
-            and not name.endswith(settings.CALLERS_SUFFIX)
-            for name in files
-        ):
-            self.fail(f"raw/ has no callgrind file: {raw_dir}")
+    # One archive: openable, holding a callgrind file, and naming no
+    # absolute path from the box that made it.
+    def raw_archive_check(self, path: str, name: str) -> None:
+        self.size_check(path, _MIN_RAW_BYTES, f"raw/{name}")
+        try:
+            with tarfile.open(path, "r:xz") as archive:
+                texts = {
+                    member.name.lstrip("./"): self.member_text(archive, member)
+                    for member in archive.getmembers()
+                    if member.isfile()
+                }
+        except (OSError, tarfile.TarError) as error:
+            self.fail(f"raw/{name} is not readable as tar.xz: {path}: {error}")
             return
-        for name in files:
-            path = os.path.join(raw_dir, name)
-            text = self.size_check(path, _MIN_RAW_BYTES, f"raw/{name}")
-            if (
-                name.startswith("callgrind.")
-                and not name.endswith(settings.CALLERS_SUFFIX)
-                and "events:" not in text[:4096]
-            ):
-                self.fail(
-                    "raw data file does not look like a callgrind trace (no "
-                    f"'events:' near the top): {path}"
-                )
+        if not any(
+            inner.startswith("callgrind.")
+            and not inner.endswith(settings.CALLERS_SUFFIX)
+            and "events:" in text[:4096]
+            for inner, text in texts.items()
+        ):
+            self.fail(
+                f"raw/{name} holds no callgrind file with an 'events:' line"
+                f" near its top: {path}"
+            )
+        for inner, text in texts.items():
             if callgrind.REPO_ROOT in text:
                 self.fail(
                     f"raw/{name} still contains the absolute repo root "
-                    f"{callgrind.REPO_ROOT!r}: {path}"
+                    f"{callgrind.REPO_ROOT!r} in {inner}: {path}"
                 )
+
+    # Raw data is one tar.xz per test, holding a real callgrind file with the
+    # repo root stripped. "all" synthesizes its pages from the other tests'
+    # profiles and stores nothing of its own, so it has no raw/ at all.
+    def raw_dir_check(self, out_dir: str, has_rawdata: bool) -> None:
+        raw_dir = os.path.join(out_dir, "raw")
+        if not has_rawdata:
+            if os.path.exists(raw_dir):
+                self.fail(
+                    "raw/ in a test that records nothing of its own"
+                    f": {raw_dir}"
+                )
+            return
+        names = sorted(os.listdir(raw_dir)) if os.path.isdir(raw_dir) else []
+        archives = [name for name in names if name.endswith(_ARCHIVE_SUFFIX)]
+        if not archives:
+            self.fail(f"raw/ has no {_ARCHIVE_SUFFIX} archive: {raw_dir}")
+        for name in names:
+            if name not in archives:
+                self.fail(
+                    f"raw/{name} is not a {_ARCHIVE_SUFFIX} archive -- raw"
+                    f" data is stored compressed: {raw_dir}"
+                )
+        for name in archives:
+            self.raw_archive_check(os.path.join(raw_dir, name), name)
 
     # Check one whole report, overview or single test, and report every
     # problem at once.
@@ -397,6 +514,8 @@ class ValidateReport:
         if name == "overview":
             tests = self.overview_test_names(index_path, out_dir)
             self.overview_check(out_dir, tests, layout)
+            if "flame-graph" in layout.subpages:
+                self.flame_app_check(out_dir)
             for test_name in tests:
                 self.test_report_check(
                     os.path.join(out_dir, test_name), test_name, layout
@@ -439,9 +558,12 @@ class ValidateReport:
         self, out_dir: str, name: str, layout: ValidateReport.ReportLayout
     ) -> None:
         has_rawdata = layout.test_has_rawdata and name != "all"
-        self.index_check(out_dir, name, layout, has_rawdata)
+        # a diff stores one delta per test, "all" included, because it
+        # subtracts the merged profiles rather than re-reading each test's
+        has_archive = layout.all_has_archive or name != "all"
+        self.index_check(out_dir, name, layout, has_rawdata, has_archive)
         self.heat_map_check(out_dir, name)
-        self.raw_dir_check(out_dir)
+        self.raw_dir_check(out_dir, has_archive)
         if "flame-graph" in layout.subpages:
             self.flame_graph_check(out_dir, has_rawdata)
         if layout.test_has_rawdata:
@@ -494,6 +616,7 @@ _LAYOUT_DIFF = ValidateReport.ReportLayout(
     "curl/perf2html_diff.sh v1",
     ("baseline", "modified", "stamp"),
     False,
+    True,
 )
 
 # What a perf2html.sh report must contain.
@@ -504,6 +627,7 @@ _LAYOUT_FULL = ValidateReport.ReportLayout(
     "curl/perf2html.sh v1",
     ("sampled", "revision", "cpu", "build", "executable", "stamp"),
     True,
+    False,
 )
 
 

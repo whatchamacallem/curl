@@ -102,24 +102,24 @@ kept in step by hand; `$SCRIPT` survives only for the `cd`.
   `--report=perf2html_modified_report` yourself). cwd-independent (cd's to
   `dev/`); relative DIR is under `dev/`. Last line printed is the `file://`
   URL. `toolchain_check` is the **only** toolchain check the user-facing
-  scripts have (the batch reaches it by calling this script; the diff only
-  probes `python3` inline). It collects **every** missing tool before exiting
-  1, printing one `tool -> official install command` line each from
+  scripts have (the batch reaches it by calling this script; the diff probes
+  `python3`/`tar`/`xz` inline). It collects **every** missing tool before
+  exiting 1, printing one `tool -> official install command` line each from
   `install_hint`: `sudo apt install` for what Ubuntu ships (`cmake`,
   `ninja-build`, `ccache`, `build-essential` for `cc`, `valgrind`,
-  `linux-tools-generic` for `perf`, `binutils` for `addr2line`/`readelf`) and
-  the project's own command for what it does not (`npm install -g speedscope`).
-  **Official instructions only** - no PPAs, no hand-rolled recipes. A missing
-  `perf` also prints a WSL2 note: `linux-tools-generic` is built against an
-  Ubuntu kernel WSL does not run, so `linux-perf` is the kernel-independent
-  build. Tools a desktop Ubuntu already has are deliberately hint-free beyond
-  the default `apt` line - `taskset` (util-linux), `python3`, and
-  `git`/`lscpu`/`awk`/`sed`/`find`, which aren't probed at all. `reformat.sh`'s
-  tools (pyright, ruff, prettier, shfmt, clang-format, node) are **out of
-  scope** here: `dev/*.sh` is for tool users, `reformat.sh` for tool
-  development.
+  `linux-tools-generic` for `perf`, `binutils` for `addr2line`/`readelf`,
+  `xz-utils` for `xz`) and the project's own command for what it does not
+  (`npm install -g speedscope`). **Official instructions only** - no PPAs, no
+  hand-rolled recipes. A missing `perf` also prints a WSL2 note:
+  `linux-tools-generic` is built against an Ubuntu kernel WSL does not run, so
+  `linux-perf` is the kernel-independent build. Tools a desktop Ubuntu already
+  has are deliberately hint-free beyond the default `apt` line - `taskset`
+  (util-linux), `python3`, `tar`, and `git`/`lscpu`/`awk`/`sed`/`find`, which
+  aren't probed at all. `reformat.sh`'s tools (pyright, ruff, prettier, shfmt,
+  clang-format, node) are **out of scope** here: `dev/*.sh` is for tool users,
+  `reformat.sh` for tool development.
 - `perf2html_diff.sh` - measures nothing; subtracts two reports' own `raw/`
-  data.
+  archives, unpacked into `dev/temporary_artifacts/` first.
 - `perf2html_batch.sh` - measures and generates, and runs **no** checks. Three
   steps: 1 baseline, 2 modified (default `-D CMAKE_C_FLAGS=-Os`), 3 diff. Every
   step runs even after a failure; exit 1 names the failed ones. **Quiet mode
@@ -204,12 +204,18 @@ index.html          overview: strip + header table + "test suites" table
 <test>/index.html   summary: strip + collapsed perf log / trace log /
                     valgrind log / raw-data links + "top 50 functions
                     by self"
-<test>/flame-graph/ speedscope bundle + profile.js (recorded rdtsc trace)
+<test>/flame-graph/ index.html + profile.js (recorded rdtsc trace) +
+                    output.txt; the viewer itself is in flame-graph-app/
 <test>/heat-map/    per-line source heat map
 <test>/perf-tool/   output.txt only (rendered as the summary's "perf log")
-<test>/raw/         callgrind file (repo root stripped) + the trace's
-                    speedscope JSON
+<test>/raw/         <test>.tar.xz: callgrind file (repo root stripped)
+                    + the trace's speedscope JSON
 all/                every test's callgrind data merged, same shape
+assets/             the report's one copy of the theme: theme.css,
+                    theme.js, frame.js, heatmap.css, heatmap.js,
+                    ui_strings.js. every page links what it uses
+flame-graph-app/    the report's one copy of speedscope: the engine, its
+                    stylesheet, its font
 README.md           glossary + notes; copied from dev/README.md every
                     run ("help" link)
 MANIFEST.txt        line 1 = version string; then LABEL=VALUE header rows
@@ -217,10 +223,15 @@ MANIFEST.txt        line 1 = version string; then LABEL=VALUE header rows
 
 Exceptions to remember:
 
-- The **"all"** synthetic test: no perf log, no trace log, no raw-data section,
-  no flame graph (the files still exist on disk, just unlinked).
+- The **"all"** synthetic test: no perf log, no trace log, no flame graph, and
+  in a full report **no `raw/` at all** - it records nothing of its own, it
+  reads every real test's archive. (A _diff_'s `all` does have one: the merged
+  delta is data no per-test archive holds. That split is
+  `ReportLayout.all_has_archive`.) It used to keep a `raw/` holding a copy of
+  every test's callgrind file, unlinked from any page - 1.3MB of dead clones.
 - A **diff report**: no flame graph, no native timing, and per-test pages have
-  no preamble at all - strip straight to the table.
+  no preamble **except** the raw-data link to their own archive, which they
+  gained when raw data became a single linkable file.
 - `MANIFEST.txt` line 1 is the _only_ thing that makes a directory a diff input
   (`head -1`; a diff's own version string names `perf2html_diff.sh`, so diffs
   can't be diffed). Written by `run_all` after every test, so an aborted run
@@ -228,6 +239,93 @@ Exceptions to remember:
 - **Every path written to a page or manifest is relative** - `path_display()` /
   `$REPO` stripping. `validate_report.py`'s `home_dir_check` walks every file
   and fails on the author's `$HOME`: a report must be copyable off-box.
+
+**Raw data is stored compressed, one `tar.xz` per test**, and
+`dev/temporary_artifacts/` is the uncompressed working dir it is packed from
+and unpacked back into. `ARCHIVE_SUFFIX` = `.tar.xz` in both user-facing
+scripts and `_ARCHIVE_SUFFIX` in `validate_report.py`. The archive is named
+after the **directory** holding it, never the page title, which can carry a
+space (`<test> diff`). Writers stage copies under
+`temporary_artifacts/stage.<name>.<stamp>`, strip `.$STAMP` out of each name
+and `$REPO/` out of each body, then tar and delete the stage - so the names
+inside an archive are exactly what `raw/` used to hold uncompressed. The `tar`
+line is **`--sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner`**:
+without those an archive carries mtimes and readdir order and two runs on one
+input differ, which breaks the determinism rule below. `perf2html_diff.sh`
+unpacks both input reports **once** in `profiles_extract`, into
+`temporary_artifacts/<role>.<test>.<stamp>/`, and writes a
+`profiles.<role>.<stamp>.txt` listing of `<test> <files...>` lines that
+`tests_pair`/`profiles_of` then read - re-running the glob per test would
+re-extract every archive. `profiles_extract` is also what **synthesizes the
+`all` row** for a diff, as the union of every real test's profiles, since no
+`all` archive exists to find. `tar`/`xz` are in `toolchain_check` and in the
+diff's inline probe (`xz` -> `xz-utils`, the one hint the default `apt` line
+gets wrong).
+
+**A diff overview reads its rows from `--profile NAME=FILE`**, the working
+delta in `temporary_artifacts/`, not from the report's `raw/`
+(`BuildReport.diff_overview_rows`; the callers file is that path plus
+`settings.CALLERS_SUFFIX`). It used to `os.listdir` each test's `raw/`, which
+compressing would have silently emptied - every row would have rendered blank
+rather than failing.
+
+**What every page shares is stored once per report and linked**, never inlined
+per page. Two directories at the report root hold it: `assets/` for our own
+theme (`theme.css`, `theme.js`, `frame.js`, `heatmap.css`, `heatmap.js`,
+`ui_strings.js`) and `flame-graph-app/` for speedscope. The constants are
+`ASSETS_DIR`/`FLAME_APP_DIR` in the two user-facing scripts, `theme.py`'s
+`THEME_CSS`/`THEME_JS`/`FRAME_JS`/`HEATMAP_CSS`/`HEATMAP_JS`/ `UI_STRINGS_JS`,
+and `_FLAME_APP_DIR`/`_FLAME_APP_GLOBS`/`_FLAME_GRAPH_FILES` in
+`validate_report.py`. Every generator takes `--assets-href`, the **relative**
+href from that page to `assets/` (`assets` at the root, `../assets` one deep,
+`../../assets` for a heat map or flame graph); a diff's single-test mode is its
+own root, which is what `diff_one`'s `assets_href`/`heat_assets_href` compute.
+Without the flag a page inlines everything and stands alone, which is what
+keeps `theme.py`'s `document()` and `callgrind_to_heatmap.py`'s `render()`
+honest - both branches build the same page. `theme.theme_assets_write()`
+(exposed as `build_report.py assets -o DIR`) writes the theme: **the stylesheet
+is generated, not copied**, because its colour variables are computed in
+`Theme.css()`, so a copied `scripts/theme.css` would silently drop them.
+`flame_app_install` copies speedscope, and both run once per report before any
+page.
+
+This is a `file://` layout, so it is **classic `<script src>` and `<link>`
+only** - verified in Chrome across directories. An ES module or a `fetch()`
+would need a web server and is what this must never become; `localStorage` and
+the frame `postMessage` nest keep working because same-origin `file://`
+documents still count as same-origin to each other.
+
+**Only the speedscope files a page actually loads are copied.**
+`FLAME_APP_FILES` is `speedscope-*.js`, `speedscope-*.css`, `*.woff2` - the
+engine, its stylesheet, and the font that stylesheet names by a path relative
+to **itself**, which is why the font has to sit beside the CSS. The rest of the
+release is dead weight for us: `jfrview_bg-*.wasm` (a Java Flight Recorder
+importer), `perf-vertx-stacks-*.txt` (speedscope's 264KB demo profile), the
+favicons, `file-format-schema.json` and `release.txt`. Both large files are
+lazy module exports - evaluating them yields a **string**, and nothing fetches
+it unless you use the importer or open speedscope's own landing page, which we
+replace. Together they were 973KB copied per test.
+
+**A flame graph page is ours now, not a patched speedscope page.**
+`build_flame_graph.py` writes `scripts/flame_graph.html` with `__APP_CSS__`,
+`__APP_JS__` and `__PROFILE_JS__` substituted, instead of editing speedscope's
+`index.html` in place. `app_asset()` resolves each `speedscope-*` glob against
+the shared directory and **fails unless it matches exactly one file**, so a
+second copy of the bundle is an error rather than an arbitrary pick. The page
+is a loader - a link and two script tags - so it has its own size floor,
+`_MIN_FLAME_PAGE_BYTES`, well under `_MIN_PAGE_BYTES`.
+
+**Validation follows a link rather than assuming inlining.** `page_scripts()`
+reads every `src=`/`href=` a page names and appends the file, so
+`heat_map_check`'s grep for `report_ui.layout_activate` finds a linked runtime
+and **a missing or misspelled href fails loudly** - that is the one failure
+mode sharing introduces, and it is caught, not rendered blank.
+`flame_graph_check` resolves the flame page's hrefs the same way, requires
+`flame-graph-app/` to appear in it, and fails any file in a test's
+`flame-graph/` outside `_FLAME_GRAPH_FILES` - a per-test copy of the engine is
+exactly what sharing exists to remove. `flame_app_check` runs once at the
+overview level and requires the shared bundle to hold exactly one file per
+glob.
 
 **Generated pages are deterministic** - same input ⇒ byte-identical output, so
 a page diff is always code, never sampling. Only `MANIFEST.txt`'s `stamp=` and
@@ -310,13 +408,15 @@ vocabulary means adding it to `_ALLOWED_UNICODE` with a `#` comment naming it.
 table pairs `*.md` with `*.json` only because `prettier` handles both.
 
 Reformatting any of `scripts/heatmap.html`, `heatmap.js`, `heatmap.css`,
-`frame.js`, `flame_bootstrap.js`, `theme.css` or `theme.js` changes every
-generated page (they are all inlined into each one), so a page diff after such
-an edit is expected; `perf2html_batch.sh --regenerate` then a diff against a
-snapshot is how you check that only the inlined `<style>`/`<script>` moved.
-Text a script `echo`s into `perf-tool/output.txt` is _page content_, so
-rewrapping it does change the report - split it into extra `#` lines rather
-than letting it overflow.
+`frame.js`, `flame_bootstrap.js`, `theme.css` or `theme.js` changes a report,
+so a page diff after such an edit is expected;
+`perf2html_batch.sh --regenerate` then a diff against a snapshot is how you
+check it. Most of them now land in the report's one `assets/` copy rather than
+in every page, so the diff is one file, not nineteen - `heatmap.html` and
+`flame_bootstrap.js` are the exceptions, being substituted into each page. Text
+a script `echo`s into `perf-tool/output.txt` is _page content_, so rewrapping
+it does change the report - split it into extra `#` lines rather than letting
+it overflow.
 
 Not to be confused with the **80-column source _view_** in the heat map
 (`SOURCE_WIDTH`, `MINIMUM_COLUMNS`), which is the standard width the profiled
@@ -430,7 +530,9 @@ pipx/uv). Pylance is not usable - LSP only, ignores argv.
   are `ManifestRow`/`ManifestBlock` (methods `manifest_*`) - not the heat map's
   `HeatMapTotals`, and not a table's column-title row
   (`theme.table_render(column_titles=...)`). **Never call any of them just
-  "header".** Its `FRAME_JS` is `theme.theme_asset("frame.js")`.
+  "header".** Its `_PAGE_JS` is the asset **names**
+  `(theme.UI_STRINGS_JS, theme.FRAME_JS)`, which `theme.page_document()` either
+  links or inlines.
 - `callgrind_diff.py` - the subtraction; also home of `profile_magnitudes()`,
   which generators import. It names `settings.EVENT` directly; `event_of()` and
   `events_all()` are gone. `events_check()` is a **hard error** - two sides
@@ -441,31 +543,36 @@ pipx/uv). Pylance is not usable - LSP only, ignores argv.
   diff** (`CallersDoc`), carrying the baselines every diff share divides by;
   every vector it writes goes through `costs_fit()`, which pads to the recorded
   width and trims trailing zeros - so a slot's index never moves and a short
-  vector still means zeros. `perf2html_diff.sh` copies it into the report's
-  `raw/` as `<delta>.callers.json` so the overview can reach it;
-  `validate_report.py` skips it in `raw_dir_check` (`settings.CALLERS_SUFFIX`).
-  The file name, the flags and the JSON keys are contract - only the prose and
-  the Python names say "synthesized callers diff": `CallgrindToHeatmap`'s
+  vector still means zeros. `perf2html_diff.sh` stores it in the report's
+  `raw/` archive as `<delta>.callers.json`, and the overview reaches it by
+  `--profile`, off the working copy, not by reading the archive back. The file
+  name, the flags and the JSON keys are contract - only the prose and the
+  Python names say "synthesized callers diff": `CallgrindToHeatmap`'s
   `SynthesizedCallers` + `synthesized_callers_load()` read it,
   `BuildReport.CallersData` + `callers_data_load()` read it back whole.
 - `callgrind_to_heatmap.py` - opens on `settings.EVENT`, `_TREE` = dirs whose
   tracked `.c/.h` are listed even without samples. Its `BODY`, `_CSS` and
   `_HEAT_MAP_JS` are `theme.theme_asset()` of `heatmap.html`, `heatmap.css` and
   `heatmap.js`, and `_UI_STRINGS_JS` of `ui_strings.js`. `render()` substitutes
-  `__UI_STRINGS_JS__`, `__THEME_JS__` and `__HEATMAP_JS__` **before**
-  `__DATA__`: the three scripts are our own files and carry no marker, while
-  `__DATA__` is profiled source text, so it is the one replacement whose result
-  must never be scanned again.
+  `__SCRIPTS__` **before** `__DATA__`: the scripts are our own files and carry
+  no marker, while `__DATA__` is profiled source text, so it is the one
+  replacement whose result must never be scanned again. `__SCRIPTS__` is one
+  marker holding the whole ordered run of `<script>` tags -- three `src=` links
+  with `--assets-href`, three inline blocks without -- and it sits where the
+  tags sat, **after** the markup they touch. Both branches emit
+  `ui_strings.js`, `theme.js`, `heatmap.js` in that order.
 - **No generator holds a multi-line HTML/CSS/JS literal any more.** Each one is
   a real file in `scripts/`, read at import through `theme.theme_asset()` -
   `Theme.asset_read()` exposed as a free function, the same door
   `theme.css`/`theme.js` come through. The files and their holders:
   `heatmap.html` → `callgrind_to_heatmap.BODY`, `heatmap.css` →
   `callgrind_to_heatmap._CSS`, `heatmap.js` →
-  `callgrind_to_heatmap._HEAT_MAP_JS`, `frame.js` → `build_report.FRAME_JS`,
-  `flame_bootstrap.js` → `build_flame_graph._BOOTSTRAP`, `ui_strings.js` →
-  `callgrind_to_heatmap._UI_STRINGS_JS` **and** `build_report._UI_STRINGS_JS`
-  (the one asset two generators hold, because both their pages render text).
+  `callgrind_to_heatmap._HEAT_MAP_JS`, `flame_graph.html` →
+  `build_flame_graph._PAGE`, `flame_bootstrap.js` →
+  `build_flame_graph._BOOTSTRAP`, `ui_strings.js` →
+  `callgrind_to_heatmap._UI_STRINGS_JS` (its inline branch). `frame.js` has no
+  holder any more: `build_report` names it as `theme.FRAME_JS`, a **file
+  name**, and `theme.py` reads it only to write `assets/` or to inline it.
   Being off the Python side, **their JS is written plainly** - `\n` is `\n`,
   not `\\n`; that gotcha is gone from `dev/` entirely. They keep their
   coverage: `prettier` formats and parses each file on disk, which is the same
@@ -488,20 +595,21 @@ pipx/uv). Pylance is not usable - LSP only, ignores argv.
   never split at the seam (`str_popup_callees`, `str_heading_lines_by_event`).
   Replacements are not rescanned, so a function name containing braces cannot
   inject a second substitution. It is the only `scripts/` asset two generators
-  hold, and it must be inlined **before** the script that reads it -
-  `heatmap.html`'s marker order and `build_report._PAGE_JS`
-  (`_UI_STRINGS_JS + FRAME_JS`, one `extra_js` string) are how that is done.
-  What stays out of it is the boundary names: CSS classes, `data-*` attributes,
-  localStorage and URL keys, element ids, the TypedDicts' JSON keys, the
-  substitution markers, and the three names `validate_report.py` greps for. The
-  diff arrows and `>1000x`/`≈0.00%` stay out too - they are number _notation_,
-  produced in lockstep with `theme.py`'s `Numbers`, not vocabulary. `theme.js`
-  holds no UI text, and `flame_bootstrap.js` renders none. **`heatmap.html`
-  holds none either**: its four control labels, the two `tree:` option texts
-  and the search placeholder are empty in the markup and filled by `heatmap.js`
-  at startup (`str_control_*`, `str_sort_*`, `str_search_placeholder`) through
-  the `#eventLabel`/`#scaleLabel`/`#sortLabel`/`#searchLabel` spans - so no
-  English text is authored into the page skeleton. Python is the one boundary
+  hold, and it must load **before** the script that reads it - `heatmap.html`'s
+  `__SCRIPTS__` order and `build_report._PAGE_JS`
+  (`(theme.UI_STRINGS_JS, theme.FRAME_JS)`, the asset names `extra_js` takes)
+  are how that is done. What stays out of it is the boundary names: CSS
+  classes, `data-*` attributes, localStorage and URL keys, element ids, the
+  TypedDicts' JSON keys, the substitution markers, and the three names
+  `validate_report.py` greps for. The diff arrows and `>1000x`/`≈0.00%` stay
+  out too - they are number _notation_, produced in lockstep with `theme.py`'s
+  `Numbers`, not vocabulary. `theme.js` holds no UI text, and
+  `flame_bootstrap.js` renders none. **`heatmap.html` holds none either**: its
+  four control labels, the two `tree:` option texts and the search placeholder
+  are empty in the markup and filled by `heatmap.js` at startup
+  (`str_control_*`, `str_sort_*`, `str_search_placeholder`) through the
+  `#eventLabel`/`#scaleLabel`/`#sortLabel`/`#searchLabel` spans - so no English
+  text is authored into the page skeleton. Python is the one boundary
   `ui_strings.js` cannot cross: `build_report.py` renders page text server-side
   and cannot call `text_of`, so its few strings (`(no recorded caller)`,
   `(no recorded caller change)`) stay in Python and are kept in step with their
@@ -538,7 +646,11 @@ pipx/uv). Pylance is not usable - LSP only, ignores argv.
   profile out of `flame_bootstrap.js` with) and `report_ui.layout_activate`
   (`heat_map_check`'s proof the heat map carries its runtime). Rename one of
   those in the JS and every page fails validation while looking perfectly
-  correct in a browser - change both sides together.
+  correct in a browser - change both sides together. `raw_dir_check` /
+  `raw_archive_check` open each `raw/*.tar.xz` with `tarfile` and run the old
+  per-file checks **inside** it (an `events:` line near the top of a callgrind
+  member, no `callgrind.REPO_ROOT` in any member), fail an uncompressed file
+  left beside the archives, and fail a `raw/` on a test that stores nothing.
 - `prettier` - formats **and** lints JS, CSS, HTML, Markdown, JSON and YAML,
   replacing the former `check_js.py`/`check_html.py` and `mdformat`. It
   reparses what it writes, so a syntax error or an unbalanced `</div>` fails
@@ -690,9 +802,10 @@ freely. The shared runtime global is `window.report_ui` (`layout_activate`,
 and unrelated. The stored keys themselves are boundary names, so they keep
 their dotted spelling - `heat.scale`, `heat.sort`, `split.<pane>` and
 `perf2html.version`, the last holding the store version that `theme.js` sweeps
-on. `flame_bootstrap.js`'s `__NAME__`/`__DATA__` and `heatmap.html`'s
-`__DATA__`/`__UI_STRINGS_JS__`/`__THEME_JS__`/`__HEATMAP_JS__` are substitution
-markers Python matches literally - never rename them.
+on. `flame_bootstrap.js`'s `__NAME__`/`__DATA__`, `heatmap.html`'s
+`__DATA__`/`__SCRIPTS__` and `flame_graph.html`'s
+`__APP_CSS__`/`__APP_JS__`/`__PROFILE_JS__` are substitution markers Python
+matches literally - never rename them.
 
 **UI text does not live in the script that renders it.** Every English string a
 page shows is an entry in `scripts/ui_strings.js` behind a `str_` id, and a

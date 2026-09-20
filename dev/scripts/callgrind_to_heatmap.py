@@ -134,6 +134,8 @@ class CallgrindToHeatmap:
 
     # HeatArgs - What this tool reads, and the page it writes.
     class HeatArgs(NamedTuple):
+        # relative href to the report's shared theme, or "" to inline it
+        assets_href: str
         # the callgrind file(s), merged into one profile
         callgrind_file: list[str]
         # where the page goes
@@ -434,22 +436,46 @@ class CallgrindToHeatmap:
     # close the script tag early. The script markers go in before __DATA__,
     # which carries profiled source text and so is the one substitution whose
     # result must never be scanned again.
-    def render(self, model: CallgrindToHeatmap.HeatModel, title: str) -> str:
+    def render(
+        self,
+        model: CallgrindToHeatmap.HeatModel,
+        title: str,
+        assets_href: str = "",
+    ) -> str:
         data = json.dumps(model, separators=(",", ":"), ensure_ascii=False)
         data = data.replace("</", "<\\/")
-        body = (
-            BODY.replace("__UI_STRINGS_JS__", _UI_STRINGS_JS)
-            .replace("__THEME_JS__", theme.theme_js())
-            .replace("__HEATMAP_JS__", _HEAT_MAP_JS)
-            .replace("__DATA__", data)
-        )
+        # the three scripts run in this order, after the markup they touch
+        names = (theme.UI_STRINGS_JS, theme.THEME_JS, theme.HEATMAP_JS)
+        if assets_href:
+            # the scripts and styles are the same bytes on every heat map,
+            # so they are linked from the report's one copy of each; only
+            # this test's measurements stay in the page
+            scripts = "".join(
+                f'<script src="{assets_href}/{name}"></script>\n'
+                for name in names
+            )
+            styles = "".join(
+                f'<link rel="stylesheet" href="{assets_href}/{name}">\n'
+                for name in (theme.THEME_CSS, theme.HEATMAP_CSS)
+            )
+        else:
+            scripts = "".join(
+                f"<script>\n{text}</script>\n"
+                for text in (
+                    _UI_STRINGS_JS,
+                    theme.theme_js(),
+                    _HEAT_MAP_JS,
+                )
+            )
+            styles = f"<style>\n{theme.theme_css()}{_CSS}</style>\n"
+        body = BODY.replace("__SCRIPTS__", scripts).replace("__DATA__", data)
         return (
             '<!doctype html>\n<html lang="en">\n'
             '<head>\n<meta charset="utf-8">\n'
             '<meta name="viewport"'
             ' content="width=device-width, initial-scale=1">\n'
-            f"<title>{theme.html_escape(title)}</title>\n<style>\n"
-            f"{theme.theme_css()}{_CSS}</style>\n"
+            f"<title>{theme.html_escape(title)}</title>\n"
+            f"{styles}"
             "</head>\n<body>\n" + body + "</body>\n</html>\n"
         )
 
@@ -474,7 +500,7 @@ class CallgrindToHeatmap:
         model = self.model(profile)
         if args.diff:
             self.diff_model(model, profile, args.baseline_data)
-        html = self.render(model, args.title)
+        html = self.render(model, args.title, args.assets_href)
         os.makedirs(
             os.path.dirname(os.path.abspath(args.output)), exist_ok=True
         )
@@ -531,6 +557,13 @@ def main() -> None:
         help="callgrind output file(s). several are merged into one profile",
     )
     parser.add_argument(
+        "--assets-href",
+        default="",
+        metavar="HREF",
+        help="relative href to the report's shared theme; without it the "
+        "page inlines its own copy and stands alone",
+    )
+    parser.add_argument(
         "-o",
         "--output",
         required=True,
@@ -554,6 +587,7 @@ def main() -> None:
     namespace = parser.parse_args()
     CallgrindToHeatmap().run(
         CallgrindToHeatmap.HeatArgs(
+            assets_href=namespace.assets_href,
             callgrind_file=namespace.callgrind_file,
             output=namespace.output,
             title=namespace.title,

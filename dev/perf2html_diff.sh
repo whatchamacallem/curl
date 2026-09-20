@@ -5,6 +5,8 @@ set -euo pipefail
 SCRIPT="$(readlink -f "$0")"
 cd "$(dirname "$SCRIPT")"
 
+ARCHIVE_SUFFIX=.txz
+ASSETS_DIR=assets
 DIFF_MANIFEST='curl/perf2html_diff.sh v1'
 REPORT_MANIFEST='curl/perf2html.sh v1'
 
@@ -136,31 +138,60 @@ header_file_of() {
   echo "$out"
 }
 
-profiles_list() {
-  local dir="$1" raw test files
-  for raw in "$dir"/raw "$dir"/*/raw; do
-    [ -d "$raw" ] || continue
-    files=$(find "$raw" -maxdepth 1 -type f -name 'callgrind.out.*' \
+raw_archive_write() {
+  local name="$1" out="$2"
+  shift 2
+  local stage file staged
+  stage="$PWD/temporary_artifacts/stage.$name.$STAMP"
+  rm -rf "$stage"
+  mkdir -p "$stage" "$out/raw"
+  for file in "$@"; do
+    staged="$(basename "$file")"
+    staged="${staged/.$STAMP/}"
+    cp "$file" "$stage/$staged"
+  done
+  # generated output is byte-identical for one input
+  test_run tar --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner \
+    -cJf "$out/raw/$name$ARCHIVE_SUFFIX" -C "$stage" .
+  rm -rf "$stage"
+}
+
+profiles_extract() {
+  local dir="$1" role="$2"
+  local listing="$PWD/temporary_artifacts/profiles.$role.$STAMP.txt"
+  local archive test into files every=""
+  : >"$listing"
+  for archive in "$dir"/raw/*"$ARCHIVE_SUFFIX" \
+    "$dir"/*/raw/*"$ARCHIVE_SUFFIX"; do
+    [ -f "$archive" ] || continue
+    test="$(basename "$(dirname "$(dirname "$archive")")")"
+    [ "$test" = "$(basename "$dir")" ] && test=.
+    into="$PWD/temporary_artifacts/$role.$test.$STAMP"
+    rm -rf "$into"
+    mkdir -p "$into"
+    test_run tar xJf "$archive" -C "$into"
+    files=$(find "$into" -maxdepth 1 -type f -name 'callgrind.out.*' \
       | sort | tr '\n' ' ')
     [ -n "$files" ] || continue
-    test="$(basename "$(dirname "$raw")")"
-    [ "$test" = "$(basename "$dir")" ] && test=.
-    echo "$test $files"
+    echo "$test $files" >>"$listing"
+    [ "$test" = . ] || every+="$files"
   done
+  [ -z "$every" ] || echo "all $every" >>"$listing"
+  echo "$listing"
 }
 
 tests_pair() {
   local base_tests cur_tests name
-  base_tests="$(profiles_list "$BASE_DIR" | cut -d' ' -f1 | sort -u)"
-  cur_tests="$(profiles_list "$MOD_DIR" | cut -d' ' -f1 | sort -u)"
+  base_tests="$(cut -d' ' -f1 "$BASE_LISTING" | sort -u)"
+  cur_tests="$(cut -d' ' -f1 "$MODIFIED_LISTING" | sort -u)"
   if [ -z "$base_tests" ]; then
-    echo "error: no */raw/callgrind.out.* files in the baseline" \
-      "report: $BASE_DIR" >&2
+    echo "error: no */raw/*$ARCHIVE_SUFFIX archive holding" \
+      "callgrind.out.* in the baseline report: $BASE_DIR" >&2
     exit 2
   fi
   if [ -z "$cur_tests" ]; then
-    echo "error: no */raw/callgrind.out.* files in the modified" \
-      "report: $MOD_DIR" >&2
+    echo "error: no */raw/*$ARCHIVE_SUFFIX archive holding" \
+      "callgrind.out.* in the modified report: $MOD_DIR" >&2
     exit 2
   fi
   for name in $(comm -23 <(echo "$base_tests") <(echo "$cur_tests")); do
@@ -173,18 +204,22 @@ tests_pair() {
 }
 
 profiles_of() {
-  profiles_list "$1" | awk -v want="$2" \
+  awk -v want="$2" \
     'found { next }
-     $1 == want { $1 = ""; print substr($0, 2); found = 1 }'
+     $1 == want { $1 = ""; print substr($0, 2); found = 1 }' "$1"
 }
 
 diff_one() {
   local test="$1" out="$2" name="$3"
-  local diff_file callers_file base_files cur_files args help_args=() raw_name
+  local diff_file callers_file base_files cur_files args help_args=()
+  local archive assets_href heat_assets_href
+  assets_href="$ASSETS_DIR"
+  [ "$out" = "$OUT_DIR" ] || assets_href="../$ASSETS_DIR"
+  heat_assets_href="../$assets_href"
   diff_file="$PWD/temporary_artifacts/callgrind.diff.$name.$STAMP"
   callers_file="$diff_file.callers.json"
-  base_files="$(profiles_of "$BASE_DIR" "$test")"
-  cur_files="$(profiles_of "$MOD_DIR" "$test")"
+  base_files="$(profiles_of "$BASE_LISTING" "$test")"
+  cur_files="$(profiles_of "$MODIFIED_LISTING" "$test")"
 
   verbose "== [$name]: diff -> $diff_file =="
   args=(python3 scripts/callgrind_diff.py -o "$diff_file"
@@ -199,32 +234,25 @@ diff_one() {
   test_run python3 scripts/callgrind_to_heatmap.py "$diff_file" \
     -o "$out/heat-map/index.html" \
     --title "$name / heat map" --diff \
+    --assets-href "$heat_assets_href" \
     --baseline-data "$callers_file"
 
   verbose "== [$name]: index -> $out/index.html =="
   rm -rf "$out/raw"
-  mkdir -p "$out/raw"
-  raw_name="$(basename "$diff_file")"
-  raw_name="${raw_name%.*}"
-  cp "$diff_file" "$out/raw/$raw_name"
-  cp "$callers_file" "$out/raw/$raw_name.callers.json"
+  archive="$out/raw/$(basename "$out")$ARCHIVE_SUFFIX"
+  raw_archive_write "$(basename "$out")" "$out" \
+    "$diff_file" "$callers_file"
   [ "$MULTI" = 1 ] && help_args=(--help-href ../README.md)
   test_run python3 scripts/build_report.py test "$diff_file" \
     -o "$out/index.html" --test "$name" --diff \
-    --callers-data "$callers_file" \
+    --assets-href "$assets_href" \
+    --callers-data "$callers_file" --raw-data "$archive" \
     "${help_args[@]}"
   printf '%-13sdiff -> %s\n' "$name" "${out#"$PWD"/}/index.html"
 }
 
 main() {
   args_parse "$@"
-  command -v python3 >/dev/null 2>&1 || {
-    {
-      echo "error: 1 tool(s) not found on PATH:"
-      printf '  %-12s %s\n' python3 "sudo apt install python3"
-    } >&2
-    exit 1
-  }
 
   manifest_check "$BASE_DIR" baseline
   manifest_check "$MOD_DIR" modified
@@ -239,6 +267,8 @@ main() {
   mkdir -p "$OUT_DIR" temporary_artifacts
   RUN_LOG="$PWD/temporary_artifacts/diff.$STAMP.log"
   cp README.md "$OUT_DIR/README.md"
+  test_run python3 scripts/build_report.py assets \
+    -o "$OUT_DIR/$ASSETS_DIR"
   {
     printf '%s\n' "$DIFF_MANIFEST"
     echo "baseline=$(path_display "$BASE_DIR")"
@@ -249,6 +279,8 @@ main() {
     >"$RUN_LOG"
 
   local tests test_name args
+  BASE_LISTING="$(profiles_extract "$BASE_DIR" baseline)"
+  MODIFIED_LISTING="$(profiles_extract "$MOD_DIR" modified)"
   tests="$(tests_pair)"
   [ -n "$tests" ] || {
     echo "error: the two reports have no test in common" >&2
@@ -261,18 +293,19 @@ main() {
     "$(basename "$MOD_DIR")"
   if [ "$MULTI" = 0 ]; then
     local base_file test_name
-    base_file="$(profiles_of "$BASE_DIR" .)"
+    base_file="$(profiles_of "$BASE_LISTING" .)"
     test_name="$(basename "${base_file%% *}")"
     test_name="${test_name#callgrind.out.}"
     test_name="${test_name%%.*}"
     diff_one . "$OUT_DIR" "$test_name diff"
   else
-    args=(-o "$OUT_DIR/index.html" --diff
+    args=(-o "$OUT_DIR/index.html" --diff --assets-href "$ASSETS_DIR"
       --header-block "baseline=$(header_file_of "$BASE_DIR" baseline)"
       --header-block "modified=$(header_file_of "$MOD_DIR" modified)")
     for test_name in $tests; do
       diff_one "$test_name" "$OUT_DIR/$test_name" "$test_name"
-      args+=(--test "$test_name")
+      args+=(--test "$test_name" --profile
+        "$test_name=$PWD/temporary_artifacts/callgrind.diff.$test_name.$STAMP")
     done
     verbose "== overview -> $OUT_DIR/index.html =="
     test_run python3 scripts/build_report.py overview "${args[@]}"

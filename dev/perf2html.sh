@@ -5,7 +5,11 @@ set -euo pipefail
 SCRIPT="$(readlink -f "$0")"
 cd "$(dirname "$SCRIPT")"
 
+ARCHIVE_SUFFIX=.txz
+ASSETS_DIR=assets
 BUILD_DIR=build-relwithdebinfo
+FLAME_APP_DIR=flame-graph-app
+FLAME_APP_FILES=(speedscope-*.js speedscope-*.css *.woff2)
 TRACE_BUILD_DIR=build-instr
 CPU=3
 CALLGRIND_LOOPS=200
@@ -187,19 +191,6 @@ build_manifest() {
     | sed 's/^Model name:[[:space:]]*//')"
 }
 
-install_hint() {
-  case "$1" in
-    cmake) echo "sudo apt install cmake" ;;
-    ninja) echo "sudo apt install ninja-build" ;;
-    ccache) echo "sudo apt install ccache" ;;
-    cc) echo "sudo apt install build-essential" ;;
-    valgrind) echo "sudo apt install valgrind" ;;
-    perf) echo "sudo apt install linux-tools-generic" ;;
-    addr2line | readelf) echo "sudo apt install binutils" ;;
-    speedscope) echo "npm install -g speedscope" ;;
-    *) echo "sudo apt install $1" ;;
-  esac
-}
 
 toolchain_check() {
   local tool missing=()
@@ -208,20 +199,7 @@ toolchain_check() {
     command -v "$tool" >/dev/null 2>&1 || missing+=("$tool")
   done
   if [ "${#missing[@]}" != 0 ]; then
-    {
-      echo "error: ${#missing[@]} tool(s) not found on PATH:"
-      for tool in "${missing[@]}"; do
-        printf '  %-12s %s\n' "$tool" "$(install_hint "$tool")"
-      done
-      case " ${missing[*]} " in
-        *" perf "*)
-          echo "note: on WSL2 the linux-tools-generic perf is built for an"
-          echo "      Ubuntu kernel WSL does not run, so it may refuse to"
-          echo "      start; 'sudo apt install linux-perf' installs a"
-          echo "      kernel-independent build."
-          ;;
-      esac
-    } >&2
+    echo "error: ${#missing[@]} tool(s) not found on PATH."
     exit 1
   fi
   SPEEDSCOPE_RELEASE="$(dirname \
@@ -290,6 +268,22 @@ trace_record() {
     taskset -c "$CPU" "$TRACE_BIN" "$test" "$loops" 2>&1
 }
 
+flame_app_install() {
+  local out="$1"
+  local pattern found=()
+  rm -rf "$out/$FLAME_APP_DIR"
+  mkdir -p "$out/$FLAME_APP_DIR"
+  for pattern in "${FLAME_APP_FILES[@]}"; do
+    # shellcheck disable=SC2206  # the glob is the point
+    found=($SPEEDSCOPE_RELEASE/$pattern)
+    [ -e "${found[0]}" ] || {
+      echo "error: no $pattern in $SPEEDSCOPE_RELEASE" >&2
+      exit 1
+    }
+    cp "${found[@]}" "$out/$FLAME_APP_DIR"/
+  done
+}
+
 trace_render() {
   local test="$1" out="$2" loops="$3"
   local seen
@@ -306,16 +300,15 @@ trace_render() {
     cp "$log" "$saved"
     rm -rf "$out/flame-graph"
     mkdir -p "$out/flame-graph"
-    cp -r "$SPEEDSCOPE_RELEASE"/. "$out/flame-graph"/
     cp "$saved" "$log"
     rm -f "$saved"
     test_run python3 scripts/build_flame_graph.py \
-      --speedscope-dir "$out/flame-graph" --profile-json "$TRACE_JSON"
+      --flame-graph-dir "$out/flame-graph" --profile-json "$TRACE_JSON" \
+      --app-href "../../$FLAME_APP_DIR"
     return
   fi
   rm -rf "$out/flame-graph"
   mkdir -p "$out/flame-graph"
-  cp -r "$SPEEDSCOPE_RELEASE"/. "$out/flame-graph"/
   {
     echo "# $TRACE_BUILD_DIR = this report's build flags +"
     echo "# -finstrument-functions, linked with dev/cyg_callback.c, which"
@@ -336,44 +329,52 @@ trace_render() {
   cat "$log" >>"$RUN_LOG"
   if [ "$VERBOSE" = 1 ]; then cat "$log"; fi
   test_run python3 scripts/build_flame_graph.py \
-    --speedscope-dir "$out/flame-graph" --profile-json "$TRACE_JSON"
+    --flame-graph-dir "$out/flame-graph" --profile-json "$TRACE_JSON" \
+    --app-href "../../$FLAME_APP_DIR"
+}
+
+raw_archive_write() {
+  local name="$1" out="$2"
+  shift 2
+  local stage file staged
+  stage="$PWD/temporary_artifacts/stage.$name.$STAMP"
+  rm -rf "$stage"
+  mkdir -p "$stage" "$out/raw"
+  for file in "$@"; do
+    staged="$(basename "$file")"
+    staged="${staged/.$STAMP/}"
+    cp "$file" "$stage/$staged"
+  done
+  sed -i "s#$REPO/##g" "$stage"/*
+  test_run tar --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner \
+    -cJf "$out/raw/$name$ARCHIVE_SUFFIX" -C "$stage" .
+  rm -rf "$stage"
 }
 
 report_render() {
   local name="$1" out="$2" json="$3"
-  local log_args=() raw_args=() help_args=() log_file cg_file raw_name
+  local log_args=() raw_args=() help_args=() log_file
 
   verbose "== [$name]: heat map -> $out/heat-map/index.html =="
   test_run python3 scripts/callgrind_to_heatmap.py "${CALLGRIND_FILES[@]}" \
     -o "$out/heat-map/index.html" \
-    --title "$name / heat map"
+    --title "$name / heat map" --assets-href "../../$ASSETS_DIR"
 
   verbose "== [$name]: index -> $out/index.html =="
   rm -rf "$out/raw"
-  mkdir -p "$out/raw"
-  for cg_file in "${CALLGRIND_FILES[@]}"; do
-    raw_name="$(basename "$cg_file")"
-    raw_name="${raw_name%.*}"
-    cp "$cg_file" "$out/raw/$raw_name"
-    raw_args+=(--raw-data "$out/raw/$raw_name")
-  done
-  sed -i "s#$REPO/##g" "$out"/raw/*
   for log_file in "${LOG_FILES[@]}"; do log_args+=(--log "$log_file"); done
   local perf_log_args=(--perf-log "$out/perf-tool/output.txt"
     --trace-log "$out/flame-graph/output.txt")
   if [ "$name" = all ]; then
     log_args+=(--no-log)
-    raw_args=()
     perf_log_args=()
   else
-    raw_name="$(basename "$json")"
-    raw_name="${raw_name/.$STAMP/}"
-    cp "$json" "$out/raw/$raw_name"
-    raw_args+=(--raw-data "$out/raw/$raw_name")
+    raw_archive_write "$name" "$out" "${CALLGRIND_FILES[@]}" "$json"
+    raw_args+=(--raw-data "$out/raw/$name$ARCHIVE_SUFFIX")
   fi
   [ "${#TESTS[@]}" -gt 1 ] && help_args=(--help-href ../README.md)
   test_run python3 scripts/build_report.py test "${CALLGRIND_FILES[@]}" \
-    -o "$out/index.html" --test "$name" \
+    -o "$out/index.html" --test "$name" --assets-href "../$ASSETS_DIR" \
     "${perf_log_args[@]}" "${log_args[@]}" "${raw_args[@]}" "${help_args[@]}"
 }
 
@@ -487,7 +488,8 @@ run_all() {
     echo "executable=$BIN_REL <test>  (native, pinned to CPU $CPU)"
     echo "stamp=$STAMP"
   } >"$OUT_DIR/MANIFEST.txt"
-  args=(-o "$OUT_DIR/index.html" --header-file "$OUT_DIR/MANIFEST.txt")
+  args=(-o "$OUT_DIR/index.html" --header-file "$OUT_DIR/MANIFEST.txt"
+    --assets-href "$ASSETS_DIR")
   for test_name in "${TESTS[@]}" all; do args+=(--test "$test_name"); done
   test_run python3 scripts/build_report.py overview "${args[@]}"
   printf '%-13s%d profiles merged -> %s\n' all "${#TESTS[@]}" \
@@ -509,6 +511,9 @@ main() {
   cp README.md "$OUT_DIR/README.md"
   echo "dev/perf2html.sh $STAMP: ${CMAKE_FLAGS[*]} -> $OUT_DIR" >"$RUN_LOG"
   build_compile
+  flame_app_install "$OUT_DIR"
+  test_run python3 scripts/build_report.py assets \
+    -o "$OUT_DIR/$ASSETS_DIR"
 
   local test_name
   for test_name in "${TESTS[@]}"; do

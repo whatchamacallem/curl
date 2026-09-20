@@ -54,6 +54,19 @@ _THEME: list[str] = [
     "#2F3640",
 ]
 
+# What the report's one shared copy of the theme is written as. Every page
+# in a report renders the same stylesheet and the same script, so they are
+# written once at the report root and linked, not inlined 19 times. The
+# heat map's own stylesheet and runtime, and the frame script every summary
+# and overview page runs, are the same on all of them too, so they are
+# shared the same way; each page links only the ones it uses.
+FRAME_JS = "frame.js"
+HEATMAP_CSS = "heatmap.css"
+HEATMAP_JS = "heatmap.js"
+THEME_CSS = "theme.css"
+THEME_JS = "theme.js"
+UI_STRINGS_JS = "ui_strings.js"
+
 # Width of a strip's status row, its first cell. The outer one says
 # "perf2html"; the inner one says the selection path, so the budget is
 # the longest test name plus separator plus the longest view label --
@@ -209,6 +222,26 @@ class Theme:
         ) as handle:
             return handle.read()
 
+    # Write the report's one shared copy of the theme. The stylesheet is
+    # generated, not copied: its colour variables are computed here, so the
+    # file a page links must be the same bytes document() would have
+    # inlined.
+    def assets_write(self, out_dir: str) -> None:
+        os.makedirs(out_dir, exist_ok=True)
+        shared = (
+            (FRAME_JS, self.asset_read(FRAME_JS)),
+            (HEATMAP_CSS, self.asset_read(HEATMAP_CSS)),
+            (HEATMAP_JS, self.asset_read(HEATMAP_JS)),
+            (THEME_CSS, self.css()),
+            (THEME_JS, self.js()),
+            (UI_STRINGS_JS, self.asset_read(UI_STRINGS_JS)),
+        )
+        for name, text in shared:
+            with open(
+                os.path.join(out_dir, name), "w", encoding="utf-8"
+            ) as handle:
+                handle.write(text)
+
     # Take bare text as a plain Cell, and leave a real Cell alone.
     def cell(self, value: CellOrText) -> Cell:
         return value if isinstance(value, Cell) else Cell(text=value)
@@ -255,22 +288,45 @@ class Theme:
         lines.append("}")
         return "\n".join(lines) + "\n" + self.asset_read("theme.css")
 
-    # One standalone page, CSS and JS inlined -- nothing fetched.
+    # One page. The theme's stylesheet and script are the same bytes on every
+    # page in a report, so with an assets_href they are linked from the one
+    # shared copy there; without one they are inlined and the page stands
+    # alone. Either way a browser opens it from file:// with no server.
     def document(
-        self, title: str, body: str, extra_js: str = "", body_class: str = ""
+        self,
+        title: str,
+        body: str,
+        extra_js: Sequence[str] = (),
+        body_class: str = "",
+        assets_href: str = "",
     ) -> str:
         body_attr = f' class="{body_class}"' if body_class else ""
+        if assets_href:
+            head = (
+                f'<link rel="stylesheet" href="{assets_href}/{THEME_CSS}">\n'
+            )
+            script = "".join(
+                f'<script src="{assets_href}/{name}"></script>\n'
+                for name in (THEME_JS, *extra_js)
+            )
+        else:
+            head = f"<style>\n{self.css()}</style>\n"
+            script = "".join(
+                f"<script>\n{text}</script>\n"
+                for text in (
+                    self.js(),
+                    *(self.asset_read(name) for name in extra_js),
+                )
+            )
         return (
             '<!doctype html>\n<html lang="en">\n'
             '<head>\n<meta charset="utf-8">\n'
             '<meta name="viewport"'
             ' content="width=device-width, initial-scale=1">\n'
             f"<title>{html_escape(title)}</title>\n"
-            f"<style>\n{self.css()}</style>\n</head>\n"
+            f"{head}</head>\n"
             f"<body{body_attr}>\n{body}\n"
-            f"<script>\n{self.js()}</script>\n"
-            + (f"<script>\n{extra_js}</script>\n" if extra_js else "")
-            + "</body>\n</html>\n"
+            f"{script}</body>\n</html>\n"
         )
 
     # Blend a heat position over the page background and pick readable text.
@@ -512,11 +568,15 @@ def num_time(seconds: float) -> str:
     return _NUMBERS.time(seconds)
 
 
-# page_document - One whole standalone page, CSS and JS inlined.
+# page_document - One whole page, its theme linked or inlined.
 def page_document(
-    title: str, body: str, extra_js: str = "", body_class: str = ""
+    title: str,
+    body: str,
+    extra_js: Sequence[str] = (),
+    body_class: str = "",
+    assets_href: str = "",
 ) -> str:
-    return _RENDERER.document(title, body, extra_js, body_class)
+    return _RENDERER.document(title, body, extra_js, body_class, assets_href)
 
 
 # table_render - One whole table, columns sized in exact characters.
@@ -533,6 +593,11 @@ def table_render(
 # theme_asset - One file from scripts/, to inline into a page.
 def theme_asset(name: str) -> str:
     return _RENDERER.asset_read(name)
+
+
+# theme_assets_write - Write the report's one shared copy of the theme.
+def theme_assets_write(out_dir: str) -> None:
+    _RENDERER.assets_write(out_dir)
 
 
 # theme_css - The whole stylesheet, colour variables first.
