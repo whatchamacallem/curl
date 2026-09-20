@@ -134,7 +134,6 @@ window.report_ui = (function () {
     ) {
       const handle_bar = document.createElement("div");
       handle_bar.className = "bar";
-      handle_bar.title = "drag to resize";
       handle_bar.addEventListener("pointerdown", (pointer_event) =>
         handle_drag_begin(
           pointer_event,

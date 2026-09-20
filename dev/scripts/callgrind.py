@@ -15,24 +15,6 @@ Costs: TypeAlias = list[int]
 Group = Literal["repo", "system", "external"]
 _Key = TypeVar("_Key")
 
-# What callgrind's terse event abbreviations mean, spelled out for the
-# heat map's event dropdown.
-_EVENT_LONG: dict[str, str] = {
-    "Bc": "conditional branches executed",
-    "Bcm": "conditional branches mispredicted",
-    "Bi": "indirect branches executed",
-    "Bim": "indirect branches mispredicted",
-    "D1mr": "L1 data cache read misses",
-    "D1mw": "L1 data cache write misses",
-    "DLmr": "LL (last-level) data read misses",
-    "DLmw": "LL (last-level) data write misses",
-    "Dr": "data reads",
-    "Dw": "data writes",
-    "I1mr": "L1 instruction cache misses",
-    "ILmr": "LL (last-level) instruction cache misses",
-    "Ir": "instructions executed",
-}
-
 # The curl checkout, three levels up from here -- every path is
 # reported relative to it.
 REPO_ROOT = os.path.dirname(
@@ -66,8 +48,6 @@ class DerivedEvent(NamedTuple):
     name: str
     # the recorded events to add up, with weights
     terms: tuple[Term, ...]
-    # the spelled-out version, for the event dropdown
-    long: str
 
 
 # PathInfo - One source path, resolved three ways at once.
@@ -86,8 +66,6 @@ class PathInfo(NamedTuple):
 class Profile:
     # the recorded events, in cost-vector order
     events: list[str] = field(default_factory=list)
-    # each event spelled out, for the event dropdown
-    event_long: dict[str, str] = field(default_factory=dict)
     # what a cost line's leading columns mean
     positions: list[str] = field(default_factory=lambda: ["line"])
     # the profiled command line
@@ -145,7 +123,6 @@ class Profile:
                     )
                     for term in derived_event.terms
                 ),
-                derived_event.long,
             )
             for derived_event in _DERIVED_DEFAULTS
             if all(
@@ -193,8 +170,6 @@ class ResolvedDerivedEvent(NamedTuple):
     name: str
     # the slots to add up, with weights
     terms: tuple[ResolvedTerm, ...]
-    # the spelled-out version
-    long: str
 
 
 # ResolvedTerm - One weighted slot of a cost vector.
@@ -232,31 +207,11 @@ class Term(NamedTuple):
 
 # The derived events we offer whenever the run recorded everything they need.
 _DERIVED_DEFAULTS: tuple[DerivedEvent, ...] = (
-    DerivedEvent(
-        "D1m",
-        (Term(1, "D1mr"), Term(1, "D1mw")),
-        "L1 data cache misses (D1mr + D1mw)",
-    ),
-    DerivedEvent(
-        "DLm",
-        (Term(1, "DLmr"), Term(1, "DLmw")),
-        "LL data cache misses (DLmr + DLmw)",
-    ),
-    DerivedEvent(
-        "L1m",
-        (Term(1, "I1mr"), Term(1, "D1mr"), Term(1, "D1mw")),
-        "L1 misses, all (I1mr + D1mr + D1mw)",
-    ),
-    DerivedEvent(
-        "LLm",
-        (Term(1, "ILmr"), Term(1, "DLmr"), Term(1, "DLmw")),
-        "LL misses, all (ILmr + DLmr + DLmw)",
-    ),
-    DerivedEvent(
-        "Bm",
-        (Term(1, "Bcm"), Term(1, "Bim")),
-        "branch mispredicts, all (Bcm + Bim)",
-    ),
+    DerivedEvent("D1m", (Term(1, "D1mr"), Term(1, "D1mw"))),
+    DerivedEvent("DLm", (Term(1, "DLmr"), Term(1, "DLmw"))),
+    DerivedEvent("L1m", (Term(1, "I1mr"), Term(1, "D1mr"), Term(1, "D1mw"))),
+    DerivedEvent("LLm", (Term(1, "ILmr"), Term(1, "DLmr"), Term(1, "DLmw"))),
+    DerivedEvent("Bm", (Term(1, "Bcm"), Term(1, "Bim"))),
     DerivedEvent(
         "CEst",
         (
@@ -268,7 +223,6 @@ _DERIVED_DEFAULTS: tuple[DerivedEvent, ...] = (
             Term(100, "DLmr"),
             Term(100, "DLmw"),
         ),
-        "cycle estimate (Ir + 10 L1m + 100 LLm)",
     ),
 )
 
@@ -359,13 +313,6 @@ class Callgrind:
             if line:
                 profile.function_entry[function] = SourceLine(home, line)
 
-    # Spell out every event name, recorded and derived, for the dropdown.
-    def labels_fill(self, profile: Profile) -> None:
-        for name in profile.events:
-            profile.event_long[name] = _EVENT_LONG.get(name, "")
-        for derived_event in profile.resolved_derived_events():
-            profile.event_long[derived_event.name] = derived_event.long
-
     # Read every given file and merge them into one profile.
     def load(self, paths: Sequence[str]) -> Profile:
         return self.merge([self.load_one(path) for path in paths])
@@ -408,7 +355,6 @@ class Callgrind:
                 )
         merged = Profile(
             events=list(first.events),
-            event_long=dict(first.event_long),
             positions=list(first.positions),
         )
         merged.command = self.merge_command(profiles)
@@ -424,7 +370,6 @@ class Callgrind:
             ]
         for other in profiles:
             self.merge_one(merged, other)
-        self.labels_fill(merged)
         return merged
 
     # One command line standing for all of them, sharing the program
@@ -603,7 +548,6 @@ class Callgrind:
                 if len(values) >= len(profile.summary):
                     profile.summary = values
 
-        self.labels_fill(profile)
         self.entries_fill(profile)
         return profile
 
@@ -646,6 +590,19 @@ def costs_accumulate(
 def costs_add(dst: Costs, src: Costs) -> None:
     for index, value in enumerate(src):
         dst[index] += value
+
+
+# Every event a vector written against these recorded ones can supply:
+# the recorded ones, then the derived ones they add up to.
+def event_names(events: Sequence[str]) -> list[str]:
+    return Profile(events=list(events)).event_names()
+
+
+# Pull one named event out of a stored cost vector, given only the
+# recorded events it was written against -- the one door a derived
+# event is computed through outside a live Profile.
+def event_value(events: Sequence[str], costs: Costs, name: str) -> int:
+    return Profile(events=list(events)).value(costs, name)
 
 
 # Work out how to print a path, whether we can still read it, and

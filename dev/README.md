@@ -34,28 +34,32 @@ run using the default report directory names.
 ## Callgrind Events
 
 These are the raw counters callgrind records and the derived ones this report
-adds. They show up as column headers and event picker choices in the summary
-and the heat map.
+adds up from them. They show up as column headers and event picker choices in
+the heat map, under these same names.
 
-| Event | Meaning                                  |
-| ----- | ---------------------------------------- |
-| Ir    | Instructions executed (I cache reads)    |
-| I1mr  | L1 instruction cache read misses         |
-| ILmr  | Last level cache instruction read misses |
-| Dr    | Memory reads (D cache reads)             |
-| D1mr  | L1 data cache read misses                |
-| DLmr  | Last level cache data read misses        |
-| Dw    | Memory writes (D cache writes)           |
-| D1mw  | L1 data cache write misses               |
-| DLmw  | Last level cache data write misses       |
-| Bc    | Conditional branches executed            |
-| Bcm   | Conditional branches mispredicted        |
-| Bi    | Indirect branches executed               |
-| Bim   | Indirect branches mispredicted           |
+| Event | Meaning                             | Derived from          |
+| ----- | ----------------------------------- | --------------------- |
+| Ir    | instructions executed               |                       |
+| Dr    | data reads                          |                       |
+| Dw    | data writes                         |                       |
+| I1mr  | L1 instruction cache misses         |                       |
+| D1mr  | L1 data cache read misses           |                       |
+| D1mw  | L1 data cache write misses          |                       |
+| ILmr  | last level instruction cache misses |                       |
+| DLmr  | last level data cache read misses   |                       |
+| DLmw  | last level data cache write misses  |                       |
+| Bc    | conditional branches executed       |                       |
+| Bcm   | conditional branches mispredicted   |                       |
+| Bi    | indirect branches executed          |                       |
+| Bim   | indirect branches mispredicted      |                       |
+| D1m   | L1 data cache misses                | D1mr + D1mw           |
+| DLm   | last level data cache misses        | DLmr + DLmw           |
+| L1m   | L1 cache misses, all                | I1mr + D1mr + D1mw    |
+| LLm   | last level cache misses, all        | ILmr + DLmr + DLmw    |
+| Bm    | branches mispredicted, all          | Bcm + Bim             |
+| CEst  | cycle estimate                      | Ir + 10 L1m + 100 LLm |
 
-Derived from the above: `D1m` is `D1mr + D1mw`, `DLm` is `DLmr + DLmw`, `L1m`
-is every L1 miss, `LLm` is every last level miss, `Bm` is every mispredict, and
-`CEst` is a rough cycle estimate.
+`CEst` weights a miss by roughly what it costs and is used by default.
 
 See the [callgrind](https://valgrind.org/docs/manual/cl-manual.html) docs. GPL
 Version 3, 29 June 2007.

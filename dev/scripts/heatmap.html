@@ -1,22 +1,19 @@
 <div id="hdr" class="strip">
   <label
-    >event:
+    ><span id="eventLabel"></span>
     <select id="event"></select
   ></label>
   <label
-    >scale:
+    ><span id="scaleLabel"></span>
     <select id="scale"></select
   ></label>
   <label
-    >tree:
+    ><span id="sortLabel"></span>
     <select id="sort">
-      <option value="heat">by heat</option>
-      <option value="name">by name</option>
-    </select></label
-  >
-  <label
-    >search: <input id="q" type="search" placeholder="file name…"
-  /></label>
+      <option value="heat"></option>
+      <option value="name"></option></select
+  ></label>
+  <label><span id="searchLabel"></span> <input id="q" type="search" /></label>
 </div>
 <div id="layout">
   <nav id="tree"></nav>
@@ -29,6 +26,9 @@
 </div>
 <script id="heatdata" type="application/json">
   __DATA__
+</script>
+<script>
+  __UI_STRINGS_JS__;
 </script>
 <script>
   __THEME_JS__;

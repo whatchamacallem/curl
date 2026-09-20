@@ -12,10 +12,7 @@ from typing import NamedTuple
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import callgrind
-
-# callgrind_diff.py's synthesized callers diff, which sits in a diff's raw/
-# beside the delta but is not itself a callgrind trace.
-_CALLERS_SUFFIX = ".callers.json"
+import settings
 
 # Only a flame graph our own tool exported counts -- a stale or hand-made one
 # must fail.
@@ -357,7 +354,7 @@ class ValidateReport:
         files = sorted(os.listdir(raw_dir)) if os.path.isdir(raw_dir) else []
         if not any(
             name.startswith("callgrind.")
-            and not name.endswith(_CALLERS_SUFFIX)
+            and not name.endswith(settings.CALLERS_SUFFIX)
             for name in files
         ):
             self.fail(f"raw/ has no callgrind file: {raw_dir}")
@@ -367,7 +364,7 @@ class ValidateReport:
             text = self.size_check(path, _MIN_RAW_BYTES, f"raw/{name}")
             if (
                 name.startswith("callgrind.")
-                and not name.endswith(_CALLERS_SUFFIX)
+                and not name.endswith(settings.CALLERS_SUFFIX)
                 and "events:" not in text[:4096]
             ):
                 self.fail(

@@ -70,10 +70,12 @@ REPORT_MANIFEST='curl/perf2html.sh v1'
 DIFF_MANIFEST='curl/perf2html_diff.sh v1'
 
 usage_show() {
-  awk 'NR > 1 && !/^#/ { exit } NR > 1 { sub(/^# ?/, ""); print }' "$SCRIPT"
+  cat <<'EOF'
+scripts/reformat.sh [--check] [--verbose] [report-dir]
+EOF
 }
 
-log_say() { if [ "$VERBOSE" = 1 ]; then echo "$@"; fi; }
+verbose() { if [ "$VERBOSE" = 1 ]; then echo "$@"; fi; }
 
 tool_find() {
   local name="$1" found
@@ -110,7 +112,7 @@ tool_run() {
 
   if [ "$exit_code" = 0 ]; then
     printf '%-12s| ok      | %s file(s)\n' "$label" "$#"
-    log_say "$output"
+    verbose "$output"
     return 0
   fi
 
@@ -212,7 +214,7 @@ lint_run() {
 
   if [ "$exit_code" = 0 ]; then
     printf '%-12s| ok      | pyright\n' "lint"
-    log_say "$output"
+    verbose "$output"
     return 0
   fi
 
@@ -326,7 +328,7 @@ validate_run() {
 
     if [ "$exit_code" = 0 ]; then
       printf '%-12s| ok      | %s\n' "validate" "$(basename "$path")"
-      log_say "$output"
+      verbose "$output"
       continue
     fi
 

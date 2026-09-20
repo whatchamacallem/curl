@@ -13,19 +13,9 @@ from urllib.parse import quote
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import callgrind
+import settings
 import theme
 from theme import Cell, CellOrText, Column, html_escape
-
-# What callgrind_diff.py's synthesized callers diff is named, next to the
-# delta it describes.
-_CALLERS_SUFFIX = ".callers.json"
-
-# The one event every table here ranks and colours by, diff or not, and the
-# one a diff's baselines are read in. Recorded or derived either way: the
-# synthesized callers diff gives every derived event its own slot, so this
-# can be set to any event callgrind.py knows with no other edit. A profile
-# that cannot supply it falls back -- see event_of().
-_EVENT = "CEst"
 
 # The diff share that paints the hottest colour. A change the size of the
 # thing's own baseline is as lit as a cell gets.
@@ -73,6 +63,14 @@ _TIME_SCALE: dict[str, float] = {
 
 # How many functions the summary's top table lists.
 _TOP = 50
+
+# Every English string a page renders, read from scripts/ui_strings.js at
+# generate time. It is inlined ahead of FRAME_JS, which looks ids up in it.
+_UI_STRINGS_JS = theme.theme_asset("ui_strings.js")
+
+# The whole script a framed page carries, strings first so the frame runtime
+# can look an id up the moment it runs.
+_PAGE_JS = _UI_STRINGS_JS + FRAME_JS
 
 
 # BuildReport - Writes the overview page and every test's summary page, and
@@ -194,11 +192,11 @@ class BuildReport:
         # where the page sits
         path: str
 
-    # The baseline run's total in this page's event, read from the synthesized
-    # callers diff left beside the delta file. Its "events" list names the
-    # derived events too, so _EVENT resolves to a slot whichever kind it is.
-    # None when there is none to divide by, which is what an empty share
-    # cell means.
+    # The baseline run's total in this page's event, read from the
+    # synthesized callers diff left beside the delta file. Its "events" list
+    # is the recorded events the vector was written against, which is all
+    # callgrind.event_value() needs to add a derived event up. None when
+    # there is none to divide by, which is what an empty share cell means.
     def baseline_total_load(self, paths: Sequence[str]) -> int | None:
         total = 0
         found = False
@@ -207,8 +205,8 @@ class BuildReport:
                 doc = json.load(handle)
             events: list[str] = doc.get("events", [])
             costs: list[int] = doc.get("baselineTotal", [])
-            slot = events.index(_EVENT) if _EVENT in events else 0
-            total += costs[slot] if slot < len(costs) else 0
+            self.events_check(events, path)
+            total += callgrind.event_value(events, costs, settings.EVENT)
             found = True
         return total if found else None
 
@@ -256,17 +254,16 @@ class BuildReport:
         return f'<a href="{href}">{label}</a>' if href else label
 
     # Read the synthesized callers diff back: the call graph a delta file
-    # cannot carry, plus the baselines. It names the event it counted in and
-    # lists derived events alongside recorded ones, so that name resolves to
-    # a slot whichever kind it is.
+    # cannot carry, plus the baselines. Its vectors carry only the recorded
+    # events, so a derived one is added up from them here the way the heat
+    # map's own script does.
     def callers_data_load(self, path: str) -> BuildReport.CallersData:
         if not path:
             return BuildReport.CallersData({}, {}, {})
         with open(path, encoding="utf-8") as handle:
             doc = json.load(handle)
-        index = doc["event"]
         events: list[str] = doc.get("events", [])
-        slot = events.index(index) if index in events else 0
+        self.events_check(events, path)
         return BuildReport.CallersData(
             callers={
                 callee: [
@@ -276,7 +273,7 @@ class BuildReport:
                 for callee, deltas in doc["callers"].items()
             },
             baseline={
-                name: costs[slot] if slot < len(costs) else 0
+                name: callgrind.event_value(events, costs, settings.EVENT)
                 for name, costs in doc["baseline"].items()
                 if "\n" not in name
             },
@@ -288,12 +285,13 @@ class BuildReport:
         profile: callgrind.Profile,
         callers_data: BuildReport.CallersData,
     ) -> str:
-        event = self.event_of(profile)
         ranked = sorted(
             (
-                BuildReport.FunctionCost(profile.value(costs, event), function)
+                BuildReport.FunctionCost(
+                    profile.value(costs, settings.EVENT), function
+                )
                 for function, costs in profile.function_self.items()
-                if profile.value(costs, event) != 0
+                if profile.value(costs, settings.EVENT) != 0
             ),
             key=lambda t: (-abs(t.cost), t.function),
         )[:_TOP]
@@ -328,7 +326,7 @@ class BuildReport:
             Column("#", numeric=True),
             Column("% self", numeric=True),
             Column("symbol", width=_SYMBOL_CHARS),
-            Column(event, numeric=True),
+            Column(settings.EVENT, numeric=True),
             Column("calls", numeric=True),
             Column("callers", grow=True),
         ]
@@ -395,7 +393,7 @@ class BuildReport:
     ) -> tuple[list[Column], list[list[CellOrText]]]:
         columns = [
             Column("one report per test"),
-            Column(_EVENT, numeric=True),
+            Column(settings.EVENT, numeric=True),
             Column("% of change", numeric=True),
             Column("functions changed", numeric=True),
         ]
@@ -408,12 +406,12 @@ class BuildReport:
             files = [
                 os.path.join(raw_dir, name)
                 for name in names
-                if not name.endswith(_CALLERS_SUFFIX)
+                if not name.endswith(settings.CALLERS_SUFFIX)
             ]
             synthesized_callers = [
                 os.path.join(raw_dir, name)
                 for name in names
-                if name.endswith(_CALLERS_SUFFIX)
+                if name.endswith(settings.CALLERS_SUFFIX)
             ]
             link = Cell(
                 test.name,
@@ -424,12 +422,11 @@ class BuildReport:
                 rows.append([link, "", "", ""])
                 continue
             profile = callgrind.profile_load(files)
-            event = self.event_of(profile)
-            delta = profile.value(profile.totals(), event)
+            delta = profile.value(profile.totals(), settings.EVENT)
             changed = sum(
                 1
                 for costs in profile.function_self.values()
-                if profile.value(costs, event) != 0
+                if profile.value(costs, settings.EVENT) != 0
             )
             share = self.diff_share(
                 delta, self.baseline_total_load(synthesized_callers)
@@ -475,14 +472,17 @@ class BuildReport:
             quote(function, safe="/-_.!~*'()")
         )
 
-    # What every table here ranks by: _EVENT when the profile can supply it,
-    # recorded or derived, else whatever it records first. Profile.value()
-    # raises on an event a profile has not got, so nothing asks it blind.
-    def event_of(self, profile: callgrind.Profile) -> str:
-        names = profile.event_names()
-        if _EVENT in names:
-            return _EVENT
-        return names[0] if names else _EVENT
+    # Refuse a synthesized callers diff whose recorded events cannot add up
+    # to the one event every share is counted in -- a wrong denominator is
+    # worse than a stopped run.
+    def events_check(self, events: Sequence[str], path: str) -> None:
+        if settings.EVENT in callgrind.event_names(events):
+            return
+        sys.exit(
+            f"error: {path} cannot supply {settings.EVENT}, the event"
+            f" every diff share is counted in: it records"
+            f" {' '.join(events)}"
+        )
 
     def file_read(self, path: str) -> str:
         try:
@@ -493,13 +493,14 @@ class BuildReport:
             return f"(missing: {path})"
 
     def functions_table(self, profile: callgrind.Profile) -> str:
-        event = self.event_of(profile)
-        total = profile.value(profile.totals(), event) or 1
+        total = profile.value(profile.totals(), settings.EVENT) or 1
         ranked = sorted(
             (
-                BuildReport.FunctionCost(profile.value(costs, event), function)
+                BuildReport.FunctionCost(
+                    profile.value(costs, settings.EVENT), function
+                )
                 for function, costs in profile.function_self.items()
-                if profile.value(costs, event) > 0
+                if profile.value(costs, settings.EVENT) > 0
             ),
             key=lambda t: (-t.cost, t.function),
         )[:_TOP]
@@ -516,7 +517,7 @@ class BuildReport:
             Column("#", numeric=True),
             Column("% self", numeric=True),
             Column("symbol", width=_SYMBOL_CHARS),
-            Column(event, numeric=True),
+            Column(settings.EVENT, numeric=True),
             Column("calls", numeric=True),
             Column("callers", grow=True),
         ]
@@ -574,6 +575,28 @@ class BuildReport:
                 ]
             )
         return theme.table_render("report.functions", columns, rows, fill=True)
+
+    def log_block(self, path: str) -> str:
+        lines = self.file_read(path).rstrip().split("\n")[_LOG_SKIP_LINES:]
+        text = "\n".join(_PID_PREFIX.sub("", line) for line in lines)
+        return (
+            f'<div class="tbl"><pre class="logbox">{html_escape(text)}'
+            "</pre></div>"
+        )
+
+    def log_section(self, paths: Sequence[str]) -> str:
+        if not paths:
+            return ""
+        body = ""
+        for path in paths:
+            if len(paths) > 1:
+                body += f"<p>{html_escape(os.path.basename(path))}</p>"
+            body += self.log_block(path)
+        return (
+            '<details class="sec"><summary><h2>valgrind log</h2></summary>'
+            + body
+            + "</details>"
+        )
 
     def manifest_blocks_render(
         self, key: str, blocks: Sequence[BuildReport.ManifestBlock]
@@ -637,28 +660,6 @@ class BuildReport:
             rows,
             fill=True,
             column_titles=False,
-        )
-
-    def log_block(self, path: str) -> str:
-        lines = self.file_read(path).rstrip().split("\n")[_LOG_SKIP_LINES:]
-        text = "\n".join(_PID_PREFIX.sub("", line) for line in lines)
-        return (
-            f'<div class="tbl"><pre class="logbox">{html_escape(text)}'
-            "</pre></div>"
-        )
-
-    def log_section(self, paths: Sequence[str]) -> str:
-        if not paths:
-            return ""
-        body = ""
-        for path in paths:
-            if len(paths) > 1:
-                body += f"<p>{html_escape(os.path.basename(path))}</p>"
-            body += self.log_block(path)
-        return (
-            '<details class="sec"><summary><h2>valgrind log</h2></summary>'
-            + body
-            + "</details>"
         )
 
     def output_section(self, title: str, path: str) -> str:
@@ -749,7 +750,7 @@ class BuildReport:
         self.page_write(
             args.output,
             theme.page_document(
-                "overview", body, extra_js=FRAME_JS, body_class="frame"
+                "overview", body, extra_js=_PAGE_JS, body_class="frame"
             ),
         )
 
@@ -818,7 +819,7 @@ class BuildReport:
         self.page_write(
             args.output,
             theme.page_document(
-                args.test, body, extra_js=FRAME_JS, body_class="frame"
+                args.test, body, extra_js=_PAGE_JS, body_class="frame"
             ),
         )
 

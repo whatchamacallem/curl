@@ -6,9 +6,10 @@
   const view_links = [...strip_bar.querySelectorAll("a[data-view]")];
   const utility_block = document.getElementById("util");
   const is_framed = window.parent !== window;
-  const OUTER_STATUS_TEXT = "perf2html";
+  const text_of = window.ui_strings.text_of;
+  const OUTER_STATUS_TEXT = text_of("str_report_name");
   const SELECTION_SEPARATOR = " / ";
-  const HOME_VIEW_LABEL = "summary";
+  const HOME_VIEW_LABEL = text_of("str_view_summary");
   let current_page_href = "",
     current_inner_hash = "",
     current_title = title_badge.textContent;

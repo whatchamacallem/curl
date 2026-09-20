@@ -13,6 +13,7 @@ from typing import NamedTuple, NotRequired, TypedDict
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import callgrind
 import callgrind_diff
+import settings
 import theme
 from callgrind import Costs, Group
 
@@ -24,15 +25,16 @@ BODY = theme.theme_asset("heatmap.html")
 # read from scripts/heatmap.css at generate time.
 _CSS = theme.theme_asset("heatmap.css")
 
-# The event the page opens on, when the profile can supply it.
-_DEFAULT_EVENT = "CEst"
-
 # The page's own runtime, read from scripts/heatmap.js at generate time.
 _HEAT_MAP_JS = theme.theme_asset("heatmap.js")
 
 # Directories whose tracked .c/.h are listed even when nothing sampled them,
 # so a file with no cost is visibly cold rather than simply missing.
 _TREE = ("lib", "include", "src", "tests/perf")
+
+# Every English string the page renders, read from scripts/ui_strings.js at
+# generate time. It loads before the scripts that look ids up in it.
+_UI_STRINGS_JS = theme.theme_asset("ui_strings.js")
 
 
 # CallgrindToHeatmap - Turns one profile into a single self-contained page
@@ -104,8 +106,6 @@ class CallgrindToHeatmap:
     class HeatMapTotals(TypedDict):
         # the recorded events, in cost-vector order
         events: list[str]
-        # each event spelled out, for the event dropdown
-        eventLong: dict[str, str]
         # the events the page adds up itself
         derived: list[callgrind.ResolvedDerivedEvent]
         # which event the page opens on
@@ -148,9 +148,8 @@ class CallgrindToHeatmap:
 
     # SynthesizedCallers - The part of callgrind_diff.py's synthesized callers
     # diff this tool reads: what every share on a diff page divides by. Its
-    # vectors carry the recorded slots first and the derived events after, but
-    # the page resolves either kind from the recorded slots alone, so the
-    # appended ones go unread here.
+    # vectors carry the recorded slots only, and the page's own script adds a
+    # derived event up from them, so both kinds are handed straight through.
     class SynthesizedCallers(TypedDict):
         # keyed by function, and by "<function>\n<file>\n<line>"
         baseline: dict[str, Costs]
@@ -413,17 +412,13 @@ class CallgrindToHeatmap:
             if relative not in files
         )
         default_event = (
-            _DEFAULT_EVENT
-            if _DEFAULT_EVENT in profile.event_names()
+            settings.EVENT
+            if settings.EVENT in profile.event_names()
             else profile.events[0]
         )
         return {
             "heatMapTotals": {
                 "events": profile.events,
-                "eventLong": {
-                    name: profile.event_long.get(name, "")
-                    for name in profile.event_names()
-                },
                 "derived": profile.resolved_derived_events(),
                 "defaultEvent": default_event,
                 "totals": profile.totals(),
@@ -443,7 +438,8 @@ class CallgrindToHeatmap:
         data = json.dumps(model, separators=(",", ":"), ensure_ascii=False)
         data = data.replace("</", "<\\/")
         body = (
-            BODY.replace("__THEME_JS__", theme.theme_js())
+            BODY.replace("__UI_STRINGS_JS__", _UI_STRINGS_JS)
+            .replace("__THEME_JS__", theme.theme_js())
             .replace("__HEATMAP_JS__", _HEAT_MAP_JS)
             .replace("__DATA__", data)
         )

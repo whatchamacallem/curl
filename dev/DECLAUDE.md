@@ -62,6 +62,40 @@ taskset -c 3 ./build-relwithdebinfo/tests/perf/perf <test> [loops]
 
 ## How the four scripts fit together
 
+**`--verbose` is additive, in all four.** Quiet is the baseline both modes
+share: whatever quiet prints, verbose prints too, in the same form and the same
+order. `$VERBOSE` is only ever consulted to decide whether **extra** lines
+appear on top of that - never to choose between two spellings of one fact, and
+nothing is printed twice in either mode. `verbose()` is the door those extra
+lines come through and the one function that tests `$VERBOSE`; the only other
+tests left are `test_run`/`step_run` teeing a child's own output to the
+terminal, a `cat` of a log file verbose adds beneath the summary line it
+already printed, and the batch passing `--verbose` down to its children. A
+guard of the shape `[ "$VERBOSE" = 1 ] || printf ...` is the bug this rule
+exists to prevent - the quiet line _is_ the line.
+
+**No function in `dev/*.sh` may wrap `printf` without adding logic.** A helper
+whose whole body is one `printf` is a rename of `printf`, and it hides what a
+line actually prints behind a verb you have to go read - `say`, `log_error`,
+`line_add`/`line_end` were all of that shape and are gone. Call `printf` where
+the line is printed, with its format visible at the call site. `verbose()` is
+the exception that proves the rule: it wraps a **condition**, which is the
+logic this rule asks for. `elapsed_show`/`took`/`now_us` compute a value and
+return it - they print nothing.
+
+Where quiet composes a progress row from parts known at different times (the
+command first, its duration after it ran), the parts accumulate in a plain
+`local line` string and one `printf` at the end emits it whole, so a verbose
+line can never land in the middle of one. That is an ordinary variable, not a
+script-level accumulator with two functions guarding it.
+
+**Usage text is a here-doc**, in all four scripts: `usage_show` is
+`cat <<'EOF'` with the usage lines written out. They used to `awk` the script's
+own `#` header back out of `$SCRIPT`, which put the text somewhere you would
+not look for it and, in `reformat.sh`, would have printed the whole ASCII tool
+table. The here-doc and the file's header comment say the same thing and are
+kept in step by hand; `$SCRIPT` survives only for the `cd`.
+
 - `perf2html.sh` - builds + profiles + generates one report. Default DIR
   `perf2html_baseline_report`, or `perf2html_modified_report` when any
   cmake_flags are given (after a _source_-only change, pass
@@ -95,9 +129,13 @@ taskset -c 3 ./build-relwithdebinfo/tests/perf/perf <test> [loops]
   `removing ...` lines, and the closing `file://` URL. A step's duration rides
   in its own `done:` line, so no stat depends on a half-written line - nothing
   is ever left unterminated, because an unflushed partial line can sit
-  unforwarded for minutes. `--verbose` is unchanged: `== N name: cmd ==`
-  banners with a matching `done in`/`FAILED` banner, no `[Ns]` prefix, the
-  child's own output in between.
+  unforwarded for minutes. **That timeline is the same timeline in both
+  modes**: `--verbose` prints every `[N.NNs]` line quiet prints and adds a
+  plain `== N name ==` / `== N name: end ==` pair around each step with the
+  child's own output between them. The banners carry no command, duration or
+  exit code, because the timeline lines beside them already do - they are
+  delimiters, not a second report. `START_US` is set as `main()`'s first act,
+  before any `say`, so every prefix has a clock to subtract from.
 - `scripts/reformat.sh` - **the one hook that verifies `dev/` and its output.**
   Lint, then format, then validate, every stage running even after an earlier
   one failed. **It takes no path argument**: the directories are fixed by
@@ -143,9 +181,13 @@ Key behaviors worth knowing before touching them:
   `tests/perf/Makefile.inc`; loops from `loops_of` grepping the test source.
 - Valgrind's LL cache auto-detects as direct-mapped and overstates conflict
   misses - `--LL=16777216,16,64` is on the `valgrind` line in `run_one`.
-- Quiet mode logs to `dev/temporary_artifacts/*.log`; a failing step prints its
-  last 40 lines, under an `[N.NNs] FAILED: step N name, exit C, after 12s` line
-  on stderr.
+- **Both** modes log every child's output to `dev/temporary_artifacts/*.log`,
+  and both print the same failure summary from it: a failing step's last 40
+  lines, under an `[N.NNs] FAILED: step N name, exit C, after 12s` line on
+  stderr. Verbose additionally tees that output to the terminal as it is
+  produced - the log is written either way, so the summary never depends on
+  which mode was used. The tee sits behind `if ! { ...; }` so `pipefail` can't
+  take the pipeline's failure before `PIPESTATUS[0]` is read.
 - The batch's `[N.NNs]` clock is elapsed time since `main()` started, from the
   `EPOCHREALTIME` builtin - `SECONDS` is integer-only, and a builtin keeps the
   script free of the toolchain check it doesn't have. `now_us()` strips every
@@ -215,13 +257,15 @@ Raw data in `dev/temporary_artifacts/` (gitignored):
   1→1 is 0% (rendered empty). Something the baseline never had is **+100%**.
   Baselines ride in the synthesized callers diff (`baseline`, keyed by `<fn>`
   and `<fn>\n<display path>\n<line>`, `baselineTotal`, `baselineCalls`,
-  `events`); the heat map reads it via `--baseline-data`. **`events` names the
-  derived events too** - recorded slots keep the indices they always had and
-  `costs_emit()` appends one slot per derived event to every vector it writes,
-  so `events.index("CEst")` resolves like any other and the diff is no longer
-  pinned to a recorded event. The heat map ignores the appended slots: its JS
-  resolves a derived event from the recorded ones itself. Ranking and heat are
-  `abs()`, so winners and losers interleave.
+  `events`); the heat map reads it via `--baseline-data`. **`events` is the
+  recorded events and nothing else**, and every vector is written against
+  them - `costs_fit()` pads to the recorded width and trims trailing zeros, and
+  stores no derived slot, because a derived event is a pure function of the
+  recorded ones and a stored copy could only go stale. Readers add
+  `settings.EVENT` up themselves: the heat map's JS already did, and on the
+  Python side `callgrind.event_value(events, costs, name)` is the one door,
+  which is why the coefficients live only in `_DERIVED_DEFAULTS`. Ranking and
+  heat are `abs()`, so winners and losers interleave.
 - **Per-line baselines are wildly skewed** - median line is ~18 Ir and 72% are
   under 1,000, so a line that cost 1 and moved 200K reads 20,360,300%. Only
   ~1.8% of lines exceed ±1000%, but a max-based colour scale is set by exactly
@@ -306,7 +350,7 @@ one-line delegations (`profile_load(paths)` → `Callgrind().load(paths)`) so
 callers never name a class.
 
 **Constants are alphabetical ignoring the leading `_`** - so `BODY` sorts
-before `_CSS`, `_EVENT_LONG` before `REPO_ROOT`. The _only_ constants allowed
+before `_CSS`, `_PID_PREFIX` before `REPO_ROOT`. The _only_ constants allowed
 below the classes are the ones that can't be evaluated above them: a constant
 whose value names a class in the same file (`_DERIVED_DEFAULTS`,
 `_LAYOUT_FULL`/`_LAYOUT_DIFF`, `_FLAME_VIEW`/`_HEAT_VIEW`, `_TIME_UNITS`) or a
@@ -330,6 +374,20 @@ pipx/uv). Pylance is not usable - LSP only, ignores argv.
 
 ### The scripts
 
+- `settings.py` - the constants that are genuinely one decision shared between
+  the Python generators, and nothing else. `EVENT` (exported, no leading
+  underscore) is the event every table ranks, colours and divides by, replacing
+  the `_EVENT` in `build_report.py` and `callgrind_diff.py` and the
+  `_DEFAULT_EVENT` in `callgrind_to_heatmap.py`; `CALLERS_SUFFIX` replaces the
+  copy in `build_report.py` and in `validate_report.py`. It has **no classes
+  and no functions**, so the "one enclosing class" rule does not apply to it -
+  it is a module of constants, alphabetical ignoring the leading `_`, one `#`
+  line above each. A constant only one file states stays where it is: `_TOP`,
+  `_SYMBOL_CHARS`, `_FULL_HEAT_PCT`, `_LOG_SKIP_LINES`, `_PERF_CHART` and
+  `SOURCE_WIDTH` were all checked and left alone. `FULL_HEAT_PERCENT` and
+  `SOURCE_WIDTH` live in `heatmap.js` and cannot import Python at all, so their
+  Python twins stay hand-matched - keep them in step the way
+  `column_widths()`/`table_render()` are kept in step.
 - `callgrind.py` - the one parser. `profile_load(path)` exits unless the
   self-check ratio (stderr) is exactly **1.0000** - re-verify after touching
   it. It is cost conservation only, and says nothing about whether emitted
@@ -338,53 +396,66 @@ pipx/uv). Pylance is not usable - LSP only, ignores argv.
   every generator uses - no `--repo-root` flag exists. Functions keyed by
   **name**, so a symbol in two objects is one function. Derived events when
   inputs exist: `D1m`, `DLm`, `L1m`, `LLm`, `Bm`, `CEst` (= Ir + 10·L1m +
-  100·LLm). `Profile.function_lines[fn][SourceLine]` is the only per-context
-  table. `function_entry` for an uncalled function = the **first** cost line
-  callgrind wrote in its home file (matched 505/505; lowest line number does
-  not - inlined helpers sit above the entry).
+  100·LLm), declared in `_DERIVED_DEFAULTS` as a name plus weighted terms and
+  nothing else - `DerivedEvent`/`ResolvedDerivedEvent` carry **no `long`
+  field**, so the `derived` array the page gets is `[name, terms]`. **No Python
+  here spells out what an event is called**: `_EVENT_LONG`, `labels_fill()`,
+  `Profile.event_long` and the page's `eventLong` key are all gone, because no
+  Python renders an event description - the pages do, out of `ui_strings.js`. A
+  19-entry dictionary was being serialized into every generated page that
+  nothing ever read. `event_value(events, costs, name)` / `event_names(events)`
+  are the door a reader with a **stored** vector uses - given the recorded
+  events it was written against, they resolve a derived event exactly as
+  `Profile.value()` does, because that is what they call. **Nothing outside
+  this file spells a coefficient**, so `_DERIVED_DEFAULTS` stays the only place
+  `CEst` is defined. `Profile.function_lines[fn][SourceLine]` is the only
+  per-context table. `function_entry` for an uncalled function = the **first**
+  cost line callgrind wrote in its home file (matched 505/505; lowest line
+  number does not - inlined helpers sit above the entry).
 - `build_report.py test|overview` - summary and overview pages. `_TOP = 50`.
-  **One event constant, `_EVENT = "CEst"`, for every table on both sides of the
-  core/diff split** - the non-diff summary's "top 50 functions by self", every
-  diff path and the diff overview alike. It may name a recorded or a derived
-  event, and can be pointed at any event `callgrind.py` knows with no other
-  edit. `event_of()` resolves it per profile - `_EVENT` when
-  `Profile.event_names()` carries it, else that profile's first recorded
-  event - because `Profile.value()` **raises `KeyError`** on an event a profile
-  can't supply; the resolved name is a local that both the column label and the
-  ranking key read. There is **no second named fallback**. The numerator was
-  never the obstacle (CEst is linear, so
-  `CEst(mod-base) == CEst(mod)-CEst(base)`, verified); the **denominator** was,
-  and the synthesized callers diff now gives a derived event its own slot, so
-  `callers_data_load()`/`baseline_total_load()` find one by `events.index(...)`
-  exactly like a recorded event. `--perf-log`/`--trace-log`/`--raw-data` each
-  render a section only when given; the flame-graph strip link exists only with
-  `--trace-log`. `--diff` picks `diff_test` in `main()`. The LABEL=VALUE rows
-  above a page's content are `ManifestRow`/`ManifestBlock` (methods
-  `manifest_*`) - not the heat map's `HeatMapTotals`, and not a table's
-  column-title row (`theme.table_render(column_titles=...)`). **Never call any
-  of them just "header".** Its `FRAME_JS` is `theme.theme_asset("frame.js")`.
+  **Every table on both sides of the core/diff split names `settings.EVENT`
+  directly** - the non-diff summary's "top 50 functions by self", every diff
+  path and the diff overview alike. There is **no `event_of()` and no
+  fallback**: `Profile.value()` raises `KeyError` on an event a profile can't
+  supply, and that is the wanted behaviour, because a silently substituted
+  event is a wrong column and a wrong denominator. `events_check(events, path)`
+  is the one guard - it stops the run naming the event it wanted and the
+  recorded list it got. The numerator was never the obstacle (CEst is linear,
+  so `CEst(mod-base) == CEst(mod)-CEst(base)`, verified); the **denominator**
+  is now added up from the recorded slots by `callgrind.event_value()`, which
+  is what `callers_data_load()` and `baseline_total_load()` call.
+  `--perf-log`/`--trace-log`/`--raw-data` each render a section only when
+  given; the flame-graph strip link exists only with `--trace-log`. `--diff`
+  picks `diff_test` in `main()`. The LABEL=VALUE rows above a page's content
+  are `ManifestRow`/`ManifestBlock` (methods `manifest_*`) - not the heat map's
+  `HeatMapTotals`, and not a table's column-title row
+  (`theme.table_render(column_titles=...)`). **Never call any of them just
+  "header".** Its `FRAME_JS` is `theme.theme_asset("frame.js")`.
 - `callgrind_diff.py` - the subtraction; also home of `profile_magnitudes()`,
-  which generators import. Its own `_EVENT` is `CEst`, the same one knob, and
-  `event_of()` drops to the first recorded event when a side can't supply it.
-  `--callers-output` is required, and writes the **synthesized callers diff**
-  (`CallersDoc`), carrying the baselines every diff share divides by; every
-  vector it writes goes through `costs_emit()`, which pads to the recorded
-  width, appends one slot per derived event in `events_all()` order and only
-  then trims trailing zeros - so a slot's index never moves and a short vector
-  still means zeros. `perf2html_diff.sh` copies it into the report's `raw/` as
-  `<delta>.callers.json` so the overview can reach it; `validate_report.py`
-  skips it in `raw_dir_check` (`_CALLERS_SUFFIX`). The file name, the flags and
-  the JSON keys are contract - only the prose and the Python names say
-  "synthesized callers diff": `CallgrindToHeatmap`'s `SynthesizedCallers` +
-  `synthesized_callers_load()` read it, `BuildReport.CallersData` +
-  `callers_data_load()` read it back whole.
-- `callgrind_to_heatmap.py` - `_DEFAULT_EVENT = "CEst"`, `_TREE` = dirs whose
+  which generators import. It names `settings.EVENT` directly; `event_of()` and
+  `events_all()` are gone. `events_check()` is a **hard error** - two sides
+  recording different events, or either unable to supply `settings.EVENT`,
+  names both lists and exits non-zero, the way `profile_load()`'s self-check
+  does. `subtract()` owns that call, so every path through the file is guarded
+  once. `--callers-output` is required, and writes the **synthesized callers
+  diff** (`CallersDoc`), carrying the baselines every diff share divides by;
+  every vector it writes goes through `costs_fit()`, which pads to the recorded
+  width and trims trailing zeros - so a slot's index never moves and a short
+  vector still means zeros. `perf2html_diff.sh` copies it into the report's
+  `raw/` as `<delta>.callers.json` so the overview can reach it;
+  `validate_report.py` skips it in `raw_dir_check` (`settings.CALLERS_SUFFIX`).
+  The file name, the flags and the JSON keys are contract - only the prose and
+  the Python names say "synthesized callers diff": `CallgrindToHeatmap`'s
+  `SynthesizedCallers` + `synthesized_callers_load()` read it,
+  `BuildReport.CallersData` + `callers_data_load()` read it back whole.
+- `callgrind_to_heatmap.py` - opens on `settings.EVENT`, `_TREE` = dirs whose
   tracked `.c/.h` are listed even without samples. Its `BODY`, `_CSS` and
   `_HEAT_MAP_JS` are `theme.theme_asset()` of `heatmap.html`, `heatmap.css` and
-  `heatmap.js`. `render()` substitutes `__THEME_JS__` and `__HEATMAP_JS__`
-  **before** `__DATA__`: the two scripts are our own files and carry no marker,
-  while `__DATA__` is profiled source text, so it is the one replacement whose
-  result must never be scanned again.
+  `heatmap.js`, and `_UI_STRINGS_JS` of `ui_strings.js`. `render()` substitutes
+  `__UI_STRINGS_JS__`, `__THEME_JS__` and `__HEATMAP_JS__` **before**
+  `__DATA__`: the three scripts are our own files and carry no marker, while
+  `__DATA__` is profiled source text, so it is the one replacement whose result
+  must never be scanned again.
 - **No generator holds a multi-line HTML/CSS/JS literal any more.** Each one is
   a real file in `scripts/`, read at import through `theme.theme_asset()` -
   `Theme.asset_read()` exposed as a free function, the same door
@@ -392,15 +463,49 @@ pipx/uv). Pylance is not usable - LSP only, ignores argv.
   `heatmap.html` → `callgrind_to_heatmap.BODY`, `heatmap.css` →
   `callgrind_to_heatmap._CSS`, `heatmap.js` →
   `callgrind_to_heatmap._HEAT_MAP_JS`, `frame.js` → `build_report.FRAME_JS`,
-  `flame_bootstrap.js` → `build_flame_graph._BOOTSTRAP`. Being off the Python
-  side, **their JS is written plainly** - `\n` is `\n`, not `\\n`; that gotcha
-  is gone from `dev/` entirely. They keep their coverage: `prettier` formats
-  and parses each file on disk, which is the same string the holder reads, and
-  the 79-column and ASCII scans run over all of them. Holder names are now
-  free - nothing looks a constant up by name any more.
+  `flame_bootstrap.js` → `build_flame_graph._BOOTSTRAP`, `ui_strings.js` →
+  `callgrind_to_heatmap._UI_STRINGS_JS` **and** `build_report._UI_STRINGS_JS`
+  (the one asset two generators hold, because both their pages render text).
+  Being off the Python side, **their JS is written plainly** - `\n` is `\n`,
+  not `\\n`; that gotcha is gone from `dev/` entirely. They keep their
+  coverage: `prettier` formats and parses each file on disk, which is the same
+  string the holder reads, and the 79-column and ASCII scans run over all of
+  them. Holder names are now free - nothing looks a constant up by name any
+  more.
 - `flame_bootstrap.js` keeps its `__NAME__`/`__DATA__` markers, which
   `build_flame_graph.py` substitutes at generate time; they are bare
   identifiers, so `node --check` accepts the file as written.
+- `ui_strings.js` - **the whole UI vocabulary, in one object.** Every English
+  string a page renders is an entry in `STRINGS`, keyed by a `str_`-prefixed
+  snake_case id named for what the string _is_, not where it sits
+  (`str_column_calls`, `str_no_samples`, `str_event_d1m`). Ids are
+  alphabetical. The module exposes `window.ui_strings` with two accessors:
+  `text_of(id)` returns the string, and **returns the id itself when the id is
+  unknown**, so a typo renders as `str_column_calls` on the page instead of as
+  an empty cell - a miss is visible, never silent. `text_fill(id, values)`
+  fills a template's `{name}` slots, leaving an unmatched `{name}` as written;
+  a string with a number or a name in it is **one entry with a placeholder**,
+  never split at the seam (`str_popup_callees`, `str_heading_lines_by_event`).
+  Replacements are not rescanned, so a function name containing braces cannot
+  inject a second substitution. It is the only `scripts/` asset two generators
+  hold, and it must be inlined **before** the script that reads it -
+  `heatmap.html`'s marker order and `build_report._PAGE_JS`
+  (`_UI_STRINGS_JS + FRAME_JS`, one `extra_js` string) are how that is done.
+  What stays out of it is the boundary names: CSS classes, `data-*` attributes,
+  localStorage and URL keys, element ids, the TypedDicts' JSON keys, the
+  substitution markers, and the three names `validate_report.py` greps for. The
+  diff arrows and `>1000x`/`≈0.00%` stay out too - they are number _notation_,
+  produced in lockstep with `theme.py`'s `Numbers`, not vocabulary. `theme.js`
+  holds no UI text, and `flame_bootstrap.js` renders none. **`heatmap.html`
+  holds none either**: its four control labels, the two `tree:` option texts
+  and the search placeholder are empty in the markup and filled by `heatmap.js`
+  at startup (`str_control_*`, `str_sort_*`, `str_search_placeholder`) through
+  the `#eventLabel`/`#scaleLabel`/`#sortLabel`/`#searchLabel` spans - so no
+  English text is authored into the page skeleton. Python is the one boundary
+  `ui_strings.js` cannot cross: `build_report.py` renders page text server-side
+  and cannot call `text_of`, so its few strings (`(no recorded caller)`,
+  `(no recorded caller change)`) stay in Python and are kept in step with their
+  `str_no_caller` twin by hand.
 - `dev/cyg_callback.c` - the recorder. Hot path is
   `if(next < end) { next->fn = fn; next->tsc = rdtsc | flag; ++next; }` - 11/12
   instructions (check with
@@ -523,8 +628,12 @@ pages must not assume more.
 - **No tooltips.** Nothing a page renders carries a `title=` attribute -
   neither `Cell` nor `Column` has a field for one, and `table_render()` / the
   heat map's `table_html()` emit none. What a cell can't fit is simply not
-  shown; widen the column or drag the bar. The only `title=` left in a
-  generator is the `<iframe title="report page">` accessibility label, and
+  shown; widen the column or drag the bar. The rule covers the JS too:
+  `theme.js`'s `handles_create()` used to set
+  `handle_bar.title = "drag to resize"` on every column drag handle, which is
+  exactly the hover-only affordance the rule forbids - the `.bar` shows itself
+  on hover, so the text said nothing the cursor did not. The only `title=` left
+  in a generator is the `<iframe title="report page">` accessibility label, and
   `<title>`/`document.title`/`data-title` are the page title and the status
   row, not hover text. If a header needs explaining, that is a caption or a
   `README.md` section, never a `title=`. **A page that can only be read by
@@ -582,8 +691,16 @@ and unrelated. The stored keys themselves are boundary names, so they keep
 their dotted spelling - `heat.scale`, `heat.sort`, `split.<pane>` and
 `perf2html.version`, the last holding the store version that `theme.js` sweeps
 on. `flame_bootstrap.js`'s `__NAME__`/`__DATA__` and `heatmap.html`'s
-`__DATA__`/`__THEME_JS__`/`__HEATMAP_JS__` are substitution markers Python
-matches literally - never rename them.
+`__DATA__`/`__UI_STRINGS_JS__`/`__THEME_JS__`/`__HEATMAP_JS__` are substitution
+markers Python matches literally - never rename them.
+
+**UI text does not live in the script that renders it.** Every English string a
+page shows is an entry in `scripts/ui_strings.js` behind a `str_` id, and a
+call site asks `window.ui_strings.text_of("str_...")` (or `text_fill()` for a
+template) for it. The ids are ours, so they are `snake_case`; an unknown id
+comes back as itself, so a miss shows up on the page. A string literal left
+inline in a `.js` file is therefore a boundary name by definition - if it is
+not one, it belongs in `ui_strings.js`.
 
 ### Frames and URL state
 
@@ -658,6 +775,24 @@ Pages nest two deep: overview frames a test summary, which frames its heat map
   **not** filtered by whether the total is zero - the dropdown and columns stay
   layout-stable across profiles/diffs. An all-zero column renders blank, no
   heat, no `NaN`. Totals guard `|| 1`.
+- **The event descriptions are one vocabulary, in two places that must say the
+  same words**: `ui_strings.js`'s `str_event_<key>` entries, which
+  `heatmap.js`'s `EVENT_STRING_IDS` maps each event key onto, and `README.md`'s
+  "Callgrind Events" table. Same key means a **byte-identical string**, all 19
+  events, derived included - the README binds the UI's event names the way
+  "Reading a Diff Report" binds the diff notation. Change a wording in one and
+  change it in both, same edit. Python is **not** a third place: it holds no
+  event description at all. Register is "plain and unabbreviated but not a
+  sentence": `L1 data cache misses`, not `L1 cache` (too terse to tell `D1m`
+  from `L1m`) and not `L1 data cache misses (D1mr + D1mw)` (the formula belongs
+  in the README's "Derived from" column). The keys are exactly what
+  `--cache-sim=yes --branch-sim=yes` records plus the six derived; `Ge`,
+  `sys*`, `AcCost*`, `SpLoss*` and the `*Ldmr`/`DLdmw` prefetch counters were
+  dropped because their options (`--collect-bus`, `--collect-systime`,
+  `--cacheuse`, `--simulate-hwpref`) are off and `run_one` never passes them.
+  **Watch the width:** `event_label()` builds `"<desc> / <key>"`, and the
+  `<select>` takes its fixed `ch` width from the longest option, now 42 ch -
+  the 1366x768 target stands, so a longer description costs dropdown width.
 - `.fhead`, `.chips` and `.tbl-cols` sit in one `.srcwrap`
   (`width: max-content; min-width: 100%`) so the wrapper equals the sideways
   scroll range. Bands/chips need `contain: inline-size` or their unwrapped

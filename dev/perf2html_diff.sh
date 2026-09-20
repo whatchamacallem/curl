@@ -11,7 +11,10 @@ REPORT_MANIFEST='curl/perf2html.sh v1'
 STAMP="$(date +%s)"
 
 usage_show() {
-  awk 'NR > 1 && !/^#/ { exit } NR > 1 { sub(/^# ?/, ""); print }' "$SCRIPT"
+  cat <<'EOF'
+perf2html_diff.sh [--verbose] [--keep-raw] [--regenerate]
+    [baseline-dir] [modified-dir] [report-dir]
+EOF
 }
 
 path_display() {
@@ -19,17 +22,20 @@ path_display() {
 print(os.path.relpath(sys.argv[1], sys.argv[2]))' "$1" "$PWD"
 }
 
-log_say() { if [ "$VERBOSE" = 1 ]; then echo "$@"; fi; }
+verbose() { if [ "$VERBOSE" = 1 ]; then echo "$@"; fi; }
 
 test_run() {
-  if [ "$VERBOSE" = 1 ]; then
-    "$@"
-    return
-  fi
   local exit_code=0 from
   printf '\n$ %s\n' "$*" >>"$RUN_LOG"
   from="$(wc -l <"$RUN_LOG")"
-  "$@" >>"$RUN_LOG" 2>&1 || exit_code=$?
+  verbose "\$ $*"
+  if [ "$VERBOSE" = 1 ]; then
+    if ! { "$@" 2>&1 | tee -a "$RUN_LOG"; }; then
+      exit_code="${PIPESTATUS[0]}"
+    fi
+  else
+    "$@" >>"$RUN_LOG" 2>&1 || exit_code=$?
+  fi
   if [ "$exit_code" != 0 ]; then
     {
       echo
@@ -180,8 +186,7 @@ diff_one() {
   base_files="$(profiles_of "$BASE_DIR" "$test")"
   cur_files="$(profiles_of "$MOD_DIR" "$test")"
 
-  log_say "== [$name]: diff -> $diff_file =="
-  [ "$VERBOSE" = 1 ] || printf '%-13sdiff' "$name"
+  verbose "== [$name]: diff -> $diff_file =="
   args=(python3 scripts/callgrind_diff.py -o "$diff_file"
     --callers-output "$callers_file")
   # shellcheck disable=SC2086
@@ -190,13 +195,13 @@ diff_one() {
   for file in $cur_files; do args+=(--current "$file"); done
   test_run "${args[@]}"
 
-  log_say "== [$name]: heat map -> $out/heat-map/index.html =="
+  verbose "== [$name]: heat map -> $out/heat-map/index.html =="
   test_run python3 scripts/callgrind_to_heatmap.py "$diff_file" \
     -o "$out/heat-map/index.html" \
     --title "$name / heat map" --diff \
     --baseline-data "$callers_file"
 
-  log_say "== [$name]: index -> $out/index.html =="
+  verbose "== [$name]: index -> $out/index.html =="
   rm -rf "$out/raw"
   mkdir -p "$out/raw"
   raw_name="$(basename "$diff_file")"
@@ -208,7 +213,7 @@ diff_one() {
     -o "$out/index.html" --test "$name" --diff \
     --callers-data "$callers_file" \
     "${help_args[@]}"
-  [ "$VERBOSE" = 1 ] || printf ' -> %s\n' "${out#"$PWD"/}/index.html"
+  printf '%-13sdiff -> %s\n' "$name" "${out#"$PWD"/}/index.html"
 }
 
 main() {
@@ -240,9 +245,8 @@ main() {
     echo "modified=$(path_display "$MOD_DIR")"
     echo "stamp=$STAMP"
   } >"$OUT_DIR/MANIFEST.txt"
-  [ "$VERBOSE" = 1 ] \
-    || echo "dev/perf2html_diff.sh $STAMP: $BASE_DIR -> $MOD_DIR ->" \
-      "$OUT_DIR" >"$RUN_LOG"
+  echo "dev/perf2html_diff.sh $STAMP: $BASE_DIR -> $MOD_DIR -> $OUT_DIR" \
+    >"$RUN_LOG"
 
   local tests test_name args
   tests="$(tests_pair)"
@@ -253,9 +257,8 @@ main() {
   MULTI=1
   [ "$tests" = "." ] && MULTI=0
 
-  [ "$VERBOSE" = 1 ] \
-    || echo "dev/perf2html_diff.sh $STAMP: $(basename "$BASE_DIR") ->" \
-      "$(basename "$MOD_DIR")"
+  echo "dev/perf2html_diff.sh $STAMP: $(basename "$BASE_DIR") ->" \
+    "$(basename "$MOD_DIR")"
   if [ "$MULTI" = 0 ]; then
     local base_file test_name
     base_file="$(profiles_of "$BASE_DIR" .)"
@@ -271,10 +274,9 @@ main() {
       diff_one "$test_name" "$OUT_DIR/$test_name" "$test_name"
       args+=(--test "$test_name")
     done
-    log_say "== overview -> $OUT_DIR/index.html =="
+    verbose "== overview -> $OUT_DIR/index.html =="
     test_run python3 scripts/build_report.py overview "${args[@]}"
-    [ "$VERBOSE" = 1 ] \
-      || printf '%-13s%s\n' overview "${OUT_DIR#"$PWD"/}/index.html"
+    printf '%-13s%s\n' overview "${OUT_DIR#"$PWD"/}/index.html"
   fi
 
   if [ "$KEEP_RAW" != 1 ]; then rm -rf temporary_artifacts; fi

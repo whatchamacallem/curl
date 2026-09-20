@@ -14,7 +14,23 @@
   let sort_mode = view_storage.value_read("heat.sort") || "heat";
   let current_file_path = null,
     search_query = "";
-  document.getElementById("sort").value = sort_mode;
+  const sort_select = document.getElementById("sort");
+  document.getElementById("eventLabel").textContent =
+    window.ui_strings.text_of("str_control_event");
+  document.getElementById("scaleLabel").textContent =
+    window.ui_strings.text_of("str_control_scale");
+  document.getElementById("sortLabel").textContent =
+    window.ui_strings.text_of("str_control_tree");
+  document.getElementById("searchLabel").textContent =
+    window.ui_strings.text_of("str_control_search");
+  sort_select.options[0].textContent =
+    window.ui_strings.text_of("str_sort_by_heat");
+  sort_select.options[1].textContent =
+    window.ui_strings.text_of("str_sort_by_name");
+  document.getElementById("q").placeholder = window.ui_strings.text_of(
+    "str_search_placeholder",
+  );
+  sort_select.value = sort_mode;
   report_ui.pane_splitter.attach(
     document.getElementById("split"),
     tree_panel,
@@ -28,11 +44,10 @@
   profile_model.heatMapTotals.events.forEach((name, index) => {
     event_list.push({
       key: name,
-      long: profile_model.heatMapTotals.eventLong[name] || "",
       get: (cost_vector) => vector_at(cost_vector, index),
     });
   });
-  for (const [name, terms, long] of profile_model.heatMapTotals.derived) {
+  for (const [name, terms] of profile_model.heatMapTotals.derived) {
     const get = (cost_vector) =>
       terms.reduce(
         (running_total, term) =>
@@ -41,7 +56,6 @@
       );
     event_list.push({
       key: name,
-      long: long || profile_model.heatMapTotals.eventLong[name] || "",
       get,
       derived: true,
     });
@@ -53,50 +67,39 @@
     .map(event_find)
     .filter(Boolean);
 
-  const EVENT_DESCRIPTIONS = {
-    Ir: "instructions",
-    Dr: "data reads",
-    Dw: "data writes",
-    I1mr: "L1 icache miss",
-    D1mr: "L1 dcache read miss",
-    D1mw: "L1 dcache write miss",
-    ILmr: "L3 icache miss",
-    DLmr: "L3 dcache read miss",
-    DLmw: "L3 dcache write miss",
-    Bc: "branches",
-    Bcm: "misprediction",
-    Bi: "indirect branches",
-    Bim: "indirect misprediction",
-    Ge: "bus events",
-    sysCount: "syscalls",
-    sysTime: "syscall time",
-    sysCpuTime: "syscall cpu time",
-    AcCost1: "L1 access cost",
-    SpLoss1: "L1 spatial loss",
-    AcCost2: "L3 access cost",
-    SpLoss2: "L3 spatial loss",
-    ILdmr: "L3 insn write-back",
-    DLdmr: "L3 read write-back",
-    DLdmw: "L3 write write-back",
-    D1m: "L1 cache",
-    DLm: "L3 cache",
-    L1m: "L1 cache, all",
-    LLm: "L3 cache, all",
-    Bm: "misprediction, all",
-    CEst: "cycle estimate",
+  const text_of = window.ui_strings.text_of;
+  const text_fill = window.ui_strings.text_fill;
+  const EVENT_STRING_IDS = {
+    Ir: "str_event_ir",
+    Dr: "str_event_dr",
+    Dw: "str_event_dw",
+    I1mr: "str_event_i1mr",
+    D1mr: "str_event_d1mr",
+    D1mw: "str_event_d1mw",
+    ILmr: "str_event_ilmr",
+    DLmr: "str_event_dlmr",
+    DLmw: "str_event_dlmw",
+    Bc: "str_event_bc",
+    Bcm: "str_event_bcm",
+    Bi: "str_event_bi",
+    Bim: "str_event_bim",
+    D1m: "str_event_d1m",
+    DLm: "str_event_dlm",
+    L1m: "str_event_l1m",
+    LLm: "str_event_llm",
+    Bm: "str_event_bm",
+    CEst: "str_event_cest",
   };
   const event_label = (event) =>
-    EVENT_DESCRIPTIONS[event.key]
-      ? EVENT_DESCRIPTIONS[event.key] + " / " + event.key
+    EVENT_STRING_IDS[event.key]
+      ? text_of(EVENT_STRING_IDS[event.key]) + " / " + event.key
       : event.key;
-  const event_description = (event) =>
-    EVENT_DESCRIPTIONS[event.key] || event.long || event.key;
   const event_select = document.getElementById("event");
   let event_label_width = 0;
   for (const event of event_list) {
     const option = document.createElement("option");
     option.value = event.key;
-    option.textContent = event.key + (event.long ? " - " + event.long : "");
+    option.textContent = event_label(event);
     event_label_width = Math.max(event_label_width, option.textContent.length);
     event_select.appendChild(option);
   }
@@ -184,10 +187,10 @@
   const cell_number = (value) => ({
     text: human_text(value),
   });
-  let HEADING_PREFIX = "Hottest",
-    CHIP_HEADING = "hottest lines";
+  let HEADING_PREFIX = text_of("str_heading_prefix_self"),
+    CHIP_HEADING = text_of("str_chip_heading_self");
   const SELF_COLUMN = {
-    label: "self",
+    label: text_of("str_column_self"),
     num: true,
   };
   const HAS_CALL_GRAPH = function_table.some(
@@ -224,8 +227,8 @@
       !value
         ? "0"
         : (value < 0 ? "-" : "") + plain_human_text(absolute(value));
-    HEADING_PREFIX = "Most changed";
-    CHIP_HEADING = "most changed lines";
+    HEADING_PREFIX = text_of("str_heading_prefix_diff");
+    CHIP_HEADING = text_of("str_chip_heading_diff");
     baseline_of = (cost_vector) => {
       if (!cost_vector) return null;
       const baseline_cost = absolute(current_event.get(cost_vector));
@@ -250,20 +253,30 @@
 
   const scale_select = document.getElementById("scale");
   const SCOPE_CHOICES = IS_DIFF
-    ? [["line", "per line"]]
+    ? [["line", text_of("str_scope_line")]]
     : [
-        ["global", "global"],
-        ["file", "per file"],
-        ["function", "per function"],
+        ["global", text_of("str_scope_global")],
+        ["file", text_of("str_scope_file")],
+        ["function", text_of("str_scope_function")],
       ];
+  const CURVE_CHOICES = [
+    ["log", text_of("str_scale_curve_log")],
+    ["linear", text_of("str_scale_curve_linear")],
+  ];
   const SCALE_CHOICES = [];
-  ["log", "linear"].forEach((curve) => {
+  CURVE_CHOICES.forEach((curve) => {
     SCOPE_CHOICES.forEach((scope) =>
       SCALE_CHOICES.push({
-        value: curve + "/" + scope[0],
-        curve: curve,
+        value: curve[0] + "/" + scope[0],
+        curve: curve[0],
         scope: scope[0],
-        label: SCOPE_CHOICES.length > 1 ? curve + ", " + scope[1] : curve,
+        label:
+          SCOPE_CHOICES.length > 1
+            ? text_fill("str_scale_entry", {
+                curve: curve[1],
+                scope: scope[1],
+              })
+            : curve[1],
       }),
     );
   });
@@ -404,7 +417,7 @@
   function function_name(index) {
     return index != null && function_table[index]
       ? function_table[index].name
-      : "?";
+      : text_of("str_function_name_unknown");
   }
 
   function line_link(file_path, line, text) {
@@ -668,6 +681,8 @@
     return false;
   }
   const DIRECTORY_MAX_SHARE = 100;
+  const caret_of = (is_expanded) =>
+    text_of(is_expanded ? "str_caret_expanded" : "str_caret_collapsed");
   function tree_render() {
     const output_parts = [];
     function nodes_emit(tree_node, depth) {
@@ -691,7 +706,7 @@
             ` style="padding-left:${6 + depth * 14}px;` +
             `${heat_style_attribute}">` +
             `<span class="caret">` +
-            `${is_expanded ? "▼" : "▶"}</span>` +
+            `${caret_of(is_expanded)}</span>` +
             `<span class="name">` +
             `${html_escape(directory_node.name)}/</span>` +
             `<span class="pct">` +
@@ -721,7 +736,8 @@
             ` data-file="${html_escape(file.path)}"` +
             ` style="padding-left:${6 + depth * 14}px;` +
             `${heat_style_attribute}">` +
-            `<span class="caret">▶</span>` +
+            `<span class="caret">` +
+            `${caret_of(false)}</span>` +
             `<span class="name">` +
             `${html_escape(file.name)}</span>` +
             `<span class="pct">` +
@@ -740,8 +756,9 @@
             ` data-more="${html_escape(tree_node.path)}"` +
             ` style="padding-left:${6 + depth * 14}px">` +
             `<span class="caret">` +
-            `${is_expanded ? "▼" : "▶"}</span>` +
-            `<span class="name">no samples</span>` +
+            `${caret_of(is_expanded)}</span>` +
+            `<span class="name">` +
+            `${text_of("str_no_samples")}</span>` +
             `<span class="pct"></span></div>`,
         );
         if (is_expanded) {
@@ -827,23 +844,27 @@
     let markup = `<div class="home">`;
     const line_rows = top_lines(60);
     markup +=
-      `<h2>${HEADING_PREFIX} lines by ` +
-      `${html_escape(event_label(current_event))}</h2>` +
+      `<h2>${html_escape(
+        text_fill("str_heading_lines_by_event", {
+          prefix: HEADING_PREFIX,
+          event: event_label(current_event),
+        }),
+      )}</h2>` +
       table_html(
         "heat.home.lines",
         [
-          { label: "#", num: true },
+          { label: text_of("str_column_rank"), num: true },
           SELF_COLUMN,
           {
-            label: "function",
+            label: text_of("str_column_function"),
             width: SYMBOL_WIDTH,
           },
           {
-            label: "defined at",
+            label: text_of("str_column_defined_at"),
             clip: 28,
           },
           {
-            label: "source",
+            label: text_of("str_column_source"),
             clip: 36,
           },
           event_column(current_event),
@@ -910,29 +931,33 @@
     const call_columns = HAS_CALL_GRAPH
       ? [
           {
-            label: "calls",
+            label: text_of("str_column_calls"),
             num: true,
           },
           {
-            label: "incl",
+            label: text_of("str_column_inclusive"),
             num: true,
           },
         ]
       : [];
     markup +=
-      `<h2>${HEADING_PREFIX} functions by self ` +
-      `${html_escape(event_label(current_event))}</h2>` +
+      `<h2>${html_escape(
+        text_fill("str_heading_functions_by_self", {
+          prefix: HEADING_PREFIX,
+          event: event_label(current_event),
+        }),
+      )}</h2>` +
       table_html(
         "heat.home.functions",
         [
-          { label: "#", num: true },
+          { label: text_of("str_column_rank"), num: true },
           SELF_COLUMN,
           {
-            label: "function",
+            label: text_of("str_column_function"),
             width: SYMBOL_WIDTH,
           },
           {
-            label: "defined at",
+            label: text_of("str_column_defined_at"),
             clip: 48,
           },
           ...call_columns,
@@ -1036,8 +1061,11 @@
     }
     markup +=
       `<span class="stat">` +
-      `self <b>` +
-      `${share_of_baseline_text(file_self_cost, file_baseline_cost) || "0%"}` +
+      `${html_escape(text_of("str_column_self"))} <b>` +
+      `${
+        share_of_baseline_text(file_self_cost, file_baseline_cost) ||
+        text_of("str_share_zero")
+      }` +
       `</b>` +
       ` (${human_text(file_self_cost)}` +
       ` ${html_escape(event_label(current_event))})</span>`;
@@ -1053,12 +1081,13 @@
         ` (${human_text(self_cost)})</span>`;
     }
     if (file.group === "external") {
-      const raw = html_escape(file.raw);
-      markup += `<span class="stat">not in this repo (${raw})</span>`;
+      const note = text_fill("str_not_in_repo", { path: file.raw });
+      markup += `<span class="stat">${html_escape(note)}</span>`;
     }
     markup += `</div>`;
     if (file.source == null) {
-      markup += `<div class="nosrc">Source not available.</div></div>`;
+      const note = html_escape(text_of("str_source_unavailable"));
+      markup += `<div class="nosrc">${note}</div></div>`;
       main_panel.innerHTML = markup;
       tree_render();
       report_ui.layout_activate(main_panel);
@@ -1080,7 +1109,8 @@
       .slice(0, HOT_CHIP_LIMIT);
     if (chip_lines.length) {
       markup +=
-        `<div class="chips">` + `<span class="lbl">${CHIP_HEADING}</span>`;
+        `<div class="chips">` +
+        `<span class="lbl">${html_escape(CHIP_HEADING)}</span>`;
       for (const [line_number, cost] of chip_lines) {
         const baseline_cost = line_baseline(file_path, line_number);
         markup +=
@@ -1160,17 +1190,13 @@
     for (const line_key of Object.keys(lines)) {
       if (+line_key <= source_lines.length) continue;
       line_count = Math.max(line_count, +line_key);
-      source_row_emit(
-        +line_key,
-        "(line beyond end of file: source changed since" +
-          " the profile was taken)",
-      );
+      source_row_emit(+line_key, text_of("str_source_beyond_end"));
     }
 
     const call_column = HAS_CALL_GRAPH
       ? [
           {
-            label: "calls",
+            label: text_of("str_column_calls"),
             num: true,
             cls: "incl",
           },
@@ -1181,12 +1207,17 @@
         cls: "self",
       }),
       {
-        label: "line",
+        label: text_of("str_column_line"),
         num: true,
         width: String(line_count).length + 2,
         cls: "ln",
       },
-      { label: "source", width: SOURCE_WIDTH, grow: true, cls: "code" },
+      {
+        label: text_of("str_column_source"),
+        width: SOURCE_WIDTH,
+        grow: true,
+        cls: "code",
+      },
       ...call_column,
       ...secondary_columns(),
     ];
@@ -1469,35 +1500,38 @@
       width: SYMBOL_WIDTH,
     });
     const location_column = {
-      label: "defined at",
+      label: text_of("str_column_defined_at"),
       clip: 48,
     };
     const call_cost = current_value(line_costs[1]);
     const self_cost = current_value(line_costs[0]);
     const line_baseline_cost = line_baseline(file_path, line_number);
-    const self_label = function_index != null ? "self" : "line self";
+    const self_label = text_of(
+      function_index != null ? "str_column_self" : "str_line_self",
+    );
     const stat_columns = [
-      { label: "event" },
-      { label: "global %", num: true },
-      { label: "count", num: true },
+      { label: text_of("str_column_event") },
+      { label: text_of("str_column_global_share"), num: true },
+      { label: text_of("str_column_count"), num: true },
     ];
     const stat_rows = [
       [
         {
           text: `${self_label} ${event_label(current_event)}`,
         },
-        share_of_baseline_text(self_cost, line_baseline_cost) || "0%",
+        share_of_baseline_text(self_cost, line_baseline_cost) ||
+          text_of("str_share_zero"),
         cell_number(self_cost),
       ],
     ];
     if (call_cost) {
       stat_rows.push([
-        { text: "calls" },
+        { text: text_of("str_column_calls") },
         share_of_baseline_text(call_cost, line_baseline_cost),
         cell_number(call_cost),
       ]);
       stat_rows.push([
-        { text: "call count" },
+        { text: text_of("str_column_call_count") },
         "",
         call_count_cell(line_costs[2]),
       ]);
@@ -1515,15 +1549,22 @@
     }
     const in_function_note =
       line_function_index != null
-        ? " in " + function_name(line_function_index)
+        ? text_fill("str_in_function", {
+            function: function_name(line_function_index),
+          })
         : "";
     const heading_line = `${file_path}:${line_number}${in_function_note}`;
     const in_function_html =
       line_function_index != null
-        ? " in <b>" + html_escape(function_name(line_function_index)) + "</b>"
+        ? text_fill("str_in_function", {
+            function:
+              "<b>" + html_escape(function_name(line_function_index)) + "</b>",
+          })
         : "";
     let markup = `<div class="dbox">`;
-    markup += `<a href="#" class="dclose">[X]</a>`;
+    markup +=
+      `<a href="#" class="dclose">` +
+      `${html_escape(text_of("str_detail_close_symbol"))}</a>`;
     markup +=
       `<div>${html_escape(file_path)}:` +
       `${line_number}${in_function_html}</div>`;
@@ -1533,10 +1574,10 @@
     ];
     if (callees.length) {
       const columns = [
-        { label: "% of total", num: true },
+        { label: text_of("str_column_share_of_total"), num: true },
         event_column(current_event),
-        { label: "call count", num: true },
-        function_column("callee"),
+        { label: text_of("str_column_call_count"), num: true },
+        function_column(text_of("str_column_callee")),
         location_column,
       ];
       const rows = callees.map(
@@ -1558,8 +1599,9 @@
           ];
         },
       );
-      const event_text = event_label(current_event);
-      const heading = `calls from this line (total ${event_text})`;
+      const heading = text_fill("str_popup_callees", {
+        event: event_label(current_event),
+      });
       markup +=
         `<h4>${html_escape(heading)}</h4>` +
         table_html("heat.detail.callees", columns, rows);
@@ -1575,25 +1617,31 @@
         share_of_baseline_text(
           current_value(function_entry.self),
           function_baseline_cost,
-        ) || "0%";
+        ) || text_of("str_share_zero");
       const function_total_text =
         share_of_baseline_text(
           current_value(function_entry.self) +
             current_value(function_entry.calls),
           function_baseline_cost,
-        ) || "0%";
+        ) || text_of("str_share_zero");
       const heading = HAS_CALL_GRAPH
-        ? `${function_entry.name} by call count:` +
-          ` self ${function_self_text}, total ${function_total_text}.`
-        : `${function_entry.name}: self ${function_self_text}.`;
+        ? text_fill("str_popup_function_totals", {
+            function: function_entry.name,
+            self: function_self_text,
+            total: function_total_text,
+          })
+        : text_fill("str_popup_function_self", {
+            function: function_entry.name,
+            self: function_self_text,
+          });
       markup += `<h4>${html_escape(heading)}</h4>`;
       if (callers.length) {
         const columns = [
-          { label: "call count", num: true },
-          { label: "% of total", num: true },
+          { label: text_of("str_column_call_count"), num: true },
+          { label: text_of("str_column_share_of_total"), num: true },
           event_column(current_event),
-          function_column("caller"),
-          { label: "called at", clip: 48 },
+          function_column(text_of("str_column_caller")),
+          { label: text_of("str_column_called_at"), clip: 48 },
         ];
         const rows = callers.map(
           ([caller_index, call_file, call_line, cost_vector, call_count]) => {
@@ -1617,16 +1665,18 @@
         markup += table_html("heat.detail.callers", columns, rows);
         text_parts.push(heading + "\n" + table_markdown(columns, rows));
       } else if (HAS_CALL_GRAPH) {
-        const none = "(no recorded caller - a root or a resolver stub)";
-        markup += `<div class="dim">${none}</div>`;
+        const none = text_of("str_no_caller");
+        markup += `<div class="dim">${html_escape(none)}</div>`;
         text_parts.push(heading + "\n" + none);
       } else {
         text_parts.push(heading);
       }
     }
     markup +=
-      `<div class="dactions"><a href="#" class="dcopy">copy</a>` +
-      ` <a href="#" class="dclose2">close</a></div>`;
+      `<div class="dactions"><a href="#" class="dcopy">` +
+      `${html_escape(text_of("str_detail_copy"))}</a>` +
+      ` <a href="#" class="dclose2">` +
+      `${html_escape(text_of("str_detail_close"))}</a></div>`;
     markup += `</div>`;
     const detail_row = document.createElement("tr");
     detail_row.className = "detail";
@@ -1793,13 +1843,11 @@
     rendered_key = "";
     route_render();
   });
-  document
-    .getElementById("sort")
-    .addEventListener("change", (change_event) => {
-      sort_mode = change_event.target.value;
-      view_storage.value_write("heat.sort", sort_mode);
-      tree_render();
-    });
+  sort_select.addEventListener("change", (change_event) => {
+    sort_mode = change_event.target.value;
+    view_storage.value_write("heat.sort", sort_mode);
+    tree_render();
+  });
   document.getElementById("q").addEventListener("input", (input_event) => {
     search_query = input_event.target.value.trim().toLowerCase();
     tree_render();

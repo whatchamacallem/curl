@@ -18,10 +18,13 @@ REPO="$(cd .. && pwd)"
 STAMP="$(date +%s)"
 
 usage_show() {
-  awk 'NR > 1 && !/^#/ { exit } NR > 1 { sub(/^# ?/, ""); print }' "$SCRIPT"
+  cat <<'EOF'
+perf2html.sh [--verbose] [--keep-raw] [--regenerate] [--report=DIR]
+    [cmake_flags...]
+EOF
 }
 
-log_say() { if [ "$VERBOSE" = 1 ]; then echo "$@"; fi; }
+verbose() { if [ "$VERBOSE" = 1 ]; then echo "$@"; fi; }
 
 took() {
   local seconds=$((SECONDS - $1))
@@ -33,14 +36,17 @@ took() {
 }
 
 test_run() {
-  if [ "$VERBOSE" = 1 ]; then
-    "$@"
-    return
-  fi
   local exit_code=0 from
   printf '\n$ %s\n' "$*" >>"$RUN_LOG"
   from="$(wc -l <"$RUN_LOG")"
-  "$@" >>"$RUN_LOG" 2>&1 || exit_code=$?
+  verbose "\$ $*"
+  if [ "$VERBOSE" = 1 ]; then
+    if ! { "$@" 2>&1 | tee -a "$RUN_LOG"; }; then
+      exit_code="${PIPESTATUS[0]}"
+    fi
+  else
+    "$@" >>"$RUN_LOG" 2>&1 || exit_code=$?
+  fi
   if [ "$exit_code" != 0 ]; then
     {
       echo
@@ -247,12 +253,13 @@ build_compile() {
   if [ "$REGENERATE" = 1 ]; then
     build_paths
     BUILD_DESC="$(manifest_value build)"
-    [ "$VERBOSE" = 1 ] || printf '%-11s%s | reused\n' build "${CMAKE_FLAGS[*]}"
+    printf '%-11s%s | reused\n' build "${CMAKE_FLAGS[*]}"
     return
   fi
-  log_say "== 1: cmake + build $BUILD_DIR and $TRACE_BUILD_DIR:" \
+  verbose "== 1: cmake + build $BUILD_DIR and $TRACE_BUILD_DIR:" \
     "${CMAKE_FLAGS[*]} =="
-  [ "$VERBOSE" = 1 ] || printf '%-11s%s' build "${CMAKE_FLAGS[*]}"
+  local line
+  line="$(printf '%-11s%s' build "${CMAKE_FLAGS[*]}")"
   local start=$SECONDS flag trace_flags=()
   tree_build "$BUILD_DIR" "${CMAKE_FLAGS[@]}"
   for flag in "${CMAKE_FLAGS[@]}"; do
@@ -270,7 +277,7 @@ build_compile() {
   local hook="$REPO/$TRACE_BUILD_DIR/cyg_callback.o"
   tree_build "$TRACE_BUILD_DIR" "${trace_flags[@]}" \
     "-DCMAKE_EXE_LINKER_FLAGS=$hook -Wl,--export-dynamic"
-  [ "$VERBOSE" = 1 ] || printf ' | %s\n' "$(took "$start")"
+  printf '%s | %s\n' "$line" "$(took "$start")"
   build_paths
   BUILD_DESC="$BUILD_DIR, ${CMAKE_FLAGS[*]}, $(cc --version | head -1)"
 }
@@ -291,7 +298,7 @@ trace_render() {
   TRACE_JSON="$PWD/temporary_artifacts/trace.$test.$loops"
   TRACE_JSON="$TRACE_JSON.$STAMP.speedscope.json"
 
-  log_say "== [$test]: native trace, pinned to CPU $CPU, loops=$loops" \
+  verbose "== [$test]: native trace, pinned to CPU $CPU, loops=$loops" \
     "-> $out/flame-graph/index.html =="
   if [ "$REGENERATE" = 1 ]; then
     local saved
@@ -326,7 +333,8 @@ trace_render() {
     echo "error: the native trace of $test failed; its output is in $log" >&2
     exit 1
   }
-  if [ "$VERBOSE" = 1 ]; then cat "$log"; else cat "$log" >>"$RUN_LOG"; fi
+  cat "$log" >>"$RUN_LOG"
+  if [ "$VERBOSE" = 1 ]; then cat "$log"; fi
   test_run python3 scripts/build_flame_graph.py \
     --speedscope-dir "$out/flame-graph" --profile-json "$TRACE_JSON"
 }
@@ -335,12 +343,12 @@ report_render() {
   local name="$1" out="$2" json="$3"
   local log_args=() raw_args=() help_args=() log_file cg_file raw_name
 
-  log_say "== [$name]: heat map -> $out/heat-map/index.html =="
+  verbose "== [$name]: heat map -> $out/heat-map/index.html =="
   test_run python3 scripts/callgrind_to_heatmap.py "${CALLGRIND_FILES[@]}" \
     -o "$out/heat-map/index.html" \
     --title "$name / heat map"
 
-  log_say "== [$name]: index -> $out/index.html =="
+  verbose "== [$name]: index -> $out/index.html =="
   rm -rf "$out/raw"
   mkdir -p "$out/raw"
   for cg_file in "${CALLGRIND_FILES[@]}"; do
@@ -371,7 +379,7 @@ report_render() {
 
 run_one() {
   local test="$1" out="$2"
-  local loops cg_file log start
+  local loops cg_file log start line timing
   local stat_file="$PWD/temporary_artifacts/perf-stat.$test.$STAMP.csv"
   loops=$CALLGRIND_LOOPS
   cg_file="$PWD/temporary_artifacts/callgrind.out.$test.$loops.$STAMP"
@@ -379,25 +387,24 @@ run_one() {
   mkdir -p "$out/perf-tool"
 
   if [ "$REGENERATE" = 1 ]; then
-    [ "$VERBOSE" = 1 ] || printf '%-13sloops=%s | reused' "$test" "$loops"
     trace_render "$test" "$out" "$loops"
     CALLGRIND_FILES=("$cg_file")
     LOG_FILES=("$log")
     report_render "$test" "$out" "$TRACE_JSON"
-    [ "$VERBOSE" = 1 ] || printf '\n'
+    printf '%-13sloops=%s | reused\n' "$test" "$loops"
     return
   fi
 
-  log_say "== [$test]: callgrind, pinned to CPU $CPU, loops=$loops" \
+  verbose "== [$test]: callgrind, pinned to CPU $CPU, loops=$loops" \
     "-> $cg_file =="
-  [ "$VERBOSE" = 1 ] || printf '%-13sloops=%s' "$test" "$loops"
+  line="$(printf '%-13sloops=%s' "$test" "$loops")"
   start=$SECONDS
   test_run taskset -c "$CPU" valgrind --tool=callgrind --cache-sim=yes \
     --branch-sim=yes \
     --callgrind-out-file="$cg_file" --log-file="$log" "$BIN" "$test" "$loops"
-  [ "$VERBOSE" = 1 ] || printf ' | %s' "$(took "$start")"
+  line="$line | $(took "$start")"
 
-  log_say "== [$test]: native timing, pinned to CPU $CPU," \
+  verbose "== [$test]: native timing, pinned to CPU $CPU," \
     "loops=$TIMING_LOOPS -> $out/perf-tool/output.txt =="
   {
     echo "\$ perf stat -e cycles:u,instructions:u taskset -c $CPU" \
@@ -414,22 +421,20 @@ run_one() {
         "$out/perf-tool/output.txt" >&2
       exit 1
     }
-  if [ "$VERBOSE" = 1 ]; then
-    cat "$out/perf-tool/output.txt"
-  else
-    cat "$out/perf-tool/output.txt" >>"$RUN_LOG"
-    printf ' | %s\n' "$(awk '
-      /^Time\/[A-Za-z]+:/ {
-        unit = $1
-        sub(/^Time\//, "", unit)
-        sub(/:$/, "", unit)
-        t = $2 " " $3
-        sub(/ /, "", t)
-        s = t "/" unit
-      }
-      /^Errors:/ { $1 = $1; s = s (s ? ", " : "") $0 }
-      END { print s }' "$out/perf-tool/output.txt")"
-  fi
+  cat "$out/perf-tool/output.txt" >>"$RUN_LOG"
+  if [ "$VERBOSE" = 1 ]; then cat "$out/perf-tool/output.txt"; fi
+  timing="$(awk '
+    /^Time\/[A-Za-z]+:/ {
+      unit = $1
+      sub(/^Time\//, "", unit)
+      sub(/:$/, "", unit)
+      t = $2 " " $3
+      sub(/ /, "", t)
+      s = t "/" unit
+    }
+    /^Errors:/ { $1 = $1; s = s (s ? ", " : "") $0 }
+    END { print s }' "$out/perf-tool/output.txt")"
+  printf '%s | %s\n' "$line" "$timing"
 
   trace_render "$test" "$out" "$loops"
   CALLGRIND_FILES=("$cg_file")
@@ -453,7 +458,7 @@ run_all() {
     )
   done
 
-  log_say "== [all]: native timing, every test's run above summed =="
+  verbose "== [all]: native timing, every test's run above summed =="
   for test_name in "${TESTS[@]}"; do
     usecs="$(awk '/^Time:/ { print $2; exit }' \
       "$OUT_DIR/$test_name/perf-tool/output.txt")"
@@ -467,12 +472,12 @@ run_all() {
     printf '%s' "$rows"
     echo "Time:     $total usecs"
   } >"$out/perf-tool/output.txt"
-  [ "$VERBOSE" = 1 ] && cat "$out/perf-tool/output.txt"
+  if [ "$VERBOSE" = 1 ]; then cat "$out/perf-tool/output.txt"; fi
 
   rm -rf "$out/flame-graph"
   report_render all "$out" ""
 
-  log_say "== overview -> $OUT_DIR/index.html =="
+  verbose "== overview -> $OUT_DIR/index.html =="
   {
     printf '%s\n' "$REPORT_MANIFEST"
     echo "sampled=$SAMPLED"
@@ -485,9 +490,8 @@ run_all() {
   args=(-o "$OUT_DIR/index.html" --header-file "$OUT_DIR/MANIFEST.txt")
   for test_name in "${TESTS[@]}" all; do args+=(--test "$test_name"); done
   test_run python3 scripts/build_report.py overview "${args[@]}"
-  [ "$VERBOSE" = 1 ] \
-    || printf '%-13s%d profiles merged -> %s\n' all "${#TESTS[@]}" \
-      "${OUT_DIR#"$REPO"/}/index.html"
+  printf '%-13s%d profiles merged -> %s\n' all "${#TESTS[@]}" \
+    "${OUT_DIR#"$REPO"/}/index.html"
 }
 
 main() {
@@ -503,9 +507,7 @@ main() {
     RUN_LOG="$PWD/temporary_artifacts/profile.$STAMP.log"
   fi
   cp README.md "$OUT_DIR/README.md"
-  [ "$VERBOSE" = 1 ] \
-    || echo "dev/perf2html.sh $STAMP: ${CMAKE_FLAGS[*]} -> $OUT_DIR" \
-      >"$RUN_LOG"
+  echo "dev/perf2html.sh $STAMP: ${CMAKE_FLAGS[*]} -> $OUT_DIR" >"$RUN_LOG"
   build_compile
 
   local test_name
