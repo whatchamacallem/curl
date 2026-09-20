@@ -92,29 +92,8 @@ args_parse() {
   [ "${#CMAKE_FLAGS[@]}" -gt 0 ] || CMAKE_FLAGS=("${DEFAULT_FLAGS[@]}")
 }
 
-lint_run() {
-  command -v pyright >/dev/null 2>&1 \
-    || {
-      echo "error: pyright not found (pip3 install --user" \
-        "--break-system-packages pyright)" >&2
-      return 1
-    }
-  local status=0
-  pyright --project . || status=1
-  python3 scripts/check_js.py || status=1
-  return "$status"
-}
-
 reports_clean() {
   rm -rf "$BASE_DIR" "$MOD_DIR" "$DIFF_DIR"
-}
-
-validate_all() {
-  local status=0
-  python3 scripts/validate_report.py "$PWD/$BASE_DIR" || status=1
-  python3 scripts/validate_report.py "$PWD/$MOD_DIR" || status=1
-  python3 scripts/validate_report.py "$PWD/$DIFF_DIR" --diff || status=1
-  return "$status"
 }
 
 main() {
@@ -139,14 +118,12 @@ main() {
   echo "dev/perf2html_batch.sh $STAMP: modified build flags: ${CMAKE_FLAGS[*]}"
 
   [ "$KEEP" = 1 ] || reports_clean
-  step_run 1 lint lint_run
-  step_run 2 baseline ./perf2html.sh "${verbose_args[@]}" \
+  step_run 1 baseline ./perf2html.sh "${verbose_args[@]}" \
     "${child_args[@]}" "--report=$BASE_DIR"
-  step_run 3 modified ./perf2html.sh "${verbose_args[@]}" \
+  step_run 2 modified ./perf2html.sh "${verbose_args[@]}" \
     "${child_args[@]}" "--report=$MOD_DIR" "${CMAKE_FLAGS[@]}"
-  step_run 4 diff ./perf2html_diff.sh "${verbose_args[@]}" \
+  step_run 3 diff ./perf2html_diff.sh "${verbose_args[@]}" \
     "${child_args[@]}" "$BASE_DIR" "$MOD_DIR" "$DIFF_DIR"
-  step_run 5 validate validate_all
 
   if [ "$STATUS" != 0 ]; then
     echo "perf2html_batch: ${#FAILED[@]} step(s) failed: ${FAILED[*]}" >&2

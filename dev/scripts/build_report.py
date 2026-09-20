@@ -528,9 +528,7 @@ class BuildReport:
         for test in tests:
             raw_dir = os.path.join(test.directory, "raw")
             names = (
-                sorted(os.listdir(raw_dir))
-                if os.path.isdir(raw_dir)
-                else []
+                sorted(os.listdir(raw_dir)) if os.path.isdir(raw_dir) else []
             )
             files = [
                 os.path.join(raw_dir, name)
@@ -557,9 +555,7 @@ class BuildReport:
                 for costs in profile.function_self.values()
                 if profile.value(costs, _EVENT) != 0
             )
-            share = self.diff_share(
-                delta, self.baseline_total_load(sidecars)
-            )
+            share = self.diff_share(delta, self.baseline_total_load(sidecars))
             rows.append(
                 [
                     link,
@@ -728,9 +724,7 @@ class BuildReport:
                 continue
             body += (
                 f"<h2>{html_escape(block.label)}</h2>"
-            ) + self.manifest_table(
-                f"{key}.{index}", block.pairs
-            )
+            ) + self.manifest_table(f"{key}.{index}", block.pairs)
         return body
 
     def manifest_parse_blocks(

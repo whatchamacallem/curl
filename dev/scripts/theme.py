@@ -542,6 +542,10 @@ def table_render(
     return _RENDERER.table(key, columns, rows, fill, column_titles)
 
 
+def theme_asset(name: str) -> str:
+    return _RENDERER.asset_read(name)
+
+
 # theme_css - The whole stylesheet, colour variables first.
 def theme_css() -> str:
     return _RENDERER.css()

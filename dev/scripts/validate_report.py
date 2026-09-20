@@ -39,12 +39,10 @@ _ALLOWED_UNICODE = (
 )
 
 # Anything outside plain ASCII that is not in the allow list above.
-_NON_ASCII_RE = re.compile(
-    r"[^\x00-\x7F" + "".join(_ALLOWED_UNICODE) + r"]"
-)
+_NON_ASCII_RE = re.compile(r"[^\x00-\x7F" + "".join(_ALLOWED_UNICODE) + r"]")
 
 # Which files under dev/ the ASCII scan reads.
-_UNICODE_SCAN_EXTS = (".py", ".js", ".css", ".sh")
+_UNICODE_SCAN_EXTS = (".py", ".js", ".css", ".sh", ".html")
 _UNICODE_SCAN_NAMES = ("README.md",)
 
 # Generated output and caches, which the ASCII scan walks straight past.

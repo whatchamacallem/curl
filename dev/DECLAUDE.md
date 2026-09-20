@@ -30,7 +30,13 @@ dev/perf2html_diff.sh [--verbose] [--keep-raw] [--regenerate]
     [baseline-dir] [modified-dir] [report-dir]
 dev/perf2html_batch.sh [--verbose] [--keep] [--keep-raw] [--regenerate]
     [cmake_flags...]
+dev/scripts/reformat.sh [--check] [--verbose] [report-dir] [path...]
 ```
+
+**Verification is two runs, in this order:** `dev/perf2html_batch.sh` measures
+and generates, then `dev/scripts/reformat.sh` lints, formats and validates what
+it produced. The batch runs no checks at all. Anything that verifies a build
+has to invoke **both**.
 
 **Iterating on generators: `dev/perf2html_batch.sh --regenerate`** - rebuilds
 all three reports' pages from their last run's raw data. Seconds, not ~2.5min.
@@ -54,7 +60,7 @@ pinned.
 taskset -c 3 ./build-relwithdebinfo/tests/perf/perf <test> [loops]
 ```
 
-## How the three scripts fit together
+## How the four scripts fit together
 
 - `perf2html.sh` - builds + profiles + generates one report. Default DIR
   `perf2html_baseline_report`, or `perf2html_modified_report` when any
@@ -64,24 +70,34 @@ taskset -c 3 ./build-relwithdebinfo/tests/perf/perf <test> [loops]
   URL.
 - `perf2html_diff.sh` - measures nothing; subtracts two reports' own `raw/`
   data.
-- `perf2html_batch.sh` - the only thing that runs checks. Five steps: 1 lint
-  (pyright, must be **0 errors**, + `check_js.py`), 2 baseline, 3 modified
-  (default `-D CMAKE_C_FLAGS=-Os`), 4 diff, 5 `validate_report.py` ×3. Every
+- `perf2html_batch.sh` - measures and generates, and runs **no** checks. Three
+  steps: 1 baseline, 2 modified (default `-D CMAKE_C_FLAGS=-Os`), 3 diff. Every
   step runs even after a failure; exit 1 names the failed ones.
+- `scripts/reformat.sh` - **the one hook that verifies `dev/` and its output.**
+  Lint, then format, then validate, every stage running even after an earlier
+  one failed. Lint is pyright (**0 errors**) + `check_js.py`. Validation is
+  `validate_report.py` over the first argument when that is a report, else over
+  whichever of the three default report dirs exist; a directory counts as a
+  report by holding a `MANIFEST.txt`, and line 1 of it decides `--diff`. An
+  argument that is *not* a report is an ordinary path to format, so
+  `reformat.sh scripts` still formats and still validates the defaults. No
+  report named and none of the defaults present is an **error**.
 
 Key behaviors worth knowing before touching them:
 
 - `--keep-raw` keeps `dev/trace/`; otherwise it's deleted at startup. **The
   batch owns every `dev/trace/` deletion** - it passes `--keep-raw` down so a
-  child can't unlink the batch log mid-run, and deletes after step 5. A failed
+  child can't unlink the batch log mid-run, and deletes after step 3. A failed
   flagless batch *keeps* `dev/trace/` (the step logs are the evidence).
 - `--regenerate` implies `--keep-raw`, and in the batch also `--keep`. It reads
   `stamp=` back from the report's own `MANIFEST.txt` and rebuilds
   byte-identically when no generator changed.
-- **Step 5 is the only `validate_report.py` call anywhere.** Don't add a
-  validate step to a generator.
-- **The batch is the generators' test suite** - driving them over all three
-  output dirs is the coverage. Don't grow a per-generator check.
+- **`reformat.sh` is the only `validate_report.py` and `pyright` call
+  anywhere.** Don't add a lint or validate step to a generator or to the batch.
+  Validation reads the report dirs only, never `dev/trace/`, so the batch
+  deleting `trace/` on a clean flagless run doesn't affect it.
+- **The batch plus `reformat.sh` is the generators' test suite** - driving them
+  over all three output dirs is the coverage. Don't grow a per-generator check.
 - Profiling:
   `taskset -c 3 valgrind --tool=callgrind --cache-sim=yes --branch-sim=yes`.
   Timing is a *separate* native pinned
@@ -152,24 +168,21 @@ Raw data in `dev/trace/` (gitignored): `callgrind.out.<test>.<loops>.<ts>`,
   (`callgrind_diff.py --callers-output`, consumed via
   `build_report.py test --diff --callers-data`).
 - **Every share divides by that same thing's own baseline cost**, never by a
-  global budget: a function by its baseline self, a line by its baseline
-  cost, a file/dir by its summed baseline, the overview by that test's
-  baseline total. `(new - old)/old`, so 1→0 is -100%, 100→90 is -10%, 90→100
-  is +11.1%, 1→1 is 0% (rendered empty). Something the baseline never had is
-  **+100%**. Baselines ride in the `--callers-output` sidecar
-  (`baseline`, keyed by `<fn>` and `<fn>\n<display path>\n<line>`,
-  `baselineTotal`, `baselineCalls`, `events`); the heat map reads it via
-  `--baseline-data`. Ranking and heat are `abs()`, so winners and losers
-  interleave.
-- **Per-line baselines are wildly skewed** - median line is ~18 Ir and 72%
-  are under 1,000, so a line that cost 1 and moved 200K reads 20,360,300%.
-  Only ~1.8% of lines exceed ±1000%, but a max-based colour scale is set by
-  exactly those. In a diff the `PFULL` clamp handles it (a diff has no
-  per-function scope); in a non-diff report that is what `log, per function`
-  is for.
-- `profile_magnitudes()` (Σ|per-function line delta|) still exists and is
-  what `heatMapTotals.totals` carries, but it is no longer what shares
-  divide by.
+  global budget: a function by its baseline self, a line by its baseline cost,
+  a file/dir by its summed baseline, the overview by that test's baseline
+  total. `(new - old)/old`, so 1→0 is -100%, 100→90 is -10%, 90→100 is +11.1%,
+  1→1 is 0% (rendered empty). Something the baseline never had is **+100%**.
+  Baselines ride in the `--callers-output` sidecar (`baseline`, keyed by `<fn>`
+  and `<fn>\n<display path>\n<line>`, `baselineTotal`, `baselineCalls`,
+  `events`); the heat map reads it via `--baseline-data`. Ranking and heat are
+  `abs()`, so winners and losers interleave.
+- **Per-line baselines are wildly skewed** - median line is ~18 Ir and 72% are
+  under 1,000, so a line that cost 1 and moved 200K reads 20,360,300%. Only
+  ~1.8% of lines exceed ±1000%, but a max-based colour scale is set by exactly
+  those. In a diff the `PFULL` clamp handles it (a diff has no per-function
+  scope); in a non-diff report that is what `log, per function` is for.
+- `profile_magnitudes()` (Σ|per-function line delta|) still exists and is what
+  `heatMapTotals.totals` carries, but it is no longer what shares divide by.
 - `summary:` in the delta = the signed total, so the parser's 1.0000 self-check
   holds on it too.
 
@@ -186,27 +199,30 @@ generator. Keep the split: `BuildReport.test`/`.functions_table` core vs
 comment alike, in every language. `scripts/reformat.sh` enforces it, and a line
 still over 79 after the formatters run is an **error**, not a note:
 `long_lines_report` prints `file:line`, the width and the whole line, and the
-script exits 1. The formatters cannot reach those lines - embedded JS/CSS in a
-Python string literal, `echo` text in a shell script, a fenced block in `.md` -
-so they are rewrapped by hand. Whole tree is at 0.
+script exits 1. It scans `.sh`, `.py`, `.c`, `.h`, `.md` and `.html`. The
+formatters cannot reach some of those lines - embedded JS/CSS in a Python
+string literal, `echo` text in a shell script, a fenced block in `.md`, all of
+`scripts/heatmap.html` (there is no HTML formatter) - so they are rewrapped by
+hand. Whole tree is at 0.
 
 **`dev/` source is ASCII plus a short allow list.** `validate_report.py`'s
-`unicode_check` walks every `.py`/`.js`/`.css`/`.sh` and `README.md` under
-`dev/` and fails on any character outside `_NON_ASCII_RE`, which is ASCII plus
-`_ALLOWED_UNICODE`: `≈`, `▲`, `▼`, `…`. Those are the diff vocabulary and they
-are **written literally** - not `▼`, and not an HTML entity. An entity would be
-double-escaped into visible text by the JS `esc()` and by `theme.py`'s
+`unicode_check` walks every `.py`/`.js`/`.css`/`.sh`/`.html` and `README.md`
+under `dev/` and fails on any character outside `_NON_ASCII_RE`, which is ASCII
+plus `_ALLOWED_UNICODE`: `≈`, `▲`, `▼`, `…`. Those are the diff vocabulary and
+they are **written literally** - not `▼`, and not an HTML entity. An entity
+would be double-escaped into visible text by the JS `esc()` and by `theme.py`'s
 `html_escape()` (both escape `&`), and its length would corrupt the
 `text.length` column-width math. Adding a character to the page's vocabulary
 means adding it to `_ALLOWED_UNICODE` with a `#` comment naming it.
 `DECLAUDE.md` is not scanned.
 
-Rewrapping an embedded block changes every generated page (the CSS and JS are
-inlined into each one), so a page diff after such an edit is expected;
-`perf2html_batch.sh --regenerate` then a diff against a snapshot is how you
-check that only the inlined `<style>`/`<script>` moved. Text a script `echo`s
-into `perf-tool/output.txt` is *page content*, so rewrapping it does change the
-report - split it into extra `#` lines rather than letting it overflow.
+Rewrapping an embedded block, or `scripts/heatmap.html`, changes every
+generated page (the CSS and JS are inlined into each one), so a page diff after
+such an edit is expected; `perf2html_batch.sh --regenerate` then a diff against
+a snapshot is how you check that only the inlined `<style>`/`<script>` moved.
+Text a script `echo`s into `perf-tool/output.txt` is *page content*, so
+rewrapping it does change the report - split it into extra `#` lines rather
+than letting it overflow.
 
 Not to be confused with the **80-column source *view*** in the heat map
 (`SRC_COLS`, `MM_MIN_COLS`), which is the standard width the profiled `lib/`
@@ -282,15 +298,24 @@ pipx/uv). Pylance is not usable - LSP only, ignores argv.
   `--trace-log`. `--diff` picks `diff_test` in `main()`. The LABEL=VALUE rows
   above a page's content are `ManifestRow`/`ManifestBlock` (methods
   `manifest_*`) - not the heat map's `HeatMapTotals`, and not a table's
-  column-title row (`theme.table_render(column_titles=...)`). **Never call
-  any of them just "header".**
+  column-title row (`theme.table_render(column_titles=...)`). **Never call any
+  of them just "header".**
 - `callgrind_diff.py` - the subtraction; also home of `profile_magnitudes()`,
   which generators import. `--callers-output` is required, and carries the
-  baselines every diff share divides by. `perf2html_diff.sh` copies it into
-  the report's `raw/` as `<delta>.callers.json` so the overview can reach it;
+  baselines every diff share divides by. `perf2html_diff.sh` copies it into the
+  report's `raw/` as `<delta>.callers.json` so the overview can reach it;
   `validate_report.py` skips it in `raw_dir_check` (`_CALLERS_SUFFIX`).
 - `callgrind_to_heatmap.py` - `_DEFAULT_EVENT = "CEst"`, `_TREE` = dirs whose
-  tracked `.c/.h` are listed even without samples.
+  tracked `.c/.h` are listed even without samples. Its `BODY` is no longer a
+  string literal: it is `theme.theme_asset("heatmap.html")`, read at import
+  time from the file beside it. `theme_asset()` is `Theme.asset_read()` exposed
+  as a free function, the same door `theme.css`/`theme.js` come through.
+- `scripts/heatmap.html` - the heat map's whole page body and script, as a real
+  file. Being off the Python side, **its JS is written plainly** - `\n` is
+  `\n`, not `\\n`; that gotcha is gone here and still applies to
+  `build_report.py`'s `FRAME_JS`. Still reached by `check_js.py` (via `BODY`)
+  and by the 79-column and ASCII scans, so nothing was given up by moving it.
+  No formatter touches it - rewrap by hand.
 - `dev/cyg_callback.c` - the recorder. Hot path is
   `if(next < end) { next->fn = fn; next->tsc = rdtsc | flag; ++next; }` - 11/12
   instructions (check with
@@ -314,8 +339,10 @@ pipx/uv). Pylance is not usable - LSP only, ignores argv.
 - `validate_report.py OUTDIR [--diff]` - structural smoke test only;
   `flame_graph_check` requires exactly one `evented` profile whose `exporter`
   is `_FLAME_EXPORTER`, so a synthesized or stale flame graph fails.
-- `check_js.py` - `node --check` on `theme.js` and every JS chunk embedded in a
-  Python string (`_HOLDERS`). **Add a pair here when a generator grows new
+- `check_js.py` - `node --check` on `theme.js` and every JS chunk a generator
+  holds in a module-level string (`_HOLDERS`), whichever way that string was
+  filled - `callgrind_to_heatmap.BODY` now reads `heatmap.html` off disk and is
+  checked exactly as before. **Add a pair here when a generator grows new
   embedded JS.** This is what catches a `\n` that needed `\\n`.
 
 ## Why the heat map exists
@@ -345,48 +372,45 @@ pages must not assume more.
   The `_HEAT` ramp is exempt from the pair rule.
 - Heat = 12-stop `_HEAT` blended over `--bg`, alpha on log scale of magnitude,
   text color by resulting luminance. **The scale dropdown is a curve × scope
-  product, built at runtime** - `SCALES` from `{log, linear}` × `SCOPES`,
-  and `scale` is the chosen entry (`.curve`, `.scope`, `.value`), never a
-  bare string. `heatP()` reads `.curve`; `maxP`/`maxPfor()` read `.scope`.
-  Non-diff `SCOPES` is all three, so the dropdown carries **all six**
-  permutations: `global` (`MAXP`, every line of every file), `per file`,
-  `per function` (each line against the hottest line of the function that
-  owns it - `maxPfor()`; what keeps one blown-up line from flattening a
-  whole file). **A diff has exactly one scope, `per line`**, so its dropdown
-  is just `log`/`linear` with no scope suffix: a diff share already divides
-  by that line's own baseline, so there is no global, file or function
-  delta to scale against and `maxP` is simply `PFULL`. Because `file` and
-  `function` scope can no longer be reached in a diff, both `maxP` arms use
-  plain `pct()` - no `DIFF ? pctOf(...)` branch, and no per-file percentage
-  max. An unknown stored `heat.scale` falls back to `SCALES[0]`, which is
-  how old values survive.
-  Non-diff indexes `0..1`; **diff indexes signed `-1..1` across the ramp**
-  (savings → cold/blue, regressions → hot/red, 0 at midpoint) via
-  `heat_style(signed=True)` / the JS `if (DIFF)` branch. **A diff clamps
-  both the share and `maxP` to 100%** (`_FULL_HEAT_PCT` / `PFULL`,
-  applied in `BuildReport.diff_heat` and in `heatP`), so a change the size
-  of the thing's own baseline is already fully lit and the 1.8% of lines
-  reading millions of percent can't set a scale nothing else registers on:
-  `c(100%) == c(10000000%)`, `c(90%) != c(10000000%)`. Non-diff is
-  untouched - `heat_t()`/`heatP()` clamp nothing without `DIFF`.
+  product, built at runtime** - `SCALES` from `{log, linear}` × `SCOPES`, and
+  `scale` is the chosen entry (`.curve`, `.scope`, `.value`), never a bare
+  string. `heatP()` reads `.curve`; `maxP`/`maxPfor()` read `.scope`. Non-diff
+  `SCOPES` is all three, so the dropdown carries **all six** permutations:
+  `global` (`MAXP`, every line of every file), `per file`, `per function` (each
+  line against the hottest line of the function that owns it - `maxPfor()`;
+  what keeps one blown-up line from flattening a whole file). **A diff has
+  exactly one scope, `per line`**, so its dropdown is just `log`/`linear` with
+  no scope suffix: a diff share already divides by that line's own baseline, so
+  there is no global, file or function delta to scale against and `maxP` is
+  simply `PFULL`. Because `file` and `function` scope can no longer be reached
+  in a diff, both `maxP` arms use plain `pct()` - no `DIFF ? pctOf(...)`
+  branch, and no per-file percentage max. An unknown stored `heat.scale` falls
+  back to `SCALES[0]`, which is how old values survive. Non-diff indexes
+  `0..1`; **diff indexes signed `-1..1` across the ramp** (savings → cold/blue,
+  regressions → hot/red, 0 at midpoint) via `heat_style(signed=True)` / the JS
+  `if (DIFF)` branch. **A diff clamps both the share and `maxP` to 100%**
+  (`_FULL_HEAT_PCT` / `PFULL`, applied in `BuildReport.diff_heat` and in
+  `heatP`), so a change the size of the thing's own baseline is already fully
+  lit and the 1.8% of lines reading millions of percent can't set a scale
+  nothing else registers on: `c(100%) == c(10000000%)`,
+  `c(90%) != c(10000000%)`. Non-diff is untouched - `heat_t()`/`heatP()` clamp
+  nothing without `DIFF`.
 - Call counts are their own metric, heat-colored by share of all recorded
   calls, log-scaled, event-independent.
 - Numbers: `num_human()`/`fmtH()` → `2.1K`/`2.0G` (exact in tooltip);
-  `num_pct()`/`fmtP()` → `63.2%`, `<0.01%`. Exact zero renders empty.
-  **A diff never prints `+`.** A share leads with an arrow and keeps a
-  negative's sign, Bloomberg style - `▲11.1%` up, `▼-100.0%` down
-  (`num_signed_pct()` / the JS `fmtP()`); an amount
-  carries only a minus when negative, nothing when positive
-  (`num_signed()` / `fmtH()`, U+2212 in the page). Under 0.01% it is
-  `▲≈0.00%`/`▼≈0.00%` - direction kept, size marginal. **A diff share past
-  100% switches to a multiple** - `▲1.30x` - and at or past `99.99x` it is
-  just `>1000x`, deliberately approximate (`Numbers.multiple()` / the JS
-  `mult()`; both sides kept in step and tested on the same cases).
-  `≈0.00%` and `>1000x` state a bound, not a value, so neither takes a
-  sign. **A drop can't pass -100%** - `(new-old)/old` bottoms out when the
-  cost reaches zero - so the multiple branch is reachable only for a rise;
-  don't "fix" negative multiples, they can't occur.
-  Tooltips keep an explicit `+`/`-` on the exact value.
+  `num_pct()`/`fmtP()` → `63.2%`, `<0.01%`. Exact zero renders empty. **A diff
+  never prints `+`.** A share leads with an arrow and keeps a negative's sign,
+  Bloomberg style - `▲11.1%` up, `▼-100.0%` down (`num_signed_pct()` / the JS
+  `fmtP()`); an amount carries only a minus when negative, nothing when
+  positive (`num_signed()` / `fmtH()`, U+2212 in the page). Under 0.01% it is
+  `▲≈0.00%`/`▼≈0.00%` - direction kept, size marginal. **A diff share past 100%
+  switches to a multiple** - `▲1.30x` - and at or past `99.99x` it is just
+  `>1000x`, deliberately approximate (`Numbers.multiple()` / the JS `mult()`;
+  both sides kept in step and tested on the same cases). `≈0.00%` and `>1000x`
+  state a bound, not a value, so neither takes a sign. **A drop can't pass
+  -100%** - `(new-old)/old` bottoms out when the cost reaches zero - so the
+  multiple branch is reachable only for a rise; don't "fix" negative multiples,
+  they can't occur. Tooltips keep an explicit `+`/`-` on the exact value.
 - **No decorative borders.** The only drawn lines are drag targets (`.bar`,
   `.split`), invisible until hover/active. Everything else is separated by
   background shading (`--panel`/`--bg`/`--bg-alt`/`--nav`).
@@ -549,6 +573,8 @@ the reports (overview: native time, cycles, instructions), not here.
    `dev/perf2html_diff.sh`. Keep only changes that measurably help **and**
    leave everything else the test prints (counts, error totals) unchanged.
 1. Record before/after numbers in "Current state" as you go.
+1. After any `dev/` edit: `dev/perf2html_batch.sh` **then**
+   `dev/scripts/reformat.sh`. The batch alone checks nothing.
 1. Before calling anything final: full suite (`tests/runtests.pl`, or `ctest`
    from `build/` with `-DBUILD_TESTING=ON`) - the perf test doesn't validate
    correctness.

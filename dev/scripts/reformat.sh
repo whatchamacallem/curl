@@ -1,12 +1,9 @@
 #!/usr/bin/env bash
-# dev/scripts/reformat.sh [--check] [--verbose] [path...]
+# dev/scripts/reformat.sh [--check] [--verbose] [report-dir] [path...]
 #
-# Formats every dev/ source to 79 columns: *.sh with shfmt, scripts/*.py with
-# ruff, *.c/*.h with clang-format, *.md with mdformat. No path = all of dev/.
-# Any line still over 79 after that is an error: it prints file:line, the
-# width and the whole line, and exits 1. No formatter reaches those -- a
-# heredoc, an embedded JS/CSS string, a fenced block -- so they are rewritten
-# by hand.
+# The one hook that verifies dev/ and its output. Three things in order:
+# lint, format, validate.
+#
 # --check reports what would change and exits 1 instead of writing.
 # cwd-independent: paths are relative to dev/, like the perf2html scripts.
 set -uo pipefail
@@ -17,6 +14,12 @@ cd "$DEV"
 COLUMNS_MAX=79
 SHELL_INDENT=2
 RUFF_CONFIG=scripts/ruff.toml
+DEFAULT_REPORTS=(
+  perf2html_baseline_report
+  perf2html_modified_report
+  perf2html_diff_report
+)
+DIFF_MANIFEST='curl/perf2html_diff.sh'
 
 usage_show() {
   awk 'NR > 1 && !/^#/ { exit } NR > 1 { sub(/^# ?/, ""); print }' "$SCRIPT"
@@ -129,7 +132,7 @@ format_markdown() {
 
 long_lines_report() {
   local files=() kind
-  for kind in '*.sh' '*.py' '*.c' '*.h' '*.md'; do
+  for kind in '*.sh' '*.py' '*.c' '*.h' '*.md' '*.html'; do
     mapfile -t -O "${#files[@]}" files < <(files_of "$kind" "$@")
   done
   if [ "${#files[@]}" = 0 ]; then return 0; fi
@@ -145,6 +148,71 @@ long_lines_report() {
     "columns" "$(echo "$over" | grep -c ' cols$')" "$COLUMNS_MAX"
   echo "$over" >&2
   STATUS=1
+}
+
+lint_run() {
+  local binary
+  if ! binary="$(tool_find pyright)"; then
+    printf '%-12s| skipped | not installed: %s\n' "lint" "pyright"
+    MISSING+=(pyright)
+    return 0
+  fi
+  local output exit_code=0
+  output="$("$binary" --project . 2>&1)" || exit_code=$?
+  output="$output"$'\n'"$(python3 scripts/check_js.py 2>&1)" || exit_code=$?
+  if [ "$exit_code" = 0 ]; then
+    printf '%-12s| ok      | pyright + check_js\n' "lint"
+    log_say "$output"
+    return 0
+  fi
+  printf '%-12s| FAILED  | pyright + check_js\n' "lint"
+  echo "$output" >&2
+  STATUS=1
+}
+
+report_is_diff() {
+  case "$(head -n 1 "$1/MANIFEST.txt" 2>/dev/null)" in
+    "$DIFF_MANIFEST"*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+report_find() {
+  local path
+  if [ "${#PATHS[@]}" != 0 ] && [ -f "${PATHS[0]}/MANIFEST.txt" ]; then
+    REPORTS=("${PATHS[0]}")
+    PATHS=("${PATHS[@]:1}")
+    return 0
+  fi
+  for path in "${DEFAULT_REPORTS[@]}"; do
+    if [ -f "$path/MANIFEST.txt" ]; then REPORTS+=("$path"); fi
+  done
+}
+
+validate_run() {
+  local path args output exit_code
+  if [ "${#REPORTS[@]}" = 0 ]; then
+    printf '%-12s| FAILED  | no report found\n' "validate"
+    echo "error: no report to validate: name one as the first argument," \
+      "or run dev/perf2html_batch.sh to make ${DEFAULT_REPORTS[0]}" >&2
+    STATUS=1
+    return 0
+  fi
+  for path in "${REPORTS[@]}"; do
+    args=("$PWD/$path")
+    if report_is_diff "$path"; then args+=(--diff); fi
+    exit_code=0
+    output="$(python3 scripts/validate_report.py "${args[@]}" 2>&1)" \
+      || exit_code=$?
+    if [ "$exit_code" = 0 ]; then
+      printf '%-12s| ok      | %s\n' "validate" "$path"
+      log_say "$output"
+      continue
+    fi
+    printf '%-12s| FAILED  | %s\n' "validate" "$path"
+    echo "$output" >&2
+    STATUS=1
+  done
 }
 
 args_parse() {
@@ -181,11 +249,15 @@ main() {
   args_parse "$@"
   STATUS=0
   MISSING=()
+  REPORTS=()
+  report_find
+  lint_run
   format_shell "${PATHS[@]}"
   format_python "${PATHS[@]}"
   format_c "${PATHS[@]}"
   format_markdown "${PATHS[@]}"
   long_lines_report "${PATHS[@]}"
+  validate_run
   if [ "${#MISSING[@]}" != 0 ]; then
     {
       echo

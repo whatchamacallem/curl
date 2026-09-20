@@ -62,9 +62,7 @@ class CallgrindDiff:
     # The baseline cost of every function and of every one of its lines --
     # the denominator each share is taken against. Keyed the same way the
     # subtraction is, so an inlined body is never charged to its neighbour.
-    def baseline_costs(
-        self, baseline: callgrind.Profile
-    ) -> dict[str, Costs]:
+    def baseline_costs(self, baseline: callgrind.Profile) -> dict[str, Costs]:
         out: dict[str, Costs] = {}
         for function, costs in baseline.function_self.items():
             if any(costs):
@@ -102,9 +100,7 @@ class CallgrindDiff:
             file=sys.stderr,
         )
         callers = self.callers_subtract(baseline, modified, args.event)
-        self.callers_write(
-            callers, args.callers_output, args.event, baseline
-        )
+        self.callers_write(callers, args.callers_output, args.event, baseline)
         print(
             f"wrote {args.callers_output} "
             f"({os.path.getsize(args.callers_output):,} bytes): "
