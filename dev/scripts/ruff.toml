@@ -19,11 +19,10 @@ select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM"]
 # was asked for. pyright understands the form and still reports a genuinely
 # undefined name, so the check moved tools rather than being dropped -- it
 # is one of the things reformat.sh's 0-error pyright gate is covering.
-ignore = ["E501", "F821"]
-
-[lint.isort]
-known-first-party = [
-  "callgrind",
-  "callgrind_diff",
-  "theme",
-]
+# E401 and I001 are off because every module is imported plainly -- there is
+# no "from X import Y" anywhere but "from __future__ import annotations" --
+# and the plain imports are packed onto one alphabetical line per block, one
+# before the sys.path.insert() and one after it. Both rules would unpack
+# those lines back to one import each, and reformat.sh runs ruff with --fix,
+# so leaving them on would silently undo the shape on the next format run.
+ignore = ["E401", "E501", "F821", "I001"]

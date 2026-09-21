@@ -16,8 +16,12 @@
 #   scripts/*.css     prettier      prettier         yes   yes
 #   scripts/*.html    prettier      prettier         yes   yes
 #
-#   (1) README.md only. DECLAUDE.md is not scanned, and no *.json is:
-#       json shares the row because prettier handles both kinds.
+#   (1) README.md only. No *.json is: json shares the row because
+#       prettier handles both kinds.
+#
+# DECLAUDE.md is the author's own notes, not dev/ source: no formatter, no
+# lint, no column check reaches it. SKIPPED_MARKDOWN_NAMES is what holds it
+# out of every one of those, so adding a second such file is one name here.
 #
 # The dirs are fixed by convention: ".." is dev/ itself, where the shell
 # scripts, the C recorder and the markdown live, and "." is scripts/, where
@@ -31,6 +35,10 @@
 # after the formatters run is an error: it prints file:line, the width and
 # the whole line, and exits 1. prettier cannot break a long template
 # literal, so those few are split by hand.
+#
+# The "settings" stage reports every SCREAMING_SNAKE constant a generator
+# assigns below its settings.load_into() call. It is a note, never a
+# failure: the namespace rule is what puts them there. --verbose lists them.
 #
 # Validation runs validate_report.py over the report named as the argument,
 # or over whichever default reports exist when none is named. A directory is
@@ -54,6 +62,10 @@ DIR_SCRIPTS=.
 
 COLUMNS_MAX=79
 PRETTIER_CONFIG=../.prettierrc.json
+
+# Markdown that is the author's notes rather than dev/ source. Nothing here
+# is formatted, linted or column-checked.
+SKIPPED_MARKDOWN_NAMES=(DECLAUDE.md)
 SHELL_INDENT=2
 RUFF_CONFIG=ruff.toml
 
@@ -123,14 +135,21 @@ tool_run() {
 }
 
 # Every file of one kind under one directory, report dirs and raw data
-# skipped.
+# skipped, and so is every SKIPPED_MARKDOWN_NAMES file. This is the one
+# door each stage collects its files through, so a name held out here is
+# held out of formatting, linting and the column check alike.
 files_of() {
-  local dir="$1" pattern="$2"
+  local dir="$1" pattern="$2" skipped=()
+
+  local name
+  for name in "${SKIPPED_MARKDOWN_NAMES[@]}"; do
+    skipped+=(-not -name "$name")
+  done
 
   find "$dir" -name "$pattern" -type f \
     -not -path '*/temporary_artifacts/*' \
     -not -path '*_report/*' -not -path '*/node_modules/*' \
-    -not -path '*/__pycache__/*' | sort
+    -not -path '*/__pycache__/*' "${skipped[@]}" | sort
 }
 
 format_shell() {
@@ -221,6 +240,34 @@ lint_run() {
   printf '%-12s| FAILED  | pyright\n' "lint"
   echo "$output" >&2
   STATUS=1
+}
+
+# Every SCREAMING_SNAKE constant a generator assigns below its
+# settings.load_into() call. The namespace rule puts them there, so this is
+# a report and never a failure: it is the list of constants a reader of a
+# file's head does not see, which is what to check when a value seems to
+# have no definition.
+lost_settings_report() {
+  local files output
+  mapfile -t files < <(files_of "$DIR_SCRIPTS" '*.py')
+
+  if [ "${#files[@]}" = 0 ]; then return 0; fi
+
+  output="$(python3 -c '
+import sys, settings
+for path in sys.argv[1:]:
+    for row in settings.lost_settings(path):
+        print(f"{row.path}:{row.line}: {row.name}")
+' "${files[@]}" 2>&1)"
+
+  if [ -z "$output" ]; then
+    printf '%-12s| ok      | none below load_into()\n' "settings"
+    return 0
+  fi
+
+  printf '%-12s| note    | %s below load_into()\n' \
+    "settings" "$(echo "$output" | grep -c ':')"
+  verbose "$output"
 }
 
 long_lines_report() {
@@ -395,6 +442,7 @@ main() {
   format_c
   format_prettier
 
+  lost_settings_report
   long_lines_report
   validate_run
 

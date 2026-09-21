@@ -1,16 +1,10 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-import argparse
-import base64
-import json
-import os
-import sys
-from typing import NamedTuple
+import argparse, base64, json, os, sys, typing
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import settings
-import theme
+import settings, theme
 
 # Every value this file takes from settings.py, declared as the type it
 # expects and loaded before any other name this module binds.
@@ -30,7 +24,7 @@ _PAGE = theme.asset_text_read("flame_graph.html")
 # profile, plus links to the report's one shared copy of speedscope.
 class BuildFlameGraph:
     # FlameGraphArgs - Where the page goes and what it points at.
-    class FlameGraphArgs(NamedTuple):
+    class FlameGraphArgs(typing.NamedTuple):
         # the shared bundle's stylesheet, a bare file name
         app_css: str
         # relative href from the page to the shared speedscope bundle

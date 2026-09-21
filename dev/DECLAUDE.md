@@ -10,9 +10,10 @@
    or break a contract. If it isn't A-list it probably won't fit. You know what
    is A-list because this file is what is in your context - judge a new fact
    against what is already here. Keep adding A-list facts as long as they are
-   worth maintaining, into the section they belong to. When this file goes over
-   **40,000 bytes** at the moment you are adding to it, compact it back to
-   **32,000** in that same change (`wc -c`).
+   worth maintaining, into the section they belong to. When this file is over
+   **40,000 bytes** at the moment you are adding to it, **say so to the user
+   and leave it alone** (`wc -c`) - report the size and let them decide.
+   Never compact it on your own initiative: what to drop is the user's call.
 1. `dev/` is throwaway profiling tooling: one shared parser, one shared theme,
    no dead code, no duplicate systems. Everything a script writes must open
    from `file://` with nothing fetched at view time.
@@ -23,7 +24,9 @@
 1. **Nothing test-specific, ever.** No test names, file lists or per-test cases
    anywhere in `dev/`; every view is built for every test in `TESTS_C`.
    Examples read `<test>`/`<file>`.
-1. Don't use the word "meta". that is a "header" or a "manifest".
+1. Don't use the word "meta". that is a "header" or a "manifest". There are no
+   "events", "metrics" or "stats" only "counters". Because that is what this
+   tool does, is count things.
 1. On any run where more than one goal was given conclude with a checklist of
    what was and was not accomplished. Also include any relevant bug reports.
 1. All new identifiers should have at least 2 unabbreviated english words
@@ -96,6 +99,19 @@ line can sit unforwarded for minutes.
   `prettier` call anywhere.** Don't add a lint or validate step to a generator
   or to the batch. **The batch plus `reformat.sh` is the generators' test
   suite** - don't grow a per-generator check.
+- **`DECLAUDE.md` is the author's notes, not `dev/` source**: no formatter, no
+  lint, no column check reaches it. `SKIPPED_MARKDOWN_NAMES` in `reformat.sh`
+  holds it out, and it is honoured in `files_of()` - the **one door** every
+  stage collects its files through - so a second such file is one name there
+  and nothing else. `README.md` **is** source and is checked.
+- **`reformat.sh`'s `settings` stage is a note, never a failure.** It lists
+  every `SCREAMING_SNAKE` constant a generator assigns **below** its
+  `settings.load_into()` call, which is where the namespace rule forces a
+  file's own constants. Today that is 18. It exists because a reader of a
+  file's head sees the declared settings and no sign those exist: when a
+  value seems to have no definition, this is the list to check.
+  `settings.lost_settings(path)` is the function; `--verbose` prints the
+  names.
 - `--keep-raw` keeps `dev/temporary_artifacts/`. **The batch owns every
   deletion of it** - it passes `--keep-raw` down so a child can't unlink the
   batch log mid-run. A failed flagless batch _keeps_ it (the logs are the
@@ -234,9 +250,9 @@ Raw data in `dev/temporary_artifacts/` (gitignored):
   heat are `abs()`, so winners and losers interleave.
 - **Per-line baselines are wildly skewed** - median line is ~18 Ir and 72% are
   under 1,000, so a line that cost 1 and moved 200K reads 20,360,300%. Only
-  ~1.8% of lines exceed ±1000%, but a max-based colour scale is set by exactly
-  those. In a diff the `FULL_HEAT_PERCENT` clamp handles it; in a non-diff
-  report that is what `log, per function` is for.
+  ~1.8% of lines exceed ±1000%. This is why the colour mapping measures no
+  maximum: the `HEAT_COLOR_FULL_SCALE_PERCENT` clamp is what holds those
+  lines, and a max-based scale would be set by exactly them.
 - `profile_magnitudes()` (Σ|per-function line delta|) is what
   `heatMapTotals.totals` carries, but it is no longer what shares divide by.
 - `summary:` in the delta = the signed total, so the parser's 1.0000 self-check
@@ -264,7 +280,7 @@ match the 79.
 would be double-escaped into visible text by `html_escape()`, and its length
 would corrupt the `text.length` column-width math. Adding a character means
 adding it to that constant with a `#` comment naming it. `DECLAUDE.md` is not
-scanned, nor any `.json`.
+scanned (`SKIPPED_MARKDOWN_NAMES`), nor any `.json`.
 
 Reformatting `heatmap.html`, `heatmap.js`, `heatmap.css`, `frame.js`,
 `flame_bootstrap.js`, `theme.css` or `theme.js` changes a report, so a page
@@ -297,6 +313,17 @@ helpers, no nested `def`s. Classes and methods alphabetical. Public free
 functions are one-line delegations so callers never name a class. **Constants
 alphabetical ignoring the leading `_`**; the only ones allowed below the
 classes are those that can't be evaluated above.
+
+**Imports: `import X` only**, never `from X import Y` - the sole exception is
+`from __future__ import annotations`. Every use site is qualified
+(`typing.NamedTuple`, `collections.abc.Sequence`, `dataclasses.field`,
+`callgrind.Costs`, `theme.html_escape`). The plain imports are **packed onto
+one alphabetical line per block**, one before `sys.path.insert` and one after
+it for our own modules; a block past 79 columns splits into further
+`import a, b` lines keeping the order. This is why **`E401` and `I001` are off
+in `ruff.toml`** - both unpack those lines, and `reformat.sh` runs
+`ruff check --fix`, so leaving them on would silently undo the shape. The
+`[lint.isort]` section went with `I001`: it configured nothing else.
 
 **Typing** (pyright `standard`, py3.11, **0 errors**): everything annotated, no
 `Any`-shaped records. Record → `NamedTuple`; summed in place → `@dataclass`;
@@ -377,15 +404,28 @@ searches alongside `~/.local/bin`.
 
   **Every setting the page's JS reads** is listed in `_BROWSER_SETTING_NAMES`
   and reaches the browser as **one generated file** written by
-  `settings_script_write()`, a single `const settings = ...` - no per-setting
-  serialization, so adding one is a name in that list and a `settings.NAME` at
-  the use site. **The object is frozen to its leaves** by `_DEEP_FREEZE`,
-  carried in that file since nothing else has loaded yet (a shallow
-  `Object.freeze` leaves nested objects writable), and `settings` is a
-  **lexical `const`, not a `window` property**. Python and the page read the
-  same name, so a heat alpha or a column width is **one value under one id, not
-  a hand-matched twin**. **The page links it before every script that reads
-  it.**
+  `settings_script_write()` - no per-setting serialization. **The values are
+  frozen to their leaves** by `_DEEP_FREEZE`, carried in that file since
+  nothing else has loaded yet (a shallow `Object.freeze` leaves nested
+  objects writable). Python and the page read the same name, so a heat alpha
+  or a column width is **one value under one id, not a hand-matched twin**.
+  **The page links it before every script that reads it.**
+
+  **`settings` is a reader function, not an object**: the page calls
+  `settings("NAME")` and it throws on a name `_BROWSER_SETTING_NAMES` does
+  not carry, so a typo fails where it is asked for instead of reading
+  `undefined` into the layout math - the same trade `text_of()` makes by
+  rendering `(update ui_strings.js)`. It is a **lexical `const`, not a
+  `window` property**.
+
+  **A `.js` file resolves each setting once, into a local `const` of the
+  same name, in one block at the top of its IIFE** - right under
+  `"use strict"`, alphabetical, under one comment. Use sites then read the
+  bare name. **Never call `settings()` inside a loop or a render path**, and
+  never inline a call at a use site: adding a setting is a line in that
+  block plus the bare name where it is read. So `SCREAMING_SNAKE` in a `.js`
+  file means "a setting, resolved at the top of this file" and one grep
+  still finds every use in all three languages.
 
 - `callgrind.py` - the one parser. `profile_load(path)` exits unless the
   self-check ratio is exactly **1.0000** - re-verify after touching it. It is
@@ -498,36 +538,45 @@ pages must not assume more.
   change it only there. `THEME_COLOR_PAIR_ENTRIES` holds raw THEME entries, odd
   index = dark member, `--<name>-l` light; `HEAT_COLOR_RAMP_STOPS` is exempt
   from the pair rule.
-- Heat = the 12-stop `HEAT_COLOR_RAMP_STOPS` blended over `--bg`, alpha on log
-  scale of magnitude, text colour by resulting luminance. **The scale dropdown
-  is a curve × scope product built at runtime**, and `scale` is the chosen
-  entry (`.curve`, `.scope`, `.value`), never a bare string.
-- **Scope is a denominator, not just a colour ceiling** - it picks what a
-  percentage divides by, and the heat is that same percentage, so the printed
-  number and the colour behind it are one quantity. `global` divides by the
-  profile total, `per file` by that file's lines, `per function` by the lines
-  the owning function holds. `scope_totals_build()` sums a file once per
-  render, for the selected event **and every secondary event**, so `Bcm` under
-  `per function` reads what share of that function's mispredictions a line
-  carries. `share_in_scope()` is the door; `heat_of_line()` picks between it
-  and the diff's `share_of_baseline` on `IS_DIFF`, which is how the core/diff
-  split survives a shared call site. Scope reaches the **file view only** - the
-  home tables and tree span every file, where `per file` and `per function`
-  name nothing, and `home_render()` clears `scope_totals` so a stale file's
-  sums can't leak in. The popup's share column is titled for the scope in
-  force, so the copied markdown can't be misread as global.
-- **A scope's heat ceiling is either fixed or measured**: `global` colours
-  against 10% and `line` against 100%, while `per file`/`per function` measure
-  the scope's own largest percentage per event. `global` is fixed because no
-  single line is a large share of a whole program - measuring would light the
-  hottest line fully and say nothing, while `[0..10%] -> full palette` reads as
-  an absolute standing across every file. A line past it clamps.
+- Heat = the 12-stop `HEAT_COLOR_RAMP_STOPS` blended over `--bg`, text colour
+  by resulting luminance. **The scale dropdown is a curve × scope product
+  built at runtime**, and `scale` is the chosen entry (`.curve`, `.scope`,
+  `.value`), never a bare string.
+- **The colour mapping is deliberately the simplest correct one, and
+  `heat_of_share()` is the whole of it.** A percentage is clamped to
+  `HEAT_COLOR_FULL_SCALE_PERCENT`, divided by it, and the curve applied to
+  that fraction; `cell_style()` then multiplies by `COLOR_STOPS.length - 1`.
+  **Nothing is measured off the data** - no `max_share`, no per-scope maximum
+  scan, no smallest-visible floor - so a line's colour depends only on the
+  number printed beside it and two lines reading the same percentage are the
+  same colour in every file and every report. This is built to be **read and
+  adjusted by hand**, not tuned for the eye: it is the base to change from,
+  so resist re-introducing a measured ceiling without being asked.
+  - Non-diff: `[0..100%]` → index `[0..11]`.
+  - Diff: `[-100..100%]` → index `[0..11]`, **0% at the 5.5 midpoint**,
+    savings → cold/blue, regressions → hot/red. The curve is applied to the
+    **magnitude before** the remap, so the two halves stay symmetric.
+  - `log` is `log10(1 + 9f)`, which maps `[0..1]` onto `[0..1]` exactly, so
+    the curve needs no floor constant and no measured span.
+- **Scope is only a denominator** - it picks what a percentage divides by,
+  and the heat is that same percentage, so the printed number and the colour
+  behind it are one quantity. It sets no colour ceiling at all. `global`
+  divides by the profile total, `per file` by that file's lines, `per
+  function` by the lines the owning function holds. `scope_totals_build()`
+  sums a file once per render, for the selected event **and every secondary
+  event**, so `Bcm` under `per function` reads what share of that function's
+  mispredictions a line carries. `share_in_scope()` is the door;
+  `heat_of_line()` picks between it and the diff's `share_of_baseline` on
+  `IS_DIFF`, which is how the core/diff split survives a shared call site.
+  Scope reaches the **file view only** - the home tables and tree span every
+  file, where `per file` and `per function` name nothing, and `home_render()`
+  clears `scope_totals` so a stale file's sums can't leak in. The popup's
+  share column is titled for the scope in force, so the copied markdown can't
+  be misread as global.
 - **A diff has exactly one scope, `per line`**, so its dropdown is just
-  `log`/`linear`. Non-diff indexes `0..1`; **diff indexes signed `-1..1` across
-  the ramp** (savings → cold/blue, regressions → hot/red, 0 at midpoint). **A
-  diff clamps both the share and `max_share` to 100%**, so the 1.8% of lines
-  reading millions of percent can't set a scale nothing else registers on:
-  `c(100%) == c(10000000%)`, `c(90%) != c(10000000%)`. Non-diff clamps nothing.
+  `log`/`linear`. The 100% clamp is what keeps the 1.8% of lines reading
+  millions of percent from setting a scale nothing else registers on:
+  `c(100%) == c(10000000%)`, `c(90%) != c(10000000%)`.
 - Call counts are their own event, heat-coloured by share of all recorded
   calls, log-scaled, event-independent.
 - Numbers: `2.1K`/`2.0G`, `63.2%`, `<0.01%`; exact zero renders empty. **A diff

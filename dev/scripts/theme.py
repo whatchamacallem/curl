@@ -1,10 +1,6 @@
 from __future__ import annotations
 
-import html
-import math
-import os
-from collections.abc import Sequence
-from typing import NamedTuple, TypeAlias, TypedDict
+import collections.abc, html, math, os, typing
 
 import settings
 
@@ -31,7 +27,7 @@ settings.load_into(__name__)
 
 
 # Cell - One table cell: the text, plus every way a page can dress it up.
-class Cell(NamedTuple):
+class Cell(typing.NamedTuple):
     # what the cell says, and what its width is measured from
     text: str = ""
     # markup to print instead of the escaped text, e.g. a link
@@ -43,11 +39,11 @@ class Cell(NamedTuple):
 
 
 # Either a dressed-up Cell or bare text that becomes one.
-CellOrText: TypeAlias = Cell | str
+CellOrText: typing.TypeAlias = Cell | str
 
 
 # Column - One table column: its label and how wide it is allowed to get.
-class Column(NamedTuple):
+class Column(typing.NamedTuple):
     # the header text, and every column's width floor
     label: str
     # right-align this column, because it holds numbers
@@ -61,7 +57,7 @@ class Column(NamedTuple):
 
 
 # ThemeRuntime - The few theme values the page's JavaScript needs at runtime.
-class ThemeRuntime(TypedDict):
+class ThemeRuntime(typing.TypedDict):
     # the same 12 heat stops, for heat the JS computes itself
     heat: list[str]
     # the page background heat blends over
@@ -81,14 +77,14 @@ class Theme:
     NAMES = ("blue", "white", "yellow", "gray", "navy", "steel", "slate")
 
     # ColorPair - One "User settings" colour in both its light and dark form.
-    class ColorPair(NamedTuple):
+    class ColorPair(typing.NamedTuple):
         # the light member, exposed to CSS as --<name>-l
         light: str
         # the dark member, exposed to CSS as --<name>
         dark: str
 
     # Rgb - One colour split into channels, so it can be mixed and measured.
-    class Rgb(NamedTuple):
+    class Rgb(typing.NamedTuple):
         # 0..255
         red: int
         # 0..255
@@ -97,7 +93,7 @@ class Theme:
         blue: int
 
     # TimeUnit - One time suffix and how many seconds one of it is.
-    class TimeUnit(NamedTuple):
+    class TimeUnit(typing.NamedTuple):
         # what to print, e.g. "ms"
         suffix: str
         # how long one of them lasts
@@ -214,7 +210,9 @@ class Theme:
 
     # How wide each column ends up: its title is always the floor.
     def column_widths(
-        self, columns: Sequence[Column], rows: Sequence[Sequence[Cell]]
+        self,
+        columns: collections.abc.Sequence[Column],
+        rows: collections.abc.Sequence[collections.abc.Sequence[Cell]],
     ) -> list[int]:
         widths: list[int] = []
         for index, column in enumerate(columns):
@@ -266,7 +264,7 @@ class Theme:
         self,
         title: str,
         body: str,
-        extra_js: Sequence[str] = (),
+        extra_js: collections.abc.Sequence[str] = (),
         body_class: str = "",
         depth: int = 0,
     ) -> str:
@@ -388,8 +386,8 @@ class Theme:
     def table(
         self,
         key: str,
-        columns: Sequence[Column],
-        rows: Sequence[Sequence[CellOrText]],
+        columns: collections.abc.Sequence[Column],
+        rows: collections.abc.Sequence[collections.abc.Sequence[CellOrText]],
         fill: bool = False,
         column_titles: bool = True,
     ) -> str:
@@ -544,7 +542,7 @@ def num_time(seconds: float) -> str:
 def page_document(
     title: str,
     body: str,
-    extra_js: Sequence[str] = (),
+    extra_js: collections.abc.Sequence[str] = (),
     body_class: str = "",
     depth: int = 0,
 ) -> str:
@@ -559,8 +557,8 @@ def shared_href(depth: int, name: str) -> str:
 # table_render - One whole table, columns sized in exact characters.
 def table_render(
     key: str,
-    columns: Sequence[Column],
-    rows: Sequence[Sequence[CellOrText]],
+    columns: collections.abc.Sequence[Column],
+    rows: collections.abc.Sequence[collections.abc.Sequence[CellOrText]],
     fill: bool = False,
     column_titles: bool = True,
 ) -> str:

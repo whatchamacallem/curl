@@ -1,17 +1,10 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-import argparse
-import json
-import os
-import sys
-from collections.abc import Sequence
-from typing import NamedTuple, TextIO, TypedDict
+import argparse, collections.abc, json, os, sys, typing
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import callgrind
-import settings
-from callgrind import Costs
+import callgrind, settings
 
 # Every value this file takes from settings.py, declared as the type it
 # expects and loaded before any other name this module binds.
@@ -23,7 +16,7 @@ settings.load_into(__name__)
 # line), and writes the result back out as a plain callgrind file.
 class CallgrindDiff:
     # CallerDelta - How one caller's calls into one callee changed.
-    class CallerDelta(NamedTuple):
+    class CallerDelta(typing.NamedTuple):
         # who does the calling
         function: str
         # how many more (or fewer) times it called
@@ -33,7 +26,7 @@ class CallgrindDiff:
 
     # CallersDoc - The synthesized callers diff, because a delta file has no
     # calls= lines and so no call graph, and no baseline to be a share of.
-    class CallersDoc(TypedDict):
+    class CallersDoc(typing.TypedDict):
         # which event the costs are counted in
         event: str
         # the recorded events the baseline vectors are written against, so a
@@ -43,14 +36,14 @@ class CallgrindDiff:
         callers: dict[str, list[list[object]]]
         # what every share divides by: the baseline cost vector per
         # "<function>" and per "<function>\n<file>\n<line>"
-        baseline: dict[str, Costs]
+        baseline: dict[str, callgrind.Costs]
         # the baseline's summed cost vector, the overview's denominator
-        baselineTotal: Costs
+        baselineTotal: callgrind.Costs
         # per callee, how many times the baseline called it
         baselineCalls: dict[str, int]
 
     # DiffArgs - The two sides to subtract, and the two files to write.
-    class DiffArgs(NamedTuple):
+    class DiffArgs(typing.NamedTuple):
         # the "before" callgrind files, merged
         baseline: list[str]
         # the "after" callgrind files, merged
@@ -63,8 +56,10 @@ class CallgrindDiff:
     # The baseline cost of every function and of every one of its lines --
     # the denominator each share is taken against. Keyed the same way the
     # subtraction is, so an inlined body is never charged to its neighbour.
-    def baseline_costs(self, baseline: callgrind.Profile) -> dict[str, Costs]:
-        out: dict[str, Costs] = {}
+    def baseline_costs(
+        self, baseline: callgrind.Profile
+    ) -> dict[str, callgrind.Costs]:
+        out: dict[str, callgrind.Costs] = {}
         for function, costs in baseline.function_self.items():
             if any(costs):
                 out[function] = self.costs_fit(baseline, costs)
@@ -194,12 +189,16 @@ class CallgrindDiff:
     # width so a slot's index never moves. A derived event is a pure
     # function of these, so none is stored. Trailing zeros go, since every
     # reader treats a missing slot as zero.
-    def costs_fit(self, profile: callgrind.Profile, costs: Costs) -> Costs:
+    def costs_fit(
+        self, profile: callgrind.Profile, costs: callgrind.Costs
+    ) -> callgrind.Costs:
         padded = list(costs) + [0] * (len(profile.events) - len(costs))
         return self.costs_trim(padded)
 
     # Subtract two cost vectors, treating a missing slot as zero.
-    def costs_sub(self, modified: Costs, baseline: Costs) -> Costs:
+    def costs_sub(
+        self, modified: callgrind.Costs, baseline: callgrind.Costs
+    ) -> callgrind.Costs:
         return [
             (modified[index] if index < len(modified) else 0)
             - (baseline[index] if index < len(baseline) else 0)
@@ -208,7 +207,7 @@ class CallgrindDiff:
 
     # Drop trailing zeros -- the synthesized callers diff carries one vector
     # per line, so the slots nothing would divide by are not worth the bytes.
-    def costs_trim(self, costs: Costs) -> Costs:
+    def costs_trim(self, costs: callgrind.Costs) -> callgrind.Costs:
         length = len(costs)
         while length and costs[length - 1] == 0:
             length -= 1
@@ -238,7 +237,7 @@ class CallgrindDiff:
 
     # Sum of every line delta's absolute value -- what a diff's shares divide
     # by, since the signed total is near zero.
-    def magnitudes(self, profile: callgrind.Profile) -> Costs:
+    def magnitudes(self, profile: callgrind.Profile) -> callgrind.Costs:
         total = profile.zeros()
         for lines in profile.function_lines.values():
             for costs in lines.values():
@@ -293,7 +292,7 @@ class CallgrindDiff:
         self,
         profile: callgrind.Profile,
         path: str,
-        descriptions: Sequence[str],
+        descriptions: collections.abc.Sequence[str],
     ) -> None:
         os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
         with open(path, "w", encoding="utf-8") as handle:
@@ -320,12 +319,12 @@ class CallgrindDiff:
     # Write one function's lines, home file first, entry line first inside it.
     def write_function(
         self,
-        handle: TextIO,
+        handle: typing.TextIO,
         profile: callgrind.Profile,
         function: str,
         current_ob: str,
     ) -> str:
-        by_file: dict[str, list[tuple[int, Costs]]] = {}
+        by_file: dict[str, list[tuple[int, callgrind.Costs]]] = {}
         for key, costs in profile.function_lines[function].items():
             by_file.setdefault(key.file, []).append((key.line, costs))
         home = profile.function_home.get(function, "")
@@ -360,7 +359,7 @@ class CallgrindDiff:
 
 # profile_magnitudes - Sum of every line delta's absolute value -- the
 # denominator a diff's shares use.
-def profile_magnitudes(profile: callgrind.Profile) -> Costs:
+def profile_magnitudes(profile: callgrind.Profile) -> callgrind.Costs:
     return CallgrindDiff().magnitudes(profile)
 
 

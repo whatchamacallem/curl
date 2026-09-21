@@ -1,20 +1,11 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-import argparse
-import base64
-import glob
-import json
-import os
-import re
-import sys
-import tarfile
-from collections.abc import Sequence
-from typing import NamedTuple
+import argparse, base64, collections.abc, glob, json, os, re, sys
+import tarfile, typing
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import callgrind
-import settings
+import callgrind, settings
 
 # Every setting this file reads. Each is declared with the type it must
 # have; settings.load_into() fails at import on a wrong name, a wrong type,
@@ -43,7 +34,7 @@ settings.load_into(__name__)
 # every page present, closed, titled, and free of leftover markers.
 class ValidateReport:
     # NonAsciiLine - One line of one file that broke the ASCII rule.
-    class NonAsciiLine(NamedTuple):
+    class NonAsciiLine(typing.NamedTuple):
         # the file it is in
         path: str
         # which line, 1-based
@@ -53,7 +44,7 @@ class ValidateReport:
 
     # ReportLayout - What one kind of report is expected to contain -- this is
     # the whole difference between checking a full report and a diff.
-    class ReportLayout(NamedTuple):
+    class ReportLayout(typing.NamedTuple):
         # the per-test views that must exist
         subpages: tuple[str, ...]
         # the pattern the top-N heading has to match
@@ -72,7 +63,7 @@ class ValidateReport:
         all_has_archive: bool
 
     # ValidateArgs - Which report to check, and which layout to check it as.
-    class ValidateArgs(NamedTuple):
+    class ValidateArgs(typing.NamedTuple):
         # the report directory
         out_dir: str
         # check it as a diff report rather than a full one
@@ -296,7 +287,7 @@ class ValidateReport:
     def overview_check(
         self,
         out_dir: str,
-        tests: Sequence[str],
+        tests: collections.abc.Sequence[str],
         layout: ValidateReport.ReportLayout,
     ) -> None:
         path = os.path.join(out_dir, "index.html")
@@ -394,7 +385,9 @@ class ValidateReport:
 
     # Every heat map's source text sits in the report's one sources/
     # directory. Confirm.
-    def sources_check(self, out_dir: str, tests: Sequence[str]) -> None:
+    def sources_check(
+        self, out_dir: str, tests: collections.abc.Sequence[str]
+    ) -> None:
         sources_dir = os.path.join(out_dir, _REPORT_SOURCES_DIR_NAME)
         linked = False
         for test_name in tests:

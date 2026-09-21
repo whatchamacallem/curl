@@ -1,21 +1,11 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-import argparse
-import json
-import math
-import os
-import re
-import sys
-from collections.abc import Sequence
-from typing import NamedTuple
-from urllib.parse import quote
+import argparse, collections.abc, json, math, os, re, sys, typing
+import urllib.parse
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import callgrind
-import settings
-import theme
-from theme import Cell, CellOrText, Column, html_escape
+import callgrind, settings, theme
 
 # Every setting this file reads, declared with the type it must have.
 # settings.load_into() finds each one, checks it against that type and
@@ -51,7 +41,7 @@ _TIME_LINE = re.compile(
 class BuildReport:
     # CallerDelta - How one caller's calls into one function changed, read back
     # from callgrind_diff.py's synthesized callers diff.
-    class CallerDelta(NamedTuple):
+    class CallerDelta(typing.NamedTuple):
         # who does the calling
         function: str
         # how many more (or fewer) times it called
@@ -62,7 +52,7 @@ class BuildReport:
     # CallersData - callgrind_diff.py's synthesized callers diff, read back:
     # the call graph a delta file cannot carry, and the baseline every share
     # divides by.
-    class CallersData(NamedTuple):
+    class CallersData(typing.NamedTuple):
         # per function, who called it and how that changed
         callers: dict[str, list[BuildReport.CallerDelta]]
         # per function, its baseline cost in the synthesized callers diff's
@@ -72,14 +62,14 @@ class BuildReport:
         baseline_calls: dict[str, int]
 
     # FunctionCost - One function and one number, for ranking the top table.
-    class FunctionCost(NamedTuple):
+    class FunctionCost(typing.NamedTuple):
         # what it is ranked on
         cost: int
         # whose cost it is
         function: str
 
     # ManifestBlock - A named group of those rows, e.g. "baseline".
-    class ManifestBlock(NamedTuple):
+    class ManifestBlock(typing.NamedTuple):
         # the heading above the group
         label: str
         # the rows themselves
@@ -87,14 +77,14 @@ class BuildReport:
 
     # ManifestRow - One LABEL=VALUE row above a page's content. Not the heat
     # map's HeatMapTotals, which is its data rather than where it came from.
-    class ManifestRow(NamedTuple):
+    class ManifestRow(typing.NamedTuple):
         # the left column
         label: str
         # the right column
         value: str
 
     # OverviewArgs - What the overview page is built from.
-    class OverviewArgs(NamedTuple):
+    class OverviewArgs(typing.NamedTuple):
         # where the page goes
         output: str
         # each test as "name=directory"
@@ -112,7 +102,7 @@ class BuildReport:
         diff_profile: list[str]
 
     # StripLink - One link in a page's top strip.
-    class StripLink(NamedTuple):
+    class StripLink(typing.NamedTuple):
         # what the URL hash calls it
         key: str
         # what the link says
@@ -126,7 +116,7 @@ class BuildReport:
 
     # TestArgs - Everything one test's summary page is built from. Each
     # optional log renders a section only when it is given.
-    class TestArgs(NamedTuple):
+    class TestArgs(typing.NamedTuple):
         # the callgrind file(s), merged into one profile
         callgrind_file: list[str]
         # where the page goes
@@ -155,14 +145,14 @@ class BuildReport:
         single_test_report: bool
 
     # TestDirectory - One test of the overview, and where its report sits.
-    class TestDirectory(NamedTuple):
+    class TestDirectory(typing.NamedTuple):
         # the test's name
         name: str
         # its directory, relative to the overview
         directory: str
 
     # View - One of the pages a test summary can frame.
-    class View(NamedTuple):
+    class View(typing.NamedTuple):
         # what the URL hash calls it
         key: str
         # what the strip link says
@@ -175,7 +165,9 @@ class BuildReport:
     # is the recorded events the vector was written against, which is all
     # callgrind.event_value() needs to add a derived event up. None when
     # there is none to divide by, which is what an empty share cell means.
-    def baseline_total_load(self, paths: Sequence[str]) -> int | None:
+    def baseline_total_load(
+        self, paths: collections.abc.Sequence[str]
+    ) -> int | None:
         total = 0
         found = False
         for path in paths:
@@ -193,10 +185,10 @@ class BuildReport:
     def caller_delta_cell(
         self,
         profile: callgrind.Profile,
-        deltas: Sequence[BuildReport.CallerDelta],
-    ) -> Cell:
+        deltas: collections.abc.Sequence[BuildReport.CallerDelta],
+    ) -> theme.Cell:
         if not deltas:
-            return Cell("(no recorded caller change)", cls="dim")
+            return theme.Cell("(no recorded caller change)", cls="dim")
         parts: list[str] = []
         html_parts: list[str] = []
         for delta in deltas:
@@ -212,14 +204,14 @@ class BuildReport:
             href = self.entry_link(profile, delta.function)
             label = (
                 f"{theme.num_signed(delta.cost)}"
-                f" {html_escape(delta.function)}"
-                f"{html_escape(count_text)}"
+                f" {theme.html_escape(delta.function)}"
+                f"{theme.html_escape(count_text)}"
             )
             html_parts.append(
                 f'<a href="{href}">{label}</a>' if href else label
             )
         joined = ", ".join(parts)
-        return Cell(joined, html=", ".join(html_parts))
+        return theme.Cell(joined, html=", ".join(html_parts))
 
     def caller_link(
         self,
@@ -230,7 +222,7 @@ class BuildReport:
     ) -> str:
         href = self.entry_link(profile, caller_name)
         share = theme.num_pct(100.0 * count / call_count)
-        label = f"{html_escape(caller_name)} ({share})"
+        label = f"{theme.html_escape(caller_name)} ({share})"
         return f'<a href="{href}">{label}</a>' if href else label
 
     # Read the synthesized callers diff back: the call graph a delta file
@@ -305,14 +297,14 @@ class BuildReport:
             default=1.0,
         )
         columns = [
-            Column("#", numeric=True),
-            Column("% self", numeric=True),
-            Column("symbol", width=_TABLE_FUNCTION_NAME_WIDTH_CHARS),
-            Column(_RANKING_COUNTER_NAME, numeric=True),
-            Column("calls", numeric=True),
-            Column("callers", grow=True),
+            theme.Column("#", numeric=True),
+            theme.Column("% self", numeric=True),
+            theme.Column("symbol", width=_TABLE_FUNCTION_NAME_WIDTH_CHARS),
+            theme.Column(_RANKING_COUNTER_NAME, numeric=True),
+            theme.Column("calls", numeric=True),
+            theme.Column("callers", grow=True),
         ]
-        rows: list[list[CellOrText]] = []
+        rows: list[list[theme.CellOrText]] = []
         for rank, ranked_function in enumerate(ranked, 1):
             share = shares[rank - 1]
             href = self.entry_link(profile, ranked_function.function)
@@ -322,7 +314,7 @@ class BuildReport:
             rows.append(
                 [
                     str(rank),
-                    Cell(
+                    theme.Cell(
                         theme.num_signed_pct(share)
                         if share is not None
                         else "",
@@ -332,15 +324,15 @@ class BuildReport:
                         if share is not None
                         else "",
                     ),
-                    Cell(
+                    theme.Cell(
                         ranked_function.function,
                         html=f'<a href="{href}">'
-                        f"{html_escape(ranked_function.function)}</a>"
+                        f"{theme.html_escape(ranked_function.function)}</a>"
                         if href
                         else None,
                     ),
                     theme.num_signed(ranked_function.cost),
-                    Cell(
+                    theme.Cell(
                         theme.num_signed(call_count),
                         style=theme.heat_style(
                             self.diff_heat(call_share, calls_max_pct),
@@ -373,19 +365,19 @@ class BuildReport:
 
     def diff_overview_rows(
         self,
-        tests: Sequence[BuildReport.TestDirectory],
-        diff_profiles: Sequence[str],
-    ) -> tuple[list[Column], list[list[CellOrText]]]:
+        tests: collections.abc.Sequence[BuildReport.TestDirectory],
+        diff_profiles: collections.abc.Sequence[str],
+    ) -> tuple[list[theme.Column], list[list[theme.CellOrText]]]:
         columns = [
-            Column("one report per test"),
-            Column(_RANKING_COUNTER_NAME, numeric=True),
-            Column("% of change", numeric=True),
-            Column("functions changed", numeric=True),
+            theme.Column("one report per test"),
+            theme.Column(_RANKING_COUNTER_NAME, numeric=True),
+            theme.Column("% of change", numeric=True),
+            theme.Column("functions changed", numeric=True),
         ]
         profile_of = dict(
             entry.split("=", 1) for entry in diff_profiles if "=" in entry
         )
-        rows: list[list[CellOrText]] = []
+        rows: list[list[theme.CellOrText]] = []
         for test in tests:
             profile_path = profile_of.get(test.name, "")
             files = (
@@ -397,10 +389,10 @@ class BuildReport:
             synthesized_callers = (
                 [callers] if files and os.path.isfile(callers) else []
             )
-            link = Cell(
+            link = theme.Cell(
                 test.name,
-                html=f'<a href="{html_escape(test.name)}/index.html">'
-                f"{html_escape(test.name)}</a>",
+                html=f'<a href="{theme.html_escape(test.name)}/index.html">'
+                f"{theme.html_escape(test.name)}</a>",
             )
             if not files:
                 rows.append([link, "", "", ""])
@@ -452,14 +444,16 @@ class BuildReport:
             or callgrind.path_norm(entry.file).local is None
         ):
             return ""
-        return "heat-map/index.html#fn=" + html_escape(
-            quote(function, safe="/-_.!~*'()")
+        return "heat-map/index.html#fn=" + theme.html_escape(
+            urllib.parse.quote(function, safe="/-_.!~*'()")
         )
 
     # Refuse a synthesized callers diff whose recorded events cannot add up
     # to the one event every share is counted in -- a wrong denominator is
     # worse than a stopped run.
-    def events_check(self, events: Sequence[str], path: str) -> None:
+    def events_check(
+        self, events: collections.abc.Sequence[str], path: str
+    ) -> None:
         if _RANKING_COUNTER_NAME in callgrind.event_names(events):
             return
         sys.exit(
@@ -498,14 +492,14 @@ class BuildReport:
             100.0 * max(function_calls.values(), default=0) / calls_total
         )
         columns = [
-            Column("#", numeric=True),
-            Column("% self", numeric=True),
-            Column("symbol", width=_TABLE_FUNCTION_NAME_WIDTH_CHARS),
-            Column(_RANKING_COUNTER_NAME, numeric=True),
-            Column("calls", numeric=True),
-            Column("callers", grow=True),
+            theme.Column("#", numeric=True),
+            theme.Column("% self", numeric=True),
+            theme.Column("symbol", width=_TABLE_FUNCTION_NAME_WIDTH_CHARS),
+            theme.Column(_RANKING_COUNTER_NAME, numeric=True),
+            theme.Column("calls", numeric=True),
+            theme.Column("callers", grow=True),
         ]
-        rows: list[list[CellOrText]] = []
+        rows: list[list[theme.CellOrText]] = []
         for rank, ranked_function in enumerate(ranked, 1):
             by_caller: dict[str, int] = {}
             for caller, tally in profile.callers.get(
@@ -531,19 +525,19 @@ class BuildReport:
             rows.append(
                 [
                     str(rank),
-                    Cell(
+                    theme.Cell(
                         theme.num_pct(share),
                         style=theme.heat_style(theme.heat_t(share, max_pct)),
                     ),
-                    Cell(
+                    theme.Cell(
                         ranked_function.function,
                         html=f'<a href="{href}">'
-                        f"{html_escape(ranked_function.function)}</a>"
+                        f"{theme.html_escape(ranked_function.function)}</a>"
                         if href
                         else None,
                     ),
                     theme.num_human(ranked_function.cost),
-                    Cell(
+                    theme.Cell(
                         theme.num_human(call_count),
                         style=theme.heat_style(
                             theme.heat_t(
@@ -553,9 +547,9 @@ class BuildReport:
                     )
                     if call_count
                     else "",
-                    Cell(who, html=who_html)
+                    theme.Cell(who, html=who_html)
                     if who
-                    else Cell("(no recorded caller)", cls="dim"),
+                    else theme.Cell("(no recorded caller)", cls="dim"),
                 ]
             )
         return theme.table_render("report.functions", columns, rows, fill=True)
@@ -568,17 +562,17 @@ class BuildReport:
         )
         text = "\n".join(_PID_PREFIX.sub("", line) for line in lines)
         return (
-            f'<div class="tbl"><pre class="logbox">{html_escape(text)}'
+            f'<div class="tbl"><pre class="logbox">{theme.html_escape(text)}'
             "</pre></div>"
         )
 
-    def log_section(self, paths: Sequence[str]) -> str:
+    def log_section(self, paths: collections.abc.Sequence[str]) -> str:
         if not paths:
             return ""
         body = ""
         for path in paths:
             if len(paths) > 1:
-                body += f"<p>{html_escape(os.path.basename(path))}</p>"
+                body += f"<p>{theme.html_escape(os.path.basename(path))}</p>"
             body += self.log_block(path)
         return (
             '<details class="sec"><summary><h2>valgrind log</h2></summary>'
@@ -587,19 +581,21 @@ class BuildReport:
         )
 
     def manifest_blocks_render(
-        self, key: str, blocks: Sequence[BuildReport.ManifestBlock]
+        self,
+        key: str,
+        blocks: collections.abc.Sequence[BuildReport.ManifestBlock],
     ) -> str:
         body = ""
         for index, block in enumerate(blocks):
             if not block.pairs:
                 continue
             body += (
-                f"<h2>{html_escape(block.label)}</h2>"
+                f"<h2>{theme.html_escape(block.label)}</h2>"
             ) + self.manifest_table(f"{key}.{index}", block.pairs)
         return body
 
     def manifest_parse_blocks(
-        self, items: Sequence[str]
+        self, items: collections.abc.Sequence[str]
     ) -> list[BuildReport.ManifestBlock]:
         out: list[BuildReport.ManifestBlock] = []
         for item in items:
@@ -616,7 +612,7 @@ class BuildReport:
         return out
 
     def manifest_parse_rows(
-        self, items: Sequence[str]
+        self, items: collections.abc.Sequence[str]
     ) -> list[BuildReport.ManifestRow]:
         out: list[BuildReport.ManifestRow] = []
         for item in items:
@@ -635,16 +631,18 @@ class BuildReport:
         return self.manifest_parse_rows(lines)
 
     def manifest_table(
-        self, key: str, pairs: Sequence[BuildReport.ManifestRow]
+        self,
+        key: str,
+        pairs: collections.abc.Sequence[BuildReport.ManifestRow],
     ) -> str:
         if not pairs:
             return ""
-        rows: list[list[CellOrText]] = [
-            [Cell(pair.label, cls="dim"), pair.value] for pair in pairs
+        rows: list[list[theme.CellOrText]] = [
+            [theme.Cell(pair.label, cls="dim"), pair.value] for pair in pairs
         ]
         return theme.table_render(
             key,
-            [Column("label"), Column("value", grow=True)],
+            [theme.Column("label"), theme.Column("value", grow=True)],
             rows,
             fill=True,
             column_titles=False,
@@ -655,7 +653,7 @@ class BuildReport:
             return ""
         output = self.time_humanize(self.file_read(path).rstrip())
         body = (
-            f'<div class="tbl"><pre class="logbox">{html_escape(output)}'
+            f'<div class="tbl"><pre class="logbox">{theme.html_escape(output)}'
             "</pre></div>"
         )
         return (
@@ -681,15 +679,16 @@ class BuildReport:
                     if match.group(1) not in keys:
                         keys.append(match.group(1))
             numbers[test.name] = values
-        columns = [Column("report")] + [
-            Column(key, numeric=True) for key in keys
+        columns = [theme.Column("report")] + [
+            theme.Column(key, numeric=True) for key in keys
         ]
-        rows: list[list[CellOrText]] = [
+        rows: list[list[theme.CellOrText]] = [
             [
-                Cell(
+                theme.Cell(
                     test.name,
-                    html=f'<a href="{html_escape(test.name)}/index.html">'
-                    f"{html_escape(test.name)}</a>",
+                    html=f'<a href="{theme.html_escape(test.name)}'
+                    '/index.html">'
+                    f"{theme.html_escape(test.name)}</a>",
                 )
             ]
             + [numbers[test.name].get(key, "") for key in keys]
@@ -700,9 +699,11 @@ class BuildReport:
     def overview_page(
         self,
         args: BuildReport.OverviewArgs,
-        tests: Sequence[BuildReport.TestDirectory],
-        columns: Sequence[Column],
-        rows: Sequence[Sequence[CellOrText]],
+        tests: collections.abc.Sequence[BuildReport.TestDirectory],
+        columns: collections.abc.Sequence[theme.Column],
+        rows: collections.abc.Sequence[
+            collections.abc.Sequence[theme.CellOrText]
+        ],
     ) -> None:
         links = [BuildReport.StripLink("", "overview", "#", "overview")] + [
             BuildReport.StripLink(
@@ -772,13 +773,16 @@ class BuildReport:
             file=sys.stderr,
         )
 
-    def rawdata_section(self, paths: Sequence[str], out_dir: str) -> str:
+    def rawdata_section(
+        self, paths: collections.abc.Sequence[str], out_dir: str
+    ) -> str:
         if not paths:
             return ""
         items = "".join(
-            f'<li><a href="{html_escape(os.path.relpath(path, out_dir))}"'
+            "<li><a href="
+            f'"{theme.html_escape(os.path.relpath(path, out_dir))}"'
             ' target="_blank">'
-            f"{html_escape(os.path.basename(path))}</a></li>"
+            f"{theme.html_escape(os.path.basename(path))}</a></li>"
             for path in paths
         )
         return (
@@ -789,7 +793,7 @@ class BuildReport:
     def report_page(
         self,
         args: BuildReport.TestArgs,
-        views: Sequence[BuildReport.View],
+        views: collections.abc.Sequence[BuildReport.View],
         heading: str,
         table: str,
     ) -> None:
@@ -828,27 +832,28 @@ class BuildReport:
     def strip_render(
         self,
         title: str,
-        links: Sequence[BuildReport.StripLink],
+        links: collections.abc.Sequence[BuildReport.StripLink],
         help_href: str = "README.md",
     ) -> str:
         separator = '<span class="sep">|</span>'
-        parts = [f'<b class="title" id="title">{html_escape(title)}</b>']
+        parts = [f'<b class="title" id="title">{theme.html_escape(title)}</b>']
         for index, link in enumerate(links):
             if index:
                 parts.append(separator)
             parts.append(
-                f'<a href="{html_escape(link.href)}"'
-                f' data-view="{html_escape(link.key)}"'
-                f' data-title="{html_escape(link.title)}"'
+                f'<a href="{theme.html_escape(link.href)}"'
+                f' data-view="{theme.html_escape(link.key)}"'
+                f' data-title="{theme.html_escape(link.title)}"'
                 f"{' data-frame=1' if link.frame else ''}>"
-                f"{html_escape(link.label)}</a>"
+                f"{theme.html_escape(link.label)}</a>"
             )
         parts.append('<span class="sp"></span>')
         parts.append('<span class="util" id="util">')
         parts.append('<a href="#" id="reset-cols">reset columns</a>')
         parts.append(separator)
         parts.append(
-            f'<a href="{html_escape(help_href)}" target="_blank">help</a>'
+            f'<a href="{theme.html_escape(help_href)}"'
+            ' target="_blank">help</a>'
         )
         parts.append(separator)
         parts.append(

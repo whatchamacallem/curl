@@ -1,5 +1,77 @@
 (function () {
   "use strict";
+
+  const HEAT_COLOR_ALPHA_HIGHEST = settings("HEAT_COLOR_ALPHA_HIGHEST");
+  const HEAT_COLOR_ALPHA_LOWEST = settings("HEAT_COLOR_ALPHA_LOWEST");
+  const HEAT_COLOR_FULL_SCALE_PERCENT = settings(
+    "HEAT_COLOR_FULL_SCALE_PERCENT",
+  );
+  const HEAT_COLOR_LIGHT_TEXT_ABOVE_SHARE = settings(
+    "HEAT_COLOR_LIGHT_TEXT_ABOVE_SHARE",
+  );
+  const HEAT_MAP_CONTROL_DROPDOWN_EXTRA_WIDTH_CHARS = settings(
+    "HEAT_MAP_CONTROL_DROPDOWN_EXTRA_WIDTH_CHARS",
+  );
+  const HEAT_MAP_HOME_LINES_LOCATION_MAX_CHARS = settings(
+    "HEAT_MAP_HOME_LINES_LOCATION_MAX_CHARS",
+  );
+  const HEAT_MAP_HOME_LINES_SOURCE_COLUMN_WIDTH_CHARS = settings(
+    "HEAT_MAP_HOME_LINES_SOURCE_COLUMN_WIDTH_CHARS",
+  );
+  const HEAT_MAP_HOME_LINES_SOURCE_TEXT_MAX_CHARS = settings(
+    "HEAT_MAP_HOME_LINES_SOURCE_TEXT_MAX_CHARS",
+  );
+  const HEAT_MAP_HOME_TABLE_MAX_ROWS = settings(
+    "HEAT_MAP_HOME_TABLE_MAX_ROWS",
+  );
+  const HEAT_MAP_MINIMAP_SHOWN_ABOVE_FILE_LINES = settings(
+    "HEAT_MAP_MINIMAP_SHOWN_ABOVE_FILE_LINES",
+  );
+  const HEAT_MAP_MINIMAP_SOURCE_WIDTH_CHARS = settings(
+    "HEAT_MAP_MINIMAP_SOURCE_WIDTH_CHARS",
+  );
+  const HEAT_MAP_MINIMAP_VIEWPORT_BOX_SMALLEST_PX = settings(
+    "HEAT_MAP_MINIMAP_VIEWPORT_BOX_SMALLEST_PX",
+  );
+  const HEAT_MAP_SOURCE_HOT_LINE_BUTTON_LEAST_SHARE = settings(
+    "HEAT_MAP_SOURCE_HOT_LINE_BUTTON_LEAST_SHARE",
+  );
+  const HEAT_MAP_SOURCE_HOT_LINE_BUTTON_MAX_COUNT = settings(
+    "HEAT_MAP_SOURCE_HOT_LINE_BUTTON_MAX_COUNT",
+  );
+  const HEAT_MAP_SOURCE_VIEW_WIDTH_CHARS = settings(
+    "HEAT_MAP_SOURCE_VIEW_WIDTH_CHARS",
+  );
+  const HEAT_MAP_TREE_AUTO_EXPAND_ABOVE_SHARE = settings(
+    "HEAT_MAP_TREE_AUTO_EXPAND_ABOVE_SHARE",
+  );
+  const HEAT_MAP_TREE_COLOR_ALPHA_HIGHEST = settings(
+    "HEAT_MAP_TREE_COLOR_ALPHA_HIGHEST",
+  );
+  const HEAT_MAP_TREE_COLOR_ALPHA_LOWEST = settings(
+    "HEAT_MAP_TREE_COLOR_ALPHA_LOWEST",
+  );
+  const HEAT_MAP_TREE_INDENT_FIRST_LEVEL_PX = settings(
+    "HEAT_MAP_TREE_INDENT_FIRST_LEVEL_PX",
+  );
+  const HEAT_MAP_TREE_INDENT_PER_LEVEL_PX = settings(
+    "HEAT_MAP_TREE_INDENT_PER_LEVEL_PX",
+  );
+  const HEAT_MAP_TREE_PANE_NARROWEST_PX = settings(
+    "HEAT_MAP_TREE_PANE_NARROWEST_PX",
+  );
+  const LAYOUT_RESIZE_SETTLE_DELAY_MS = settings(
+    "LAYOUT_RESIZE_SETTLE_DELAY_MS",
+  );
+  const TABLE_COLUMN_EXTRA_WIDTH_CHARS = settings(
+    "TABLE_COLUMN_EXTRA_WIDTH_CHARS",
+  );
+  const TABLE_FUNCTION_NAME_WIDTH_CHARS = settings(
+    "TABLE_FUNCTION_NAME_WIDTH_CHARS",
+  );
+  const TABLE_LOCATION_COLUMN_MAX_CHARS = settings(
+    "TABLE_LOCATION_COLUMN_MAX_CHARS",
+  );
   const profile_model = JSON.parse(
     document.getElementById("heatdata").textContent,
   );
@@ -35,7 +107,7 @@
     document.getElementById("split"),
     tree_panel,
     "heat.tree",
-    settings.HEAT_MAP_TREE_PANE_NARROWEST_PX,
+    HEAT_MAP_TREE_PANE_NARROWEST_PX,
   );
 
   const vector_at = (cost_vector, index) =>
@@ -106,58 +178,21 @@
   event_select.value = current_event.key;
 
   event_select.style.width =
-    event_label_width +
-    settings.HEAT_MAP_CONTROL_DROPDOWN_EXTRA_WIDTH_CHARS +
-    "ch";
+    event_label_width + HEAT_MAP_CONTROL_DROPDOWN_EXTRA_WIDTH_CHARS + "ch";
   let total_cost = 1,
-    maximum_share = 1,
-    secondary_maximums = {};
+    secondary_totals = {};
   const current_value = (cost_vector) => current_event.get(cost_vector);
   const absolute = Math.abs;
 
+  // The denominators a percentage divides by, for the selected event and
+  // every secondary one. Nothing here is a colour ceiling: heat is the
+  // percentage itself, so no maximum is measured off the data.
   function scale_recompute() {
     total_cost = current_event.get(profile_model.heatMapTotals.totals) || 1;
-    let maximum = 0,
-      maximum_percent = 0;
-    for (const [file_path, file] of Object.entries(file_table)) {
-      for (const [line_number, line_costs] of Object.entries(file.lines)) {
-        const self_cost = absolute(current_value(line_costs[0]));
-        if (self_cost > maximum) maximum = self_cost;
-        if (IS_DIFF) {
-          const baseline_cost = line_baseline(file_path, line_number);
-          maximum_percent = Math.max(
-            maximum_percent,
-            absolute(
-              share_of_baseline(current_value(line_costs[0]), baseline_cost),
-            ),
-          );
-        }
-      }
-    }
-    maximum_share = Math.max(
-      IS_DIFF ? maximum_percent : (100 * maximum) / total_cost,
-      settings.HEAT_COLOR_SMALLEST_SCALE_TOP_SHARE,
-    );
-    secondary_maximums = {};
+    secondary_totals = {};
     for (const secondary of secondary_events) {
-      let secondary_maximum = 0;
-      for (const file of Object.values(file_table)) {
-        for (const line_costs of Object.values(file.lines)) {
-          const self_cost = absolute(secondary.get(line_costs[0]));
-          if (self_cost > secondary_maximum) {
-            secondary_maximum = self_cost;
-          }
-        }
-      }
-      const secondary_total =
+      secondary_totals[secondary.key] =
         secondary.get(profile_model.heatMapTotals.totals) || 1;
-      secondary_maximums[secondary.key] = {
-        total: secondary_total,
-        max_share: Math.max(
-          (100 * secondary_maximum) / secondary_total,
-          settings.HEAT_COLOR_SMALLEST_SCALE_TOP_SHARE,
-        ),
-      };
     }
   }
 
@@ -297,9 +332,7 @@
   });
   scale_select.value = active_scale.value;
   scale_select.style.width =
-    scale_label_width +
-    settings.HEAT_MAP_CONTROL_DROPDOWN_EXTRA_WIDTH_CHARS +
-    "ch";
+    scale_label_width + HEAT_MAP_CONTROL_DROPDOWN_EXTRA_WIDTH_CHARS + "ch";
 
   let scope_totals = null;
   const SCOPE_SHARE_STRING_IDS = {
@@ -307,10 +340,6 @@
     file: "str_column_file_share",
     function: "str_column_function_share",
     line: "str_column_global_share",
-  };
-  const SCOPE_FIXED_CEILINGS = {
-    global: settings.HEAT_COLOR_WHOLE_PROFILE_SCALE_PERCENT,
-    line: settings.HEAT_COLOR_FULL_SCALE_PERCENT,
   };
   function scope_totals_build(file_path) {
     const file = file_table[file_path];
@@ -362,48 +391,47 @@
     IS_DIFF
       ? share_of_baseline_text(value, baseline_cost)
       : share_in_scope_text(value, current_event, line_number);
-  const heat_of_line = (value, baseline_cost, line_number, max_share) =>
-    heat_of_share(line_share(value, baseline_cost, line_number), max_share);
+  const heat_of_line = (value, baseline_cost, line_number) =>
+    heat_of_share(line_share(value, baseline_cost, line_number));
 
-  function heat_of_share(percent, max_share) {
-    const heat_sign = IS_DIFF && percent < 0 ? -1 : 1;
-    percent = absolute(percent);
-    if (IS_DIFF) {
-      percent = Math.min(percent, settings.HEAT_COLOR_FULL_SCALE_PERCENT);
-      max_share = Math.min(max_share, settings.HEAT_COLOR_FULL_SCALE_PERCENT);
-    }
-    if (percent <= 0) return 0;
-    if (active_scale.curve === "linear") {
-      return heat_sign * Math.min(1, percent / max_share);
-    }
-    if (percent < settings.HEAT_COLOR_SMALLEST_VISIBLE_SHARE) return 0;
-    const log_span = Math.log10(
-      Math.max(max_share, settings.HEAT_COLOR_SMALLEST_VISIBLE_SHARE * 10) /
-        settings.HEAT_COLOR_SMALLEST_VISIBLE_SHARE,
+  // A percentage to a position on the ramp, and nothing else. The whole
+  // mapping is here: a percentage is clamped to the scale's own range,
+  // divided by it, and the curve applied to that fraction. Nothing is
+  // measured off the data, so the colour a line gets depends only on the
+  // number printed next to it.
+  //
+  // A normal report's range is [0..100%] -> [0..1]. A diff's is
+  // [-100..100%] -> [-1..1], sign kept: the curve is applied to the
+  // magnitude first, so the remap onto the ramp stays symmetric about 0.
+  function heat_of_share(percent) {
+    const heat_sign = percent < 0 ? -1 : 1;
+    const magnitude = Math.min(
+      absolute(percent),
+      HEAT_COLOR_FULL_SCALE_PERCENT,
     );
-    return (
-      heat_sign *
-      Math.min(
-        1,
-        Math.log10(percent / settings.HEAT_COLOR_SMALLEST_VISIBLE_SHARE) /
-          log_span,
-      )
-    );
+    if (magnitude <= 0) return 0;
+    const fraction = magnitude / HEAT_COLOR_FULL_SCALE_PERCENT;
+    const curved =
+      active_scale.curve === "log" ? Math.log10(1 + 9 * fraction) : fraction;
+    return IS_DIFF ? heat_sign * curved : curved;
   }
-  function heat_of_delta(cost, baseline_cost, max_share) {
-    return heat_of_share(share_of_baseline(cost, baseline_cost), max_share);
+  function heat_of_delta(cost, baseline_cost) {
+    return heat_of_share(share_of_baseline(cost, baseline_cost));
   }
 
   const channels_of = (hex) =>
     [1, 3, 5].map((index) => parseInt(hex.slice(index, index + 2), 16));
   const COLOR_STOPS = profile_model.theme.heat.map(channels_of),
     BACKGROUND_COLOR = channels_of(profile_model.theme.bg);
+  // A heat position to a colour. The position is already the whole scale:
+  // [0..1] in a normal report and [-1..1] in a diff, so the remap onto the
+  // ramp is one multiply -- a diff's 0 lands mid-ramp, its -1 cold and its
+  // +1 hot, while a normal report's 0 lands cold and its 1 hot.
   function cell_style(heat_value, alpha_minimum, alpha_maximum) {
     const magnitude = absolute(heat_value);
     if (magnitude <= 0) return "";
-    const scaled_position =
-      (IS_DIFF ? (heat_value + 1) * 0.5 : heat_value) *
-      (COLOR_STOPS.length - 1);
+    const position = IS_DIFF ? (heat_value + 1) * 0.5 : heat_value;
+    const scaled_position = position * (COLOR_STOPS.length - 1);
     const index = Math.min(
       Math.max(Math.floor(scaled_position), 0),
       COLOR_STOPS.length - 2,
@@ -437,16 +465,12 @@
     );
   }
   const cell_style_strong = (heat_value) =>
-    cell_style(
-      heat_value,
-      settings.HEAT_COLOR_ALPHA_LOWEST,
-      settings.HEAT_COLOR_ALPHA_HIGHEST,
-    );
+    cell_style(heat_value, HEAT_COLOR_ALPHA_LOWEST, HEAT_COLOR_ALPHA_HIGHEST);
   const cell_style_soft = (heat_value) =>
     cell_style(
       heat_value,
-      settings.HEAT_MAP_TREE_COLOR_ALPHA_LOWEST,
-      settings.HEAT_MAP_TREE_COLOR_ALPHA_HIGHEST,
+      HEAT_MAP_TREE_COLOR_ALPHA_LOWEST,
+      HEAT_MAP_TREE_COLOR_ALPHA_HIGHEST,
     );
 
   const per_function_calls = function_table.map((function_entry) =>
@@ -460,20 +484,12 @@
       (running_total, call_count) => running_total + call_count,
       0,
     ) || 1;
-  const CALLS_MAXIMUM = per_function_calls.reduce(
-    (maximum, call_count) => Math.max(maximum, call_count),
-    0,
-  );
-  const CALLS_MAX_SHARE = Math.max(
-    (100 * CALLS_MAXIMUM) / CALLS_TOTAL,
-    settings.HEAT_COLOR_SMALLEST_SCALE_TOP_SHARE,
-  );
   const call_count_cell = (call_count) =>
     call_count
       ? {
           text: human_text(call_count),
           style: cell_style_strong(
-            heat_of_share((100 * call_count) / CALLS_TOTAL, CALLS_MAX_SHARE),
+            heat_of_share((100 * call_count) / CALLS_TOTAL),
           ),
         }
       : "";
@@ -545,7 +561,7 @@
           width = Math.max(column.label.length, Math.min(width, column.clip));
         }
       }
-      return width + settings.TABLE_COLUMN_EXTRA_WIDTH_CHARS;
+      return width + TABLE_COLUMN_EXTRA_WIDTH_CHARS;
     });
   }
   function table_html(key, columns, rows, options) {
@@ -571,7 +587,7 @@
         .filter(Boolean)
         .join(" ");
       const minimum_chars =
-        column.label.length + settings.TABLE_COLUMN_EXTRA_WIDTH_CHARS;
+        column.label.length + TABLE_COLUMN_EXTRA_WIDTH_CHARS;
       markup +=
         `<col${column_classes ? ` class="${column_classes}"` : ""}` +
         ` data-min="${minimum_chars}ch"` +
@@ -664,23 +680,18 @@
         cls: "x",
       }),
     );
-  function secondary_cells(cost_vector, line_number, max_share_of_event) {
+  function secondary_cells(cost_vector, line_number) {
     return secondary_events.map((secondary) => {
-      const self_cost = secondary.get(cost_vector),
-        maximum_entry = secondary_maximums[secondary.key];
+      const self_cost = secondary.get(cost_vector);
       const in_scope = line_number != null;
       const percent = in_scope
         ? share_in_scope(self_cost, secondary, line_number)
-        : (100 * self_cost) / maximum_entry.total;
-      const heat_value = heat_of_share(
-        percent,
-        in_scope ? max_share_of_event(secondary) : maximum_entry.max_share,
-      );
+        : (100 * self_cost) / secondary_totals[secondary.key];
+      const heat_value = heat_of_share(percent);
       return {
         text: self_cost ? share_text(percent) : "",
         style: cell_style_strong(heat_value),
-        cls:
-          heat_value > settings.HEAT_COLOR_LIGHT_TEXT_ABOVE_SHARE ? "hot" : "",
+        cls: heat_value > HEAT_COLOR_LIGHT_TEXT_ABOVE_SHARE ? "hot" : "",
       };
     });
   }
@@ -772,15 +783,14 @@
       if (subtree_matches(directory_node)) return true;
     return false;
   }
-  const DIRECTORY_MAX_SHARE = settings.HEAT_COLOR_FULL_SCALE_PERCENT;
   const caret_of = (is_expanded) =>
     text_of(is_expanded ? "str_caret_expanded" : "str_caret_collapsed");
   function tree_render() {
     const output_parts = [];
     function nodes_emit(tree_node, depth) {
       const indent_px =
-        settings.HEAT_MAP_TREE_INDENT_FIRST_LEVEL_PX +
-        depth * settings.HEAT_MAP_TREE_INDENT_PER_LEVEL_PX;
+        HEAT_MAP_TREE_INDENT_FIRST_LEVEL_PX +
+        depth * HEAT_MAP_TREE_INDENT_PER_LEVEL_PX;
       const directories = [...tree_node.dirs.values()]
         .filter(subtree_matches)
         .sort(node_compare);
@@ -789,11 +799,7 @@
           ? true
           : expanded_directories.has(directory_node.path);
         const heat_style_attribute = cell_style_soft(
-          heat_of_delta(
-            directory_node.self,
-            directory_node.base,
-            DIRECTORY_MAX_SHARE,
-          ),
+          heat_of_delta(directory_node.self, directory_node.base),
         );
         output_parts.push(
           `<div class="node dir${heat_style_attribute ? " heat" : ""}"` +
@@ -822,9 +828,7 @@
         const selected_class = file.path === current_file_path ? " sel" : "";
         const heat_style_attribute = file.cold
           ? ""
-          : cell_style_soft(
-              heat_of_delta(file.self, file.base, DIRECTORY_MAX_SHARE),
-            );
+          : cell_style_soft(heat_of_delta(file.self, file.base));
         output_parts.push(
           `<div class="node file${file.cold ? " cold" : ""}` +
             `${heat_style_attribute ? " heat" : ""}${selected_class}"` +
@@ -931,7 +935,7 @@
         if (entry[1] >= 1 && entry[1] <= source_lines.length) {
           source_snippet = source_lines[entry[1] - 1]
             .trim()
-            .slice(0, settings.HEAT_MAP_HOME_LINES_SOURCE_COLUMN_WIDTH_CHARS);
+            .slice(0, HEAT_MAP_HOME_LINES_SOURCE_COLUMN_WIDTH_CHARS);
         }
       }
       return [entry[0], entry[1], entry[2], entry[3], source_snippet];
@@ -941,7 +945,7 @@
     current_file_path = null;
     scope_totals = null;
     let markup = `<div class="home">`;
-    const line_rows = top_lines(settings.HEAT_MAP_HOME_TABLE_MAX_ROWS);
+    const line_rows = top_lines(HEAT_MAP_HOME_TABLE_MAX_ROWS);
     markup +=
       `<h2>${html_escape(
         text_fill("str_heading_lines_by_event", {
@@ -956,15 +960,15 @@
           SELF_COLUMN,
           {
             label: text_of("str_column_function"),
-            width: settings.TABLE_FUNCTION_NAME_WIDTH_CHARS,
+            width: TABLE_FUNCTION_NAME_WIDTH_CHARS,
           },
           {
             label: text_of("str_column_defined_at"),
-            clip: settings.HEAT_MAP_HOME_LINES_LOCATION_MAX_CHARS,
+            clip: HEAT_MAP_HOME_LINES_LOCATION_MAX_CHARS,
           },
           {
             label: text_of("str_column_source"),
-            clip: settings.HEAT_MAP_HOME_LINES_SOURCE_TEXT_MAX_CHARS,
+            clip: HEAT_MAP_HOME_LINES_SOURCE_TEXT_MAX_CHARS,
           },
           event_column(current_event),
           ...secondary_columns(),
@@ -984,9 +988,7 @@
             String(index + 1),
             {
               text: share_of_baseline_text(cost, baseline_cost),
-              style: cell_style_strong(
-                heat_of_delta(cost, baseline_cost, maximum_share),
-              ),
+              style: cell_style_strong(heat_of_delta(cost, baseline_cost)),
             },
             {
               text: function_name(function_index),
@@ -1013,20 +1015,7 @@
       ])
       .filter((entry) => absolute(entry[1]) > 0)
       .sort((entry_a, entry_b) => absolute(entry_b[1]) - absolute(entry_a[1]))
-      .slice(0, settings.HEAT_MAP_HOME_TABLE_MAX_ROWS);
-    const function_max_share = IS_DIFF
-      ? Math.max(
-          ...top_functions.map(([function_index, self_cost]) =>
-            absolute(
-              share_of_baseline(
-                self_cost,
-                function_baseline_of(function_index),
-              ),
-            ),
-          ),
-          settings.HEAT_COLOR_SMALLEST_SCALE_TOP_SHARE,
-        )
-      : maximum_share;
+      .slice(0, HEAT_MAP_HOME_TABLE_MAX_ROWS);
     const call_columns = HAS_CALL_GRAPH
       ? [
           {
@@ -1053,11 +1042,11 @@
           SELF_COLUMN,
           {
             label: text_of("str_column_function"),
-            width: settings.TABLE_FUNCTION_NAME_WIDTH_CHARS,
+            width: TABLE_FUNCTION_NAME_WIDTH_CHARS,
           },
           {
             label: text_of("str_column_defined_at"),
-            clip: settings.TABLE_LOCATION_COLUMN_MAX_CHARS,
+            clip: TABLE_LOCATION_COLUMN_MAX_CHARS,
           },
           ...call_columns,
           ...secondary_columns(),
@@ -1082,7 +1071,7 @@
             {
               text: share_of_baseline_text(self_cost, baseline_cost),
               style: cell_style_strong(
-                heat_of_delta(self_cost, baseline_cost, function_max_share),
+                heat_of_delta(self_cost, baseline_cost),
               ),
             },
             { text: function_entry.name },
@@ -1122,28 +1111,6 @@
     tree_reveal(file_path);
     const lines = file.lines;
     scope_totals = scope_totals_build(file_path);
-    const fixed_ceiling = SCOPE_FIXED_CEILINGS[active_scale.scope];
-    const scope_maximums = {};
-    if (fixed_ceiling == null) {
-      for (const [line_number, line_costs] of Object.entries(lines)) {
-        for (const event of [current_event].concat(secondary_events)) {
-          const percent = absolute(
-            share_in_scope(event.get(line_costs[0]), event, line_number),
-          );
-          scope_maximums[event.key] = Math.max(
-            scope_maximums[event.key] ||
-              settings.HEAT_COLOR_SMALLEST_SCALE_TOP_SHARE,
-            percent,
-          );
-        }
-      }
-    }
-    const max_share_of_event = (event) =>
-      fixed_ceiling != null
-        ? fixed_ceiling
-        : scope_maximums[event.key] ||
-          settings.HEAT_COLOR_SMALLEST_SCALE_TOP_SHARE;
-    const max_share = max_share_of_event(current_event);
     let markup =
       `<div class="srcwrap"><div class="fhead band">` +
       `<span class="path">${html_escape(file_path)}</span>`;
@@ -1171,7 +1138,7 @@
         `<span class="stat">` +
         `${html_escape(event_label(secondary))}` +
         ` <b>${share_text(
-          (100 * self_cost) / secondary_maximums[secondary.key].total,
+          (100 * self_cost) / secondary_totals[secondary.key],
         )}</b>` +
         ` (${human_text(self_cost)})</span>`;
     }
@@ -1200,9 +1167,9 @@
         (entry) =>
           absolute(
             line_share(entry[1], line_baseline(file_path, entry[0]), entry[0]),
-          ) >= settings.HEAT_MAP_SOURCE_HOT_LINE_BUTTON_LEAST_SHARE,
+          ) >= HEAT_MAP_SOURCE_HOT_LINE_BUTTON_LEAST_SHARE,
       )
-      .slice(0, settings.HEAT_MAP_SOURCE_HOT_LINE_BUTTON_MAX_COUNT);
+      .slice(0, HEAT_MAP_SOURCE_HOT_LINE_BUTTON_MAX_COUNT);
     if (chip_lines.length) {
       markup +=
         `<div class="chips">` +
@@ -1212,7 +1179,7 @@
         markup +=
           `<span class="chip" data-goto="${line_number}"` +
           ` style="${cell_style_strong(
-            heat_of_line(cost, baseline_cost, line_number, max_share),
+            heat_of_line(cost, baseline_cost, line_number),
           )}">` +
           `${line_number} -` +
           ` ${line_share_text(cost, baseline_cost, line_number)}</span>`;
@@ -1227,12 +1194,7 @@
       const self_cost = line_costs ? current_value(line_costs[0]) : 0,
         calls = line_costs ? current_value(line_costs[1]) : 0;
       const baseline_cost = line_baseline(file_path, line_number);
-      const heat_value = heat_of_line(
-          self_cost,
-          baseline_cost,
-          line_number,
-          max_share,
-        ),
+      const heat_value = heat_of_line(self_cost, baseline_cost, line_number),
         heat_style_attribute = cell_style_strong(heat_value);
       const class_names = [
         line_costs ? "clickable" : "",
@@ -1250,7 +1212,7 @@
             {
               text: line_share_text(calls, baseline_cost, line_number),
               style: cell_style_strong(
-                heat_of_line(calls, baseline_cost, line_number, max_share),
+                heat_of_line(calls, baseline_cost, line_number),
               ),
             },
           ]
@@ -1259,16 +1221,13 @@
         {
           text: line_share_text(self_cost, baseline_cost, line_number),
           style: heat_style_attribute,
-          cls:
-            heat_value > settings.HEAT_COLOR_LIGHT_TEXT_ABOVE_SHARE
-              ? "hot"
-              : "",
+          cls: heat_value > HEAT_COLOR_LIGHT_TEXT_ABOVE_SHARE ? "hot" : "",
         },
         { text: String(line_number), style: heat_style_attribute },
         { text, style: heat_style_attribute },
         ...call_cell,
         ...(line_costs
-          ? secondary_cells(line_costs[0], line_number, max_share_of_event)
+          ? secondary_cells(line_costs[0], line_number)
           : secondary_events.map(() => "")),
       ]);
     };
@@ -1307,7 +1266,7 @@
       },
       {
         label: text_of("str_column_source"),
-        width: settings.HEAT_MAP_SOURCE_VIEW_WIDTH_CHARS,
+        width: HEAT_MAP_SOURCE_VIEW_WIDTH_CHARS,
         grow: true,
         cls: "code",
       },
@@ -1399,7 +1358,7 @@
     const table_body = table_element && table_element.tBodies[0];
     if (
       !table_body ||
-      table_body.rows.length < settings.HEAT_MAP_MINIMAP_SHOWN_ABOVE_FILE_LINES
+      table_body.rows.length < HEAT_MAP_MINIMAP_SHOWN_ABOVE_FILE_LINES
     ) {
       minimap_clear();
       return;
@@ -1447,7 +1406,7 @@
     scale_factor = Math.min(
       1,
       band_width_px /
-        (settings.HEAT_MAP_MINIMAP_SOURCE_WIDTH_CHARS * character_width_px),
+        (HEAT_MAP_MINIMAP_SOURCE_WIDTH_CHARS * character_width_px),
       band_height_px / clone_height_px,
     );
     minimap_box.style.transform = `scale(${scale_factor})`;
@@ -1493,7 +1452,7 @@
     const row_start = geometry.above(geometry.head),
       row_end = geometry.above(geometry.bottom);
     const box_height_px = Math.max(
-      settings.HEAT_MAP_MINIMAP_VIEWPORT_BOX_SMALLEST_PX,
+      HEAT_MAP_MINIMAP_VIEWPORT_BOX_SMALLEST_PX,
       (scaled_height_px * (row_end - row_start)) / geometry.rows,
     );
     const box_top_px = Math.min(
@@ -1592,11 +1551,11 @@
     const line_costs = file.lines[line_number] || [[], [], 0];
     const function_column = (label) => ({
       label,
-      width: settings.TABLE_FUNCTION_NAME_WIDTH_CHARS,
+      width: TABLE_FUNCTION_NAME_WIDTH_CHARS,
     });
     const location_column = {
       label: text_of("str_column_defined_at"),
-      clip: settings.TABLE_LOCATION_COLUMN_MAX_CHARS,
+      clip: TABLE_LOCATION_COLUMN_MAX_CHARS,
     };
     const call_cost = current_value(line_costs[1]);
     const self_cost = current_value(line_costs[0]);
@@ -1638,7 +1597,7 @@
         { text: event_label(secondary) },
         IS_DIFF
           ? share_text(
-              (100 * secondary_self) / secondary_maximums[secondary.key].total,
+              (100 * secondary_self) / secondary_totals[secondary.key],
             )
           : share_in_scope_text(secondary_self, secondary, line_number),
         cell_number(secondary_self),
@@ -1740,7 +1699,7 @@
           function_column(text_of("str_column_caller")),
           {
             label: text_of("str_column_called_at"),
-            clip: settings.TABLE_LOCATION_COLUMN_MAX_CHARS,
+            clip: TABLE_LOCATION_COLUMN_MAX_CHARS,
           },
         ];
         const rows = callers.map(
@@ -1852,7 +1811,7 @@
     for (const directory_node of tree_root.dirs.values()) {
       if (
         absolute(directory_node.self) / total_cost >
-        settings.HEAT_MAP_TREE_AUTO_EXPAND_ABOVE_SHARE
+        HEAT_MAP_TREE_AUTO_EXPAND_ABOVE_SHARE
       ) {
         expanded_directories.add(directory_node.path);
       }
@@ -1931,7 +1890,7 @@
     resize_debounce_timer = setTimeout(() => {
       tail_fit();
       minimap_layout();
-    }, settings.LAYOUT_RESIZE_SETTLE_DELAY_MS);
+    }, LAYOUT_RESIZE_SETTLE_DELAY_MS);
   });
   event_select.addEventListener("change", (change_event) => {
     location.hash = hash_of_state(

@@ -1,17 +1,10 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-import argparse
-import json
-import os
-import subprocess
-import sys
-from array import array
-from typing import NamedTuple, NotRequired, TypedDict
+import argparse, array, json, os, subprocess, sys, typing
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import callgrind
-import settings
+import callgrind, settings
 
 # Every value this file takes from settings.py, declared as the type it
 # expects and loaded before any other name this module binds.
@@ -34,7 +27,7 @@ _RECORD_WORDS = 2
 
 
 # Event - One enter or exit, as speedscope's evented format spells it.
-class Event(TypedDict):
+class Event(typing.TypedDict):
     # "O" to open a frame, "C" to close one
     type: str
     # which frame of the shared list this is
@@ -44,7 +37,7 @@ class Event(TypedDict):
 
 
 # EventedProfile - One timeline of enters and exits, and what it covers.
-class EventedProfile(TypedDict):
+class EventedProfile(typing.TypedDict):
     # always "evented" -- what validate_report.py insists on
     type: str
     # what the timeline is called in the page
@@ -60,23 +53,23 @@ class EventedProfile(TypedDict):
 
 
 # Frame - One function as the flame graph names it.
-class Frame(TypedDict):
+class Frame(typing.TypedDict):
     # the demangled symbol, or object+offset when there is none
     name: str
     # the source file, repo-relative
-    file: NotRequired[str]
+    file: typing.NotRequired[str]
     # the line it is declared on
-    line: NotRequired[int]
+    line: typing.NotRequired[int]
 
 
 # Shared - The one frame list every event indexes into.
-class Shared(TypedDict):
+class Shared(typing.TypedDict):
     # every frame the profile mentions, in first-seen order
     frames: list[Frame]
 
 
 # The whole written document. Spelled functionally because of "$schema".
-SpeedscopeDoc = TypedDict(
+SpeedscopeDoc = typing.TypedDict(
     "SpeedscopeDoc",
     {
         "$schema": str,
@@ -93,7 +86,7 @@ SpeedscopeDoc = TypedDict(
 # calls.
 class TraceToSpeedscope:
     # CallSpan - One top-level call, as a span of record numbers.
-    class CallSpan(NamedTuple):
+    class CallSpan(typing.NamedTuple):
         # the record that entered it
         first: int
         # the record that exited it
@@ -101,7 +94,7 @@ class TraceToSpeedscope:
 
     # ExecutableMapping - One executable range of the traced process, and
     # which file it came from.
-    class ExecutableMapping(NamedTuple):
+    class ExecutableMapping(typing.NamedTuple):
         # first address in the range
         low: int
         # one past the last address
@@ -113,7 +106,7 @@ class TraceToSpeedscope:
 
     # LoadSegment - One LOAD segment of an ELF file, for turning a file offset
     # back into the address the debug info is keyed by.
-    class LoadSegment(NamedTuple):
+    class LoadSegment(typing.NamedTuple):
         # where the segment starts in the file
         offset: int
         # how long it is
@@ -122,7 +115,7 @@ class TraceToSpeedscope:
         address: int
 
     # TraceArgs - What this tool reads and what it writes.
-    class TraceArgs(NamedTuple):
+    class TraceArgs(typing.NamedTuple):
         # the .bin cyg.c wrote; its .maps sits beside it
         trace_file: str
         # where the speedscope document goes
@@ -131,7 +124,7 @@ class TraceToSpeedscope:
         name: str
 
     # TraceRecording - One whole trace file, unpacked.
-    class TraceRecording(NamedTuple):
+    class TraceRecording(typing.NamedTuple):
         # how many events the run counted, kept or not
         seen: int
         # how many it dropped before the kept ones
@@ -263,7 +256,7 @@ class TraceToSpeedscope:
 
     # Read one trace file, and refuse anything that is not one.
     def load(self, trace_file: str) -> TraceToSpeedscope.TraceRecording:
-        words = array("Q")
+        words = array.array("Q")
         with open(trace_file, "rb") as handle:
             words.frombytes(handle.read())
         if len(words) < _HEADER_WORDS or words[0] != _MAGIC:

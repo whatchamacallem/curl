@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import json
-import sys
-import typing
+import json, re, sys, typing
 
 # What the report's one shared copy of the theme is written as. Every page
 # in a report renders the same stylesheet and the same script, so they are
@@ -31,6 +29,21 @@ _DEEP_FREEZE = """(function deep_freeze(value) {
   Object.values(value).forEach(deep_freeze);
   return Object.freeze(value);
 })"""
+
+# The reader the generated settings file closes over its frozen values with.
+# A page names a setting once, at the top of the file that reads it, and
+# keeps the value in a local const, so no name is resolved twice and none is
+# resolved inside a loop. An unknown name throws where it is asked for
+# rather than reading undefined into the layout math, which is the same
+# trade ui_strings.js makes by rendering "(update ui_strings.js)".
+_SETTING_READER = """function (name) {
+  if (!Object.prototype.hasOwnProperty.call(values, name)) {
+    throw new Error(
+      "no such setting: " + name + " -- add it to _BROWSER_SETTING_NAMES",
+    );
+  }
+  return values[name];
+}"""
 
 # What callgrind_diff.py's synthesized callers diff is named, next to the
 # delta it describes. Written by perf2html_diff.sh, read back by
@@ -99,17 +112,10 @@ HEAT_COLOR_RAMP_STOPS: list[str] = [
     "#F06142",
 ]
 
-# The lowest a measured colour ceiling is allowed to fall to, so an event
-# nothing recorded divides by a positive number rather than by 0.
-HEAT_COLOR_SMALLEST_SCALE_TOP_SHARE = 0.0001
-
-# The smallest share the log curve resolves; below it a cell is left cold.
+# The smallest share a rendered percentage resolves; below it a number
+# reads "<0.01%". This is number notation, not a colour: heat measures
+# nothing off the data and has no floor.
 HEAT_COLOR_SMALLEST_VISIBLE_SHARE = 0.001
-
-# The ceiling a whole-profile percentage is coloured against: a line holding
-# this much of the profile gets the full palette, so a whole-profile view is
-# not dim just because no single line is a large share of a whole program.
-HEAT_COLOR_WHOLE_PROFILE_SCALE_PERCENT = 10
 
 # Width a <select> adds beyond its longest option text, so the chosen option
 # is not clipped by the dropdown arrow.
@@ -310,9 +316,6 @@ _BROWSER_SETTING_NAMES = (
     "HEAT_COLOR_ALPHA_LOWEST",
     "HEAT_COLOR_FULL_SCALE_PERCENT",
     "HEAT_COLOR_LIGHT_TEXT_ABOVE_SHARE",
-    "HEAT_COLOR_SMALLEST_SCALE_TOP_SHARE",
-    "HEAT_COLOR_SMALLEST_VISIBLE_SHARE",
-    "HEAT_COLOR_WHOLE_PROFILE_SCALE_PERCENT",
     "HEAT_MAP_CONTROL_DROPDOWN_EXTRA_WIDTH_CHARS",
     "HEAT_MAP_HOME_LINES_LOCATION_MAX_CHARS",
     "HEAT_MAP_HOME_LINES_SOURCE_COLUMN_WIDTH_CHARS",
@@ -340,6 +343,17 @@ _BROWSER_SETTING_NAMES = (
 # The scalar types load_into() checks exactly. bool sits before int because
 # bool is an int subclass, so an int annotation must not accept True.
 _SCALAR_TYPES = (bool, int, float, str)
+
+
+# LostSetting - one SCREAMING_SNAKE constant a file assigns below its
+# load_into() call, where a reader of the file's head does not see it.
+class LostSetting(typing.NamedTuple):
+    # How the constant is spelled, leading underscore kept.
+    name: str
+    # The file holding it.
+    path: str
+    # The 1-based line the assignment sits on.
+    line: int
 
 
 # Settings - the reader for the annotated settings a module declares.
@@ -428,6 +442,28 @@ class Settings:
                 "value in settings.py."
             )
 
+    # Every SCREAMING_SNAKE assignment one source file makes below its
+    # load_into() call, in the order they are written. These are the file's
+    # own constants, which the namespace rule pushes below the call: the
+    # cost is that a reader scrolling the top of the file sees the declared
+    # settings and no sign that more constants exist further down.
+    def lost_settings(self, path: str) -> list[LostSetting]:
+        with open(path, encoding="utf-8") as handle:
+            lines = handle.read().split("\n")
+        call_line = 0
+        for index, text in enumerate(lines, start=1):
+            if text.startswith(_LOAD_INTO_CALL_TEXT):
+                call_line = index
+                break
+        if not call_line:
+            return []
+        found: list[LostSetting] = []
+        for index, text in enumerate(lines[call_line:], start=call_line + 1):
+            matched = _ASSIGNED_NAME_RE.match(text)
+            if matched and self.is_setting_name(matched.group(1)):
+                found.append(LostSetting(matched.group(1), path, index))
+        return found
+
     # The value of one setting, named as the declaring module spells it.
     def value_of(self, module_name: str, name: str) -> object:
         setting = name.lstrip("_")
@@ -440,6 +476,14 @@ class Settings:
         return globals()[setting]
 
 
+# A module-level assignment, capturing the name being assigned. Anchored,
+# so an indented assignment inside a class or function is not one.
+_ASSIGNED_NAME_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)\s*(?::[^=]+)?=")
+
+# How the load_into() call is written at the top of every file that has
+# one, matched at the start of the line.
+_LOAD_INTO_CALL_TEXT = "settings.load_into("
+
 _READER = Settings()
 
 
@@ -449,9 +493,21 @@ def load_into(module_name: str) -> None:
     _READER.load_into(module_name)
 
 
+# Every SCREAMING_SNAKE constant one source file assigns below its
+# load_into() call.
+def lost_settings(path: str) -> list[LostSetting]:
+    return _READER.lost_settings(path)
+
+
 # Build the generated assets/settings.js: the settings the browser reads, as
-# one JSON literal frozen to its leaves and assigned to one global.
+# one JSON literal frozen to its leaves, reachable only through the one
+# reader function the page calls to fill its own local consts.
 def settings_script_write() -> str:
     values = {name: globals()[name] for name in _BROWSER_SETTING_NAMES}
     data = json.dumps(values, indent=2, sort_keys=True, ensure_ascii=False)
-    return f"const {PAGE_SETTINGS_GLOBAL_NAME} = {_DEEP_FREEZE}({data});\n"
+    return (
+        f"const {PAGE_SETTINGS_GLOBAL_NAME} = (function () {{\n"
+        f"  const values = {_DEEP_FREEZE}({data});\n"
+        f"  return {_SETTING_READER};\n"
+        f"}})();\n"
+    )
