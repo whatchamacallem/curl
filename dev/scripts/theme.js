@@ -1,6 +1,5 @@
 window.report_ui = (function () {
   "use strict";
-  const MINIMUM_COLUMN_PX = 24;
 
   function listeners_bind(
     handle_bar,
@@ -23,14 +22,17 @@ window.report_ui = (function () {
   }
   function minimum_width_px(column_element) {
     const floor_px = column_element.dataset.min || column_element.dataset.w;
-    if (!floor_px) return MINIMUM_COLUMN_PX;
+    if (!floor_px) return settings.TABLE_COLUMN_NARROWEST_DRAG_PX;
     const probe_element = column_element.ownerDocument.createElement("div");
     probe_element.style.cssText =
       "position:absolute;visibility:hidden;width:" + floor_px;
     column_element.ownerDocument.body.appendChild(probe_element);
     const width_px = probe_element.getBoundingClientRect().width;
     probe_element.remove();
-    return Math.max(MINIMUM_COLUMN_PX, Math.ceil(width_px));
+    return Math.max(
+      settings.TABLE_COLUMN_NARROWEST_DRAG_PX,
+      Math.ceil(width_px),
+    );
   }
   function handles_position(table_element) {
     const container_left_px =

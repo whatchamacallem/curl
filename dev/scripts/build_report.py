@@ -17,21 +17,25 @@ import settings
 import theme
 from theme import Cell, CellOrText, Column, html_escape
 
-# The diff share that paints the hottest colour. A change the size of the
-# thing's own baseline is as lit as a cell gets.
-_FULL_HEAT_PCT = 100.0
-
-# Valgrind's own preamble, dropped from the log a page shows.
-_LOG_SKIP_LINES = 9
-
-# The "curl.se/perf" link in every page's util block.
-_PERF_CHART = "https://curl.se/perf/index.html"
+# Every setting this file reads, declared with the type it must have.
+# settings.load_into() finds each one, checks it against that type and
+# assigns it, failing at import on an unknown name, a type that disagrees
+# with settings.py, or a setting declared after another constant was
+# already assigned. Each value's comment lives on its definition there.
+_ASSET_FRAME_SCRIPT_NAME: str
+_ASSET_UI_STRINGS_SCRIPT_NAME: str
+_DIFF_CALLER_COUNTS_FILE_SUFFIX: str
+_HEAT_COLOR_FULL_SCALE_PERCENT: int
+_RANKING_COUNTER_NAME: str
+_STRIP_CURL_PERF_SITE_HREF: str
+_SUMMARY_PERF_LOG_SKIPPED_HEAD_LINES: int
+_SUMMARY_TIME_SUFFIX_SECONDS: dict[str, float]
+_SUMMARY_TOP_FUNCTION_ROWS: int
+_TABLE_FUNCTION_NAME_WIDTH_CHARS: int
+settings.load_into(__name__)
 
 # Valgrind's "==1234== " line prefix, stripped so the log reads as output.
 _PID_PREFIX = re.compile(r"^==\d+==\s?")
-
-# How much of a long symbol a column shows before it clips.
-_SYMBOL_CHARS = 20
 
 # A "Something: 1.23 ms" line of the perf log, which is the only valid speed
 # number -- callgrind's wall clock never is.
@@ -40,29 +44,6 @@ _TIME_LINE = re.compile(
     r"(-?\d+(?:\.\d+)?)\s*(usecs?|us|msecs?|ms|nsecs?|ns|secs?|s)\s*$",
     re.I | re.M,
 )
-
-# What each of those suffixes is in seconds.
-_TIME_SCALE: dict[str, float] = {
-    "usec": 1e-6,
-    "usecs": 1e-6,
-    "us": 1e-6,
-    "msec": 1e-3,
-    "msecs": 1e-3,
-    "ms": 1e-3,
-    "nsec": 1e-9,
-    "nsecs": 1e-9,
-    "ns": 1e-9,
-    "sec": 1.0,
-    "secs": 1.0,
-    "s": 1.0,
-}
-
-# How many functions the summary's top table lists.
-_TOP = 50
-
-# The scripts a framed page runs, in order: the strings first, so the frame
-# runtime can look an id up the moment it runs.
-_PAGE_JS = (theme.UI_STRINGS_JS, theme.FRAME_JS)
 
 
 # BuildReport - Writes the overview page and every test's summary page, and
@@ -203,7 +184,9 @@ class BuildReport:
             events: list[str] = doc.get("events", [])
             costs: list[int] = doc.get("baselineTotal", [])
             self.events_check(events, path)
-            total += callgrind.event_value(events, costs, settings.EVENT)
+            total += callgrind.event_value(
+                events, costs, _RANKING_COUNTER_NAME
+            )
             found = True
         return total if found else None
 
@@ -270,7 +253,9 @@ class BuildReport:
                 for callee, deltas in doc["callers"].items()
             },
             baseline={
-                name: callgrind.event_value(events, costs, settings.EVENT)
+                name: callgrind.event_value(
+                    events, costs, _RANKING_COUNTER_NAME
+                )
                 for name, costs in doc["baseline"].items()
                 if "\n" not in name
             },
@@ -285,13 +270,13 @@ class BuildReport:
         ranked = sorted(
             (
                 BuildReport.FunctionCost(
-                    profile.value(costs, settings.EVENT), function
+                    profile.value(costs, _RANKING_COUNTER_NAME), function
                 )
                 for function, costs in profile.function_self.items()
-                if profile.value(costs, settings.EVENT) != 0
+                if profile.value(costs, _RANKING_COUNTER_NAME) != 0
             ),
             key=lambda t: (-abs(t.cost), t.function),
-        )[:_TOP]
+        )[:_SUMMARY_TOP_FUNCTION_ROWS]
         shares = [
             self.diff_share(
                 cost.cost, callers_data.baseline.get(cost.function)
@@ -322,8 +307,8 @@ class BuildReport:
         columns = [
             Column("#", numeric=True),
             Column("% self", numeric=True),
-            Column("symbol", width=_SYMBOL_CHARS),
-            Column(settings.EVENT, numeric=True),
+            Column("symbol", width=_TABLE_FUNCTION_NAME_WIDTH_CHARS),
+            Column(_RANKING_COUNTER_NAME, numeric=True),
             Column("calls", numeric=True),
             Column("callers", grow=True),
         ]
@@ -375,9 +360,10 @@ class BuildReport:
     # baseline is fully lit, so a line that cost 1 and moved 200K does not
     # set a scale that leaves every honest change colourless.
     def diff_heat(self, share: float, max_share: float) -> float:
+        full = _HEAT_COLOR_FULL_SCALE_PERCENT
         return theme.heat_t(
-            math.copysign(min(abs(share), _FULL_HEAT_PCT), share),
-            min(max_share, _FULL_HEAT_PCT),
+            math.copysign(min(abs(share), full), share),
+            min(max_share, full),
         )
 
     def diff_overview(self, args: BuildReport.OverviewArgs) -> None:
@@ -392,7 +378,7 @@ class BuildReport:
     ) -> tuple[list[Column], list[list[CellOrText]]]:
         columns = [
             Column("one report per test"),
-            Column(settings.EVENT, numeric=True),
+            Column(_RANKING_COUNTER_NAME, numeric=True),
             Column("% of change", numeric=True),
             Column("functions changed", numeric=True),
         ]
@@ -407,7 +393,7 @@ class BuildReport:
                 if profile_path and os.path.isfile(profile_path)
                 else []
             )
-            callers = profile_path + settings.CALLERS_SUFFIX
+            callers = profile_path + _DIFF_CALLER_COUNTS_FILE_SUFFIX
             synthesized_callers = (
                 [callers] if files and os.path.isfile(callers) else []
             )
@@ -420,11 +406,11 @@ class BuildReport:
                 rows.append([link, "", "", ""])
                 continue
             profile = callgrind.profile_load(files)
-            delta = profile.value(profile.totals(), settings.EVENT)
+            delta = profile.value(profile.totals(), _RANKING_COUNTER_NAME)
             changed = sum(
                 1
                 for costs in profile.function_self.values()
-                if profile.value(costs, settings.EVENT) != 0
+                if profile.value(costs, _RANKING_COUNTER_NAME) != 0
             )
             share = self.diff_share(
                 delta, self.baseline_total_load(synthesized_callers)
@@ -454,7 +440,7 @@ class BuildReport:
         self.report_page(
             args,
             [_HEAT_VIEW],
-            f"top {_TOP} functions by change in self",
+            f"top {_SUMMARY_TOP_FUNCTION_ROWS} functions by change in self",
             self.diff_functions_table(profile, callers_data),
         )
 
@@ -474,10 +460,10 @@ class BuildReport:
     # to the one event every share is counted in -- a wrong denominator is
     # worse than a stopped run.
     def events_check(self, events: Sequence[str], path: str) -> None:
-        if settings.EVENT in callgrind.event_names(events):
+        if _RANKING_COUNTER_NAME in callgrind.event_names(events):
             return
         sys.exit(
-            f"error: {path} cannot supply {settings.EVENT}, the event"
+            f"error: {path} cannot supply {_RANKING_COUNTER_NAME}, the event"
             f" every diff share is counted in: it records"
             f" {' '.join(events)}"
         )
@@ -491,17 +477,17 @@ class BuildReport:
             return f"(missing: {path})"
 
     def functions_table(self, profile: callgrind.Profile) -> str:
-        total = profile.value(profile.totals(), settings.EVENT) or 1
+        total = profile.value(profile.totals(), _RANKING_COUNTER_NAME) or 1
         ranked = sorted(
             (
                 BuildReport.FunctionCost(
-                    profile.value(costs, settings.EVENT), function
+                    profile.value(costs, _RANKING_COUNTER_NAME), function
                 )
                 for function, costs in profile.function_self.items()
-                if profile.value(costs, settings.EVENT) > 0
+                if profile.value(costs, _RANKING_COUNTER_NAME) > 0
             ),
             key=lambda t: (-t.cost, t.function),
-        )[:_TOP]
+        )[:_SUMMARY_TOP_FUNCTION_ROWS]
         max_pct = 100.0 * ranked[0].cost / total if ranked else 1.0
         function_calls = {
             function: sum(tally.count for tally in callers.values())
@@ -514,8 +500,8 @@ class BuildReport:
         columns = [
             Column("#", numeric=True),
             Column("% self", numeric=True),
-            Column("symbol", width=_SYMBOL_CHARS),
-            Column(settings.EVENT, numeric=True),
+            Column("symbol", width=_TABLE_FUNCTION_NAME_WIDTH_CHARS),
+            Column(_RANKING_COUNTER_NAME, numeric=True),
             Column("calls", numeric=True),
             Column("callers", grow=True),
         ]
@@ -575,7 +561,11 @@ class BuildReport:
         return theme.table_render("report.functions", columns, rows, fill=True)
 
     def log_block(self, path: str) -> str:
-        lines = self.file_read(path).rstrip().split("\n")[_LOG_SKIP_LINES:]
+        lines = (
+            self.file_read(path)
+            .rstrip()
+            .split("\n")[_SUMMARY_PERF_LOG_SKIPPED_HEAD_LINES:]
+        )
         text = "\n".join(_PID_PREFIX.sub("", line) for line in lines)
         return (
             f'<div class="tbl"><pre class="logbox">{html_escape(text)}'
@@ -750,7 +740,7 @@ class BuildReport:
             theme.page_document(
                 "overview",
                 body,
-                extra_js=_PAGE_JS,
+                extra_js=self.framed_page_script_names(),
                 body_class="frame",
             ),
         )
@@ -765,6 +755,13 @@ class BuildReport:
         ]
         tests.sort()
         return tests
+
+    # The scripts a framed page runs, in order: the strings first, so the
+    # frame runtime can look an id up the moment it runs. settings.js is
+    # linked ahead of these by page_document() itself, since theme.js reads
+    # it too.
+    def framed_page_script_names(self) -> tuple[str, str]:
+        return (_ASSET_UI_STRINGS_SCRIPT_NAME, _ASSET_FRAME_SCRIPT_NAME)
 
     def page_write(self, path: str, page: str) -> None:
         os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
@@ -822,7 +819,7 @@ class BuildReport:
             theme.page_document(
                 args.test,
                 body,
-                extra_js=_PAGE_JS,
+                extra_js=self.framed_page_script_names(),
                 body_class="frame",
                 depth=0 if args.single_test_report else 1,
             ),
@@ -855,7 +852,8 @@ class BuildReport:
         )
         parts.append(separator)
         parts.append(
-            f'<a href="{_PERF_CHART}" target="_blank" rel="noopener">'
+            f'<a href="{_STRIP_CURL_PERF_SITE_HREF}" target="_blank"'
+            ' rel="noopener">'
             "curl.se/perf</a>"
         )
         parts.append("</span>")
@@ -867,13 +865,13 @@ class BuildReport:
         self.report_page(
             args,
             views,
-            f"top {_TOP} functions by self",
+            f"top {_SUMMARY_TOP_FUNCTION_ROWS} functions by self",
             self.functions_table(profile),
         )
 
     def time_humanize(self, text: str) -> str:
         def one(match: re.Match[str]) -> str:
-            scale = _TIME_SCALE.get(match.group(3).lower())
+            scale = _SUMMARY_TIME_SUFFIX_SECONDS.get(match.group(3).lower())
             return (
                 match.group(0)
                 if scale is None
@@ -1004,7 +1002,7 @@ def main() -> None:
         default=[],
         help="with --diff, a test's subtracted profile as callgrind_diff.py"
         " wrote it, to read its row from (its synthesized callers diff is"
-        f" that name plus {settings.CALLERS_SUFFIX}). repeatable",
+        f" that name plus {_DIFF_CALLER_COUNTS_FILE_SUFFIX}). repeatable",
     )
     overview_parser.add_argument(
         "--header", action="append", metavar="LABEL=VALUE", default=[]

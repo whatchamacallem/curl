@@ -9,17 +9,21 @@ import sys
 from typing import NamedTuple
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import settings
 import theme
+
+# Every value this file takes from settings.py, declared as the type it
+# expects and loaded before any other name this module binds.
+_FLAME_GRAPH_PROFILE_SCRIPT_NAME: str
+settings.load_into(__name__)
 
 # The script that hands the embedded profile to speedscope once it has
 # loaded -- it polls, because speedscope finishes starting up well after
 # its own script tag has run.
-_BOOTSTRAP = theme.theme_asset("flame_bootstrap.js")
+_BOOTSTRAP = theme.asset_text_read("flame_bootstrap.js")
 
-_PAGE = theme.theme_asset("flame_graph.html")
-
-# What the bootstrap plus its embedded profile gets written as.
-_PROFILE_JS = "profile.js"
+# The page itself: a link and two script tags, the markers substituted.
+_PAGE = theme.asset_text_read("flame_graph.html")
 
 
 # BuildFlameGraph - Writes one flame graph page: this test's recorded
@@ -49,7 +53,9 @@ class BuildFlameGraph:
             "__DATA__", json.dumps(base64.b64encode(raw).decode("ascii"))
         )
         with open(
-            os.path.join(args.flame_graph_dir, _PROFILE_JS),
+            os.path.join(
+                args.flame_graph_dir, _FLAME_GRAPH_PROFILE_SCRIPT_NAME
+            ),
             "w",
             encoding="utf-8",
         ) as handle:
@@ -62,9 +68,11 @@ class BuildFlameGraph:
             raw = handle.read()
         self.bootstrap_write(args, raw)
         self.page_write(args)
+        written = os.path.join(
+            args.flame_graph_dir, _FLAME_GRAPH_PROFILE_SCRIPT_NAME
+        )
         print(
-            f"wrote {os.path.join(args.flame_graph_dir, _PROFILE_JS)} "
-            f"({len(raw):,} bytes of profile) and its page",
+            f"wrote {written} ({len(raw):,} bytes of profile) and its page",
             file=sys.stderr,
         )
 
@@ -73,7 +81,7 @@ class BuildFlameGraph:
         html = (
             _PAGE.replace("__APP_CSS__", f"{args.app_href}/{args.app_css}")
             .replace("__APP_JS__", f"{args.app_href}/{args.app_js}")
-            .replace("__PROFILE_JS__", _PROFILE_JS)
+            .replace("__PROFILE_JS__", _FLAME_GRAPH_PROFILE_SCRIPT_NAME)
         )
         index_html = os.path.join(args.flame_graph_dir, "index.html")
         with open(index_html, "w", encoding="utf-8") as handle:

@@ -13,6 +13,11 @@ import callgrind
 import settings
 from callgrind import Costs
 
+# Every value this file takes from settings.py, declared as the type it
+# expects and loaded before any other name this module binds.
+_RANKING_COUNTER_NAME: str
+settings.load_into(__name__)
+
 
 # CallgrindDiff - Subtracts one profile from another, per (function, file,
 # line), and writes the result back out as a plain callgrind file.
@@ -95,7 +100,9 @@ class CallgrindDiff:
             f"{len(diff.line_self):,} lines in {changed:,} functions changed",
             file=sys.stderr,
         )
-        callers = self.callers_subtract(baseline, modified, settings.EVENT)
+        callers = self.callers_subtract(
+            baseline, modified, _RANKING_COUNTER_NAME
+        )
         self.callers_write(callers, args.callers_output, baseline)
         print(
             f"wrote {args.callers_output} "
@@ -162,7 +169,7 @@ class CallgrindDiff:
         baseline: callgrind.Profile,
     ) -> None:
         doc: CallgrindDiff.CallersDoc = {
-            "event": settings.EVENT,
+            "event": _RANKING_COUNTER_NAME,
             "events": list(baseline.events),
             "callers": {
                 callee: [
@@ -221,11 +228,11 @@ class CallgrindDiff:
                 f"{' '.join(modified.events)}"
             )
         for side, profile in (("baseline", baseline), ("modified", modified)):
-            if settings.EVENT not in profile.event_names():
+            if _RANKING_COUNTER_NAME not in profile.event_names():
                 sys.exit(
                     f"error: the {side} profile cannot supply"
-                    f" {settings.EVENT}, the event every diff share is"
-                    f" counted in: it records"
+                    f" {_RANKING_COUNTER_NAME}, the counter every diff share"
+                    f" is counted in: it records"
                     f" {' '.join(profile.events)}"
                 )
 

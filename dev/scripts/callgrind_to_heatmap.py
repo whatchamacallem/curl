@@ -17,13 +17,22 @@ import settings
 import theme
 from callgrind import Costs, Group
 
-# The page markup and its substitution markers, read from
-# scripts/heatmap.html at generate time.
-BODY = theme.theme_asset("heatmap.html")
+# Every value this file takes from settings.py, declared as the type it
+# expects and loaded before any other name this module binds.
+_ASSET_HEAT_MAP_SCRIPT_NAME: str
+_ASSET_HEAT_MAP_STYLESHEET_NAME: str
+_ASSET_SETTINGS_SCRIPT_NAME: str
+_ASSET_THEME_SCRIPT_NAME: str
+_ASSET_THEME_STYLESHEET_NAME: str
+_ASSET_UI_STRINGS_SCRIPT_NAME: str
+_HEAT_MAP_TREE_ALWAYS_LISTED_DIRS: tuple[str, ...]
+_RANKING_COUNTER_NAME: str
+_REPORT_ASSETS_DIR_NAME: str
+_REPORT_SOURCES_DIR_NAME: str
+settings.load_into(__name__)
 
-# Directories whose tracked .c/.h are listed even when nothing sampled them,
-# so a file with no cost is visibly cold rather than simply missing.
-_TREE = ("lib", "include", "src", "tests/perf")
+# The page skeleton every heat map is rendered into.
+BODY = theme.asset_text_read("heatmap.html")
 
 
 # CallgrindToHeatmap - Turns one profile into a page that shows cost per
@@ -409,8 +418,8 @@ class CallgrindToHeatmap:
             if relative not in files
         )
         default_event = (
-            settings.EVENT
-            if settings.EVENT in profile.event_names()
+            _RANKING_COUNTER_NAME
+            if _RANKING_COUNTER_NAME in profile.event_names()
             else profile.events[0]
         )
         return {
@@ -436,8 +445,8 @@ class CallgrindToHeatmap:
     ) -> str:
         data = json.dumps(model, separators=(",", ":"), ensure_ascii=False)
         data = data.replace("</", "<\\/")
-        assets_href = theme.shared_href(depth, theme.ASSETS_DIR)
-        sources_href = theme.shared_href(depth, theme.SOURCES_DIR)
+        assets_href = theme.shared_href(depth, _REPORT_ASSETS_DIR_NAME)
+        sources_href = theme.shared_href(depth, _REPORT_SOURCES_DIR_NAME)
         scripts = "".join(
             f'<script src="{sources_href}/{name}"></script>\n'
             for name in sorted(
@@ -448,11 +457,19 @@ class CallgrindToHeatmap:
         )
         scripts += "".join(
             f'<script src="{assets_href}/{name}"></script>\n'
-            for name in (theme.UI_STRINGS_JS, theme.THEME_JS, theme.HEATMAP_JS)
+            for name in (
+                _ASSET_SETTINGS_SCRIPT_NAME,
+                _ASSET_UI_STRINGS_SCRIPT_NAME,
+                _ASSET_THEME_SCRIPT_NAME,
+                _ASSET_HEAT_MAP_SCRIPT_NAME,
+            )
         )
         styles = "".join(
             f'<link rel="stylesheet" href="{assets_href}/{name}">\n'
-            for name in (theme.THEME_CSS, theme.HEATMAP_CSS)
+            for name in (
+                _ASSET_THEME_STYLESHEET_NAME,
+                _ASSET_HEAT_MAP_STYLESHEET_NAME,
+            )
         )
         body = BODY.replace("__SCRIPTS__", scripts).replace("__DATA__", data)
         return (
@@ -465,11 +482,19 @@ class CallgrindToHeatmap:
             "</head>\n<body>\n" + body + "</body>\n</html>\n"
         )
 
-    # Every tracked .c/.h under _TREE, so a file with no samples still shows.
+    # Every tracked .c/.h under _HEAT_MAP_TREE_ALWAYS_LISTED_DIRS, so a file
+    # with no samples still shows.
     def repo_tracked_files(self) -> list[str]:
         try:
             output = subprocess.run(
-                ["git", "-C", callgrind.REPO_ROOT, "ls-files", "--", *_TREE],
+                [
+                    "git",
+                    "-C",
+                    callgrind.REPO_ROOT,
+                    "ls-files",
+                    "--",
+                    *_HEAT_MAP_TREE_ALWAYS_LISTED_DIRS,
+                ],
                 check=True,
                 capture_output=True,
                 text=True,
@@ -489,7 +514,7 @@ class CallgrindToHeatmap:
         depth = 1 if args.single_test_report else 2
         page_dir = os.path.dirname(os.path.abspath(args.output))
         self.sources_write(
-            os.path.join(page_dir, *[".."] * depth, theme.SOURCES_DIR),
+            os.path.join(page_dir, *[".."] * depth, _REPORT_SOURCES_DIR_NAME),
             info,
             model,
         )

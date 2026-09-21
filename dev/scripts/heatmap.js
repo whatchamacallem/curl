@@ -35,7 +35,7 @@
     document.getElementById("split"),
     tree_panel,
     "heat.tree",
-    120,
+    settings.HEAT_MAP_TREE_PANE_NARROWEST_PX,
   );
 
   const vector_at = (cost_vector, index) =>
@@ -105,7 +105,10 @@
   }
   event_select.value = current_event.key;
 
-  event_select.style.width = event_label_width + 4 + "ch";
+  event_select.style.width =
+    event_label_width +
+    settings.HEAT_MAP_CONTROL_DROPDOWN_EXTRA_WIDTH_CHARS +
+    "ch";
   let total_cost = 1,
     maximum_share = 1,
     secondary_maximums = {};
@@ -133,7 +136,7 @@
     }
     maximum_share = Math.max(
       IS_DIFF ? maximum_percent : (100 * maximum) / total_cost,
-      0.0001,
+      settings.HEAT_COLOR_SMALLEST_SCALE_TOP_SHARE,
     );
     secondary_maximums = {};
     for (const secondary of secondary_events) {
@@ -152,7 +155,7 @@
         total: secondary_total,
         max_share: Math.max(
           (100 * secondary_maximum) / secondary_total,
-          0.0001,
+          settings.HEAT_COLOR_SMALLEST_SCALE_TOP_SHARE,
         ),
       };
     }
@@ -293,31 +296,99 @@
     scale_label_width = Math.max(scale_label_width, entry.label.length);
   });
   scale_select.value = active_scale.value;
-  scale_select.style.width = scale_label_width + 4 + "ch";
+  scale_select.style.width =
+    scale_label_width +
+    settings.HEAT_MAP_CONTROL_DROPDOWN_EXTRA_WIDTH_CHARS +
+    "ch";
 
-  const MINIMUM_SHARE = 0.001;
-  const FULL_HEAT_PERCENT = 100;
+  let scope_totals = null;
+  const SCOPE_SHARE_STRING_IDS = {
+    global: "str_column_global_share",
+    file: "str_column_file_share",
+    function: "str_column_function_share",
+    line: "str_column_global_share",
+  };
+  const SCOPE_FIXED_CEILINGS = {
+    global: settings.HEAT_COLOR_WHOLE_PROFILE_SCALE_PERCENT,
+    line: settings.HEAT_COLOR_FULL_SCALE_PERCENT,
+  };
+  function scope_totals_build(file_path) {
+    const file = file_table[file_path];
+    const totals = { file: {}, function: {} };
+    if (!file) return totals;
+    for (const [line_number, line_costs] of Object.entries(file.lines)) {
+      const owner = file.lineFunction[line_number];
+      for (const event of [current_event].concat(secondary_events)) {
+        const self_cost = absolute(event.get(line_costs[0]));
+        if (!self_cost) continue;
+        totals.file[event.key] = (totals.file[event.key] || 0) + self_cost;
+        if (owner == null) continue;
+        const owner_key = owner + "\n" + event.key;
+        totals.function[owner_key] =
+          (totals.function[owner_key] || 0) + self_cost;
+      }
+    }
+    return totals;
+  }
+  function scope_total_of(event, line_number) {
+    const scope = active_scale.scope;
+    if (scope === "file" && scope_totals) {
+      return scope_totals.file[event.key] || 0;
+    }
+    if (scope === "function" && scope_totals && current_file_path) {
+      const owner = file_table[current_file_path].lineFunction[line_number];
+      if (owner == null) return 0;
+      return scope_totals.function[owner + "\n" + event.key] || 0;
+    }
+    return event.get(profile_model.heatMapTotals.totals) || 1;
+  }
+  const share_in_scope = (value, event, line_number) => {
+    const scope_total = scope_total_of(event, line_number);
+    return scope_total ? (100 * value) / scope_total : 0;
+  };
+  const share_in_scope_text = (value, event, line_number) =>
+    value ? share_text(share_in_scope(value, event, line_number)) : "";
+  const scope_share_label = () =>
+    text_of(
+      IS_DIFF
+        ? "str_column_global_share"
+        : SCOPE_SHARE_STRING_IDS[active_scale.scope],
+    );
+  const line_share = (value, baseline_cost, line_number) =>
+    IS_DIFF
+      ? share_of_baseline(value, baseline_cost)
+      : share_in_scope(value, current_event, line_number);
+  const line_share_text = (value, baseline_cost, line_number) =>
+    IS_DIFF
+      ? share_of_baseline_text(value, baseline_cost)
+      : share_in_scope_text(value, current_event, line_number);
+  const heat_of_line = (value, baseline_cost, line_number, max_share) =>
+    heat_of_share(line_share(value, baseline_cost, line_number), max_share);
+
   function heat_of_share(percent, max_share) {
     const heat_sign = IS_DIFF && percent < 0 ? -1 : 1;
     percent = absolute(percent);
     if (IS_DIFF) {
-      percent = Math.min(percent, FULL_HEAT_PERCENT);
-      max_share = Math.min(max_share, FULL_HEAT_PERCENT);
+      percent = Math.min(percent, settings.HEAT_COLOR_FULL_SCALE_PERCENT);
+      max_share = Math.min(max_share, settings.HEAT_COLOR_FULL_SCALE_PERCENT);
     }
     if (percent <= 0) return 0;
     if (active_scale.curve === "linear") {
       return heat_sign * Math.min(1, percent / max_share);
     }
-    if (percent < MINIMUM_SHARE) return 0;
+    if (percent < settings.HEAT_COLOR_SMALLEST_VISIBLE_SHARE) return 0;
     const log_span = Math.log10(
-      Math.max(max_share, MINIMUM_SHARE * 10) / MINIMUM_SHARE,
+      Math.max(max_share, settings.HEAT_COLOR_SMALLEST_VISIBLE_SHARE * 10) /
+        settings.HEAT_COLOR_SMALLEST_VISIBLE_SHARE,
     );
     return (
-      heat_sign * Math.min(1, Math.log10(percent / MINIMUM_SHARE) / log_span)
+      heat_sign *
+      Math.min(
+        1,
+        Math.log10(percent / settings.HEAT_COLOR_SMALLEST_VISIBLE_SHARE) /
+          log_span,
+      )
     );
-  }
-  function heat_of_cost(cost, max_share) {
-    return heat_of_share(share_of_total(cost), max_share);
   }
   function heat_of_delta(cost, baseline_cost, max_share) {
     return heat_of_share(share_of_baseline(cost, baseline_cost), max_share);
@@ -365,8 +436,18 @@
       `color:${foreground_color}`
     );
   }
-  const cell_style_strong = (heat_value) => cell_style(heat_value, 0.18, 0.92);
-  const cell_style_soft = (heat_value) => cell_style(heat_value, 0.12, 0.55);
+  const cell_style_strong = (heat_value) =>
+    cell_style(
+      heat_value,
+      settings.HEAT_COLOR_ALPHA_LOWEST,
+      settings.HEAT_COLOR_ALPHA_HIGHEST,
+    );
+  const cell_style_soft = (heat_value) =>
+    cell_style(
+      heat_value,
+      settings.HEAT_MAP_TREE_COLOR_ALPHA_LOWEST,
+      settings.HEAT_MAP_TREE_COLOR_ALPHA_HIGHEST,
+    );
 
   const per_function_calls = function_table.map((function_entry) =>
     function_entry.callers.reduce(
@@ -385,7 +466,7 @@
   );
   const CALLS_MAX_SHARE = Math.max(
     (100 * CALLS_MAXIMUM) / CALLS_TOTAL,
-    0.0001,
+    settings.HEAT_COLOR_SMALLEST_SCALE_TOP_SHARE,
   );
   const call_count_cell = (call_count) =>
     call_count
@@ -445,11 +526,6 @@
     const href = hash_for_function(function_table[function_index].name);
     return `<a href="${href}">${html_escape(text)}</a>`;
   }
-  const SYMBOL_WIDTH = 20;
-  const SOURCE_WIDTH = 80;
-  const HOT_CHIP_LIMIT = 10;
-
-  const COLUMN_PADDING = 3;
 
   const cell_normalize = (value) =>
     value && typeof value === "object"
@@ -469,7 +545,7 @@
           width = Math.max(column.label.length, Math.min(width, column.clip));
         }
       }
-      return width + COLUMN_PADDING;
+      return width + settings.TABLE_COLUMN_EXTRA_WIDTH_CHARS;
     });
   }
   function table_html(key, columns, rows, options) {
@@ -494,9 +570,11 @@
       ]
         .filter(Boolean)
         .join(" ");
+      const minimum_chars =
+        column.label.length + settings.TABLE_COLUMN_EXTRA_WIDTH_CHARS;
       markup +=
         `<col${column_classes ? ` class="${column_classes}"` : ""}` +
-        ` data-min="${column.label.length + COLUMN_PADDING}ch"` +
+        ` data-min="${minimum_chars}ch"` +
         ` style="width:${column_width_list[column_index]}ch">`;
     });
     markup += `</colgroup><thead><tr>`;
@@ -586,16 +664,23 @@
         cls: "x",
       }),
     );
-  function secondary_cells(cost_vector) {
+  function secondary_cells(cost_vector, line_number, max_share_of_event) {
     return secondary_events.map((secondary) => {
       const self_cost = secondary.get(cost_vector),
         maximum_entry = secondary_maximums[secondary.key];
-      const percent = (100 * self_cost) / maximum_entry.total;
-      const heat_value = heat_of_share(percent, maximum_entry.max_share);
+      const in_scope = line_number != null;
+      const percent = in_scope
+        ? share_in_scope(self_cost, secondary, line_number)
+        : (100 * self_cost) / maximum_entry.total;
+      const heat_value = heat_of_share(
+        percent,
+        in_scope ? max_share_of_event(secondary) : maximum_entry.max_share,
+      );
       return {
         text: self_cost ? share_text(percent) : "",
         style: cell_style_strong(heat_value),
-        cls: heat_value > 0.45 ? "hot" : "",
+        cls:
+          heat_value > settings.HEAT_COLOR_LIGHT_TEXT_ABOVE_SHARE ? "hot" : "",
       };
     });
   }
@@ -687,12 +772,15 @@
       if (subtree_matches(directory_node)) return true;
     return false;
   }
-  const DIRECTORY_MAX_SHARE = 100;
+  const DIRECTORY_MAX_SHARE = settings.HEAT_COLOR_FULL_SCALE_PERCENT;
   const caret_of = (is_expanded) =>
     text_of(is_expanded ? "str_caret_expanded" : "str_caret_collapsed");
   function tree_render() {
     const output_parts = [];
     function nodes_emit(tree_node, depth) {
+      const indent_px =
+        settings.HEAT_MAP_TREE_INDENT_FIRST_LEVEL_PX +
+        depth * settings.HEAT_MAP_TREE_INDENT_PER_LEVEL_PX;
       const directories = [...tree_node.dirs.values()]
         .filter(subtree_matches)
         .sort(node_compare);
@@ -710,7 +798,7 @@
         output_parts.push(
           `<div class="node dir${heat_style_attribute ? " heat" : ""}"` +
             ` data-dir="${html_escape(directory_node.path)}"` +
-            ` style="padding-left:${6 + depth * 14}px;` +
+            ` style="padding-left:${indent_px}px;` +
             `${heat_style_attribute}">` +
             `<span class="caret">` +
             `${caret_of(is_expanded)}</span>` +
@@ -741,7 +829,7 @@
           `<div class="node file${file.cold ? " cold" : ""}` +
             `${heat_style_attribute ? " heat" : ""}${selected_class}"` +
             ` data-file="${html_escape(file.path)}"` +
-            ` style="padding-left:${6 + depth * 14}px;` +
+            ` style="padding-left:${indent_px}px;` +
             `${heat_style_attribute}">` +
             `<span class="caret">` +
             `${caret_of(false)}</span>` +
@@ -761,7 +849,7 @@
         output_parts.push(
           `<div class="node more"` +
             ` data-more="${html_escape(tree_node.path)}"` +
-            ` style="padding-left:${6 + depth * 14}px">` +
+            ` style="padding-left:${indent_px}px">` +
             `<span class="caret">` +
             `${caret_of(is_expanded)}</span>` +
             `<span class="name">` +
@@ -841,7 +929,9 @@
       if (snippet_source != null) {
         const source_lines = snippet_source.split("\n");
         if (entry[1] >= 1 && entry[1] <= source_lines.length) {
-          source_snippet = source_lines[entry[1] - 1].trim().slice(0, 110);
+          source_snippet = source_lines[entry[1] - 1]
+            .trim()
+            .slice(0, settings.HEAT_MAP_HOME_LINES_SOURCE_COLUMN_WIDTH_CHARS);
         }
       }
       return [entry[0], entry[1], entry[2], entry[3], source_snippet];
@@ -849,8 +939,9 @@
   }
   function home_render() {
     current_file_path = null;
+    scope_totals = null;
     let markup = `<div class="home">`;
-    const line_rows = top_lines(60);
+    const line_rows = top_lines(settings.HEAT_MAP_HOME_TABLE_MAX_ROWS);
     markup +=
       `<h2>${html_escape(
         text_fill("str_heading_lines_by_event", {
@@ -865,15 +956,15 @@
           SELF_COLUMN,
           {
             label: text_of("str_column_function"),
-            width: SYMBOL_WIDTH,
+            width: settings.TABLE_FUNCTION_NAME_WIDTH_CHARS,
           },
           {
             label: text_of("str_column_defined_at"),
-            clip: 28,
+            clip: settings.HEAT_MAP_HOME_LINES_LOCATION_MAX_CHARS,
           },
           {
             label: text_of("str_column_source"),
-            clip: 36,
+            clip: settings.HEAT_MAP_HOME_LINES_SOURCE_TEXT_MAX_CHARS,
           },
           event_column(current_event),
           ...secondary_columns(),
@@ -922,7 +1013,7 @@
       ])
       .filter((entry) => absolute(entry[1]) > 0)
       .sort((entry_a, entry_b) => absolute(entry_b[1]) - absolute(entry_a[1]))
-      .slice(0, 60);
+      .slice(0, settings.HEAT_MAP_HOME_TABLE_MAX_ROWS);
     const function_max_share = IS_DIFF
       ? Math.max(
           ...top_functions.map(([function_index, self_cost]) =>
@@ -933,7 +1024,7 @@
               ),
             ),
           ),
-          0.0001,
+          settings.HEAT_COLOR_SMALLEST_SCALE_TOP_SHARE,
         )
       : maximum_share;
     const call_columns = HAS_CALL_GRAPH
@@ -962,11 +1053,11 @@
           SELF_COLUMN,
           {
             label: text_of("str_column_function"),
-            width: SYMBOL_WIDTH,
+            width: settings.TABLE_FUNCTION_NAME_WIDTH_CHARS,
           },
           {
             label: text_of("str_column_defined_at"),
-            clip: 48,
+            clip: settings.TABLE_LOCATION_COLUMN_MAX_CHARS,
           },
           ...call_columns,
           ...secondary_columns(),
@@ -1030,33 +1121,29 @@
     current_file_path = file_path;
     tree_reveal(file_path);
     const lines = file.lines;
-    let file_maximum_cost = 0;
-    for (const line_costs of Object.values(lines)) {
-      const self_cost = absolute(current_value(line_costs[0]));
-      if (self_cost > file_maximum_cost) file_maximum_cost = self_cost;
-    }
-    const max_share =
-      active_scale.scope === "line"
-        ? FULL_HEAT_PERCENT
-        : active_scale.scope === "file"
-          ? Math.max(share_of_total(file_maximum_cost), 0.0001)
-          : maximum_share;
-    const function_max_shares = {};
-    if (active_scale.scope === "function") {
+    scope_totals = scope_totals_build(file_path);
+    const fixed_ceiling = SCOPE_FIXED_CEILINGS[active_scale.scope];
+    const scope_maximums = {};
+    if (fixed_ceiling == null) {
       for (const [line_number, line_costs] of Object.entries(lines)) {
-        const owner = file.lineFunction[line_number];
-        if (owner == null) continue;
-        function_max_shares[owner] = Math.max(
-          function_max_shares[owner] || 0.0001,
-          absolute(share_of_total(current_value(line_costs[0]))),
-        );
+        for (const event of [current_event].concat(secondary_events)) {
+          const percent = absolute(
+            share_in_scope(event.get(line_costs[0]), event, line_number),
+          );
+          scope_maximums[event.key] = Math.max(
+            scope_maximums[event.key] ||
+              settings.HEAT_COLOR_SMALLEST_SCALE_TOP_SHARE,
+            percent,
+          );
+        }
       }
     }
-    const max_share_for_line = (line_number) => {
-      if (active_scale.scope !== "function") return max_share;
-      const owner = file.lineFunction[line_number];
-      return owner != null ? function_max_shares[owner] || 0.0001 : max_share;
-    };
+    const max_share_of_event = (event) =>
+      fixed_ceiling != null
+        ? fixed_ceiling
+        : scope_maximums[event.key] ||
+          settings.HEAT_COLOR_SMALLEST_SCALE_TOP_SHARE;
+    const max_share = max_share_of_event(current_event);
     let markup =
       `<div class="srcwrap"><div class="fhead band">` +
       `<span class="path">${html_escape(file_path)}</span>`;
@@ -1112,10 +1199,10 @@
       .filter(
         (entry) =>
           absolute(
-            share_of_baseline(entry[1], line_baseline(file_path, entry[0])),
-          ) >= 0.01,
+            line_share(entry[1], line_baseline(file_path, entry[0]), entry[0]),
+          ) >= settings.HEAT_MAP_SOURCE_HOT_LINE_BUTTON_LEAST_SHARE,
       )
-      .slice(0, HOT_CHIP_LIMIT);
+      .slice(0, settings.HEAT_MAP_SOURCE_HOT_LINE_BUTTON_MAX_COUNT);
     if (chip_lines.length) {
       markup +=
         `<div class="chips">` +
@@ -1125,14 +1212,10 @@
         markup +=
           `<span class="chip" data-goto="${line_number}"` +
           ` style="${cell_style_strong(
-            heat_of_delta(
-              cost,
-              baseline_cost,
-              max_share_for_line(line_number),
-            ),
+            heat_of_line(cost, baseline_cost, line_number, max_share),
           )}">` +
           `${line_number} -` +
-          ` ${share_of_baseline_text(cost, baseline_cost)}</span>`;
+          ` ${line_share_text(cost, baseline_cost, line_number)}</span>`;
       }
       markup += `</div>`;
     }
@@ -1144,11 +1227,11 @@
       const self_cost = line_costs ? current_value(line_costs[0]) : 0,
         calls = line_costs ? current_value(line_costs[1]) : 0;
       const baseline_cost = line_baseline(file_path, line_number);
-      const row_max_share = max_share_for_line(line_number);
-      const heat_value = heat_of_delta(
+      const heat_value = heat_of_line(
           self_cost,
           baseline_cost,
-          row_max_share,
+          line_number,
+          max_share,
         ),
         heat_style_attribute = cell_style_strong(heat_value);
       const class_names = [
@@ -1165,26 +1248,27 @@
       const call_cell = HAS_CALL_GRAPH
         ? [
             {
-              text: calls ? share_of_baseline_text(calls, baseline_cost) : "",
+              text: line_share_text(calls, baseline_cost, line_number),
               style: cell_style_strong(
-                heat_of_delta(calls, baseline_cost, row_max_share),
+                heat_of_line(calls, baseline_cost, line_number, max_share),
               ),
             },
           ]
         : [];
       rows.push([
         {
-          text: self_cost
-            ? share_of_baseline_text(self_cost, baseline_cost)
-            : "",
+          text: line_share_text(self_cost, baseline_cost, line_number),
           style: heat_style_attribute,
-          cls: heat_value > 0.45 ? "hot" : "",
+          cls:
+            heat_value > settings.HEAT_COLOR_LIGHT_TEXT_ABOVE_SHARE
+              ? "hot"
+              : "",
         },
         { text: String(line_number), style: heat_style_attribute },
         { text, style: heat_style_attribute },
         ...call_cell,
         ...(line_costs
-          ? secondary_cells(line_costs[0])
+          ? secondary_cells(line_costs[0], line_number, max_share_of_event)
           : secondary_events.map(() => "")),
       ]);
     };
@@ -1223,7 +1307,7 @@
       },
       {
         label: text_of("str_column_source"),
-        width: SOURCE_WIDTH,
+        width: settings.HEAT_MAP_SOURCE_VIEW_WIDTH_CHARS,
         grow: true,
         cls: "code",
       },
@@ -1302,8 +1386,6 @@
       "px";
   }
 
-  const MINIMUM_COLUMNS = 80;
-  const MINIMUM_LINES = 40;
   let character_width_px = 0,
     scale_factor = 1,
     clone_height_px = 0;
@@ -1315,7 +1397,10 @@
   function minimap_build() {
     const table_element = main_panel.querySelector("table.src");
     const table_body = table_element && table_element.tBodies[0];
-    if (!table_body || table_body.rows.length < MINIMUM_LINES) {
+    if (
+      !table_body ||
+      table_body.rows.length < settings.HEAT_MAP_MINIMAP_SHOWN_ABOVE_FILE_LINES
+    ) {
       minimap_clear();
       return;
     }
@@ -1361,7 +1446,8 @@
 
     scale_factor = Math.min(
       1,
-      band_width_px / (MINIMUM_COLUMNS * character_width_px),
+      band_width_px /
+        (settings.HEAT_MAP_MINIMAP_SOURCE_WIDTH_CHARS * character_width_px),
       band_height_px / clone_height_px,
     );
     minimap_box.style.transform = `scale(${scale_factor})`;
@@ -1407,7 +1493,7 @@
     const row_start = geometry.above(geometry.head),
       row_end = geometry.above(geometry.bottom);
     const box_height_px = Math.max(
-      8,
+      settings.HEAT_MAP_MINIMAP_VIEWPORT_BOX_SMALLEST_PX,
       (scaled_height_px * (row_end - row_start)) / geometry.rows,
     );
     const box_top_px = Math.min(
@@ -1506,11 +1592,11 @@
     const line_costs = file.lines[line_number] || [[], [], 0];
     const function_column = (label) => ({
       label,
-      width: SYMBOL_WIDTH,
+      width: settings.TABLE_FUNCTION_NAME_WIDTH_CHARS,
     });
     const location_column = {
       label: text_of("str_column_defined_at"),
-      clip: 48,
+      clip: settings.TABLE_LOCATION_COLUMN_MAX_CHARS,
     };
     const call_cost = current_value(line_costs[1]);
     const self_cost = current_value(line_costs[0]);
@@ -1520,7 +1606,7 @@
     );
     const stat_columns = [
       { label: text_of("str_column_event") },
-      { label: text_of("str_column_global_share"), num: true },
+      { label: scope_share_label(), num: true },
       { label: text_of("str_column_count"), num: true },
     ];
     const stat_rows = [
@@ -1528,7 +1614,7 @@
         {
           text: `${self_label} ${event_label(current_event)}`,
         },
-        share_of_baseline_text(self_cost, line_baseline_cost) ||
+        line_share_text(self_cost, line_baseline_cost, line_number) ||
           text_of("str_share_zero"),
         cell_number(self_cost),
       ],
@@ -1536,7 +1622,7 @@
     if (call_cost) {
       stat_rows.push([
         { text: text_of("str_column_calls") },
-        share_of_baseline_text(call_cost, line_baseline_cost),
+        line_share_text(call_cost, line_baseline_cost, line_number),
         cell_number(call_cost),
       ]);
       stat_rows.push([
@@ -1550,9 +1636,11 @@
       if (!secondary_self) continue;
       stat_rows.push([
         { text: event_label(secondary) },
-        share_text(
-          (100 * secondary_self) / secondary_maximums[secondary.key].total,
-        ),
+        IS_DIFF
+          ? share_text(
+              (100 * secondary_self) / secondary_maximums[secondary.key].total,
+            )
+          : share_in_scope_text(secondary_self, secondary, line_number),
         cell_number(secondary_self),
       ]);
     }
@@ -1650,7 +1738,10 @@
           { label: text_of("str_column_share_of_total"), num: true },
           event_column(current_event),
           function_column(text_of("str_column_caller")),
-          { label: text_of("str_column_called_at"), clip: 48 },
+          {
+            label: text_of("str_column_called_at"),
+            clip: settings.TABLE_LOCATION_COLUMN_MAX_CHARS,
+          },
         ];
         const rows = callers.map(
           ([caller_index, call_file, call_line, cost_vector, call_count]) => {
@@ -1759,7 +1850,10 @@
     scale_recompute();
     tree_root = tree_build();
     for (const directory_node of tree_root.dirs.values()) {
-      if (absolute(directory_node.self) / total_cost > 0.05) {
+      if (
+        absolute(directory_node.self) / total_cost >
+        settings.HEAT_MAP_TREE_AUTO_EXPAND_ABOVE_SHARE
+      ) {
         expanded_directories.add(directory_node.path);
       }
     }
@@ -1837,7 +1931,7 @@
     resize_debounce_timer = setTimeout(() => {
       tail_fit();
       minimap_layout();
-    }, 120);
+    }, settings.LAYOUT_RESIZE_SETTLE_DELAY_MS);
   });
   event_select.addEventListener("change", (change_event) => {
     location.hash = hash_of_state(

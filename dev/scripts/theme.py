@@ -6,80 +6,28 @@ import os
 from collections.abc import Sequence
 from typing import NamedTuple, TypeAlias, TypedDict
 
-# The page font: Monaco first, then whatever else the box has.
-_FONT = (
-    'Monaco, Menlo, "DejaVu Sans Mono", "Liberation Mono", Consolas, monospace'
-)
+import settings
 
-# The 12-stop heat ramp, cold to hot. Exempt from the light/dark pair rule.
-_HEAT: list[str] = [
-    "#3E4A89",
-    "#31688E",
-    "#26828E",
-    "#1F9E89",
-    "#35B779",
-    "#6DCD59",
-    "#B4DE2C",
-    "#FDE725",
-    "#FFC83B",
-    "#FFA22C",
-    "#FF7F21",
-    "#F06142",
-]
-
-# How opaque the hottest and coldest cells blend over the page background.
-_HEAT_ALPHA_HIGH = 0.92
-_HEAT_ALPHA_LOW = 0.18
-# Below this share a cell gets no heat at all.
-_HEAT_MINIMUM_SHARE = 0.001
-
-# Breathing room added to every column width, in characters.
-_PADDING_CHARS = 3
-
-# Raw "User settings" THEME entries: odd index = dark member.
-_THEME: list[str] = [
-    "#1AB6FF",
-    "#0097E6",
-    "#F5F6FA",
-    "#DCDDE1",
-    "#FBC531",
-    "#E1B12C",
-    "#7F8FA6",
-    "#718093",
-    "#273C75",
-    "#192A56",
-    "#487EB0",
-    "#40739E",
-    "#353B48",
-    "#2F3640",
-]
-
-# The report-root directory holding the shared copy of our own theme.
-ASSETS_DIR = "assets"
-
-# What the report's one shared copy of the theme is written as. Every page
-# in a report renders the same stylesheet and the same script, so they are
-# written once at the report root and linked, not inlined 19 times. The
-# heat map's own stylesheet and runtime, and the frame script every summary
-# and overview page runs, are the same on all of them too, so they are
-# shared the same way; each page links only the ones it uses.
-FRAME_JS = "frame.js"
-HEATMAP_CSS = "heatmap.css"
-HEATMAP_JS = "heatmap.js"
-# The report-root directory holding every heat map's source text, one copy
-# of each profiled file rather than one per page that references it.
-SOURCES_DIR = "sources"
-
-THEME_CSS = "theme.css"
-THEME_JS = "theme.js"
-UI_STRINGS_JS = "ui_strings.js"
-
-# Width of a strip's status row, its first cell. The outer one says
-# "perf2html"; the inner one says the selection path, so the budget is
-# the longest test name plus separator plus the longest view label --
-# "simpleformat / flame graph" is 26 today, and "<test> / summary" is
-# shorter. flex-wrap: nowrap means too small clips mid-word.
-TITLE_COLUMNS = len("|-------------------------------|")
+# Every setting this file reads. Each one is declared with the type it must
+# have and loaded by settings.load_into(), which fails at import if a name, a
+# type or the ordering is wrong.
+_ASSET_FRAME_SCRIPT_NAME: str
+_ASSET_HEAT_MAP_SCRIPT_NAME: str
+_ASSET_HEAT_MAP_STYLESHEET_NAME: str
+_ASSET_SETTINGS_SCRIPT_NAME: str
+_ASSET_THEME_SCRIPT_NAME: str
+_ASSET_THEME_STYLESHEET_NAME: str
+_ASSET_UI_STRINGS_SCRIPT_NAME: str
+_HEAT_COLOR_ALPHA_HIGHEST: float
+_HEAT_COLOR_ALPHA_LOWEST: float
+_HEAT_COLOR_RAMP_STOPS: list[str]
+_HEAT_COLOR_SMALLEST_VISIBLE_SHARE: float
+_PAGE_FONT_FAMILY: str
+_REPORT_ASSETS_DIR_NAME: str
+_STRIP_STATUS_ROW_WIDTH_CHARS: int
+_TABLE_COLUMN_EXTRA_WIDTH_CHARS: int
+_THEME_COLOR_PAIR_ENTRIES: list[str]
+settings.load_into(__name__)
 
 
 # Cell - One table cell: the text, plus every way a page can dress it up.
@@ -128,7 +76,8 @@ class ThemeRuntime(TypedDict):
 class Theme:
     # Where theme.css and theme.js live.
     DIRECTORY = os.path.dirname(os.path.abspath(__file__))
-    # The seven colour pairs of _THEME, in the order _THEME lists them.
+    # The seven colour pairs of _THEME_COLOR_PAIR_ENTRIES, in the order
+    # that list gives them.
     NAMES = ("blue", "white", "yellow", "gray", "navy", "steel", "slate")
 
     # ColorPair - One "User settings" colour in both its light and dark form.
@@ -229,19 +178,29 @@ class Theme:
         ) as handle:
             return handle.read()
 
-    # Write the report's one shared copy of the theme. The stylesheet is
-    # generated, not copied: its colour variables are computed here, so the
-    # file a page links must be the same bytes document() would have
-    # inlined.
+    # Write the report's one shared copy of the theme. Two of these are
+    # generated rather than copied: the stylesheet, whose colour variables
+    # are computed here, and settings.js, which settings.py serializes. A
+    # copied scripts/theme.css would silently drop the variables, and there
+    # is no scripts/settings.js to copy at all.
     def assets_write(self, out_dir: str) -> None:
         os.makedirs(out_dir, exist_ok=True)
+        heat_map_script = _ASSET_HEAT_MAP_SCRIPT_NAME
+        heat_map_stylesheet = _ASSET_HEAT_MAP_STYLESHEET_NAME
         shared = (
-            (FRAME_JS, self.asset_read(FRAME_JS)),
-            (HEATMAP_CSS, self.asset_read(HEATMAP_CSS)),
-            (HEATMAP_JS, self.asset_read(HEATMAP_JS)),
-            (THEME_CSS, self.css()),
-            (THEME_JS, self.js()),
-            (UI_STRINGS_JS, self.asset_read(UI_STRINGS_JS)),
+            (
+                _ASSET_FRAME_SCRIPT_NAME,
+                self.asset_read(_ASSET_FRAME_SCRIPT_NAME),
+            ),
+            (heat_map_stylesheet, self.asset_read(heat_map_stylesheet)),
+            (heat_map_script, self.asset_read(heat_map_script)),
+            (_ASSET_SETTINGS_SCRIPT_NAME, settings.settings_script_write()),
+            (_ASSET_THEME_STYLESHEET_NAME, self.css()),
+            (_ASSET_THEME_SCRIPT_NAME, self.js()),
+            (
+                _ASSET_UI_STRINGS_SCRIPT_NAME,
+                self.asset_read(_ASSET_UI_STRINGS_SCRIPT_NAME),
+            ),
         )
         for name, text in shared:
             with open(
@@ -268,7 +227,7 @@ class Theme:
                         width = max(width, len(row[index].text))
                 if column.clip is not None:
                     width = max(len(column.label), min(width, column.clip))
-            widths.append(width + _PADDING_CHARS)
+            widths.append(width + _TABLE_COLUMN_EXTRA_WIDTH_CHARS)
         return widths
 
     # Dark or light text, whichever the background can actually be read on.
@@ -282,18 +241,25 @@ class Theme:
             lines.append(f"  --{name}: {pair.dark}; --{name}-l: {pair.light};")
         for role, color in _ROLE.items():
             lines.append(f"  --{role}: {color};")
-        lines.append(f"  --hot: {_HEAT[-1]};")
+        stops = _HEAT_COLOR_RAMP_STOPS
+        lines.append(f"  --hot: {stops[-1]};")
         lines.append(
-            f"  --hot-fg: {self.contrast_foreground(self.rgb(_HEAT[-1]))};"
+            f"  --hot-fg: {self.contrast_foreground(self.rgb(stops[-1]))};"
         )
-        lines.append(f"  --title-bg: {_HEAT[2]};")
+        lines.append(f"  --title-bg: {stops[2]};")
         lines.append(
-            f"  --title-fg: {self.contrast_foreground(self.rgb(_HEAT[2]))};"
+            f"  --title-fg: {self.contrast_foreground(self.rgb(stops[2]))};"
         )
-        lines.append(f"  --title-w: calc({TITLE_COLUMNS}ch + 16px);")
-        lines.append(f"  --font: {_FONT};")
+        lines.append(
+            f"  --title-w: calc({_STRIP_STATUS_ROW_WIDTH_CHARS}ch + 16px);"
+        )
+        lines.append(f"  --font: {_PAGE_FONT_FAMILY};")
         lines.append("}")
-        return "\n".join(lines) + "\n" + self.asset_read("theme.css")
+        return (
+            "\n".join(lines)
+            + "\n"
+            + self.asset_read(_ASSET_THEME_STYLESHEET_NAME)
+        )
 
     # One page.
     def document(
@@ -304,12 +270,19 @@ class Theme:
         body_class: str = "",
         depth: int = 0,
     ) -> str:
-        assets_href = shared_href(depth, ASSETS_DIR)
+        assets_href = shared_href(depth, _REPORT_ASSETS_DIR_NAME)
         body_attr = f' class="{body_class}"' if body_class else ""
-        head = f'<link rel="stylesheet" href="{assets_href}/{THEME_CSS}">\n'
+        head = (
+            '<link rel="stylesheet" '
+            f'href="{assets_href}/{_ASSET_THEME_STYLESHEET_NAME}">\n'
+        )
         script = "".join(
             f'<script src="{assets_href}/{name}"></script>\n'
-            for name in (THEME_JS, *extra_js)
+            for name in (
+                _ASSET_SETTINGS_SCRIPT_NAME,
+                _ASSET_THEME_SCRIPT_NAME,
+                *extra_js,
+            )
         )
         return (
             '<!doctype html>\n<html lang="en">\n'
@@ -327,16 +300,15 @@ class Theme:
         magnitude = abs(heat)
         if magnitude <= 0:
             return ""
-        stops = [self.rgb(color) for color in _HEAT]
+        stops = [self.rgb(color) for color in _HEAT_COLOR_RAMP_STOPS]
         if signed:
             position = (heat + 1) * 0.5 * (len(stops) - 1)
         else:
             position = heat * (len(stops) - 1)
         index = min(max(int(position), 0), len(stops) - 2)
         fraction = position - index
-        amount = (
-            _HEAT_ALPHA_LOW + (_HEAT_ALPHA_HIGH - _HEAT_ALPHA_LOW) * magnitude
-        )
+        lowest = _HEAT_COLOR_ALPHA_LOWEST
+        amount = lowest + (_HEAT_COLOR_ALPHA_HIGHEST - lowest) * magnitude
         background = self.rgb(_ROLE["bg"])
         mixed = Theme.Rgb(
             *(
@@ -362,16 +334,17 @@ class Theme:
     def heat_t(self, share: float, max_share: float) -> float:
         sign = -1.0 if share < 0 else 1.0
         magnitude = abs(share)
-        if magnitude < _HEAT_MINIMUM_SHARE:
+        smallest = _HEAT_COLOR_SMALLEST_VISIBLE_SHARE
+        if magnitude < smallest:
             return 0.0
-        top = max(max_share, _HEAT_MINIMUM_SHARE * 10) / _HEAT_MINIMUM_SHARE
+        top = max(max_share, smallest * 10) / smallest
         return sign * min(
-            1.0, math.log10(magnitude / _HEAT_MINIMUM_SHARE) / math.log10(top)
+            1.0, math.log10(magnitude / smallest) / math.log10(top)
         )
 
     # The shared page script, read straight off disk.
     def js(self) -> str:
-        return self.asset_read("theme.js")
+        return self.asset_read(_ASSET_THEME_SCRIPT_NAME)
 
     # How bright a colour looks, 0..1 -- what contrast_foreground() decides on.
     def luminance(self, color: Theme.Rgb) -> float:
@@ -379,10 +352,11 @@ class Theme:
             0.2126 * color.red + 0.7152 * color.green + 0.0722 * color.blue
         ) / 255
 
-    # Cut _THEME into its named light/dark pairs.
+    # Cut _THEME_COLOR_PAIR_ENTRIES into its named light/dark pairs.
     def pairs(self) -> dict[str, Theme.ColorPair]:
+        entries = _THEME_COLOR_PAIR_ENTRIES
         return {
-            name: Theme.ColorPair(_THEME[2 * index], _THEME[2 * index + 1])
+            name: Theme.ColorPair(entries[2 * index], entries[2 * index + 1])
             for index, name in enumerate(self.NAMES)
         }
 
@@ -397,7 +371,7 @@ class Theme:
     # The handful of theme values the page's own JavaScript needs.
     def runtime(self) -> ThemeRuntime:
         return {
-            "heat": _HEAT,
+            "heat": _HEAT_COLOR_RAMP_STOPS,
             "bg": _ROLE["bg"],
             "fgLight": _ROLE["fg"],
             "fgDark": _ROLE["bg"],
@@ -451,7 +425,7 @@ class Theme:
                 if class_name
             )
             attr = f' class="{col_classes}"' if col_classes else ""
-            floor = len(columns[index].label) + _PADDING_CHARS
+            floor = len(columns[index].label) + _TABLE_COLUMN_EXTRA_WIDTH_CHARS
             out.append(
                 f'<col{attr} data-min="{floor}ch" style="width:{width}ch">'
             )
@@ -521,6 +495,11 @@ _TIME_UNITS: tuple[Theme.TimeUnit, ...] = (
 )
 
 
+# asset_text_read - One file from scripts/, to inline into a page.
+def asset_text_read(name: str) -> str:
+    return _RENDERER.asset_read(name)
+
+
 # heat_style - The inline style one heat position paints a cell with.
 def heat_style(heat: float, signed: bool = False) -> str:
     return _RENDERER.heat_style(heat, signed)
@@ -572,6 +551,7 @@ def page_document(
     return _RENDERER.document(title, body, extra_js, body_class, depth)
 
 
+# shared_href - A page's href to one of the report's shared directories.
 def shared_href(depth: int, name: str) -> str:
     return "../" * depth + name
 
@@ -585,11 +565,6 @@ def table_render(
     column_titles: bool = True,
 ) -> str:
     return _RENDERER.table(key, columns, rows, fill, column_titles)
-
-
-# theme_asset - One file from scripts/, to inline into a page.
-def theme_asset(name: str) -> str:
-    return _RENDERER.asset_read(name)
 
 
 # theme_assets_write - Write the report's one shared copy of the theme.

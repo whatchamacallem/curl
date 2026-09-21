@@ -16,60 +16,27 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import callgrind
 import settings
 
-# What a report's raw data is stored as, one archive per test.
-_ARCHIVE_SUFFIX = "txz"
-
-# The report's one shared copy of speedscope, and the globs naming what it
-# must hold: the engine, its stylesheet and the font the stylesheet names.
-_FLAME_APP_DIR = "flame-graph-app"
-_FLAME_APP_GLOBS = ("speedscope-*.js", "speedscope-*.css", "*.woff2")
-
-# Only a flame graph our own tool exported counts -- a stale or hand-made one
-# must fail.
-_FLAME_EXPORTER = "dev/scripts/trace_to_speedscope.py"
-
-# All a per-test flame graph directory may hold: its own page, its own
-# recorded profile, and the trace log. Everything else lives in the one
-# shared bundle at the report root.
-_FLAME_GRAPH_FILES = ("index.html", "output.txt", "profile.js")
-
-# Smallest a file can be before it is plainly a failed generate rather than a
-# small page. The flame graph page is a loader -- two script tags and a
-# stylesheet link pointing at the shared bundle -- so it has a floor of its
-# own, well under the one a page carrying real content must clear.
-_MIN_FLAME_JS_BYTES = 200
-_MIN_FLAME_PAGE_BYTES = 300
-_MIN_HEATMAP_BYTES = 5000
-_MIN_INDEX_BYTES = 2000
-_MIN_PAGE_BYTES = 500
-_MIN_RAW_BYTES = 100
-
-_SOURCES_DIR = "sources"
-
-# The diff vocabulary, spelled the same everywhere a reader sees it. These
-# are the only non-ASCII characters a source file may contain.
-_ALLOWED_UNICODE = (
-    "≈",  # almost equal to
-    "▲",  # up-pointing triangle
-    "▶",  # right-pointing triangle, the heat map's collapsed caret
-    "▼",  # down-pointing triangle
-    "…",  # horizontal ellipsis
-)
-
-# Anything outside plain ASCII that is not in the allow list above.
-_NON_ASCII_RE = re.compile(r"[^\x00-\x7F" + "".join(_ALLOWED_UNICODE) + r"]")
-
-# Which files under dev/ the ASCII scan reads.
-_UNICODE_SCAN_EXTS = (".py", ".js", ".css", ".sh", ".html", ".c", ".h")
-_UNICODE_SCAN_NAMES = ("README.md",)
-
-# Generated output and caches, which the ASCII scan walks straight past.
-_UNICODE_SCAN_SKIP_DIRS = (
-    "__pycache__",
-    "perf2html_baseline_report",
-    "perf2html_modified_report",
-    "perf2html_diff_report",
-)
+# Every setting this file reads. Each is declared with the type it must
+# have; settings.load_into() fails at import on a wrong name, a wrong type,
+# or a setting declared after another name in the file is assigned.
+_DIFF_CALLER_COUNTS_FILE_SUFFIX: str
+_FLAME_GRAPH_APP_DIR_NAME: str
+_FLAME_GRAPH_APP_FILE_GLOBS: tuple[str, ...]
+_FLAME_GRAPH_EXPORTER_NAME: str
+_FLAME_GRAPH_PAGE_FILE_NAMES: tuple[str, ...]
+_REPORT_RAW_ARCHIVE_SUFFIX: str
+_REPORT_SOURCES_DIR_NAME: str
+_SOURCE_SCAN_ALLOWED_NON_ASCII_CHARS: tuple[str, ...]
+_SOURCE_SCAN_FILE_EXTENSIONS: tuple[str, ...]
+_SOURCE_SCAN_FILE_NAMES: tuple[str, ...]
+_SOURCE_SCAN_SKIPPED_DIRS: tuple[str, ...]
+_VALIDATE_ANY_PAGE_LEAST_BYTES: int
+_VALIDATE_FLAME_GRAPH_PAGE_LEAST_BYTES: int
+_VALIDATE_FLAME_GRAPH_SCRIPT_LEAST_BYTES: int
+_VALIDATE_HEAT_MAP_PAGE_LEAST_BYTES: int
+_VALIDATE_OVERVIEW_PAGE_LEAST_BYTES: int
+_VALIDATE_RAW_ARCHIVE_LEAST_BYTES: int
+settings.load_into(__name__)
 
 
 # ValidateReport - A structural smoke test over a finished report directory:
@@ -121,16 +88,16 @@ class ValidateReport:
     # The one shared speedscope bundle every flame graph page loads. It holds
     # exactly one file per glob, so a page can name it without a version.
     def flame_app_check(self, out_dir: str) -> None:
-        app_dir = os.path.join(out_dir, _FLAME_APP_DIR)
+        app_dir = os.path.join(out_dir, _FLAME_GRAPH_APP_DIR_NAME)
         if not os.path.isdir(app_dir):
             self.fail(f"no shared speedscope bundle: {app_dir}")
             return
-        for pattern in _FLAME_APP_GLOBS:
+        for pattern in _FLAME_GRAPH_APP_FILE_GLOBS:
             found = sorted(glob.glob(os.path.join(app_dir, pattern)))
             if len(found) != 1:
                 self.fail(
-                    f"{_FLAME_APP_DIR}/ holds {len(found)} files matching "
-                    f"{pattern}, expected exactly 1: {app_dir}"
+                    f"{_FLAME_GRAPH_APP_DIR_NAME}/ holds {len(found)} files"
+                    f" matching {pattern}, expected exactly 1: {app_dir}"
                 )
 
     # A flame graph must hold exactly one evented profile our own tool wrote,
@@ -138,7 +105,9 @@ class ValidateReport:
     def flame_graph_check(self, out_dir: str, has_trace: bool) -> None:
         flame_dir = os.path.join(out_dir, "flame-graph")
         index_text = self.size_check(
-            os.path.join(out_dir, "index.html"), _MIN_INDEX_BYTES, "index.html"
+            os.path.join(out_dir, "index.html"),
+            _VALIDATE_OVERVIEW_PAGE_LEAST_BYTES,
+            "index.html",
         )
         if not has_trace:
             if os.path.exists(flame_dir) or "<h2>trace log</h2>" in index_text:
@@ -155,7 +124,7 @@ class ValidateReport:
         page = self.page_check(
             os.path.join(flame_dir, "index.html"),
             "flame-graph/index.html",
-            _MIN_FLAME_PAGE_BYTES,
+            _VALIDATE_FLAME_GRAPH_PAGE_LEAST_BYTES,
         )
         # the engine is not here, so the page is only a page if it reaches
         # the shared bundle -- and every asset it names must exist
@@ -165,17 +134,17 @@ class ValidateReport:
                     f"flame-graph/index.html names {href}, which is not"
                     f" there: {flame_dir}"
                 )
-        if f"{_FLAME_APP_DIR}/" not in page:
+        if f"{_FLAME_GRAPH_APP_DIR_NAME}/" not in page:
             self.fail(
                 "flame-graph/index.html does not load the shared "
-                f"{_FLAME_APP_DIR}/ bundle: {flame_dir}/index.html"
+                f"{_FLAME_GRAPH_APP_DIR_NAME}/ bundle: {flame_dir}/index.html"
             )
         self.size_check(
             os.path.join(flame_dir, "output.txt"), 20, "flame-graph/output.txt"
         )
         script = self.size_check(
             os.path.join(flame_dir, "profile.js"),
-            _MIN_FLAME_JS_BYTES,
+            _VALIDATE_FLAME_GRAPH_SCRIPT_LEAST_BYTES,
             "flame-graph/profile.js",
         )
         if not script:
@@ -195,19 +164,22 @@ class ValidateReport:
         kinds = [
             profile.get("type") for profile in document.get("profiles", [])
         ]
-        if document.get("exporter") != _FLAME_EXPORTER or kinds != ["evented"]:
+        if document.get("exporter") != _FLAME_GRAPH_EXPORTER_NAME or kinds != [
+            "evented"
+        ]:
             self.fail(
                 "flame-graph/profile.js does not hold one recorded trace from "
-                f"{_FLAME_EXPORTER} (exporter {document.get('exporter')!r}, "
+                f"{_FLAME_GRAPH_EXPORTER_NAME} (exporter"
+                f" {document.get('exporter')!r}, "
                 f"profiles {kinds}): {flame_dir}/profile.js"
             )
         # the engine is shared at the report root, so a copy of it here is
         # the per-test duplication that sharing exists to remove
         for stray in sorted(os.listdir(flame_dir)):
-            if stray not in _FLAME_GRAPH_FILES:
+            if stray not in _FLAME_GRAPH_PAGE_FILE_NAMES:
                 self.fail(
                     f"flame-graph/{stray} duplicates the shared "
-                    f"{_FLAME_APP_DIR}/ bundle: {flame_dir}"
+                    f"{_FLAME_GRAPH_APP_DIR_NAME}/ bundle: {flame_dir}"
                 )
 
     # The heat map must be there, and must carry its own runtime script.
@@ -216,7 +188,7 @@ class ValidateReport:
         text = self.page_check(
             path,
             "heat-map/index.html",
-            _MIN_HEATMAP_BYTES,
+            _VALIDATE_HEAT_MAP_PAGE_LEAST_BYTES,
             f"{test_name} / heat map",
         )
         if text and "report_ui.layout_activate" not in self.page_scripts(
@@ -261,7 +233,9 @@ class ValidateReport:
         has_archive: bool,
     ) -> None:
         path = os.path.join(out_dir, "index.html")
-        text = self.page_check(path, "index.html", _MIN_INDEX_BYTES, test_name)
+        text = self.page_check(
+            path, "index.html", _VALIDATE_OVERVIEW_PAGE_LEAST_BYTES, test_name
+        )
         if not text:
             return
         if not re.search(layout.heading, text):
@@ -313,6 +287,11 @@ class ValidateReport:
             return ""
         return handle.read().decode("utf-8", errors="replace")
 
+    # Anything outside plain ASCII that the allow list does not permit.
+    def non_ascii_re(self) -> re.Pattern[str]:
+        allowed = "".join(_SOURCE_SCAN_ALLOWED_NON_ASCII_CHARS)
+        return re.compile(r"[^\x00-\x7F" + allowed + r"]")
+
     # The overview page: its test-suites table, one link per test, its blocks.
     def overview_check(
         self,
@@ -322,7 +301,7 @@ class ValidateReport:
     ) -> None:
         path = os.path.join(out_dir, "index.html")
         text = self.page_check(
-            path, "index.html", _MIN_INDEX_BYTES, "overview"
+            path, "index.html", _VALIDATE_OVERVIEW_PAGE_LEAST_BYTES, "overview"
         )
         if not text:
             return
@@ -359,10 +338,13 @@ class ValidateReport:
         self,
         path: str,
         label: str,
-        min_bytes: int = _MIN_PAGE_BYTES,
+        min_bytes: int | None = None,
         want_title: str | None = None,
     ) -> str:
-        text = self.size_check(path, min_bytes, label)
+        floor = _VALIDATE_ANY_PAGE_LEAST_BYTES
+        text = self.size_check(
+            path, floor if min_bytes is None else min_bytes, label
+        )
         if not text:
             return text
         if "<title>" not in text:
@@ -413,14 +395,14 @@ class ValidateReport:
     # Every heat map's source text sits in the report's one sources/
     # directory. Confirm.
     def sources_check(self, out_dir: str, tests: Sequence[str]) -> None:
-        sources_dir = os.path.join(out_dir, _SOURCES_DIR)
+        sources_dir = os.path.join(out_dir, _REPORT_SOURCES_DIR_NAME)
         linked = False
         for test_name in tests:
             path = os.path.join(out_dir, test_name, "heat-map", "index.html")
             if not os.path.isfile(path):
                 continue
             with open(path, encoding="utf-8", errors="replace") as handle:
-                if f"/{_SOURCES_DIR}/" in handle.read():
+                if f"/{_REPORT_SOURCES_DIR_NAME}/" in handle.read():
                     linked = True
                     break
         if linked and not os.path.isdir(sources_dir):
@@ -442,7 +424,9 @@ class ValidateReport:
                 f" line: {out_txt}"
             )
         index_text = self.size_check(
-            os.path.join(out_dir, "index.html"), _MIN_INDEX_BYTES, "index.html"
+            os.path.join(out_dir, "index.html"),
+            _VALIDATE_OVERVIEW_PAGE_LEAST_BYTES,
+            "index.html",
         )
         if index_text:
             if has_perf_log and "<h2>perf log</h2>" not in index_text:
@@ -459,7 +443,7 @@ class ValidateReport:
     # One archive: openable, holding a callgrind file, and naming no
     # absolute path from the box that made it.
     def raw_archive_check(self, path: str, name: str) -> None:
-        self.size_check(path, _MIN_RAW_BYTES, f"raw/{name}")
+        self.size_check(path, _VALIDATE_RAW_ARCHIVE_LEAST_BYTES, f"raw/{name}")
         try:
             with tarfile.open(path, "r:xz") as archive:
                 texts = {
@@ -472,7 +456,7 @@ class ValidateReport:
             return
         if not any(
             inner.startswith("callgrind.")
-            and not inner.endswith(settings.CALLERS_SUFFIX)
+            and not inner.endswith(_DIFF_CALLER_COUNTS_FILE_SUFFIX)
             and "events:" in text[:4096]
             for inner, text in texts.items()
         ):
@@ -500,13 +484,18 @@ class ValidateReport:
                 )
             return
         names = sorted(os.listdir(raw_dir)) if os.path.isdir(raw_dir) else []
-        archives = [name for name in names if name.endswith(_ARCHIVE_SUFFIX)]
+        archives = [
+            name for name in names if name.endswith(_REPORT_RAW_ARCHIVE_SUFFIX)
+        ]
         if not archives:
-            self.fail(f"raw/ has no {_ARCHIVE_SUFFIX} archive: {raw_dir}")
+            self.fail(
+                f"raw/ has no {_REPORT_RAW_ARCHIVE_SUFFIX} archive: {raw_dir}"
+            )
         for name in names:
             if name not in archives:
                 self.fail(
-                    f"raw/{name} is not a {_ARCHIVE_SUFFIX} archive -- raw"
+                    f"raw/{name} is not a {_REPORT_RAW_ARCHIVE_SUFFIX}"
+                    " archive -- raw"
                     f" data is stored compressed: {raw_dir}"
                 )
         for name in archives:
@@ -590,6 +579,7 @@ class ValidateReport:
 
     # The sources themselves must stay plain ASCII.
     def unicode_check(self) -> None:
+        non_ascii = self.non_ascii_re()
         for path in self.unicode_scan_paths():
             try:
                 with open(path, encoding="utf-8", errors="replace") as handle:
@@ -597,7 +587,7 @@ class ValidateReport:
             except OSError:
                 continue
             for line_no, line in enumerate(lines, start=1):
-                match = _NON_ASCII_RE.search(line)
+                match = non_ascii.search(line)
                 if match:
                     found = ValidateReport.NonAsciiLine(
                         path=path, line_no=line_no, line=line.rstrip("\n")
@@ -616,12 +606,12 @@ class ValidateReport:
             dirs[:] = [
                 d
                 for d in dirs
-                if d not in _UNICODE_SCAN_SKIP_DIRS and not d.startswith(".")
+                if d not in _SOURCE_SCAN_SKIPPED_DIRS and not d.startswith(".")
             ]
             for name in names:
                 if (
-                    name.endswith(_UNICODE_SCAN_EXTS)
-                    or name in _UNICODE_SCAN_NAMES
+                    name.endswith(_SOURCE_SCAN_FILE_EXTENSIONS)
+                    or name in _SOURCE_SCAN_FILE_NAMES
                 ):
                     paths.append(os.path.join(root, name))
         return sorted(paths)

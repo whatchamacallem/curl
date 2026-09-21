@@ -13,7 +13,9 @@ window.ui_strings = (function () {
     str_column_count: "count",
     str_column_defined_at: "defined at",
     str_column_event: "event",
+    str_column_file_share: "file %",
     str_column_function: "function",
+    str_column_function_share: "function %",
     str_column_global_share: "global %",
     str_column_inclusive: "incl",
     str_column_line: "line",
@@ -90,7 +92,7 @@ window.ui_strings = (function () {
   function text_of(string_id) {
     return Object.prototype.hasOwnProperty.call(STRINGS, string_id)
       ? STRINGS[string_id]
-      : string_id;
+      : "(update ui_strings.js)";
   }
   return { text_fill, text_of };
 })();

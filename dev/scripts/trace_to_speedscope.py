@@ -11,6 +11,14 @@ from typing import NamedTuple, NotRequired, TypedDict
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import callgrind
+import settings
+
+# Every value this file takes from settings.py, declared as the type it
+# expects and loaded before any other name this module binds.
+_FLAME_GRAPH_EXPORTER_NAME: str
+_FLAME_GRAPH_FILE_FORMAT_SCHEMA_URL: str
+_FLAME_GRAPH_MAX_RECORDED_CALLS: int
+settings.load_into(__name__)
 
 # The high bit cyg.c sets on a timestamp to mark a function exit.
 _EXIT_BIT = 1 << 63
@@ -21,14 +29,8 @@ _HEADER_WORDS = 8
 # "CYG2" -- the first word of a trace cyg.c wrote.
 _MAGIC = 0x32475943
 
-# The most complete calls to keep..
-_MAX_CALLS = 200
-
 # How many 64-bit words one recorded event takes: the function, then the stamp.
 _RECORD_WORDS = 2
-
-# The format the written document declares itself to be.
-_SCHEMA = "https://www.speedscope.app/file-format-schema.json"
 
 
 # Event - One enter or exit, as speedscope's evented format spells it.
@@ -87,7 +89,8 @@ SpeedscopeDoc = TypedDict(
 
 
 # TraceToSpeedscope - Turns one rdtsc trace into a speedscope document,
-# keeping the busiest run's first _MAX_CALLS complete calls.
+# keeping the busiest run's first _FLAME_GRAPH_MAX_RECORDED_CALLS complete
+# calls.
 class TraceToSpeedscope:
     # CallSpan - One top-level call, as a span of record numbers.
     class CallSpan(NamedTuple):
@@ -197,7 +200,7 @@ class TraceToSpeedscope:
             f"..{trace.skip + last + 1:,} of {trace.seen:,}"
         )
         return {
-            "$schema": _SCHEMA,
+            "$schema": _FLAME_GRAPH_FILE_FORMAT_SCHEMA_URL,
             "shared": {"frames": [frames[function] for function in order]},
             "profiles": [
                 {
@@ -210,7 +213,7 @@ class TraceToSpeedscope:
                 }
             ],
             "name": name,
-            "exporter": "dev/scripts/trace_to_speedscope.py",
+            "exporter": _FLAME_GRAPH_EXPORTER_NAME,
         }
 
     # Name every traced address, by asking addr2line once per object file.
@@ -307,7 +310,8 @@ class TraceToSpeedscope:
                     )
         return mappings
 
-    # Read a trace and write the document for its first _MAX_CALLS calls.
+    # Read a trace and write the document for its first
+    # _FLAME_GRAPH_MAX_RECORDED_CALLS calls.
     def run(self, args: TraceToSpeedscope.TraceArgs) -> None:
         trace = self.load(args.trace_file)
         print(
@@ -316,7 +320,7 @@ class TraceToSpeedscope:
             f" {trace.tsc_per_ns:.6f} tsc/ns",
             file=sys.stderr,
         )
-        calls = self.calls(trace)[:_MAX_CALLS]
+        calls = self.calls(trace)[:_FLAME_GRAPH_MAX_RECORDED_CALLS]
         if not calls:
             sys.exit(
                 f"error: {args.trace_file}: no call both starts and ends"
