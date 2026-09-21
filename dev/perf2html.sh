@@ -5,7 +5,7 @@ set -euo pipefail
 SCRIPT="$(readlink -f "$0")"
 cd "$(dirname "$SCRIPT")"
 
-ARCHIVE_SUFFIX=txz
+ARCHIVE_SUFFIX=.txz
 ASSETS_DIR=assets
 BUILD_DIR=build-relwithdebinfo
 FLAME_APP_DIR=flame-graph-app

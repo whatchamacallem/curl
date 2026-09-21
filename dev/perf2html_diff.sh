@@ -5,7 +5,7 @@ set -euo pipefail
 SCRIPT="$(readlink -f "$0")"
 cd "$(dirname "$SCRIPT")"
 
-ARCHIVE_SUFFIX=txz
+ARCHIVE_SUFFIX=.txz
 ASSETS_DIR=assets
 DIFF_MANIFEST='curl/perf2html_diff.sh v1'
 REPORT_MANIFEST='curl/perf2html.sh v1'
