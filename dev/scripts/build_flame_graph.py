@@ -1,30 +1,34 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-import argparse, base64, json, os, sys, typing
+import argparse, base64, json, os, sys
+from typing import NamedTuple
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import settings, theme
 
 # Every value this file takes from settings.py, declared as the type it
 # expects and loaded before any other name this module binds.
+_ASSET_TEMPLATE_FLAME_GRAPH_BOOTSTRAP_NAME: str
+_ASSET_TEMPLATE_FLAME_GRAPH_PAGE_NAME: str
 _FLAME_GRAPH_PROFILE_SCRIPT_NAME: str
 settings.load_into(__name__)
 
-# The script that hands the embedded profile to speedscope once it has
-# loaded -- it polls, because speedscope finishes starting up well after
-# its own script tag has run.
-_BOOTSTRAP = theme.asset_text_read("flame_bootstrap.js")
+# Hands the embedded profile to speedscope. It polls, because speedscope
+# starts up well after its own script tag has run.
+_BOOTSTRAP = theme.asset_text_read(
+    _ASSET_TEMPLATE_FLAME_GRAPH_BOOTSTRAP_NAME
+)
 
 # The page itself: a link and two script tags, the markers substituted.
-_PAGE = theme.asset_text_read("flame_graph.html")
+_PAGE = theme.asset_text_read(_ASSET_TEMPLATE_FLAME_GRAPH_PAGE_NAME)
 
 
 # BuildFlameGraph - Writes one flame graph page: this test's recorded
 # profile, plus links to the report's one shared copy of speedscope.
 class BuildFlameGraph:
     # FlameGraphArgs - Where the page goes and what it points at.
-    class FlameGraphArgs(typing.NamedTuple):
+    class FlameGraphArgs(NamedTuple):
         # the shared bundle's stylesheet, a bare file name
         app_css: str
         # relative href from the page to the shared speedscope bundle

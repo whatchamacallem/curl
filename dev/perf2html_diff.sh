@@ -1,31 +1,59 @@
 #!/usr/bin/env bash
 # dev/perf2html_diff.sh [--verbose] [--keep-raw] [--regenerate]
-#     [baseline-dir] [modified-dir] [report-dir]
+#     [--artifacts=DIR] [baseline-dir] [modified-dir] [report-dir]
+#
+# The unpacked profiles and the subtracted working files are written to a
+# temporary artifacts directory. It sits beside the report by default --
+# the parent directory of report-dir, holding
+# perf2html_temporary_artifacts/ -- so a read-only checkout still diffs.
+# --artifacts=DIR overrides that.
+#
+# Both inputs are refused unless their version line and recorded checksum
+# hold. MANIFEST.txt is written last, once every page, asset and raw
+# archive is in place, so a report holding one is a run that finished.
 set -euo pipefail
+# this script's resolved path. Every other path is relative to its dir
 SCRIPT="$(readlink -f "$0")"
 cd "$(dirname "$SCRIPT")"
 
-ARCHIVE_SUFFIX=.txz
-ASSETS_DIR=assets
-DIFF_MANIFEST='curl/perf2html_diff.sh v1'
-REPORT_MANIFEST='curl/perf2html.sh v1'
+# MANIFEST.txt is written by report_manifest.sh, which also supplies
+# REPORT_MANIFEST and DIFF_MANIFEST, the checksum and every check that
+# reads a report back.
+# shellcheck source=report_manifest.sh
+. ./report_manifest.sh
 
+# extension of one test's raw-data archive
+ARCHIVE_SUFFIX=.txz
+# default artifacts directory name, beside the report
+ARTIFACTS_NAME=perf2html_temporary_artifacts
+# report subdirectory holding the one shared theme copy
+ASSETS_DIR=assets
+
+# this run's identity, reused from the manifest on --regenerate
 STAMP="$(date +%s)"
 
+# usage_show - prints the usage banner
 usage_show() {
   cat <<'EOF'
 perf2html_diff.sh [--verbose] [--keep-raw] [--regenerate]
-    [baseline-dir] [modified-dir] [report-dir]
+    [--artifacts=DIR] [baseline-dir] [modified-dir] [report-dir]
+
+--artifacts=DIR holds the unpacked profiles and the subtracted working
+files; it defaults to perf2html_temporary_artifacts/ beside the report
+directory.
 EOF
 }
 
+# path_display - a path rewritten relative to the working directory
 path_display() {
   python3 -c 'import os, sys
 print(os.path.relpath(sys.argv[1], sys.argv[2]))' "$1" "$PWD"
 }
 
+# verbose - the one function testing $VERBOSE
 verbose() { if [ "$VERBOSE" = 1 ]; then echo "$@"; fi; }
 
+# test_run - runs a child, logs it, and exits printing the tail on failure
 test_run() {
   local exit_code=0 from
   printf '\n$ %s\n' "$*" >>"$RUN_LOG"
@@ -49,10 +77,12 @@ test_run() {
   fi
 }
 
+# args_parse - reads the flags and the three directories, all absolute
 args_parse() {
   VERBOSE=0
   KEEP_RAW=0
   REGENERATE=0
+  ARTIFACTS_DIR=""
   while [ $# -gt 0 ]; do
     case "$1" in
       -h | --help)
@@ -70,6 +100,10 @@ args_parse() {
       --regenerate)
         REGENERATE=1
         KEEP_RAW=1
+        shift
+        ;;
+      --artifacts=*)
+        ARTIFACTS_DIR="${1#--artifacts=}"
         shift
         ;;
       *) break ;;
@@ -103,34 +137,35 @@ args_parse() {
       *) printf -v "$dir" '%s' "$PWD/${!dir}" ;;
     esac
   done
+  if [ -z "$ARTIFACTS_DIR" ]; then
+    ARTIFACTS_DIR="$(dirname "$OUT_DIR")/$ARTIFACTS_NAME"
+  fi
+  case "$ARTIFACTS_DIR" in
+    "~/"*) ARTIFACTS_DIR="$HOME/${ARTIFACTS_DIR#"~/"}" ;;
+    /*) ;;
+    *) ARTIFACTS_DIR="$PWD/$ARTIFACTS_DIR" ;;
+  esac
 }
 
+# manifest_check - refuses an input whose version line is not exactly a
+# perf2html.sh report's, which is how a diff is never read back as one.
 manifest_check() {
-  local dir="$1" role="$2" manifest="$1/MANIFEST.txt" version
-  if [ ! -f "$manifest" ]; then
-    echo "error: $role report has no MANIFEST.txt, so it is not a" \
-      "recognized input: $dir" >&2
-    echo "       (perf2html.sh writes one; reports made before it did" \
-      "must be regenerated)" >&2
-    exit 2
-  fi
-  version="$(head -1 "$manifest")"
-  if [ "$version" = "$DIFF_MANIFEST" ]; then
+  local dir="$1" role="$2" manifest="$1/MANIFEST.txt"
+  if [ -f "$manifest" ] \
+    && [ "$(head -1 "$manifest")" = "$DIFF_MANIFEST" ]; then
     echo "error: can't diff a diff -- the $role report was written by" \
       "perf2html_diff.sh: $dir" >&2
+    echo "       found:    $DIFF_MANIFEST" >&2
+    echo "       expected: $REPORT_MANIFEST" >&2
     exit 2
   fi
-  if [ "$version" != "$REPORT_MANIFEST" ]; then
-    echo "error: unrecognized file type -- $role report has an" \
-      "unrecognized MANIFEST.txt: $dir" >&2
-    echo "       expected its first line to be: $REPORT_MANIFEST" >&2
-    exit 2
-  fi
+  manifest_verify "$dir" "$REPORT_MANIFEST" "$role"
 }
 
+# header_file_of - writes one input's LABEL=VALUE rows for the overview
 header_file_of() {
   local dir="$1" role="$2"
-  local out="$PWD/temporary_artifacts/header.$role.$STAMP.txt"
+  local out="$ARTIFACTS_DIR/header.$role.$STAMP.txt"
   {
     echo "report=$(path_display "$dir")"
     grep '=' "$dir/MANIFEST.txt" || true
@@ -138,11 +173,12 @@ header_file_of() {
   echo "$out"
 }
 
+# raw_archive_write - packs the named files into one test's raw archive
 raw_archive_write() {
   local name="$1" out="$2"
   shift 2
   local stage file staged
-  stage="$PWD/temporary_artifacts/stage.$name.$STAMP"
+  stage="$ARTIFACTS_DIR/stage.$name.$STAMP"
   rm -rf "$stage"
   mkdir -p "$stage" "$out/raw"
   for file in "$@"; do
@@ -156,9 +192,11 @@ raw_archive_write() {
   rm -rf "$stage"
 }
 
+# profiles_extract - unpacks one report's archives once and lists them,
+# synthesizing the "all" row as the union of every real test's profiles
 profiles_extract() {
   local dir="$1" role="$2"
-  local listing="$PWD/temporary_artifacts/profiles.$role.$STAMP.txt"
+  local listing="$ARTIFACTS_DIR/profiles.$role.$STAMP.txt"
   local archive test into files every=""
   : >"$listing"
   for archive in "$dir"/raw/*"$ARCHIVE_SUFFIX" \
@@ -166,7 +204,7 @@ profiles_extract() {
     [ -f "$archive" ] || continue
     test="$(basename "$(dirname "$(dirname "$archive")")")"
     [ "$test" = "$(basename "$dir")" ] && test=.
-    into="$PWD/temporary_artifacts/$role.$test.$STAMP"
+    into="$ARTIFACTS_DIR/$role.$test.$STAMP"
     rm -rf "$into"
     mkdir -p "$into"
     test_run tar xJf "$archive" -C "$into"
@@ -180,6 +218,7 @@ profiles_extract() {
   echo "$listing"
 }
 
+# tests_pair - the tests both reports hold, noting each one-sided name
 tests_pair() {
   local base_tests cur_tests name
   base_tests="$(cut -d' ' -f1 "$BASE_LISTING" | sort -u)"
@@ -203,18 +242,20 @@ tests_pair() {
   comm -12 <(echo "$base_tests") <(echo "$cur_tests")
 }
 
+# profiles_of - one test's profile files, read out of a listing
 profiles_of() {
   awk -v want="$2" \
     'found { next }
      $1 == want { $1 = ""; print substr($0, 2); found = 1 }' "$1"
 }
 
+# diff_one - subtracts one test and generates its summary and heat map
 diff_one() {
   local test="$1" out="$2" name="$3"
   local diff_file callers_file base_files cur_files args help_args=()
   local archive root_args=()
   [ "$MULTI" = 1 ] || root_args=(--single-test-report)
-  diff_file="$PWD/temporary_artifacts/callgrind.diff.$name.$STAMP"
+  diff_file="$ARTIFACTS_DIR/callgrind.diff.$name.$STAMP"
   callers_file="$diff_file.callers.json"
   base_files="$(profiles_of "$BASE_LISTING" "$test")"
   cur_files="$(profiles_of "$MODIFIED_LISTING" "$test")"
@@ -247,30 +288,30 @@ diff_one() {
   printf '%-13sdiff -> %s\n' "$name" "${out#"$PWD"/}/index.html"
 }
 
+# main - checks both inputs, diffs every shared test, stamps the report
 main() {
   args_parse "$@"
 
   manifest_check "$BASE_DIR" baseline
   manifest_check "$MOD_DIR" modified
 
-  [ "$KEEP_RAW" = 1 ] || rm -rf temporary_artifacts
+  [ "$KEEP_RAW" = 1 ] || rm -rf "$ARTIFACTS_DIR"
   if [ "$REGENERATE" = 1 ]; then
+    # reusing a previous stamp means reading that report back, so it has
+    # to hold up as one first
+    manifest_verify "$OUT_DIR" "$DIFF_MANIFEST" "--regenerate input"
     local previous
-    previous="$(sed -n 's/^stamp=//p' "$OUT_DIR/MANIFEST.txt" 2>/dev/null \
-      | head -1)"
+    previous="$(manifest_value "$OUT_DIR" stamp)"
     if [ -n "$previous" ]; then STAMP="$previous"; fi
   fi
-  mkdir -p "$OUT_DIR" temporary_artifacts
-  RUN_LOG="$PWD/temporary_artifacts/diff.$STAMP.log"
+  mkdir -p "$OUT_DIR" "$ARTIFACTS_DIR"
+  # the line above is the last reader of the previous run's manifest, so a
+  # run that aborts from here on leaves a directory no tool will open
+  rm -f "$OUT_DIR/MANIFEST.txt"
+  RUN_LOG="$ARTIFACTS_DIR/diff.$STAMP.log"
   cp README.md "$OUT_DIR/README.md"
   test_run python3 scripts/build_report.py assets \
     -o "$OUT_DIR/$ASSETS_DIR"
-  {
-    printf '%s\n' "$DIFF_MANIFEST"
-    echo "baseline=$(path_display "$BASE_DIR")"
-    echo "modified=$(path_display "$MOD_DIR")"
-    echo "stamp=$STAMP"
-  } >"$OUT_DIR/MANIFEST.txt"
   echo "dev/perf2html_diff.sh $STAMP: $BASE_DIR -> $MOD_DIR -> $OUT_DIR" \
     >"$RUN_LOG"
 
@@ -301,14 +342,25 @@ main() {
     for test_name in $tests; do
       diff_one "$test_name" "$OUT_DIR/$test_name" "$test_name"
       args+=(--test "$test_name" --diff-profile
-        "$test_name=$PWD/temporary_artifacts/callgrind.diff.$test_name.$STAMP")
+        "$test_name=$ARTIFACTS_DIR/callgrind.diff.$test_name.$STAMP")
     done
     verbose "== overview -> $OUT_DIR/index.html =="
     test_run python3 scripts/build_report.py overview "${args[@]}"
     printf '%-13s%s\n' overview "${OUT_DIR#"$PWD"/}/index.html"
   fi
 
-  if [ "$KEEP_RAW" != 1 ]; then rm -rf temporary_artifacts; fi
+  # last of all, once every page, asset and raw archive is in place: the
+  # manifest is what says this run finished, and its checksum covers the
+  # finished tree
+  verbose "== manifest -> $OUT_DIR/MANIFEST.txt =="
+  manifest_write "$DIFF_MANIFEST" "$OUT_DIR" \
+    "baseline=$(path_display "$BASE_DIR")" \
+    "modified=$(path_display "$MOD_DIR")" \
+    "stamp=$STAMP"
+  printf '%-13s%s\n' manifest \
+    "$(manifest_value "$OUT_DIR" "$CHECKSUM_LABEL")"
+
+  if [ "$KEEP_RAW" != 1 ]; then rm -rf "$ARTIFACTS_DIR"; fi
   echo "file://$OUT_DIR/index.html"
 }
 

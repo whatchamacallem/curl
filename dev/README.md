@@ -31,33 +31,33 @@ report. The positional args default to `perf2html_baseline_report`,
 `perf2html_batch.sh` generates the baseline, modified and diff reports in one
 run using the default report directory names.
 
-## Callgrind Events
+## Callgrind Counters
 
 These are the raw counters callgrind records and the derived ones this report
-adds up from them. They show up as column headers and event picker choices in
-the heat map, under these same names.
+adds up from them. They show up as column headers and counter picker choices
+in the heat map, under these same names.
 
-| Event | Meaning                             | Derived from          |
-| ----- | ----------------------------------- | --------------------- |
-| Ir    | instructions executed               |                       |
-| Dr    | data reads                          |                       |
-| Dw    | data writes                         |                       |
-| I1mr  | L1 instruction cache misses         |                       |
-| D1mr  | L1 data cache read misses           |                       |
-| D1mw  | L1 data cache write misses          |                       |
-| ILmr  | last level instruction cache misses |                       |
-| DLmr  | last level data cache read misses   |                       |
-| DLmw  | last level data cache write misses  |                       |
-| Bc    | conditional branches executed       |                       |
-| Bcm   | conditional branches mispredicted   |                       |
-| Bi    | indirect branches executed          |                       |
-| Bim   | indirect branches mispredicted      |                       |
-| D1m   | L1 data cache misses                | D1mr + D1mw           |
-| DLm   | last level data cache misses        | DLmr + DLmw           |
-| L1m   | L1 cache misses, all                | I1mr + D1mr + D1mw    |
-| LLm   | last level cache misses, all        | ILmr + DLmr + DLmw    |
-| Bm    | branches mispredicted, all          | Bcm + Bim             |
-| CEst  | cycle estimate                      | Ir + 10 L1m + 100 LLm |
+| Counter | Meaning                             | Derived from          |
+| ------- | ----------------------------------- | --------------------- |
+| Ir      | instructions executed               |                       |
+| Dr      | data reads                          |                       |
+| Dw      | data writes                         |                       |
+| I1mr    | L1 instruction cache misses         |                       |
+| D1mr    | L1 data cache read misses           |                       |
+| D1mw    | L1 data cache write misses          |                       |
+| ILmr    | last level instruction cache misses |                       |
+| DLmr    | last level data cache read misses   |                       |
+| DLmw    | last level data cache write misses  |                       |
+| Bc      | conditional branches executed       |                       |
+| Bcm     | conditional branches mispredicted   |                       |
+| Bi      | indirect branches executed          |                       |
+| Bim     | indirect branches mispredicted      |                       |
+| D1m     | L1 data cache misses                | D1mr + D1mw           |
+| DLm     | last level data cache misses        | DLmr + DLmw           |
+| L1m     | L1 cache misses, all                | I1mr + D1mr + D1mw    |
+| LLm     | last level cache misses, all        | ILmr + DLmr + DLmw    |
+| Bm      | branches mispredicted, all          | Bcm + Bim             |
+| CEst    | cycle estimate                      | Ir + 10 L1m + 100 LLm |
 
 `CEst` weights a miss by roughly what it costs and is used by default.
 

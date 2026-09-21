@@ -1,8 +1,6 @@
 window.report_ui = (function () {
   "use strict";
 
-  // Every setting this file reads, each resolved once here so
-  // no name is looked up twice and none inside a loop.
   const TABLE_COLUMN_NARROWEST_DRAG_PX = settings(
     "TABLE_COLUMN_NARROWEST_DRAG_PX",
   );

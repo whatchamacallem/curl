@@ -1,22 +1,52 @@
 #!/usr/bin/env bash
 # dev/perf2html_batch.sh [--verbose] [--keep] [--keep-raw] [--regenerate]
-#     [cmake_flags...]
+#     [--artifacts=DIR] [target-dir] [cmake_flags...]
+#
+# The three reports keep their default names and are created in target-dir
+# (the current directory when it is not given). The batch cannot rename
+# them: call perf2html.sh or perf2html_diff.sh directly for that.
+#
+# Raw recordings are written to a temporary artifacts directory. It sits
+# beside the reports by default -- target-dir holding
+# perf2html_temporary_artifacts/ -- so a read-only checkout still
+# profiles. --artifacts=DIR overrides that and is forwarded to both
+# children, so all three stages share one directory.
 set -uo pipefail
 SCRIPT="$(readlink -f "$0")"
 cd "$(dirname "$SCRIPT")"
 
-BASE_DIR=perf2html_baseline_report
-MOD_DIR=perf2html_modified_report
-DIFF_DIR=perf2html_diff_report
+# directory name holding the raw recordings, inside target-dir
+ARTIFACTS_NAME=perf2html_temporary_artifacts
+# report directory name for the unmodified build
+BASE_NAME=perf2html_baseline_report
+# report directory name for the build carrying the cmake flags
+MOD_NAME=perf2html_modified_report
+# report directory name for the subtraction of the two
+DIFF_NAME=perf2html_diff_report
+# cmake flags for the modified build when the caller gives none
 DEFAULT_FLAGS=(-D CMAKE_C_FLAGS=-Os)
 
+# seconds since the epoch, naming this run's log
 STAMP="$(date +%s)"
-RUN_LOG="$PWD/temporary_artifacts/perf2html_batch.$STAMP.log"
 
+# usage_show - the help text, for -h and --help
 usage_show() {
   cat <<'EOF'
 perf2html_batch.sh [--verbose] [--keep] [--keep-raw] [--regenerate]
-    [cmake_flags...]
+    [--artifacts=DIR] [target-dir] [cmake_flags...]
+
+target-dir is where the three default-named reports are created:
+perf2html_baseline_report, perf2html_modified_report and
+perf2html_diff_report. It defaults to the current directory. The batch
+cannot rename them -- call perf2html.sh or perf2html_diff.sh directly.
+
+The first argument that does not start with "-" is target-dir; every
+argument after it, and every unrecognized argument starting with "-",
+is a cmake flag. A bare "-D" or "-U" claims the argument after it as
+its value, so "-D CMAKE_C_FLAGS=-Os" still reads as one cmake flag.
+
+--artifacts=DIR holds the raw recordings; it defaults to
+perf2html_temporary_artifacts/ inside target-dir.
 EOF
 }
 
@@ -33,6 +63,7 @@ elapsed_show() {
   printf '%d.%02d' "$((delta / 1000000))" "$((delta % 1000000 / 10000))"
 }
 
+# verbose - the one function testing $VERBOSE, printing only when set
 verbose() { if [ "$VERBOSE" = 1 ]; then echo "$@"; fi; }
 
 # took - a step's own duration, 1m23s or 12s, from its start microseconds.
@@ -45,6 +76,8 @@ took() {
   fi
 }
 
+# step_run - runs one numbered step, logging it, and records a failure
+# in STATUS and FAILED instead of returning non-zero.
 step_run() {
   local number="$1" name="$2"
   shift 2
@@ -82,11 +115,25 @@ step_run() {
   return 0
 }
 
+# args_parse - reads the command line into the globals, and derives every
+# absolute *_DIR and RUN_LOG path from target-dir.
 args_parse() {
   VERBOSE=0
   KEEP=0
   PASS_ARGS=()
+  CMAKE_FLAGS=()
+  TARGET_DIR=""
+  ARTIFACTS_DIR=""
+  local target_seen=0 value_wanted=0
   while [ $# -gt 0 ]; do
+    # a bare -D takes the next argument as its value, so that value is
+    # never read as target-dir
+    if [ "$target_seen" = 1 ] || [ "$value_wanted" = 1 ]; then
+      CMAKE_FLAGS+=("$1")
+      value_wanted=0
+      shift
+      continue
+    fi
     case "$1" in
       -h | --help)
         usage_show
@@ -109,33 +156,70 @@ args_parse() {
         KEEP=1
         shift
         ;;
-      *) break ;;
+      --artifacts=*)
+        ARTIFACTS_DIR="${1#--artifacts=}"
+        shift
+        ;;
+      -D | -U)
+        CMAKE_FLAGS+=("$1")
+        value_wanted=1
+        shift
+        ;;
+      -*)
+        CMAKE_FLAGS+=("$1")
+        shift
+        ;;
+      *)
+        TARGET_DIR="$1"
+        target_seen=1
+        shift
+        ;;
     esac
   done
-  CMAKE_FLAGS=("$@")
   [ "${#CMAKE_FLAGS[@]}" -gt 0 ] || CMAKE_FLAGS=("${DEFAULT_FLAGS[@]}")
+  [ -n "$TARGET_DIR" ] || TARGET_DIR="$PWD"
+  case "$TARGET_DIR" in
+    "~/"*) TARGET_DIR="$HOME/${TARGET_DIR#"~/"}" ;;
+    /*) ;;
+    *) TARGET_DIR="$PWD/$TARGET_DIR" ;;
+  esac
+  if [ -z "$ARTIFACTS_DIR" ]; then
+    ARTIFACTS_DIR="$TARGET_DIR/$ARTIFACTS_NAME"
+  fi
+  case "$ARTIFACTS_DIR" in
+    "~/"*) ARTIFACTS_DIR="$HOME/${ARTIFACTS_DIR#"~/"}" ;;
+    /*) ;;
+    *) ARTIFACTS_DIR="$PWD/$ARTIFACTS_DIR" ;;
+  esac
+  BASE_DIR="$TARGET_DIR/$BASE_NAME"
+  MOD_DIR="$TARGET_DIR/$MOD_NAME"
+  DIFF_DIR="$TARGET_DIR/$DIFF_NAME"
+  RUN_LOG="$ARTIFACTS_DIR/perf2html_batch.$STAMP.log"
 }
 
+# reports_clean - deletes the three report directories
 reports_clean() {
   rm -rf "$BASE_DIR" "$MOD_DIR" "$DIFF_DIR"
 }
 
+# main - runs baseline, modified and diff, each step even after a failure,
+# and owns every deletion of the artifacts directory.
 main() {
   args_parse "$@"
   START_US="$(now_us)"
-  local child_args=("${PASS_ARGS[@]}")
+  local child_args=("${PASS_ARGS[@]}" "--artifacts=$ARTIFACTS_DIR")
   RAW_KEEP=1
   case " ${PASS_ARGS[*]} " in
     *" --keep-raw "* | *" --regenerate "*) ;;
     *)
       RAW_KEEP=0
-      printf '[%ss] removing stale dev/temporary_artifacts/\n' \
-        "$(elapsed_show)"
-      rm -rf temporary_artifacts
+      printf '[%ss] removing stale %s/\n' \
+        "$(elapsed_show)" "$ARTIFACTS_DIR"
+      rm -rf "$ARTIFACTS_DIR"
       child_args+=(--keep-raw)
       ;;
   esac
-  mkdir -p temporary_artifacts
+  mkdir -p "$ARTIFACTS_DIR"
   STATUS=0
   FAILED=()
   local verbose_args=()
@@ -159,17 +243,17 @@ main() {
     printf '[%ss] perf2html_batch: %s step(s) failed: %s\n' \
       "$(elapsed_show)" "${#FAILED[@]}" "${FAILED[*]}" >&2
     if [ "$RAW_KEEP" = 0 ]; then
-      printf '[%ss] perf2html_batch: dev/temporary_artifacts/ kept for %s\n' \
-        "$(elapsed_show)" "diagnosis (a clean run deletes it)" >&2
+      printf '[%ss] perf2html_batch: %s/ kept for %s\n' \
+        "$(elapsed_show)" "$ARTIFACTS_DIR" \
+        "diagnosis (a clean run deletes it)" >&2
     fi
     return 1
   fi
   if [ "$RAW_KEEP" = 0 ]; then
-    printf '[%ss] removing dev/temporary_artifacts/\n' "$(elapsed_show)"
-    rm -rf temporary_artifacts
+    printf '[%ss] removing %s/\n' "$(elapsed_show)" "$ARTIFACTS_DIR"
+    rm -rf "$ARTIFACTS_DIR"
   fi
-  printf '[%ss] file://%s/%s/index.html\n' "$(elapsed_show)" \
-    "$PWD" "$DIFF_DIR"
+  printf '[%ss] file://%s/index.html\n' "$(elapsed_show)" "$DIFF_DIR"
   return 0
 }
 

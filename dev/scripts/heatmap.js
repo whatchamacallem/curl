@@ -12,6 +12,9 @@
   const HEAT_MAP_CONTROL_DROPDOWN_EXTRA_WIDTH_CHARS = settings(
     "HEAT_MAP_CONTROL_DROPDOWN_EXTRA_WIDTH_CHARS",
   );
+  const HEAT_MAP_COUNTER_DESCRIPTION_STRING_ID_PREFIX = settings(
+    "HEAT_MAP_COUNTER_DESCRIPTION_STRING_ID_PREFIX",
+  );
   const HEAT_MAP_HOME_LINES_LOCATION_MAX_CHARS = settings(
     "HEAT_MAP_HOME_LINES_LOCATION_MAX_CHARS",
   );
@@ -32,6 +35,9 @@
   );
   const HEAT_MAP_MINIMAP_VIEWPORT_BOX_SMALLEST_PX = settings(
     "HEAT_MAP_MINIMAP_VIEWPORT_BOX_SMALLEST_PX",
+  );
+  const HEAT_MAP_SECONDARY_COUNTER_NAMES = settings(
+    "HEAT_MAP_SECONDARY_COUNTER_NAMES",
   );
   const HEAT_MAP_SOURCE_HOT_LINE_BUTTON_LEAST_SHARE = settings(
     "HEAT_MAP_SOURCE_HOT_LINE_BUTTON_LEAST_SHARE",
@@ -63,6 +69,9 @@
   const LAYOUT_RESIZE_SETTLE_DELAY_MS = settings(
     "LAYOUT_RESIZE_SETTLE_DELAY_MS",
   );
+  const NUMBER_SMALLEST_PRINTED_PERCENT = settings(
+    "NUMBER_SMALLEST_PRINTED_PERCENT",
+  );
   const TABLE_COLUMN_EXTRA_WIDTH_CHARS = settings(
     "TABLE_COLUMN_EXTRA_WIDTH_CHARS",
   );
@@ -87,8 +96,8 @@
   let current_file_path = null,
     search_query = "";
   const sort_select = document.getElementById("sort");
-  document.getElementById("eventLabel").textContent =
-    window.ui_strings.text_of("str_control_event");
+  document.getElementById("counterLabel").textContent =
+    window.ui_strings.text_of("str_control_counter");
   document.getElementById("scaleLabel").textContent =
     window.ui_strings.text_of("str_control_scale");
   document.getElementById("sortLabel").textContent =
@@ -112,9 +121,9 @@
 
   const vector_at = (cost_vector, index) =>
     cost_vector && index < cost_vector.length ? cost_vector[index] : 0;
-  const event_list = [];
-  profile_model.heatMapTotals.events.forEach((name, index) => {
-    event_list.push({
+  const counter_list = [];
+  profile_model.heatMapTotals.counters.forEach((name, index) => {
+    counter_list.push({
       key: name,
       get: (cost_vector) => vector_at(cost_vector, index),
     });
@@ -126,71 +135,60 @@
           running_total + term[0] * vector_at(cost_vector, term[1]),
         0,
       );
-    event_list.push({
+    counter_list.push({
       key: name,
       get,
       derived: true,
     });
   }
-  const event_find = (key) => event_list.find((event) => event.key === key);
-  let current_event =
-    event_find(profile_model.heatMapTotals.defaultEvent) || event_list[0];
-  const secondary_events = ["D1m", "DLm", "Bcm"]
-    .map(event_find)
-    .filter(Boolean);
+  const counter_find = (key) =>
+    counter_list.find((counter) => counter.key === key);
+  let current_counter =
+    counter_find(profile_model.heatMapTotals.defaultCounter) ||
+    counter_list[0];
+  const secondary_counters = HEAT_MAP_SECONDARY_COUNTER_NAMES.map(
+    counter_find,
+  ).filter(Boolean);
 
   const text_of = window.ui_strings.text_of;
   const text_fill = window.ui_strings.text_fill;
-  const EVENT_STRING_IDS = {
-    Ir: "str_event_ir",
-    Dr: "str_event_dr",
-    Dw: "str_event_dw",
-    I1mr: "str_event_i1mr",
-    D1mr: "str_event_d1mr",
-    D1mw: "str_event_d1mw",
-    ILmr: "str_event_ilmr",
-    DLmr: "str_event_dlmr",
-    DLmw: "str_event_dlmw",
-    Bc: "str_event_bc",
-    Bcm: "str_event_bcm",
-    Bi: "str_event_bi",
-    Bim: "str_event_bim",
-    D1m: "str_event_d1m",
-    DLm: "str_event_dlm",
-    L1m: "str_event_l1m",
-    LLm: "str_event_llm",
-    Bm: "str_event_bm",
-    CEst: "str_event_cest",
+  const MISSING_STRING_TEXT = text_of("str_no_such_string_id");
+  const counter_label = (counter) => {
+    const described = text_of(
+      HEAT_MAP_COUNTER_DESCRIPTION_STRING_ID_PREFIX +
+        counter.key.toLowerCase(),
+    );
+    return described === MISSING_STRING_TEXT
+      ? counter.key
+      : described + " / " + counter.key;
   };
-  const event_label = (event) =>
-    EVENT_STRING_IDS[event.key]
-      ? text_of(EVENT_STRING_IDS[event.key]) + " / " + event.key
-      : event.key;
-  const event_select = document.getElementById("event");
-  let event_label_width = 0;
-  for (const event of event_list) {
+  const counter_select = document.getElementById("counter");
+  let counter_label_width = 0;
+  for (const counter of counter_list) {
     const option = document.createElement("option");
-    option.value = event.key;
-    option.textContent = event_label(event);
-    event_label_width = Math.max(event_label_width, option.textContent.length);
-    event_select.appendChild(option);
+    option.value = counter.key;
+    option.textContent = counter_label(counter);
+    counter_label_width = Math.max(
+      counter_label_width,
+      option.textContent.length,
+    );
+    counter_select.appendChild(option);
   }
-  event_select.value = current_event.key;
+  counter_select.value = current_counter.key;
 
-  event_select.style.width =
-    event_label_width + HEAT_MAP_CONTROL_DROPDOWN_EXTRA_WIDTH_CHARS + "ch";
+  counter_select.style.width =
+    counter_label_width + HEAT_MAP_CONTROL_DROPDOWN_EXTRA_WIDTH_CHARS + "ch";
   let total_cost = 1,
     secondary_totals = {};
-  const current_value = (cost_vector) => current_event.get(cost_vector);
+  const current_value = (cost_vector) => current_counter.get(cost_vector);
   const absolute = Math.abs;
 
-  // The denominators a percentage divides by, for the selected event and
-  // every secondary one. Nothing here is a colour ceiling: heat is the
-  // percentage itself, so no maximum is measured off the data.
+  // The denominators a percentage divides by, selected and secondary
+  // counters. Not a colour ceiling: no maximum is measured off the data.
   function scale_recompute() {
-    total_cost = current_event.get(profile_model.heatMapTotals.totals) || 1;
+    total_cost = current_counter.get(profile_model.heatMapTotals.totals) || 1;
     secondary_totals = {};
-    for (const secondary of secondary_events) {
+    for (const secondary of secondary_counters) {
       secondary_totals[secondary.key] =
         secondary.get(profile_model.heatMapTotals.totals) || 1;
     }
@@ -206,7 +204,7 @@
   let share_text = (percent) =>
     percent >= 9.95
       ? percent.toFixed(1) + "%"
-      : percent >= 0.01
+      : percent >= NUMBER_SMALLEST_PRINTED_PERCENT
         ? percent.toFixed(2) + "%"
         : percent > 0
           ? "<0.01%"
@@ -247,7 +245,7 @@
     const multiple_text = (percent) =>
       percent / 100 < 99.99 ? (percent / 100).toFixed(2) + "x" : ">1000x";
     const magnitude_text = (percent) =>
-      percent < 0.01
+      percent < NUMBER_SMALLEST_PRINTED_PERCENT
         ? "≈0.00%"
         : percent > 100
           ? multiple_text(percent)
@@ -269,7 +267,7 @@
     CHIP_HEADING = text_of("str_chip_heading_diff");
     baseline_of = (cost_vector) => {
       if (!cost_vector) return null;
-      const baseline_cost = absolute(current_event.get(cost_vector));
+      const baseline_cost = absolute(current_counter.get(cost_vector));
       return baseline_cost ? baseline_cost : null;
     };
     share_of_baseline = (value, baseline_cost) =>
@@ -347,36 +345,37 @@
     if (!file) return totals;
     for (const [line_number, line_costs] of Object.entries(file.lines)) {
       const owner = file.lineFunction[line_number];
-      for (const event of [current_event].concat(secondary_events)) {
-        const self_cost = absolute(event.get(line_costs[0]));
+      for (const counter of [current_counter].concat(secondary_counters)) {
+        const self_cost = absolute(counter.get(line_costs[0]));
         if (!self_cost) continue;
-        totals.file[event.key] = (totals.file[event.key] || 0) + self_cost;
+        totals.file[counter.key] =
+          (totals.file[counter.key] || 0) + self_cost;
         if (owner == null) continue;
-        const owner_key = owner + "\n" + event.key;
+        const owner_key = owner + "\n" + counter.key;
         totals.function[owner_key] =
           (totals.function[owner_key] || 0) + self_cost;
       }
     }
     return totals;
   }
-  function scope_total_of(event, line_number) {
+  function scope_total_of(counter, line_number) {
     const scope = active_scale.scope;
     if (scope === "file" && scope_totals) {
-      return scope_totals.file[event.key] || 0;
+      return scope_totals.file[counter.key] || 0;
     }
     if (scope === "function" && scope_totals && current_file_path) {
       const owner = file_table[current_file_path].lineFunction[line_number];
       if (owner == null) return 0;
-      return scope_totals.function[owner + "\n" + event.key] || 0;
+      return scope_totals.function[owner + "\n" + counter.key] || 0;
     }
-    return event.get(profile_model.heatMapTotals.totals) || 1;
+    return counter.get(profile_model.heatMapTotals.totals) || 1;
   }
-  const share_in_scope = (value, event, line_number) => {
-    const scope_total = scope_total_of(event, line_number);
+  const share_in_scope = (value, counter, line_number) => {
+    const scope_total = scope_total_of(counter, line_number);
     return scope_total ? (100 * value) / scope_total : 0;
   };
-  const share_in_scope_text = (value, event, line_number) =>
-    value ? share_text(share_in_scope(value, event, line_number)) : "";
+  const share_in_scope_text = (value, counter, line_number) =>
+    value ? share_text(share_in_scope(value, counter, line_number)) : "";
   const scope_share_label = () =>
     text_of(
       IS_DIFF
@@ -386,23 +385,16 @@
   const line_share = (value, baseline_cost, line_number) =>
     IS_DIFF
       ? share_of_baseline(value, baseline_cost)
-      : share_in_scope(value, current_event, line_number);
+      : share_in_scope(value, current_counter, line_number);
   const line_share_text = (value, baseline_cost, line_number) =>
     IS_DIFF
       ? share_of_baseline_text(value, baseline_cost)
-      : share_in_scope_text(value, current_event, line_number);
+      : share_in_scope_text(value, current_counter, line_number);
   const heat_of_line = (value, baseline_cost, line_number) =>
     heat_of_share(line_share(value, baseline_cost, line_number));
 
-  // A percentage to a position on the ramp, and nothing else. The whole
-  // mapping is here: a percentage is clamped to the scale's own range,
-  // divided by it, and the curve applied to that fraction. Nothing is
-  // measured off the data, so the colour a line gets depends only on the
-  // number printed next to it.
-  //
-  // A normal report's range is [0..100%] -> [0..1]. A diff's is
-  // [-100..100%] -> [-1..1], sign kept: the curve is applied to the
-  // magnitude first, so the remap onto the ramp stays symmetric about 0.
+  // The whole mapping: clamp, divide, curve -- nothing measured off the
+  // data. Diff keeps the sign, curving the magnitude first to stay symmetric.
   function heat_of_share(percent) {
     const heat_sign = percent < 0 ? -1 : 1;
     const magnitude = Math.min(
@@ -423,10 +415,8 @@
     [1, 3, 5].map((index) => parseInt(hex.slice(index, index + 2), 16));
   const COLOR_STOPS = profile_model.theme.heat.map(channels_of),
     BACKGROUND_COLOR = channels_of(profile_model.theme.bg);
-  // A heat position to a colour. The position is already the whole scale:
-  // [0..1] in a normal report and [-1..1] in a diff, so the remap onto the
-  // ramp is one multiply -- a diff's 0 lands mid-ramp, its -1 cold and its
-  // +1 hot, while a normal report's 0 lands cold and its 1 hot.
+  // A heat position to a colour. The position is already the whole scale,
+  // [0..1] normally and [-1..1] in a diff, whose 0 lands mid-ramp.
   function cell_style(heat_value, alpha_minimum, alpha_maximum) {
     const magnitude = absolute(heat_value);
     if (magnitude <= 0) return "";
@@ -503,8 +493,8 @@
       hash_parts.push("f=" + hash_encode(state.file));
       if (state.line) hash_parts.push("l=" + state.line);
     }
-    if (event_list.length > 1) {
-      hash_parts.push("e=" + hash_encode(state.ev || current_event.key));
+    if (counter_list.length > 1) {
+      hash_parts.push("e=" + hash_encode(state.ev || current_counter.key));
     }
     return hash_parts.length ? "#" + hash_parts.join("&") : "";
   }
@@ -671,17 +661,17 @@
     }
     return output_parts.join("\n");
   }
-  const event_column = (event, extra) =>
-    Object.assign({ label: event.key, num: true }, extra || {});
+  const counter_column = (counter, extra) =>
+    Object.assign({ label: counter.key, num: true }, extra || {});
   const secondary_columns = () =>
-    secondary_events.map((secondary) =>
-      event_column(secondary, {
-        label: event_label(secondary),
+    secondary_counters.map((secondary) =>
+      counter_column(secondary, {
+        label: counter_label(secondary),
         cls: "x",
       }),
     );
   function secondary_cells(cost_vector, line_number) {
-    return secondary_events.map((secondary) => {
+    return secondary_counters.map((secondary) => {
       const self_cost = secondary.get(cost_vector);
       const in_scope = line_number != null;
       const percent = in_scope
@@ -734,7 +724,7 @@
       if (IS_DIFF) {
         const baseline_table = file_table[file_path].baseline || {};
         for (const cost_vector of Object.values(baseline_table)) {
-          baseline_cost += absolute(current_event.get(cost_vector));
+          baseline_cost += absolute(current_counter.get(cost_vector));
         }
       }
       node_insert(
@@ -948,9 +938,9 @@
     const line_rows = top_lines(HEAT_MAP_HOME_TABLE_MAX_ROWS);
     markup +=
       `<h2>${html_escape(
-        text_fill("str_heading_lines_by_event", {
+        text_fill("str_heading_lines_by_counter", {
           prefix: HEADING_PREFIX,
-          event: event_label(current_event),
+          counter: counter_label(current_counter),
         }),
       )}</h2>` +
       table_html(
@@ -970,7 +960,7 @@
             label: text_of("str_column_source"),
             clip: HEAT_MAP_HOME_LINES_SOURCE_TEXT_MAX_CHARS,
           },
-          event_column(current_event),
+          counter_column(current_counter),
           ...secondary_columns(),
         ],
         line_rows.map((entry, index) => {
@@ -1032,7 +1022,7 @@
       `<h2>${html_escape(
         text_fill("str_heading_functions_by_self", {
           prefix: HEADING_PREFIX,
-          event: event_label(current_event),
+          counter: counter_label(current_counter),
         }),
       )}</h2>` +
       table_html(
@@ -1118,7 +1108,7 @@
     let file_baseline_cost = 0;
     if (IS_DIFF) {
       for (const cost_vector of Object.values(file.baseline || {})) {
-        file_baseline_cost += absolute(current_event.get(cost_vector));
+        file_baseline_cost += absolute(current_counter.get(cost_vector));
       }
     }
     markup +=
@@ -1130,13 +1120,13 @@
       }` +
       `</b>` +
       ` (${human_text(file_self_cost)}` +
-      ` ${html_escape(event_label(current_event))})</span>`;
-    for (const secondary of secondary_events) {
+      ` ${html_escape(counter_label(current_counter))})</span>`;
+    for (const secondary of secondary_counters) {
       const self_cost = secondary.get(file.self);
       if (!self_cost) continue;
       markup +=
         `<span class="stat">` +
-        `${html_escape(event_label(secondary))}` +
+        `${html_escape(counter_label(secondary))}` +
         ` <b>${share_text(
           (100 * self_cost) / secondary_totals[secondary.key],
         )}</b>` +
@@ -1228,7 +1218,7 @@
         ...call_cell,
         ...(line_costs
           ? secondary_cells(line_costs[0], line_number)
-          : secondary_events.map(() => "")),
+          : secondary_counters.map(() => "")),
       ]);
     };
     const source_lines = file_source.split("\n");
@@ -1255,7 +1245,7 @@
         ]
       : [];
     const columns = [
-      event_column(current_event, {
+      counter_column(current_counter, {
         cls: "self",
       }),
       {
@@ -1563,15 +1553,15 @@
     const self_label = text_of(
       function_index != null ? "str_column_self" : "str_line_self",
     );
-    const stat_columns = [
-      { label: text_of("str_column_event") },
+    const popup_counter_columns = [
+      { label: text_of("str_column_counter") },
       { label: scope_share_label(), num: true },
       { label: text_of("str_column_count"), num: true },
     ];
-    const stat_rows = [
+    const popup_counter_rows = [
       [
         {
-          text: `${self_label} ${event_label(current_event)}`,
+          text: `${self_label} ${counter_label(current_counter)}`,
         },
         line_share_text(self_cost, line_baseline_cost, line_number) ||
           text_of("str_share_zero"),
@@ -1579,22 +1569,22 @@
       ],
     ];
     if (call_cost) {
-      stat_rows.push([
+      popup_counter_rows.push([
         { text: text_of("str_column_calls") },
         line_share_text(call_cost, line_baseline_cost, line_number),
         cell_number(call_cost),
       ]);
-      stat_rows.push([
+      popup_counter_rows.push([
         { text: text_of("str_column_call_count") },
         "",
         call_count_cell(line_costs[2]),
       ]);
     }
-    for (const secondary of secondary_events) {
+    for (const secondary of secondary_counters) {
       const secondary_self = secondary.get(line_costs[0]);
       if (!secondary_self) continue;
-      stat_rows.push([
-        { text: event_label(secondary) },
+      popup_counter_rows.push([
+        { text: counter_label(secondary) },
         IS_DIFF
           ? share_text(
               (100 * secondary_self) / secondary_totals[secondary.key],
@@ -1624,14 +1614,20 @@
     markup +=
       `<div>${html_escape(file_path)}:` +
       `${line_number}${in_function_html}</div>`;
-    markup += table_html("heat.detail.stats", stat_columns, stat_rows);
+    markup += table_html(
+      "heat.detail.stats",
+      popup_counter_columns,
+      popup_counter_rows,
+    );
     const text_parts = [
-      heading_line + "\n" + table_markdown(stat_columns, stat_rows),
+      heading_line +
+        "\n" +
+        table_markdown(popup_counter_columns, popup_counter_rows),
     ];
     if (callees.length) {
       const columns = [
         { label: text_of("str_column_share_of_total"), num: true },
-        event_column(current_event),
+        counter_column(current_counter),
         { label: text_of("str_column_call_count"), num: true },
         function_column(text_of("str_column_callee")),
         location_column,
@@ -1656,7 +1652,7 @@
         },
       );
       const heading = text_fill("str_popup_callees", {
-        event: event_label(current_event),
+        counter: counter_label(current_counter),
       });
       markup +=
         `<h4>${html_escape(heading)}</h4>` +
@@ -1695,7 +1691,7 @@
         const columns = [
           { label: text_of("str_column_call_count"), num: true },
           { label: text_of("str_column_share_of_total"), num: true },
-          event_column(current_event),
+          counter_column(current_counter),
           function_column(text_of("str_column_caller")),
           {
             label: text_of("str_column_called_at"),
@@ -1803,9 +1799,9 @@
     }
     return parsed_state;
   }
-  function event_apply(key) {
-    current_event = event_find(key) || event_list[0];
-    event_select.value = current_event.key;
+  function counter_apply(key) {
+    current_counter = counter_find(key) || counter_list[0];
+    counter_select.value = current_counter.key;
     scale_recompute();
     tree_root = tree_build();
     for (const directory_node of tree_root.dirs.values()) {
@@ -1829,11 +1825,11 @@
   }
   function route_render() {
     const parsed_state = state_of_hash(location.hash);
-    const event =
-      event_find(parsed_state.ev) ||
-      event_find(profile_model.heatMapTotals.defaultEvent) ||
-      event_list[0];
-    if (event.key !== current_event.key) event_apply(event.key);
+    const counter =
+      counter_find(parsed_state.ev) ||
+      counter_find(profile_model.heatMapTotals.defaultCounter) ||
+      counter_list[0];
+    if (counter.key !== current_counter.key) counter_apply(counter.key);
     let file = parsed_state.file,
       line = parsed_state.line,
       fn = parsed_state.fn;
@@ -1862,7 +1858,7 @@
     const key =
       (file ? "file\n" + file : "home") +
       "\n" +
-      current_event.key +
+      current_counter.key +
       "\n" +
       active_scale.value;
     if (key !== rendered_key) {
@@ -1892,7 +1888,7 @@
       minimap_layout();
     }, LAYOUT_RESIZE_SETTLE_DELAY_MS);
   });
-  event_select.addEventListener("change", (change_event) => {
+  counter_select.addEventListener("change", (change_event) => {
     location.hash = hash_of_state(
       Object.assign({}, current_state, { ev: change_event.target.value }),
     );
@@ -1914,6 +1910,6 @@
     search_query = input_event.target.value.trim().toLowerCase();
     tree_render();
   });
-  event_apply(current_event.key);
+  counter_apply(current_counter.key);
   route_render();
 })();

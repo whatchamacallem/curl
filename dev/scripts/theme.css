@@ -106,6 +106,16 @@ input {
   flex: none;
   width: var(--title-w);
 }
+.strip .title:has(.wordmark-letter) {
+  background: var(--bg);
+}
+.strip .title .wordmark-letter {
+  flex: none;
+  padding: 0;
+  margin: 0;
+  white-space: pre;
+}
+
 .strip .sp {
   flex: 1 0 0;
   min-width: 0;

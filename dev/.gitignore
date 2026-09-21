@@ -1,6 +1,6 @@
 build/
-temporary_artifacts/
 __pycache__/
-perf2html_baseline_report
-perf2html_modified_report
-perf2html_diff_report
+perf2html_baseline_report/
+perf2html_diff_report/
+perf2html_modified_report/
+perf2html_temporary_artifacts/

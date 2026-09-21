@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-import argparse, collections.abc, dataclasses, json, os, subprocess, sys
-import typing
+import argparse, dataclasses, json, os, subprocess, sys
+from collections.abc import Sequence
+from typing import NamedTuple, NotRequired, TypedDict
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import callgrind, callgrind_diff, settings, theme
@@ -12,6 +13,7 @@ import callgrind, callgrind_diff, settings, theme
 _ASSET_HEAT_MAP_SCRIPT_NAME: str
 _ASSET_HEAT_MAP_STYLESHEET_NAME: str
 _ASSET_SETTINGS_SCRIPT_NAME: str
+_ASSET_TEMPLATE_HEAT_MAP_PAGE_NAME: str
 _ASSET_THEME_SCRIPT_NAME: str
 _ASSET_THEME_STYLESHEET_NAME: str
 _ASSET_UI_STRINGS_SCRIPT_NAME: str
@@ -22,7 +24,7 @@ _REPORT_SOURCES_DIR_NAME: str
 settings.load_into(__name__)
 
 # The page skeleton every heat map is rendered into.
-BODY = theme.asset_text_read("heatmap.html")
+BODY = theme.asset_text_read(_ASSET_TEMPLATE_HEAT_MAP_PAGE_NAME)
 
 
 # CallgrindToHeatmap - Turns one profile into a page that shows cost per
@@ -30,7 +32,7 @@ BODY = theme.asset_text_read("heatmap.html")
 class CallgrindToHeatmap:
     # CallRow - One end of one call edge, as the page's script reads it. Used
     # for a line's callees and for a function's callers alike.
-    class CallRow(typing.NamedTuple):
+    class CallRow(NamedTuple):
         # the other function, as an index into the functions list
         function: int
         # the file to open when it is clicked
@@ -43,7 +45,7 @@ class CallgrindToHeatmap:
         count_: int
 
     # LineCost - One source line's numbers.
-    class LineCost(typing.NamedTuple):
+    class LineCost(NamedTuple):
         # cost on the line itself
         self_cost: callgrind.Costs
         # cost below the calls it makes
@@ -52,7 +54,7 @@ class CallgrindToHeatmap:
         count_: int
 
     # FileModel - One source file as the page's script sees it.
-    class FileModel(typing.TypedDict):
+    class FileModel(TypedDict):
         # the file's own cost
         self: callgrind.Costs
         # cost below what it calls
@@ -66,7 +68,7 @@ class CallgrindToHeatmap:
         lineFunction: dict[str, int]
         # per line number, its baseline cost vector -- a diff's denominator,
         # absent on a non-diff page and on a line the baseline never had
-        baseline: typing.NotRequired[dict[str, callgrind.Costs]]
+        baseline: NotRequired[dict[str, callgrind.Costs]]
         # per line number, what that line calls
         callees: dict[str, list[CallgrindToHeatmap.CallRow]]
         # repo, system or external
@@ -75,7 +77,7 @@ class CallgrindToHeatmap:
         raw: str
 
     # FunctionModel - One function as the page's script sees it.
-    class FunctionModel(typing.TypedDict):
+    class FunctionModel(TypedDict):
         # its name
         name: str
         # where to open it
@@ -89,26 +91,25 @@ class CallgrindToHeatmap:
         # who calls it, most expensive first
         callers: list[CallgrindToHeatmap.CallRow]
 
-    # HeatMapTotals - What the heat map needs to label and scale everything.
-    # Not the report's LABEL=VALUE rows -- those are build_report.py's
-    # ManifestRow.
-    class HeatMapTotals(typing.TypedDict):
-        # the recorded events, in cost-vector order
-        events: list[str]
-        # the events the page adds up itself
-        derived: list[callgrind.ResolvedDerivedEvent]
-        # which event the page opens on
-        defaultEvent: str
+    # HeatMapTotals - What labels and scales the heat map. Not the report's
+    # LABEL=VALUE rows -- those are build_report.py's ManifestRow.
+    class HeatMapTotals(TypedDict):
+        # the recorded counters, in cost-vector order
+        counters: list[str]
+        # the counters the page adds up itself
+        derived: list[callgrind.ResolvedDerivedCounter]
+        # which counter the page opens on
+        defaultCounter: str
         # what shares are taken against
         totals: callgrind.Costs
         # signed numbers and a signed heat ramp
         diff: bool
         # the baseline run's total, what the page's own totals compare to
-        baselineTotal: typing.NotRequired[callgrind.Costs]
+        baselineTotal: NotRequired[callgrind.Costs]
 
     # HeatModel - The whole page's data, in one JSON blob.
-    class HeatModel(typing.TypedDict):
-        # labels, totals and which event to show
+    class HeatModel(TypedDict):
+        # labels, totals and which counter to show
         heatMapTotals: CallgrindToHeatmap.HeatMapTotals
         # the few theme values the script needs
         theme: theme.ThemeRuntime
@@ -119,10 +120,10 @@ class CallgrindToHeatmap:
         # tracked files with no samples at all
         cold: list[str]
         # per function, its baseline cost vector, indexed like functions
-        functionBaseline: typing.NotRequired[list[callgrind.Costs]]
+        functionBaseline: NotRequired[list[callgrind.Costs]]
 
     # HeatArgs - What this tool reads, and the page it writes.
-    class HeatArgs(typing.NamedTuple):
+    class HeatArgs(NamedTuple):
         # the callgrind file(s), merged into one profile
         callgrind_file: list[str]
         # where the page goes
@@ -138,11 +139,9 @@ class CallgrindToHeatmap:
         # directory below its root rather than two
         single_test_report: bool
 
-    # SynthesizedCallers - The part of callgrind_diff.py's synthesized callers
-    # diff this tool reads: what every share on a diff page divides by. Its
-    # vectors carry the recorded slots only, and the page's own script adds a
-    # derived event up from them, so both kinds are handed straight through.
-    class SynthesizedCallers(typing.TypedDict):
+    # SynthesizedCallers - What every share on a diff page divides by. Its
+    # vectors carry recorded slots only. The page derives the rest itself.
+    class SynthesizedCallers(TypedDict):
         # keyed by function, and by "<function>\n<file>\n<line>"
         baseline: dict[str, callgrind.Costs]
         # the baseline run's summed cost vector
@@ -205,13 +204,13 @@ class CallgrindToHeatmap:
 
         # One line's tally, started at zero the first time it is asked for.
         def line(
-            self, line_number: int, event_count: int
+            self, line_number: int, counter_count: int
         ) -> CallgrindToHeatmap.LineTally:
             record = self.lines.get(str(line_number))
             if record is None:
                 record = self.lines[str(line_number)] = (
                     CallgrindToHeatmap.LineTally(
-                        [0] * event_count, [0] * event_count
+                        [0] * counter_count, [0] * counter_count
                     )
                 )
             return record
@@ -226,8 +225,8 @@ class CallgrindToHeatmap:
         # how many calls it makes, so far
         count: int = 0
 
-    # Drop trailing zeros, because every cost vector is the full event width
-    # and the page does not need what it would only render blank.
+    # Drop trailing zeros: every cost vector is the full counter width, and
+    # the page would only render those slots blank.
     @staticmethod
     def costs_trim(costs: callgrind.Costs) -> callgrind.Costs:
         length = len(costs)
@@ -268,7 +267,7 @@ class CallgrindToHeatmap:
     def display_paths(
         self,
         profile: callgrind.Profile,
-        raw_files: collections.abc.Sequence[str],
+        raw_files: Sequence[str],
     ) -> dict[str, callgrind.PathInfo]:
         info: dict[str, callgrind.PathInfo] = {}
         for raw in raw_files:
@@ -291,7 +290,7 @@ class CallgrindToHeatmap:
         info: dict[str, callgrind.PathInfo],
         function_index: dict[str, int],
     ) -> dict[str, CallgrindToHeatmap.FileModel]:
-        event_count = len(profile.events)
+        counter_count = len(profile.counters)
         display = {raw: path_info.display for raw, path_info in info.items()}
         accumulators: dict[str, CallgrindToHeatmap.FileTally] = {}
         for raw, path_info in info.items():
@@ -303,8 +302,8 @@ class CallgrindToHeatmap:
                         raw=raw
                         if path_info.group == "external"
                         else path_info.display,
-                        self_cost=[0] * event_count,
-                        calls_cost=[0] * event_count,
+                        self_cost=[0] * counter_count,
+                        calls_cost=[0] * counter_count,
                     )
                 )
             if entry.source is None and path_info.local:
@@ -313,12 +312,12 @@ class CallgrindToHeatmap:
             entry = accumulators[display[key.file]]
             callgrind.costs_add(entry.self_cost, costs)
             callgrind.costs_add(
-                entry.line(key.line, event_count).self_cost, costs
+                entry.line(key.line, counter_count).self_cost, costs
             )
         for key, costs in profile.line_calls.items():
             entry = accumulators[display[key.file]]
             callgrind.costs_add(entry.calls_cost, costs)
-            record = entry.line(key.line, event_count)
+            record = entry.line(key.line, counter_count)
             callgrind.costs_add(record.calls_cost, costs)
             record.count += profile.line_call_count[key]
         for key, function in profile.line_function.items():
@@ -350,7 +349,7 @@ class CallgrindToHeatmap:
         self,
         profile: callgrind.Profile,
         info: dict[str, callgrind.PathInfo],
-        function_names: collections.abc.Sequence[str],
+        function_names: Sequence[str],
         function_index: dict[str, int],
     ) -> list[CallgrindToHeatmap.FunctionModel]:
         display = {raw: path_info.display for raw, path_info in info.items()}
@@ -409,16 +408,16 @@ class CallgrindToHeatmap:
             for relative in self.repo_tracked_files()
             if relative not in files
         )
-        default_event = (
+        default_counter = (
             _RANKING_COUNTER_NAME
-            if _RANKING_COUNTER_NAME in profile.event_names()
-            else profile.events[0]
+            if _RANKING_COUNTER_NAME in profile.counter_names()
+            else profile.counters[0]
         )
         return {
             "heatMapTotals": {
-                "events": profile.events,
-                "derived": profile.resolved_derived_events(),
-                "defaultEvent": default_event,
+                "counters": profile.counters,
+                "derived": profile.resolved_derived_counters(),
+                "defaultCounter": default_counter,
                 "totals": profile.totals(),
                 "diff": False,
             },
@@ -531,6 +530,7 @@ class CallgrindToHeatmap:
             file=sys.stderr,
         )
 
+    # The sources/ script file name for one display path.
     @staticmethod
     def source_name(display: str) -> str:
         flat = "".join(char if char.isalnum() else "_" for char in display)
@@ -545,6 +545,7 @@ class CallgrindToHeatmap:
             return None
         return data.decode("utf-8", errors="replace")
 
+    # Write one script per profiled file into the report's sources/ dir.
     def sources_write(
         self,
         out_dir: str,

@@ -1,20 +1,19 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-import argparse, base64, collections.abc, glob, json, os, re, sys
-import tarfile, typing
+import argparse, base64, glob, json, os, re, subprocess, sys, tarfile
+from collections.abc import Sequence
+from typing import NamedTuple, cast
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import callgrind, settings
 
-# Every setting this file reads. Each is declared with the type it must
-# have; settings.load_into() fails at import on a wrong name, a wrong type,
-# or a setting declared after another name in the file is assigned.
 _DIFF_CALLER_COUNTS_FILE_SUFFIX: str
 _FLAME_GRAPH_APP_DIR_NAME: str
 _FLAME_GRAPH_APP_FILE_GLOBS: tuple[str, ...]
 _FLAME_GRAPH_EXPORTER_NAME: str
 _FLAME_GRAPH_PAGE_FILE_NAMES: tuple[str, ...]
+_REPORT_MANIFEST_CHECKSUM_LABEL: str
 _REPORT_RAW_ARCHIVE_SUFFIX: str
 _REPORT_SOURCES_DIR_NAME: str
 _SOURCE_SCAN_ALLOWED_NON_ASCII_CHARS: tuple[str, ...]
@@ -27,6 +26,8 @@ _VALIDATE_FLAME_GRAPH_SCRIPT_LEAST_BYTES: int
 _VALIDATE_HEAT_MAP_PAGE_LEAST_BYTES: int
 _VALIDATE_OVERVIEW_PAGE_LEAST_BYTES: int
 _VALIDATE_RAW_ARCHIVE_LEAST_BYTES: int
+_VALIDATE_REPORT_LAYOUT_DIFF: dict[str, object]
+_VALIDATE_REPORT_LAYOUT_FULL: dict[str, object]
 settings.load_into(__name__)
 
 
@@ -34,7 +35,7 @@ settings.load_into(__name__)
 # every page present, closed, titled, and free of leftover markers.
 class ValidateReport:
     # NonAsciiLine - One line of one file that broke the ASCII rule.
-    class NonAsciiLine(typing.NamedTuple):
+    class NonAsciiLine(NamedTuple):
         # the file it is in
         path: str
         # which line, 1-based
@@ -44,7 +45,7 @@ class ValidateReport:
 
     # ReportLayout - What one kind of report is expected to contain -- this is
     # the whole difference between checking a full report and a diff.
-    class ReportLayout(typing.NamedTuple):
+    class ReportLayout(NamedTuple):
         # the per-test views that must exist
         subpages: tuple[str, ...]
         # the pattern the top-N heading has to match
@@ -63,14 +64,37 @@ class ValidateReport:
         all_has_archive: bool
 
     # ValidateArgs - Which report to check, and which layout to check it as.
-    class ValidateArgs(typing.NamedTuple):
+    class ValidateArgs(NamedTuple):
         # the report directory
         out_dir: str
         # check it as a diff report rather than a full one
         diff: bool
 
     def __init__(self) -> None:
+        # every problem found so far, printed together at the end
         self.errors: list[str] = []
+
+    # The POSIX cksum of every file except MANIFEST.txt, run through the
+    # very pipeline report_manifest.sh wrote the row with, never our own.
+    def checksum_compute(self, out_dir: str) -> str:
+        try:
+            done = subprocess.run(
+                ["sh", "-c", _REPORT_CHECKSUM_COMMAND],
+                cwd=out_dir,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+        except OSError as error:
+            self.fail(f"cannot checksum {out_dir}: {error}")
+            return ""
+        if done.returncode != 0:
+            self.fail(
+                f"cannot checksum {out_dir}: cksum exited"
+                f" {done.returncode}: {done.stderr.strip()}"
+            )
+            return ""
+        return done.stdout.strip()
 
     # Record one problem -- every check runs, so one page cannot hide another.
     def fail(self, message: str) -> None:
@@ -247,19 +271,50 @@ class ValidateReport:
                 f" not: {path}"
             )
 
-    # MANIFEST.txt's first line is what makes a directory a diff input, so it
-    # has to be exact.
+    # Build one ReportLayout from its settings entry, a plain mapping
+    # because settings.py cannot name this class without importing us.
+    def layout_build(
+        self, entry: dict[str, object]
+    ) -> ValidateReport.ReportLayout:
+        fields = ValidateReport.ReportLayout._fields
+        missing = [name for name in fields if name not in entry]
+        if missing:
+            raise KeyError(
+                f"a report layout in settings.py is missing "
+                f"{', '.join(missing)}, which ReportLayout needs"
+            )
+        return ValidateReport.ReportLayout(
+            subpages=cast("tuple[str, ...]", entry["subpages"]),
+            heading=cast(str, entry["heading"]),
+            header_blocks=cast(
+                "tuple[str, ...]", entry["header_blocks"]
+            ),
+            manifest_version=cast(str, entry["manifest_version"]),
+            manifest_labels=cast(
+                "tuple[str, ...]", entry["manifest_labels"]
+            ),
+            test_has_rawdata=cast(bool, entry["test_has_rawdata"]),
+            all_has_archive=cast(bool, entry["all_has_archive"]),
+        )
+
+    # MANIFEST.txt line 1 must be exact and its checksum row must still
+    # match the files beside it. Both failures name found and expected.
     def manifest_check(
         self, out_dir: str, layout: ValidateReport.ReportLayout
     ) -> None:
         path = os.path.join(out_dir, "MANIFEST.txt")
         text = self.size_check(path, 40, "MANIFEST.txt")
         if not text:
+            self.fail(
+                "MANIFEST.txt is missing or unreadable, so this is not a"
+                f" finished report; expected its first line to be"
+                f" {layout.manifest_version!r}: {path}"
+            )
             return
         first = text.split("\n", 1)[0]
         if first != layout.manifest_version:
             self.fail(
-                f"MANIFEST.txt starts with {first!r}, expected the"
+                f"MANIFEST.txt line 1 found {first!r}, expected the"
                 f" version line {layout.manifest_version!r}: {path}"
             )
         for label in layout.manifest_labels:
@@ -268,6 +323,30 @@ class ValidateReport:
                     f"MANIFEST.txt has no '{label}=' header row, so a"
                     f" reader of this report cannot show it: {path}"
                 )
+        recorded = self.manifest_value(text, _REPORT_MANIFEST_CHECKSUM_LABEL)
+        if not recorded:
+            self.fail(
+                "MANIFEST.txt has no"
+                f" '{_REPORT_MANIFEST_CHECKSUM_LABEL}=' row, so this"
+                " report's files cannot be verified; expected one"
+                f" beside the version line {layout.manifest_version!r}:"
+                f" {path}"
+            )
+            return
+        found = self.checksum_compute(out_dir)
+        if found and found != recorded:
+            self.fail(
+                "this report does not match its recorded"
+                f" {_REPORT_MANIFEST_CHECKSUM_LABEL}: found {found!r},"
+                f" expected {recorded!r} -- a file was added, removed or"
+                " edited"
+                f" after the report was written: {out_dir}"
+            )
+
+    # One LABEL= row out of a manifest's text.
+    def manifest_value(self, text: str, label: str) -> str:
+        match = re.search(rf"^{re.escape(label)}=(.*)$", text, re.M)
+        return match.group(1).strip() if match else ""
 
     # One file out of an open archive, as text a scan can search.
     def member_text(
@@ -287,7 +366,7 @@ class ValidateReport:
     def overview_check(
         self,
         out_dir: str,
-        tests: collections.abc.Sequence[str],
+        tests: Sequence[str],
         layout: ValidateReport.ReportLayout,
     ) -> None:
         path = os.path.join(out_dir, "index.html")
@@ -365,10 +444,8 @@ class ValidateReport:
                 )
         return text
 
-    # Everything a page runs or styles itself with, inline or linked. A
-    # linked asset is read off disk and a missing one fails, so a page whose
-    # relative href into the shared theme is wrong cannot pass by looking
-    # like a page that simply inlines less.
+    # Everything a page runs or styles itself with, inline or linked. Each
+    # linked asset is read off disk, so a wrong relative href fails loudly.
     def page_scripts(self, path: str, text: str) -> str:
         parts = [text]
         page_dir = os.path.dirname(path)
@@ -385,9 +462,7 @@ class ValidateReport:
 
     # Every heat map's source text sits in the report's one sources/
     # directory. Confirm.
-    def sources_check(
-        self, out_dir: str, tests: collections.abc.Sequence[str]
-    ) -> None:
+    def sources_check(self, out_dir: str, tests: Sequence[str]) -> None:
         sources_dir = os.path.join(out_dir, _REPORT_SOURCES_DIR_NAME)
         linked = False
         for test_name in tests:
@@ -464,9 +539,8 @@ class ValidateReport:
                     f"{callgrind.REPO_ROOT!r} in {inner}: {path}"
                 )
 
-    # Raw data is one tar.xz per test, holding a real callgrind file with the
-    # repo root stripped. "all" synthesizes its pages from the other tests'
-    # profiles and stores nothing of its own, so it has no raw/ at all.
+    # Raw data is one tar.xz per test. A test storing nothing of its own
+    # must have no raw/ at all, and nothing uncompressed may sit beside it.
     def raw_dir_check(self, out_dir: str, has_rawdata: bool) -> None:
         raw_dir = os.path.join(out_dir, "raw")
         if not has_rawdata:
@@ -610,26 +684,23 @@ class ValidateReport:
         return sorted(paths)
 
 
+# The one checker the two layouts below are built through. Named first
+# because they are built from it.
+_CHECKER = ValidateReport()
+
 # What a perf2html_diff.sh report must contain: no flame graph, no timing.
-_LAYOUT_DIFF = ValidateReport.ReportLayout(
-    ("heat-map",),
-    r"<h2>top \d+ functions by change in self</h2>",
-    ("baseline", "modified"),
-    "curl/perf2html_diff.sh v1",
-    ("baseline", "modified", "stamp"),
-    False,
-    True,
-)
+_LAYOUT_DIFF = _CHECKER.layout_build(_VALIDATE_REPORT_LAYOUT_DIFF)
 
 # What a perf2html.sh report must contain.
-_LAYOUT_FULL = ValidateReport.ReportLayout(
-    ("flame-graph", "heat-map"),
-    r"<h2>top \d+ functions by self</h2>",
-    (),
-    "curl/perf2html.sh v1",
-    ("sampled", "revision", "cpu", "build", "executable", "stamp"),
-    True,
-    False,
+_LAYOUT_FULL = _CHECKER.layout_build(_VALIDATE_REPORT_LAYOUT_FULL)
+
+# report_manifest.sh's checksum pipeline, spelled the same here so the two
+# can never disagree: sorted paths, relative to the report directory.
+_REPORT_CHECKSUM_COMMAND = (
+    "find . -type f ! -name MANIFEST.txt -print"
+    " | LC_ALL=C sort | LC_ALL=C tr '\\n' '\\0'"
+    " | xargs -0 -r cksum --"
+    " | LC_ALL=C sort | cksum"
 )
 
 

@@ -1,49 +1,63 @@
 from __future__ import annotations
 
-import json, re, sys, typing
+import argparse, json, os, re, sys
+from typing import NamedTuple, get_origin, get_type_hints
 
 # What the report's one shared copy of the theme is written as. Every page
 # in a report renders the same stylesheet and the same script, so they are
 # written once at the report root and linked, not inlined 19 times. The heat
 # map's own stylesheet and runtime, and the frame script every summary and
 # overview page runs, are the same on all of them too, so they are shared
-# the same way; each page links only the ones it uses. theme.css and the
-# settings file are generated rather than copied.
+# the same way. Each page links only the ones it uses. theme.css and the
+# settings file are generated rather than copied. This list runs on past
+# the template names below it, which sort into the middle of it.
 ASSET_FRAME_SCRIPT_NAME = "frame.js"
 ASSET_HEAT_MAP_SCRIPT_NAME = "heatmap.js"
 ASSET_HEAT_MAP_STYLESHEET_NAME = "heatmap.css"
 ASSET_SETTINGS_SCRIPT_NAME = "settings.js"
+
+# The four scripts/ files a generator reads as a template rather than
+# copying, interleaved here by name among the shared assets above. Each
+# holds the markers that generator substitutes its own content into, and
+# nothing writes them into a report under these names, so they are read
+# but never shared. No generator holds a multi-line literal, which is why
+# each of these is a real file. The settings runtime is this file's own
+# template, so settings_script_write() reads it the way a generator reads
+# the other three.
+ASSET_TEMPLATE_FLAME_GRAPH_BOOTSTRAP_NAME = "flame_bootstrap.js"
+ASSET_TEMPLATE_FLAME_GRAPH_PAGE_NAME = "flame_graph.html"
+ASSET_TEMPLATE_HEAT_MAP_PAGE_NAME = "heatmap.html"
+ASSET_TEMPLATE_SETTINGS_RUNTIME_NAME = "settings_runtime.js"
+
 ASSET_THEME_SCRIPT_NAME = "theme.js"
 ASSET_THEME_STYLESHEET_NAME = "theme.css"
 ASSET_UI_STRINGS_SCRIPT_NAME = "ui_strings.js"
 
-# The immediately-invoked expression settings_script_write() wraps the
-# settings object in, so the page's one control surface cannot be written to.
-# It freezes to the leaves rather than calling Object.freeze on the top level
-# alone: a shallow freeze leaves every nested object writable, and nesting
-# is how a group would be spelled if the ids ever became one.
-_DEEP_FREEZE = """(function deep_freeze(value) {
-  if (value === null || typeof value !== "object") {
-    return value;
-  }
-  Object.values(value).forEach(deep_freeze);
-  return Object.freeze(value);
-})"""
-
-# The reader the generated settings file closes over its frozen values with.
-# A page names a setting once, at the top of the file that reads it, and
-# keeps the value in a local const, so no name is resolved twice and none is
-# resolved inside a loop. An unknown name throws where it is asked for
-# rather than reading undefined into the layout math, which is the same
-# trade ui_strings.js makes by rendering "(update ui_strings.js)".
-_SETTING_READER = """function (name) {
-  if (!Object.prototype.hasOwnProperty.call(values, name)) {
-    throw new Error(
-      "no such setting: " + name + " -- add it to _BROWSER_SETTING_NAMES",
-    );
-  }
-  return values[name];
-}"""
+# Every counter callgrind never records, and the recorded ones each is
+# added up from. The key is what a page calls the counter, and the value maps
+# each recorded counter it needs to the whole number that counter is
+# multiplied by. A run offers a derived counter only when it recorded every
+# input named here, and nothing stores one: a derived counter is a pure
+# function of the recorded slots, so a stored copy could only go stale.
+# callgrind.py is the one reader, and these are the only place a coefficient
+# is written down. Adding or dropping a counter is an edit here plus its
+# description in ui_strings.js and README.md -- no code changes.
+DERIVED_COUNTER_TERMS: dict[str, dict[str, int]] = {
+    "D1m": {"D1mr": 1, "D1mw": 1},
+    "DLm": {"DLmr": 1, "DLmw": 1},
+    "L1m": {"I1mr": 1, "D1mr": 1, "D1mw": 1},
+    "LLm": {"ILmr": 1, "DLmr": 1, "DLmw": 1},
+    "Bm": {"Bcm": 1, "Bim": 1},
+    "CEst": {
+        "Ir": 1,
+        "I1mr": 10,
+        "D1mr": 10,
+        "D1mw": 10,
+        "ILmr": 100,
+        "DLmr": 100,
+        "DLmw": 100,
+    },
+}
 
 # What callgrind_diff.py's synthesized callers diff is named, next to the
 # delta it describes. Written by perf2html_diff.sh, read back by
@@ -71,7 +85,7 @@ FLAME_GRAPH_FILE_FORMAT_SCHEMA_URL = (
 
 # The most complete calls one trace keeps. Measured against the current
 # TESTS_C, whose recorded call counts run 79-202 for seven of the eight, so
-# the cut lands on the top of that range; the eighth records 3,180 cheap
+# the cut lands on the top of that range. The eighth records 3,180 cheap
 # calls. Retune if a test's shape changes.
 FLAME_GRAPH_MAX_RECORDED_CALLS = 200
 
@@ -82,6 +96,18 @@ FLAME_GRAPH_PAGE_FILE_NAMES = ("index.html", "output.txt", "profile.js")
 
 # What the bootstrap plus its embedded profile gets written as.
 FLAME_GRAPH_PROFILE_SCRIPT_NAME = "profile.js"
+
+# The flame graph view a summary page links, as key, link label, page path.
+# A test links it only where a trace was actually recorded, which is why it
+# is named apart from the heat map view rather than sharing one list. The
+# key is what the URL hash calls the view and what the frame script matches,
+# so it is a boundary name. The label is rendered into the page by
+# build_report.py, which is the one boundary ui_strings.js cannot cross.
+FLAME_GRAPH_VIEW_ENTRY: tuple[str, str, str] = (
+    "flame-graph",
+    "flame graph",
+    "flame-graph/index.html",
+)
 
 # Blend alpha of the hottest cell, and of the coldest one that still carries
 # colour.
@@ -97,6 +123,9 @@ HEAT_COLOR_FULL_SCALE_PERCENT = 100
 HEAT_COLOR_LIGHT_TEXT_ABOVE_SHARE = 0.45
 
 # The 12-stop heat ramp, cold to hot. Exempt from the light/dark pair rule.
+# Every heated cell blends one of these over the page background, and the
+# outer strip's wordmark steps its letters across the ramp's upper half as
+# plain text colour, so a retune moves both.
 HEAT_COLOR_RAMP_STOPS: list[str] = [
     "#3E4A89",
     "#31688E",
@@ -112,14 +141,24 @@ HEAT_COLOR_RAMP_STOPS: list[str] = [
     "#F06142",
 ]
 
-# The smallest share a rendered percentage resolves; below it a number
-# reads "<0.01%". This is number notation, not a colour: heat measures
-# nothing off the data and has no floor.
+# The smallest share theme.heat_t() still paints, and the bottom of the
+# log scale it measures against its caller's own maximum. Only the summary
+# and overview tables that theme.py renders read it. It is not the "<0.01%"
+# notation floor, which is NUMBER_SMALLEST_PRINTED_PERCENT, and the heat
+# map's own heat_of_share() has no floor at all: that mapping measures
+# nothing off the data, which is why the page never reads this.
 HEAT_COLOR_SMALLEST_VISIBLE_SHARE = 0.001
 
 # Width a <select> adds beyond its longest option text, so the chosen option
 # is not clipped by the dropdown arrow.
 HEAT_MAP_CONTROL_DROPDOWN_EXTRA_WIDTH_CHARS = 4
+
+# How the page finds a counter's description: this prefix, then the counter
+# name lowercased. So "CEst" reads str_counter_cest out of ui_strings.js,
+# and a counter added to DERIVED_COUNTER_TERMS or recorded by a new
+# callgrind run needs only its entry there, never a map in the page script.
+# A counter with no entry falls back to showing its bare name.
+HEAT_MAP_COUNTER_DESCRIPTION_STRING_ID_PREFIX = "str_counter_"
 
 # In the home page's hot-lines table: how much of the "defined at" path a
 # row keeps, how much of the source line itself it keeps, and how wide the
@@ -142,6 +181,11 @@ HEAT_MAP_MINIMAP_SOURCE_WIDTH_CHARS = 80
 # Smallest the minimap's viewport box may be drawn, in pixels, so the box
 # marking what is on screen stays visible in a very long file.
 HEAT_MAP_MINIMAP_VIEWPORT_BOX_SMALLEST_PX = 8
+
+# The counters the heat map shows beside the selected one, in the order the
+# columns are drawn. A counter named here that the run cannot supply is
+# simply left out, so naming one no profile records costs nothing.
+HEAT_MAP_SECONDARY_COUNTER_NAMES: tuple[str, ...] = ("D1m", "DLm", "Bcm")
 
 # The share of the file a line must carry to earn a jump button above the
 # source, and how many of those buttons a file view shows at most.
@@ -173,10 +217,29 @@ HEAT_MAP_TREE_INDENT_PER_LEVEL_PX = 14
 # Narrowest the tree pane may be dragged, in pixels.
 HEAT_MAP_TREE_PANE_NARROWEST_PX = 120
 
+# The heat map view a summary page links, as key, link label, page path.
+# Every test has one, recorded trace or not. Spelled the same way as
+# FLAME_GRAPH_VIEW_ENTRY, and carrying a label for the same reason.
+HEAT_MAP_VIEW_ENTRY: tuple[str, str, str] = (
+    "heat-map",
+    "heat map",
+    "heat-map/index.html",
+)
+
 # Milliseconds a window resize settles for before the page re-measures. A
 # drag fires resize continuously, and re-measuring every frame is what this
 # delay exists to avoid.
 LAYOUT_RESIZE_SETTLE_DELAY_MS = 120
+
+# The smallest percentage a table prints as a number. Under it a full
+# report renders "<0.01%" and a diff renders the arrow plus "≈0.00%", both
+# of which state a bound rather than a value. It is a notation floor and
+# nothing else: it picks no colour, hides no row and is never a
+# denominator. It is not HEAT_COLOR_SMALLEST_VISIBLE_SHARE, which is the
+# bottom of theme.heat_t()'s log colour scale. theme.py renders the number
+# server-side and heatmap.js renders it on the page, so both read this one
+# value and the two spellings of the notation cannot drift apart.
+NUMBER_SMALLEST_PRINTED_PERCENT = 0.01
 
 # The page font: Monaco first, then whatever else the box has.
 PAGE_FONT_FAMILY = (
@@ -185,7 +248,8 @@ PAGE_FONT_FAMILY = (
 
 # The global the generated settings file assigns its one statement to. A page
 # links that file before every script that reads it, the way it links
-# ui_strings.js.
+# ui_strings.js. settings_script_write() fills the runtime template's name
+# marker with this, so the page calls what is spelled here.
 PAGE_SETTINGS_GLOBAL_NAME = "settings"
 
 # The one counter every generator ranks, colours and divides by, recorded or
@@ -194,6 +258,11 @@ RANKING_COUNTER_NAME = "CEst"
 
 # The report-root directory holding the shared copy of our own theme.
 REPORT_ASSETS_DIR_NAME = "assets"
+
+# The LABEL= row a report's MANIFEST.txt records its checksum on. The shell
+# writes that row and reads it back, validate_report.py and reformat.sh
+# check it, so the label is one spelling here rather than one per reader.
+REPORT_MANIFEST_CHECKSUM_LABEL = "checksum"
 
 # What a report's raw data is stored as, one archive per test.
 REPORT_RAW_ARCHIVE_SUFFIX = "txz"
@@ -237,7 +306,7 @@ SOURCE_SCAN_SKIPPED_DIRS = (
 STRIP_CURL_PERF_SITE_HREF = "https://curl.se/perf/index.html"
 
 # Width of a strip's status row, its first cell. The outer one says
-# "perf2html"; the inner one says the selection path, so the budget is the
+# "perf2html". The inner one says the selection path, so the budget is the
 # longest test name plus separator plus the longest view label --
 # "simpleformat / flame graph" is 26 today, and "<test> / summary" is
 # shorter. flex-wrap: nowrap means too small clips mid-word.
@@ -295,6 +364,60 @@ THEME_COLOR_PAIR_ENTRIES: list[str] = [
     "#2F3640",
 ]
 
+# What the seven THEME_COLOR_PAIR_ENTRIES pairs are called, in the order
+# that list gives them. Each name becomes the CSS variables --<name> and
+# --<name>-l, so these are boundary names, and there must be one name for
+# every pair the entries hold.
+THEME_COLOR_PAIR_NAMES: tuple[str, ...] = (
+    "blue",
+    "white",
+    "yellow",
+    "gray",
+    "navy",
+    "steel",
+    "slate",
+)
+
+# How much darker than its named colour the page background is drawn. The
+# whole page follows --bg: the scrollbar track, the minimap band and every
+# heat blend, so this is the one number that moves them together.
+THEME_COLOR_ROLE_BACKGROUND_SHADE_FACTOR = 0.90
+
+# What each colour is actually for, as the CSS variable name every page
+# reads, then which THEME_COLOR_PAIR_NAMES pair it is taken from and which
+# member of that pair. The member is "light" or "dark". "bg" is the one
+# entry the pair alone does not settle, because it is its pair's dark
+# member darkened by THEME_COLOR_ROLE_BACKGROUND_SHADE_FACTOR. Renaming a
+# role renames a CSS variable every stylesheet and page script reads, so
+# these keys are boundary names.
+THEME_COLOR_ROLE_SOURCES: dict[str, tuple[str, str]] = {
+    "bg": ("slate", "dark"),
+    "bg-alt": ("slate", "light"),
+    "panel": ("navy", "dark"),
+    "nav": ("navy", "dark"),
+    "sel": ("navy", "light"),
+    "fg": ("white", "light"),
+    "fg-dim": ("white", "dark"),
+    "muted": ("white", "dark"),
+    "link": ("blue", "light"),
+    "accent": ("yellow", "light"),
+    "bar": ("steel", "dark"),
+}
+
+# The units a printed duration is measured in, largest first, each as the
+# suffix to print and how many seconds one of them lasts. num_time() prints
+# a value in the first unit it reaches, so the order is what decides
+# whether 0.5 ms reads as 500.00us or 0.50ms. This is the printing ladder,
+# not SUMMARY_TIME_SUFFIX_SECONDS, which reads suffixes a perf log already
+# wrote.
+THEME_TIME_UNIT_ENTRIES: tuple[tuple[str, float], ...] = (
+    ("s", 1.0),
+    ("ms", 1e-3),
+    ("us", 1e-6),
+    ("ns", 1e-9),
+    ("ps", 1e-12),
+)
+
 # Smallest a file can be before it is plainly a failed generate rather than
 # a small page. The flame graph page is a loader -- two script tags and a
 # stylesheet link pointing at the shared bundle -- so it has a floor of its
@@ -306,17 +429,62 @@ VALIDATE_HEAT_MAP_PAGE_LEAST_BYTES = 5000
 VALIDATE_OVERVIEW_PAGE_LEAST_BYTES = 2000
 VALIDATE_RAW_ARCHIVE_LEAST_BYTES = 100
 
+# What a perf2html_diff.sh report is expected to contain, and what a
+# perf2html.sh report is expected to contain. These two are the whole
+# difference between checking a diff and checking a full report, which is
+# why validate_report.py reads its checks off them rather than branching
+# on which kind it was handed. Each holds:
+#   subpages          the per-test view directories that must exist
+#   heading           the pattern the top-N heading has to match
+#   header_blocks     the header blocks the overview must carry
+#   manifest_version  the exact first line of MANIFEST.txt, which is also
+#                     the only thing that makes a directory a diff input
+#   manifest_labels   the LABEL= rows MANIFEST.txt must have
+#   test_has_rawdata  whether a test records runs of its own -- a perf
+#                     log, a trace, a flame graph. never true of the
+#                     synthesized "all"
+#   all_has_archive   whether "all" stores an archive of its own, which it
+#                     does only where its pages are built from data no
+#                     other test's archive holds
+VALIDATE_REPORT_LAYOUT_DIFF: dict[str, object] = {
+    "subpages": ("heat-map",),
+    "heading": r"<h2>top \d+ functions by change in self</h2>",
+    "header_blocks": ("baseline", "modified"),
+    "manifest_version": "curl/perf2html_diff.sh v1",
+    "manifest_labels": ("baseline", "modified", "stamp"),
+    "test_has_rawdata": False,
+    "all_has_archive": True,
+}
+VALIDATE_REPORT_LAYOUT_FULL: dict[str, object] = {
+    "subpages": ("flame-graph", "heat-map"),
+    "heading": r"<h2>top \d+ functions by self</h2>",
+    "header_blocks": (),
+    "manifest_version": "curl/perf2html.sh v1",
+    "manifest_labels": (
+        "sampled",
+        "revision",
+        "cpu",
+        "build",
+        "executable",
+        "stamp",
+    ),
+    "test_has_rawdata": True,
+    "all_has_archive": False,
+}
+
 # Every setting the report's JavaScript reads, by name. The value itself is
 # the module-level setting above, so a value the page and Python both use is
 # written once and this list only says who else can see it. A page reads a
-# name off the frozen object this list builds; Python reads the same name
+# name off the frozen object this list builds. Python reads the same name
 # through load_into().
 _BROWSER_SETTING_NAMES = (
     "HEAT_COLOR_ALPHA_HIGHEST",
     "HEAT_COLOR_ALPHA_LOWEST",
     "HEAT_COLOR_FULL_SCALE_PERCENT",
     "HEAT_COLOR_LIGHT_TEXT_ABOVE_SHARE",
+    "HEAT_COLOR_RAMP_STOPS",
     "HEAT_MAP_CONTROL_DROPDOWN_EXTRA_WIDTH_CHARS",
+    "HEAT_MAP_COUNTER_DESCRIPTION_STRING_ID_PREFIX",
     "HEAT_MAP_HOME_LINES_LOCATION_MAX_CHARS",
     "HEAT_MAP_HOME_LINES_SOURCE_COLUMN_WIDTH_CHARS",
     "HEAT_MAP_HOME_LINES_SOURCE_TEXT_MAX_CHARS",
@@ -324,6 +492,7 @@ _BROWSER_SETTING_NAMES = (
     "HEAT_MAP_MINIMAP_SHOWN_ABOVE_FILE_LINES",
     "HEAT_MAP_MINIMAP_SOURCE_WIDTH_CHARS",
     "HEAT_MAP_MINIMAP_VIEWPORT_BOX_SMALLEST_PX",
+    "HEAT_MAP_SECONDARY_COUNTER_NAMES",
     "HEAT_MAP_SOURCE_HOT_LINE_BUTTON_LEAST_SHARE",
     "HEAT_MAP_SOURCE_HOT_LINE_BUTTON_MAX_COUNT",
     "HEAT_MAP_SOURCE_VIEW_WIDTH_CHARS",
@@ -334,6 +503,7 @@ _BROWSER_SETTING_NAMES = (
     "HEAT_MAP_TREE_INDENT_PER_LEVEL_PX",
     "HEAT_MAP_TREE_PANE_NARROWEST_PX",
     "LAYOUT_RESIZE_SETTLE_DELAY_MS",
+    "NUMBER_SMALLEST_PRINTED_PERCENT",
     "TABLE_COLUMN_EXTRA_WIDTH_CHARS",
     "TABLE_COLUMN_NARROWEST_DRAG_PX",
     "TABLE_FUNCTION_NAME_WIDTH_CHARS",
@@ -344,10 +514,28 @@ _BROWSER_SETTING_NAMES = (
 # bool is an int subclass, so an int annotation must not accept True.
 _SCALAR_TYPES = (bool, int, float, str)
 
+# The field of a report layout that holds its MANIFEST.txt version line,
+# which is the value the shell wants out of the two layout settings.
+_SHELL_SETTING_LAYOUT_FIELD = "manifest_version"
+
+# Every setting report_manifest.sh reads, by name, and the shell variable
+# each one is assigned to. Shell cannot import this module, so it runs
+# "python3 settings.py --shell" once as it is sourced and evals what comes
+# back. The names differ because a shell variable is read bare, with no
+# module in front of it, so REPORT_MANIFEST says which manifest it is where
+# a bare CHECKSUM_LABEL would not. The values are the ones Python reads, so
+# the writer of a MANIFEST.txt and every reader that checks one back spell
+# the same strings.
+_SHELL_SETTING_VARIABLES = (
+    ("CHECKSUM_LABEL", "REPORT_MANIFEST_CHECKSUM_LABEL"),
+    ("DIFF_MANIFEST", "VALIDATE_REPORT_LAYOUT_DIFF"),
+    ("REPORT_MANIFEST", "VALIDATE_REPORT_LAYOUT_FULL"),
+)
+
 
 # LostSetting - one SCREAMING_SNAKE constant a file assigns below its
 # load_into() call, where a reader of the file's head does not see it.
-class LostSetting(typing.NamedTuple):
+class LostSetting(NamedTuple):
     # How the constant is spelled, leading underscore kept.
     name: str
     # The file holding it.
@@ -372,17 +560,11 @@ class Settings:
         bare = name.lstrip("_")
         return bool(bare) and bare[0].isupper() and bare.isupper()
 
-    # Read one module's declared settings and assign them into it. The
-    # module declares each one as a bare annotation and names no value, so
-    # the annotation is the whole request: it says which setting is wanted
-    # and what type the module expects it to be.
-    #
-    # Until this returns, the whole SCREAMING_SNAKE namespace belongs to the
-    # settings reader, so that what it walks is a clean list of names it was
-    # asked for. A module's own constants are assigned after the call.
+    # A bare annotation is the whole request: which setting, and the type
+    # expected. The SCREAMING_SNAKE namespace is ours until this returns.
     def load_into(self, module_name: str) -> None:
         module = sys.modules[module_name]
-        wanted = typing.get_type_hints(module)
+        wanted = get_type_hints(module)
         self.namespace_check(module_name, vars(module))
         for name, expected in wanted.items():
             if not self.is_setting_name(name):
@@ -391,11 +573,8 @@ class Settings:
             self.type_check(module_name, name, value, expected)
             setattr(module, name, value)
 
-    # Stop a module that has already filled part of the reserved namespace.
-    # Anything spelled like a setting and holding a value at this point is
-    # either a setting this reader does not know or, far more often, one of
-    # the module's own constants written above the settings instead of
-    # below them.
+    # Stop a module that already filled part of the reserved namespace --
+    # almost always its own constants written above load_into(), not below.
     def namespace_check(
         self, module_name: str, scope: dict[str, object]
     ) -> None:
@@ -412,15 +591,24 @@ class Settings:
             "a bare annotation here and define it in settings.py."
         )
 
-    # Confirm a setting's value is the type the module annotated it with.
-    # Scalars must match exactly -- no conversion, ever, so an annotation
-    # that disagrees with settings.py is a hard error one of the two sides
-    # has to fix. A container is checked to the container only; what it
-    # holds is not walked.
+    # The settings report_manifest.sh evals as it is sourced. A layout hands
+    # over its version line only. Every value is quoted so none runs as shell.
+    def shell_script_write(self) -> str:
+        lines: list[str] = []
+        for variable, name in _SHELL_SETTING_VARIABLES:
+            value = globals()[name]
+            if isinstance(value, dict):
+                value = value[_SHELL_SETTING_LAYOUT_FIELD]
+            quoted = str(value).replace("'", "'\\''")
+            lines.append(f"{variable}='{quoted}'")
+        return "\n".join(lines) + "\n"
+
+    # Confirm a value matches its annotation. Scalars exactly, never
+    # converted. A container is checked to the container, not walked.
     def type_check(
         self, module_name: str, name: str, value: object, expected: object
     ) -> None:
-        wanted = typing.get_origin(expected) or expected
+        wanted = get_origin(expected) or expected
         if not isinstance(wanted, type):
             return
         found = type(value)
@@ -442,11 +630,8 @@ class Settings:
                 "value in settings.py."
             )
 
-    # Every SCREAMING_SNAKE assignment one source file makes below its
-    # load_into() call, in the order they are written. These are the file's
-    # own constants, which the namespace rule pushes below the call: the
-    # cost is that a reader scrolling the top of the file sees the declared
-    # settings and no sign that more constants exist further down.
+    # Every SCREAMING_SNAKE assignment a file makes below its load_into()
+    # call, in written order: its own constants, invisible from the head.
     def lost_settings(self, path: str) -> list[LostSetting]:
         with open(path, encoding="utf-8") as handle:
             lines = handle.read().split("\n")
@@ -480,9 +665,20 @@ class Settings:
 # so an indented assignment inside a class or function is not one.
 _ASSIGNED_NAME_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)\s*(?::[^=]+)?=")
 
+# The scripts/ directory this module was loaded from, which is also where
+# the runtime template sits.
+_DIRECTORY = os.path.dirname(os.path.abspath(__file__))
+
 # How the load_into() call is written at the top of every file that has
 # one, matched at the start of the line.
 _LOAD_INTO_CALL_TEXT = "settings.load_into("
+
+# What settings_script_write() substitutes in the runtime template: the
+# JSON literal of every setting the browser reads, and the name the page
+# calls the reader by. Both are bare identifiers in the template, so
+# node --check parses the file before anything is filled in.
+_PAGE_SETTINGS_DATA_MARKER = "__DATA__"
+_PAGE_SETTINGS_NAME_MARKER = "__NAME__"
 
 _READER = Settings()
 
@@ -499,15 +695,42 @@ def lost_settings(path: str) -> list[LostSetting]:
     return _READER.lost_settings(path)
 
 
-# Build the generated assets/settings.js: the settings the browser reads, as
-# one JSON literal frozen to its leaves, reachable only through the one
-# reader function the page calls to fill its own local consts.
+# Build assets/settings.js: the browser's settings as one frozen JSON
+# literal in settings_runtime.js, opened here -- theme.py would cycle.
 def settings_script_write() -> str:
     values = {name: globals()[name] for name in _BROWSER_SETTING_NAMES}
     data = json.dumps(values, indent=2, sort_keys=True, ensure_ascii=False)
-    return (
-        f"const {PAGE_SETTINGS_GLOBAL_NAME} = (function () {{\n"
-        f"  const values = {_DEEP_FREEZE}({data});\n"
-        f"  return {_SETTING_READER};\n"
-        f"}})();\n"
+    with open(
+        os.path.join(_DIRECTORY, ASSET_TEMPLATE_SETTINGS_RUNTIME_NAME),
+        encoding="utf-8",
+    ) as handle:
+        runtime = handle.read()
+    return runtime.replace(
+        _PAGE_SETTINGS_NAME_MARKER, PAGE_SETTINGS_GLOBAL_NAME
+    ).replace(_PAGE_SETTINGS_DATA_MARKER, data)
+
+
+# Build the shell assignments report_manifest.sh evals while it is sourced.
+def shell_script_write() -> str:
+    return _READER.shell_script_write()
+
+
+# main - Print the settings the shell reads. The whole command-line
+# surface: nothing here writes a file or takes a path.
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--shell",
+        action="store_true",
+        help="print the settings report_manifest.sh reads",
     )
+    args = parser.parse_args()
+    if not args.shell:
+        parser.print_usage(sys.stderr)
+        return 2
+    sys.stdout.write(shell_script_write())
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

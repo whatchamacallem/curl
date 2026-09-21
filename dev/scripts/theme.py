@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-import collections.abc, html, math, os, typing
+import html, math, os
+from collections.abc import Sequence
+from typing import NamedTuple, TypeAlias, TypedDict
 
 import settings
 
-# Every setting this file reads. Each one is declared with the type it must
-# have and loaded by settings.load_into(), which fails at import if a name, a
-# type or the ordering is wrong.
 _ASSET_FRAME_SCRIPT_NAME: str
 _ASSET_HEAT_MAP_SCRIPT_NAME: str
 _ASSET_HEAT_MAP_STYLESHEET_NAME: str
@@ -18,16 +17,21 @@ _HEAT_COLOR_ALPHA_HIGHEST: float
 _HEAT_COLOR_ALPHA_LOWEST: float
 _HEAT_COLOR_RAMP_STOPS: list[str]
 _HEAT_COLOR_SMALLEST_VISIBLE_SHARE: float
+_NUMBER_SMALLEST_PRINTED_PERCENT: float
 _PAGE_FONT_FAMILY: str
 _REPORT_ASSETS_DIR_NAME: str
 _STRIP_STATUS_ROW_WIDTH_CHARS: int
 _TABLE_COLUMN_EXTRA_WIDTH_CHARS: int
 _THEME_COLOR_PAIR_ENTRIES: list[str]
+_THEME_COLOR_PAIR_NAMES: tuple[str, ...]
+_THEME_COLOR_ROLE_BACKGROUND_SHADE_FACTOR: float
+_THEME_COLOR_ROLE_SOURCES: dict[str, tuple[str, str]]
+_THEME_TIME_UNIT_ENTRIES: tuple[tuple[str, float], ...]
 settings.load_into(__name__)
 
 
 # Cell - One table cell: the text, plus every way a page can dress it up.
-class Cell(typing.NamedTuple):
+class Cell(NamedTuple):
     # what the cell says, and what its width is measured from
     text: str = ""
     # markup to print instead of the escaped text, e.g. a link
@@ -39,11 +43,11 @@ class Cell(typing.NamedTuple):
 
 
 # Either a dressed-up Cell or bare text that becomes one.
-CellOrText: typing.TypeAlias = Cell | str
+CellOrText: TypeAlias = Cell | str
 
 
 # Column - One table column: its label and how wide it is allowed to get.
-class Column(typing.NamedTuple):
+class Column(NamedTuple):
     # the header text, and every column's width floor
     label: str
     # right-align this column, because it holds numbers
@@ -57,7 +61,7 @@ class Column(typing.NamedTuple):
 
 
 # ThemeRuntime - The few theme values the page's JavaScript needs at runtime.
-class ThemeRuntime(typing.TypedDict):
+class ThemeRuntime(TypedDict):
     # the same 12 heat stops, for heat the JS computes itself
     heat: list[str]
     # the page background heat blends over
@@ -72,19 +76,16 @@ class ThemeRuntime(typing.TypedDict):
 class Theme:
     # Where theme.css and theme.js live.
     DIRECTORY = os.path.dirname(os.path.abspath(__file__))
-    # The seven colour pairs of _THEME_COLOR_PAIR_ENTRIES, in the order
-    # that list gives them.
-    NAMES = ("blue", "white", "yellow", "gray", "navy", "steel", "slate")
 
     # ColorPair - One "User settings" colour in both its light and dark form.
-    class ColorPair(typing.NamedTuple):
+    class ColorPair(NamedTuple):
         # the light member, exposed to CSS as --<name>-l
         light: str
         # the dark member, exposed to CSS as --<name>
         dark: str
 
     # Rgb - One colour split into channels, so it can be mixed and measured.
-    class Rgb(typing.NamedTuple):
+    class Rgb(NamedTuple):
         # 0..255
         red: int
         # 0..255
@@ -93,7 +94,7 @@ class Theme:
         blue: int
 
     # TimeUnit - One time suffix and how many seconds one of it is.
-    class TimeUnit(typing.NamedTuple):
+    class TimeUnit(NamedTuple):
         # what to print, e.g. "ms"
         suffix: str
         # how long one of them lasts
@@ -127,25 +128,24 @@ class Theme:
         def percent(self, percent: float) -> str:
             if percent >= 9.95:
                 return f"{percent:.1f}%"
-            if percent >= 0.01:
+            if percent >= _NUMBER_SMALLEST_PRINTED_PERCENT:
                 return f"{percent:.2f}%"
             return "<0.01%" if percent > 0 else ""
 
         # A diff number: same as human(), and empty at zero. Only a drop
-        # is marked, with "-"; a rise carries no "+".
+        # is marked, with "-". A rise carries no "+".
         def signed(self, number: float) -> str:
             if number == 0:
                 return ""
             return ("-" if number < 0 else "") + self.human(abs(number))
 
-        # A diff share: same as percent(), and empty at zero. An arrow
-        # leads and a drop keeps its "-". Too small to print is
-        # "~0.00%" and ">1000x" is a bound, so neither takes a sign.
+        # A diff share: percent(), empty at zero, arrow-led, a drop keeping
+        # its "-". "≈0.00%" and ">1000x" are bounds, so take no sign.
         def signed_percent(self, percent: float) -> str:
             if percent == 0:
                 return ""
             arrow = "▼" if percent < 0 else "▲"
-            if abs(percent) < 0.01:
+            if abs(percent) < _NUMBER_SMALLEST_PRINTED_PERCENT:
                 return arrow + "≈0.00%"
             body = self.multiple(abs(percent))
             sign = "-" if percent < 0 and body[0] != ">" else ""
@@ -174,11 +174,8 @@ class Theme:
         ) as handle:
             return handle.read()
 
-    # Write the report's one shared copy of the theme. Two of these are
-    # generated rather than copied: the stylesheet, whose colour variables
-    # are computed here, and settings.js, which settings.py serializes. A
-    # copied scripts/theme.css would silently drop the variables, and there
-    # is no scripts/settings.js to copy at all.
+    # Write the report's one shared copy of the theme. The stylesheet and
+    # settings.js are generated here, not copied -- copies lose their data.
     def assets_write(self, out_dir: str) -> None:
         os.makedirs(out_dir, exist_ok=True)
         heat_map_script = _ASSET_HEAT_MAP_SCRIPT_NAME
@@ -211,8 +208,8 @@ class Theme:
     # How wide each column ends up: its title is always the floor.
     def column_widths(
         self,
-        columns: collections.abc.Sequence[Column],
-        rows: collections.abc.Sequence[collections.abc.Sequence[Cell]],
+        columns: Sequence[Column],
+        rows: Sequence[Sequence[Cell]],
     ) -> list[int]:
         widths: list[int] = []
         for index, column in enumerate(columns):
@@ -264,7 +261,7 @@ class Theme:
         self,
         title: str,
         body: str,
-        extra_js: collections.abc.Sequence[str] = (),
+        extra_js: Sequence[str] = (),
         body_class: str = "",
         depth: int = 0,
     ) -> str:
@@ -353,9 +350,16 @@ class Theme:
     # Cut _THEME_COLOR_PAIR_ENTRIES into its named light/dark pairs.
     def pairs(self) -> dict[str, Theme.ColorPair]:
         entries = _THEME_COLOR_PAIR_ENTRIES
+        names = _THEME_COLOR_PAIR_NAMES
+        if len(entries) != 2 * len(names):
+            raise ValueError(
+                f"THEME_COLOR_PAIR_ENTRIES holds {len(entries)} colours, "
+                f"which is not two for each of the {len(names)} "
+                "THEME_COLOR_PAIR_NAMES"
+            )
         return {
             name: Theme.ColorPair(entries[2 * index], entries[2 * index + 1])
-            for index, name in enumerate(self.NAMES)
+            for index, name in enumerate(names)
         }
 
     # Split "#RRGGBB" into channels.
@@ -365,6 +369,19 @@ class Theme:
             int(hex_color[3:5], 16),
             int(hex_color[5:7], 16),
         )
+
+    # Resolve _THEME_COLOR_ROLE_SOURCES into each role's colour. "bg" alone
+    # is not its pair's member, but that member shaded darker.
+    def roles(self, pairs: dict[str, Theme.ColorPair]) -> dict[str, str]:
+        resolved: dict[str, str] = {}
+        for role, (pair_name, member) in _THEME_COLOR_ROLE_SOURCES.items():
+            color = getattr(pairs[pair_name], member)
+            if role == "bg":
+                color = self.shade(
+                    color, _THEME_COLOR_ROLE_BACKGROUND_SHADE_FACTOR
+                )
+            resolved[role] = color
+        return resolved
 
     # The handful of theme values the page's own JavaScript needs.
     def runtime(self) -> ThemeRuntime:
@@ -386,8 +403,8 @@ class Theme:
     def table(
         self,
         key: str,
-        columns: collections.abc.Sequence[Column],
-        rows: collections.abc.Sequence[collections.abc.Sequence[CellOrText]],
+        columns: Sequence[Column],
+        rows: Sequence[Sequence[CellOrText]],
         fill: bool = False,
         column_titles: bool = True,
     ) -> str:
@@ -457,8 +474,16 @@ class Theme:
         out.append("</div>")
         return "".join(out)
 
+    # Build _THEME_TIME_UNIT_ENTRIES into the ladder NumberFormat.time()
+    # walks, largest unit first.
+    def time_units(self) -> tuple[Theme.TimeUnit, ...]:
+        return tuple(
+            Theme.TimeUnit(suffix, seconds)
+            for suffix, seconds in _THEME_TIME_UNIT_ENTRIES
+        )
 
-# The one renderer every page goes through. Named first because the three
+
+# The one renderer every page goes through. Named first because the four
 # below are built from it.
 _RENDERER = Theme()
 
@@ -469,28 +494,10 @@ _COLOR_PAIR: dict[str, Theme.ColorPair] = _RENDERER.pairs()
 _NUMBERS = Theme.NumberFormat()
 
 # What each colour is actually for -- the names CSS and the pages use.
-_ROLE: dict[str, str] = {
-    "bg": _RENDERER.shade(_COLOR_PAIR["slate"].dark, 0.90),
-    "bg-alt": _COLOR_PAIR["slate"].light,
-    "panel": _COLOR_PAIR["navy"].dark,
-    "nav": _COLOR_PAIR["navy"].dark,
-    "sel": _COLOR_PAIR["navy"].light,
-    "fg": _COLOR_PAIR["white"].light,
-    "fg-dim": _COLOR_PAIR["white"].dark,
-    "muted": _COLOR_PAIR["white"].dark,
-    "link": _COLOR_PAIR["blue"].light,
-    "accent": _COLOR_PAIR["yellow"].light,
-    "bar": _COLOR_PAIR["steel"].dark,
-}
+_ROLE: dict[str, str] = _RENDERER.roles(_COLOR_PAIR)
 
 # Time units, largest first -- num_time() picks the first one a value reaches.
-_TIME_UNITS: tuple[Theme.TimeUnit, ...] = (
-    Theme.TimeUnit("s", 1.0),
-    Theme.TimeUnit("ms", 1e-3),
-    Theme.TimeUnit("us", 1e-6),
-    Theme.TimeUnit("ns", 1e-9),
-    Theme.TimeUnit("ps", 1e-12),
-)
+_TIME_UNITS: tuple[Theme.TimeUnit, ...] = _RENDERER.time_units()
 
 
 # asset_text_read - One file from scripts/, to inline into a page.
@@ -542,7 +549,7 @@ def num_time(seconds: float) -> str:
 def page_document(
     title: str,
     body: str,
-    extra_js: collections.abc.Sequence[str] = (),
+    extra_js: Sequence[str] = (),
     body_class: str = "",
     depth: int = 0,
 ) -> str:
@@ -557,8 +564,8 @@ def shared_href(depth: int, name: str) -> str:
 # table_render - One whole table, columns sized in exact characters.
 def table_render(
     key: str,
-    columns: collections.abc.Sequence[Column],
-    rows: collections.abc.Sequence[collections.abc.Sequence[CellOrText]],
+    columns: Sequence[Column],
+    rows: Sequence[Sequence[CellOrText]],
     fill: bool = False,
     column_titles: bool = True,
 ) -> str:

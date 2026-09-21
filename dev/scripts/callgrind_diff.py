@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-import argparse, collections.abc, json, os, sys, typing
+import argparse, json, os, sys
+from collections.abc import Sequence
+from typing import NamedTuple, TextIO, TypedDict
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import callgrind, settings
@@ -16,7 +18,7 @@ settings.load_into(__name__)
 # line), and writes the result back out as a plain callgrind file.
 class CallgrindDiff:
     # CallerDelta - How one caller's calls into one callee changed.
-    class CallerDelta(typing.NamedTuple):
+    class CallerDelta(NamedTuple):
         # who does the calling
         function: str
         # how many more (or fewer) times it called
@@ -26,12 +28,12 @@ class CallgrindDiff:
 
     # CallersDoc - The synthesized callers diff, because a delta file has no
     # calls= lines and so no call graph, and no baseline to be a share of.
-    class CallersDoc(typing.TypedDict):
-        # which event the costs are counted in
-        event: str
-        # the recorded events the baseline vectors are written against, so a
-        # reader can resolve any event, derived ones included, from them
-        events: list[str]
+    class CallersDoc(TypedDict):
+        # which counter the costs are counted in
+        counter: str
+        # the recorded counters the baseline vectors are written against, so
+        # a reader can resolve any counter, derived ones included, from them
+        counters: list[str]
         # per callee, its changed callers as [name, count, cost] rows
         callers: dict[str, list[list[object]]]
         # what every share divides by: the baseline cost vector per
@@ -43,7 +45,7 @@ class CallgrindDiff:
         baselineCalls: dict[str, int]
 
     # DiffArgs - The two sides to subtract, and the two files to write.
-    class DiffArgs(typing.NamedTuple):
+    class DiffArgs(NamedTuple):
         # the "before" callgrind files, merged
         baseline: list[str]
         # the "after" callgrind files, merged
@@ -53,9 +55,8 @@ class CallgrindDiff:
         # where the synthesized callers diff goes
         callers_output: str
 
-    # The baseline cost of every function and of every one of its lines --
-    # the denominator each share is taken against. Keyed the same way the
-    # subtraction is, so an inlined body is never charged to its neighbour.
+    # Baseline cost per function and per line -- what each share divides by,
+    # keyed as the subtraction is so an inlined body stays off its neighbour.
     def baseline_costs(
         self, baseline: callgrind.Profile
     ) -> dict[str, callgrind.Costs]:
@@ -111,7 +112,7 @@ class CallgrindDiff:
         self,
         baseline: callgrind.Profile,
         modified: callgrind.Profile,
-        event: str,
+        counter: str,
     ) -> dict[str, list[CallgrindDiff.CallerDelta]]:
         out: dict[str, list[CallgrindDiff.CallerDelta]] = {}
         for callee in sorted(set(baseline.callers) | set(modified.callers)):
@@ -131,12 +132,12 @@ class CallgrindDiff:
                     before_tally.count if before_tally else 0
                 )
                 cost = (
-                    modified.value(after_tally.costs, event)
+                    modified.value(after_tally.costs, counter)
                     if after_tally
                     else 0
                 )
                 cost -= (
-                    baseline.value(before_tally.costs, event)
+                    baseline.value(before_tally.costs, counter)
                     if before_tally
                     else 0
                 )
@@ -164,8 +165,8 @@ class CallgrindDiff:
         baseline: callgrind.Profile,
     ) -> None:
         doc: CallgrindDiff.CallersDoc = {
-            "event": _RANKING_COUNTER_NAME,
-            "events": list(baseline.events),
+            "counter": _RANKING_COUNTER_NAME,
+            "counters": list(baseline.counters),
             "callers": {
                 callee: [
                     [delta.function, delta.count_, delta.cost]
@@ -184,15 +185,12 @@ class CallgrindDiff:
         with open(path, "w", encoding="utf-8") as handle:
             json.dump(doc, handle)
 
-    # One vector as the synthesized callers diff writes it: the recorded
-    # slots at the indices they already had, widened to the full recorded
-    # width so a slot's index never moves. A derived event is a pure
-    # function of these, so none is stored. Trailing zeros go, since every
-    # reader treats a missing slot as zero.
+    # Pad to the full recorded width so a slot's index never moves, then trim
+    # trailing zeros. Stores no derived slot -- those are a function of these.
     def costs_fit(
         self, profile: callgrind.Profile, costs: callgrind.Costs
     ) -> callgrind.Costs:
-        padded = list(costs) + [0] * (len(profile.events) - len(costs))
+        padded = list(costs) + [0] * (len(profile.counters) - len(costs))
         return self.costs_trim(padded)
 
     # Subtract two cost vectors, treating a missing slot as zero.
@@ -213,26 +211,24 @@ class CallgrindDiff:
             length -= 1
         return costs[:length]
 
-    # Refuse two sides that do not count the same things, or that cannot
-    # supply the one event every share is taken in. Diffing across event
-    # lists is what the manifest version exists to special-case later. For
-    # now it stops the run rather than quietly picking another event.
-    def events_check(
+    # Refuse two sides recording different counters, or either unable to
+    # supply the ranking counter -- never quietly substitute another.
+    def counters_check(
         self, baseline: callgrind.Profile, modified: callgrind.Profile
     ) -> None:
-        if baseline.events != modified.events:
+        if baseline.counters != modified.counters:
             sys.exit(
-                "error: the two profiles record different events: "
-                f"{' '.join(baseline.events)} vs "
-                f"{' '.join(modified.events)}"
+                "error: the two profiles record different counters: "
+                f"{' '.join(baseline.counters)} vs "
+                f"{' '.join(modified.counters)}"
             )
         for side, profile in (("baseline", baseline), ("modified", modified)):
-            if _RANKING_COUNTER_NAME not in profile.event_names():
+            if _RANKING_COUNTER_NAME not in profile.counter_names():
                 sys.exit(
                     f"error: the {side} profile cannot supply"
                     f" {_RANKING_COUNTER_NAME}, the counter every diff share"
                     f" is counted in: it records"
-                    f" {' '.join(profile.events)}"
+                    f" {' '.join(profile.counters)}"
                 )
 
     # Sum of every line delta's absolute value -- what a diff's shares divide
@@ -253,9 +249,9 @@ class CallgrindDiff:
     def subtract(
         self, baseline: callgrind.Profile, modified: callgrind.Profile
     ) -> callgrind.Profile:
-        self.events_check(baseline, modified)
+        self.counters_check(baseline, modified)
         diff = callgrind.Profile(
-            events=list(modified.events),
+            counters=list(modified.counters),
             command=modified.command,
         )
         for function in sorted(
@@ -292,7 +288,7 @@ class CallgrindDiff:
         self,
         profile: callgrind.Profile,
         path: str,
-        descriptions: collections.abc.Sequence[str],
+        descriptions: Sequence[str],
     ) -> None:
         os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
         with open(path, "w", encoding="utf-8") as handle:
@@ -303,7 +299,7 @@ class CallgrindDiff:
                 handle.write(f"desc: {self.path_strip(description)}\n")
             handle.write(
                 f"cmd: {profile.command}\npositions: line\n"
-                f"events: {' '.join(profile.events)}\n"
+                f"events: {' '.join(profile.counters)}\n"
             )
             handle.write(
                 "summary: "
@@ -319,7 +315,7 @@ class CallgrindDiff:
     # Write one function's lines, home file first, entry line first inside it.
     def write_function(
         self,
-        handle: typing.TextIO,
+        handle: TextIO,
         profile: callgrind.Profile,
         function: str,
         current_ob: str,

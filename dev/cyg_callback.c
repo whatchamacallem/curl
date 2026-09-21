@@ -5,7 +5,7 @@
  * (-Wl,--export-dynamic), so libcurl.so binds to this copy of the hooks
  * instead of glibc's empty ones. Single-threaded, like the perf tests.
  *
- *   PERF_TRACE_OUT=FILE   write the trace here at exit; unset records
+ *   PERF_TRACE_OUT=FILE   write the trace here at exit. Unset records
  *                         nothing
  *   PERF_TRACE_SKIP=N     let the first N events pass without recording them
  *
@@ -31,12 +31,15 @@
 #define CYG_CALLBACKS_MAX_REC 327680u
 #define CYG_CALLBACKS_EXIT_BIT (1ull << 63)
 
+/* cyg_callback_record_t - one enter or exit, as written to the file */
 typedef struct {
   uint64_t fn;
   uint64_t tsc;
 } cyg_callback_record_t;
 
+/* cyg_callbacks_t - the recorder's whole state, one static instance */
 typedef struct {
+  /* the records, all of them static storage */
   cyg_callback_record_t buf[CYG_CALLBACKS_MAX_REC];
   /* where the next record goes. == end: not sampling */
   cyg_callback_record_t *next;
@@ -46,14 +49,19 @@ typedef struct {
   cyg_callback_record_t *final;
   /* cyg_callback_pause() calls not yet undone */
   unsigned holds;
+  /* calls passed without recording, and how many to pass */
   uint64_t idle, skip;
+  /* wall clock and stamp read together, to convert ticks */
   uint64_t t0_ns, t0_tsc;
+  /* PERF_TRACE_OUT, NULL records nothing */
   const char *out;
 } cyg_callbacks_t;
 
+/* the one recorder. Final starts at buf so pause/resume stay paired */
 static cyg_callbacks_t s_cyg_callbacks =
     {{{0, 0}}, NULL, NULL, s_cyg_callbacks.buf, 1, 0, 0, 0, 0, NULL};
 
+/* cyg_callback_now_ns - monotonic wall clock, paired with a stamp read */
 __attribute__((cold)) static uint64_t cyg_callback_now_ns(void)
 {
   struct timespec ts;
@@ -61,6 +69,7 @@ __attribute__((cold)) static uint64_t cyg_callback_now_ns(void)
   return (uint64_t)ts.tv_sec * 1000000000ull + (uint64_t)ts.tv_nsec;
 }
 
+/* cyg_callback_pause - stop recording, keeping the stop point. Nests */
 __attribute__((cold)) static void cyg_callback_pause(void)
 {
   cyg_callbacks_t *cb = &s_cyg_callbacks;
@@ -70,6 +79,7 @@ __attribute__((cold)) static void cyg_callback_pause(void)
   }
 }
 
+/* cyg_callback_resume - undo one pause, recording again at the last hold */
 __attribute__((cold)) static void cyg_callback_resume(void)
 {
   cyg_callbacks_t *cb = &s_cyg_callbacks;
@@ -79,6 +89,7 @@ __attribute__((cold)) static void cyg_callback_resume(void)
   }
 }
 
+/* cyg_callback_record - the hot path. Keep it a check, two stores, a bump */
 __attribute__((always_inline, hot)) static inline void
 cyg_callback_record(void *fn, uint64_t flag)
 {
@@ -93,21 +104,25 @@ cyg_callback_record(void *fn, uint64_t flag)
   }
 }
 
+/* the two hooks GCC calls, declared so the definitions are not implicit */
 void __cyg_profile_func_enter(void *fn, void *site);
 void __cyg_profile_func_exit(void *fn, void *site);
 
+/* __cyg_profile_func_enter - GCC's hook on entering an instrumented body */
 __attribute__((hot)) void __cyg_profile_func_enter(void *fn, void *site)
 {
   (void)site;
   cyg_callback_record(fn, 0);
 }
 
+/* __cyg_profile_func_exit - GCC's hook on leaving an instrumented body */
 __attribute__((hot)) void __cyg_profile_func_exit(void *fn, void *site)
 {
   (void)site;
   cyg_callback_record(fn, CYG_CALLBACKS_EXIT_BIT);
 }
 
+/* cyg_callback_init - set up before main, so no fault lands in a timed call */
 __attribute__((constructor)) static void cyg_callback_init(void)
 {
   cyg_callbacks_t *cb = &s_cyg_callbacks;
@@ -128,6 +143,7 @@ __attribute__((constructor)) static void cyg_callback_init(void)
   }
 }
 
+/* cyg_callback_dump - write the trace and a /proc/self/maps copy at exit */
 __attribute__((destructor)) static void cyg_callback_dump(void)
 {
   cyg_callbacks_t *cb = &s_cyg_callbacks;

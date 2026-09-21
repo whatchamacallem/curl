@@ -1,4 +1,8 @@
 (function () {
+  "use strict";
+
+  const HEAT_COLOR_RAMP_STOPS = settings("HEAT_COLOR_RAMP_STOPS");
+
   const strip_bar = document.getElementById("bar");
   const home_panel = document.getElementById("home");
   const view_frame = document.getElementById("view");
@@ -13,7 +17,38 @@
   let current_page_href = "",
     current_inner_hash = "",
     current_title = title_badge.textContent;
-  if (!is_framed) title_badge.textContent = OUTER_STATUS_TEXT;
+  const channels_of = (hex) =>
+    [1, 3, 5].map((index) => parseInt(hex.slice(index, index + 2), 16));
+  const RAMP_STOPS = HEAT_COLOR_RAMP_STOPS.map(channels_of);
+  function ramp_color_at(fraction) {
+    const scaled_position = fraction * (RAMP_STOPS.length - 1);
+    const index = Math.min(
+      Math.max(Math.floor(scaled_position), 0),
+      RAMP_STOPS.length - 2,
+    );
+    const step_fraction = scaled_position - index;
+    const mixed_channels = [0, 1, 2].map((channel) => {
+      const low_channel = RAMP_STOPS[index][channel],
+        high_channel = RAMP_STOPS[index + 1][channel];
+      return Math.round(
+        low_channel + (high_channel - low_channel) * step_fraction,
+      );
+    });
+    return `rgb(${mixed_channels.join(",")})`;
+  }
+  const WORDMARK_LETTERS = [...OUTER_STATUS_TEXT].map((letter, index, all) => {
+    const letter_element = document.createElement("span");
+    letter_element.className = "wordmark-letter";
+    letter_element.textContent = letter;
+    letter_element.style.color = ramp_color_at(
+      all.length > 1 ? 0.5 + (0.5 * index) / (all.length - 1) : 1,
+    );
+    return letter_element;
+  });
+  function wordmark_paint() {
+    title_badge.replaceChildren(...WORDMARK_LETTERS);
+  }
+  if (!is_framed) wordmark_paint();
   function selection_path(new_title) {
     return new_title && !new_title.includes(SELECTION_SEPARATOR)
       ? new_title + SELECTION_SEPARATOR + HOME_VIEW_LABEL
@@ -21,9 +56,8 @@
   }
   function title_publish(new_title) {
     current_title = new_title;
-    title_badge.textContent = is_framed
-      ? selection_path(new_title)
-      : OUTER_STATUS_TEXT;
+    if (is_framed) title_badge.textContent = selection_path(new_title);
+    else wordmark_paint();
     document.title = new_title;
     if (!is_framed) return;
     window.parent.postMessage(

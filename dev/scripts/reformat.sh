@@ -42,8 +42,10 @@
 #
 # Validation runs validate_report.py over the report named as the argument,
 # or over whichever default reports exist when none is named. A directory is
-# a report by holding a MANIFEST.txt whose line 1 is a known version string;
-# that line also decides --diff.
+# a report by holding a MANIFEST.txt whose line 1 is a known version string
+# and whose checksum= row still matches the files beside it. That line also
+# decides --diff. Anything else is an error naming what was found and what
+# was expected, and the reports that do hold up are still validated.
 #
 # --check reports what would change and exits 1 instead of writing.
 # cwd-independent: it works in dev/scripts/, like the perf2html scripts.
@@ -60,12 +62,19 @@ cd "$SCRIPTS"
 DIR_DEV=..
 DIR_SCRIPTS=.
 
+# the hard column limit every kind of source is checked against
 COLUMNS_MAX=79
 PRETTIER_CONFIG=../.prettierrc.json
+
+# The recorded raw data the perf2html scripts write. It is measurement,
+# not dev/ source, so no formatter, lint or column check reaches it.
+ARTIFACTS_NAME=perf2html_temporary_artifacts
 
 # Markdown that is the author's notes rather than dev/ source. Nothing here
 # is formatted, linted or column-checked.
 SKIPPED_MARKDOWN_NAMES=(DECLAUDE.md)
+
+# spaces shfmt indents a shell block by
 SHELL_INDENT=2
 RUFF_CONFIG=ruff.toml
 
@@ -77,9 +86,11 @@ DEFAULT_REPORTS=(
   ../perf2html_diff_report
 )
 
-# MANIFEST.txt line 1 of a perf2html.sh report, and of a diff of two.
-REPORT_MANIFEST='curl/perf2html.sh v1'
-DIFF_MANIFEST='curl/perf2html_diff.sh v1'
+# REPORT_MANIFEST, DIFF_MANIFEST, CHECKSUM_LABEL and checksum_compute all
+# come from the one file the perf2html scripts write a manifest with, so
+# this reads a report back by exactly the contract that wrote it.
+# shellcheck source=../report_manifest.sh
+. ../report_manifest.sh
 
 usage_show() {
   cat <<'EOF'
@@ -87,8 +98,10 @@ scripts/reformat.sh [--check] [--verbose] [report-dir]
 EOF
 }
 
+# verbose - the one function testing VERBOSE. No other guard may.
 verbose() { if [ "$VERBOSE" = 1 ]; then echo "$@"; fi; }
 
+# tool_find - echo a tool's path, searching the pip and npm user bins too.
 tool_find() {
   local name="$1" found
 
@@ -103,6 +116,8 @@ tool_find() {
   return 1
 }
 
+# tool_run - run one tool with TOOL_ARGS over the files, printing a status
+# row. It sets STATUS on failure and always returns 0, so later stages run.
 tool_run() {
   local name="$1" label="$2"
   shift 2
@@ -134,10 +149,8 @@ tool_run() {
   return 0
 }
 
-# Every file of one kind under one directory, report dirs and raw data
-# skipped, and so is every SKIPPED_MARKDOWN_NAMES file. This is the one
-# door each stage collects its files through, so a name held out here is
-# held out of formatting, linting and the column check alike.
+# files_of - the one door every stage collects files through, so a name
+# held out here is out of format, lint and the column check alike.
 files_of() {
   local dir="$1" pattern="$2" skipped=()
 
@@ -147,7 +160,7 @@ files_of() {
   done
 
   find "$dir" -name "$pattern" -type f \
-    -not -path '*/temporary_artifacts/*' \
+    -not -path "*/$ARTIFACTS_NAME/*" \
     -not -path '*_report/*' -not -path '*/node_modules/*' \
     -not -path '*/__pycache__/*' "${skipped[@]}" | sort
 }
@@ -195,10 +208,8 @@ format_c() {
   tool_run clang-format c "${files[@]}"
 }
 
-# Markdown, JSON and YAML under dev/, and every page asset under scripts/.
-# prettier reparses what it writes, so this is the lint for these kinds too:
-# a stray </div> or a bad backslash fails here rather than shipping into
-# every generated page.
+# format_prettier - markdown, JSON, YAML and every page asset. prettier
+# reparses what it writes, so it is these kinds' lint as well.
 format_prettier() {
   local files=() extra kind
 
@@ -242,11 +253,8 @@ lint_run() {
   STATUS=1
 }
 
-# Every SCREAMING_SNAKE constant a generator assigns below its
-# settings.load_into() call. The namespace rule puts them there, so this is
-# a report and never a failure: it is the list of constants a reader of a
-# file's head does not see, which is what to check when a value seems to
-# have no definition.
+# lost_settings_report - the SCREAMING_SNAKE constants a generator assigns
+# below its settings.load_into() call. A note, never a failure.
 lost_settings_report() {
   local files output
   mapfile -t files < <(files_of "$DIR_SCRIPTS" '*.py')
@@ -270,6 +278,7 @@ for path in sys.argv[1:]:
   verbose "$output"
 }
 
+# long_lines_report - fail on any line still over COLUMNS_MAX afterwards.
 long_lines_report() {
   local files=() extra kind
 
@@ -305,44 +314,71 @@ report_version() {
   head -n 1 "$1/MANIFEST.txt" 2>/dev/null
 }
 
-# Claim the named report, or every default report that exists. Anything
-# wrong is reported here, naming the version string that was expected.
-report_find() {
-  local path version
+# report_claim - accept a directory whose MANIFEST.txt line 1 is a version
+# string and whose checksum still matches, else set REPORT_ERROR saying so.
+report_claim() {
+  local path="$1" version recorded found
 
-  if [ -n "$REPORT_ARG" ]; then
-    if [ ! -d "$REPORT_ARG" ]; then
-      REPORT_ERROR="no such directory: $REPORT_ARG -- a report is a"
-      REPORT_ERROR="$REPORT_ERROR directory whose MANIFEST.txt line 1 reads"
+  if [ ! -d "$path" ]; then
+    REPORT_ERROR="no such directory: $path -- a report is a directory"
+    REPORT_ERROR="$REPORT_ERROR whose MANIFEST.txt line 1 reads"
+    REPORT_ERROR="$REPORT_ERROR \"$REPORT_MANIFEST\""
+    REPORT_ERROR="$REPORT_ERROR or \"$DIFF_MANIFEST\""
+    return 1
+  fi
+
+  version="$(report_version "$path")"
+  case "$version" in
+    "$REPORT_MANIFEST" | "$DIFF_MANIFEST") ;;
+    "")
+      REPORT_ERROR="$path has no MANIFEST.txt, so it is not a finished"
+      REPORT_ERROR="$REPORT_ERROR report; expected line 1 to read"
       REPORT_ERROR="$REPORT_ERROR \"$REPORT_MANIFEST\""
       REPORT_ERROR="$REPORT_ERROR or \"$DIFF_MANIFEST\""
-      return 0
-    fi
-    version="$(report_version "$REPORT_ARG")"
-    case "$version" in
-      "$REPORT_MANIFEST" | "$DIFF_MANIFEST")
-        REPORTS=("$REPORT_ARG")
-        ;;
-      "")
-        REPORT_ERROR="$REPORT_ARG has no MANIFEST.txt, so it is not"
-        REPORT_ERROR="$REPORT_ERROR dev/perf2html.sh output; its line 1"
-        REPORT_ERROR="$REPORT_ERROR must read \"$REPORT_MANIFEST\""
-        REPORT_ERROR="$REPORT_ERROR or \"$DIFF_MANIFEST\""
-        ;;
-      *)
-        REPORT_ERROR="$REPORT_ARG/MANIFEST.txt line 1 reads \"$version\";"
-        REPORT_ERROR="$REPORT_ERROR expected \"$REPORT_MANIFEST\""
-        REPORT_ERROR="$REPORT_ERROR or \"$DIFF_MANIFEST\""
-        ;;
-    esac
+      return 1
+      ;;
+    *)
+      REPORT_ERROR="$path/MANIFEST.txt line 1 found \"$version\";"
+      REPORT_ERROR="$REPORT_ERROR expected \"$REPORT_MANIFEST\""
+      REPORT_ERROR="$REPORT_ERROR or \"$DIFF_MANIFEST\""
+      return 1
+      ;;
+  esac
+
+  recorded="$(manifest_value "$path" "$CHECKSUM_LABEL")"
+  if [ -z "$recorded" ]; then
+    REPORT_ERROR="$path/MANIFEST.txt has no $CHECKSUM_LABEL= row, so its"
+    REPORT_ERROR="$REPORT_ERROR files cannot be verified; expected one"
+    REPORT_ERROR="$REPORT_ERROR beside the version line \"$version\""
+    return 1
+  fi
+  found="$(checksum_compute "$path")"
+  if [ "$found" != "$recorded" ]; then
+    REPORT_ERROR="$path does not match its recorded $CHECKSUM_LABEL:"
+    REPORT_ERROR="$REPORT_ERROR found \"$found\", expected \"$recorded\""
+    REPORT_ERROR="$REPORT_ERROR -- a file was added, removed or edited"
+    REPORT_ERROR="$REPORT_ERROR after the report was written"
+    return 1
+  fi
+
+  REPORTS+=("$path")
+  return 0
+}
+
+# Claim the named report, or every default report that is present.
+report_find() {
+  local path
+
+  if [ -n "$REPORT_ARG" ]; then
+    report_claim "$REPORT_ARG"
     return 0
   fi
 
   for path in "${DEFAULT_REPORTS[@]}"; do
-    if [ -n "$(report_version "$path")" ]; then REPORTS+=("$path"); fi
+    if [ -e "$path/MANIFEST.txt" ]; then report_claim "$path"; fi
   done
 
-  if [ "${#REPORTS[@]}" = 0 ]; then
+  if [ "${#REPORTS[@]}" = 0 ] && [ -z "$REPORT_ERROR" ]; then
     REPORT_ERROR="no report was named, and the default location"
     REPORT_ERROR="$REPORT_ERROR dev/${DEFAULT_REPORTS[0]#../} is absent"
     REPORT_ERROR="$REPORT_ERROR or has no MANIFEST.txt reading"
@@ -350,18 +386,20 @@ report_find() {
   fi
 }
 
+# validate_run - run validate_report.py over every claimed report.
 validate_run() {
   local path args output exit_code
 
+  # a directory that is not a report is its own failure, and the reports
+  # that are still get validated
   if [ -n "$REPORT_ERROR" ]; then
-    printf '%-12s| FAILED  | no report to validate\n' "validate"
+    printf '%-12s| FAILED  | %s\n' "validate" "not a report"
     {
       echo "error: $REPORT_ERROR"
       echo "       name a report directory as the argument, or run" \
         "dev/perf2html_batch.sh to write the three default ones"
     } >&2
     STATUS=1
-    return 0
   fi
 
   for path in "${REPORTS[@]}"; do
@@ -385,6 +423,7 @@ validate_run() {
   done
 }
 
+# args_parse - read the flags and resolve REPORT_ARG against INVOKED_FROM.
 args_parse() {
   CHECK=0
   VERBOSE=0

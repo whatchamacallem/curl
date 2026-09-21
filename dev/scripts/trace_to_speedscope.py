@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-import argparse, array, json, os, subprocess, sys, typing
+import argparse, array, json, os, subprocess, sys
+from typing import NamedTuple, NotRequired, TypedDict
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import callgrind, settings
@@ -27,7 +28,7 @@ _RECORD_WORDS = 2
 
 
 # Event - One enter or exit, as speedscope's evented format spells it.
-class Event(typing.TypedDict):
+class Event(TypedDict):
     # "O" to open a frame, "C" to close one
     type: str
     # which frame of the shared list this is
@@ -37,7 +38,7 @@ class Event(typing.TypedDict):
 
 
 # EventedProfile - One timeline of enters and exits, and what it covers.
-class EventedProfile(typing.TypedDict):
+class EventedProfile(TypedDict):
     # always "evented" -- what validate_report.py insists on
     type: str
     # what the timeline is called in the page
@@ -53,23 +54,23 @@ class EventedProfile(typing.TypedDict):
 
 
 # Frame - One function as the flame graph names it.
-class Frame(typing.TypedDict):
+class Frame(TypedDict):
     # the demangled symbol, or object+offset when there is none
     name: str
     # the source file, repo-relative
-    file: typing.NotRequired[str]
+    file: NotRequired[str]
     # the line it is declared on
-    line: typing.NotRequired[int]
+    line: NotRequired[int]
 
 
 # Shared - The one frame list every event indexes into.
-class Shared(typing.TypedDict):
+class Shared(TypedDict):
     # every frame the profile mentions, in first-seen order
     frames: list[Frame]
 
 
 # The whole written document. Spelled functionally because of "$schema".
-SpeedscopeDoc = typing.TypedDict(
+SpeedscopeDoc = TypedDict(
     "SpeedscopeDoc",
     {
         "$schema": str,
@@ -82,11 +83,10 @@ SpeedscopeDoc = typing.TypedDict(
 
 
 # TraceToSpeedscope - Turns one rdtsc trace into a speedscope document,
-# keeping the busiest run's first _FLAME_GRAPH_MAX_RECORDED_CALLS complete
-# calls.
+# keeping the busiest run's first _FLAME_GRAPH_MAX_RECORDED_CALLS calls.
 class TraceToSpeedscope:
     # CallSpan - One top-level call, as a span of record numbers.
-    class CallSpan(typing.NamedTuple):
+    class CallSpan(NamedTuple):
         # the record that entered it
         first: int
         # the record that exited it
@@ -94,7 +94,7 @@ class TraceToSpeedscope:
 
     # ExecutableMapping - One executable range of the traced process, and
     # which file it came from.
-    class ExecutableMapping(typing.NamedTuple):
+    class ExecutableMapping(NamedTuple):
         # first address in the range
         low: int
         # one past the last address
@@ -106,7 +106,7 @@ class TraceToSpeedscope:
 
     # LoadSegment - One LOAD segment of an ELF file, for turning a file offset
     # back into the address the debug info is keyed by.
-    class LoadSegment(typing.NamedTuple):
+    class LoadSegment(NamedTuple):
         # where the segment starts in the file
         offset: int
         # how long it is
@@ -115,8 +115,8 @@ class TraceToSpeedscope:
         address: int
 
     # TraceArgs - What this tool reads and what it writes.
-    class TraceArgs(typing.NamedTuple):
-        # the .bin cyg.c wrote; its .maps sits beside it
+    class TraceArgs(NamedTuple):
+        # the .bin cyg.c wrote, with its .maps beside it
         trace_file: str
         # where the speedscope document goes
         output: str
@@ -124,7 +124,7 @@ class TraceToSpeedscope:
         name: str
 
     # TraceRecording - One whole trace file, unpacked.
-    class TraceRecording(typing.NamedTuple):
+    class TraceRecording(NamedTuple):
         # how many events the run counted, kept or not
         seen: int
         # how many it dropped before the kept ones
