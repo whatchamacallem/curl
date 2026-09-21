@@ -66,9 +66,36 @@ Version 3, 29 June 2007.
 
 ## Reading a Diff Report
 
-Every number in a diff report is **modified minus baseline**, for each
-function, file and line compared against itself. There is no separate "before",
-"after" or percentage of a larger change. Positive is more, negative is less.
+### Regular report
+
+A regular report shows you a percentage of a total as you might expect. In most
+places it is a percentage of a global total cycle count, however in the source
+view it may also be a percentage of a file or function if selected.
+
+| counts      |      % |
+| ----------- | -----: |
+| 1 / 50000   | <0.01% |
+| 1 / 5000    |  0.02% |
+| 500 / 5000  |  10.0% |
+| 5000 / 5000 | 100.0% |
+
+### Diff report
+
+A diff report uses percentages the same way the stock market does. If your
+function takes half as long then it is at 50%, where smaller is better.
+
+| counts             |     mine |  bloomberg |
+| ------------------ | -------: | ---------: |
+| 0 -> 5000          |      ▲∞% |       N.A. |
+| 5000 -> 0          | ▼-100.0% |   -100.00% |
+| 0 -> 0             |          |       N.A. |
+| 5000 -> 5000       |          |      0.00% |
+| 5000000 -> 5000001 |  ▲≈0.00% |     +0.00% |
+| 5000000 -> 4999999 |  ▼≈0.00% |     -0.00% |
+| 1000 -> 2000       |  ▲100.0% |   +100.00% |
+| 1000 -> 2010       |   ▲1.01x |   +101.00% |
+| 1000 -> 2300       |   ▲1.30x |   +130.00% |
+| 1000 -> 101000     |  ▲>1000x | +10000.00% |
 
 ## Flame Graph (speedscope)
 
