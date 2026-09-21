@@ -420,6 +420,13 @@
       : text_of("str_function_name_unknown");
   }
 
+  function source_text(file_path) {
+    const file = file_table[file_path];
+    if (!file || file.source == null) return null;
+    const sources = window.report_sources;
+    return (sources && sources[file_path]) != null ? sources[file_path] : null;
+  }
+
   function line_link(file_path, line, text) {
     if (!file_table[file_path] || !line) return html_escape(text);
     return (
@@ -830,8 +837,9 @@
     return all.slice(0, count).map((entry) => {
       const file = file_table[entry[0]];
       let source_snippet = "";
-      if (file.source != null) {
-        const source_lines = file.source.split("\n");
+      const snippet_source = source_text(entry[0]);
+      if (snippet_source != null) {
+        const source_lines = snippet_source.split("\n");
         if (entry[1] >= 1 && entry[1] <= source_lines.length) {
           source_snippet = source_lines[entry[1] - 1].trim().slice(0, 110);
         }
@@ -1085,7 +1093,8 @@
       markup += `<span class="stat">${html_escape(note)}</span>`;
     }
     markup += `</div>`;
-    if (file.source == null) {
+    const file_source = source_text(file_path);
+    if (file_source == null) {
       const note = html_escape(text_of("str_source_unavailable"));
       markup += `<div class="nosrc">${note}</div></div>`;
       main_panel.innerHTML = markup;
@@ -1179,7 +1188,7 @@
           : secondary_events.map(() => "")),
       ]);
     };
-    const source_lines = file.source.split("\n");
+    const source_lines = file_source.split("\n");
     if (source_lines.length && source_lines[source_lines.length - 1] === "") {
       source_lines.pop();
     }

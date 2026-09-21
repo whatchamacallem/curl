@@ -126,10 +126,9 @@ class BuildReport:
         header_block: list[str]
         # build a diff overview: no native timing
         diff: bool
-        # each test's working delta file as "name=path", for a diff overview
-        profile: list[str]
-        # relative href to the report's shared theme, or "" to inline it
-        assets_href: str
+        # each test's working diff profile as "name=path", for a diff
+        # overview
+        diff_profile: list[str]
 
     # StripLink - One link in a page's top strip.
     class StripLink(NamedTuple):
@@ -171,8 +170,8 @@ class BuildReport:
         header: list[str]
         # callgrind_diff.py's synthesized callers diff, for the call columns
         callers_data: str
-        # relative href to the report's shared theme, or "" to inline it
-        assets_href: str
+        # the report holds this test alone, so this page is its root
+        single_test_report: bool
 
     # TestDirectory - One test of the overview, and where its report sits.
     class TestDirectory(NamedTuple):
@@ -383,13 +382,13 @@ class BuildReport:
 
     def diff_overview(self, args: BuildReport.OverviewArgs) -> None:
         tests = self.overview_tests(args)
-        columns, rows = self.diff_overview_rows(tests, args.profile)
+        columns, rows = self.diff_overview_rows(tests, args.diff_profile)
         self.overview_page(args, tests, columns, rows)
 
     def diff_overview_rows(
         self,
         tests: Sequence[BuildReport.TestDirectory],
-        profiles: Sequence[str],
+        diff_profiles: Sequence[str],
     ) -> tuple[list[Column], list[list[CellOrText]]]:
         columns = [
             Column("one report per test"),
@@ -397,18 +396,18 @@ class BuildReport:
             Column("% of change", numeric=True),
             Column("functions changed", numeric=True),
         ]
-        delta_of = dict(
-            entry.split("=", 1) for entry in profiles if "=" in entry
+        profile_of = dict(
+            entry.split("=", 1) for entry in diff_profiles if "=" in entry
         )
         rows: list[list[CellOrText]] = []
         for test in tests:
-            delta_path = delta_of.get(test.name, "")
+            profile_path = profile_of.get(test.name, "")
             files = (
-                [delta_path]
-                if delta_path and os.path.isfile(delta_path)
+                [profile_path]
+                if profile_path and os.path.isfile(profile_path)
                 else []
             )
-            callers = delta_path + settings.CALLERS_SUFFIX
+            callers = profile_path + settings.CALLERS_SUFFIX
             synthesized_callers = (
                 [callers] if files and os.path.isfile(callers) else []
             )
@@ -753,7 +752,6 @@ class BuildReport:
                 body,
                 extra_js=_PAGE_JS,
                 body_class="frame",
-                assets_href=args.assets_href,
             ),
         )
 
@@ -826,7 +824,7 @@ class BuildReport:
                 body,
                 extra_js=_PAGE_JS,
                 body_class="frame",
-                assets_href=args.assets_href,
+                depth=0 if args.single_test_report else 1,
             ),
         )
 
@@ -912,11 +910,10 @@ def main() -> None:
         help="callgrind output file(s). several are merged into one profile",
     )
     test_parser.add_argument(
-        "--assets-href",
-        default="",
-        metavar="HREF",
-        help="relative href to the report's shared theme; without it the "
-        "page inlines its own copy and stands alone",
+        "--single-test-report",
+        action="store_true",
+        help="the report holds this test alone, so this page is its root"
+        " and the shared assets sit beside it rather than one level up",
     )
     test_parser.add_argument("-o", "--output", required=True)
     test_parser.add_argument("--test", required=True, help="the page's title")
@@ -991,13 +988,6 @@ def main() -> None:
     overview_parser = subparsers.add_parser(
         "overview", help="the page over several tests"
     )
-    overview_parser.add_argument(
-        "--assets-href",
-        default="",
-        metavar="HREF",
-        help="relative href to the report's shared theme; without it the "
-        "page inlines its own copy and stands alone",
-    )
     overview_parser.add_argument("-o", "--output", required=True)
     overview_parser.add_argument(
         "--test",
@@ -1008,13 +998,13 @@ def main() -> None:
         " (repeatable)",
     )
     overview_parser.add_argument(
-        "--profile",
+        "--diff-profile",
         action="append",
         metavar="NAME=FILE",
         default=[],
-        help="with --diff, a test's delta file to read its row from"
-        " (its callers file is that name plus"
-        f" {settings.CALLERS_SUFFIX}). repeatable",
+        help="with --diff, a test's subtracted profile as callgrind_diff.py"
+        " wrote it, to read its row from (its synthesized callers diff is"
+        f" that name plus {settings.CALLERS_SUFFIX}). repeatable",
     )
     overview_parser.add_argument(
         "--header", action="append", metavar="LABEL=VALUE", default=[]
@@ -1061,7 +1051,7 @@ def main() -> None:
             diff=namespace.diff,
             header=namespace.header,
             callers_data=namespace.callers_data,
-            assets_href=namespace.assets_href,
+            single_test_report=namespace.single_test_report,
         )
         (report.diff_test if namespace.diff else report.test)(test_args)
     else:
@@ -1072,8 +1062,7 @@ def main() -> None:
             header_file=namespace.header_file,
             header_block=namespace.header_block,
             diff=namespace.diff,
-            profile=namespace.profile,
-            assets_href=namespace.assets_href,
+            diff_profile=namespace.diff_profile,
         )
         (report.diff_overview if namespace.diff else report.overview)(
             overview_args

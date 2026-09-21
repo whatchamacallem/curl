@@ -54,6 +54,9 @@ _THEME: list[str] = [
     "#2F3640",
 ]
 
+# The report-root directory holding the shared copy of our own theme.
+ASSETS_DIR = "assets"
+
 # What the report's one shared copy of the theme is written as. Every page
 # in a report renders the same stylesheet and the same script, so they are
 # written once at the report root and linked, not inlined 19 times. The
@@ -63,6 +66,10 @@ _THEME: list[str] = [
 FRAME_JS = "frame.js"
 HEATMAP_CSS = "heatmap.css"
 HEATMAP_JS = "heatmap.js"
+# The report-root directory holding every heat map's source text, one copy
+# of each profiled file rather than one per page that references it.
+SOURCES_DIR = "sources"
+
 THEME_CSS = "theme.css"
 THEME_JS = "theme.js"
 UI_STRINGS_JS = "ui_strings.js"
@@ -288,36 +295,22 @@ class Theme:
         lines.append("}")
         return "\n".join(lines) + "\n" + self.asset_read("theme.css")
 
-    # One page. The theme's stylesheet and script are the same bytes on every
-    # page in a report, so with an assets_href they are linked from the one
-    # shared copy there; without one they are inlined and the page stands
-    # alone. Either way a browser opens it from file:// with no server.
+    # One page.
     def document(
         self,
         title: str,
         body: str,
         extra_js: Sequence[str] = (),
         body_class: str = "",
-        assets_href: str = "",
+        depth: int = 0,
     ) -> str:
+        assets_href = shared_href(depth, ASSETS_DIR)
         body_attr = f' class="{body_class}"' if body_class else ""
-        if assets_href:
-            head = (
-                f'<link rel="stylesheet" href="{assets_href}/{THEME_CSS}">\n'
-            )
-            script = "".join(
-                f'<script src="{assets_href}/{name}"></script>\n'
-                for name in (THEME_JS, *extra_js)
-            )
-        else:
-            head = f"<style>\n{self.css()}</style>\n"
-            script = "".join(
-                f"<script>\n{text}</script>\n"
-                for text in (
-                    self.js(),
-                    *(self.asset_read(name) for name in extra_js),
-                )
-            )
+        head = f'<link rel="stylesheet" href="{assets_href}/{THEME_CSS}">\n'
+        script = "".join(
+            f'<script src="{assets_href}/{name}"></script>\n'
+            for name in (THEME_JS, *extra_js)
+        )
         return (
             '<!doctype html>\n<html lang="en">\n'
             '<head>\n<meta charset="utf-8">\n'
@@ -568,15 +561,19 @@ def num_time(seconds: float) -> str:
     return _NUMBERS.time(seconds)
 
 
-# page_document - One whole page, its theme linked or inlined.
+# page_document - One whole page, linking the report's shared theme.
 def page_document(
     title: str,
     body: str,
     extra_js: Sequence[str] = (),
     body_class: str = "",
-    assets_href: str = "",
+    depth: int = 0,
 ) -> str:
-    return _RENDERER.document(title, body, extra_js, body_class, assets_href)
+    return _RENDERER.document(title, body, extra_js, body_class, depth)
+
+
+def shared_href(depth: int, name: str) -> str:
+    return "../" * depth + name
 
 
 # table_render - One whole table, columns sized in exact characters.
@@ -598,16 +595,6 @@ def theme_asset(name: str) -> str:
 # theme_assets_write - Write the report's one shared copy of the theme.
 def theme_assets_write(out_dir: str) -> None:
     _RENDERER.assets_write(out_dir)
-
-
-# theme_css - The whole stylesheet, colour variables first.
-def theme_css() -> str:
-    return _RENDERER.css()
-
-
-# theme_js - The shared page script.
-def theme_js() -> str:
-    return _RENDERER.js()
 
 
 # theme_runtime - The theme values a page's own JavaScript needs.

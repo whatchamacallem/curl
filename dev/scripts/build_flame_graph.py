@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import argparse
 import base64
-import glob
 import json
 import os
 import sys
@@ -13,7 +12,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import theme
 
 # The script that hands the embedded profile to speedscope once it has
-# loaded -- it polls, because script order is not guaranteed.
+# loaded -- it polls, because speedscope finishes starting up well after
+# its own script tag has run.
 _BOOTSTRAP = theme.theme_asset("flame_bootstrap.js")
 
 _PAGE = theme.theme_asset("flame_graph.html")
@@ -27,25 +27,16 @@ _PROFILE_JS = "profile.js"
 class BuildFlameGraph:
     # FlameGraphArgs - Where the page goes and what it points at.
     class FlameGraphArgs(NamedTuple):
+        # the shared bundle's stylesheet, a bare file name
+        app_css: str
         # relative href from the page to the shared speedscope bundle
         app_href: str
+        # the shared bundle's engine, a bare file name
+        app_js: str
         # the per-test directory the page and its profile are written to
         flame_graph_dir: str
         # the recorded profile to bake into it
         profile_json: str
-
-    # The one file in the shared bundle matching a glob, as an href.
-    def app_asset(
-        self, args: BuildFlameGraph.FlameGraphArgs, pattern: str
-    ) -> str:
-        local = os.path.join(args.flame_graph_dir, args.app_href)
-        found = sorted(glob.glob(os.path.join(local, pattern)))
-        if len(found) != 1:
-            sys.exit(
-                f"error: {pattern} matched {len(found)} files in {local}, "
-                "expected exactly 1"
-            )
-        return f"{args.app_href}/{os.path.basename(found[0])}"
 
     # Write the bootstrap with the profile base64'd into it.
     def bootstrap_write(
@@ -80,10 +71,8 @@ class BuildFlameGraph:
     # Write the page, pointing it at the shared bundle's engine and style.
     def page_write(self, args: BuildFlameGraph.FlameGraphArgs) -> None:
         html = (
-            _PAGE.replace(
-                "__APP_CSS__", self.app_asset(args, "speedscope-*.css")
-            )
-            .replace("__APP_JS__", self.app_asset(args, "speedscope-*.js"))
+            _PAGE.replace("__APP_CSS__", f"{args.app_href}/{args.app_css}")
+            .replace("__APP_JS__", f"{args.app_href}/{args.app_js}")
             .replace("__PROFILE_JS__", _PROFILE_JS)
         )
         index_html = os.path.join(args.flame_graph_dir, "index.html")
@@ -95,9 +84,19 @@ class BuildFlameGraph:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument(
+        "--app-css",
+        required=True,
+        help="the shared bundle's stylesheet, a bare file name",
+    )
+    parser.add_argument(
         "--app-href",
         required=True,
         help="relative href from the page to the shared speedscope bundle",
+    )
+    parser.add_argument(
+        "--app-js",
+        required=True,
+        help="the shared bundle's engine, a bare file name",
     )
     parser.add_argument(
         "--flame-graph-dir",
@@ -110,7 +109,9 @@ def main() -> None:
     namespace = parser.parse_args()
     BuildFlameGraph().build(
         BuildFlameGraph.FlameGraphArgs(
+            app_css=namespace.app_css,
             app_href=namespace.app_href,
+            app_js=namespace.app_js,
             flame_graph_dir=namespace.flame_graph_dir,
             profile_json=namespace.profile_json,
         )

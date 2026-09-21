@@ -17,7 +17,7 @@ import callgrind
 import settings
 
 # What a report's raw data is stored as, one archive per test.
-_ARCHIVE_SUFFIX = ".tar.xz"
+_ARCHIVE_SUFFIX = "txz"
 
 # The report's one shared copy of speedscope, and the globs naming what it
 # must hold: the engine, its stylesheet and the font the stylesheet names.
@@ -43,6 +43,8 @@ _MIN_HEATMAP_BYTES = 5000
 _MIN_INDEX_BYTES = 2000
 _MIN_PAGE_BYTES = 500
 _MIN_RAW_BYTES = 100
+
+_SOURCES_DIR = "sources"
 
 # The diff vocabulary, spelled the same everywhere a reader sees it. These
 # are the only non-ASCII characters a source file may contain.
@@ -408,6 +410,22 @@ class ValidateReport:
                 self.fail(f"{path} links {href}, which is unreadable: {error}")
         return "\n".join(parts)
 
+    # Every heat map's source text sits in the report's one sources/
+    # directory. Confirm.
+    def sources_check(self, out_dir: str, tests: Sequence[str]) -> None:
+        sources_dir = os.path.join(out_dir, _SOURCES_DIR)
+        linked = False
+        for test_name in tests:
+            path = os.path.join(out_dir, test_name, "heat-map", "index.html")
+            if not os.path.isfile(path):
+                continue
+            with open(path, encoding="utf-8", errors="replace") as handle:
+                if f"/{_SOURCES_DIR}/" in handle.read():
+                    linked = True
+                    break
+        if linked and not os.path.isdir(sources_dir):
+            self.fail(f"no shared source directory: {sources_dir}")
+
     # A page's title, which is how we tell an overview from a test page.
     def page_title(self, index_path: str) -> str:
         with open(index_path, encoding="utf-8", errors="replace") as handle:
@@ -516,6 +534,7 @@ class ValidateReport:
             self.overview_check(out_dir, tests, layout)
             if "flame-graph" in layout.subpages:
                 self.flame_app_check(out_dir)
+            self.sources_check(out_dir, tests)
             for test_name in tests:
                 self.test_report_check(
                     os.path.join(out_dir, test_name), test_name, layout

@@ -5,7 +5,7 @@ set -euo pipefail
 SCRIPT="$(readlink -f "$0")"
 cd "$(dirname "$SCRIPT")"
 
-ARCHIVE_SUFFIX=.txz
+ARCHIVE_SUFFIX=txz
 ASSETS_DIR=assets
 BUILD_DIR=build-relwithdebinfo
 FLAME_APP_DIR=flame-graph-app
@@ -191,7 +191,6 @@ build_manifest() {
     | sed 's/^Model name:[[:space:]]*//')"
 }
 
-
 toolchain_check() {
   local tool missing=()
   for tool in cmake ninja ccache cc valgrind perf taskset python3 \
@@ -276,11 +275,16 @@ flame_app_install() {
   for pattern in "${FLAME_APP_FILES[@]}"; do
     # shellcheck disable=SC2206  # the glob is the point
     found=($SPEEDSCOPE_RELEASE/$pattern)
-    [ -e "${found[0]}" ] || {
-      echo "error: no $pattern in $SPEEDSCOPE_RELEASE" >&2
+    [ "${#found[@]}" = 1 ] && [ -e "${found[0]}" ] || {
+      echo "error: $pattern matched ${#found[@]} files in" \
+        "$SPEEDSCOPE_RELEASE, expected exactly 1" >&2
       exit 1
     }
     cp "${found[@]}" "$out/$FLAME_APP_DIR"/
+    case "$pattern" in
+      *.js) FLAME_APP_JS="$(basename "${found[0]}")" ;;
+      *.css) FLAME_APP_CSS="$(basename "${found[0]}")" ;;
+    esac
   done
 }
 
@@ -304,7 +308,8 @@ trace_render() {
     rm -f "$saved"
     test_run python3 scripts/build_flame_graph.py \
       --flame-graph-dir "$out/flame-graph" --profile-json "$TRACE_JSON" \
-      --app-href "../../$FLAME_APP_DIR"
+      --app-href "../../$FLAME_APP_DIR" \
+      --app-js "$FLAME_APP_JS" --app-css "$FLAME_APP_CSS"
     return
   fi
   rm -rf "$out/flame-graph"
@@ -330,7 +335,8 @@ trace_render() {
   if [ "$VERBOSE" = 1 ]; then cat "$log"; fi
   test_run python3 scripts/build_flame_graph.py \
     --flame-graph-dir "$out/flame-graph" --profile-json "$TRACE_JSON" \
-    --app-href "../../$FLAME_APP_DIR"
+    --app-href "../../$FLAME_APP_DIR" \
+    --app-js "$FLAME_APP_JS" --app-css "$FLAME_APP_CSS"
 }
 
 raw_archive_write() {
@@ -358,7 +364,7 @@ report_render() {
   verbose "== [$name]: heat map -> $out/heat-map/index.html =="
   test_run python3 scripts/callgrind_to_heatmap.py "${CALLGRIND_FILES[@]}" \
     -o "$out/heat-map/index.html" \
-    --title "$name / heat map" --assets-href "../../$ASSETS_DIR"
+    --title "$name / heat map"
 
   verbose "== [$name]: index -> $out/index.html =="
   rm -rf "$out/raw"
@@ -374,7 +380,7 @@ report_render() {
   fi
   [ "${#TESTS[@]}" -gt 1 ] && help_args=(--help-href ../README.md)
   test_run python3 scripts/build_report.py test "${CALLGRIND_FILES[@]}" \
-    -o "$out/index.html" --test "$name" --assets-href "../$ASSETS_DIR" \
+    -o "$out/index.html" --test "$name" \
     "${perf_log_args[@]}" "${log_args[@]}" "${raw_args[@]}" "${help_args[@]}"
 }
 
@@ -488,8 +494,7 @@ run_all() {
     echo "executable=$BIN_REL <test>  (native, pinned to CPU $CPU)"
     echo "stamp=$STAMP"
   } >"$OUT_DIR/MANIFEST.txt"
-  args=(-o "$OUT_DIR/index.html" --header-file "$OUT_DIR/MANIFEST.txt"
-    --assets-href "$ASSETS_DIR")
+  args=(-o "$OUT_DIR/index.html" --header-file "$OUT_DIR/MANIFEST.txt")
   for test_name in "${TESTS[@]}" all; do args+=(--test "$test_name"); done
   test_run python3 scripts/build_report.py overview "${args[@]}"
   printf '%-13s%d profiles merged -> %s\n' all "${#TESTS[@]}" \

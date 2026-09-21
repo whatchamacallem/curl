@@ -5,7 +5,7 @@ set -euo pipefail
 SCRIPT="$(readlink -f "$0")"
 cd "$(dirname "$SCRIPT")"
 
-ARCHIVE_SUFFIX=.txz
+ARCHIVE_SUFFIX=txz
 ASSETS_DIR=assets
 DIFF_MANIFEST='curl/perf2html_diff.sh v1'
 REPORT_MANIFEST='curl/perf2html.sh v1'
@@ -212,10 +212,8 @@ profiles_of() {
 diff_one() {
   local test="$1" out="$2" name="$3"
   local diff_file callers_file base_files cur_files args help_args=()
-  local archive assets_href heat_assets_href
-  assets_href="$ASSETS_DIR"
-  [ "$out" = "$OUT_DIR" ] || assets_href="../$ASSETS_DIR"
-  heat_assets_href="../$assets_href"
+  local archive root_args=()
+  [ "$MULTI" = 1 ] || root_args=(--single-test-report)
   diff_file="$PWD/temporary_artifacts/callgrind.diff.$name.$STAMP"
   callers_file="$diff_file.callers.json"
   base_files="$(profiles_of "$BASE_LISTING" "$test")"
@@ -233,8 +231,7 @@ diff_one() {
   verbose "== [$name]: heat map -> $out/heat-map/index.html =="
   test_run python3 scripts/callgrind_to_heatmap.py "$diff_file" \
     -o "$out/heat-map/index.html" \
-    --title "$name / heat map" --diff \
-    --assets-href "$heat_assets_href" \
+    --title "$name / heat map" --diff "${root_args[@]}" \
     --baseline-data "$callers_file"
 
   verbose "== [$name]: index -> $out/index.html =="
@@ -244,8 +241,7 @@ diff_one() {
     "$diff_file" "$callers_file"
   [ "$MULTI" = 1 ] && help_args=(--help-href ../README.md)
   test_run python3 scripts/build_report.py test "$diff_file" \
-    -o "$out/index.html" --test "$name" --diff \
-    --assets-href "$assets_href" \
+    -o "$out/index.html" --test "$name" --diff "${root_args[@]}" \
     --callers-data "$callers_file" --raw-data "$archive" \
     "${help_args[@]}"
   printf '%-13sdiff -> %s\n' "$name" "${out#"$PWD"/}/index.html"
@@ -299,12 +295,12 @@ main() {
     test_name="${test_name%%.*}"
     diff_one . "$OUT_DIR" "$test_name diff"
   else
-    args=(-o "$OUT_DIR/index.html" --diff --assets-href "$ASSETS_DIR"
+    args=(-o "$OUT_DIR/index.html" --diff
       --header-block "baseline=$(header_file_of "$BASE_DIR" baseline)"
       --header-block "modified=$(header_file_of "$MOD_DIR" modified)")
     for test_name in $tests; do
       diff_one "$test_name" "$OUT_DIR/$test_name" "$test_name"
-      args+=(--test "$test_name" --profile
+      args+=(--test "$test_name" --diff-profile
         "$test_name=$PWD/temporary_artifacts/callgrind.diff.$test_name.$STAMP")
     done
     verbose "== overview -> $OUT_DIR/index.html =="

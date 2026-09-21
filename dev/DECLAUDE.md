@@ -208,7 +208,7 @@ index.html          overview: strip + header table + "test suites" table
                     output.txt; the viewer itself is in flame-graph-app/
 <test>/heat-map/    per-line source heat map
 <test>/perf-tool/   output.txt only (rendered as the summary's "perf log")
-<test>/raw/         <test>.tar.xz: callgrind file (repo root stripped)
+<test>/raw/         <test>txz: callgrind file (repo root stripped)
                     + the trace's speedscope JSON
 all/                every test's callgrind data merged, same shape
 assets/             the report's one copy of the theme: theme.css,
@@ -216,6 +216,10 @@ assets/             the report's one copy of the theme: theme.css,
                     ui_strings.js. every page links what it uses
 flame-graph-app/    the report's one copy of speedscope: the engine, its
                     stylesheet, its font
+sources/            the report's one copy of every profiled source file,
+                    one <flattened path>.js assigning into
+                    window.report_sources. a heat map links the files
+                    it shows
 README.md           glossary + notes; copied from dev/README.md every
                     run ("help" link)
 MANIFEST.txt        line 1 = version string; then LABEL=VALUE header rows
@@ -242,10 +246,10 @@ Exceptions to remember:
 
 **Raw data is stored compressed, one `tar.xz` per test**, and
 `dev/temporary_artifacts/` is the uncompressed working dir it is packed from
-and unpacked back into. `ARCHIVE_SUFFIX` = `.tar.xz` in both user-facing
-scripts and `_ARCHIVE_SUFFIX` in `validate_report.py`. The archive is named
-after the **directory** holding it, never the page title, which can carry a
-space (`<test> diff`). Writers stage copies under
+and unpacked back into. `ARCHIVE_SUFFIX` = `txz` in both user-facing scripts
+and `_ARCHIVE_SUFFIX` in `validate_report.py`. The archive is named after the
+**directory** holding it, never the page title, which can carry a space
+(`<test> diff`). Writers stage copies under
 `temporary_artifacts/stage.<name>.<stamp>`, strip `.$STAMP` out of each name
 and `$REPO/` out of each body, then tar and delete the stage - so the names
 inside an archive are exactly what `raw/` used to hold uncompressed. The `tar`
@@ -262,32 +266,65 @@ re-extract every archive. `profiles_extract` is also what **synthesizes the
 diff's inline probe (`xz` -> `xz-utils`, the one hint the default `apt` line
 gets wrong).
 
-**A diff overview reads its rows from `--profile NAME=FILE`**, the working
-delta in `temporary_artifacts/`, not from the report's `raw/`
-(`BuildReport.diff_overview_rows`; the callers file is that path plus
-`settings.CALLERS_SUFFIX`). It used to `os.listdir` each test's `raw/`, which
-compressing would have silently emptied - every row would have rendered blank
-rather than failing.
+**A diff overview reads its rows from `--diff-profile NAME=FILE`**, the working
+subtracted profile in `temporary_artifacts/`, not from the report's `raw/`
+(`BuildReport.diff_overview_rows`; the synthesized callers diff is that path
+plus `settings.CALLERS_SUFFIX`). It used to `os.listdir` each test's `raw/`,
+which compressing would have silently emptied - every row would have rendered
+blank rather than failing. The flag is named for **what it carries**, and both
+its words earn their place: it is a `profile`, in callgrind's own format, and
+it is a `diff`. It was `--profile`, which could not tell a subtraction from a
+recording, and then briefly `--delta`, which named the arithmetic and not the
+thing - see "A name must answer" under `dev/scripts/` conventions.
 
 **What every page shares is stored once per report and linked**, never inlined
-per page. Two directories at the report root hold it: `assets/` for our own
+per page. Three directories at the report root hold it: `assets/` for our own
 theme (`theme.css`, `theme.js`, `frame.js`, `heatmap.css`, `heatmap.js`,
-`ui_strings.js`) and `flame-graph-app/` for speedscope. The constants are
+`ui_strings.js`), `flame-graph-app/` for speedscope, and `sources/` for the
+profiled source text every heat map renders. The constants are
 `ASSETS_DIR`/`FLAME_APP_DIR` in the two user-facing scripts, `theme.py`'s
+`ASSETS_DIR`/`SOURCES_DIR` and
 `THEME_CSS`/`THEME_JS`/`FRAME_JS`/`HEATMAP_CSS`/`HEATMAP_JS`/ `UI_STRINGS_JS`,
-and `_FLAME_APP_DIR`/`_FLAME_APP_GLOBS`/`_FLAME_GRAPH_FILES` in
-`validate_report.py`. Every generator takes `--assets-href`, the **relative**
-href from that page to `assets/` (`assets` at the root, `../assets` one deep,
-`../../assets` for a heat map or flame graph); a diff's single-test mode is its
-own root, which is what `diff_one`'s `assets_href`/`heat_assets_href` compute.
-Without the flag a page inlines everything and stands alone, which is what
-keeps `theme.py`'s `document()` and `callgrind_to_heatmap.py`'s `render()`
-honest - both branches build the same page. `theme.theme_assets_write()`
-(exposed as `build_report.py assets -o DIR`) writes the theme: **the stylesheet
-is generated, not copied**, because its colour variables are computed in
-`Theme.css()`, so a copied `scripts/theme.css` would silently drop them.
-`flame_app_install` copies speedscope, and both run once per report before any
-page.
+and `_FLAME_APP_DIR`/`_FLAME_APP_GLOBS`/`_FLAME_GRAPH_FILES`/`_SOURCES_DIR` in
+`validate_report.py`.
+
+**No generator takes an assets href any more.** A page's href to the shared
+directories is `theme.shared_href(depth, name)`, and `depth` is how many
+directories below the report root that page sits - which the report layout
+fixes: an overview is 0, a summary 1, a heat map or flame graph 2. Passing it
+in was asking every caller to restate an invariant, and a flag nobody can get
+wrong is a flag that should not exist. The one genuine variable is a **diff's
+single-test mode**, where the report holds one test so its summary page _is_
+the root; that is `--single-test-report`, a boolean on `build_report.py test`
+and `callgrind_to_heatmap.py`, and it is named for the layout it selects rather
+than for the string it used to produce. `perf2html_diff.sh` passes it off the
+same `MULTI` it already gates `--help-href` on. There is still no
+inline-everything branch: a page that must stand alone is a new flag with a
+caller, not a default nobody exercises.
+
+**`sources/` holds one script per profiled file**, named
+`CallgrindToHeatmap.source_name()` - the display path with every
+non-alphanumeric character flattened to `_`, plus `.js` - and each one assigns
+its file's text into `window.report_sources[<display path>]`. A `FileModel`'s
+`source` is that **file name**, not the text, and `heatmap.js` resolves it
+through `source_text(file_path)`, the one door its three read sites go through.
+The source scripts are linked **before**
+`ui_strings.js`/`theme.js`/`heatmap.js` in the same `__SCRIPTS__` marker, for
+the reason `ui_strings.js` goes first: `heatmap.js` renders the opened file the
+moment it runs, so anything it reads has to already be there. A `file://` page
+cannot `fetch()` a second blob, which is why this is a `<script src>` assigning
+a global rather than a data file. Writing is idempotent by construction - the
+name is the path and the body is the file - so every page that references a
+file writes the same bytes, and `CallgrindToHeatmap.model()` returns the
+resolved `PathInfo` map alongside the model so `sources_write()` resolves no
+path twice. This took the default report from 9.31MB to **8.39MB**: 1.32MB of
+embedded source was only 0.41MB unique.
+
+`theme.theme_assets_write()` (exposed as `build_report.py assets -o DIR`)
+writes the theme: **the stylesheet is generated, not copied**, because its
+colour variables are computed in `Theme.css()`, so a copied `scripts/theme.css`
+would silently drop them. `flame_app_install` copies speedscope, and both run
+once per report before any page.
 
 This is a `file://` layout, so it is **classic `<script src>` and `<link>`
 only** - verified in Chrome across directories. An ES module or a `fetch()`
@@ -309,11 +346,18 @@ replace. Together they were 973KB copied per test.
 **A flame graph page is ours now, not a patched speedscope page.**
 `build_flame_graph.py` writes `scripts/flame_graph.html` with `__APP_CSS__`,
 `__APP_JS__` and `__PROFILE_JS__` substituted, instead of editing speedscope's
-`index.html` in place. `app_asset()` resolves each `speedscope-*` glob against
-the shared directory and **fails unless it matches exactly one file**, so a
-second copy of the bundle is an error rather than an arbitrary pick. The page
-is a loader - a link and two script tags - so it has its own size floor,
-`_MIN_FLAME_PAGE_BYTES`, well under `_MIN_PAGE_BYTES`.
+`index.html` in place. The engine and stylesheet are passed in by name,
+`--app-js`/`--app-css`, because **the script that copied them is what knows
+them**: `flame_app_install` expands `FLAME_APP_FILES` to copy the bundle, so it
+already holds each resolved name and hands it down. It **fails unless each glob
+matches exactly one file**, so a second copy of the bundle is an error rather
+than an arbitrary pick - that check lives at the copy, once per report, instead
+of being re-globbed out of the report tree once per test by a generator that
+would have to guess what the bundle should contain. The page is a loader - a
+link and two script tags - so it has its own size floor,
+`_MIN_FLAME_PAGE_BYTES`, well under `_MIN_PAGE_BYTES`. `flame_bootstrap.js`
+still polls: speedscope only defines `window.speedscope` once it has started
+up, which is well after its own script tag has run.
 
 **Validation follows a link rather than assuming inlining.** `page_scripts()`
 reads every `src=`/`href=` a page names and appends the file, so
@@ -323,7 +367,11 @@ mode sharing introduces, and it is caught, not rendered blank.
 `flame_graph_check` resolves the flame page's hrefs the same way, requires
 `flame-graph-app/` to appear in it, and fails any file in a test's
 `flame-graph/` outside `_FLAME_GRAPH_FILES` - a per-test copy of the engine is
-exactly what sharing exists to remove. `flame_app_check` runs once at the
+exactly what sharing exists to remove. That same `page_scripts()` walk is what
+covers `sources/`: every `<script src>` a heat map names must resolve, so a
+source file that was linked but not written fails. `sources_check` adds the one
+thing a per-page walk cannot see - a report where some page links `sources/`
+but the directory itself is missing. `flame_app_check` runs once at the
 overview level and requires the shared bundle to hold exactly one file per
 glob.
 
@@ -434,6 +482,58 @@ Shebangs stay. `ArgumentParser()` gets no description by design.
 **Class names read like a how-to, not an abbreviation** - `CompressedNames`,
 `PositionDecoder`, `FileTally`, `ExecutableMapping`, `TraceRecording`,
 `ReportLayout`. A name needing a comment to be legible is the wrong name.
+
+**A name must answer "which one?" and "what kind?" on its own.** A bare English
+word usually answers neither, so a bare English word is usually the wrong name.
+The test is not whether the word is a term of art - it is whether a competent
+reader who has **not** read this code can recover the referent from the name
+alone, with nothing else on the line to help.
+
+Almost nothing passes that test, including names already in this tree:
+
+- `profile` - there are **two** kinds here, a recording and a subtraction, and
+  the word picks neither. `--profile` became `--diff-profile` for exactly that
+  reason. `recorded_profile` and `diff_profile` are the honest pair.
+- `stamp` - a large integer. A reader may reasonably take it for a magic
+  number, a checksum or a format version before landing on "the run's
+  timestamp". `run_timestamp` says it.
+- `loops` - enough to guess at, not enough to be sure: loops of what, and is it
+  a count or a list? `loop_count` costs one word and removes the doubt.
+- `event` - the word is used by every profiler, kernel and UI toolkit, for
+  different things. Here it is a **counter name** callgrind recorded, so
+  `counter` is nearer and `counter_name` is right.
+- `theme` - tolerable, and the reason it survives is that it names a whole
+  subsystem with one meaning in this tree, not that the word is self-evident.
+
+So the rule is **not** "single words are fine when commonplace". It is: prefer
+the compound that names the thing, and keep a bare word only where the tree
+gives it exactly one meaning and that meaning is the subsystem's own name. When
+the two readings a word invites would send a reader to different files, the
+word is wrong however familiar it looks.
+
+This is strictest for **flags, fields and constants**, which are read alone - a
+`--help` line has no surrounding code to disambiguate it. A class gets its
+`# <Name> - what it is` comment, which is why the class-name rule above is the
+looser one. And the fix is never a longer help string: help text explains a
+name, it does not repair one. Two plain words beat one word plus a footnote.
+
+**Names left alone.** `profile`, `stamp`, `loops` and `event` stay as they are,
+and that is a decision, not an oversight. Three reasons, in order of weight:
+
+1. `event` and `stamp` are **boundary names**. `events:` is callgrind's own
+   line, `events` is a key in the synthesized callers diff and in the page
+   model, and `stamp=` is a `MANIFEST.txt` row `--regenerate` reads back.
+   Renaming the Python without the file format is a lie; renaming both breaks
+   every report on disk to make a variable read better.
+2. A rename touching this many files produces a diff nobody can review against
+   the one thing that matters here - that the **numbers** did not move.
+3. The rule earns its keep on names not yet written, where it costs nothing.
+
+So: **do not open a renaming campaign.** Rename one of these only when you are
+already editing that code for another reason, the name is not a boundary name,
+and the change is small enough to read in one sitting. `--profile` →
+`--diff-profile` is the shape to copy: one flag, one caller, taken while that
+code was open anyway.
 
 **Naming:** `object_method` lowercase C-identifier form (`args_parse`,
 `profile_parse`, `report_test`) for shell functions and public free functions;
@@ -551,16 +651,14 @@ pipx/uv). Pylance is not usable - LSP only, ignores argv.
   `SynthesizedCallers` + `synthesized_callers_load()` read it,
   `BuildReport.CallersData` + `callers_data_load()` read it back whole.
 - `callgrind_to_heatmap.py` - opens on `settings.EVENT`, `_TREE` = dirs whose
-  tracked `.c/.h` are listed even without samples. Its `BODY`, `_CSS` and
-  `_HEAT_MAP_JS` are `theme.theme_asset()` of `heatmap.html`, `heatmap.css` and
-  `heatmap.js`, and `_UI_STRINGS_JS` of `ui_strings.js`. `render()` substitutes
-  `__SCRIPTS__` **before** `__DATA__`: the scripts are our own files and carry
-  no marker, while `__DATA__` is profiled source text, so it is the one
-  replacement whose result must never be scanned again. `__SCRIPTS__` is one
-  marker holding the whole ordered run of `<script>` tags -- three `src=` links
-  with `--assets-href`, three inline blocks without -- and it sits where the
-  tags sat, **after** the markup they touch. Both branches emit
-  `ui_strings.js`, `theme.js`, `heatmap.js` in that order.
+  tracked `.c/.h` are listed even without samples. Its `BODY` is
+  `theme.theme_asset()` of `heatmap.html`. `render()` substitutes `__SCRIPTS__`
+  **before** `__DATA__`: the scripts are file names and carry no marker, while
+  `__DATA__` is the model, so it is the one replacement whose result must never
+  be scanned again. `__SCRIPTS__` is one marker holding the whole ordered run
+  of `<script src>` tags, and it sits where the tags sat, **after** the markup
+  they touch: this page's `sources/` files first, then `ui_strings.js`,
+  `theme.js`, `heatmap.js` in that order.
 - **No generator holds a multi-line HTML/CSS/JS literal any more.** Each one is
   a real file in `scripts/`, read at import through `theme.theme_asset()` -
   `Theme.asset_read()` exposed as a free function, the same door
@@ -647,7 +745,7 @@ pipx/uv). Pylance is not usable - LSP only, ignores argv.
   (`heat_map_check`'s proof the heat map carries its runtime). Rename one of
   those in the JS and every page fails validation while looking perfectly
   correct in a browser - change both sides together. `raw_dir_check` /
-  `raw_archive_check` open each `raw/*.tar.xz` with `tarfile` and run the old
+  `raw_archive_check` open each `raw/*txz` with `tarfile` and run the old
   per-file checks **inside** it (an `events:` line near the top of a callgrind
   member, no `callgrind.REPO_ROOT` in any member), fail an uncompressed file
   left beside the archives, and fail a `raw/` on a test that stores nothing.
@@ -799,7 +897,12 @@ a camelCase name is the signal that it crosses a boundary and cannot be renamed
 freely. The shared runtime global is `window.report_ui` (`layout_activate`,
 `layout_refresh`, `layout_reset`, `pane_splitter.attach`,
 `view_storage.value_read`/`.value_write`); `theme.py`'s `Theme` class is Python
-and unrelated. The stored keys themselves are boundary names, so they keep
+and unrelated. `window.report_sources` is the second such global: the
+`sources/` scripts assign into it, keyed by **display path**, and
+`heatmap.js`'s `source_text()` is the only thing that reads it. The key is what
+`callgrind_to_heatmap.py` writes, so it is a boundary name - change the
+spelling on one side and every heat map renders "Source not available." without
+failing anything. The stored keys themselves are boundary names, so they keep
 their dotted spelling - `heat.scale`, `heat.sort`, `split.<pane>` and
 `perf2html.version`, the last holding the store version that `theme.js` sweeps
 on. `flame_bootstrap.js`'s `__NAME__`/`__DATA__`, `heatmap.html`'s
@@ -984,6 +1087,48 @@ across documents or layout anyway - Chrome for anything geometric.
   exposes the CPU PMU). `perf record` works but samples.
 - uftrace is not installed (needs sudo); a `dpkg -x` copy hung in
   `uftrace record`. It would cost more per call than the rdtsc hook.
+
+## What a report's bytes are (2026-09-20)
+
+A default `perf2html_baseline_report` over the eight `TESTS_C` is **8.39MB**,
+down from 9.31MB before `sources/` was shared. Measured, not estimated - walk
+the tree and group by what wrote each file:
+
+```text
+heat-map pages (cost vectors)            3.73 MB  44.4%
+flame profile.js (base64 trace)          2.98 MB  35.5%
+speedscope bundle (shared, one copy)     0.54 MB   6.5%
+sources/ (shared, one copy per file)     0.43 MB   5.1%
+raw archives (txz)                       0.41 MB   4.8%
+summary/overview pages                   0.21 MB   2.5%
+assets/ theme (shared, one copy)         0.09 MB   1.1%
+```
+
+Almost all of it is recorded measurement, and **none of it is deleted to make a
+number smaller** - the source text a heat map shows is what makes it readable
+offline, and the trace is the flame graph. What is worth knowing is which bytes
+carry no information:
+
+- **base64 costs a flat 33%** of every trace: 2.98MB of `profile.js` holds
+  2.23MB of profile, so **744KB is padding**. It is not ours to remove -
+  `loadFileFromBase64` is the only entry point speedscope's bundle exports
+  (grep it: there is no `loadFileFromText`), and it is reached only when the
+  hash carries `localProfilePath`, on which speedscope appends **its own**
+  `<script src="file:///profile">` that silently 404s. Our `profile.js` tag is
+  what actually loads, which is why the bootstrap polls. Removing the padding
+  means a different loader, not a smaller encoding. **This is the one finding
+  here that is still open**, and it is open because the fix is somebody else's
+  loader, not because it is not worth 744KB.
+- **Source duplication is fixed.** Source text used to be embedded once per
+  heat map that referenced the file: 1.32MB of it was only **0.41MB unique**,
+  the same `lib/` file copied into several tests' pages, and `all/` alone was
+  0.99MB because it is every test's data by construction. It is now one
+  `sources/` directory at the report root, 27 files and 0.43MB, linked the way
+  the theme is - see "What every page shares" above for how, and why it has to
+  be a `<script src>` assigning a global rather than a second data file.
+- `lines`/`lineFunction` (264KB + 75KB in the largest page) are recorded cost
+  vectors and owner indices, already trailing-zero-trimmed by `costs_trim`.
+  There is nothing redundant left in them.
 
 ## Current state
 

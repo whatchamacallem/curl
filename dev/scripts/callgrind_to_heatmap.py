@@ -21,24 +21,13 @@ from callgrind import Costs, Group
 # scripts/heatmap.html at generate time.
 BODY = theme.theme_asset("heatmap.html")
 
-# The extra stylesheet the heat map needs on top of the shared theme,
-# read from scripts/heatmap.css at generate time.
-_CSS = theme.theme_asset("heatmap.css")
-
-# The page's own runtime, read from scripts/heatmap.js at generate time.
-_HEAT_MAP_JS = theme.theme_asset("heatmap.js")
-
 # Directories whose tracked .c/.h are listed even when nothing sampled them,
 # so a file with no cost is visibly cold rather than simply missing.
 _TREE = ("lib", "include", "src", "tests/perf")
 
-# Every English string the page renders, read from scripts/ui_strings.js at
-# generate time. It loads before the scripts that look ids up in it.
-_UI_STRINGS_JS = theme.theme_asset("ui_strings.js")
 
-
-# CallgrindToHeatmap - Turns one profile into a single self-contained page
-# that shows cost per source line, with the source itself embedded.
+# CallgrindToHeatmap - Turns one profile into a page that shows cost per
+# source line, linking the source text from the report's shared copy.
 class CallgrindToHeatmap:
     # CallRow - One end of one call edge, as the page's script reads it. Used
     # for a line's callees and for a function's callers alike.
@@ -69,7 +58,8 @@ class CallgrindToHeatmap:
         self: Costs
         # cost below what it calls
         calls: Costs
-        # the source text, embedded, or None when it is not on this box
+        # the name of this file's script in the report's shared
+        # sources/ directory, or None when it is not on this box
         source: str | None
         # per line number, that line's numbers
         lines: dict[str, CallgrindToHeatmap.LineCost]
@@ -134,8 +124,6 @@ class CallgrindToHeatmap:
 
     # HeatArgs - What this tool reads, and the page it writes.
     class HeatArgs(NamedTuple):
-        # relative href to the report's shared theme, or "" to inline it
-        assets_href: str
         # the callgrind file(s), merged into one profile
         callgrind_file: list[str]
         # where the page goes
@@ -147,6 +135,9 @@ class CallgrindToHeatmap:
         # that delta's synthesized callers diff, holding what each share
         # divides by
         baseline_data: str
+        # the report holds this test alone, so this page sits one
+        # directory below its root rather than two
+        single_test_report: bool
 
     # SynthesizedCallers - The part of callgrind_diff.py's synthesized callers
     # diff this tool reads: what every share on a diff page divides by. Its
@@ -191,7 +182,11 @@ class CallgrindToHeatmap:
             return {
                 "self": trim(self.self_cost),
                 "calls": trim(self.calls_cost),
-                "source": self.source,
+                "source": (
+                    None
+                    if self.source is None
+                    else CallgrindToHeatmap.source_name(self.raw)
+                ),
                 "lines": {
                     line: CallgrindToHeatmap.LineCost(
                         trim(record.self_cost),
@@ -392,10 +387,10 @@ class CallgrindToHeatmap:
             )
         return functions
 
-    # The whole page's data: every file, every function, and the cold list.
+    # The whole page's data.
     def model(
         self, profile: callgrind.Profile
-    ) -> CallgrindToHeatmap.HeatModel:
+    ) -> tuple[CallgrindToHeatmap.HeatModel, dict[str, callgrind.PathInfo]]:
         function_names = sorted(profile.function_home)
         function_index = {name: i for i, name in enumerate(function_names)}
         raw_files = sorted(
@@ -430,44 +425,35 @@ class CallgrindToHeatmap:
             "files": files,
             "functions": functions,
             "cold": cold,
-        }
+        }, info
 
-    # Bake the model into the page. "</" is escaped so no embedded source can
-    # close the script tag early. The script markers go in before __DATA__,
-    # which carries profiled source text and so is the one substitution whose
-    # result must never be scanned again.
+    # Bake the model into the page.
     def render(
         self,
         model: CallgrindToHeatmap.HeatModel,
         title: str,
-        assets_href: str = "",
+        depth: int,
     ) -> str:
         data = json.dumps(model, separators=(",", ":"), ensure_ascii=False)
         data = data.replace("</", "<\\/")
-        # the three scripts run in this order, after the markup they touch
-        names = (theme.UI_STRINGS_JS, theme.THEME_JS, theme.HEATMAP_JS)
-        if assets_href:
-            # the scripts and styles are the same bytes on every heat map,
-            # so they are linked from the report's one copy of each; only
-            # this test's measurements stay in the page
-            scripts = "".join(
-                f'<script src="{assets_href}/{name}"></script>\n'
-                for name in names
+        assets_href = theme.shared_href(depth, theme.ASSETS_DIR)
+        sources_href = theme.shared_href(depth, theme.SOURCES_DIR)
+        scripts = "".join(
+            f'<script src="{sources_href}/{name}"></script>\n'
+            for name in sorted(
+                entry["source"]
+                for entry in model["files"].values()
+                if entry["source"] is not None
             )
-            styles = "".join(
-                f'<link rel="stylesheet" href="{assets_href}/{name}">\n'
-                for name in (theme.THEME_CSS, theme.HEATMAP_CSS)
-            )
-        else:
-            scripts = "".join(
-                f"<script>\n{text}</script>\n"
-                for text in (
-                    _UI_STRINGS_JS,
-                    theme.theme_js(),
-                    _HEAT_MAP_JS,
-                )
-            )
-            styles = f"<style>\n{theme.theme_css()}{_CSS}</style>\n"
+        )
+        scripts += "".join(
+            f'<script src="{assets_href}/{name}"></script>\n'
+            for name in (theme.UI_STRINGS_JS, theme.THEME_JS, theme.HEATMAP_JS)
+        )
+        styles = "".join(
+            f'<link rel="stylesheet" href="{assets_href}/{name}">\n'
+            for name in (theme.THEME_CSS, theme.HEATMAP_CSS)
+        )
         body = BODY.replace("__SCRIPTS__", scripts).replace("__DATA__", data)
         return (
             '<!doctype html>\n<html lang="en">\n'
@@ -497,23 +483,28 @@ class CallgrindToHeatmap:
     # Read the profile, build the model and write the one page.
     def run(self, args: CallgrindToHeatmap.HeatArgs) -> None:
         profile = callgrind.profile_load(args.callgrind_file)
-        model = self.model(profile)
+        model, info = self.model(profile)
         if args.diff:
             self.diff_model(model, profile, args.baseline_data)
-        html = self.render(model, args.title, args.assets_href)
-        os.makedirs(
-            os.path.dirname(os.path.abspath(args.output)), exist_ok=True
+        depth = 1 if args.single_test_report else 2
+        page_dir = os.path.dirname(os.path.abspath(args.output))
+        self.sources_write(
+            os.path.join(page_dir, *[".."] * depth, theme.SOURCES_DIR),
+            info,
+            model,
         )
+        html = self.render(model, args.title, depth)
+        os.makedirs(page_dir, exist_ok=True)
         with open(args.output, "w", encoding="utf-8") as handle:
             handle.write(html)
-        embedded_count = sum(
+        shared_count = sum(
             1
             for entry in model["files"].values()
             if entry["source"] is not None
         )
         print(
             f"files with samples: {len(model['files'])}"
-            f" ({embedded_count} with source embedded),"
+            f" ({shared_count} with source shared),"
             f" cold files listed: {len(model['cold'])}, "
             f"functions: {len(model['functions'])}",
             file=sys.stderr,
@@ -523,7 +514,12 @@ class CallgrindToHeatmap:
             file=sys.stderr,
         )
 
-    # Read one source file to embed, or None when it is not on this box.
+    @staticmethod
+    def source_name(display: str) -> str:
+        flat = "".join(char if char.isalnum() else "_" for char in display)
+        return f"{flat}.js"
+
+    # Read one source file, or None when it is not on this box.
     def source_read(self, local: str) -> str | None:
         try:
             with open(local, "rb") as handle:
@@ -531,6 +527,39 @@ class CallgrindToHeatmap:
         except OSError:
             return None
         return data.decode("utf-8", errors="replace")
+
+    def sources_write(
+        self,
+        out_dir: str,
+        info: dict[str, callgrind.PathInfo],
+        model: CallgrindToHeatmap.HeatModel,
+    ) -> None:
+        names = {
+            entry["source"]: display
+            for display, entry in model["files"].items()
+            if entry["source"] is not None
+        }
+        if not names:
+            return
+        local_of = {
+            path_info.display: path_info.local
+            for path_info in info.values()
+            if path_info.local
+        }
+        os.makedirs(out_dir, exist_ok=True)
+        for name, display in sorted(names.items()):
+            text = self.source_read(local_of.get(display, ""))
+            if text is None:
+                continue
+            body = json.dumps(text, ensure_ascii=False).replace("</", "<\\/")
+            with open(
+                os.path.join(out_dir, str(name)), "w", encoding="utf-8"
+            ) as handle:
+                handle.write(
+                    "window.report_sources = window.report_sources || {};\n"
+                    f"window.report_sources[{json.dumps(display)}] ="
+                    f" {body};\n"
+                )
 
     # Read callgrind_diff.py's synthesized callers diff, or nothing when there
     # is none -- a diff built without one simply has no share to show.
@@ -557,11 +586,10 @@ def main() -> None:
         help="callgrind output file(s). several are merged into one profile",
     )
     parser.add_argument(
-        "--assets-href",
-        default="",
-        metavar="HREF",
-        help="relative href to the report's shared theme; without it the "
-        "page inlines its own copy and stands alone",
+        "--single-test-report",
+        action="store_true",
+        help="the report holds this test alone, so the shared assets"
+        " sit one directory up rather than two",
     )
     parser.add_argument(
         "-o",
@@ -587,12 +615,12 @@ def main() -> None:
     namespace = parser.parse_args()
     CallgrindToHeatmap().run(
         CallgrindToHeatmap.HeatArgs(
-            assets_href=namespace.assets_href,
             callgrind_file=namespace.callgrind_file,
             output=namespace.output,
             title=namespace.title,
             diff=namespace.diff,
             baseline_data=namespace.baseline_data,
+            single_test_report=namespace.single_test_report,
         )
     )
 
