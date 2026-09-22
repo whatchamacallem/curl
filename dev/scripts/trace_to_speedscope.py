@@ -7,11 +7,11 @@ from typing import NamedTuple, NotRequired, TypedDict
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import callgrind, settings
 
-# Every value this file takes from settings.py, declared as the type it
-# expects and loaded before any other name this module binds.
-_FLAME_GRAPH_EXPORTER_NAME: str
-_FLAME_GRAPH_FILE_FORMAT_SCHEMA_URL: str
-_FLAME_GRAPH_MAX_RECORDED_CALLS: int
+# All constants needed from settings.py have to be loaded here before anything
+# else.
+_FLAME_GRAPH_EXPORTER_NAME: str = ""
+_FLAME_GRAPH_FILE_FORMAT_SCHEMA_URL: str = ""
+_FLAME_GRAPH_MAX_RECORDED_CALLS: int = 0
 settings.load_into(__name__)
 
 # The high bit cyg.c sets on a timestamp to mark a function exit.

@@ -7,18 +7,16 @@ from typing import NamedTuple
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import settings, theme
 
-# Every value this file takes from settings.py, declared as the type it
-# expects and loaded before any other name this module binds.
-_ASSET_TEMPLATE_FLAME_GRAPH_BOOTSTRAP_NAME: str
-_ASSET_TEMPLATE_FLAME_GRAPH_PAGE_NAME: str
-_FLAME_GRAPH_PROFILE_SCRIPT_NAME: str
+# All constants needed from settings.py have to be loaded here before anything
+# else.
+_ASSET_TEMPLATE_FLAME_GRAPH_BOOTSTRAP_NAME: str = ""
+_ASSET_TEMPLATE_FLAME_GRAPH_PAGE_NAME: str = ""
+_FLAME_GRAPH_PROFILE_SCRIPT_NAME: str = ""
 settings.load_into(__name__)
 
 # Hands the embedded profile to speedscope. It polls, because speedscope
 # starts up well after its own script tag has run.
-_BOOTSTRAP = theme.asset_text_read(
-    _ASSET_TEMPLATE_FLAME_GRAPH_BOOTSTRAP_NAME
-)
+_BOOTSTRAP = theme.asset_text_read(_ASSET_TEMPLATE_FLAME_GRAPH_BOOTSTRAP_NAME)
 
 # The page itself: a link and two script tags, the markers substituted.
 _PAGE = theme.asset_text_read(_ASSET_TEMPLATE_FLAME_GRAPH_PAGE_NAME)

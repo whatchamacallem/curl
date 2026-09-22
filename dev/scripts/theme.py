@@ -6,27 +6,31 @@ from typing import NamedTuple, TypeAlias, TypedDict
 
 import settings
 
-_ASSET_FRAME_SCRIPT_NAME: str
-_ASSET_HEAT_MAP_SCRIPT_NAME: str
-_ASSET_HEAT_MAP_STYLESHEET_NAME: str
-_ASSET_SETTINGS_SCRIPT_NAME: str
-_ASSET_THEME_SCRIPT_NAME: str
-_ASSET_THEME_STYLESHEET_NAME: str
-_ASSET_UI_STRINGS_SCRIPT_NAME: str
-_HEAT_COLOR_ALPHA_HIGHEST: float
-_HEAT_COLOR_ALPHA_LOWEST: float
-_HEAT_COLOR_RAMP_STOPS: list[str]
-_HEAT_COLOR_SMALLEST_VISIBLE_SHARE: float
-_NUMBER_SMALLEST_PRINTED_PERCENT: float
-_PAGE_FONT_FAMILY: str
-_REPORT_ASSETS_DIR_NAME: str
-_STRIP_STATUS_ROW_WIDTH_CHARS: int
-_TABLE_COLUMN_EXTRA_WIDTH_CHARS: int
-_THEME_COLOR_PAIR_ENTRIES: list[str]
-_THEME_COLOR_PAIR_NAMES: tuple[str, ...]
-_THEME_COLOR_ROLE_BACKGROUND_SHADE_FACTOR: float
-_THEME_COLOR_ROLE_SOURCES: dict[str, tuple[str, str]]
-_THEME_TIME_UNIT_ENTRIES: tuple[tuple[str, float], ...]
+# All constants needed from settings.py have to be loaded here before anything
+# else.
+_ASSET_ERROR_OVERLAY_SCRIPT_NAME: str = ""
+_ASSET_FRAME_SCRIPT_NAME: str = ""
+_ASSET_HEAT_MAP_SCRIPT_NAME: str = ""
+_ASSET_HEAT_MAP_STYLESHEET_NAME: str = ""
+_ASSET_REPORT_MANIFEST_SCRIPT_NAME: str = ""
+_ASSET_SETTINGS_SCRIPT_NAME: str = ""
+_ASSET_THEME_SCRIPT_NAME: str = ""
+_ASSET_THEME_STYLESHEET_NAME: str = ""
+_ASSET_UI_STRINGS_SCRIPT_NAME: str = ""
+_HEAT_COLOR_ALPHA_HIGHEST: float = 0.0
+_HEAT_COLOR_ALPHA_LOWEST: float = 0.0
+_HEAT_COLOR_LOGO_STOPS: list[str] = []
+_HEAT_COLOR_SMALLEST_VISIBLE_SHARE: float = 0.0
+_NUMBER_SMALLEST_PRINTED_PERCENT: float = 0.0
+_PAGE_FONT_FAMILY: str = ""
+_REPORT_ASSETS_DIR_NAME: str = ""
+_STRIP_STATUS_ROW_WIDTH_CHARS: int = 0
+_TABLE_COLUMN_EXTRA_WIDTH_CHARS: int = 0
+_THEME_COLOR_PAIR_ENTRIES: list[str] = []
+_THEME_COLOR_PAIR_NAMES: tuple[str, ...] = ()
+_THEME_COLOR_ROLE_BACKGROUND_SHADE_FACTOR: float = 0.0
+_THEME_COLOR_ROLE_SOURCES: dict[str, tuple[str, str]] = {}
+_THEME_TIME_UNIT_ENTRIES: tuple[tuple[str, float], ...] = ()
 settings.load_into(__name__)
 
 
@@ -182,6 +186,10 @@ class Theme:
         heat_map_stylesheet = _ASSET_HEAT_MAP_STYLESHEET_NAME
         shared = (
             (
+                _ASSET_ERROR_OVERLAY_SCRIPT_NAME,
+                self.asset_read(_ASSET_ERROR_OVERLAY_SCRIPT_NAME),
+            ),
+            (
                 _ASSET_FRAME_SCRIPT_NAME,
                 self.asset_read(_ASSET_FRAME_SCRIPT_NAME),
             ),
@@ -236,7 +244,7 @@ class Theme:
             lines.append(f"  --{name}: {pair.dark}; --{name}-l: {pair.light};")
         for role, color in _ROLE.items():
             lines.append(f"  --{role}: {color};")
-        stops = _HEAT_COLOR_RAMP_STOPS
+        stops = _HEAT_COLOR_LOGO_STOPS
         lines.append(f"  --hot: {stops[-1]};")
         lines.append(
             f"  --hot-fg: {self.contrast_foreground(self.rgb(stops[-1]))};"
@@ -274,6 +282,7 @@ class Theme:
         script = "".join(
             f'<script src="{assets_href}/{name}"></script>\n'
             for name in (
+                *page_preamble_scripts(),
                 _ASSET_SETTINGS_SCRIPT_NAME,
                 _ASSET_THEME_SCRIPT_NAME,
                 *extra_js,
@@ -295,7 +304,7 @@ class Theme:
         magnitude = abs(heat)
         if magnitude <= 0:
             return ""
-        stops = [self.rgb(color) for color in _HEAT_COLOR_RAMP_STOPS]
+        stops = [self.rgb(color) for color in _HEAT_COLOR_LOGO_STOPS]
         if signed:
             position = (heat + 1) * 0.5 * (len(stops) - 1)
         else:
@@ -386,7 +395,7 @@ class Theme:
     # The handful of theme values the page's own JavaScript needs.
     def runtime(self) -> ThemeRuntime:
         return {
-            "heat": _HEAT_COLOR_RAMP_STOPS,
+            "heat": _HEAT_COLOR_LOGO_STOPS,
             "bg": _ROLE["bg"],
             "fgLight": _ROLE["fg"],
             "fgDark": _ROLE["bg"],
@@ -554,6 +563,19 @@ def page_document(
     depth: int = 0,
 ) -> str:
     return _RENDERER.document(title, body, extra_js, body_class, depth)
+
+
+# page_preamble_scripts - The scripts every page links before any other,
+# in this order. The error overlay installs the window handlers that turn
+# a thrown error into a readable page, so nothing that can throw may
+# precede it; the manifest script only assigns a global, and sits second
+# so the overlay has the report's identity to print. Both are shared
+# assets, so the report carries one copy of each.
+def page_preamble_scripts() -> tuple[str, ...]:
+    return (
+        _ASSET_ERROR_OVERLAY_SCRIPT_NAME,
+        _ASSET_REPORT_MANIFEST_SCRIPT_NAME,
+    )
 
 
 # shared_href - A page's href to one of the report's shared directories.

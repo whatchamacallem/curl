@@ -8,9 +8,9 @@ from typing import NamedTuple, TextIO, TypedDict
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import callgrind, settings
 
-# Every value this file takes from settings.py, declared as the type it
-# expects and loaded before any other name this module binds.
-_RANKING_COUNTER_NAME: str
+# All constants needed from settings.py have to be loaded here before anything
+# else.
+_RANKING_COUNTER_NAME: str = ""
 settings.load_into(__name__)
 
 

@@ -5,70 +5,83 @@ the top level `index.html` in the report then bookmarks should work.
 
 ## The Scripts
 
+These are the scripts for using `perf2html`. While the scripts directory does
+contain a few more interesting files, none of them should be needed to use the
+generators.
+
+- `perf2html.sh` : Capture timing data and generate a report.
+- `perf2html_diff.sh` : Generate a report about the difference between two
+  perf2html.sh` reports.
+- `perf2html_batch.sh` : Generate 3 reports, a baseline version, a modified
+  version, and a diff.
+
 ```txt
 perf2html.sh [debug-flags] [--report=DIR] [cmake-flags...]
-    Builds RelWithDebInfo, profiles every TESTS_C test under callgrind
-    plus a native perf stat timing run, generates one report.
-    --report=DIR   Defaults to perf2html_baseline_report, or
-                   perf2html_modified_report when a cmake flag is given.
-                   Pass it yourself after a source-only change.
-    cmake-flags    Everything else, e.g. -D CMAKE_C_FLAGS=-Os.
+    Builds RelWithDebInfo, profiles every TESTS_C test under callgrind plus a
+    native perf stat timing run, generates one report.
+    --report=DIR      Defaults to perf2html_baseline_report, or
+                      perf2html_modified_report when a cmake flag is given.
+                      Pass it yourself after a source-only change.
+    cmake-flags       Everything else, e.g. -D CMAKE_C_FLAGS=-Os.
 
-perf2html_diff.sh [debug-flags] [baseline] [modified] [report]
-    Measures nothing: Compares the counters in two profiling reports.
-    Directories default to perf2html_{baseline,modified,diff}_report.
-    Each input must be a perf2html.sh report. A diff can't be diffed.
+perf2html_diff.sh [debug-flags] [baseline] [modified] [diff]
+    Measures nothing: Compares the counters in two profiling reports and
+    generates a diff. Directories default to
+    ./perf2html_{baseline,modified,diff}_report. Both baseline and modified
+    must be a perf2html.sh report. A diff can't be diffed.
 
 perf2html_batch.sh [debug-flags] [--target-dir=DIR] [cmake-flags...]
-    Runs baseline, modified, diff in order, every step running even
-    after an earlier one failed. Checks nothing; pair with reformat.sh.
-    --target-dir=DIR  holds the three default-named reports (default
-                      CWD); the batch cannot rename them.
-    cmake-flags       every argument not one of its own options,
-                      applied to the modified build (default
-                      -D CMAKE_C_FLAGS=-Os).
+    Profiles baseline, modified and then does a diff of them.
+    --target-dir=DIR  holds the three default-named reports (default CWD). The
+                      batch cannot rename them.
+    cmake-flags       every argument not one of its own options, applied to the
+                      modified build (default -D CMAKE_C_FLAGS=-Os).
+```
 
-Shared Flags
-    --verbose         additive: whatever quiet prints, verbose prints
-                      too, plus each child's output as produced.
-    --keep-artifacts  keeps the recordings directory; required for a
-                      later --regenerate.
-    --regenerate      rebuilds all pages from the last run's
-                      recordings, re-measuring nothing; implies
-                      --keep-artifacts.
-    --artifacts=DIR   the recordings directory; defaults to
+These are developer flags for the iterative development of `perf2html` itself.
+`perf2html_diff.sh` was designed to compare archived reports and so it does not
+touch the profiler artifacts directory at all.
+
+```txt
+    --artifacts=TMP   The profiler artifacts directory. Defaults to
                       perf2html_temporary_artifacts/ beside the report
-                      (inside the target dir for the batch, which
-                      forwards it to both children).
+                      directory (inside the target dir for a batch).
+    --keep-artifacts  Do not delete the profiler artifacts directory after use.
+                      Required for a later --regenerate.
+    --regenerate      Rebuilds all pages from the last run's profiler
+                      artifacts, re-measuring nothing. Implies
+                      --keep-artifacts.
+    --verbose         additive: whatever quiet prints, verbose prints too, plus
+                      each child's output as produced.
 ```
 
 ## Callgrind Counters
 
-These are the raw counters callgrind records and the derived ones this report
+These are the raw counters `callgrind` records and the derived ones this report
 adds up from them. They show up as column headers and counter picker choices in
 the heat map, under these same names.
 
-| Counter | Meaning                             | Derived from          |
-| ------- | ----------------------------------- | --------------------- |
-| Ir      | instructions executed               |                       |
-| Dr      | data reads                          |                       |
-| Dw      | data writes                         |                       |
-| I1mr    | L1 instruction cache misses         |                       |
-| D1mr    | L1 data cache read misses           |                       |
-| D1mw    | L1 data cache write misses          |                       |
-| ILmr    | last level instruction cache misses |                       |
-| DLmr    | last level data cache read misses   |                       |
-| DLmw    | last level data cache write misses  |                       |
-| Bc      | conditional branches executed       |                       |
-| Bcm     | conditional branches mispredicted   |                       |
-| Bi      | indirect branches executed          |                       |
-| Bim     | indirect branches mispredicted      |                       |
-| D1m     | L1 data cache misses                | D1mr + D1mw           |
-| DLm     | last level data cache misses        | DLmr + DLmw           |
-| L1m     | L1 cache misses, all                | I1mr + D1mr + D1mw    |
-| LLm     | last level cache misses, all        | ILmr + DLmr + DLmw    |
-| Bm      | branches mispredicted, all          | Bcm + Bim             |
-| CEst    | cycle estimate                      | Ir + 10 L1m + 100 LLm |
+| Counter | Meaning                             | Derived from            |
+| ------- | ----------------------------------- | ----------------------- |
+| `Ir`    | instructions executed               |                         |
+| `Dr`    | data reads                          |                         |
+| `Dw`    | data writes                         |                         |
+| `I1mr`  | L1 instruction cache misses         |                         |
+| `D1mr`  | L1 data cache read misses           |                         |
+| `D1mw`  | L1 data cache write misses          |                         |
+| `ILmr`  | last level instruction cache misses |                         |
+| `DLmr`  | last level data cache read misses   |                         |
+| `DLmw`  | last level data cache write misses  |                         |
+| `Bc`    | conditional branches executed       |                         |
+| `Bcm`   | conditional branches mispredicted   |                         |
+| `Bi`    | indirect branches executed          |                         |
+| `Bim`   | indirect branches mispredicted      |                         |
+| `D1m`   | L1 data cache misses                | `D1mr + D1mw`           |
+| `DLm`   | last level data cache misses        | `DLmr + DLmw`           |
+| `L1m`   | L1 cache misses, all                | `I1mr + D1mr + D1mw`    |
+| `LLm`   | last level cache misses, all        | `ILmr + DLmr + DLmw`    |
+| `Bm`    | branches mispredicted, all          | `Bcm + Bim`             |
+| `CEst`  | cycle estimate                      | `Ir + 10 L1m + 100 LLm` |
 
 `CEst` weights a miss by roughly what it costs and is used by default.
 
@@ -92,21 +105,19 @@ view it may also be a percentage of a file or function if selected.
 
 ### Diff report
 
-A diff report uses percentages the same way the stock market does. If your
-function takes half as long then it is at 50%, where smaller is better.
+A diff report uses percentages the same way a stock market ticker does. If the
+system under test takes half as long per-invocation in the modified profile then
+it is at 50%, where smaller is better.
 
-| counts             |     mine |  bloomberg |
-| ------------------ | -------: | ---------: |
-| 0 -> 5000          |      ▲∞% |       N.A. |
-| 5000 -> 0          | ▼-100.0% |   -100.00% |
-| 0 -> 0             |          |       N.A. |
-| 5000 -> 5000       |          |      0.00% |
-| 5000000 -> 5000001 |  ▲≈0.00% |     +0.00% |
-| 5000000 -> 4999999 |  ▼≈0.00% |     -0.00% |
-| 1000 -> 2000       |  ▲100.0% |   +100.00% |
-| 1000 -> 2010       |   ▲1.01x |   +101.00% |
-| 1000 -> 2300       |   ▲1.30x |   +130.00% |
-| 1000 -> 101000     |  ▲>1000x | +10000.00% |
+| counts             |     mine |
+| ------------------ | -------: |
+| 0 -> 5000          |      ▲∞% |
+| 5000 -> 0          | ▼-100.0% |
+| 5000000 -> 5000001 |  ▲≈0.00% |
+| 5000000 -> 4999999 |  ▼≈0.00% |
+| 1000 -> 2000       |  ▲100.0% |
+| 1000 -> 2010       |   ▲1.01x |
+| 1000 -> 101000     |  ▲>1000x |
 
 ## Flame Graph (speedscope)
 
@@ -125,7 +136,7 @@ shape: what calls what, in which order, and which call was the slow one. The
 summary's "trace log" has the commands and the traced run's own output, and
 "raw data" links the same profile as a speedscope JSON file.
 
-The merged "all" report and a diff have no flame graph: recordings neither add
+The merged "all" report and a diff have no flame graph: profiler artifacts neither add
 up nor subtract.
 
 Scroll to pan and pinch or Cmd/Ctrl+scroll to zoom, on both the minimap and the

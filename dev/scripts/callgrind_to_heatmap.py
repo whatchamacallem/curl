@@ -8,19 +8,19 @@ from typing import NamedTuple, NotRequired, TypedDict
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import callgrind, callgrind_diff, settings, theme
 
-# Every value this file takes from settings.py, declared as the type it
-# expects and loaded before any other name this module binds.
-_ASSET_HEAT_MAP_SCRIPT_NAME: str
-_ASSET_HEAT_MAP_STYLESHEET_NAME: str
-_ASSET_SETTINGS_SCRIPT_NAME: str
-_ASSET_TEMPLATE_HEAT_MAP_PAGE_NAME: str
-_ASSET_THEME_SCRIPT_NAME: str
-_ASSET_THEME_STYLESHEET_NAME: str
-_ASSET_UI_STRINGS_SCRIPT_NAME: str
-_HEAT_MAP_TREE_ALWAYS_LISTED_DIRS: tuple[str, ...]
-_RANKING_COUNTER_NAME: str
-_REPORT_ASSETS_DIR_NAME: str
-_REPORT_SOURCES_DIR_NAME: str
+# All constants needed from settings.py have to be loaded here before anything
+# else.
+_ASSET_HEAT_MAP_SCRIPT_NAME: str = ""
+_ASSET_HEAT_MAP_STYLESHEET_NAME: str = ""
+_ASSET_SETTINGS_SCRIPT_NAME: str = ""
+_ASSET_TEMPLATE_HEAT_MAP_PAGE_NAME: str = ""
+_ASSET_THEME_SCRIPT_NAME: str = ""
+_ASSET_THEME_STYLESHEET_NAME: str = ""
+_ASSET_UI_STRINGS_SCRIPT_NAME: str = ""
+_HEAT_MAP_TREE_ALWAYS_LISTED_DIRS: tuple[str, ...] = ()
+_RANKING_COUNTER_NAME: str = ""
+_REPORT_ASSETS_DIR_NAME: str = ""
+_REPORT_SOURCES_DIR_NAME: str = ""
 settings.load_into(__name__)
 
 # The page skeleton every heat map is rendered into.
@@ -439,6 +439,10 @@ class CallgrindToHeatmap:
         assets_href = theme.shared_href(depth, _REPORT_ASSETS_DIR_NAME)
         sources_href = theme.shared_href(depth, _REPORT_SOURCES_DIR_NAME)
         scripts = "".join(
+            f'<script src="{assets_href}/{name}"></script>\n'
+            for name in theme.page_preamble_scripts()
+        )
+        scripts += "".join(
             f'<script src="{sources_href}/{name}"></script>\n'
             for name in sorted(
                 entry["source"]

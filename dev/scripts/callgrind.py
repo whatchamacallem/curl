@@ -7,9 +7,9 @@ from typing import Literal, NamedTuple, TypeAlias, TypeVar
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import settings
 
-# Every value this file takes from settings.py, declared as the type it
-# expects and loaded before any other name this module binds.
-_DERIVED_COUNTER_TERMS: dict[str, dict[str, int]]
+# All constants needed from settings.py have to be loaded here before anything
+# else.
+_DERIVED_COUNTER_TERMS: dict[str, dict[str, int]] = {}
 settings.load_into(__name__)
 
 # One cost number per counter, in the order the file's "events:" line names

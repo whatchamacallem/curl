@@ -146,22 +146,18 @@
   let current_counter =
     counter_find(profile_model.heatMapTotals.defaultCounter) ||
     counter_list[0];
-  const secondary_counters = HEAT_MAP_SECONDARY_COUNTER_NAMES.map(
-    counter_find,
-  ).filter(Boolean);
+  const secondary_counters =
+    HEAT_MAP_SECONDARY_COUNTER_NAMES.map(counter_find).filter(Boolean);
 
   const text_of = window.ui_strings.text_of;
   const text_fill = window.ui_strings.text_fill;
-  const MISSING_STRING_TEXT = text_of("str_no_such_string_id");
-  const counter_label = (counter) => {
-    const described = text_of(
+  const counter_label = (counter) =>
+    text_of(
       HEAT_MAP_COUNTER_DESCRIPTION_STRING_ID_PREFIX +
         counter.key.toLowerCase(),
-    );
-    return described === MISSING_STRING_TEXT
-      ? counter.key
-      : described + " / " + counter.key;
-  };
+    ) +
+    " / " +
+    counter.key;
   const counter_select = document.getElementById("counter");
   let counter_label_width = 0;
   for (const counter of counter_list) {
@@ -348,8 +344,7 @@
       for (const counter of [current_counter].concat(secondary_counters)) {
         const self_cost = absolute(counter.get(line_costs[0]));
         if (!self_cost) continue;
-        totals.file[counter.key] =
-          (totals.file[counter.key] || 0) + self_cost;
+        totals.file[counter.key] = (totals.file[counter.key] || 0) + self_cost;
         if (owner == null) continue;
         const owner_key = owner + "\n" + counter.key;
         totals.function[owner_key] =
@@ -1814,14 +1809,7 @@
     }
   }
   function hash_canonicalize() {
-    const hash = hash_of_state(current_state);
-    if (hash !== location.hash) history.replaceState(null, "", hash || "#");
-    if (window.parent !== window) {
-      window.parent.postMessage(
-        { report_ui: "hash_changed", hash: hash },
-        "*",
-      );
-    }
+    report_ui.hash_publish(hash_of_state(current_state));
   }
   function route_render() {
     const parsed_state = state_of_hash(location.hash);
@@ -1874,8 +1862,8 @@
     hash_canonicalize();
   }
   window.addEventListener("hashchange", route_render);
-  window.addEventListener("message", (message_event) => {
-    if (message_event.data === "report_ui:reset_columns") {
+  report_ui.parent_listen((message_data) => {
+    if (message_data === "report_ui:reset_columns") {
       report_ui.layout_reset();
     }
   });

@@ -3,31 +3,23 @@ from __future__ import annotations
 
 import argparse, base64, glob, json, os, re, subprocess, sys, tarfile
 from collections.abc import Sequence
-from typing import NamedTuple, cast
+from typing import NamedTuple
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import callgrind, settings
 
-_DIFF_CALLER_COUNTS_FILE_SUFFIX: str
-_FLAME_GRAPH_APP_DIR_NAME: str
-_FLAME_GRAPH_APP_FILE_GLOBS: tuple[str, ...]
-_FLAME_GRAPH_EXPORTER_NAME: str
-_FLAME_GRAPH_PAGE_FILE_NAMES: tuple[str, ...]
-_REPORT_MANIFEST_CHECKSUM_LABEL: str
-_REPORT_RAW_ARCHIVE_SUFFIX: str
-_REPORT_SOURCES_DIR_NAME: str
-_SOURCE_SCAN_ALLOWED_NON_ASCII_CHARS: tuple[str, ...]
-_SOURCE_SCAN_FILE_EXTENSIONS: tuple[str, ...]
-_SOURCE_SCAN_FILE_NAMES: tuple[str, ...]
-_SOURCE_SCAN_SKIPPED_DIRS: tuple[str, ...]
-_VALIDATE_ANY_PAGE_LEAST_BYTES: int
-_VALIDATE_FLAME_GRAPH_PAGE_LEAST_BYTES: int
-_VALIDATE_FLAME_GRAPH_SCRIPT_LEAST_BYTES: int
-_VALIDATE_HEAT_MAP_PAGE_LEAST_BYTES: int
-_VALIDATE_OVERVIEW_PAGE_LEAST_BYTES: int
-_VALIDATE_RAW_ARCHIVE_LEAST_BYTES: int
-_VALIDATE_REPORT_LAYOUT_DIFF: dict[str, object]
-_VALIDATE_REPORT_LAYOUT_FULL: dict[str, object]
+# All constants needed from settings.py have to be loaded here before anything
+# else.
+_DIFF_CALLER_COUNTS_FILE_SUFFIX: str = ""
+_FLAME_GRAPH_APP_DIR_NAME: str = ""
+_FLAME_GRAPH_APP_FILE_GLOBS: tuple[str, ...] = ()
+_FLAME_GRAPH_EXPORTER_NAME: str = ""
+_FLAME_GRAPH_PAGE_FILE_NAMES: tuple[str, ...] = ()
+_REPORT_MANIFEST_CHECKSUM_LABEL: str = ""
+_REPORT_MANIFEST_VERSION_DIFF: str = ""
+_REPORT_MANIFEST_VERSION_FULL: str = ""
+_REPORT_RAW_ARCHIVE_SUFFIX: str = ""
+_REPORT_SOURCES_DIR_NAME: str = ""
 settings.load_into(__name__)
 
 
@@ -75,7 +67,7 @@ class ValidateReport:
         self.errors: list[str] = []
 
     # The POSIX cksum of every file except MANIFEST.txt, run through the
-    # very pipeline report_manifest.sh wrote the row with, never our own.
+    # very pipeline scripts/shared.sh wrote the row with, never our own.
     def checksum_compute(self, out_dir: str) -> str:
         try:
             done = subprocess.run(
@@ -270,32 +262,6 @@ class ValidateReport:
                 "index.html has a 'raw data' section, but it should"
                 f" not: {path}"
             )
-
-    # Build one ReportLayout from its settings entry, a plain mapping
-    # because settings.py cannot name this class without importing us.
-    def layout_build(
-        self, entry: dict[str, object]
-    ) -> ValidateReport.ReportLayout:
-        fields = ValidateReport.ReportLayout._fields
-        missing = [name for name in fields if name not in entry]
-        if missing:
-            raise KeyError(
-                f"a report layout in settings.py is missing "
-                f"{', '.join(missing)}, which ReportLayout needs"
-            )
-        return ValidateReport.ReportLayout(
-            subpages=cast("tuple[str, ...]", entry["subpages"]),
-            heading=cast(str, entry["heading"]),
-            header_blocks=cast(
-                "tuple[str, ...]", entry["header_blocks"]
-            ),
-            manifest_version=cast(str, entry["manifest_version"]),
-            manifest_labels=cast(
-                "tuple[str, ...]", entry["manifest_labels"]
-            ),
-            test_has_rawdata=cast(bool, entry["test_has_rawdata"]),
-            all_has_archive=cast(bool, entry["all_has_archive"]),
-        )
 
     # MANIFEST.txt line 1 must be exact and its checksum row must still
     # match the files beside it. Both failures name found and expected.
@@ -684,17 +650,38 @@ class ValidateReport:
         return sorted(paths)
 
 
-# The one checker the two layouts below are built through. Named first
-# because they are built from it.
-_CHECKER = ValidateReport()
-
 # What a perf2html_diff.sh report must contain: no flame graph, no timing.
-_LAYOUT_DIFF = _CHECKER.layout_build(_VALIDATE_REPORT_LAYOUT_DIFF)
+# The version line is the production string, read out of settings.py, not
+# restated here: this checks the report against what wrote it.
+_LAYOUT_DIFF = ValidateReport.ReportLayout(
+    subpages=("heat-map",),
+    heading=r"<h2>top \d+ functions by change in self</h2>",
+    header_blocks=("baseline", "modified"),
+    manifest_version=_REPORT_MANIFEST_VERSION_DIFF,
+    manifest_labels=("baseline", "modified", "stamp"),
+    test_has_rawdata=False,
+    all_has_archive=True,
+)
 
 # What a perf2html.sh report must contain.
-_LAYOUT_FULL = _CHECKER.layout_build(_VALIDATE_REPORT_LAYOUT_FULL)
+_LAYOUT_FULL = ValidateReport.ReportLayout(
+    subpages=("flame-graph", "heat-map"),
+    heading=r"<h2>top \d+ functions by self</h2>",
+    header_blocks=(),
+    manifest_version=_REPORT_MANIFEST_VERSION_FULL,
+    manifest_labels=(
+        "sampled",
+        "revision",
+        "cpu",
+        "build",
+        "executable",
+        "stamp",
+    ),
+    test_has_rawdata=True,
+    all_has_archive=False,
+)
 
-# report_manifest.sh's checksum pipeline, spelled the same here so the two
+# scripts/shared.sh's checksum pipeline, spelled the same here so the two
 # can never disagree: sorted paths, relative to the report directory.
 _REPORT_CHECKSUM_COMMAND = (
     "find . -type f ! -name MANIFEST.txt -print"
@@ -702,6 +689,48 @@ _REPORT_CHECKSUM_COMMAND = (
     " | xargs -0 -r cksum --"
     " | LC_ALL=C sort | cksum"
 )
+
+# The diff vocabulary, spelled the same everywhere a reader sees it. These
+# are the only non-ASCII characters a dev/ source file may contain.
+_SOURCE_SCAN_ALLOWED_NON_ASCII_CHARS = (
+    "≈",  # almost equal to
+    "∞",  # infinity
+    "▲",  # up-pointing triangle
+    "▶",  # right-pointing triangle, the heat map's collapsed caret
+    "▼",  # down-pointing triangle
+    "…",  # horizontal ellipsis
+)
+
+# Which files under dev/ the ASCII scan reads.
+_SOURCE_SCAN_FILE_EXTENSIONS = (
+    ".py",
+    ".js",
+    ".css",
+    ".sh",
+    ".html",
+    ".c",
+    ".h",
+)
+_SOURCE_SCAN_FILE_NAMES = ("README.md",)
+
+# Generated output and caches, which the ASCII scan walks straight past.
+_SOURCE_SCAN_SKIPPED_DIRS = (
+    "__pycache__",
+    "perf2html_baseline_report",
+    "perf2html_modified_report",
+    "perf2html_diff_report",
+)
+
+# Smallest a file can be before it is plainly a failed generate rather than
+# a small page. The flame graph page is a loader -- two script tags and a
+# stylesheet link pointing at the shared bundle -- so it has a floor of its
+# own, well under the one a page carrying real content must clear.
+_VALIDATE_ANY_PAGE_LEAST_BYTES = 500
+_VALIDATE_FLAME_GRAPH_PAGE_LEAST_BYTES = 300
+_VALIDATE_FLAME_GRAPH_SCRIPT_LEAST_BYTES = 200
+_VALIDATE_HEAT_MAP_PAGE_LEAST_BYTES = 5000
+_VALIDATE_OVERVIEW_PAGE_LEAST_BYTES = 2000
+_VALIDATE_RAW_ARCHIVE_LEAST_BYTES = 100
 
 
 # main - Check the sources are ASCII, then check the given report.

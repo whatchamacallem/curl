@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import argparse, json, os, re, sys
-from typing import NamedTuple, get_origin, get_type_hints
+import argparse, json, os, sys
+from typing import get_origin, get_type_hints
 
 # What the report's one shared copy of the theme is written as. Every page
 # in a report renders the same stylesheet and the same script, so they are
@@ -11,9 +11,11 @@ from typing import NamedTuple, get_origin, get_type_hints
 # the same way. Each page links only the ones it uses. theme.css and the
 # settings file are generated rather than copied. This list runs on past
 # the template names below it, which sort into the middle of it.
+ASSET_ERROR_OVERLAY_SCRIPT_NAME = "error_overlay.js"
 ASSET_FRAME_SCRIPT_NAME = "frame.js"
 ASSET_HEAT_MAP_SCRIPT_NAME = "heatmap.js"
 ASSET_HEAT_MAP_STYLESHEET_NAME = "heatmap.css"
+ASSET_REPORT_MANIFEST_SCRIPT_NAME = "report_manifest.js"
 ASSET_SETTINGS_SCRIPT_NAME = "settings.js"
 
 # The four scripts/ files a generator reads as a template rather than
@@ -21,13 +23,13 @@ ASSET_SETTINGS_SCRIPT_NAME = "settings.js"
 # holds the markers that generator substitutes its own content into, and
 # nothing writes them into a report under these names, so they are read
 # but never shared. No generator holds a multi-line literal, which is why
-# each of these is a real file. The settings runtime is this file's own
+# each of these is a real file. The settings handler is this file's own
 # template, so settings_script_write() reads it the way a generator reads
 # the other three.
 ASSET_TEMPLATE_FLAME_GRAPH_BOOTSTRAP_NAME = "flame_bootstrap.js"
 ASSET_TEMPLATE_FLAME_GRAPH_PAGE_NAME = "flame_graph.html"
 ASSET_TEMPLATE_HEAT_MAP_PAGE_NAME = "heatmap.html"
-ASSET_TEMPLATE_SETTINGS_RUNTIME_NAME = "settings_runtime.js"
+ASSET_TEMPLATE_SETTINGS_HANDLER_NAME = "settings_handler.js"
 
 ASSET_THEME_SCRIPT_NAME = "theme.js"
 ASSET_THEME_STYLESHEET_NAME = "theme.css"
@@ -126,7 +128,7 @@ HEAT_COLOR_LIGHT_TEXT_ABOVE_SHARE = 0.45
 # Every heated cell blends one of these over the page background, and the
 # outer strip's wordmark steps its letters across the ramp's upper half as
 # plain text colour, so a retune moves both.
-HEAT_COLOR_RAMP_STOPS: list[str] = [
+HEAT_COLOR_LOGO_STOPS: list[str] = [
     "#3E4A89",
     "#31688E",
     "#26828E",
@@ -248,7 +250,7 @@ PAGE_FONT_FAMILY = (
 
 # The global the generated settings file assigns its one statement to. A page
 # links that file before every script that reads it, the way it links
-# ui_strings.js. settings_script_write() fills the runtime template's name
+# ui_strings.js. settings_script_write() fills the handler template's name
 # marker with this, so the page calls what is spelled here.
 PAGE_SETTINGS_GLOBAL_NAME = "settings"
 
@@ -264,43 +266,22 @@ REPORT_ASSETS_DIR_NAME = "assets"
 # check it, so the label is one spelling here rather than one per reader.
 REPORT_MANIFEST_CHECKSUM_LABEL = "checksum"
 
+# The exact first line of a MANIFEST.txt, one per kind of report. It is the
+# only thing that makes a directory a report, and a diff names
+# perf2html_diff.sh, which is how a diff can never be read back as a diff
+# input. Production contract, not validation data: the generators write
+# these strings, the shell evals them through --shell, and every reader
+# that opens a report -- including validate_report.py -- checks against
+# them. Bump one and every tool rejects the reports written before it.
+REPORT_MANIFEST_VERSION_DIFF = "curl/perf2html_diff.sh v1"
+REPORT_MANIFEST_VERSION_FULL = "curl/perf2html.sh v1"
+
 # What a report's raw data is stored as, one archive per test.
 REPORT_RAW_ARCHIVE_SUFFIX = "txz"
 
 # The report-root directory holding every heat map's source text, one copy
 # of each profiled file rather than one per page that references it.
 REPORT_SOURCES_DIR_NAME = "sources"
-
-# The diff vocabulary, spelled the same everywhere a reader sees it. These
-# are the only non-ASCII characters a dev/ source file may contain.
-SOURCE_SCAN_ALLOWED_NON_ASCII_CHARS = (
-    "≈",  # almost equal to
-    "∞",  # infinity
-    "▲",  # up-pointing triangle
-    "▶",  # right-pointing triangle, the heat map's collapsed caret
-    "▼",  # down-pointing triangle
-    "…",  # horizontal ellipsis
-)
-
-# Which files under dev/ the ASCII scan reads.
-SOURCE_SCAN_FILE_EXTENSIONS = (
-    ".py",
-    ".js",
-    ".css",
-    ".sh",
-    ".html",
-    ".c",
-    ".h",
-)
-SOURCE_SCAN_FILE_NAMES = ("README.md",)
-
-# Generated output and caches, which the ASCII scan walks straight past.
-SOURCE_SCAN_SKIPPED_DIRS = (
-    "__pycache__",
-    "perf2html_baseline_report",
-    "perf2html_modified_report",
-    "perf2html_diff_report",
-)
 
 # The "curl.se/perf" link in every page's util block.
 STRIP_CURL_PERF_SITE_HREF = "https://curl.se/perf/index.html"
@@ -418,60 +399,6 @@ THEME_TIME_UNIT_ENTRIES: tuple[tuple[str, float], ...] = (
     ("ps", 1e-12),
 )
 
-# Smallest a file can be before it is plainly a failed generate rather than
-# a small page. The flame graph page is a loader -- two script tags and a
-# stylesheet link pointing at the shared bundle -- so it has a floor of its
-# own, well under the one a page carrying real content must clear.
-VALIDATE_ANY_PAGE_LEAST_BYTES = 500
-VALIDATE_FLAME_GRAPH_PAGE_LEAST_BYTES = 300
-VALIDATE_FLAME_GRAPH_SCRIPT_LEAST_BYTES = 200
-VALIDATE_HEAT_MAP_PAGE_LEAST_BYTES = 5000
-VALIDATE_OVERVIEW_PAGE_LEAST_BYTES = 2000
-VALIDATE_RAW_ARCHIVE_LEAST_BYTES = 100
-
-# What a perf2html_diff.sh report is expected to contain, and what a
-# perf2html.sh report is expected to contain. These two are the whole
-# difference between checking a diff and checking a full report, which is
-# why validate_report.py reads its checks off them rather than branching
-# on which kind it was handed. Each holds:
-#   subpages          the per-test view directories that must exist
-#   heading           the pattern the top-N heading has to match
-#   header_blocks     the header blocks the overview must carry
-#   manifest_version  the exact first line of MANIFEST.txt, which is also
-#                     the only thing that makes a directory a diff input
-#   manifest_labels   the LABEL= rows MANIFEST.txt must have
-#   test_has_rawdata  whether a test records runs of its own -- a perf
-#                     log, a trace, a flame graph. never true of the
-#                     synthesized "all"
-#   all_has_archive   whether "all" stores an archive of its own, which it
-#                     does only where its pages are built from data no
-#                     other test's archive holds
-VALIDATE_REPORT_LAYOUT_DIFF: dict[str, object] = {
-    "subpages": ("heat-map",),
-    "heading": r"<h2>top \d+ functions by change in self</h2>",
-    "header_blocks": ("baseline", "modified"),
-    "manifest_version": "curl/perf2html_diff.sh v1",
-    "manifest_labels": ("baseline", "modified", "stamp"),
-    "test_has_rawdata": False,
-    "all_has_archive": True,
-}
-VALIDATE_REPORT_LAYOUT_FULL: dict[str, object] = {
-    "subpages": ("flame-graph", "heat-map"),
-    "heading": r"<h2>top \d+ functions by self</h2>",
-    "header_blocks": (),
-    "manifest_version": "curl/perf2html.sh v1",
-    "manifest_labels": (
-        "sampled",
-        "revision",
-        "cpu",
-        "build",
-        "executable",
-        "stamp",
-    ),
-    "test_has_rawdata": True,
-    "all_has_archive": False,
-}
-
 # Every setting the report's JavaScript reads, by name. The value itself is
 # the module-level setting above, so a value the page and Python both use is
 # written once and this list only says who else can see it. A page reads a
@@ -482,7 +409,7 @@ _BROWSER_SETTING_NAMES = (
     "HEAT_COLOR_ALPHA_LOWEST",
     "HEAT_COLOR_FULL_SCALE_PERCENT",
     "HEAT_COLOR_LIGHT_TEXT_ABOVE_SHARE",
-    "HEAT_COLOR_RAMP_STOPS",
+    "HEAT_COLOR_LOGO_STOPS",
     "HEAT_MAP_CONTROL_DROPDOWN_EXTRA_WIDTH_CHARS",
     "HEAT_MAP_COUNTER_DESCRIPTION_STRING_ID_PREFIX",
     "HEAT_MAP_HOME_LINES_LOCATION_MAX_CHARS",
@@ -514,34 +441,45 @@ _BROWSER_SETTING_NAMES = (
 # bool is an int subclass, so an int annotation must not accept True.
 _SCALAR_TYPES = (bool, int, float, str)
 
-# The field of a report layout that holds its MANIFEST.txt version line,
-# which is the value the shell wants out of the two layout settings.
-_SHELL_SETTING_LAYOUT_FIELD = "manifest_version"
-
-# Every setting report_manifest.sh reads, by name, and the shell variable
-# each one is assigned to. Shell cannot import this module, so it runs
-# "python3 settings.py --shell" once as it is sourced and evals what comes
-# back. The names differ because a shell variable is read bare, with no
-# module in front of it, so REPORT_MANIFEST says which manifest it is where
-# a bare CHECKSUM_LABEL would not. The values are the ones Python reads, so
-# the writer of a MANIFEST.txt and every reader that checks one back spell
-# the same strings.
-_SHELL_SETTING_VARIABLES = (
-    ("CHECKSUM_LABEL", "REPORT_MANIFEST_CHECKSUM_LABEL"),
-    ("DIFF_MANIFEST", "VALIDATE_REPORT_LAYOUT_DIFF"),
-    ("REPORT_MANIFEST", "VALIDATE_REPORT_LAYOUT_FULL"),
+# The types a declaration's sentinel may be written as, each accepted only
+# while it is empty: "", 0, 0.0, (), [], {}. bool is left out -- False is
+# an int to Python, and no declaration has wanted one. set() and frozenset()
+# are here so a set-typed setting has a sentinel to be declared with.
+_SENTINEL_EMPTY_TYPES = (
+    bytes,
+    dict,
+    float,
+    frozenset,
+    int,
+    list,
+    set,
+    str,
+    tuple,
 )
 
+# The sentinels that are not empty containers but are still empty values,
+# compared by identity because neither has a falsy test of its own.
+_SENTINEL_SINGLETONS = (None, ...)
 
-# LostSetting - one SCREAMING_SNAKE constant a file assigns below its
-# load_into() call, where a reader of the file's head does not see it.
-class LostSetting(NamedTuple):
-    # How the constant is spelled, leading underscore kept.
-    name: str
-    # The file holding it.
-    path: str
-    # The 1-based line the assignment sits on.
-    line: int
+# How the accepted sentinels are spelled back in every message naming them,
+# so the three errors and DECLAUDE.md say the same list.
+_SENTINEL_TEXT = 'false, 0, 0.0, ""...'
+
+# Every setting scripts/shared.sh reads, by name, and the shell variable
+# each one is assigned to. Shell cannot import this module, so settings_load
+# runs "python3 settings.py --shell" once and evals what comes back. The
+# names differ because a shell variable is read bare, with no module in
+# front of it, so REPORT_MANIFEST says which manifest it is where a bare
+# CHECKSUM_LABEL would not. The values are the ones Python reads, so the
+# writer of a MANIFEST.txt and every reader that checks one back spell the
+# same strings.
+_SHELL_SETTING_VARIABLES = (
+    ("ASSETS_NAME", "REPORT_ASSETS_DIR_NAME"),
+    ("CHECKSUM_LABEL", "REPORT_MANIFEST_CHECKSUM_LABEL"),
+    ("DIFF_MANIFEST", "REPORT_MANIFEST_VERSION_DIFF"),
+    ("MANIFEST_SCRIPT", "ASSET_REPORT_MANIFEST_SCRIPT_NAME"),
+    ("REPORT_MANIFEST", "REPORT_MANIFEST_VERSION_FULL"),
+)
 
 
 # Settings - the reader for the annotated settings a module declares.
@@ -554,57 +492,105 @@ class Settings:
             if self.is_setting_name(name)
         }
 
+    # Whether one written initializer is an empty sentinel. A fixed-length
+    # tuple annotation has no empty form -- tuple[str, str, str] cannot be
+    # written () without pyright rejecting it -- so a tuple is also a
+    # sentinel when every element it holds is one.
+    def is_sentinel(self, written: object) -> bool:
+        if any(written is one for one in _SENTINEL_SINGLETONS):
+            return True
+        if type(written) not in _SENTINEL_EMPTY_TYPES:
+            return False
+        if not written:
+            return True
+        return type(written) is tuple and all(
+            self.is_sentinel(item) for item in written
+        )
+
     # Whether a module-level name is spelled the way a setting is: SCREAMING
     # snake case, with the leading underscore a private one keeps.
     def is_setting_name(self, name: str) -> bool:
         bare = name.lstrip("_")
         return bool(bare) and bare[0].isupper() and bare.isupper()
 
-    # A bare annotation is the whole request: which setting, and the type
-    # expected. The SCREAMING_SNAKE namespace is ours until this returns.
+    # An annotation is the whole request: which setting, and the type
+    # expected. Its initializer is a sentinel of that type and is always
+    # overwritten here, so nothing reads one. Every SCREAMING_SNAKE name the
+    # module has bound above this call is a setting it is asking for, and
+    # the three checks run in the order a mistake is best explained in:
+    # does the name match a setting at all, was it written with a sentinel,
+    # does its type agree. The namespace is ours until this returns.
     def load_into(self, module_name: str) -> None:
         module = sys.modules[module_name]
+        scope = vars(module)
         wanted = get_type_hints(module)
-        self.namespace_check(module_name, vars(module))
-        for name, expected in wanted.items():
+        for name in sorted(scope):
             if not self.is_setting_name(name):
                 continue
-            value = self.value_of(module_name, name)
+            expected = wanted.get(name)
+            self.match_check(module_name, name)
+            self.sentinel_check(module_name, name, scope[name], expected)
+            value = self.value_of(name)
             self.type_check(module_name, name, value, expected)
             setattr(module, name, value)
 
-    # Stop a module that already filled part of the reserved namespace --
-    # almost always its own constants written above load_into(), not below.
-    def namespace_check(
-        self, module_name: str, scope: dict[str, object]
-    ) -> None:
-        taken = sorted(name for name in scope if self.is_setting_name(name))
-        if not taken:
+    # The first check: a SCREAMING_SNAKE name bound above the call is a
+    # setting being asked for, so settings.py has to have one by that name.
+    # A file's own constant written above the call lands here, because it
+    # matches nothing, and so does a misspelled or undefined setting.
+    def match_check(self, module_name: str, name: str) -> None:
+        setting = name.lstrip("_")
+        if setting in globals() and self.is_setting_name(setting):
             return
         raise NameError(
-            f"{module_name} already defines {', '.join(taken)}, which "
-            "load_into() does not recognise as settings it was asked for. "
-            "Every SCREAMING_SNAKE name belongs to the settings reader "
-            "until load_into() returns, so that it walks a clean list of "
-            "names. Move the file's own constants below the load_into() "
-            "call. If one of these is meant to be a setting, declare it as "
-            "a bare annotation here and define it in settings.py."
+            f"error: constant doesn't match any setting: "
+            f"{module_name}.{name} asks for the setting {setting}, which "
+            "settings.py does not define. Define it there, correct the "
+            "spelling here, or -- if this is the file's own constant -- "
+            "move it below the load_into() call."
         )
 
-    # The settings report_manifest.sh evals as it is sourced. A layout hands
-    # over its version line only. Every value is quoted so none runs as shell.
+    # The second check: the name matches a setting, so it is a declaration,
+    # and a declaration is written with an empty sentinel of its own type.
+    # Anything else is a value someone meant to be read, and load_into()
+    # overwrites every one of them.
+    def sentinel_check(
+        self,
+        module_name: str,
+        name: str,
+        written: object,
+        expected: object,
+    ) -> None:
+        if expected is None:
+            raise NameError(
+                f"error: settings must have sentinels "
+                f"{_SENTINEL_TEXT}: {module_name}.{name} is assigned with "
+                "no annotation, so it declares no type. Write it as an "
+                "annotation naming the type plus an empty sentinel of that "
+                "type."
+            )
+        if self.is_sentinel(written):
+            return
+        raise TypeError(
+            f"error: settings must have sentinels {_SENTINEL_TEXT}: "
+            f"{module_name}.{name} is written with {written!r}. The value "
+            "comes from settings.py and overwrites whatever is here, so a "
+            "declaration carries an empty sentinel of its own type and "
+            "nothing else."
+        )
+
+    # The settings scripts/shared.sh evals in settings_load. Every value is
+    # quoted so none of it can run as shell.
     def shell_script_write(self) -> str:
         lines: list[str] = []
         for variable, name in _SHELL_SETTING_VARIABLES:
-            value = globals()[name]
-            if isinstance(value, dict):
-                value = value[_SHELL_SETTING_LAYOUT_FIELD]
-            quoted = str(value).replace("'", "'\\''")
+            quoted = str(globals()[name]).replace("'", "'\\''")
             lines.append(f"{variable}='{quoted}'")
         return "\n".join(lines) + "\n"
 
-    # Confirm a value matches its annotation. Scalars exactly, never
-    # converted. A container is checked to the container, not walked.
+    # The third check: the value settings.py holds has to be the type the
+    # annotation names. Scalars exactly, never converted. A container is
+    # checked to the container, not walked.
     def type_check(
         self, module_name: str, name: str, value: object, expected: object
     ) -> None:
@@ -612,68 +598,28 @@ class Settings:
         if not isinstance(wanted, type):
             return
         found = type(value)
-        if wanted in _SCALAR_TYPES or found in _SCALAR_TYPES:
-            if found is not wanted:
-                raise TypeError(
-                    f"{module_name}.{name} is annotated "
-                    f"{getattr(wanted, '__name__', wanted)}, but the "
-                    f"setting is {found.__name__}. Settings are never "
-                    "converted: correct the annotation, or change the "
-                    "value in settings.py."
-                )
+        exact = wanted in _SCALAR_TYPES or found in _SCALAR_TYPES
+        if found is wanted or (not exact and isinstance(value, wanted)):
             return
-        if not isinstance(value, wanted):
-            raise TypeError(
-                f"{module_name}.{name} is annotated "
-                f"{getattr(wanted, '__name__', wanted)}, but the setting is "
-                f"{found.__name__}. Correct the annotation, or change the "
-                "value in settings.py."
-            )
-
-    # Every SCREAMING_SNAKE assignment a file makes below its load_into()
-    # call, in written order: its own constants, invisible from the head.
-    def lost_settings(self, path: str) -> list[LostSetting]:
-        with open(path, encoding="utf-8") as handle:
-            lines = handle.read().split("\n")
-        call_line = 0
-        for index, text in enumerate(lines, start=1):
-            if text.startswith(_LOAD_INTO_CALL_TEXT):
-                call_line = index
-                break
-        if not call_line:
-            return []
-        found: list[LostSetting] = []
-        for index, text in enumerate(lines[call_line:], start=call_line + 1):
-            matched = _ASSIGNED_NAME_RE.match(text)
-            if matched and self.is_setting_name(matched.group(1)):
-                found.append(LostSetting(matched.group(1), path, index))
-        return found
+        raise TypeError(
+            f"error: settings must not be coerced to another type: "
+            f"{module_name}.{name} is annotated "
+            f"{getattr(wanted, '__name__', wanted)}, but the setting is "
+            f"{found.__name__}. Correct the annotation, or change the value "
+            "in settings.py."
+        )
 
     # The value of one setting, named as the declaring module spells it.
-    def value_of(self, module_name: str, name: str) -> object:
-        setting = name.lstrip("_")
-        if setting not in globals() or not self.is_setting_name(setting):
-            raise NameError(
-                f"{module_name} declares {name}, so it is asking for the "
-                f"setting {setting}, which settings.py does not define. Add "
-                "it there, or correct the spelling here."
-            )
-        return globals()[setting]
+    # match_check has already confirmed settings.py defines it.
+    def value_of(self, name: str) -> object:
+        return globals()[name.lstrip("_")]
 
-
-# A module-level assignment, capturing the name being assigned. Anchored,
-# so an indented assignment inside a class or function is not one.
-_ASSIGNED_NAME_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)\s*(?::[^=]+)?=")
 
 # The scripts/ directory this module was loaded from, which is also where
-# the runtime template sits.
+# the handler template sits.
 _DIRECTORY = os.path.dirname(os.path.abspath(__file__))
 
-# How the load_into() call is written at the top of every file that has
-# one, matched at the start of the line.
-_LOAD_INTO_CALL_TEXT = "settings.load_into("
-
-# What settings_script_write() substitutes in the runtime template: the
+# What settings_script_write() substitutes in the handler template: the
 # JSON literal of every setting the browser reads, and the name the page
 # calls the reader by. Both are bare identifiers in the template, so
 # node --check parses the file before anything is filled in.
@@ -689,19 +635,13 @@ def load_into(module_name: str) -> None:
     _READER.load_into(module_name)
 
 
-# Every SCREAMING_SNAKE constant one source file assigns below its
-# load_into() call.
-def lost_settings(path: str) -> list[LostSetting]:
-    return _READER.lost_settings(path)
-
-
 # Build assets/settings.js: the browser's settings as one frozen JSON
-# literal in settings_runtime.js, opened here -- theme.py would cycle.
+# literal in settings_handler.js, opened here -- theme.py would cycle.
 def settings_script_write() -> str:
     values = {name: globals()[name] for name in _BROWSER_SETTING_NAMES}
     data = json.dumps(values, indent=2, sort_keys=True, ensure_ascii=False)
     with open(
-        os.path.join(_DIRECTORY, ASSET_TEMPLATE_SETTINGS_RUNTIME_NAME),
+        os.path.join(_DIRECTORY, ASSET_TEMPLATE_SETTINGS_HANDLER_NAME),
         encoding="utf-8",
     ) as handle:
         runtime = handle.read()
@@ -710,7 +650,7 @@ def settings_script_write() -> str:
     ).replace(_PAGE_SETTINGS_DATA_MARKER, data)
 
 
-# Build the shell assignments report_manifest.sh evals while it is sourced.
+# Build the shell assignments scripts/shared.sh evals in settings_load.
 def shell_script_write() -> str:
     return _READER.shell_script_write()
 
@@ -722,7 +662,7 @@ def main() -> int:
     parser.add_argument(
         "--shell",
         action="store_true",
-        help="print the settings report_manifest.sh reads",
+        help="print the settings scripts/shared.sh reads",
     )
     args = parser.parse_args()
     if not args.shell:

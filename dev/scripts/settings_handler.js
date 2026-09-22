@@ -10,9 +10,7 @@ const __NAME__ = (function () {
   const values = deep_freeze(__DATA__);
   return function (name) {
     if (!Object.prototype.hasOwnProperty.call(values, name)) {
-      throw new Error(
-        "no such setting: " + name,
-      );
+      throw new Error("no such setting: " + name);
     }
     return values[name];
   };

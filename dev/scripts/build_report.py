@@ -8,18 +8,20 @@ from typing import NamedTuple
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import callgrind, settings, theme
 
-_ASSET_FRAME_SCRIPT_NAME: str
-_ASSET_UI_STRINGS_SCRIPT_NAME: str
-_DIFF_CALLER_COUNTS_FILE_SUFFIX: str
-_FLAME_GRAPH_VIEW_ENTRY: tuple[str, str, str]
-_HEAT_COLOR_FULL_SCALE_PERCENT: int
-_HEAT_MAP_VIEW_ENTRY: tuple[str, str, str]
-_RANKING_COUNTER_NAME: str
-_STRIP_CURL_PERF_SITE_HREF: str
-_SUMMARY_PERF_LOG_SKIPPED_HEAD_LINES: int
-_SUMMARY_TIME_SUFFIX_SECONDS: dict[str, float]
-_SUMMARY_TOP_FUNCTION_ROWS: int
-_TABLE_FUNCTION_NAME_WIDTH_CHARS: int
+# All constants needed from settings.py have to be loaded here before anything
+# else.
+_ASSET_FRAME_SCRIPT_NAME: str = ""
+_ASSET_UI_STRINGS_SCRIPT_NAME: str = ""
+_DIFF_CALLER_COUNTS_FILE_SUFFIX: str = ""
+_FLAME_GRAPH_VIEW_ENTRY: tuple[str, str, str] = ("", "", "")
+_HEAT_COLOR_FULL_SCALE_PERCENT: int = 0
+_HEAT_MAP_VIEW_ENTRY: tuple[str, str, str] = ("", "", "")
+_RANKING_COUNTER_NAME: str = ""
+_STRIP_CURL_PERF_SITE_HREF: str = ""
+_SUMMARY_PERF_LOG_SKIPPED_HEAD_LINES: int = 0
+_SUMMARY_TIME_SUFFIX_SECONDS: dict[str, float] = {}
+_SUMMARY_TOP_FUNCTION_ROWS: int = 0
+_TABLE_FUNCTION_NAME_WIDTH_CHARS: int = 0
 settings.load_into(__name__)
 
 # Valgrind's "==1234== " line prefix, stripped so the log reads as output.
@@ -704,9 +706,7 @@ class BuildReport:
         args: BuildReport.OverviewArgs,
         tests: Sequence[BuildReport.TestDirectory],
         columns: Sequence[theme.Column],
-        rows: Sequence[
-            Sequence[theme.CellOrText]
-        ],
+        rows: Sequence[Sequence[theme.CellOrText]],
     ) -> None:
         links = [BuildReport.StripLink("", "overview", "#", "overview")] + [
             BuildReport.StripLink(

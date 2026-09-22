@@ -49,6 +49,18 @@ window.ui_strings = (function () {
     str_detail_close: "close",
     str_detail_close_symbol: "[X]",
     str_detail_copy: "copy",
+    str_error_callstack_unavailable: "(no callstack recorded)",
+    str_error_heading_address: "address",
+    str_error_heading_callstack: "callstack",
+    str_error_heading_manifest: "manifest",
+    str_error_heading_message: "message",
+    str_error_manifest_unavailable: "MANIFEST.txt not found",
+    str_error_page_explanation:
+      "perf2html stopped because of an error." +
+      " Press Back to continue resume.",
+    str_error_page_title: "perf2html error page",
+    str_error_source_exception: "uncaught exception",
+    str_error_source_rejection: "internal error",
     str_function_name_unknown: "?",
     str_heading_functions_by_self: "{prefix} functions by self {counter}",
     str_heading_lines_by_counter: "{prefix} lines by {counter}",
@@ -90,9 +102,10 @@ window.ui_strings = (function () {
     );
   }
   function text_of(string_id) {
-    return Object.prototype.hasOwnProperty.call(STRINGS, string_id)
-      ? STRINGS[string_id]
-      : "(update ui_strings.js)";
+    if (!Object.prototype.hasOwnProperty.call(STRINGS, string_id)) {
+      throw new Error("missing ui string: " + string_id);
+    }
+    return STRINGS[string_id];
   }
   return { text_fill, text_of };
 })();

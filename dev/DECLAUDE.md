@@ -30,31 +30,32 @@
 ## Commands
 
 ```sh
-dev/perf2html.sh [--verbose] [--keep-raw] [--regenerate] [--report=DIR]
-    [--artifacts=DIR] [cmake_flags...]
-dev/perf2html_diff.sh [--verbose] [--keep-raw] [--regenerate]
-    [--artifacts=DIR] [baseline-dir] [modified-dir] [report-dir]
-dev/perf2html_batch.sh [--verbose] [--keep] [--keep-raw] [--regenerate]
-    [--artifacts=DIR] [target-dir] [cmake_flags...]
+dev/perf2html.sh [--verbose] [--keep-artifacts] [--regenerate]
+    [--report=DIR] [--artifacts=TMP] [cmake_flags...]
+dev/perf2html_diff.sh [--verbose] [--keep-artifacts] [--regenerate]
+    [--artifacts=TMP] [baseline-dir] [modified-dir] [report-dir]
+dev/perf2html_batch.sh [--verbose] [--keep-artifacts] [--regenerate]
+    [--artifacts=TMP] [--target-dir=DIR] [cmake_flags...]
 dev/scripts/reformat.sh [--check] [--verbose] [report-dir]
 ```
 
 **Verification is two runs, in this order:** `perf2html_batch.sh` measures and
 generates, then `reformat.sh` lints, formats and validates. **The batch runs no
 checks at all**; anything verifying a build invokes **both**. `--regenerate`
-rebuilds all three reports' pages from the last run's raw data in seconds if
-the artifacts dir still exists (recording run used `--keep-raw`).
+rebuilds all three reports' pages from the last run's recordings in seconds if
+the artifacts dir still exists (recording run used `--keep-artifacts`).
 
 **The artifacts dir defaults to `perf2html_temporary_artifacts/` in the parent
 directory of the report** (so the tool works with its own tree on a read-only
-FS); `--artifacts=DIR` overrides it in all three `.sh`, and the batch forwards
-it to both children so all three stages share one dir. The batch's single
-optional positional `target-dir` (default CWD) holds the three
-**default-named** reports - **the batch cannot name them**; call
-`perf2html.sh` / `perf2html_diff.sh` directly for custom names. Its
-`DEFAULT_FLAGS` passes `-D CMAKE_C_FLAGS=-Os` in cmake's **separated** form, so
-target-dir parsing does one-shot `-D`/`-U` value continuation - otherwise the
-shipped default eats `CMAKE_C_FLAGS=-Os` as a directory.
+FS); `--artifacts=TMP` overrides it in all three `.sh`, and the batch forwards
+it to both children so all three stages share one dir. The batch's
+`--target-dir=DIR` (default CWD) holds the three **default-named** reports -
+**the batch cannot name them**; call `perf2html.sh` / `perf2html_diff.sh`
+directly for custom names. **Every batch argument that is not one of its own
+options is a cmake flag**, so a run can be nothing but the flags being tested
+and `DEFAULT_FLAGS`' separated `-D CMAKE_C_FLAGS=-Os` needs no value
+continuation - the old positional `target-dir` and its one-shot `-D`/`-U`
+lookahead are gone.
 
 ```sh
 cmake -S . -B build -G Ninja -DCURL_USE_LIBPSL=OFF
@@ -76,8 +77,9 @@ measures nothing and subtracts two reports' `raw/` archives;
 runs even after an earlier one failed**.
 
 **`--verbose` is additive, in all four**: whatever quiet prints, verbose prints
-too, same form and order. `verbose()` is the one function testing `$VERBOSE`; a
-guard shaped `[ "$VERBOSE" = 1 ] || printf ...` is the bug this prevents. **No
+too, same form and order. `log_verbose()` in `scripts/shared.sh` is the one
+function testing `$VERBOSE`; a guard shaped
+`[ "$VERBOSE" = 1 ] || printf ...` is the bug this prevents. **No
 function in `dev/*.sh` may wrap `printf` without adding logic.** Quiet prints
 **whole lines only** (a duration rides in its own `done:` line; an unflushed
 partial line can sit unforwarded for minutes).
@@ -104,14 +106,23 @@ partial line can sit unforwarded for minutes).
   honoured in `files_of()` - the **one door** every stage collects files
   through, whose prune also covers the artifacts dir and
   `-not -path '*_report/*'`. `README.md` **is** source and is checked.
-- **`reformat.sh`'s `settings` stage is a note, never a failure**: the
-  `SCREAMING_SNAKE` constants a generator assigns **below** its
-  `settings.load_into()` call (today 21) - the list to check when a value seems
-  to have no definition. `settings.lost_settings(path)`; `--verbose` names
-  them.
-- `--keep-raw` keeps the artifacts dir. **The batch owns every deletion of
-  it** - it passes `--keep-raw` down so a child can't unlink the batch log
-  mid-run. A failed flagless batch _keeps_ it.
+- **`reformat.sh` has no `settings` stage** - `lost_settings()` and its
+  `settings | note | N below load_into()` row are **gone**, along with the
+  `LostSetting` record and the two module constants that scanned for them.
+  A file's own constants below the call are simply where they belong; there
+  was nothing for a reader to act on in the count.
+- `--keep-artifacts` keeps the artifacts dir. **The batch owns every deletion
+  of it** - it passes `--keep-artifacts` down so a child can't unlink the batch
+  log mid-run. A failed flagless batch _keeps_ it. The batch's own
+  `KEEP_ARTIFACTS` is set in `args_parse` straight off the flags, never
+  re-derived from a `case` over `PASS_ARGS`, and `--regenerate` has its own
+  `REGENERATE` guarding `reports_clean` - **`--keep` is gone**: its only effect
+  was skipping `reports_clean`, which nothing but `--regenerate` ever wanted,
+  and keeping stale files in a re-measured report breaks its checksum.
+- **The word "raw" now means only the report's own `<test>/raw/` and its
+  `raw-data` page links** - a layout name. The temporary recordings are
+  "artifacts" everywhere else, including `validate_report.py`'s
+  `raw_archive_check`/`raw_dir_check`, which read that layout dir.
 - Profiling:
   `taskset -c 3 valgrind --tool=callgrind --cache-sim=yes --branch-sim=yes`.
   Timing is a _separate_ native pinned
@@ -121,26 +132,47 @@ partial line can sit unforwarded for minutes).
   misses - `--LL=16777216,16,64` on the `valgrind` line in `run_one`.
 - Trace tree `build-instr` = same flags + `-finstrument-functions` +
   `dev/cyg_callback.c`. Whole build instrumented, no file list.
-- No env vars; constants sit at the top of each shell script (`CPU=3`,
-  `LOOPS_DIVISOR=50`, `SKIP_ALL`, `ARTIFACTS_NAME`; the batch's
-  `BASE_NAME`/`MOD_NAME`/`DIFF_NAME` are bare names, the `*_DIR` derived in
-  `args_parse`). `TESTS` comes from `tests/perf/Makefile.inc`; loops from
-  `loops_of` grepping the test source.
-- **`dev/report_manifest.sh` (sourced, not executable) is the one
-  `MANIFEST.txt` contract**: the two version strings (`curl/perf2html.sh v1`,
-  `curl/perf2html_diff.sh v1`), the checksum label, and `checksum_compute` /
-  `manifest_write` / `manifest_value` / `manifest_verify`. All three `.sh` plus
-  `reformat.sh` source it.
-- **The shell reads settings by eval**: sourcing runs
-  `python3 dev/scripts/settings.py --shell`, which prints `CHECKSUM_LABEL`,
-  `DIFF_MANIFEST` and `REPORT_MANIFEST` (mapped by `_SHELL_SETTING_VARIABLES`)
-  - one definition across Python and shell. The label is
-  `REPORT_MANIFEST_CHECKSUM_LABEL`; the version strings come from
-  `VALIDATE_REPORT_LAYOUT_FULL`/`_DIFF`'s `manifest_version`. **A generated
+- No env vars. **`dev/scripts/shared.sh` (sourced, not executable) holds every
+  shared shell setting and every shared shell function**, each half
+  alphabetical: the settings registry (`ARCHIVE_SUFFIX`, `ARTIFACTS_NAME`,
+  `BASE_NAME`, `BUILD_DIR`, `CALLGRIND_LOOPS`,
+  `CONTAINING_PACKAGES`, `CPU=3`, `DEFAULT_FLAGS`, `DIFF_NAME`,
+  `FLAME_APP_DIR`, `FLAME_APP_FILES`, `HEADER_ROWS_NAME`, `MOD_NAME`,
+  `TIMING_LOOPS`, `TRACE_BUILD_DIR`, `TRACE_SKIP_ALL`), then
+  `archive_write` / `checksum_compute` / `clock_microseconds` / `command_run` /
+  `duration_format` / `elapsed_format` / `install_command_of` / `json_quote` /
+  `log_verbose` / `manifest_script_write` / `manifest_value` /
+  `manifest_verify` / `manifest_write` / `absolute_path` /
+  `settings_load` / `toolchain_check`. **A name `settings.py` already holds
+  is not repeated here** - the assets dir arrives as `ASSETS_NAME` through
+  `settings_load`, which is why there is no `ASSETS_DIR`. **Only a value
+  derived from `$0` stays per-script** (`REPO`, `TIMESTAMP`), and says so in
+  its comment. `usage_show` and
+  `args_parse` stay per-script too. The `*_DIR` are derived in each
+  `args_parse`. `TESTS` comes from `tests/perf/Makefile.inc`.
+- **Sourcing `shared.sh` is inert**: it defines names and runs nothing, so it
+  cannot exit its caller. **A function there writes a caller global only where
+  all callers agreed it is the canonical setter, and its `#` comment names
+  every global it sets** - `settings_load` (`ASSETS_NAME`, `CHECKSUM_LABEL`,
+  `DIFF_MANIFEST`, `MANIFEST_SCRIPT`, `REPORT_MANIFEST`), `toolchain_check`
+  (`SPEEDSCOPE_RELEASE`), the batch's own `step_run` (`STATUS`, `FAILED`).
+- **The shell reads settings by eval**, in `settings_load`, which every caller
+  invokes explicitly: `python3 dev/scripts/settings.py --shell` prints
+  `ASSETS_NAME`, `CHECKSUM_LABEL`, `DIFF_MANIFEST`, `MANIFEST_SCRIPT` and
+  `REPORT_MANIFEST` (mapped by `_SHELL_SETTING_VARIABLES`) - one definition
+  across Python and shell, off `REPORT_ASSETS_DIR_NAME`,
+  `REPORT_MANIFEST_CHECKSUM_LABEL`, `ASSET_REPORT_MANIFEST_SCRIPT_NAME` and
+  `REPORT_MANIFEST_VERSION_FULL`/`_DIFF`. **A generated
   shell fragment was rejected**: it would be a build artifact inside the linted
   tree - formatted and column-checked, dirty in git every run, unwritable on a
   read-only checkout, and needed before any Python has run on a fresh clone, so
   there is no non-circular bootstrap.
+- **The `MANIFEST.txt` contract is `shared.sh`'s** - the two version strings
+  (`curl/perf2html.sh v1`, `curl/perf2html_diff.sh v1`), the checksum label and
+  `checksum_compute` / `manifest_write` / `manifest_value` / `manifest_verify`.
+  All three `.sh` plus `reformat.sh` source it; the strings themselves are
+  **production settings in `settings.py`**, which is where the generators, the
+  shell and `validate_report.py` all read them from.
 - **Both** modes log every child's output to the artifacts dir's `*.log` and
   print the same failure summary from it. The verbose tee sits behind
   `if ! { ...; }` so `pipefail` can't take the failure before `PIPESTATUS[0]`
@@ -158,7 +190,8 @@ index.html            overview: strip + header table + test suites
 <test>/raw/           <test>txz: callgrind file + speedscope JSON
 all/                  every test's callgrind data merged
 assets/               one theme copy (theme/heatmap css+js, frame.js,
-                      ui_strings.js, settings.js)
+                      ui_strings.js, settings.js, error_overlay.js,
+                      report_manifest.js)
 flame-graph-app/      one speedscope copy
 sources/              one .js per profiled file -> window.report_sources
 README.md             copied from dev/README.md every run ("help" link)
@@ -174,6 +207,12 @@ MANIFEST.txt          line 1 = version string; then LABEL=VALUE rows
   diff names `perf2html_diff.sh`, so diffs can't be diffed). **Written last**,
   after every page, asset and raw archive → an aborted or failed run leaves
   none.
+- **`--regenerate` reads every row it wants in `build_manifest`**, which runs
+  before `main` drops the previous manifest. `build_compile` used to read
+  `build=` after that `rm -f`, which broke `--regenerate` outright - `sed:
+  can't read ... MANIFEST.txt`, and the half-written report it left had no
+  manifest, so the _next_ regenerate could not start either. A new row a
+  regenerated run needs is read there, never later.
 - **No tool may open a report whose `MANIFEST.txt` is missing or whose version
   line is not EXACTLY the expected string**; the error prints **both found and
   expected**. Enforced at `--regenerate`, both diff inputs, `reformat.sh`'s
@@ -269,7 +308,7 @@ Artifacts dir (gitignored): `callgrind.out.<test>.<loops>.<ts>`,
   older generator): `BuildReport.test` vs `.diff_test`;
   `CallgrindToHeatmap.model()` vs `.diff_model()`; in heat-map JS every diff
   override in the one `if (IS_DIFF) {...}` block; `validate_report.py`
-  data-driven by `VALIDATE_REPORT_LAYOUT_FULL`/`_DIFF`.
+  data-driven by its own `_LAYOUT_FULL`/`_LAYOUT_DIFF`.
 
 ## `dev/scripts/` conventions
 
@@ -280,7 +319,8 @@ Artifacts dir (gitignored): `callgrind.out.<test>.<loops>.<ts>`,
   at 0. **Not** the 80-column source _view_
   (`HEAT_MAP_SOURCE_VIEW_WIDTH_CHARS`), which **must never change to match**.
 - **ASCII plus a short allow list**: `≈`, `∞`, `▲`, `▶`, `▼`, `…`
-  (`SOURCE_SCAN_ALLOWED_NON_ASCII_CHARS`), **written literally** - an entity
+  (`_SOURCE_SCAN_ALLOWED_NON_ASCII_CHARS`, now in `validate_report.py`),
+  **written literally** - an entity
   would be double-escaped by `html_escape()` and its length corrupts the
   `text.length` column math. Adding one = a line in that constant with a `#`
   comment. `DECLAUDE.md` is not scanned (`SKIPPED_MARKDOWN_NAMES`), nor
@@ -340,7 +380,16 @@ reason to keep a setting elsewhere.** `RANKING_COUNTER_NAME` is the counter
 every table ranks, colours and divides by.
 
 - **Stays out**: format facts nobody may retune (`cyg_callback.c` wire format,
-  valgrind-output regexes), class instances, derived values.
+  valgrind-output regexes), class instances, derived values, **and anything
+  only the verification component reads**. Deleting `reformat.sh` plus
+  `validate_report.py` must leave no dead setting behind, so the `VALIDATE_*`
+  byte floors, the two `ReportLayout`s and the `SOURCE_SCAN_*` family are
+  `validate_report.py`'s own constants, below its `load_into()` call.
+  **Verification may read production settings to confirm a report obeyed
+  them** - it just may never keep its own copy of a production value, which is
+  why `_LAYOUT_FULL`/`_DIFF` take `manifest_version` from
+  `REPORT_MANIFEST_VERSION_FULL`/`_DIFF` rather than restating it. The old
+  `_SHELL_SETTING_LAYOUT_FIELD` reach-into-validation is gone.
 - **"settings", never "constants"**, in every language, identifiers and prose.
   `settings.py`, `assets/settings.js`, page global `settings`.
 - **One setting, one spelling, all three languages**: `SCREAMING_SNAKE` in the
@@ -348,35 +397,59 @@ every table ranks, colours and divides by.
 - Name = **full plain-word path, broad to narrow**, min two words:
   `HEAT_MAP_TREE_INDENT_PER_LEVEL_PX`, not `tree_indent`. Unit suffix stays
   (`_PX`, `_MS`, `_PERCENT`, `_SHARE`, `_CHARS`, `_BYTES`); a count takes none.
-- **A file declares what it reads; `load_into()` assigns** - bare pyright
-  annotation naming the type, then the call, before anything else:
+- **A file declares what it reads; `load_into()` assigns** - annotation
+  naming the type **plus an empty sentinel of that type** (`""`, `0`, `0.0`,
+  `()`, `[]`, `{}`), then the call, before anything else:
 
 ```python
-_HEAT_MAP_TREE_ALWAYS_LISTED_DIRS: tuple[str, ...]
-_RANKING_COUNTER_NAME: str
+_HEAT_MAP_TREE_ALWAYS_LISTED_DIRS: tuple[str, ...] = ()
+_RANKING_COUNTER_NAME: str = ""
 settings.load_into(__name__)
 ```
 
+  **The sentinel is never read** - `load_into()` overwrites every one of them
+  at import, and a file that runs before it would be broken anyway. It is
+  there so the name is bound, which is what lets both uninitialized-variable
+  checks stay **on**.
+
 - **No accessor, no conversion**: no inline `settings.X`, no
   `page_constant_int()`, nothing that coerces. `load_into()` is the one door.
-- **Stops the run at import**, each message naming its fix, on: a declared name
-  settings.py lacks; a scalar whose type disagrees with the annotation (exact -
-  `float` on `int` is an error; containers checked to the container); a setting
-  not found; **any `SCREAMING_SNAKE` already bound**.
+- **Stops the run at import, three checks in this order**, each naming its
+  fix. `load_into()` walks **every `SCREAMING_SNAKE` name the module has
+  bound**, annotated or not - each one is a setting being asked for:
+  1. `match_check` - **`error: constant doesn't match any setting`**.
+     settings.py has no setting by that name. This is **first**, so a file's
+     own constant written above the call is told it matches nothing rather
+     than being judged on its shape; a misspelled setting lands here too.
+  1. `sentinel_check` - **`error: settings must have sentinels 0, 0.0, (),
+     [], or ""`**. The name matches, so it is a declaration, and a
+     declaration carries an empty sentinel and nothing else. An unannotated
+     name that happens to match a setting lands here, not in `match_check`.
+  1. `type_check` - **`error: settings must not be coerced to another
+     type`**. Scalars exact (`float` on `int` is an error); containers
+     checked to the container, not walked.
+
+  There is no `namespace_check` any more: the first check subsumes it, and
+  does so with the better message.
 - **Settings come first**; a file's own constants (`_PID_PREFIX`, `_MAGIC`, a
   derived regex) go **below** the call. Declared settings sort alphabetically
   ignoring `_`, under **one** comment for the block.
-- **ruff `F821` off tree-wide** (bare annotation reads as undefined); pyright
-  gated at **0 errors**.
+- **ruff `F821` and pyright `reportUnboundVariable` are both ON** - the
+  sentinel initializers are what buys that, so neither tool can read a
+  declaration as a use of an undefined name. They were both off while
+  declarations were bare; **do not turn either off again** - a real
+  uninitialized read is exactly what they are there to catch. `E401`/`I001`
+  stay off for the import shape, `E501` for the column check reformat.sh
+  does itself. pyright gated at **0 errors**.
 - **Everything the page's JS reads** is in `_BROWSER_SETTING_NAMES` (incl.
-  `HEAT_COLOR_RAMP_STOPS`, `NUMBER_SMALLEST_PRINTED_PERCENT`), shipped as
+  `HEAT_COLOR_LOGO_STOPS`, `NUMBER_SMALLEST_PRINTED_PERCENT`), shipped as
   **one generated file** from `settings_script_write()`, **frozen to its
   leaves**. One value, one id, **no hand-matched twin**. **Linked before every
   reader**; the page's script list is unchanged, nothing new is linked.
-- The freeze + reader is `settings_runtime.js`, written plainly with bare
+- The freeze + reader is `settings_handler.js`, written plainly with bare
   `__NAME__`/`__DATA__`
   markers so `node --check` accepts it unsubstituted; named by
-  `ASSET_TEMPLATE_SETTINGS_RUNTIME_NAME`, making the template block **four**.
+  `ASSET_TEMPLATE_SETTINGS_HANDLER_NAME`, making the template block **four**.
   **`settings.py` reads it with a local `open()` against its own `_DIRECTORY`,
   never `theme.asset_text_read()`** - `theme.py` does `import settings`, so
   importing theme here would cycle. The generated `assets/settings.js` carries
@@ -429,8 +502,9 @@ file name, flags and JSON keys are contract.
 
 **`callgrind_to_heatmap.py`** - `render()` substitutes `__SCRIPTS__` **before**
 `__DATA__`; the scripts carry no marker, so it is the one replacement whose
-result must never be scanned again. Script order `sources/`, `ui_strings.js`,
-`theme.js`, `heatmap.js` - the last renders the opened file as it runs.
+result must never be scanned again. Script order
+`theme.page_preamble_scripts()`, `sources/`, `ui_strings.js`, `theme.js`,
+`heatmap.js` - the last renders the opened file as it runs.
 
 **No generator holds a multi-line HTML/CSS/JS literal** - each is a real file
 in `scripts/` (`ASSET_TEMPLATE_HEAT_MAP_PAGE_NAME`,
@@ -444,7 +518,13 @@ not `\\n`. `flame_bootstrap.js` keeps bare `__NAME__`/`__DATA__` markers so
 **`ui_strings.js` - the whole UI vocabulary, in one object**, keyed by a `str_`
 id named for what the string _is_, not where it sits.
 
-- `text_of(id)` **returns `(update ui_strings.js)` for an unknown id**.
+- `text_of(id)` **throws on an unknown id**, and `settings(name)` throws on
+  an unlisted setting. Both surface as the error page, which is the point:
+  a missing string or setting is a bug in this tool, not something a page
+  papers over. The old `(update ui_strings.js)` marker return is gone, and
+  with it `heatmap.js`'s `MISSING_STRING_TEXT` sentinel - `counter_label`
+  now just reads the description, so a counter with none fails loudly
+  instead of silently rendering its bare key.
 - A string with a number or name is **one entry with a placeholder**, never
   split at the seam; replacements are not rescanned.
 - **Must load before the script that reads it.**
@@ -457,6 +537,33 @@ id named for what the string _is_, not where it sits.
 - Python is the one boundary it cannot cross: `build_report.py` renders
   server-side, so `(no recorded caller)` stays in Python, kept in step with
   `str_no_caller` by hand.
+
+**`error_overlay.js` - the error page.** An uncaught `error` or
+`unhandledrejection` replaces the document with the message, the source
+(exception or rejection), the page address, the callstack and the report's
+MANIFEST.txt. **It must be the first script every page links** - it installs
+the window handlers, so anything linked before it can throw where nothing is
+listening. `theme.page_preamble_scripts()` is the one place that order is
+written, and both `theme.document()` and `callgrind_to_heatmap.render()`
+spread it first.
+
+- It is the **only** `.js` that may not resolve its strings at IIFE top: it
+  loads before `ui_strings.js` by design, so `text_or_fallback(id, text)`
+  reads them at render time and falls back only when `window.ui_strings` is
+  not there yet. It catches `text_of`'s throw for the same reason - an error
+  page that throws shows nothing. **Its ten `str_error_*` entries still live
+  in `ui_strings.js`**; the fallbacks exist for the one moment before it
+  loads, not as a second copy to edit.
+- `history.pushState` to `#report-error`, so **Back restores the page** at
+  the address it was showing (kept in `sessionStorage` under
+  `error.restore-hash`, and taken from `location.href` first).
+- A `file://` page cannot `fetch()` its own MANIFEST.txt, so
+  `manifest_script_write` in `shared.sh` ships it as
+  `assets/report_manifest.js` assigning the text to `window.report_manifest`.
+  **It carries every row but `checksum=`**: it is written _before_
+  `checksum_compute` runs and is counted by it, so a checksum inside it could
+  only ever be the previous run's. Reading the checksum back is
+  `manifest_verify`'s job and always was.
 
 **`dev/cyg_callback.c` - the recorder.** Hot path
 `if(next < end) { next->fn = fn; next->tsc = rdtsc | flag; ++next; }` = 11/12
@@ -474,7 +581,10 @@ is raw, hook cost included. Must run while `build-instr` still holds the traced
 binary. GCC instruments inlined bodies → inlined helpers are frames.
 
 **`validate_report.py OUTDIR [--diff]`** - structural smoke test only,
-data-driven by settings-built `VALIDATE_REPORT_LAYOUT_FULL`/`_DIFF`.
+data-driven by its own `_LAYOUT_FULL`/`_LAYOUT_DIFF` `ReportLayout`s, built
+directly below the class (no `layout_build()` mapping step any more). Every
+value it checks against is either its own (`VALIDATE_*`, `SOURCE_SCAN_*`) or a
+production setting read through `load_into()` - never a copy of one.
 
 - `flame_graph_check` requires exactly one `evented` profile whose `exporter`
   is ours; fails any file in a test's `flame-graph/` outside
@@ -510,10 +620,10 @@ pages must not assume more.
   track, minimap band and heat blend all follow it - **change it only there**.
 - `THEME_COLOR_PAIR_ENTRIES` holds raw THEME entries, odd index = dark member,
   `--<name>-l` light; `THEME_COLOR_PAIR_NAMES` names them and `Theme.pairs()`
-  **fails if the two disagree in length**. `HEAT_COLOR_RAMP_STOPS` is exempt
+  **fails if the two disagree in length**. `HEAT_COLOR_LOGO_STOPS` is exempt
   from the pair rule. Time units are `THEME_TIME_UNIT_ENTRIES`; colour roles
   `THEME_COLOR_ROLE_SOURCES`.
-- Heat = the 12-stop `HEAT_COLOR_RAMP_STOPS` blended over `--bg`, text colour
+- Heat = the 12-stop `HEAT_COLOR_LOGO_STOPS` blended over `--bg`, text colour
   by resulting luminance. **The scale dropdown is a curve × scope product built
   at runtime**; `scale` is the chosen entry (`.curve`, `.scope`, `.value`),
   never a bare string.
@@ -602,7 +712,23 @@ if it is not one, it belongs in `ui_strings.js`.
 
 Two levels deep: overview frames a test summary, which frames its heat map /
 flame graph. Both run the same `FRAME_JS`, deciding by
-`is_framed = window.parent !== window`.
+`report_ui.is_framed`.
+
+**`theme.js` is the utility library for being an HTML app; `frame.js` is
+only the thin top-level frame controller.** Colour lives in `theme.js`:
+`logo_color_at(fraction)` interpolates `HEAT_COLOR_LOGO_STOPS` and
+`logo_letters_build(text, class_name, start_fraction)` paints text from the
+ramp - the wordmark is one caller, not a special case. Cross-frame talk is
+`theme.js` too: `is_framed`, `parent_post(payload)` (a no-op unframed) and
+`parent_listen(on_parent_message)` (source-checked against
+`window.parent`), and `hash_publish(hash)`, which `replaceState`s then posts
+`hash_changed` up. `frame.js` keeps only what is about the nesting itself -
+`hash_parse`/`hash_build` for `#<view>[/<inner>]`, `hash_for_href`,
+`view_show`, `title_publish`/`selection_path`, `reset_broadcast`, the
+delegated click handler and the listener for its **child** iframe.
+**Moving a helper into `frame.js` is the wrong direction** - ask whether any
+page that is not a frame would want it, and if so it belongs in `theme.js`
+behind `window.report_ui`.
 
 - Outermost **status row** reads the literal `perf2html`; a framed level's
   reads the **selection path**. Both keep the element so the block reads
@@ -624,13 +750,17 @@ flame graph. Both run the same `FRAME_JS`, deciding by
   spellings were deliberately **not** moved under one prefix. **A new key must
   go in one of those two constants or its data outlives every bump.** The check
   sits inside the accessors' `try`/`catch`, so a throwing private-mode
-  `localStorage` leaves the page working.
+  `localStorage` leaves the page working. All four `STORAGE_*` names sit in
+  `theme.js`'s one alphabetical UPPERCASE constant block, not beside
+  `view_storage`.
 - `FRAME_JS` loads with `location.replace()`, passing
   `link_href + (inner_hash || "#")` - **never `iframe.src`** (a history entry
   per load, back desyncs). `"#"` not `""`: a fragment-less URL is a reload.
 - Four postMessages, all source-checked. `hash_changed` is posted by the heat
-  map _and_ by a framed `FRAME_JS`'s `hash_canonicalize()`, so a middle level
-  relays its full hash up - without it the outer hash freezes at `#<test>`.
+  map _and_ by a framed `FRAME_JS`, so a middle level relays its full hash
+  up - without it the outer hash freezes at `#<test>`. **Both go through the
+  one `report_ui.hash_publish()`**; the heat map's `hash_canonicalize()` is
+  now a one-line delegation, and `frame.js` calls `hash_publish` directly.
 - Regression test for URL-as-state: click test → view → file → line → counter;
   the outer hash must end `#<test>/heat-map/f=<file>&l=<n>&e=<ev>`, and loading
   it back must reproduce all three levels' hashes.

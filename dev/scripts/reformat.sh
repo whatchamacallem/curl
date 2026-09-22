@@ -19,37 +19,9 @@
 #   (1) README.md only. No *.json is: json shares the row because
 #       prettier handles both kinds.
 #
-# DECLAUDE.md is the author's own notes, not dev/ source: no formatter, no
-# lint, no column check reaches it. SKIPPED_MARKDOWN_NAMES is what holds it
-# out of every one of those, so adding a second such file is one name here.
-#
-# The dirs are fixed by convention: ".." is dev/ itself, where the shell
-# scripts, the C recorder and the markdown live, and "." is scripts/, where
-# every generator and page asset lives. There is no path argument.
-#
-# prettier both formats and lints its kinds: it reparses what it writes, so
-# a syntax error cannot survive it. Each page asset is read verbatim into a
-# generator constant (theme.theme_asset), so formatting the file on disk is
-# what covers the string the generator ships. Settings live in
-# dev/.prettierrc.json -- print width 79, so a line still over 79 columns
-# after the formatters run is an error: it prints file:line, the width and
-# the whole line, and exits 1. prettier cannot break a long template
-# literal, so those few are split by hand.
-#
-# The "settings" stage reports every SCREAMING_SNAKE constant a generator
-# assigns below its settings.load_into() call. It is a note, never a
-# failure: the namespace rule is what puts them there. --verbose lists them.
-#
-# Validation runs validate_report.py over the report named as the argument,
-# or over whichever default reports exist when none is named. A directory is
-# a report by holding a MANIFEST.txt whose line 1 is a known version string
-# and whose checksum= row still matches the files beside it. That line also
-# decides --diff. Anything else is an error naming what was found and what
-# was expected, and the reports that do hold up are still validated.
-#
-# --check reports what would change and exits 1 instead of writing.
-# cwd-independent: it works in dev/scripts/, like the perf2html scripts.
-set -uo pipefail
+# Do not document what is being validated further. The validation
+# code below and the generator code itself are the living standards
+# for a correct report. They are checked for agreement, no more.
 SCRIPT="$(readlink -f "$0")"
 SCRIPTS="$(dirname "$SCRIPT")"
 
@@ -65,10 +37,6 @@ DIR_SCRIPTS=.
 # the hard column limit every kind of source is checked against
 COLUMNS_MAX=79
 PRETTIER_CONFIG=../.prettierrc.json
-
-# The recorded raw data the perf2html scripts write. It is measurement,
-# not dev/ source, so no formatter, lint or column check reaches it.
-ARTIFACTS_NAME=perf2html_temporary_artifacts
 
 # Markdown that is the author's notes rather than dev/ source. Nothing here
 # is formatted, linted or column-checked.
@@ -86,20 +54,13 @@ DEFAULT_REPORTS=(
   ../perf2html_diff_report
 )
 
-# REPORT_MANIFEST, DIFF_MANIFEST, CHECKSUM_LABEL and checksum_compute all
-# come from the one file the perf2html scripts write a manifest with, so
-# this reads a report back by exactly the contract that wrote it.
-# shellcheck source=../report_manifest.sh
-. ../report_manifest.sh
+. ./shared.sh
 
 usage_show() {
   cat <<'EOF'
 scripts/reformat.sh [--check] [--verbose] [report-dir]
 EOF
 }
-
-# verbose - the one function testing VERBOSE. No other guard may.
-verbose() { if [ "$VERBOSE" = 1 ]; then echo "$@"; fi; }
 
 # tool_find - echo a tool's path, searching the pip and npm user bins too.
 tool_find() {
@@ -139,7 +100,7 @@ tool_run() {
 
   if [ "$exit_code" = 0 ]; then
     printf '%-12s| ok      | %s file(s)\n' "$label" "$#"
-    verbose "$output"
+    log_verbose "$output"
     return 0
   fi
 
@@ -244,38 +205,13 @@ lint_run() {
 
   if [ "$exit_code" = 0 ]; then
     printf '%-12s| ok      | pyright\n' "lint"
-    verbose "$output"
+    log_verbose "$output"
     return 0
   fi
 
   printf '%-12s| FAILED  | pyright\n' "lint"
   echo "$output" >&2
   STATUS=1
-}
-
-# lost_settings_report - the SCREAMING_SNAKE constants a generator assigns
-# below its settings.load_into() call. A note, never a failure.
-lost_settings_report() {
-  local files output
-  mapfile -t files < <(files_of "$DIR_SCRIPTS" '*.py')
-
-  if [ "${#files[@]}" = 0 ]; then return 0; fi
-
-  output="$(python3 -c '
-import sys, settings
-for path in sys.argv[1:]:
-    for row in settings.lost_settings(path):
-        print(f"{row.path}:{row.line}: {row.name}")
-' "${files[@]}" 2>&1)"
-
-  if [ -z "$output" ]; then
-    printf '%-12s| ok      | none below load_into()\n' "settings"
-    return 0
-  fi
-
-  printf '%-12s| note    | %s below load_into()\n' \
-    "settings" "$(echo "$output" | grep -c ':')"
-  verbose "$output"
 }
 
 # long_lines_report - fail on any line still over COLUMNS_MAX afterwards.
@@ -413,7 +349,7 @@ validate_run() {
 
     if [ "$exit_code" = 0 ]; then
       printf '%-12s| ok      | %s\n' "validate" "$(basename "$path")"
-      verbose "$output"
+      log_verbose "$output"
       continue
     fi
 
@@ -467,6 +403,8 @@ args_parse() {
 main() {
   args_parse "$@"
 
+  settings_load
+
   STATUS=0
   MISSING=()
   REPORTS=()
@@ -481,7 +419,6 @@ main() {
   format_c
   format_prettier
 
-  lost_settings_report
   long_lines_report
   validate_run
 
