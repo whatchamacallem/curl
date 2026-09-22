@@ -5,37 +5,48 @@ the top level `index.html` in the report then bookmarks should work.
 
 ## The Scripts
 
-```sh
-dev/perf2html.sh [--verbose] [--report=DIR] [cmake-flags...]
-dev/perf2html_diff.sh [--verbose] [baseline-dir] [modified-dir] [report-dir]
-dev/perf2html_batch.sh [--verbose] [cmake-flags...]
+```txt
+perf2html.sh [debug-flags] [--report=DIR] [cmake-flags...]
+    Builds RelWithDebInfo, profiles every TESTS_C test under callgrind
+    plus a native perf stat timing run, generates one report.
+    --report=DIR   Defaults to perf2html_baseline_report, or
+                   perf2html_modified_report when a cmake flag is given.
+                   Pass it yourself after a source-only change.
+    cmake-flags    Everything else, e.g. -D CMAKE_C_FLAGS=-Os.
+
+perf2html_diff.sh [debug-flags] [baseline] [modified] [report]
+    Measures nothing: Compares the counters in two profiling reports.
+    Directories default to perf2html_{baseline,modified,diff}_report.
+    Each input must be a perf2html.sh report. A diff can't be diffed.
+
+perf2html_batch.sh [debug-flags] [--target-dir=DIR] [cmake-flags...]
+    Runs baseline, modified, diff in order, every step running even
+    after an earlier one failed. Checks nothing; pair with reformat.sh.
+    --target-dir=DIR  holds the three default-named reports (default
+                      CWD); the batch cannot rename them.
+    cmake-flags       every argument not one of its own options,
+                      applied to the modified build (default
+                      -D CMAKE_C_FLAGS=-Os).
+
+Shared Flags
+    --verbose         additive: whatever quiet prints, verbose prints
+                      too, plus each child's output as produced.
+    --keep-artifacts  keeps the recordings directory; required for a
+                      later --regenerate.
+    --regenerate      rebuilds all pages from the last run's
+                      recordings, re-measuring nothing; implies
+                      --keep-artifacts.
+    --artifacts=DIR   the recordings directory; defaults to
+                      perf2html_temporary_artifacts/ beside the report
+                      (inside the target dir for the batch, which
+                      forwards it to both children).
 ```
-
-`perf2html.sh` builds curl twice (`-O2 -g`+ccache by default, the second tree
-adds `-finstrument-functions` and exists only for the flame graph), runs every
-perf test under each, and writes one HTML report:
-
-```text
-DIR/index.html            Open this.
-DIR/README.md             You are reading this.
-DIR/MANIFEST.txt          Describes contents.
-```
-
-DIR defaults to `perf2html_baseline_report`, or `perf2html_modified_report`.
-
-`perf2html_diff.sh` subtracts the callgrind data of two `perf2html.sh` reports
-(modified minus baseline, per function and source line) and creates a diff
-report. The positional args default to `perf2html_baseline_report`,
-`perf2html_modified_report`, and `perf2html_diff_report`.
-
-`perf2html_batch.sh` generates the baseline, modified and diff reports in one
-run using the default report directory names.
 
 ## Callgrind Counters
 
 These are the raw counters callgrind records and the derived ones this report
-adds up from them. They show up as column headers and counter picker choices
-in the heat map, under these same names.
+adds up from them. They show up as column headers and counter picker choices in
+the heat map, under these same names.
 
 | Counter | Meaning                             | Derived from          |
 | ------- | ----------------------------------- | --------------------- |
