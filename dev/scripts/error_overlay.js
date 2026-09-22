@@ -100,17 +100,14 @@ window.report_error_overlay = (function () {
       if (browser_event.error || browser_event.message) {
         overlay_show(
           browser_event.error || browser_event.message,
-          text_or_fallback("str_error_source_exception", "uncaught exception"),
+          text_or_fallback("str_error_source_exception"),
         );
       }
     });
     window.addEventListener("unhandledrejection", function (browser_event) {
       overlay_show(
         browser_event.reason,
-        text_or_fallback(
-          "str_error_source_rejection",
-          "unhandled promise rejection",
-        ),
+        text_or_fallback("str_error_source_rejection"),
       );
     });
     window.addEventListener("popstate", function () {
@@ -135,17 +132,13 @@ window.report_error_overlay = (function () {
       root,
       "div",
       "report-error-title",
-      text_or_fallback("str_error_page_title", "report page error"),
+      text_or_fallback("str_error_page_title"),
     );
     element_append(
       root,
       "p",
       "",
-      text_or_fallback(
-        "str_error_page_explanation",
-        "This page stopped because of an error it could not recover" +
-          " from. Press Back to reload it at the address it was showing.",
-      ),
+      text_or_fallback("str_error_page_explanation"),
     );
     element_append(
       root,
@@ -161,41 +154,34 @@ window.report_error_overlay = (function () {
       root,
       "h2",
       "",
-      text_or_fallback("str_error_heading_address", "page address"),
+      text_or_fallback("str_error_heading_address"),
     );
     element_append(root, "pre", "", restore_hash || location.href);
     element_append(
       root,
       "h2",
       "",
-      text_or_fallback("str_error_heading_callstack", "callstack"),
+      text_or_fallback("str_error_heading_callstack"),
     );
     element_append(
       root,
       "pre",
       "",
       described.stack ||
-        text_or_fallback(
-          "str_error_callstack_unavailable",
-          "(no callstack recorded)",
-        ),
+        text_or_fallback("str_error_callstack_unavailable"),
     );
     element_append(
       root,
       "h2",
       "",
-      text_or_fallback("str_error_heading_manifest", "report manifest"),
+      text_or_fallback("str_error_heading_manifest"),
     );
     element_append(
       root,
       "pre",
       "",
       manifest_text() ||
-        text_or_fallback(
-          "str_error_manifest_unavailable",
-          "(this report ships no manifest script, so its MANIFEST.txt" +
-            " cannot be read from a file:// page)",
-        ),
+        text_or_fallback("str_error_manifest_unavailable"),
     );
     return root;
   }
@@ -217,10 +203,7 @@ window.report_error_overlay = (function () {
       document.body.textContent = "";
       document.body.className = "report-error-shown";
       document.body.appendChild(root);
-      document.title = text_or_fallback(
-        "str_error_page_title",
-        "report page error",
-      );
+      document.title = text_or_fallback("str_error_page_title");
     } catch (ignored) {
       overlay_is_shown = true;
     }
@@ -262,15 +245,15 @@ window.report_error_overlay = (function () {
     (document.head || document.documentElement).appendChild(style);
   }
 
-  function text_or_fallback(string_id, fallback) {
+  function text_or_fallback(string_id) {
     const strings = window.ui_strings;
     if (!strings || typeof strings.text_of !== "function") {
-      return fallback;
+      return "(ui strings missing)";
     }
     try {
       return strings.text_of(string_id);
     } catch (ignored) {
-      return fallback;
+      return "(missing ui string)";
     }
   }
 
