@@ -144,16 +144,21 @@ class Theme:
             return ("-" if number < 0 else "") + self.human(abs(number))
 
         # A diff share: percent(), empty at zero, arrow-led, a drop keeping
-        # its "-". "≈0.00%" and ">1000x" are bounds, so take no sign.
+        # its "-". A zero baseline is an infinite share, "∞%". "≈0.00%" and
+        # ">1000x" are bounds, so take no sign. README.md's "Reading a Diff
+        # Report" is the specification, and theme.js's signed_percent_text
+        # is kept in step with this.
         def signed_percent(self, percent: float) -> str:
             if percent == 0:
                 return ""
             arrow = "▼" if percent < 0 else "▲"
+            sign = "-" if percent < 0 else ""
+            if math.isinf(percent):
+                return arrow + sign + "∞%"
             if abs(percent) < _NUMBER_SMALLEST_PRINTED_PERCENT:
                 return arrow + "≈0.00%"
             body = self.multiple(abs(percent))
-            sign = "-" if percent < 0 and body[0] != ">" else ""
-            return arrow + sign + body
+            return arrow + ("" if body[0] == ">" else sign) + body
 
         # A duration in the largest unit it reaches, e.g. 1.25ms.
         def time(self, seconds: float) -> str:

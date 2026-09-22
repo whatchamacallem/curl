@@ -2,6 +2,8 @@
   "use strict";
 
   const HOME_VIEW_LABEL = window.ui_strings.text_of("str_view_summary");
+  const LAYOUT_RESET_RATE_LIMIT_CLICKS = 3;
+  const LAYOUT_RESET_RATE_LIMIT_WINDOW_MS = 5000;
   const OUTER_STATUS_TEXT = window.ui_strings.text_of("str_report_name");
   const SELECTION_SEPARATOR = " / ";
   const WORDMARK_LETTER_CLASS = "wordmark-letter";
@@ -9,6 +11,7 @@
 
   const home_panel = document.getElementById("home");
   const is_framed = window.report_ui.is_framed;
+  const reset_click_times = [];
   const reset_columns_link = document.getElementById("reset-cols");
   const strip_bar = document.getElementById("bar");
   const title_badge = document.getElementById("title");
@@ -102,6 +105,19 @@
 
   reset_columns_link.addEventListener("click", (pointer_event) => {
     pointer_event.preventDefault();
+    const click_time = Date.now();
+    while (
+      reset_click_times.length &&
+      click_time - reset_click_times[0] > LAYOUT_RESET_RATE_LIMIT_WINDOW_MS
+    ) {
+      reset_click_times.shift();
+    }
+    reset_click_times.push(click_time);
+    if (reset_click_times.length >= LAYOUT_RESET_RATE_LIMIT_CLICKS) {
+      throw new Error(
+        window.ui_strings.text_of("str_error_reset_columns_too_fast"),
+      );
+    }
     reset_broadcast();
   });
   document.addEventListener("click", (click_event) => {

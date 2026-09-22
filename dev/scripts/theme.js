@@ -2,6 +2,9 @@ window.report_ui = (function () {
   "use strict";
 
   const HEAT_COLOR_LOGO_STOPS = settings("HEAT_COLOR_LOGO_STOPS");
+  const NUMBER_SMALLEST_PRINTED_PERCENT = settings(
+    "NUMBER_SMALLEST_PRINTED_PERCENT",
+  );
   const TABLE_COLUMN_NARROWEST_DRAG_PX = settings(
     "TABLE_COLUMN_NARROWEST_DRAG_PX",
   );
@@ -52,6 +55,44 @@ window.report_ui = (function () {
       );
       return letter_element;
     });
+  }
+
+  function human_text(number) {
+    let value = number,
+      unit = "";
+    for (const candidate of ["K", "M", "G", "T"]) {
+      if (value < 999.5) break;
+      value /= 1000;
+      unit = candidate;
+    }
+    return (unit && value < 9.95 ? value.toFixed(1) : value.toFixed(0)) + unit;
+  }
+  function percent_text(percent) {
+    if (percent >= 9.95) return percent.toFixed(1) + "%";
+    if (percent >= NUMBER_SMALLEST_PRINTED_PERCENT) {
+      return percent.toFixed(2) + "%";
+    }
+    return percent > 0 ? "<0.01%" : "";
+  }
+  function multiple_text(percent) {
+    if (percent <= 100) return percent_text(percent);
+    const times = percent / 100;
+    return times < 99.99 ? times.toFixed(2) + "x" : ">1000x";
+  }
+  function signed_human_text(number) {
+    if (!number) return "";
+    return (number < 0 ? "-" : "") + human_text(Math.abs(number));
+  }
+  function signed_percent_text(percent) {
+    if (!percent) return "";
+    const arrow = percent < 0 ? "▼" : "▲";
+    const sign = percent < 0 ? "-" : "";
+    if (!Number.isFinite(percent)) return arrow + sign + "∞%";
+    if (Math.abs(percent) < NUMBER_SMALLEST_PRINTED_PERCENT) {
+      return arrow + "≈0.00%";
+    }
+    const body = multiple_text(Math.abs(percent));
+    return arrow + (body[0] === ">" ? "" : sign) + body;
   }
 
   function parent_post(payload) {
@@ -377,15 +418,20 @@ window.report_ui = (function () {
   } else layout_activate();
   return {
     hash_publish,
+    human_text,
     is_framed,
     layout_activate,
     layout_refresh,
     layout_reset,
+    multiple_text,
     pane_splitter: { attach: pane_splitter_attach },
     parent_listen,
     parent_post,
+    percent_text,
     logo_color_at,
     logo_letters_build,
+    signed_human_text,
+    signed_percent_text,
     view_storage,
   };
 })();

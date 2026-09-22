@@ -6,9 +6,8 @@ set -uo pipefail
 SCRIPT="$(readlink -f "$0")"
 cd "$(dirname "$SCRIPT")"
 
+. ./scripts/settings.sh
 . ./scripts/shared.sh
-
-TIMESTAMP="$(date +%s)"
 
 # Must be kept in sync with the README.txt and no other usage docs allowed.
 usage_show() {
@@ -130,9 +129,9 @@ args_parse() {
     ARTIFACTS_DIR="$TARGET_DIR/$ARTIFACTS_NAME"
   fi
   ARTIFACTS_DIR="$(absolute_path "$ARTIFACTS_DIR")"
-  BASE_DIR="$TARGET_DIR/$BASE_NAME"
-  MOD_DIR="$TARGET_DIR/$MOD_NAME"
-  DIFF_DIR="$TARGET_DIR/$DIFF_NAME"
+  BASE_DIR="$TARGET_DIR/$REPORT_BASELINE_DIR_NAME"
+  MOD_DIR="$TARGET_DIR/$REPORT_MODIFIED_DIR_NAME"
+  DIFF_DIR="$TARGET_DIR/$REPORT_DIFF_DIR_NAME"
   RUN_LOG="$ARTIFACTS_DIR/perf2html_batch.$TIMESTAMP.log"
 }
 

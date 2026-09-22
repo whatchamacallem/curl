@@ -260,7 +260,7 @@ class TraceToSpeedscope:
         with open(trace_file, "rb") as handle:
             words.frombytes(handle.read())
         if len(words) < _HEADER_WORDS or words[0] != _MAGIC:
-            sys.exit(f"error: {trace_file}: not a dev/cyg_callback.c trace")
+            sys.exit(f"error: {trace_file}: not a cyg_callback.c trace")
         _, kept, seen, skip, t0_ns, t0_tsc, t1_ns, t1_tsc = words[
             :_HEADER_WORDS
         ]
@@ -387,7 +387,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "trace_file",
-        help="a dev/cyg_callback.c trace; its .maps file sits beside it",
+        help="a cyg_callback.c trace. its .maps file sits beside it",
     )
     parser.add_argument(
         "-o", "--output", default="", help="output .speedscope.json path"

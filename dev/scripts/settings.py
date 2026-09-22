@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import argparse, json, os, sys
-from typing import get_origin, get_type_hints
+import json, os, re, sys
+from typing import NoReturn, get_origin, get_type_hints
 
 # What the report's one shared copy of the theme is written as. Every page
 # in a report renders the same stylesheet and the same script, so they are
@@ -15,7 +15,6 @@ ASSET_ERROR_OVERLAY_SCRIPT_NAME = "error_overlay.js"
 ASSET_FRAME_SCRIPT_NAME = "frame.js"
 ASSET_HEAT_MAP_SCRIPT_NAME = "heatmap.js"
 ASSET_HEAT_MAP_STYLESHEET_NAME = "heatmap.css"
-ASSET_REPORT_MANIFEST_SCRIPT_NAME = "report_manifest.js"
 ASSET_SETTINGS_SCRIPT_NAME = "settings.js"
 
 # The four scripts/ files a generator reads as a template rather than
@@ -65,16 +64,6 @@ DERIVED_COUNTER_TERMS: dict[str, dict[str, int]] = {
 # delta it describes. Written by perf2html_diff.sh, read back by
 # build_report.py and skipped by validate_report.py.
 DIFF_CALLER_COUNTS_FILE_SUFFIX = ".callers.json"
-
-# The report-root directory holding the shared copy of speedscope, and the
-# globs naming what it must hold: the engine, its stylesheet and the font
-# the stylesheet names.
-FLAME_GRAPH_APP_DIR_NAME = "flame-graph-app"
-FLAME_GRAPH_APP_FILE_GLOBS = (
-    "speedscope-*.js",
-    "speedscope-*.css",
-    "*.woff2",
-)
 
 # Only a flame graph our own tool exported counts -- a stale or hand-made
 # one must fail.
@@ -258,27 +247,6 @@ PAGE_SETTINGS_GLOBAL_NAME = "settings"
 # derived. Point it at any counter callgrind.py knows and every page follows.
 RANKING_COUNTER_NAME = "CEst"
 
-# The report-root directory holding the shared copy of our own theme.
-REPORT_ASSETS_DIR_NAME = "assets"
-
-# The LABEL= row a report's MANIFEST.txt records its checksum on. The shell
-# writes that row and reads it back, validate_report.py and reformat.sh
-# check it, so the label is one spelling here rather than one per reader.
-REPORT_MANIFEST_CHECKSUM_LABEL = "checksum"
-
-# The exact first line of a MANIFEST.txt, one per kind of report. It is the
-# only thing that makes a directory a report, and a diff names
-# perf2html_diff.sh, which is how a diff can never be read back as a diff
-# input. Production contract, not validation data: the generators write
-# these strings, the shell evals them through --shell, and every reader
-# that opens a report -- including validate_report.py -- checks against
-# them. Bump one and every tool rejects the reports written before it.
-REPORT_MANIFEST_VERSION_DIFF = "curl/perf2html_diff.sh v1"
-REPORT_MANIFEST_VERSION_FULL = "curl/perf2html.sh v1"
-
-# What a report's raw data is stored as, one archive per test.
-REPORT_RAW_ARCHIVE_SUFFIX = "txz"
-
 # The report-root directory holding every heat map's source text, one copy
 # of each profiled file rather than one per page that references it.
 REPORT_SOURCES_DIR_NAME = "sources"
@@ -429,6 +397,8 @@ _BROWSER_SETTING_NAMES = (
     "HEAT_MAP_TREE_INDENT_FIRST_LEVEL_PX",
     "HEAT_MAP_TREE_INDENT_PER_LEVEL_PX",
     "HEAT_MAP_TREE_PANE_NARROWEST_PX",
+    "LAYOUT_RESET_RATE_LIMIT_CLICKS",
+    "LAYOUT_RESET_RATE_LIMIT_WINDOW_MS",
     "LAYOUT_RESIZE_SETTLE_DELAY_MS",
     "NUMBER_SMALLEST_PRINTED_PERCENT",
     "TABLE_COLUMN_EXTRA_WIDTH_CHARS",
@@ -465,20 +435,27 @@ _SENTINEL_SINGLETONS = (None, ...)
 # so the three errors and DECLAUDE.md say the same list.
 _SENTINEL_TEXT = 'false, 0, 0.0, ""...'
 
-# Every setting scripts/shared.sh reads, by name, and the shell variable
-# each one is assigned to. Shell cannot import this module, so settings_load
-# runs "python3 settings.py --shell" once and evals what comes back. The
-# names differ because a shell variable is read bare, with no module in
-# front of it, so REPORT_MANIFEST says which manifest it is where a bare
-# CHECKSUM_LABEL would not. The values are the ones Python reads, so the
-# writer of a MANIFEST.txt and every reader that checks one back spell the
-# same strings.
-_SHELL_SETTING_VARIABLES = (
-    ("ASSETS_NAME", "REPORT_ASSETS_DIR_NAME"),
-    ("CHECKSUM_LABEL", "REPORT_MANIFEST_CHECKSUM_LABEL"),
-    ("DIFF_MANIFEST", "REPORT_MANIFEST_VERSION_DIFF"),
-    ("MANIFEST_SCRIPT", "ASSET_REPORT_MANIFEST_SCRIPT_NAME"),
-    ("REPORT_MANIFEST", "REPORT_MANIFEST_VERSION_FULL"),
+# The one scalar spelling settings.sh turns into an int rather than a str.
+_SHELL_INTEGER_PATTERN = re.compile(r"-?[0-9]+")
+
+# The [key]= in front of each element of a declare -A map.
+_SHELL_MAP_KEY_PATTERN = re.compile(r"\[([A-Za-z0-9_.+-]+)\]=")
+
+# The shell's settings file, beside this one. Every name it assigns is
+# bound into this module by shell_settings_read(), so a setting the shell
+# reads is a setting like any other here, under the same spelling.
+_SHELL_SETTINGS_FILE_NAME = "settings.sh"
+
+# One settings.sh statement: an optional declare -A, the name, then what
+# follows the "=", which is a scalar word or the "(" opening a container.
+_SHELL_STATEMENT_PATTERN = re.compile(
+    r"(declare -A )?([A-Za-z_][A-Za-z0-9_]*)=(.*)"
+)
+
+# One settings.sh word: single-quoted, double-quoted with nothing the shell
+# would expand, or bare from the characters no shell reads specially.
+_SHELL_WORD_PATTERN = re.compile(
+    r"'([^']*)'|\"([^\"$`\\]*)\"|([A-Za-z0-9_./,:=+%@-]+)"
 )
 
 
@@ -545,9 +522,9 @@ class Settings:
         raise NameError(
             f"error: constant doesn't match any setting: "
             f"{module_name}.{name} asks for the setting {setting}, which "
-            "settings.py does not define. Define it there, correct the "
-            "spelling here, or -- if this is the file's own constant -- "
-            "move it below the load_into() call."
+            "neither settings.py nor settings.sh defines. Define it in one "
+            "of them, correct the spelling here, or -- if this is the "
+            "file's own constant -- move it below the load_into() call."
         )
 
     # The second check: the name matches a setting, so it is a declaration,
@@ -579,14 +556,143 @@ class Settings:
             "nothing else."
         )
 
-    # The settings scripts/shared.sh evals in settings_load. Every value is
-    # quoted so none of it can run as shell.
-    def shell_script_write(self) -> str:
-        lines: list[str] = []
-        for variable, name in _SHELL_SETTING_VARIABLES:
-            quoted = str(globals()[name]).replace("'", "'\\''")
-            lines.append(f"{variable}='{quoted}'")
-        return "\n".join(lines) + "\n"
+    # A settings.sh name is spelled like every other setting and is bound
+    # nowhere else: not twice there, and not in this module, where a second
+    # definition would be the hand-matched twin this reader exists to end.
+    def shell_name_check(
+        self, number: int, name: str, found: dict[str, object]
+    ) -> None:
+        if not self.is_setting_name(name):
+            self.shell_settings_fail(
+                number, f"{name} is not a setting name (SCREAMING_SNAKE)"
+            )
+        if name in found:
+            self.shell_settings_fail(
+                number, f"{name} is assigned twice; keep one of them"
+            )
+        if name in globals():
+            self.shell_settings_fail(
+                number,
+                f"{name} is also defined in settings.py; a setting has one "
+                "definition, in one of the two files",
+            )
+
+    # One scalar: exactly one word, an int when it matches -?[0-9]+.
+    def shell_scalar_parse(self, number: int, text: str) -> int | str:
+        pairs, closed = self.shell_words_parse(number, text, False)
+        if closed or len(pairs) != 1:
+            self.shell_settings_fail(
+                number, "a scalar is exactly one bare or quoted word"
+            )
+        value = pairs[0][1]
+        if _SHELL_INTEGER_PATTERN.fullmatch(value):
+            return int(value)
+        return value
+
+    # Stop the import on one settings.sh line, naming it and the fix.
+    def shell_settings_fail(self, number: int, problem: str) -> NoReturn:
+        raise SystemExit(
+            f"error: {_SHELL_SETTINGS_FILE_NAME} line {number}: {problem}"
+        )
+
+    # Every setting settings.sh holds, by name. The file is sourced by the
+    # shell and parsed here, so only what both read the same way is
+    # accepted, and anything else stops the import naming its line: blank
+    # and # comment lines; NAME=word; NAME=(word ...) and declare -A
+    # NAME=([key]=word ...), each over one or more lines up to the closing
+    # ")", giving tuple[str, ...] and dict[str, str]. A word is bare (the
+    # characters _SHELL_WORD_PATTERN allows), single-quoted, or
+    # double-quoted with no $, backtick or backslash. A scalar matching
+    # -?[0-9]+ is an int, every other scalar a str, and elements stay str.
+    # A name is a setting name and is bound in neither file already.
+    def shell_settings_read(self) -> dict[str, object]:
+        path = os.path.join(_DIRECTORY, _SHELL_SETTINGS_FILE_NAME)
+        with open(path, encoding="utf-8") as handle:
+            lines = handle.read().splitlines()
+        found: dict[str, object] = {}
+        opened: tuple[str, int, bool, list[tuple[str, str]]] | None = None
+        for number, line in enumerate(lines, 1):
+            text = line.strip()
+            if not text or text.startswith("#"):
+                continue
+            if opened is None:
+                statement = _SHELL_STATEMENT_PATTERN.fullmatch(text)
+                if statement is None:
+                    self.shell_settings_fail(
+                        number,
+                        "expected NAME=word, NAME=(...) or "
+                        "declare -A NAME=(...)",
+                    )
+                keyed = statement.group(1) is not None
+                name = statement.group(2)
+                text = statement.group(3)
+                self.shell_name_check(number, name, found)
+                if not text.startswith("("):
+                    if keyed:
+                        self.shell_settings_fail(
+                            number, "declare -A NAME takes =([key]=word ...)"
+                        )
+                    found[name] = self.shell_scalar_parse(number, text)
+                    continue
+                opened = (name, number, keyed, [])
+                text = text[1:]
+            name, start, keyed, pairs = opened
+            more, closed = self.shell_words_parse(number, text, keyed)
+            pairs.extend(more)
+            if closed:
+                if keyed:
+                    found[name] = dict(pairs)
+                else:
+                    found[name] = tuple(value for _, value in pairs)
+                opened = None
+        if opened is not None:
+            self.shell_settings_fail(
+                opened[1], f'{opened[0]}=( is never closed by ")"'
+            )
+        return found
+
+    # One line of a container body as (key, word) pairs -- the key is empty
+    # in a list -- and whether the line closed the container. A word ends
+    # at whitespace or the closing ")", so 'a'b is refused, never joined.
+    def shell_words_parse(
+        self, number: int, text: str, keyed: bool
+    ) -> tuple[list[tuple[str, str]], bool]:
+        pairs: list[tuple[str, str]] = []
+        position = 0
+        while True:
+            while position < len(text) and text[position].isspace():
+                position += 1
+            if position == len(text):
+                return pairs, False
+            if text[position] == ")":
+                if text[position + 1 :].strip():
+                    self.shell_settings_fail(
+                        number, 'nothing may follow the closing ")"'
+                    )
+                return pairs, True
+            key = ""
+            if keyed:
+                keyed_match = _SHELL_MAP_KEY_PATTERN.match(text, position)
+                if keyed_match is None:
+                    self.shell_settings_fail(number, "expected [key]=word")
+                key = keyed_match.group(1)
+                position = keyed_match.end()
+            word_match = _SHELL_WORD_PATTERN.match(text, position)
+            if word_match is None:
+                self.shell_settings_fail(
+                    number,
+                    "expected a bare word, 'single-quoted' or "
+                    '"double-quoted" with no $, backtick or backslash',
+                )
+            position = word_match.end()
+            if position < len(text) and text[position] not in " \t)":
+                self.shell_settings_fail(
+                    number, 'a word ends at whitespace or the closing ")"'
+                )
+            word = next(
+                group for group in word_match.groups() if group is not None
+            )
+            pairs.append((key, word))
 
     # The third check: the value settings.py holds has to be the type the
     # annotation names. Scalars exactly, never converted. A container is
@@ -616,7 +722,7 @@ class Settings:
 
 
 # The scripts/ directory this module was loaded from, which is also where
-# the handler template sits.
+# the handler template and settings.sh sit.
 _DIRECTORY = os.path.dirname(os.path.abspath(__file__))
 
 # What settings_script_write() substitutes in the handler template: the
@@ -627,6 +733,11 @@ _PAGE_SETTINGS_DATA_MARKER = "__DATA__"
 _PAGE_SETTINGS_NAME_MARKER = "__NAME__"
 
 _READER = Settings()
+
+# Every setting settings.sh holds, bound here under its own name: the
+# shell's settings are settings of this module like any other, so
+# load_into() resolves them and validate_report.py reads them the same way.
+globals().update(_READER.shell_settings_read())
 
 
 # Assign a module's declared settings into it, checking each one's type
@@ -648,29 +759,3 @@ def settings_script_write() -> str:
     return runtime.replace(
         _PAGE_SETTINGS_NAME_MARKER, PAGE_SETTINGS_GLOBAL_NAME
     ).replace(_PAGE_SETTINGS_DATA_MARKER, data)
-
-
-# Build the shell assignments scripts/shared.sh evals in settings_load.
-def shell_script_write() -> str:
-    return _READER.shell_script_write()
-
-
-# main - Print the settings the shell reads. The whole command-line
-# surface: nothing here writes a file or takes a path.
-def main() -> int:
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--shell",
-        action="store_true",
-        help="print the settings scripts/shared.sh reads",
-    )
-    args = parser.parse_args()
-    if not args.shell:
-        parser.print_usage(sys.stderr)
-        return 2
-    sys.stdout.write(shell_script_write())
-    return 0
-
-
-if __name__ == "__main__":
-    sys.exit(main())

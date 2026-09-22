@@ -37,6 +37,7 @@ DIR_SCRIPTS=.
 # the hard column limit every kind of source is checked against
 COLUMNS_MAX=79
 PRETTIER_CONFIG=../.prettierrc.json
+PYRIGHT_CONFIG=../src/pyrightconfig.json
 
 # Markdown that is the author's notes rather than dev/ source. Nothing here
 # is formatted, linted or column-checked.
@@ -201,7 +202,7 @@ lint_run() {
   fi
 
   local output exit_code=0
-  output="$("$binary" --project "$DIR_DEV" 2>&1)" || exit_code=$?
+  output="$("$binary" --project "$PYRIGHT_CONFIG" 2>&1)" || exit_code=$?
 
   if [ "$exit_code" = 0 ]; then
     printf '%-12s| ok      | pyright\n' "lint"
@@ -254,43 +255,46 @@ report_version() {
 # string and whose checksum still matches, else set REPORT_ERROR saying so.
 report_claim() {
   local path="$1" version recorded found
+  local full_version="$REPORT_MANIFEST_VERSION_FULL"
+  local diff_version="$REPORT_MANIFEST_VERSION_DIFF"
+  local checksum_label="$REPORT_MANIFEST_CHECKSUM_LABEL"
 
   if [ ! -d "$path" ]; then
     REPORT_ERROR="no such directory: $path -- a report is a directory"
     REPORT_ERROR="$REPORT_ERROR whose MANIFEST.txt line 1 reads"
-    REPORT_ERROR="$REPORT_ERROR \"$REPORT_MANIFEST\""
-    REPORT_ERROR="$REPORT_ERROR or \"$DIFF_MANIFEST\""
+    REPORT_ERROR="$REPORT_ERROR \"$full_version\""
+    REPORT_ERROR="$REPORT_ERROR or \"$diff_version\""
     return 1
   fi
 
   version="$(report_version "$path")"
   case "$version" in
-    "$REPORT_MANIFEST" | "$DIFF_MANIFEST") ;;
+    "$full_version" | "$diff_version") ;;
     "")
       REPORT_ERROR="$path has no MANIFEST.txt, so it is not a finished"
       REPORT_ERROR="$REPORT_ERROR report; expected line 1 to read"
-      REPORT_ERROR="$REPORT_ERROR \"$REPORT_MANIFEST\""
-      REPORT_ERROR="$REPORT_ERROR or \"$DIFF_MANIFEST\""
+      REPORT_ERROR="$REPORT_ERROR \"$full_version\""
+      REPORT_ERROR="$REPORT_ERROR or \"$diff_version\""
       return 1
       ;;
     *)
       REPORT_ERROR="$path/MANIFEST.txt line 1 found \"$version\";"
-      REPORT_ERROR="$REPORT_ERROR expected \"$REPORT_MANIFEST\""
-      REPORT_ERROR="$REPORT_ERROR or \"$DIFF_MANIFEST\""
+      REPORT_ERROR="$REPORT_ERROR expected \"$full_version\""
+      REPORT_ERROR="$REPORT_ERROR or \"$diff_version\""
       return 1
       ;;
   esac
 
-  recorded="$(manifest_value "$path" "$CHECKSUM_LABEL")"
+  recorded="$(manifest_value "$path" "$checksum_label")"
   if [ -z "$recorded" ]; then
-    REPORT_ERROR="$path/MANIFEST.txt has no $CHECKSUM_LABEL= row, so its"
+    REPORT_ERROR="$path/MANIFEST.txt has no $checksum_label= row, so its"
     REPORT_ERROR="$REPORT_ERROR files cannot be verified; expected one"
     REPORT_ERROR="$REPORT_ERROR beside the version line \"$version\""
     return 1
   fi
   found="$(checksum_compute "$path")"
   if [ "$found" != "$recorded" ]; then
-    REPORT_ERROR="$path does not match its recorded $CHECKSUM_LABEL:"
+    REPORT_ERROR="$path does not match its recorded $checksum_label:"
     REPORT_ERROR="$REPORT_ERROR found \"$found\", expected \"$recorded\""
     REPORT_ERROR="$REPORT_ERROR -- a file was added, removed or edited"
     REPORT_ERROR="$REPORT_ERROR after the report was written"
@@ -318,7 +322,7 @@ report_find() {
     REPORT_ERROR="no report was named, and the default location"
     REPORT_ERROR="$REPORT_ERROR dev/${DEFAULT_REPORTS[0]#../} is absent"
     REPORT_ERROR="$REPORT_ERROR or has no MANIFEST.txt reading"
-    REPORT_ERROR="$REPORT_ERROR \"$REPORT_MANIFEST\""
+    REPORT_ERROR="$REPORT_ERROR \"$REPORT_MANIFEST_VERSION_FULL\""
   fi
 }
 
@@ -340,7 +344,7 @@ validate_run() {
 
   for path in "${REPORTS[@]}"; do
     args=("$(cd "$path" && pwd)")
-    if [ "$(report_version "$path")" = "$DIFF_MANIFEST" ]; then
+    if [ "$(report_version "$path")" = "$REPORT_MANIFEST_VERSION_DIFF" ]; then
       args+=(--diff)
     fi
 
@@ -402,8 +406,6 @@ args_parse() {
 
 main() {
   args_parse "$@"
-
-  settings_load
 
   STATUS=0
   MISSING=()

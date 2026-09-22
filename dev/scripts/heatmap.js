@@ -69,9 +69,6 @@
   const LAYOUT_RESIZE_SETTLE_DELAY_MS = settings(
     "LAYOUT_RESIZE_SETTLE_DELAY_MS",
   );
-  const NUMBER_SMALLEST_PRINTED_PERCENT = settings(
-    "NUMBER_SMALLEST_PRINTED_PERCENT",
-  );
   const TABLE_COLUMN_EXTRA_WIDTH_CHARS = settings(
     "TABLE_COLUMN_EXTRA_WIDTH_CHARS",
   );
@@ -179,8 +176,6 @@
   const current_value = (cost_vector) => current_counter.get(cost_vector);
   const absolute = Math.abs;
 
-  // The denominators a percentage divides by, selected and secondary
-  // counters. Not a colour ceiling: no maximum is measured off the data.
   function scale_recompute() {
     total_cost = current_counter.get(profile_model.heatMapTotals.totals) || 1;
     secondary_totals = {};
@@ -197,25 +192,10 @@
       .replace(/>/g, "&gt;")
       .replace(/"/g, "&quot;");
   const share_of_total = (value) => (100 * value) / total_cost;
-  let share_text = (percent) =>
-    percent >= 9.95
-      ? percent.toFixed(1) + "%"
-      : percent >= NUMBER_SMALLEST_PRINTED_PERCENT
-        ? percent.toFixed(2) + "%"
-        : percent > 0
-          ? "<0.01%"
-          : "";
+  let share_text = report_ui.percent_text;
   const share_of_total_text = (value) => share_text(share_of_total(value));
 
-  let human_text = (value) => {
-    let unit = "";
-    for (const next_unit of ["K", "M", "G", "T"]) {
-      if (value < 999.5) break;
-      value /= 1000;
-      unit = next_unit;
-    }
-    return (unit && value < 9.95 ? value.toFixed(1) : value.toFixed(0)) + unit;
-  };
+  let human_text = report_ui.human_text;
   const cell_number = (value) => ({
     text: human_text(value),
   });
@@ -233,32 +213,9 @@
   const function_baselines = profile_model.functionBaseline || [];
   let baseline_of = () => null;
   let share_of_baseline = (value, baseline_cost) => share_of_total(value);
-  let share_of_baseline_text = (value, baseline_cost) =>
-    share_of_total_text(value);
   if (IS_DIFF) {
-    const plain_share_text = share_text,
-      plain_human_text = human_text;
-    const multiple_text = (percent) =>
-      percent / 100 < 99.99 ? (percent / 100).toFixed(2) + "x" : ">1000x";
-    const magnitude_text = (percent) =>
-      percent < NUMBER_SMALLEST_PRINTED_PERCENT
-        ? "≈0.00%"
-        : percent > 100
-          ? multiple_text(percent)
-          : plain_share_text(percent);
-    const signed_text = (percent, text) =>
-      text[0] === ">" || text[0] === "≈"
-        ? text
-        : (percent < 0 ? "-" : "") + text;
-    share_text = (percent) =>
-      percent
-        ? (percent < 0 ? "▼" : "▲") +
-          signed_text(percent, magnitude_text(absolute(percent)))
-        : "";
-    human_text = (value) =>
-      !value
-        ? "0"
-        : (value < 0 ? "-" : "") + plain_human_text(absolute(value));
+    share_text = report_ui.signed_percent_text;
+    human_text = report_ui.signed_human_text;
     HEADING_PREFIX = text_of("str_heading_prefix_diff");
     CHIP_HEADING = text_of("str_chip_heading_diff");
     baseline_of = (cost_vector) => {
@@ -267,14 +224,14 @@
       return baseline_cost ? baseline_cost : null;
     };
     share_of_baseline = (value, baseline_cost) =>
-      baseline_cost ? (100 * value) / baseline_cost : value ? 100 : 0;
-    share_of_baseline_text = (value, baseline_cost) =>
       baseline_cost
-        ? share_text((100 * value) / baseline_cost)
+        ? (100 * value) / baseline_cost
         : value
-          ? share_text(100)
-          : "";
+          ? Math.sign(value) * Infinity
+          : 0;
   }
+  const share_of_baseline_text = (value, baseline_cost) =>
+    share_text(share_of_baseline(value, baseline_cost));
   const line_baseline = (file_path, line_number) => {
     const baseline_table =
       file_table[file_path] && file_table[file_path].baseline;
@@ -388,8 +345,6 @@
   const heat_of_line = (value, baseline_cost, line_number) =>
     heat_of_share(line_share(value, baseline_cost, line_number));
 
-  // The whole mapping: clamp, divide, curve -- nothing measured off the
-  // data. Diff keeps the sign, curving the magnitude first to stay symmetric.
   function heat_of_share(percent) {
     const heat_sign = percent < 0 ? -1 : 1;
     const magnitude = Math.min(
@@ -410,8 +365,6 @@
     [1, 3, 5].map((index) => parseInt(hex.slice(index, index + 2), 16));
   const COLOR_STOPS = profile_model.theme.heat.map(channels_of),
     BACKGROUND_COLOR = channels_of(profile_model.theme.bg);
-  // A heat position to a colour. The position is already the whole scale,
-  // [0..1] normally and [-1..1] in a diff, whose 0 lands mid-ramp.
   function cell_style(heat_value, alpha_minimum, alpha_maximum) {
     const magnitude = absolute(heat_value);
     if (magnitude <= 0) return "";
@@ -1106,6 +1059,7 @@
         file_baseline_cost += absolute(current_counter.get(cost_vector));
       }
     }
+    const file_amount_text = human_text(file_self_cost);
     markup +=
       `<span class="stat">` +
       `${html_escape(text_of("str_column_self"))} <b>` +
@@ -1114,8 +1068,11 @@
         text_of("str_share_zero")
       }` +
       `</b>` +
-      ` (${human_text(file_self_cost)}` +
-      ` ${html_escape(counter_label(current_counter))})</span>`;
+      (file_amount_text
+        ? ` (${file_amount_text}` +
+          ` ${html_escape(counter_label(current_counter))})`
+        : "") +
+      `</span>`;
     for (const secondary of secondary_counters) {
       const self_cost = secondary.get(file.self);
       if (!self_cost) continue;
@@ -1558,8 +1515,7 @@
         {
           text: `${self_label} ${counter_label(current_counter)}`,
         },
-        line_share_text(self_cost, line_baseline_cost, line_number) ||
-          text_of("str_share_zero"),
+        line_share_text(self_cost, line_baseline_cost, line_number),
         cell_number(self_cost),
       ],
     ];

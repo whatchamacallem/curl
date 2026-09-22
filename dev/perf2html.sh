@@ -6,15 +6,17 @@ set -euo pipefail
 SCRIPT="$(readlink -f "$0")"
 cd "$(dirname "$SCRIPT")"
 
+. ./scripts/settings.sh
 . ./scripts/shared.sh
 
 REPO="$(cd .. && pwd)"
-TIMESTAMP="$(date +%s)"
 
 usage_show() {
   cat <<'EOF'
-perf2html_batch.sh [debug-flags] [--target-dir=DIR] [cmake-flags...]
-    Profiles baseline, modified and then does a diff of them.
+perf2html.sh [debug-flags] [--report=DIR] [cmake-flags...]
+    Builds RelWithDebInfo, profiles every TESTS_C test under callgrind plus a
+    native perf stat timing run and a traced run for the flame graph,
+    generates one report.
     --target-dir=DIR  holds the three default-named reports (default CWD). The
                       batch cannot rename them.
     cmake-flags       every argument not one of its own options, applied to the
@@ -116,7 +118,8 @@ stamp_reuse() {
   # a report is only a report if its version line and its recorded
   # checksum both still hold, so --regenerate cannot read back a tree an
   # aborted run or a later edit left behind
-  manifest_verify "$OUT_DIR" "$REPORT_MANIFEST" "--regenerate input"
+  manifest_verify "$OUT_DIR" "$REPORT_MANIFEST_VERSION_FULL" \
+    "--regenerate input"
   TIMESTAMP="$(manifest_value "$OUT_DIR" stamp)"
   [ -n "$TIMESTAMP" ] || {
     echo "error: $manifest has no stamp= row, so its recordings" \
@@ -210,7 +213,7 @@ build_compile() {
     trace_flags+=("$flag")
   done
   mkdir -p "$REPO/$TRACE_BUILD_DIR"
-  command_run cc -O2 -fcf-protection=none -c cyg_callback.c \
+  command_run cc -O2 -fcf-protection=none -c src/cyg_callback.c \
     -o "$REPO/$TRACE_BUILD_DIR/cyg_callback.o"
   rm -f "$REPO/$TRACE_BUILD_DIR/tests/perf/perf"
   local hook="$REPO/$TRACE_BUILD_DIR/cyg_callback.o"
@@ -225,18 +228,19 @@ build_compile() {
 trace_record() {
   local test="$1" loops="$2" trace_file="$3" skip="$4"
   echo "\$ PERF_TRACE_OUT=$(basename "${trace_file/.$TIMESTAMP/}")" \
-    "PERF_TRACE_SKIP=$skip taskset -c $CPU $TRACE_BIN_REL $test $loops"
+    "PERF_TRACE_SKIP=$skip taskset -c $PROFILE_PINNED_CPU" \
+    "$TRACE_BIN_REL $test $loops"
   PERF_TRACE_OUT="$trace_file" PERF_TRACE_SKIP="$skip" \
-    taskset -c "$CPU" "$TRACE_BIN" "$test" "$loops" 2>&1
+    taskset -c "$PROFILE_PINNED_CPU" "$TRACE_BIN" "$test" "$loops" 2>&1
 }
 
 # flame_app_install - copies the speedscope files a page loads, one per glob.
 flame_app_install() {
   local out="$1"
   local pattern found=()
-  rm -rf "$out/$FLAME_APP_DIR"
-  mkdir -p "$out/$FLAME_APP_DIR"
-  for pattern in "${FLAME_APP_FILES[@]}"; do
+  rm -rf "$out/$FLAME_GRAPH_APP_DIR_NAME"
+  mkdir -p "$out/$FLAME_GRAPH_APP_DIR_NAME"
+  for pattern in "${FLAME_GRAPH_APP_FILE_GLOBS[@]}"; do
     # shellcheck disable=SC2206  # the glob is the point
     found=($SPEEDSCOPE_RELEASE/$pattern)
     [ "${#found[@]}" = 1 ] && [ -e "${found[0]}" ] || {
@@ -244,7 +248,7 @@ flame_app_install() {
         "$SPEEDSCOPE_RELEASE, expected exactly 1" >&2
       exit 1
     }
-    cp "${found[@]}" "$out/$FLAME_APP_DIR"/
+    cp "${found[@]}" "$out/$FLAME_GRAPH_APP_DIR_NAME"/
     case "$pattern" in
       *.js) FLAME_APP_JS="$(basename "${found[0]}")" ;;
       *.css) FLAME_APP_CSS="$(basename "${found[0]}")" ;;
@@ -261,8 +265,8 @@ trace_render() {
   TRACE_JSON="$ARTIFACTS_DIR/trace.$test.$loops"
   TRACE_JSON="$TRACE_JSON.$TIMESTAMP.speedscope.json"
 
-  log_verbose "== [$test]: native trace, pinned to CPU $CPU, loops=$loops" \
-    "-> $out/flame-graph/index.html =="
+  log_verbose "== [$test]: native trace, pinned to CPU" \
+    "$PROFILE_PINNED_CPU, loops=$loops -> $out/flame-graph/index.html =="
   if [ "$REGENERATE" = 1 ]; then
     local saved
     saved="$(mktemp)"
@@ -273,7 +277,7 @@ trace_render() {
     rm -f "$saved"
     command_run python3 scripts/build_flame_graph.py \
       --flame-graph-dir "$out/flame-graph" --profile-json "$TRACE_JSON" \
-      --app-href "../../$FLAME_APP_DIR" \
+      --app-href "../../$FLAME_GRAPH_APP_DIR_NAME" \
       --app-js "$FLAME_APP_JS" --app-css "$FLAME_APP_CSS"
     return
   fi
@@ -281,10 +285,10 @@ trace_render() {
   mkdir -p "$out/flame-graph"
   {
     echo "# $TRACE_BUILD_DIR = this report's build flags +"
-    echo "# -finstrument-functions, linked with dev/cyg_callback.c, which"
+    echo "# -finstrument-functions, linked with dev/src/cyg_callback.c, which"
     echo "# reads rdtsc at every function enter and exit. Run 1 counts events,"
     echo "# run 2 keeps the ones right after the run's midpoint"
-    echo "# (CYG_CALLBACKS_MAX_REC in dev/cyg_callback.c)."
+    echo "# (CYG_CALLBACKS_MAX_REC in dev/src/cyg_callback.c)."
     trace_record "$test" "$loops" "$trace_file" "$TRACE_SKIP_ALL" \
       && seen="$(python3 scripts/trace_to_speedscope.py \
         --seen "$trace_file")" \
@@ -300,7 +304,7 @@ trace_render() {
   if [ "$VERBOSE" = 1 ]; then cat "$log"; fi
   command_run python3 scripts/build_flame_graph.py \
     --flame-graph-dir "$out/flame-graph" --profile-json "$TRACE_JSON" \
-    --app-href "../../$FLAME_APP_DIR" \
+    --app-href "../../$FLAME_GRAPH_APP_DIR_NAME" \
     --app-js "$FLAME_APP_JS" --app-css "$FLAME_APP_CSS"
 }
 
@@ -325,7 +329,7 @@ report_render() {
   else
     archive_write "$name" "$out" "$REPO" \
       "${CALLGRIND_FILES[@]}" "$json"
-    raw_args+=(--raw-data "$out/raw/$name$ARCHIVE_SUFFIX")
+    raw_args+=(--raw-data "$out/raw/$name$REPORT_RAW_ARCHIVE_SUFFIX")
   fi
   [ "${#TESTS[@]}" -gt 1 ] && help_args=(--help-href ../README.md)
   command_run python3 scripts/build_report.py test "${CALLGRIND_FILES[@]}" \
@@ -352,22 +356,22 @@ run_one() {
     return
   fi
 
-  log_verbose "== [$test]: callgrind, pinned to CPU $CPU, loops=$loops" \
-    "-> $cg_file =="
+  log_verbose "== [$test]: callgrind, pinned to CPU $PROFILE_PINNED_CPU," \
+    "loops=$loops -> $cg_file =="
   line="$(printf '%-13sloops=%s' "$test" "$loops")"
   start="$(clock_microseconds)"
-  command_run taskset -c "$CPU" valgrind --tool=callgrind --cache-sim=yes \
-    --branch-sim=yes \
+  command_run taskset -c "$PROFILE_PINNED_CPU" valgrind --tool=callgrind \
+    --cache-sim=yes --branch-sim=yes \
     --callgrind-out-file="$cg_file" --log-file="$log" "$BIN" "$test" "$loops"
   line="$line | $(duration_format "$start")"
 
-  log_verbose "== [$test]: native timing, pinned to CPU $CPU," \
+  log_verbose "== [$test]: native timing, pinned to CPU $PROFILE_PINNED_CPU," \
     "loops=$TIMING_LOOPS -> $out/perf-tool/output.txt =="
   {
-    echo "\$ perf stat -e cycles:u,instructions:u taskset -c $CPU" \
-      "$BIN_REL $test $TIMING_LOOPS"
+    echo "\$ perf stat -e cycles:u,instructions:u taskset -c" \
+      "$PROFILE_PINNED_CPU $BIN_REL $test $TIMING_LOOPS"
     perf stat -x, -o "$stat_file" -e cycles:u,instructions:u \
-      taskset -c "$CPU" "$BIN" "$test" "$TIMING_LOOPS" 2>&1 \
+      taskset -c "$PROFILE_PINNED_CPU" "$BIN" "$test" "$TIMING_LOOPS" 2>&1 \
       && awk -F, '
         $3 ~ /cycles/ { printf "Cycles:    %s\n", $1 }
         $3 ~ /instructions/ { printf "Instructions: %s\n", $1 }' \
@@ -424,7 +428,7 @@ run_all() {
     total=$((total + ${usecs:-0}))
   done
   {
-    echo "\$ taskset -c $CPU $BIN_REL <test>"
+    echo "\$ taskset -c $PROFILE_PINNED_CPU $BIN_REL <test>"
     echo "#   for every test, one after the other"
     echo "#   (each test's page has its full output)"
     printf '%s' "$rows"
@@ -443,7 +447,7 @@ run_all() {
     "revision=$REVISION"
     "cpu=$CPU_MODEL"
     "build=$BUILD_DESC"
-    "executable=$BIN_REL <test>  (native, pinned to CPU $CPU)"
+    "executable=$BIN_REL <test>  (native, pinned to CPU $PROFILE_PINNED_CPU)"
     "stamp=$TIMESTAMP"
   )
   local header_file="$ARTIFACTS_DIR/$HEADER_ROWS_NAME.$TIMESTAMP.txt"
@@ -458,7 +462,6 @@ run_all() {
 # main - the whole run, ending with the manifest and the report's URL.
 main() {
   args_parse "$@"
-  settings_load
   toolchain_check
   [ "$KEEP_ARTIFACTS" = 1 ] || rm -rf "$ARTIFACTS_DIR"
   if [ "$REGENERATE" = 1 ]; then stamp_reuse; fi
@@ -479,7 +482,7 @@ main() {
   build_compile
   flame_app_install "$OUT_DIR"
   command_run python3 scripts/build_report.py assets \
-    -o "$OUT_DIR/$ASSETS_NAME"
+    -o "$OUT_DIR/$REPORT_ASSETS_DIR_NAME"
 
   local test_name
   for test_name in "${TESTS[@]}"; do
@@ -491,9 +494,10 @@ main() {
   # manifest is what says this run finished, and its checksum covers the
   # finished tree
   log_verbose "== manifest -> $OUT_DIR/MANIFEST.txt =="
-  manifest_write "$REPORT_MANIFEST" "$OUT_DIR" "${HEADER_ROWS[@]}"
+  manifest_write "$REPORT_MANIFEST_VERSION_FULL" "$OUT_DIR" \
+    "${HEADER_ROWS[@]}"
   printf '%-13s%s\n' manifest \
-    "$(manifest_value "$OUT_DIR" "$CHECKSUM_LABEL")"
+    "$(manifest_value "$OUT_DIR" "$REPORT_MANIFEST_CHECKSUM_LABEL")"
 
   if [ "$KEEP_ARTIFACTS" != 1 ]; then rm -rf "$ARTIFACTS_DIR"; fi
   echo "file://$OUT_DIR/index.html"

@@ -56,9 +56,9 @@ window.ui_strings = (function () {
     str_error_heading_message: "message",
     str_error_manifest_unavailable: "MANIFEST.txt not found",
     str_error_page_explanation:
-      "perf2html stopped because of an error." +
-      " Press Back to continue resume.",
+      "perf2html stopped because of an error." + " Press Back to resume.",
     str_error_page_title: "perf2html error page",
+    str_error_reset_columns_too_fast: "slow down...",
     str_error_source_exception: "uncaught exception",
     str_error_source_rejection: "internal error",
     str_function_name_unknown: "?",

@@ -10,6 +10,12 @@
    Over **40,000 bytes** as you add to it, **say so and leave it alone**
    (`wc -c`). **Never compact it on your own initiative** - what to drop is the
    user's call.
+1. **`dev/README.md` is the user-facing contract and the control surface** for
+   what the tool shows and how its scripts behave. The code follows README,
+   never the reverse. README changes only after discussion with the user: a
+   session that finds README and the code disagreeing fixes the code or asks,
+   and never silently edits README to match. The only README edits a session
+   makes on its own are the ones the user asked for in that session.
 1. `dev/` is throwaway profiling tooling: one shared parser, one shared theme,
    no dead code, no duplicate systems. Everything a script writes opens from
    `file://` with nothing fetched at view time.
@@ -106,11 +112,6 @@ partial line can sit unforwarded for minutes).
   honoured in `files_of()` - the **one door** every stage collects files
   through, whose prune also covers the artifacts dir and
   `-not -path '*_report/*'`. `README.md` **is** source and is checked.
-- **`reformat.sh` has no `settings` stage** - `lost_settings()` and its
-  `settings | note | N below load_into()` row are **gone**, along with the
-  `LostSetting` record and the two module constants that scanned for them.
-  A file's own constants below the call are simply where they belong; there
-  was nothing for a reader to act on in the count.
 - `--keep-artifacts` keeps the artifacts dir. **The batch owns every deletion
   of it** - it passes `--keep-artifacts` down so a child can't unlink the batch
   log mid-run. A failed flagless batch _keeps_ it. The batch's own
@@ -131,48 +132,54 @@ partial line can sit unforwarded for minutes).
 - Valgrind's LL cache auto-detects as direct-mapped and overstates conflict
   misses - `--LL=16777216,16,64` on the `valgrind` line in `run_one`.
 - Trace tree `build-instr` = same flags + `-finstrument-functions` +
-  `dev/cyg_callback.c`. Whole build instrumented, no file list.
-- No env vars. **`dev/scripts/shared.sh` (sourced, not executable) holds every
-  shared shell setting and every shared shell function**, each half
-  alphabetical: the settings registry (`ARCHIVE_SUFFIX`, `ARTIFACTS_NAME`,
-  `BASE_NAME`, `BUILD_DIR`, `CALLGRIND_LOOPS`,
-  `CONTAINING_PACKAGES`, `CPU=3`, `DEFAULT_FLAGS`, `DIFF_NAME`,
-  `FLAME_APP_DIR`, `FLAME_APP_FILES`, `HEADER_ROWS_NAME`, `MOD_NAME`,
-  `TIMING_LOOPS`, `TRACE_BUILD_DIR`, `TRACE_SKIP_ALL`), then
+  `dev/src/cyg_callback.c`. Whole build instrumented, no file list.
+- No env vars. **`dev/scripts/settings.sh` holds every setting the shell
+  reads, `dev/scripts/shared.sh` (sourced, not executable) every shared shell
+  function**, each alphabetical. `settings.sh` is pure assignments - `#`
+  comments, `NAME=word`, `NAME='quoted'`, `NAME=(list)`, `declare -A
+  NAME=(map)`, no `$`, no command - because `shared.sh` sources it **and
+  `settings.py` parses it at import**, binding every name under the same
+  spelling: `ARTIFACTS_NAME`, `ASSET_REPORT_MANIFEST_SCRIPT_NAME`, `BUILD_DIR`,
+  `CALLGRIND_LOOPS`, `CONTAINING_PACKAGES`, `DEFAULT_FLAGS`,
+  `FLAME_GRAPH_APP_DIR_NAME`, `FLAME_GRAPH_APP_FILE_GLOBS`, `HEADER_ROWS_NAME`,
+  `PROFILE_PINNED_CPU=3`, `REPORT_ASSETS_DIR_NAME`, `REPORT_BASELINE_DIR_NAME`,
+  `REPORT_DIFF_DIR_NAME`, `REPORT_MANIFEST_CHECKSUM_LABEL`,
+  `REPORT_MANIFEST_VERSION_DIFF`/`_FULL`, `REPORT_MODIFIED_DIR_NAME`,
+  `REPORT_RAW_ARCHIVE_SUFFIX` (`.txz`, dot included), `TIMING_LOOPS`,
+  `TRACE_BUILD_DIR`, `TRACE_SKIP_ALL`. `shared.sh` is `absolute_path` /
   `archive_write` / `checksum_compute` / `clock_microseconds` / `command_run` /
   `duration_format` / `elapsed_format` / `install_command_of` / `json_quote` /
   `log_verbose` / `manifest_script_write` / `manifest_value` /
-  `manifest_verify` / `manifest_write` / `absolute_path` /
-  `settings_load` / `toolchain_check`. **A name `settings.py` already holds
-  is not repeated here** - the assets dir arrives as `ASSETS_NAME` through
-  `settings_load`, which is why there is no `ASSETS_DIR`. **Only a value
+  `manifest_verify` / `manifest_write` / `toolchain_check`. **A shell setting
+  is a Python setting, one name in all three languages** - no `ASSETS_NAME`,
+  no `ASSETS_DIR`, no shell-only spelling of anything. **Only a value
   derived from `$0` stays per-script** (`REPO`, `TIMESTAMP`), and says so in
   its comment. `usage_show` and
   `args_parse` stay per-script too. The `*_DIR` are derived in each
   `args_parse`. `TESTS` comes from `tests/perf/Makefile.inc`.
-- **Sourcing `shared.sh` is inert**: it defines names and runs nothing, so it
-  cannot exit its caller. **A function there writes a caller global only where
-  all callers agreed it is the canonical setter, and its `#` comment names
-  every global it sets** - `settings_load` (`ASSETS_NAME`, `CHECKSUM_LABEL`,
-  `DIFF_MANIFEST`, `MANIFEST_SCRIPT`, `REPORT_MANIFEST`), `toolchain_check`
-  (`SPEEDSCOPE_RELEASE`), the batch's own `step_run` (`STATUS`, `FAILED`).
-- **The shell reads settings by eval**, in `settings_load`, which every caller
-  invokes explicitly: `python3 dev/scripts/settings.py --shell` prints
-  `ASSETS_NAME`, `CHECKSUM_LABEL`, `DIFF_MANIFEST`, `MANIFEST_SCRIPT` and
-  `REPORT_MANIFEST` (mapped by `_SHELL_SETTING_VARIABLES`) - one definition
-  across Python and shell, off `REPORT_ASSETS_DIR_NAME`,
-  `REPORT_MANIFEST_CHECKSUM_LABEL`, `ASSET_REPORT_MANIFEST_SCRIPT_NAME` and
-  `REPORT_MANIFEST_VERSION_FULL`/`_DIFF`. **A generated
-  shell fragment was rejected**: it would be a build artifact inside the linted
-  tree - formatted and column-checked, dirty in git every run, unwritable on a
-  read-only checkout, and needed before any Python has run on a fresh clone, so
-  there is no non-circular bootstrap.
-- **The `MANIFEST.txt` contract is `shared.sh`'s** - the two version strings
-  (`curl/perf2html.sh v1`, `curl/perf2html_diff.sh v1`), the checksum label and
-  `checksum_compute` / `manifest_write` / `manifest_value` / `manifest_verify`.
-  All three `.sh` plus `reformat.sh` source it; the strings themselves are
-  **production settings in `settings.py`**, which is where the generators, the
-  shell and `validate_report.py` all read them from.
+- **Sourcing `shared.sh` is inert**: it sources `settings.sh` (assignments
+  only), defines names and runs nothing, so it cannot exit its caller. **A
+  function there writes a caller global only where all callers agreed it is
+  the canonical setter, and its `#` comment names every global it sets** -
+  `toolchain_check` (`SPEEDSCOPE_RELEASE`), the batch's own `step_run`
+  (`STATUS`, `FAILED`).
+- **`settings.sh` is the source of truth for everything the shell reads**;
+  `settings.py` parses it at import (`Settings.shell_settings_read`, the one
+  reader, grammar in the file's header - a `-?[0-9]+` scalar arrives as
+  `int`) and binds every name unchanged, so a shell setting is a Python
+  setting with no mapping table. It is hand-written, never generated: a
+  generated fragment would be a build artifact inside the linted tree, dirty
+  in git every run, unwritable on a read-only checkout, and needed before any
+  Python has run on a fresh clone.
+- **The `MANIFEST.txt` contract is `shared.sh`'s** - `checksum_compute` /
+  `manifest_write` / `manifest_value` / `manifest_verify`, sourced by all
+  three `.sh` plus `reformat.sh`. The two version strings
+  (`curl/perf2html.sh v1`, `curl/perf2html_diff.sh v1`), the checksum label
+  and the manifest script name are **settings in `settings.sh`**
+  (`REPORT_MANIFEST_VERSION_FULL`/`_DIFF`, `REPORT_MANIFEST_CHECKSUM_LABEL`,
+  `ASSET_REPORT_MANIFEST_SCRIPT_NAME`), which is where the shell, the
+  generators and `validate_report.py` (through `settings.py`) all read them
+  from.
 - **Both** modes log every child's output to the artifacts dir's `*.log` and
   print the same failure summary from it. The verbose tee sits behind
   `if ! { ...; }` so `pipefail` can't take the failure before `PIPESTATUS[0]`
@@ -184,7 +191,8 @@ partial line can sit unforwarded for minutes).
 OUTDIR/
 index.html            overview: strip + header table + test suites
 <test>/index.html     summary: logs, raw-data links, top 50 by self
-<test>/flame-graph/   index.html + profile.js (rdtsc trace)
+<test>/flame-graph/   index.html + profile.js (rdtsc trace) + output.txt
+                      (the summary's "trace log")
 <test>/heat-map/      per-line source heat map
 <test>/perf-tool/     output.txt (the summary's "perf log")
 <test>/raw/           <test>txz: callgrind file + speedscope JSON
@@ -287,7 +295,9 @@ Artifacts dir (gitignored): `callgrind.out.<test>.<loops>.<ts>`,
 - **Every share divides by that same thing's own baseline cost**, never a
   global budget: `(new - old)/old`. 1→0 = -100%, 100→90 = -10%, 90→100 =
   +11.1%, 1→1 = 0% (rendered empty). Something the baseline never had is
-  **+100%**. Baselines ride in the synthesized callers diff, keyed by `<fn>`
+  an **infinite share** (`float("inf")` / `Infinity`), printed `▲∞%` and
+  heat-clamped at full scale - never a substitute finite number. Baselines
+  ride in the synthesized callers diff, keyed by `<fn>`
   and `<fn>\n<display path>\n<line>`.
 - **`events` is the recorded counters and nothing else**; every vector is
   written against them. `costs_fit()` pads to recorded width, trims trailing
@@ -365,7 +375,9 @@ Artifacts dir (gitignored): `callgrind.out.<test>.<loops>.<ts>`,
   calling anything. A field shadowing a base-class method takes a trailing
   underscore (`index_`).
 - pyright at `~/.local/bin/pyright`
-  (`pip3 install --user --break-system-packages pyright`; PEP-668 box).
+  (`pip3 install --user --break-system-packages pyright`; PEP-668 box); its
+  config is `dev/src/pyrightconfig.json`, passed by `reformat.sh` as
+  `--project`, with `include` relative to that file (`../scripts`).
   Pylance is not usable - LSP only, ignores argv. `prettier` **reparses what it
   writes**, so a syntax error or unbalanced `</div>` fails the run instead of
   shipping into every page; config `dev/.prettierrc.json` (`printWidth` 79,
@@ -444,8 +456,11 @@ settings.load_into(__name__)
 - **Everything the page's JS reads** is in `_BROWSER_SETTING_NAMES` (incl.
   `HEAT_COLOR_LOGO_STOPS`, `NUMBER_SMALLEST_PRINTED_PERCENT`), shipped as
   **one generated file** from `settings_script_write()`, **frozen to its
-  leaves**. One value, one id, **no hand-matched twin**. **Linked before every
-  reader**; the page's script list is unchanged, nothing new is linked.
+  leaves**. One value, one id, **no hand-matched twin** - which is why
+  `FLAME_GRAPH_APP_DIR_NAME`, `FLAME_GRAPH_APP_FILE_GLOBS` and
+  `REPORT_RAW_ARCHIVE_SUFFIX` are defined once, in `settings.sh`. **Linked
+  before every reader**; the page's script list is unchanged, nothing new is
+  linked.
 - The freeze + reader is `settings_handler.js`, written plainly with bare
   `__NAME__`/`__DATA__`
   markers so `node --check` accepts it unsubstituted; named by
@@ -548,12 +563,14 @@ written, and both `theme.document()` and `callgrind_to_heatmap.render()`
 spread it first.
 
 - It is the **only** `.js` that may not resolve its strings at IIFE top: it
-  loads before `ui_strings.js` by design, so `text_or_fallback(id, text)`
-  reads them at render time and falls back only when `window.ui_strings` is
-  not there yet. It catches `text_of`'s throw for the same reason - an error
-  page that throws shows nothing. **Its ten `str_error_*` entries still live
-  in `ui_strings.js`**; the fallbacks exist for the one moment before it
-  loads, not as a second copy to edit.
+  loads before `ui_strings.js` by design, so `text_or_fallback(id)` reads
+  them at render time. **Its ten `str_error_*` entries live only in
+  `ui_strings.js`** - there is no second copy of the text. When
+  `window.ui_strings` is not there yet, or `text_of` throws on the id, it
+  prints a placeholder naming the id instead (an error page that throws
+  shows nothing), so an error raised before `ui_strings.js` loads shows
+  placeholder labels around a real message, address, callstack and
+  manifest.
 - `history.pushState` to `#report-error`, so **Back restores the page** at
   the address it was showing (kept in `sessionStorage` under
   `error.restore-hash`, and taken from `location.href` first).
@@ -565,9 +582,10 @@ spread it first.
   only ever be the previous run's. Reading the checksum back is
   `manifest_verify`'s job and always was.
 
-**`dev/cyg_callback.c` - the recorder.** Hot path
+**`dev/src/cyg_callback.c` - the recorder.** Hot path
 `if(next < end) { next->fn = fn; next->tsc = rdtsc | flag; ++next; }` = 11/12
-instructions (`cc -O2 -fcf-protection=none -S -masm=intel dev/cyg_callback.c`).
+instructions
+(`cc -O2 -fcf-protection=none -S -masm=intel dev/src/cyg_callback.c`).
 `next` must stay a pointer, `end` a variable. `next == end` = not sampling; all
 else is cold path. Setup is a constructor (incl. `memset`, so no page fault
 lands in a timed call; 327680 records, 5MB static, no test fills it). Header
@@ -659,17 +677,22 @@ pages must not assume more.
 - Numbers: `2.1K`/`2.0G`, `63.2%`, `<0.01%`; exact zero renders empty. The
   notation floor is **`NUMBER_SMALLEST_PRINTED_PERCENT`** (0.01), one
   definition behind `theme.py`'s `percent()`/`signed_percent()` and
-  `heatmap.js`'s `share_text()`/`magnitude_text()`. **Not
+  `theme.js`'s `percent_text()`/`signed_percent_text()`. **Not
   `HEAT_COLOR_SMALLEST_VISIBLE_SHARE`**, which is the log colour scale's
   bottom - confusing the two has been done once already. The notation
-  _strings_ (`<0.01%`, `≈0.00%`, `>1000x`) stay inline, out of
+  _strings_ (`<0.01%`, `≈0.00%`, `>1000x`, `∞%`) stay inline, out of
   `ui_strings.js`. **A diff
   never prints `+`.** A share leads with an arrow, keeping a negative's sign
   (`▲11.1%`, `▼-100.0%`); an amount carries only a minus when negative
-  (U+2212). Under 0.01% → `▲≈0.00%`. **Past 100% a diff share switches to a
-  multiple** (`▲1.30x`), and at or past `99.99x` to `>1000x`;
-  `Numbers.multiple()` and the JS `multiple_text()` are kept in step and tested
-  on the same cases. `≈0.00%` and `>1000x` state a bound, not a value - no
+  (U+2212). Under 0.01% → `▲≈0.00%`; a zero baseline → `▲∞%`. **Past 100% a
+  diff share switches to a multiple** (`▲1.30x`), and at or past `99.99x` to
+  `>1000x`. **The JS notation lives in `theme.js` behind `report_ui`** -
+  `human_text`, `percent_text`, `multiple_text`, `signed_human_text`,
+  `signed_percent_text` - kept in step with `theme.py`'s `NumberFormat`
+  (`human`, `percent`, `multiple`, `signed`, `signed_percent`); `heatmap.js`
+  only picks the signed pair on `IS_DIFF`. There is no checked-in test:
+  verify both by hand on README's rows. `≈0.00%` and `>1000x` state a
+  bound, not a value - no
   sign. **A drop can't pass -100%**, so the multiple branch is rise-only; don't
   "fix" negative multiples.
 - **No decorative borders** - the only drawn lines are drag targets, invisible
@@ -679,9 +702,10 @@ pages must not assume more.
   `<iframe title="report page">` remains. **A page that can only be read by
   hovering is a broken page.** No exact value anywhere - the rounded,
   arrow-signed text is all a page shows, and "copy" carries the same text.
-- **`README.md`'s "Reading a Diff Report" is where diff notation is
-  explained** - copied into every report every run, opened by the strip's
-  "help" link. Keep it in step with "Diff semantics".
+- **`README.md`'s "Reading a Diff Report" is the specification of the diff
+  notation** - copied into every report every run, opened by the strip's
+  "help" link. "Diff semantics", `NumberFormat` and the `theme.js` functions
+  follow it, never the reverse: every row there is a test case.
 - Column widths: exact `ch` counts; the header label is every column's floor -
   **no column is ever narrower than its own title**, at rest, after a drag or a
   fill. One rule in two places, `column_widths()` (JS) and `table_render()`
@@ -725,7 +749,12 @@ ramp - the wordmark is one caller, not a special case. Cross-frame talk is
 `hash_changed` up. `frame.js` keeps only what is about the nesting itself -
 `hash_parse`/`hash_build` for `#<view>[/<inner>]`, `hash_for_href`,
 `view_show`, `title_publish`/`selection_path`, `reset_broadcast`, the
-delegated click handler and the listener for its **child** iframe.
+delegated click handler and the listener for its **child** iframe. The
+"reset columns" click handler carries a **deliberate error-overlay test
+hook**: the `LAYOUT_RESET_RATE_LIMIT_CLICKS`th click within
+`LAYOUT_RESET_RATE_LIMIT_WINDOW_MS` throws `str_error_reset_columns_too_fast`
+("slow down...") on purpose, uncaught, so the overlay can be exercised from
+any report; the relayed `report_ui:reset_columns` message is not limited.
 **Moving a helper into `frame.js` is the wrong direction** - ask whether any
 page that is not a frame would want it, and if so it belongs in `theme.js`
 behind `window.report_ui`.

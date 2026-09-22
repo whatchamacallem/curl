@@ -425,10 +425,11 @@ class BuildReport:
         return columns, rows
 
     # A delta as a percentage of that same thing's own baseline. Something
-    # the baseline never had is +100%. None when there is no change at all.
+    # the baseline never had is an infinite share, which prints "∞%" and
+    # colors at full scale. None when there is no change at all.
     def diff_share(self, delta: int, baseline: int | None) -> float | None:
         if not baseline:
-            return 100.0 if delta else None
+            return math.copysign(math.inf, delta) if delta else None
         return 100.0 * delta / abs(baseline)
 
     # Write one test's diff summary page.

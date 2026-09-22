@@ -1,4 +1,4 @@
-/* dev/cyg_callback.c -- enter/exit recorder for an
+/* dev/src/cyg_callback.c -- enter/exit recorder for an
  * -finstrument-functions build.
  *
  * Linked into the perf executable by dev/perf2html.sh and exported

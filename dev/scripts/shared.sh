@@ -1,61 +1,16 @@
+# dev/scripts/shared.sh
 
-# the extension of a report's raw-data archive, page-visible
-ARCHIVE_SUFFIX=.txz
-
-# the temporary artifacts directory's default name, beside the report
-ARTIFACTS_NAME=perf2html_temporary_artifacts
-
-# the batch's report directory name for the unmodified build
-BASE_NAME=perf2html_baseline_report
-
-# the tree profiling reads. -O0 attributes cost to the wrong lines
-BUILD_DIR=build-relwithdebinfo
-
-# loops one callgrind run of a test does
-CALLGRIND_LOOPS=200
-
-# the apt package each tool ships in, where tool and package differ.
-# install_command_of() reads it
-declare -A CONTAINING_PACKAGES=(
-  [cmake]=cmake
-  [ninja]=ninja-build
-  [ccache]=ccache
-  [valgrind]=valgrind
-  [taskset]=util-linux
-  [python3]=python3
-  [cksum]=coreutils
-)
-
-# the core every measured run is pinned to. Unpinned WSL2 noise is ~106%
-CPU=3
-
-# cmake flags the batch builds the modified tree with when given none
-DEFAULT_FLAGS=(-D CMAKE_C_FLAGS=-Os)
-
-# the batch's report directory name for the subtraction of the two
-DIFF_NAME=perf2html_diff_report
-
-# the report-root directory holding the one shared speedscope copy
-FLAME_APP_DIR=flame-graph-app
-
-# each glob must match exactly one file in the speedscope release
-FLAME_APP_FILES=(speedscope-*.js speedscope-*.css *.woff2)
-
-# working file the overview reads its LABEL=VALUE rows from. MANIFEST.txt
-# cannot be it, being written after every page exists
-HEADER_ROWS_NAME=header.overview
-
-# the batch's report directory name for the build carrying the flags
-MOD_NAME=perf2html_modified_report
-
-# loops one native timing run of a test does
-TIMING_LOOPS=10000
-
-# the -finstrument-functions tree the flame graph's trace comes from
-TRACE_BUILD_DIR=build-instr
-
-# UINT64_MAX: skip every event, making it a count-only trace run
-TRACE_SKIP_ALL=18446744073709551615
+# absolute_path - echo one path made absolute: a leading "~/" expands,
+# a relative path is taken against $PWD, an absolute one is unchanged.
+# Every script resolves every directory it was handed through this, so a
+# report and its artifacts dir never depend on a later cd.
+absolute_path() {
+  case "$1" in
+    "~/"*) echo "$HOME/${1#"~/"}" ;;
+    /*) echo "$1" ;;
+    *) echo "$PWD/$1" ;;
+  esac
+}
 
 # archive_write - one reproducible tar.xz of a test's recordings, under
 # $out/raw/.
@@ -73,7 +28,8 @@ archive_write() {
   done
   [ -z "$strip" ] || sed -i "s#$strip/##g" "$stage"/*
   command_run tar --sort=name --mtime=@0 --owner=0 --group=0 \
-    --numeric-owner -cJf "$out/raw/$name$ARCHIVE_SUFFIX" -C "$stage" .
+    --numeric-owner -cJf "$out/raw/$name$REPORT_RAW_ARCHIVE_SUFFIX" \
+    -C "$stage" .
   rm -rf "$stage"
 }
 
@@ -180,8 +136,9 @@ log_verbose() { if [ "$VERBOSE" = 1 ]; then echo "$@"; fi; }
 manifest_script_write() {
   local dir="$1" version="$2"
   shift 2
-  local out="$dir/$ASSETS_NAME/$MANIFEST_SCRIPT" row
-  mkdir -p "$dir/$ASSETS_NAME"
+  local assets="$dir/$REPORT_ASSETS_DIR_NAME" row
+  local out="$assets/$ASSET_REPORT_MANIFEST_SCRIPT_NAME"
+  mkdir -p "$assets"
   {
     printf 'window.report_manifest = [\n'
     for row in "$version" "$@"; do
@@ -201,6 +158,7 @@ manifest_value() {
 manifest_verify() {
   local dir="$1" want="$2" role="$3"
   local manifest="$dir/MANIFEST.txt" version recorded found
+  local checksum_label="$REPORT_MANIFEST_CHECKSUM_LABEL"
   if [ ! -f "$manifest" ]; then
     echo "error: $role report has no MANIFEST.txt, so it is not a" \
       "finished report: $dir" >&2
@@ -215,18 +173,18 @@ manifest_verify() {
     echo "       expected: $want" >&2
     exit 2
   fi
-  recorded="$(manifest_value "$dir" "$CHECKSUM_LABEL")"
+  recorded="$(manifest_value "$dir" "$checksum_label")"
   if [ -z "$recorded" ]; then
-    echo "error: $role report has no $CHECKSUM_LABEL= row, so its files" \
+    echo "error: $role report has no $checksum_label= row, so its files" \
       "cannot be verified: $dir" >&2
-    echo "       expected: a $CHECKSUM_LABEL= row beside the version" \
+    echo "       expected: a $checksum_label= row beside the version" \
       "line $want" >&2
     exit 2
   fi
   found="$(checksum_compute "$dir")"
   if [ "$found" != "$recorded" ]; then
     echo "error: $role report does not match its recorded" \
-      "$CHECKSUM_LABEL: $dir" >&2
+      "$checksum_label: $dir" >&2
     echo "       found:    $found" >&2
     echo "       expected: $recorded" >&2
     echo "       (a file was added, removed or edited after the report" \
@@ -250,37 +208,8 @@ manifest_write() {
   {
     printf '%s\n' "$version"
     [ "$#" = 0 ] || printf '%s\n' "$@"
-    printf '%s=%s\n' "$CHECKSUM_LABEL" "$checksum"
+    printf '%s=%s\n' "$REPORT_MANIFEST_CHECKSUM_LABEL" "$checksum"
   } >"$manifest"
-}
-
-# absolute_path - echo one path made absolute: a leading "~/" expands,
-# a relative path is taken against $PWD, an absolute one is unchanged.
-# Every script resolves every directory it was handed through this, so a
-# report and its artifacts dir never depend on a later cd.
-absolute_path() {
-  case "$1" in
-    "~/"*) echo "$HOME/${1#"~/"}" ;;
-    /*) echo "$1" ;;
-    *) echo "$PWD/$1" ;;
-  esac
-}
-
-# settings_load - SETS the caller globals ASSETS_NAME, CHECKSUM_LABEL,
-# DIFF_MANIFEST, MANIFEST_SCRIPT and REPORT_MANIFEST, and is the
-# canonical setter of all five: every script that reads a manifest calls
-# this and no script assigns them itself. Exits 1 when python3 cannot
-# supply them, which is why it is a call and not something sourcing this
-# file does behind the caller's back.
-settings_load() {
-  local script text
-  script="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/settings.py"
-  if ! text="$(python3 "$script" --shell)"; then
-    echo "error: cannot read the manifest settings out of $script" >&2
-    echo "       (python3 is required: apt install python3)" >&2
-    exit 1
-  fi
-  eval "$text"
 }
 
 # toolchain_check - the only toolchain check the user-facing scripts

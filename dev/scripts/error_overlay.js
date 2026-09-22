@@ -144,7 +144,7 @@ window.report_error_overlay = (function () {
       root,
       "h2",
       "",
-      text_or_fallback("str_error_heading_message", "message") +
+      text_or_fallback("str_error_heading_message") +
         " (" +
         source_label +
         ")",
@@ -167,8 +167,7 @@ window.report_error_overlay = (function () {
       root,
       "pre",
       "",
-      described.stack ||
-        text_or_fallback("str_error_callstack_unavailable"),
+      described.stack || text_or_fallback("str_error_callstack_unavailable"),
     );
     element_append(
       root,
@@ -180,8 +179,7 @@ window.report_error_overlay = (function () {
       root,
       "pre",
       "",
-      manifest_text() ||
-        text_or_fallback("str_error_manifest_unavailable"),
+      manifest_text() || text_or_fallback("str_error_manifest_unavailable"),
     );
     return root;
   }
@@ -248,12 +246,12 @@ window.report_error_overlay = (function () {
   function text_or_fallback(string_id) {
     const strings = window.ui_strings;
     if (!strings || typeof strings.text_of !== "function") {
-      return "(ui strings missing)";
+      return "(ui_strings.js not loaded: " + string_id + ")";
     }
     try {
       return strings.text_of(string_id);
     } catch (ignored) {
-      return "(missing ui string)";
+      return "(ui_strings.js missing string: " + string_id + ")";
     }
   }
 

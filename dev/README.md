@@ -11,14 +11,15 @@ generators.
 
 - `perf2html.sh` : Capture timing data and generate a report.
 - `perf2html_diff.sh` : Generate a report about the difference between two
-  perf2html.sh` reports.
+  `perf2html.sh` reports.
 - `perf2html_batch.sh` : Generate 3 reports, a baseline version, a modified
   version, and a diff.
 
 ```txt
 perf2html.sh [debug-flags] [--report=DIR] [cmake-flags...]
     Builds RelWithDebInfo, profiles every TESTS_C test under callgrind plus a
-    native perf stat timing run, generates one report.
+    native perf stat timing run and a traced run for the flame graph,
+    generates one report.
     --report=DIR      Defaults to perf2html_baseline_report, or
                       perf2html_modified_report when a cmake flag is given.
                       Pass it yourself after a source-only change.
@@ -39,8 +40,6 @@ perf2html_batch.sh [debug-flags] [--target-dir=DIR] [cmake-flags...]
 ```
 
 These are developer flags for the iterative development of `perf2html` itself.
-`perf2html_diff.sh` was designed to compare archived reports and so it does not
-touch the profiler artifacts directory at all.
 
 ```txt
     --artifacts=TMP   The profiler artifacts directory. Defaults to
@@ -106,8 +105,8 @@ view it may also be a percentage of a file or function if selected.
 ### Diff report
 
 A diff report uses percentages the same way a stock market ticker does. If the
-system under test takes half as long per-invocation in the modified profile then
-it is at 50%, where smaller is better.
+system under test takes half as long per-invocation in the modified profile
+then it is at 50%, where smaller is better.
 
 | counts             |     mine |
 | ------------------ | -------: |
@@ -123,21 +122,21 @@ it is at 50%, where smaller is better.
 
 The flame graph is a recording, not a model: every box is one call that
 happened, as wide as it took. The test runs in a build with
-`-finstrument-functions`, where a hook (`dev/cyg_callback.c`) reads the CPU's
-time stamp counter at every function entry and exit. "Time Order" is the order
-the calls were made in.
+`-finstrument-functions`, where a hook (`dev/src/cyg_callback.c`) reads the
+CPU's time stamp counter at every function entry and exit. "Time Order" is the
+order the calls were made in.
 
-It shows up to 10 calls in a row, 10 KB at most, taken from the middle of the
-run, when caches are warm. Times are nanoseconds since the start of the run.
-Both hooks cost time too and that time is in the boxes, so a function of a few
+It shows up to 200 top-level calls in a row, taken from the middle of the run,
+when caches are warm. Times are nanoseconds since the start of the run. Both
+hooks cost time too and that time is in the boxes, so a function of a few
 instructions looks slower than it is, and the traced run is slower than the
 perf log's native one. Use the perf log for speed and the flame graph for
 shape: what calls what, in which order, and which call was the slow one. The
 summary's "trace log" has the commands and the traced run's own output, and
 "raw data" links the same profile as a speedscope JSON file.
 
-The merged "all" report and a diff have no flame graph: profiler artifacts neither add
-up nor subtract.
+The merged "all" report and a diff have no flame graph: a trace neither adds up
+nor subtracts.
 
 Scroll to pan and pinch or Cmd/Ctrl+scroll to zoom, on both the minimap and the
 main view. Click a frame for its stats.
