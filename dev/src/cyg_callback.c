@@ -25,7 +25,7 @@
 #include <unistd.h>
 #include <x86intrin.h>
 
-#define CYG_CALLBACKS_MAGIC 0xabcdef0123456789ull
+#define CYG_CALLBACKS_MAGIC 0xABCDEF0123456789ull
 #define CYG_CALLBACKS_MAX_REC (1u << 16)
 #define CYG_CALLBACKS_EXIT_BIT (1ull << 63)
 

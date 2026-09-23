@@ -110,7 +110,8 @@ measures nothing and subtracts two reports' `raw/` archives;
 - `reformat.sh` **takes no argument but its flags**: it **runs the batch
   itself**, so the three default names are the only reports there are, and
   `MANIFEST.txt` line 1 decides each one's `--diff`. **It is the only
-  `validate_report.py`, `pyright`, `ruff` and `prettier` call anywhere**,
+  `validate_report.py`, `screenshots.py`, `pyright`, `ruff` and `prettier`
+  call anywhere**,
   and with the batch is the generators' test suite. It sources **both**
   `settings.sh` and `shared.sh`, like the other three - it reads the two
   `REPORT_MANIFEST_VERSION_*` strings, and without the first no report can
@@ -122,6 +123,17 @@ measures nothing and subtracts two reports' `raw/` archives;
   `source_scan_run` **last**. A formatting slip is thus reported before the
   profiling run, not an hour after it; and formatting precedes the batch, so
   a page asset is formatted _before_ the reports are generated from it.
+- **`screenshots.py` is verification, not shipping code**: `reformat.sh` is
+  its one caller, it shoots the modified and diff reports through
+  `index.html` at each `_VIEWS` hash, and its PNGs land in `dev/screenshots/`
+  - **outside every report**, because a checksum covers a report's own files
+  only. It imports **no settings**: its browser list, render budget,
+  viewport and output directory are its own `_SCREENSHOT_*` constants, so
+  nothing about taking a shot reaches `settings.sh`, the three shipping
+  scripts or a page's settings object. A `_VIEWS` entry is a **view**, not
+  data - two hashes differing only in which test or counter they name are
+  one shot - and **no entry names a test**: the anchors come from the timer
+  framework (`lib/curlx/timeval.c`, `curlx_now`) and the synthetic `all`.
 - **`reformat.sh` reaches source and nothing else**, collected through
   `files_of()`, the **one door** every stage uses: `*.sh` under `dev/`,
   `*.c *.h` under `src/`, `*.py *.js *.css *.html` under `scripts/`, and
@@ -396,7 +408,11 @@ kept (`_PX`, `_MS`, `_PERCENT`, `_SHARE`, `_CHARS`, `_BYTES`).
 - **Stays out**: format facts nobody may retune, class instances, derived
   values, **and anything only verification reads** - so `VALIDATE_*`, the two
   `ReportLayout`s and `SOURCE_SCAN_*` are `validate_report.py`'s own
-  constants. **Verification may read production settings**, never copy one.
+  constants, and `_SCREENSHOT_*` is `screenshots.py`'s. **Verification may
+  read production settings**, never copy one. A setting in `settings.sh`
+  is read by the three shipping scripts _and_ serialized into every
+  report's browser object, so **putting a verification-only value there
+  ships it**: `screenshots.py` imports no settings at all.
 - **A file declares what it reads; `load_into()` assigns**: an annotation
   naming the type **plus an empty sentinel of that type**, then
   `settings.load_into(__name__)`, before anything else. **The sentinel is

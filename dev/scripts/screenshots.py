@@ -8,19 +8,12 @@
 # Every anchor a hash names is from the timer framework rather than from
 # what is timed -- tests/perf/first.c and lib/curlx/timeval.c are in every
 # profile whatever TESTS_C holds, so no entry here names a test.
+#
+# Nothing here is a setting: reformat.sh is the only caller, no report
+# carries a shot, and a browser a page never sees is not the pages' to read.
 from __future__ import annotations
 
 import argparse, os, shutil, subprocess, sys
-
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import settings
-
-SCREENSHOT_BROWSER_CANDIDATES: tuple[str, ...] = ()
-SCREENSHOT_DIR_NAME: str = ""
-SCREENSHOT_RENDER_BUDGET_MS: int = 0
-SCREENSHOT_VIEWPORT_HEIGHT_PX: int = 0
-SCREENSHOT_VIEWPORT_WIDTH_PX: int = 0
-settings.load_into(__name__)
 
 
 # Screenshots - drives one headless browser over a report's views.
@@ -70,7 +63,7 @@ class Screenshots:
         if os.path.exists(out_path):
             os.remove(out_path)
         window = (
-            f"{SCREENSHOT_VIEWPORT_WIDTH_PX},{SCREENSHOT_VIEWPORT_HEIGHT_PX}"
+            f"{_SCREENSHOT_VIEWPORT_WIDTH_PX},{_SCREENSHOT_VIEWPORT_HEIGHT_PX}"
         )
         result = subprocess.run(
             [
@@ -81,7 +74,7 @@ class Screenshots:
                 "--hide-scrollbars",
                 f"--window-size={window}",
                 f"--screenshot={self.browser_path_of(out_path)}",
-                f"--virtual-time-budget={SCREENSHOT_RENDER_BUDGET_MS}",
+                f"--virtual-time-budget={_SCREENSHOT_RENDER_BUDGET_MS}",
                 self.page_url_of(view_hash),
             ],
             capture_output=True,
@@ -101,7 +94,7 @@ class Screenshots:
 
 # The first candidate present, or none when this box has no browser.
 def browser_find() -> str | None:
-    for candidate in SCREENSHOT_BROWSER_CANDIDATES:
+    for candidate in _SCREENSHOT_BROWSER_CANDIDATES:
         if os.path.isfile(candidate):
             return candidate
         found = shutil.which(candidate)
@@ -117,7 +110,7 @@ def main() -> int:
     parser.add_argument(
         "--out",
         default="",
-        help=f"where the PNGs go (default dev/{SCREENSHOT_DIR_NAME})",
+        help=f"where the PNGs go (default dev/{_SCREENSHOT_DIR_NAME})",
     )
     namespace = parser.parse_args()
 
@@ -130,7 +123,7 @@ def main() -> int:
     if browser is None:
         print(
             "error: no browser found. Tried: "
-            + ", ".join(SCREENSHOT_BROWSER_CANDIDATES),
+            + ", ".join(_SCREENSHOT_BROWSER_CANDIDATES),
             file=sys.stderr,
         )
         print(
@@ -140,7 +133,9 @@ def main() -> int:
         return 1
 
     out_dir = namespace.out or os.path.join(
-        os.path.dirname(os.path.abspath(__file__)), "..", SCREENSHOT_DIR_NAME
+        os.path.dirname(os.path.abspath(__file__)),
+        "..",
+        _SCREENSHOT_DIR_NAME,
     )
     out_dir = os.path.abspath(out_dir)
     os.makedirs(out_dir, exist_ok=True)
@@ -182,6 +177,29 @@ _ANCHOR_FUNCTION = "curlx_now"
 # The synthetic test merging every real one. It is a view of the report
 # rather than a test name, so it survives any change to TESTS_C.
 _MERGED_TEST = "all"
+
+# Every browser this will drive, in the order it tries them. A WSL box has
+# no linux browser of its own, so the Windows ones close the list.
+_SCREENSHOT_BROWSER_CANDIDATES: tuple[str, ...] = (
+    "chromium",
+    "chromium-browser",
+    "google-chrome",
+    "google-chrome-stable",
+    "/mnt/c/Program Files/Google/Chrome/Application/chrome.exe",
+    "/mnt/c/Program Files (x86)/Microsoft/Edge/Application/msedge.exe",
+)
+
+# Where the PNGs land, beside the scripts rather than in a report: a shot
+# is of a report, not part of one, and no checksum covers it.
+_SCREENSHOT_DIR_NAME = "screenshots"
+
+# How long a page gets to render before the shot is taken. Virtual time,
+# so it costs nothing when the page settles sooner.
+_SCREENSHOT_RENDER_BUDGET_MS = 8000
+
+# The viewport every shot is taken at, the target this is designed against.
+_SCREENSHOT_VIEWPORT_HEIGHT_PX = 768
+_SCREENSHOT_VIEWPORT_WIDTH_PX = 1366
 
 # Every view worth a shot, as (file name, hash). Each renders through a
 # code path no earlier entry reaches; a view showing other data does not.

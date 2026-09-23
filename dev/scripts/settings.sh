@@ -69,29 +69,6 @@ REPORT_MODIFIED_DIR_NAME=perf2html_modified_report
 # the extension of a report's raw-data archive, one per test, page-visible
 REPORT_RAW_ARCHIVE_SUFFIX=.txz
 
-# where screenshots.py writes, beside the scripts rather than in a report:
-# a shot is of a report, not part of one, and no checksum covers it
-SCREENSHOT_DIR_NAME=screenshots
-
-# every browser screenshots.py will drive, in the order it tries them. A
-# WSL box has no linux browser of its own, so the Windows ones close the list
-SCREENSHOT_BROWSER_CANDIDATES=(
-  chromium
-  chromium-browser
-  google-chrome
-  google-chrome-stable
-  '/mnt/c/Program Files/Google/Chrome/Application/chrome.exe'
-  '/mnt/c/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'
-)
-
-# how long a page gets to render before the shot is taken. Virtual time, so
-# it costs nothing when the page settles sooner
-SCREENSHOT_RENDER_BUDGET_MS=8000
-
-# the viewport every shot is taken at, the target this is designed against
-SCREENSHOT_VIEWPORT_HEIGHT_PX=768
-SCREENSHOT_VIEWPORT_WIDTH_PX=1366
-
 # When the profiler run started, the way __DATE__ is when the compiler
 # ran. Do not move.
 TIMESTAMP="$(date +%s)"

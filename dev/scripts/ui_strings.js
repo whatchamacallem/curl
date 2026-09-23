@@ -54,13 +54,13 @@ window.ui_strings = (function () {
     str_error_flame_graph_never_started:
       "flame graph viewer did not start within {seconds}s",
     str_error_hash_counter_unknown:
-      "the address names a counter this report has no column for: {counter}",
+      "url encodes counter this report has no column for: {counter}",
     str_error_hash_file_unknown:
-      "the address names a file this report has no source for: {file}",
+      "url encodes a file this report has no source for: {file}",
     str_error_hash_function_unknown:
-      "the address names a function this report never recorded: {function}",
+      "url encodes a function address this report never recorded: {function}",
     str_error_hash_view_unknown:
-      "the address names a view this report does not have: {view}",
+      "url encodes a view this report does not have: {view}",
     str_error_heading_address: "address",
     str_error_heading_callstack: "callstack",
     str_error_heading_manifest: "manifest",
