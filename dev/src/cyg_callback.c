@@ -9,25 +9,9 @@
  *                         nothing
  *   PERF_TRACE_SKIP=N     let the first N events pass without recording them
  *
- * While sampling, the hook is a range check, two stores and a pointer bump:
- *
- *   if(next < end) { next->fn = fn; next->tsc = rdtsc | flag; ++next; }
- *
  * Bit 63 of the stamp is CYG_CALLBACKS_EXIT_BIT, so the hook ORs it in without
- * masking: rdtsc counts from boot and bit 63 is ~146 years of uptime away at
- * this box's ~2GHz. Readers mask it off (trace_to_speedscope.py's ~EXIT_BIT).
- *
- * FILE.maps is a copy of /proc/self/maps, which turns an address into object
- * + offset, followed by one line per loaded object naming the build the
- * addresses came from:
- *
- *   buildid <hex NT_GNU_BUILD_ID> <object path>
- *
- * The path is what the dynamic loader called the object, or /proc/self/exe
- * resolved for the main executable, which the loader leaves unnamed. An
- * object carrying no build-id note gets no line. trace_to_speedscope.py
- * refuses to symbolize an object whose build-id no longer matches, so a
- * stale trace cannot resolve to a newer build's symbols.
+ * masking: rdtsc counts from boot and bit 63 is >100 years of uptime away at
+ * current processor frequencies.
  *
  */
 #define _GNU_SOURCE
@@ -41,8 +25,8 @@
 #include <unistd.h>
 #include <x86intrin.h>
 
-#define CYG_CALLBACKS_MAGIC 0x32475943ull
-#define CYG_CALLBACKS_MAX_REC 327680u
+#define CYG_CALLBACKS_MAGIC 0xabcdef0123456789ull
+#define CYG_CALLBACKS_MAX_REC (1u << 16)
 #define CYG_CALLBACKS_EXIT_BIT (1ull << 63)
 
 /* cyg_callback_record_t - one enter or exit, as written to the file */
@@ -72,20 +56,18 @@ typedef struct {
 } cyg_callbacks_t;
 
 /* the one recorder. Final starts at buf so pause/resume stay paired */
-static cyg_callbacks_t s_cyg_callbacks =
-    {{{0, 0}}, NULL, NULL, s_cyg_callbacks.buf, 1, 0, 0, 0, 0, NULL};
+static cyg_callbacks_t s_cyg_callbacks = {
+    {{0, 0}}, NULL, NULL, s_cyg_callbacks.buf, 1, 0, 0, 0, 0, NULL};
 
 /* cyg_callback_now_ns - monotonic wall clock, paired with a stamp read */
-__attribute__((cold)) static uint64_t cyg_callback_now_ns(void)
-{
+__attribute__((cold)) static uint64_t cyg_callback_now_ns(void) {
   struct timespec ts;
   clock_gettime(CLOCK_MONOTONIC, &ts);
   return (uint64_t)ts.tv_sec * 1000000000ull + (uint64_t)ts.tv_nsec;
 }
 
 /* cyg_callback_pause - stop recording, keeping the stop point. Nests */
-__attribute__((cold)) static void cyg_callback_pause(void)
-{
+__attribute__((cold)) static void cyg_callback_pause(void) {
   cyg_callbacks_t *cb = &s_cyg_callbacks;
   if (!cb->holds++) {
     cb->final = cb->next;
@@ -94,8 +76,7 @@ __attribute__((cold)) static void cyg_callback_pause(void)
 }
 
 /* cyg_callback_resume - undo one pause, recording again at the last hold */
-__attribute__((cold)) static void cyg_callback_resume(void)
-{
+__attribute__((cold)) static void cyg_callback_resume(void) {
   cyg_callbacks_t *cb = &s_cyg_callbacks;
   if (!--cb->holds) {
     cb->next = cb->final;
@@ -105,8 +86,7 @@ __attribute__((cold)) static void cyg_callback_resume(void)
 
 /* cyg_callback_record - the hot path. Keep it a check, two stores, a bump */
 __attribute__((always_inline, hot)) static inline void
-cyg_callback_record(void *fn, uint64_t flag)
-{
+cyg_callback_record(void *fn, uint64_t flag) {
   cyg_callbacks_t *cb = &s_cyg_callbacks;
   // next == end when recording is disabled.
   if (cb->next < cb->end) {
@@ -123,22 +103,19 @@ void __cyg_profile_func_enter(void *fn, void *site);
 void __cyg_profile_func_exit(void *fn, void *site);
 
 /* __cyg_profile_func_enter - GCC's hook on entering an instrumented body */
-__attribute__((hot)) void __cyg_profile_func_enter(void *fn, void *site)
-{
+__attribute__((hot)) void __cyg_profile_func_enter(void *fn, void *site) {
   (void)site;
   cyg_callback_record(fn, 0);
 }
 
 /* __cyg_profile_func_exit - GCC's hook on leaving an instrumented body */
-__attribute__((hot)) void __cyg_profile_func_exit(void *fn, void *site)
-{
+__attribute__((hot)) void __cyg_profile_func_exit(void *fn, void *site) {
   (void)site;
   cyg_callback_record(fn, CYG_CALLBACKS_EXIT_BIT);
 }
 
 /* cyg_callback_init - set up before main, so no fault lands in a timed call */
-__attribute__((constructor)) static void cyg_callback_init(void)
-{
+__attribute__((constructor)) static void cyg_callback_init(void) {
   cyg_callbacks_t *cb = &s_cyg_callbacks;
   const char *skip_str = getenv("PERF_TRACE_SKIP");
   cb->out = getenv("PERF_TRACE_OUT");
@@ -160,10 +137,11 @@ __attribute__((constructor)) static void cyg_callback_init(void)
 /* cyg_callback_buildid_write - one "buildid <hex> <path>" line per object,
  * walking each one's PT_NOTE for its NT_GNU_BUILD_ID. Cold: runs at exit */
 __attribute__((cold)) static int
-cyg_callback_buildid_write(struct dl_phdr_info *info, size_t size, void *data)
-{
+cyg_callback_buildid_write(struct dl_phdr_info *info, size_t size,
+                           void *data) {
   FILE *out = data;
   char self[4096];
+  char resolved[4096];
   const char *name = info->dlpi_name;
   size_t index, byte;
   ssize_t length;
@@ -176,6 +154,10 @@ cyg_callback_buildid_write(struct dl_phdr_info *info, size_t size, void *data)
     self[length] = '\0';
     name = self;
   }
+  /* the maps lines name the file, the loader names the soname pointing at
+   * it, so resolve to the one spelling a reader can match both against */
+  if (realpath(name, resolved))
+    name = resolved;
   for (index = 0; index < info->dlpi_phnum; index++) {
     const ElfW(Phdr) *header = &info->dlpi_phdr[index];
     const unsigned char *walk, *end;
@@ -189,8 +171,8 @@ cyg_callback_buildid_write(struct dl_phdr_info *info, size_t size, void *data)
       const unsigned char *desc = note_name + ((note->n_namesz + 3) & ~3u);
       if (desc > end || desc + note->n_descsz > end)
         break;
-      if (note->n_type == NT_GNU_BUILD_ID && note->n_namesz == 4
-          && !memcmp(note_name, "GNU", 4) && note->n_descsz) {
+      if (note->n_type == NT_GNU_BUILD_ID && note->n_namesz == 4 &&
+          !memcmp(note_name, "GNU", 4) && note->n_descsz) {
         fputs("buildid ", out);
         for (byte = 0; byte < note->n_descsz; byte++)
           fprintf(out, "%02x", desc[byte]);
@@ -204,8 +186,7 @@ cyg_callback_buildid_write(struct dl_phdr_info *info, size_t size, void *data)
 }
 
 /* cyg_callback_dump - write the trace and a /proc/self/maps copy at exit */
-__attribute__((destructor)) static void cyg_callback_dump(void)
-{
+__attribute__((destructor)) static void cyg_callback_dump(void) {
   cyg_callbacks_t *cb = &s_cyg_callbacks;
   uint64_t hdr[8];
   char path[4096], line[4096];
@@ -226,9 +207,9 @@ __attribute__((destructor)) static void cyg_callback_dump(void)
     perror(cb->out);
     return;
   }
-  if (fwrite(hdr, sizeof(hdr), 1, f) != 1
-      || fwrite(cb->buf, sizeof(cyg_callback_record_t), (size_t)hdr[1], f)
-             != (size_t)hdr[1]) {
+  if (fwrite(hdr, sizeof(hdr), 1, f) != 1 ||
+      fwrite(cb->buf, sizeof(cyg_callback_record_t), (size_t)hdr[1], f) !=
+          (size_t)hdr[1]) {
     perror(cb->out);
     fclose(f);
     return;

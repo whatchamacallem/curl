@@ -22,7 +22,7 @@ _BUILDID_KEYWORD = "buildid"
 _BUILDID_LABEL = "Build ID"
 
 # The high bit cyg.c sets on a timestamp to mark a function exit.
-_EXIT_BIT = 1 << 63
+_FUNCTION_EXIT_BIT = 1 << 63
 
 # The schema the written document declares. A format fact, not a setting:
 # another value names a schema speedscope does not know and is rejected.
@@ -33,8 +33,8 @@ _FLAME_GRAPH_FILE_FORMAT_SCHEMA_URL = (
 # How many 64-bit words the trace file's header takes.
 _HEADER_WORDS = 8
 
-# "CYG2" -- the first word of a trace cyg.c wrote.
-_MAGIC = 0x32475943
+# The first word of a trace cyg_callback.c wrote, its CYG_CALLBACKS_MAGIC.
+_HEADER_MAGIC = 0xabcdef0123456789
 
 # How many 64-bit words one recorded event takes: the function, then the stamp.
 _RECORD_WORDS = 2
@@ -203,7 +203,7 @@ class TraceToSpeedscope:
         runs: list[list[TraceToSpeedscope.CallSpan]] = [[]]
         open_records: list[int] = []
         for record, function in enumerate(trace.functions):
-            if not trace.stamps[record] & _EXIT_BIT:
+            if not trace.stamps[record] & _FUNCTION_EXIT_BIT:
                 open_records.append(record)
             elif not open_records:
                 runs.append([])
@@ -236,11 +236,12 @@ class TraceToSpeedscope:
             stamp = trace.stamps[record]
             frame = order.setdefault(trace.functions[record], len(order))
             at = round(
-                ((stamp & ~_EXIT_BIT) - trace.origin_tsc) / trace.tsc_per_ns
+                ((stamp & ~_FUNCTION_EXIT_BIT) - trace.origin_tsc)
+                / trace.tsc_per_ns
             )
             events.append(
                 {
-                    "type": "C" if stamp & _EXIT_BIT else "O",
+                    "type": "C" if stamp & _FUNCTION_EXIT_BIT else "O",
                     "frame": frame,
                     "at": at,
                 }
@@ -335,7 +336,7 @@ class TraceToSpeedscope:
                 " was cut off while writing it"
             )
         words.frombytes(raw)
-        if len(words) < _HEADER_WORDS or words[0] != _MAGIC:
+        if len(words) < _HEADER_WORDS or words[0] != _HEADER_MAGIC:
             sys.exit(f"error: {trace_file}: not a cyg_callback.c trace")
         _, kept, seen, skip, t0_ns, t0_tsc, t1_ns, t1_tsc = words[
             :_HEADER_WORDS

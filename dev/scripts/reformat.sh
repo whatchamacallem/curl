@@ -43,8 +43,9 @@ _DIR_SRC=../src
 
 # the hard column limit every kind of source is checked against
 _COLUMNS_MAX=79
+_CLANG_FORMAT_CONFIG=../src/.clang-format
 _PRETTIER_CONFIG=.prettierrc.json
-_PYRIGHT_CONFIG=../src/pyrightconfig.json
+_PYRIGHT_CONFIG=pyrightconfig.json
 
 # The one markdown file that is dev/ source. Every other .md under dev/ is
 # the author's notes -- DECLAUDE.md and its kin -- and no stage reaches it.
@@ -166,7 +167,7 @@ format_c() {
   mapfile -t _extra < <(files_of "$_DIR_SRC" '*.h')
   _files+=("${_extra[@]}")
 
-  _TOOL_ARGS=(--style=file)
+  _TOOL_ARGS=(--style=file:"$_CLANG_FORMAT_CONFIG")
   if [ "$_CHECK" = 1 ]; then
     _TOOL_ARGS+=(--dry-run --Werror)
   else

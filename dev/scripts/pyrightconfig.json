@@ -1,7 +1,7 @@
 {
-  "include": ["../scripts"],
+  "include": ["."],
   "exclude": ["**/__pycache__"],
-  "executionEnvironments": [{ "root": "../scripts" }],
+  "executionEnvironments": [{ "root": "." }],
   "typeCheckingMode": "standard",
   "pythonVersion": "3.11",
   "reportMissingImports": "error"

@@ -110,8 +110,8 @@ after an earlier one failed**.
   **`README.md` is the one `.md`** (`_MARKDOWN_NAME` - an allow-list, so
   `DECLAUDE.md` is out by not being named). **A config file is untouched
   by every stage** - no `.json`, `.yml` or `.toml` is formatted, linted or
-  column-checked; `.prettierrc.json` and `ruff.toml` live in `scripts/`,
-  `pyrightconfig.json` in `src/`, `.clang-format` at `dev/`.
+  column-checked; `.prettierrc.json`, `ruff.toml` and `pyrightconfig.json`
+  live in `scripts/`, `.clang-format` in `src/`.
   **`reformat.sh` always passes `--config`**, so a config need not sit where
   a tool's own upward search would find it.
 - **The batch owns every deletion of the artifacts dir** - it passes
@@ -448,9 +448,14 @@ kept (`_PX`, `_MS`, `_PERCENT`, `_SHARE`, `_CHARS`, `_BYTES`).
 - **`cyg_callback.c`**: `next` must stay a pointer and `end` a variable, so
   the hot path stays 11/12 instructions; `next == end` = not sampling. Setup
   is a constructor (incl. `memset`, so no page fault lands in a timed call).
-  Its header comment is the format reference - including the `buildid <hex>
-  <path>` lines the dump appends to the `.maps` copy, one per loaded object,
-  which is what lets a reader refuse a stale trace. Single-threaded.
+  The dump appends one `buildid <hex> <path>` line per loaded object to the
+  `.maps` copy, which is what lets a reader refuse a stale trace. **That path
+  is a `realpath`**: the loader hands `dlpi_name` the soname it asked for
+  (`libcurl.so.4`) while the maps lines name the file it resolved to
+  (`libcurl.so.4.8.0`), and `buildid_verify` matches the two by string, so
+  writing `dlpi_name` raw makes every run die "records no build-id".
+  **`CYG_CALLBACKS_MAGIC` is `trace_to_speedscope.py`'s `_MAGIC`** - a header
+  fact in two languages, so change neither alone. Single-threaded.
 - **`trace_to_speedscope.py`** takes the busiest run's first
   `FLAME_GRAPH_MAX_RECORDED_CALLS` = 200 complete calls, hard-coded for the
   current `TESTS_C` - retune if a test's shape changes. Must run while
