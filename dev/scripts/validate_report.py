@@ -303,6 +303,12 @@ class ValidateReport:
                     f"MANIFEST.txt has no '{label}=' header row, so a"
                     f" reader of this report cannot show it: {path}"
                 )
+        stamp = self.manifest_stamp_value(text)
+        if not stamp.isdigit():
+            self.fail(
+                f"MANIFEST.txt stamp= row starts {stamp!r}, expected the"
+                f" unix time: {path}"
+            )
         recorded = self.manifest_value(text, _REPORT_MANIFEST_CHECKSUM_LABEL)
         if not recorded:
             self.fail(
@@ -322,6 +328,10 @@ class ValidateReport:
                 " edited"
                 f" after the report was written: {out_dir}"
             )
+
+    # The unix time out of a stamp= row, whose human tail nothing parses.
+    def manifest_stamp_value(self, text: str) -> str:
+        return self.manifest_value(text, "stamp").split(" ", 1)[0]
 
     # One LABEL= row out of a manifest's text.
     def manifest_value(self, text: str, label: str) -> str:

@@ -433,11 +433,11 @@ screenshots_run() {
 # regenerate_cancel - say why the recordings cannot be reused, then drop
 # the flag. Measuring again always answers, so this is a notice, not a fault.
 regenerate_cancel() {
-  echo "regenerating: " "$1"
+  echo "regenerating: $1"
   _REGENERATE=0
 }
 
-# regenerate_stamp_of - echo one report's stamp= row, or exit 1 having echoed
+# regenerate_stamp_of - echo one report's unix stamp, or exit 1 having echoed
 # why it has none. The caller withdraws on that reason, so neither prints here.
 regenerate_stamp_of() {
   local _path="$1" _name _stamp
@@ -447,7 +447,11 @@ regenerate_stamp_of() {
     echo "$_name is not a finished report"
     return 1
   fi
+
+  # the row carries a human date after the unix time, and an artifact is
+  # named by the unix time alone, so the tail must not reach a find glob
   _stamp="$(manifest_value "$_path" stamp)"
+  _stamp="${_stamp%% *}"
   if [ -z "$_stamp" ]; then
     echo "$_name records no stamp= row"
     return 1

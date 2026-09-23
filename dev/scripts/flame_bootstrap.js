@@ -16,18 +16,11 @@
     return false;
   }
   function startup_failure() {
-    var strings = window.ui_strings;
-    if (strings && typeof strings.text_fill === "function") {
-      return new Error(
-        strings.text_fill(STARTUP_FAILED_STRING_ID, {
-          seconds:
-            (FLAME_GRAPH_STARTUP_POLL_MAX_ATTEMPTS *
-              FLAME_GRAPH_STARTUP_POLL_DELAY_MS) /
-            1000,
-        }),
-      );
-    }
-    return new Error(STARTUP_FAILED_STRING_ID);
+    var waited_seconds =
+      (FLAME_GRAPH_STARTUP_POLL_MAX_ATTEMPTS *
+        FLAME_GRAPH_STARTUP_POLL_DELAY_MS) /
+      1000;
+    return new Error(STARTUP_FAILED_STRING_ID + " " + waited_seconds);
   }
   if (!load_attempt()) {
     var retry_count = 0,

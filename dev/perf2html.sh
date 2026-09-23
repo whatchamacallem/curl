@@ -129,7 +129,10 @@ stamp_reuse() {
   # read back what an aborted run or a later edit left behind
   manifest_verify "$_OUT_DIR" "--regenerate input" \
     "$REPORT_MANIFEST_VERSION_FULL"
+  # the row is the unix time then a date for people, and only the unix time
+  # names a recording, so the tail is dropped here
   TIMESTAMP="$(manifest_value "$_OUT_DIR" stamp)"
+  TIMESTAMP="${TIMESTAMP%% *}"
   [ -n "$TIMESTAMP" ] || {
     echo "error: $_manifest has no stamp= row, so its recordings" \
       "cannot be identified" >&2
@@ -467,7 +470,7 @@ run_all() {
     "cpu=$_CPU_MODEL"
     "build=$_BUILD_DESC"
     "executable=$_BIN_REL <test>  (native, pinned to CPU $PROFILE_PINNED_CPU)"
-    "stamp=$TIMESTAMP"
+    "$(manifest_stamp_row)"
   )
   local _header_file="$ARTIFACTS_DIR/$HEADER_ROWS_NAME.$TIMESTAMP.txt"
   printf '%s\n' "${_HEADER_ROWS[@]}" >"$_header_file"

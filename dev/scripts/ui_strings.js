@@ -51,23 +51,28 @@ window.ui_strings = (function () {
     str_detail_close_symbol: "[X]",
     str_detail_copy: "copy",
     str_error_callstack_unavailable: "(no callstack recorded)",
+    str_error_column_frame: "frame",
+    str_error_column_label: "label",
+    str_error_column_location: "location",
+    str_error_column_value: "value",
+    str_error_control_copy: "copy",
+    str_error_control_reload: "reload",
+    str_error_control_restart: "restart",
     str_error_flame_graph_never_started:
-      "flame graph viewer did not start within {seconds}s",
+      "flame graph viewer did not start within {0}s",
     str_error_hash_counter_unknown:
-      "url encodes counter this report has no column for: {counter}",
+      "url encodes counter this report has no column for: {0}",
     str_error_hash_file_unknown:
-      "url encodes a file this report has no source for: {file}",
+      "url encodes a file this report has no source for: {0}",
     str_error_hash_function_unknown:
-      "url encodes a function address this report never recorded: {function}",
+      "url encodes a function address this report never recorded: {0}",
     str_error_hash_view_unknown:
-      "url encodes a view this report does not have: {view}",
+      "url encodes a view this report does not have: {0}",
     str_error_heading_address: "address",
     str_error_heading_callstack: "callstack",
     str_error_heading_manifest: "manifest",
     str_error_manifest_unavailable: "MANIFEST.txt not found",
-    str_error_page_explanation:
-      "perf2html stopped because of an error." +
-      " Reload this address to start again.",
+    str_error_page_heading: "perf2html error",
     str_error_page_title: "perf2html error page",
     str_error_source_address: "bad address",
     str_error_source_exception: "uncaught exception",
@@ -118,5 +123,18 @@ window.ui_strings = (function () {
     }
     return STRINGS[string_id];
   }
-  return { text_fill, text_of };
+  function text_over_args(string_id, args) {
+    const template = text_of(string_id);
+    let every_marker_filled = true;
+    const filled = template.replace(/\{(\d+)\}/g, (marker, index_text) => {
+      const index = Number(index_text);
+      if (index >= args.length) {
+        every_marker_filled = false;
+        return marker;
+      }
+      return String(args[index]);
+    });
+    return every_marker_filled ? filled : null;
+  }
+  return { text_fill, text_of, text_over_args };
 })();

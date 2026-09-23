@@ -167,6 +167,14 @@ measures nothing and subtracts two reports' `raw/` archives;
   that is not finished or has no `stamp=` row each withdraw the same way.
   **Each of the two measured reports has its own stamp**; the diff has none
   of its own recordings, being subtracted from those two.
+- **The `stamp=` row is `<unix> <human date>`** - `manifest_stamp_row`
+  writes both, the tail being for people and parsed by nobody. **Every
+  reader takes the first token**, `${_x%% *}` inlined at the read because
+  the unix time alone names an artifact (`perf-stat.<test>.<stamp>.csv`):
+  `perf2html.sh`'s `stamp_reuse`, `perf2html_diff.sh`'s `--regenerate`
+  branch and `reformat.sh`'s `regenerate_stamp_of`, whose result reaches a
+  `find` glob. **`manifest_value` stays general** - `cpu=` and `build=`
+  hold spaces, so narrowing it corrupts both.
 - **The batch owns every deletion of the artifacts dir** - it passes
   `--keep-artifacts` down so a child can't unlink the batch log mid-run; a
   failed flagless batch _keeps_ it, because a failed step exits before the
@@ -553,11 +561,28 @@ server-side, so `(no recorded caller)` stays in Python, in step with
 `unhandledrejection`. **It must be the first script every page links**;
 `theme.page_preamble_scripts()` is the one place that order is written. It is
 the **only** `.js` that may not resolve strings at IIFE top (it loads before
-`ui_strings.js`), so `text_or_fallback(id)` reads at render time; **its
-`str_error_*` entries live only in `ui_strings.js`**. The **source label
-leads the explanation sentence** (`bad address: perf2html stopped...`), so
-there is no message heading above the message itself. **An error owns the
-whole tab**: the page that threw may be framed two levels down, so
+`ui_strings.js` **and before `settings_handler.js`**), so `text_of_or_id(id)`
+reads at render time and **its colours, font and padding are inline
+constants, not settings** - it has no theme relationship at all, which is
+what makes it render on an unthemed page. **A thrower resolves nothing**:
+an exception message is a whitespace-delimited array, token 0 a candidate
+`str_` key and the rest its positional args (`{0}`, `{1}`), which
+`format_or_raw` looks up through `ui_strings.js`'s `text_over_args` and
+prints as `<key>:  <formatted>`. **Every failure path prints the raw
+message verbatim** - no `ui_strings.js`, an unknown key, or a `{N}` the
+args do not hold each abandon formatting rather than half-substituting, so
+a non-key throw (`no such setting: X`, any browser `TypeError`) prints
+naturally. `text_fill`'s named markers stay, for the ~10 non-error sites in
+`heatmap.js`. The page is **one `<pre>` holding a Markdown document** -
+`# perf2html error`, the source label on its own line, the message, then
+`##` `address`, `callstack` and `manifest`, the last two as
+whitespace-padded ASCII tables whose unparsed lines pass through as
+one-cell rows. **Every `file://` path printed is truncated to the report
+root** (recovered from `location.href`) so the `copy` control cannot leak a
+home directory - a privacy requirement, not cosmetics. Bottom controls are
+`copy`, `reload` and `restart`, `restart` being the one that leaves, to the
+root `index.html`. **An error owns the whole tab**: the page that threw may
+be framed two levels down, so
 `report_render` posts the report up (`report_ui: "report_error"`) until the
 **top** document replaces itself, menus and all. **It touches neither
 `history` nor the URL**, so the bad address stays in the bar and a **reload

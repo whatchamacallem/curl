@@ -2,76 +2,80 @@ window.report_error_overlay = (function () {
   "use strict";
 
   const OVERLAY_ROOT_ID = "reportErrorOverlay";
-  const OVERLAY_STYLE_ID = "reportErrorOverlayStyle";
-  const OVERLAY_STYLE_TEXT = [
-    "html:has(#" + OVERLAY_ROOT_ID + ") {",
-    "  overflow: auto;",
-    "}",
-    "body.report-error-shown {",
-    "  overflow: auto;",
-    "  height: auto;",
-    "  margin: 0;",
-    "  display: block;",
-    "  background: var(--bg, #14171c);",
-    "  color: var(--fg, #d6dae0);",
-    "  font: 12px/1.5 var(--font, Monaco, monospace);",
-    "}",
-    "#" + OVERLAY_ROOT_ID + " {",
-    "  padding: 24px 36px 48px;",
-    "  background: var(--bg, #14171c);",
-    "  color: var(--fg, #d6dae0);",
-    "  font: 12px/1.5 var(--font, Monaco, monospace);",
-    "}",
-    "#" + OVERLAY_ROOT_ID + " .report-error-title {",
-    "  font-size: 13px;",
-    "  font-weight: 600;",
-    "  color: var(--title-fg, #14171c);",
-    "  background: var(--title-bg, #4ea1a6);",
-    "  padding: 3px 8px;",
-    "  margin: 0 0 14px;",
-    "  display: inline-block;",
-    "}",
-    "#" + OVERLAY_ROOT_ID + " h2 {",
-    "  font-size: 12px;",
-    "  font-weight: 600;",
-    "  color: var(--fg-dim, #9aa3ad);",
-    "  margin: 22px 0 6px;",
-    "}",
-    "#" + OVERLAY_ROOT_ID + " p {",
-    "  margin: 4px 0;",
-    "  color: var(--muted, #79828d);",
-    "  max-width: 96ch;",
-    "}",
-    "#" + OVERLAY_ROOT_ID + " pre {",
-    "  font: inherit;",
-    "  margin: 0;",
-    "  padding: 8px 12px;",
-    "  background: var(--panel, #1b1f26);",
-    "  color: var(--fg, #d6dae0);",
-    "  white-space: pre-wrap;",
-    "  word-break: break-all;",
-    "  overflow-x: auto;",
-    "  max-height: 40vh;",
-    "}",
-    "#" + OVERLAY_ROOT_ID + " pre.report-error-message {",
-    "  color: var(--hot, #d95f4b);",
-    "}",
-  ].join("\n");
   const OVERLAY_MESSAGE_NAME = "report_error";
   const REPORT_MANIFEST_GLOBAL_NAME = "report_manifest";
+  const OVERLAY_BACKGROUND_COLOR = "#14171c";
+  const OVERLAY_TEXT_COLOR = "#f2f4f6";
+  const OVERLAY_LINK_COLOR = "#d95f4b";
+  const OVERLAY_FONT = "12px/1.5 Monaco, monospace";
+  const OVERLAY_PADDING = "24px 36px 48px";
+  const ROOT_INDEX_NAME = "index.html";
+  const CONTROL_GAP = "18px";
 
   let overlay_is_shown = false;
 
-  function element_append(parent, tag_name, class_name, text) {
-    const element = document.createElement(tag_name);
-    if (class_name) {
-      element.className = class_name;
+  function address_shorten(text, root_prefix) {
+    if (!root_prefix) {
+      return String(text);
     }
-    if (text !== undefined) {
-      element.textContent = text;
-    }
-    parent.appendChild(element);
-    return element;
+    return String(text).replace(/file:\/\/\S*/g, function (found) {
+      return prefix_drop(found, root_prefix);
+    });
+  }
+
+  function control_add(parent, label, action) {
+    const link = document.createElement("a");
+    link.textContent = label;
+    link.style.color = OVERLAY_LINK_COLOR;
+    link.style.textDecoration = "none";
+    link.style.cursor = "pointer";
+    link.style.marginRight = CONTROL_GAP;
+    link.addEventListener("click", function (click_event) {
+      click_event.preventDefault();
+      action();
+    });
+    parent.appendChild(link);
+    return link;
+  }
+
+  function controls_build(document_text) {
+    const bar = document.createElement("div");
+    bar.style.marginTop = CONTROL_GAP;
+    control_add(bar, text_of_or_id("str_error_control_copy"), function () {
+      text_copy(document_text);
+    });
+    control_add(bar, text_of_or_id("str_error_control_reload"), function () {
+      location.reload();
+    });
+    control_add(bar, text_of_or_id("str_error_control_restart"), function () {
+      location.href = root_prefix_of() + ROOT_INDEX_NAME;
+    });
+    return bar;
+  }
+
+  function document_build(report) {
+    const root_prefix = root_prefix_of();
+    const lines = [
+      "# " + text_of_or_id("str_error_page_heading"),
+      "",
+      String(report.source_label || ""),
+      "",
+      format_or_raw(report.message),
+      "",
+      "## " + text_of_or_id("str_error_heading_address"),
+      "",
+      address_shorten(report.address, root_prefix),
+      "",
+      "## " + text_of_or_id("str_error_heading_callstack"),
+      "",
+      stack_table(report.stack, root_prefix),
+      "",
+      "## " + text_of_or_id("str_error_heading_manifest"),
+      "",
+      manifest_table(report.manifest),
+      "",
+    ];
+    return lines.join("\n");
   }
 
   function error_describe(reason) {
@@ -93,19 +97,43 @@ window.report_error_overlay = (function () {
     return { message: String(reason), stack: "" };
   }
 
+  function format_or_raw(message) {
+    const text = String(message);
+    const tokens = text.split(/\s+/).filter(function (token) {
+      return token !== "";
+    });
+    const strings = window.ui_strings;
+    if (!tokens.length || !strings) {
+      return text;
+    }
+    if (typeof strings.text_over_args !== "function") {
+      return text;
+    }
+    let formatted = null;
+    try {
+      formatted = strings.text_over_args(tokens[0], tokens.slice(1));
+    } catch (ignored) {
+      return text;
+    }
+    if (formatted === null) {
+      return text;
+    }
+    return tokens[0] + ":  " + formatted;
+  }
+
   function handler_install() {
     window.addEventListener("error", function (browser_event) {
       if (browser_event.error || browser_event.message) {
         overlay_show(
           browser_event.error || browser_event.message,
-          text_or_fallback("str_error_source_exception"),
+          text_of_or_id("str_error_source_exception"),
         );
       }
     });
     window.addEventListener("unhandledrejection", function (browser_event) {
       overlay_show(
         browser_event.reason,
-        text_or_fallback("str_error_source_rejection"),
+        text_of_or_id("str_error_source_rejection"),
       );
     });
     window.addEventListener("message", function (browser_event) {
@@ -117,6 +145,32 @@ window.report_error_overlay = (function () {
     });
   }
 
+  function manifest_table(manifest_text) {
+    const text = String(manifest_text || "");
+    const rows = [];
+    for (const line of text.split("\n")) {
+      if (!line.trim()) {
+        continue;
+      }
+      const cut = line.indexOf("=");
+      if (cut < 0) {
+        rows.push([line.trim()]);
+      } else {
+        rows.push([line.slice(0, cut).trim(), line.slice(cut + 1).trim()]);
+      }
+    }
+    if (!rows.length) {
+      return text_of_or_id("str_error_manifest_unavailable");
+    }
+    return table_render(
+      [
+        text_of_or_id("str_error_column_label"),
+        text_of_or_id("str_error_column_value"),
+      ],
+      rows,
+    );
+  }
+
   function manifest_text() {
     const shipped = window[REPORT_MANIFEST_GLOBAL_NAME];
     if (typeof shipped === "string" && shipped) {
@@ -126,55 +180,21 @@ window.report_error_overlay = (function () {
   }
 
   function overlay_build(report) {
+    const document_text = document_build(report);
     const root = document.createElement("div");
     root.id = OVERLAY_ROOT_ID;
-    element_append(
-      root,
-      "div",
-      "report-error-title",
-      text_or_fallback("str_error_page_title"),
-    );
-    // the source label leads the sentence, so the message needs no heading
-    element_append(
-      root,
-      "p",
-      "",
-      report.source_label +
-        ": " +
-        text_or_fallback("str_error_page_explanation"),
-    );
-    element_append(root, "pre", "report-error-message", report.message);
-    element_append(
-      root,
-      "h2",
-      "",
-      text_or_fallback("str_error_heading_address"),
-    );
-    element_append(root, "pre", "", report.address);
-    element_append(
-      root,
-      "h2",
-      "",
-      text_or_fallback("str_error_heading_callstack"),
-    );
-    element_append(
-      root,
-      "pre",
-      "",
-      report.stack || text_or_fallback("str_error_callstack_unavailable"),
-    );
-    element_append(
-      root,
-      "h2",
-      "",
-      text_or_fallback("str_error_heading_manifest"),
-    );
-    element_append(
-      root,
-      "pre",
-      "",
-      report.manifest || text_or_fallback("str_error_manifest_unavailable"),
-    );
+    root.style.background = OVERLAY_BACKGROUND_COLOR;
+    root.style.color = OVERLAY_TEXT_COLOR;
+    root.style.font = OVERLAY_FONT;
+    root.style.padding = OVERLAY_PADDING;
+    const block = document.createElement("pre");
+    block.style.font = "inherit";
+    block.style.margin = "0";
+    block.style.whiteSpace = "pre-wrap";
+    block.style.overflowX = "auto";
+    block.textContent = document_text;
+    root.appendChild(block);
+    root.appendChild(controls_build(document_text));
     return root;
   }
 
@@ -192,8 +212,6 @@ window.report_error_overlay = (function () {
     });
   }
 
-  // The page that threw may be framed two levels down, so the report travels
-  // up and only the top document is replaced: an error owns the whole tab
   function report_render(report) {
     if (overlay_is_shown) {
       return;
@@ -208,35 +226,135 @@ window.report_error_overlay = (function () {
         return;
       }
       const root = overlay_build(report);
-      style_install();
       document.body.textContent = "";
-      document.body.className = "report-error-shown";
+      document.body.style.margin = "0";
+      document.body.style.background = OVERLAY_BACKGROUND_COLOR;
+      document.body.style.color = OVERLAY_TEXT_COLOR;
       document.body.appendChild(root);
-      document.title = text_or_fallback("str_error_page_title");
+      document.title = text_of_or_id("str_error_page_title");
     } catch (ignored) {
       overlay_is_shown = true;
     }
   }
 
-  function style_install() {
-    if (document.getElementById(OVERLAY_STYLE_ID)) {
-      return;
+  function prefix_drop(path_text, root_prefix) {
+    if (path_text.indexOf(root_prefix) === 0) {
+      return path_text.slice(root_prefix.length);
     }
-    const style = document.createElement("style");
-    style.id = OVERLAY_STYLE_ID;
-    style.textContent = OVERLAY_STYLE_TEXT;
-    (document.head || document.documentElement).appendChild(style);
+    const wanted = root_prefix.split("/");
+    const found = path_text.split("/");
+    let shared = 0;
+    while (shared < wanted.length && shared < found.length) {
+      if (wanted[shared] !== found[shared]) {
+        break;
+      }
+      shared += 1;
+    }
+    return found.slice(shared).join("/");
   }
 
-  function text_or_fallback(string_id) {
+  function root_prefix_of() {
+    const here = String(location.href).split("#")[0].split("?")[0];
+    const cut = here.lastIndexOf("/");
+    return cut < 0 ? "" : here.slice(0, cut + 1);
+  }
+
+  function stack_row_of(line, root_prefix) {
+    const bare = line.trim().replace(/^at\s+/, "");
+    const text = address_shorten(bare, root_prefix);
+    const braced = /^(.*?)\s*\((.*)\)$/.exec(text);
+    if (braced) {
+      return [braced[1], braced[2]];
+    }
+    const at_sign = text.indexOf("@");
+    if (at_sign > 0) {
+      return [text.slice(0, at_sign), text.slice(at_sign + 1)];
+    }
+    return [text];
+  }
+
+  function stack_table(stack_text, root_prefix) {
+    const rows = [];
+    for (const line of String(stack_text || "").split("\n")) {
+      if (line.trim()) {
+        rows.push(stack_row_of(line, root_prefix));
+      }
+    }
+    if (!rows.length) {
+      return text_of_or_id("str_error_callstack_unavailable");
+    }
+    return table_render(
+      [
+        text_of_or_id("str_error_column_frame"),
+        text_of_or_id("str_error_column_location"),
+      ],
+      rows,
+    );
+  }
+
+  function table_render(titles, rows) {
+    const widths = titles.map(function (title) {
+      return title.length;
+    });
+    for (const row of rows) {
+      for (let index = 0; index < row.length; index += 1) {
+        const cell_width = String(row[index]).length;
+        widths[index] = Math.max(widths[index] || 0, cell_width);
+      }
+    }
+    const written = [row_text(titles, widths), rule_text(widths)];
+    for (const row of rows) {
+      written.push(row_text(row, widths));
+    }
+    return written.join("\n");
+  }
+
+  function row_text(cells, widths) {
+    const padded = [];
+    for (let index = 0; index < widths.length; index += 1) {
+      const cell = index < cells.length ? String(cells[index]) : "";
+      padded.push(cell + " ".repeat(widths[index] - cell.length));
+    }
+    return "| " + padded.join(" | ") + " |";
+  }
+
+  function rule_text(widths) {
+    const dashes = widths.map(function (width) {
+      return "-".repeat(width);
+    });
+    return "| " + dashes.join(" | ") + " |";
+  }
+
+  function text_copy(text) {
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text);
+        return;
+      }
+    } catch (ignored) {
+      void ignored;
+    }
+    const holder = document.createElement("textarea");
+    holder.value = text;
+    document.body.appendChild(holder);
+    holder.select();
+    try {
+      document.execCommand("copy");
+    } catch (ignored) {
+      void ignored;
+    }
+    document.body.removeChild(holder);
+  }
+
+  function text_of_or_id(string_id) {
     const strings = window.ui_strings;
     if (!strings || typeof strings.text_of !== "function") {
-      return "(ui_strings.js not loaded: " + string_id + ")";
+      return string_id;
     }
     try {
       return strings.text_of(string_id);
     } catch (ignored) {
-      return "(ui_strings.js missing string: " + string_id + ")";
+      return string_id;
     }
   }
 

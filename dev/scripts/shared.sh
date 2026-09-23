@@ -225,6 +225,12 @@ manifest_script_write() {
   } >"$out"
 }
 
+# manifest_stamp_row - the stamp= row every report writes: the unix time a
+# reader identifies recordings by, then a human date nothing parses.
+manifest_stamp_row() {
+  echo "stamp=$TIMESTAMP $(date -d "@$TIMESTAMP" +'%F %I:%M:%S %p')"
+}
+
 # manifest_value - one LABEL= row of a report's MANIFEST.txt.
 manifest_value() {
   sed -n "s/^$2=//p" "$1/MANIFEST.txt" | head -1

@@ -74,11 +74,7 @@
     // report does not have is a bad address, and says so rather than hiding
     if (view_key && !matched_link) {
       window.report_error_overlay.overlay_show(
-        new Error(
-          window.ui_strings.text_fill("str_error_hash_view_unknown", {
-            view: view_key,
-          }),
-        ),
+        new Error("str_error_hash_view_unknown " + view_key),
         window.ui_strings.text_of("str_error_source_address"),
       );
       return;

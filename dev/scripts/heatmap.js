@@ -1783,11 +1783,7 @@
     // a hash naming a counter, file or function this report does not hold is
     // a bad address: it surfaces rather than rendering something else
     if (parsed_state.ev && !counter_find(parsed_state.ev)) {
-      hash_fault_show(
-        text_fill("str_error_hash_counter_unknown", {
-          counter: parsed_state.ev,
-        }),
-      );
+      hash_fault_show("str_error_hash_counter_unknown " + parsed_state.ev);
       return;
     }
     const counter =
@@ -1810,16 +1806,12 @@
         file = function_entry.file;
         line = function_entry.line;
       } else {
-        hash_fault_show(
-          text_fill("str_error_hash_function_unknown", { function: fn }),
-        );
+        hash_fault_show("str_error_hash_function_unknown " + fn);
         return;
       }
     }
     if (file && !file_table[file]) {
-      hash_fault_show(
-        text_fill("str_error_hash_file_unknown", { file: file }),
-      );
+      hash_fault_show("str_error_hash_file_unknown " + file);
       return;
     }
 

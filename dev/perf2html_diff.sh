@@ -252,7 +252,10 @@ main() {
     manifest_verify "$_OUT_DIR" "--regenerate input" \
       "$REPORT_MANIFEST_VERSION_DIFF"
     local _previous
+    # the row is the unix time then a date for people, and only the unix
+    # time names a recording, so the tail is dropped here
     _previous="$(manifest_value "$_OUT_DIR" stamp)"
+    _previous="${_previous%% *}"
     if [ -n "$_previous" ]; then TIMESTAMP="$_previous"; fi
   fi
   report_begin "$_OUT_DIR" "diff.$TIMESTAMP.log" \
@@ -287,7 +290,7 @@ main() {
   report_finish "$_OUT_DIR" "$REPORT_MANIFEST_VERSION_DIFF" \
     "baseline=$(path_display "$_BASE_DIR")" \
     "modified=$(path_display "$_MOD_DIR")" \
-    "stamp=$TIMESTAMP"
+    "$(manifest_stamp_row)"
   if [ "$_KEEP_ARTIFACTS" != 1 ]; then artifacts_clean; fi
 }
 
