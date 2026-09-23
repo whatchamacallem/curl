@@ -41,9 +41,8 @@ class CallgrindDiff:
         baselineTotal: callgrind.Costs
         # per callee, how many times the baseline called it
         baselineCalls: dict[str, int]
-        # per display path, the whole file's baseline cost vector, which is
-        # what a tree's file and directory shares divide by. Summing the
-        # lines a diff carries would divide by the changed lines alone.
+        # per display path, the whole file's baseline cost vector, which file
+        # and directory shares divide by -- not the changed lines alone
         fileBaseline: dict[str, callgrind.Costs]
 
     # DiffArgs - The two sides to subtract, and the two files to write.
@@ -74,9 +73,8 @@ class CallgrindDiff:
                     )
         return out
 
-    # Baseline cost per display path -- the whole file's, not the sum of the
-    # lines that happened to change, which is what a tree's file and
-    # directory shares divide by.
+    # Baseline cost per display path -- the whole file's, not the changed
+    # lines', which is what a tree's file and directory shares divide by.
     def baseline_files(
         self, baseline: callgrind.Profile
     ) -> dict[str, callgrind.Costs]:
@@ -137,9 +135,8 @@ class CallgrindDiff:
             file=sys.stderr,
         )
 
-    # One callee's callers, summed per calling function. A caller that
-    # calls from several lines is several Caller keys, so keeping one of
-    # them would report a fraction of the calls as the whole.
+    # One callee's callers, summed per calling function: a caller calling
+    # from several lines is several keys, and one of them is a fraction.
     def caller_tallies(
         self, profile: callgrind.Profile, callee: str, counter: str
     ) -> dict[str, tuple[int, int]]:
@@ -358,10 +355,8 @@ class CallgrindDiff:
             by_file.setdefault(key.file, []).append((key.line, costs))
         home = profile.function_home.get(function, "")
         if home not in by_file:
-            # its recorded home holds no changed line, so the file with the
-            # most of this function's change is the one to write it under.
-            # Naming a file by sort order would move the function somewhere
-            # nothing measured put it.
+            # its recorded home holds no changed line, so the file with most
+            # of the change wins: sort order would move it where nothing did
             home = max(
                 by_file,
                 key=lambda name: (
@@ -387,9 +382,8 @@ class CallgrindDiff:
             if file == home:
                 handle.write(f"fn={function}\n")
                 if entry is not None and entry.file == home and entry.line:
-                    # the entry line leads only when it actually changed: a
-                    # zero row here would be a cost nothing measured, and
-                    # every row in this file is a recorded difference.
+                    # the entry line leads only when it changed: a zero row
+                    # is a cost nothing measured, and every row is recorded
                     ordered = [
                         pair for pair in ordered if pair[0] == entry.line
                     ] + [pair for pair in ordered if pair[0] != entry.line]

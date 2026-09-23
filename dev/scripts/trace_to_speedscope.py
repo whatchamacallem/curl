@@ -25,8 +25,7 @@ _BUILDID_LABEL = "Build ID"
 _EXIT_BIT = 1 << 63
 
 # The schema the written document declares. A format fact, not a setting:
-# changing it would not retune anything, it would name a schema speedscope
-# does not know and produce a document it rejects.
+# another value names a schema speedscope does not know and is rejected.
 _FLAME_GRAPH_FILE_FORMAT_SCHEMA_URL = (
     "https://www.speedscope.app/file-format-schema.json"
 )
@@ -167,9 +166,8 @@ class TraceToSpeedscope:
                 return value.strip().lower()
         return ""
 
-    # Refuse an object the trace was not recorded against. Symbolizing a
-    # stale trace against a newer build resolves every address to whatever
-    # now sits there, which reads as a plausible flame graph and is fiction.
+    # Refuse an object the trace was not recorded against: a stale trace
+    # resolves to whatever now sits there, a plausible graph that is fiction.
     def buildid_verify(
         self, maps_file: str, recorded: dict[str, str], path: str
     ) -> None:

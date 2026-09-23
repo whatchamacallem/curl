@@ -256,8 +256,7 @@ long_lines_report() {
 }
 
 # report_error_add - collect one reason a directory is not a report. SETS
-# _REPORT_ERRORS, and is its canonical setter: every reason is kept, so a
-# valid report later in the list cannot hide a broken one before it.
+# _REPORT_ERRORS, its setter: a valid report cannot hide a broken one.
 report_error_add() {
   _REPORT_ERRORS+=("$1")
 }
@@ -267,13 +266,11 @@ report_version() {
   head -n 1 "$1/MANIFEST.txt" 2>/dev/null
 }
 
-# report_claim - accept a directory that holds up as either kind of
-# report, else append shared.sh's reason to _REPORT_ERRORS. SETS that
-# caller global, and is its canonical setter: main() initializes it and
-# validate_run reads every entry back. Collecting rather than exiting is
-# the whole difference from manifest_verify: a broken report must not
-# stop the reports after it from being validated.
+# report_claim - accept a directory holding up as either kind of report,
+# else append shared.sh's reason to _REPORT_ERRORS, its canonical setter.
 report_claim() {
+  # collecting rather than exiting is the difference from manifest_verify:
+  # a broken report must not stop the reports after it being validated
   local _path="$1" _fault
 
   _fault="$(manifest_fault_of "$_path" \
@@ -296,9 +293,8 @@ report_find() {
     return 0
   fi
 
-  # a directory that is there but holds no MANIFEST.txt is an aborted run,
-  # which is a failure to report, not a directory to walk past: testing
-  # for the manifest here let a broken report hide behind a valid one.
+  # a directory holding no MANIFEST.txt is an aborted run: a failure to
+  # report, not one to walk past, or it hides behind a valid report
   for _path in "${_DEFAULT_REPORTS[@]}"; do
     if [ -d "$_path" ]; then report_claim "$_path"; fi
   done
@@ -351,9 +347,28 @@ validate_run() {
   done
 }
 
-# source_scan_run - the dev/ tree's non-ASCII scan, once. The sources are
-# one tree, not a property of any report: running it inside the validator
-# scanned them once per report found, or not at all when none was.
+# comment_block_run - the dev/ tree's comment length check, once, for the
+# same reason the ASCII scan runs once: the sources are one tree.
+comment_block_run() {
+  local _output _exit_code=0
+  _output="$(python3 comment_block_scan.py 2>&1)" || _exit_code=$?
+
+  # the limit is the scanner's own and is never spelled here: it prints the
+  # number in both the ok line and every fault, so there is one to keep.
+  if [ "$_exit_code" = 0 ]; then
+    printf '%-12s| ok      | %s\n' "comments" "$_output"
+    log_verbose "$_output"
+    return 0
+  fi
+
+  printf '%-12s| TOO_LONG| %s\n' \
+    "comments" "$(echo "$_output" | tail -n 1)"
+  echo "$_output" >&2
+  _STATUS=1
+}
+
+# source_scan_run - the dev/ tree's non-ASCII scan, once: the sources are
+# one tree, not a property of any report the validator happens to find.
 source_scan_run() {
   local _output _exit_code=0
   _output="$(python3 validate_report.py --source-scan-only 2>&1)" \
@@ -428,6 +443,7 @@ main() {
   format_prettier
 
   long_lines_report
+  comment_block_run
   source_scan_run
   validate_run
 

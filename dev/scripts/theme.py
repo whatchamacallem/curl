@@ -85,12 +85,11 @@ class Theme:
 
     # NumberFormat - Every number a page prints, in its page-ready form.
     class NumberFormat:
-        # A number at a fixed number of decimal places, rounding a half
-        # away from zero rather than to the nearest even digit, which is
-        # what Python's own round() and f-string formatting would do.
-        # theme.js's fixed_text() is the twin, and the two agree digit for
-        # digit because both scale, floor and compare in IEEE-754 doubles.
+        # A number at fixed decimal places, rounding a half away from zero,
+        # not to even as round() and f-strings do.
         def fixed_text(self, value: float, digit_count: int) -> str:
+            # theme.js's fixed_text() is the twin, agreeing digit for digit:
+            # both scale, floor and compare in IEEE-754 doubles
             whole = self.rounded_units(value, digit_count)
             sign = "-" if value < 0 and whole else ""
             digits = str(whole).rjust(digit_count + 1, "0")
@@ -142,12 +141,11 @@ class Theme:
                 return ""
             return ("-" if number < 0 else "") + self.human(abs(number))
 
-        # A diff share: percent(), empty at zero, arrow-led, a drop keeping
-        # its "-". A zero baseline is an infinite share, "∞%". "≈0.00%" and
-        # ">1000x" are bounds, so take no sign. README.md's "Reading a Diff
-        # Report" is the specification, and theme.js's signed_percent_text
-        # is kept in step with this.
+        # A diff share: empty at zero, arrow-led, a drop keeping its "-", a
+        # zero baseline "∞%", and the two bounds unsigned.
         def signed_percent(self, percent: float) -> str:
+            # README.md's "Reading a Diff Report" is the specification, and
+            # theme.js's signed_percent_text is kept in step with this
             if percent == 0:
                 return ""
             arrow = "▼" if percent < 0 else "▲"
@@ -282,14 +280,8 @@ class Theme:
             + self.asset_read(_ASSET_THEME_STYLESHEET_NAME)
         )
 
-    # One page. A page linking a stylesheet of its own names it in
-    # extra_css, which follows the theme's. A body that already carries its
-    # own script block says so with body_holds_scripts, and then this adds
-    # none of its own: the heat map substitutes every script it links into
-    # its body template's __SCRIPTS__ marker, which sits exactly where this
-    # block would otherwise go, and a second block would load settings.js
-    # and theme.js twice. Such a body opens with page_preamble_scripts()
-    # itself, so the error overlay is still the first script on the page.
+    # One page. A page linking its own stylesheet names it in extra_css,
+    # which follows the theme's.
     def document(
         self,
         title: str,
@@ -306,6 +298,8 @@ class Theme:
             f'<link rel="stylesheet" href="{assets_href}/{name}">\n'
             for name in (_ASSET_THEME_STYLESHEET_NAME, *extra_css)
         )
+        # a body carrying its own block gets none here: the heat map's
+        # __SCRIPTS__ sits where this would, and twice loads theme.js twice
         script = (
             ""
             if body_holds_scripts
@@ -330,14 +324,11 @@ class Theme:
             f"{script}</body>\n</html>\n"
         )
 
-    # Where a share sits on the ramp, and the whole of the colour mapping:
-    # clamp the percentage to full scale, divide by it, apply the log curve.
-    # Nothing is measured off the data, so a cell's colour depends only on
-    # the number printed beside it. heatmap.js's heat_of_share() is the twin
-    # this is kept in step with; heat_style() does the rest, multiplying by
-    # one less than the number of stops. The sign rides along for a diff,
-    # where heat_style(signed=True) remaps it around the ramp's midpoint.
+    # Where a share sits on the ramp, and the whole colour mapping: clamp to
+    # full scale, divide, apply the log curve. heatmap.js is the twin.
     def heat_of_share(self, percent: float) -> float:
+        # nothing is measured off the data, so a cell's colour depends only
+        # on the number printed beside it. The sign rides along for a diff
         sign = -1.0 if percent < 0 else 1.0
         full_scale = float(_HEAT_COLOR_FULL_SCALE_PERCENT)
         magnitude = min(abs(percent), full_scale)
@@ -346,10 +337,8 @@ class Theme:
         fraction = magnitude / full_scale
         return sign * math.log10(1 + 9 * fraction)
 
-    # The colour one heat position paints, and readable text over it. The
-    # ramp is painted opaque: a cell carries the stop itself, interpolated
-    # between the two it sits between, never a faded copy of it over the
-    # page background. heatmap.js's cell_style() is the twin.
+    # The colour one heat position paints, and readable text over it. Opaque:
+    # a cell carries the stop itself, never faded over the page background.
     def heat_style(self, heat: float, signed: bool = False) -> str:
         if abs(heat) <= 0:
             return ""
@@ -603,13 +592,11 @@ def page_document(
     )
 
 
-# page_preamble_scripts - The scripts every page links before any other,
-# in this order. The error overlay installs the window handlers that turn
-# a thrown error into a readable page, so nothing that can throw may
-# precede it; the manifest script only assigns a global, and sits second
-# so the overlay has the report's identity to print. Both are shared
-# assets, so the report carries one copy of each.
+# page_preamble_scripts - The scripts every page links before any other, in
+# this order. Both are shared assets, one copy each per report.
 def page_preamble_scripts() -> tuple[str, ...]:
+    # the overlay installs the window handlers, so nothing that can throw
+    # precedes it; the manifest is second, giving it a report to name
     return (
         _ASSET_ERROR_OVERLAY_SCRIPT_NAME,
         _ASSET_REPORT_MANIFEST_SCRIPT_NAME,

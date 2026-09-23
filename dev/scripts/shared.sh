@@ -1,9 +1,6 @@
 # dev/scripts/shared.shz
 
-# absolute_path - echo one path made absolute: a leading "~/" expands,
-# a relative path is taken against $PWD, an absolute one is unchanged.
-# Every script resolves every directory it was handed through this, so a
-# report and its artifacts dir never depend on a later cd.
+# absolute_path - Every script resolves through here.
 absolute_path() {
   case "$1" in
     "~/"*) echo "$HOME/${1#"~/"}" ;;
@@ -55,16 +52,11 @@ checksum_compute() {
   )
 }
 
-# child_capture - runs one child with its output going to $RUN_LOG, and
-# records the child's exit code rather than taking it, so a caller can
-# decide what a failure means. Verbose tees, so a long step's output
-# arrives as it is produced. SETS the caller globals CHILD_EXIT_CODE and
-# LOG_LINE_FROM, and is their canonical setter: the second is the line
-# $RUN_LOG had reached before the child wrote, which failure_tail_print
-# reads back. It reports through globals and never through stdout,
-# because verbose's tee already owns stdout: a $(child_capture ...) would
-# capture the child's own output along with the code.
+# child_capture - run one child into $RUN_LOG, verbose teeing. SETS
+# CHILD_EXIT_CODE and LOG_LINE_FROM, their canonical setter.
 child_capture() {
+  # never stdout: verbose's tee owns it, so $(child_capture) would capture
+  # the child's own output along with the code
   CHILD_EXIT_CODE=0
   printf '\n$ %s\n' "$*" >>"$RUN_LOG"
   LOG_LINE_FROM="$(wc -l <"$RUN_LOG")"
@@ -79,17 +71,15 @@ child_capture() {
   fi
 }
 
-# clock_microseconds - wall clock in whole microseconds, from the
-# EPOCHREALTIME builtin (its separator is the locale's, so every
-# non-digit is dropped).
+# clock_microseconds - wall clock in whole microseconds, from EPOCHREALTIME
+# (its separator is the locale's, so every non-digit is dropped).
 clock_microseconds() {
   local now="${EPOCHREALTIME}"
   echo "${now//[!0-9]/}"
 }
 
-# command_run - runs one child and, on failure, prints what it wrote and
-# exits with its code. The policy a measuring run wants: the first failure
-# ends the run, because every later step reads what this one was to write.
+# command_run - run one child; on failure print what it wrote and exit with
+# its code. A measuring run's policy: later steps read what this one writes.
 command_run() {
   log_verbose "\$ $*"
   child_capture "$@"
@@ -118,9 +108,8 @@ elapsed_format() {
   printf '%d.%02d' "$((delta / 1000000))" "$((delta % 1000000 / 10000))"
 }
 
-# failure_tail_print - on stderr, what a failed child wrote: its exit
-# code, the command, and the tail of its output from $LOG_LINE_FROM on.
-# Arguments: the exit code, then the command and its arguments.
+# failure_tail_print - on stderr, a failed child's exit code, command, and
+# output tail from $LOG_LINE_FROM on. Args: exit code, command, arguments.
 failure_tail_print() {
   local exit_code="$1"
   shift
@@ -160,10 +149,8 @@ json_quote() {
 # Verbose adds to quiet, so nothing else may guard a printf on it.
 log_verbose() { if [ "$VERBOSE" = 1 ]; then echo "$@"; fi; }
 
-# log_verbose_file - a step whose output was captured to a file rather
-# than run through command_run: append the whole of it to $RUN_LOG, the
-# way command_run would have, and show it too when verbose. Whole lines
-# either way, because it is a file that was written a line at a time.
+# log_verbose_file - a step's captured output file: append the whole of it
+# to $RUN_LOG as command_run would, and show it too when verbose.
 log_verbose_file() {
   local path="$1"
   cat "$path" >>"$RUN_LOG"
@@ -171,13 +158,10 @@ log_verbose_file() {
 }
 
 # manifest_fault_of - the one reader deciding whether a directory is a
-# finished report. Echoes why it is not, over as many lines as it takes,
-# or nothing at all when it holds up. Every caller opening a report goes
-# through this, so the checksum is re-verified every single time.
-# Arguments: the directory, then each version string line 1 may read.
-# A caller naming one string is how a diff is never read back as a diff
-# input, and naming both is how either kind is accepted.
+# finished report, echoing why it is not or nothing when it holds up.
 manifest_fault_of() {
+  # args: the dir, then each version string line 1 may read -- naming one
+  # keeps a diff out of a diff, naming both accepts either kind
   local dir="$1"
   shift
   local manifest="$dir/MANIFEST.txt" version recorded found wanted
@@ -223,12 +207,11 @@ manifest_fault_of() {
   fi
 }
 
-# manifest_script_write - the assets/ script holding this report's
-# manifest text as a string, for an error page to print on a file:// URL
-# where nothing can be fetched. It carries every row but the checksum:
-# the script is written before checksum_compute runs and is counted by
-# it, so a checksum inside it could only ever be the previous run's.
+# manifest_script_write - the assets/ script holding the manifest text, for
+# an error page on a file:// URL where nothing can be fetched.
 manifest_script_write() {
+  # every row but the checksum: this is written before checksum_compute
+  # runs and counted by it, so a checksum here is the previous run's
   local dir="$1" version="$2"
   shift 2
   local assets="$dir/$REPORT_ASSETS_DIR_NAME" row
@@ -248,11 +231,8 @@ manifest_value() {
   sed -n "s/^$2=//p" "$1/MANIFEST.txt" | head -1
 }
 
-# manifest_verify - hard-error unless the directory holds up as a report
-# whose line 1 is exactly one of the version strings named. The error
-# prints both what was found and what was expected.
-# Arguments: the directory, the role it plays in the message, then each
-# version string line 1 may read.
+# manifest_verify - hard-error unless line 1 is exactly one version string
+# named, printing both found and expected. Args: directory, role, strings.
 manifest_verify() {
   local dir="$1" role="$2"
   shift 2
@@ -276,9 +256,8 @@ manifest_wanted_phrase() {
   echo "$phrase"
 }
 
-# manifest_write - write a report's MANIFEST.txt, checksum row last, and
-# the assets/ script an error page reads the same rows back from.
-# Arguments: version string, report directory, then each LABEL=VALUE row.
+# manifest_write - write MANIFEST.txt, checksum row last, and the assets/
+# script an error page reads it back from. Args: version, dir, LABEL=VALUE.
 manifest_write() {
   local version="$1" dir="$2"
   shift 2
@@ -295,20 +274,16 @@ manifest_write() {
   } >"$manifest"
 }
 
-# report_begin - the head of every run that writes a report: clear what a
-# previous run left, create the directories, drop the stale manifest, open
-# $RUN_LOG and lay down the two things every page links, README.md and the
-# shared assets. SETS the caller global RUN_LOG, and is its canonical
-# setter: every command_run after this logs into it.
-# Arguments: the report directory, the run log's file name, the line that
-# log opens with, and 1 to keep the report's contents or 0 to clear them.
+# report_begin - the head of every run writing a report: clear, create,
+# drop the stale manifest, open $RUN_LOG, lay down README.md and assets.
 report_begin() {
+  # SETS RUN_LOG, its canonical setter: every command_run after this logs
+  # into it. Args: dir, log name, opening line, 1 to keep contents else 0
   local dir="$1" log_name="$2" opening_line="$3" keep_contents="$4"
   [ "$keep_contents" = 1 ] || report_contents_clear "$dir"
   mkdir -p "$dir" "$ARTIFACTS_DIR"
-  # the caller has already read every row it wanted out of the previous
-  # run's manifest, so a run that aborts from here on leaves a directory
-  # no tool will open
+  # the caller has read every row it wanted from the previous manifest, so
+  # a run aborting from here leaves a directory no tool will open
   rm -f "$dir/MANIFEST.txt"
   RUN_LOG="$ARTIFACTS_DIR/$log_name"
   echo "$opening_line" >"$RUN_LOG"
@@ -317,14 +292,11 @@ report_begin() {
     -o "$dir/$REPORT_ASSETS_DIR_NAME"
 }
 
-# report_contents_clear - empty a report directory that a previous run
-# wrote, so nothing it no longer generates survives into the new tree and
-# gets certified by checksum_compute: a dropped test's directory, or an
-# asset since renamed. Its MANIFEST.txt is the proof we wrote it, which is
-# why a directory holding anything else is left alone and reported rather
-# than deleted -- a --report=DIR naming a populated path of the user's own
-# must never be emptied.
+# report_contents_clear - empty a report a previous run wrote, so a dropped
+# test or renamed asset is not certified by checksum_compute.
 report_contents_clear() {
+  # its MANIFEST.txt is the proof we wrote it: a directory holding anything
+  # else is reported, never emptied -- --report=DIR may name a user's path
   local dir="$1"
   [ -e "$dir" ] || return 0
   if [ ! -d "$dir" ]; then
@@ -358,12 +330,8 @@ report_contents_clear() {
   }
 }
 
-# report_finish - the tail of every run that writes a report: the
-# manifest, which is written last because it is what says the run
-# finished and its checksum covers the finished tree, then the report's
-# own URL.
-# Arguments: the report directory, the version string, then each
-# LABEL=VALUE row the manifest carries.
+# report_finish - the tail of every run writing a report: the manifest last,
+# saying the run finished, then the URL. Args: dir, version, LABEL=VALUE rows.
 report_finish() {
   local dir="$1" version="$2"
   shift 2
@@ -374,10 +342,8 @@ report_finish() {
   echo "file://$dir/index.html"
 }
 
-# toolchain_check - the only toolchain check the user-facing scripts
-# have. Collects every missing tool before exiting, so one run names them
-# all. SETS the caller global SPEEDSCOPE_RELEASE, and is its canonical
-# setter: it is the resolved bundle the caller then copies pages out of.
+# toolchain_check - the scripts' only toolchain check, collecting every
+# missing tool before exiting. SETS SPEEDSCOPE_RELEASE, its canonical setter.
 toolchain_check() {
   local tool missing=()
   for tool in cmake ninja ccache cc valgrind perf taskset python3 \
@@ -409,10 +375,8 @@ toolchain_check() {
   }
 }
 
-# verbose_flags_of - this run's verbosity as the argument a child script
-# takes, so handing it down is not a second test of $VERBOSE. It asks
-# log_verbose, the one decider, to say the flag: verbose prints it and
-# quiet prints nothing, which is exactly the array the caller wants.
+# verbose_flags_of - this run's verbosity as a child's argument, so handing
+# it down is not a second test of $VERBOSE: log_verbose says the flag.
 verbose_flags_of() {
   log_verbose --verbose
 }

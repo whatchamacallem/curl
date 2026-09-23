@@ -4,35 +4,18 @@ import json, os, re, sys, time
 from typing import NoReturn, get_origin, get_type_hints
 
 # Every setting the tools have, then the reader that checks and assigns
-# them. The settings come first and the reader's own constants below them,
-# the same order every file reading a setting is written in, and the line
-# between the two is where _SETTING_NAMES is taken: everything this module
-# had bound by then is a setting, everything after it is the reader's. That
-# is what lets settings_script_write() ship the settings wholesale to the
-# browser rather than an allow-list naming the ones a page may read.
+# them. _SETTING_NAMES is the line between the two. See DECLAUDE.md 6.1.
 
-# What the report's one shared copy of the theme is written as. Every page
-# in a report renders the same stylesheet and the same script, so they are
-# written once at the report root and linked, not inlined 19 times. The heat
-# map's own stylesheet and runtime, and the frame script every summary and
-# overview page runs, are the same on all of them too, so they are shared
-# the same way. Each page links only the ones it uses. theme.css and the
-# settings file are generated rather than copied. This list runs on past
-# the template names below it, which sort into the middle of it.
+# What the report's one shared copy of the theme is written as: written once
+# at the report root and linked, never inlined. Each page links what it uses.
 ASSET_ERROR_OVERLAY_SCRIPT_NAME = "error_overlay.js"
 ASSET_FRAME_SCRIPT_NAME = "frame.js"
 ASSET_HEAT_MAP_SCRIPT_NAME = "heatmap.js"
 ASSET_HEAT_MAP_STYLESHEET_NAME = "heatmap.css"
 ASSET_SETTINGS_SCRIPT_NAME = "settings.js"
 
-# The four scripts/ files a generator reads as a template rather than
-# copying, interleaved here by name among the shared assets above. Each
-# holds the markers that generator substitutes its own content into, and
-# nothing writes them into a report under these names, so they are read
-# but never shared. No generator holds a multi-line literal, which is why
-# each of these is a real file. The settings handler is this module's own
-# template, so settings_script_write() reads it the way a generator reads
-# the other three.
+# The four scripts/ files a generator reads as a template, each holding the
+# markers it substitutes into. Read but never shared into a report.
 ASSET_TEMPLATE_FLAME_GRAPH_BOOTSTRAP_NAME = "flame_bootstrap.js"
 ASSET_TEMPLATE_FLAME_GRAPH_PAGE_NAME = "flame_graph.html"
 ASSET_TEMPLATE_HEAT_MAP_PAGE_NAME = "heatmap.html"
@@ -42,15 +25,8 @@ ASSET_THEME_SCRIPT_NAME = "theme.js"
 ASSET_THEME_STYLESHEET_NAME = "theme.css"
 ASSET_UI_STRINGS_SCRIPT_NAME = "ui_strings.js"
 
-# Every counter callgrind never records, and the recorded ones each is
-# added up from. The key is what a page calls the counter, and the value maps
-# each recorded counter it needs to the whole number that counter is
-# multiplied by. A run offers a derived counter only when it recorded every
-# input named here, and nothing stores one: a derived counter is a pure
-# function of the recorded slots, so a stored copy could only go stale.
-# callgrind.py is the one reader, and these are the only place a coefficient
-# is written down. Adding or dropping a counter is an edit here plus its
-# description in ui_strings.js and README.md -- no code changes.
+# Every counter callgrind never records, as the recorded ones it sums from
+# and each one's coefficient. Nothing stores one. See DECLAUDE.md 6.2.
 DERIVED_COUNTER_TERMS: dict[str, dict[str, int]] = {
     "D1m": {"D1mr": 1, "D1mw": 1},
     "DLm": {"DLmr": 1, "DLmw": 1},
@@ -68,44 +44,32 @@ DERIVED_COUNTER_TERMS: dict[str, dict[str, int]] = {
     },
 }
 
-# What callgrind_diff.py's synthesized callers diff is named, next to the
-# delta it describes. Written by perf2html_diff.sh, read back by
-# build_report.py and skipped by validate_report.py.
+# What callgrind_diff.py's synthesized callers diff is named, beside the
+# delta. Written by perf2html_diff.sh, read back by build_report.py.
 DIFF_CALLER_COUNTS_FILE_SUFFIX = ".callers.json"
 
 # Only a flame graph our own tool exported counts -- a stale or hand-made
 # one must fail.
 FLAME_GRAPH_EXPORTER_NAME = "dev/scripts/trace_to_speedscope.py"
 
-# The most complete calls one trace keeps. Measured against the current
-# TESTS_C, whose recorded call counts run 79-202 for seven of the eight, so
-# the cut lands on the top of that range. The eighth records 3,180 cheap
-# calls. Retune if a test's shape changes.
+# The most complete calls one trace keeps, cut at the top of the current
+# TESTS_C's 79-202 range. Retune if a test's shape changes.
 FLAME_GRAPH_MAX_RECORDED_CALLS = 200
 
-# All a per-test flame graph directory may hold: its own page, its own
-# recorded profile, and the trace log. Everything else lives in the one
-# shared bundle at the report root.
+# All a per-test flame graph directory may hold: its page, its profile, the
+# trace log. Everything else is the shared bundle at the report root.
 FLAME_GRAPH_PAGE_FILE_NAMES = ("index.html", "output.txt", "profile.js")
 
 # What the bootstrap plus its embedded profile gets written as.
 FLAME_GRAPH_PROFILE_SCRIPT_NAME = "profile.js"
 
-# How the flame graph page waits for speedscope to start: how long between
-# attempts and how many attempts before it gives up. speedscope defines
-# window.speedscope only once its own script tag has run, and a file:// page
-# cannot be told when that happened, so the bootstrap polls. The two
-# multiply into the number of seconds the failure message names, which is
-# why neither may be spelled in the page script.
+# How the flame graph page polls for speedscope, which defines its global
+# only once its script ran. The two multiply into the failure's seconds.
 FLAME_GRAPH_STARTUP_POLL_DELAY_MS = 50
 FLAME_GRAPH_STARTUP_POLL_MAX_ATTEMPTS = 200
 
 # The flame graph view a summary page links, as key, link label, page path.
-# A test links it only where a trace was actually recorded, which is why it
-# is named apart from the heat map view rather than sharing one list. The
-# key is what the URL hash calls the view and what the frame script matches,
-# so it is a boundary name. The label is rendered into the page by
-# build_report.py, which is the one boundary ui_strings.js cannot cross.
+# Linked only where a trace was recorded. The key is a boundary name.
 FLAME_GRAPH_VIEW_ENTRY: tuple[str, str, str] = (
     "flame-graph",
     "flame graph",
@@ -120,11 +84,8 @@ HEAT_COLOR_FULL_SCALE_PERCENT = 100
 # text stays readable once the cell behind it is bright.
 HEAT_COLOR_LIGHT_TEXT_ABOVE_SHARE = 0.45
 
-# The 12-stop heat ramp, cold to hot. Exempt from the light/dark pair rule.
-# Every heated cell carries one of these opaque, interpolated between the two
-# it sits between and never faded, and the outer strip's wordmark steps its
-# letters across the ramp's upper half as plain text colour, so a retune
-# moves both.
+# The 12-stop heat ramp, cold to hot, exempt from the light/dark pair rule.
+# Carried opaque by a cell, stepped across by the wordmark: a retune hits both.
 HEAT_COLOR_LOGO_STOPS: list[str] = [
     "#3E4A89",
     "#31688E",
@@ -144,16 +105,12 @@ HEAT_COLOR_LOGO_STOPS: list[str] = [
 # is not clipped by the dropdown arrow.
 HEAT_MAP_CONTROL_DROPDOWN_EXTRA_WIDTH_CHARS = 4
 
-# How the page finds a counter's description: this prefix, then the counter
-# name lowercased. So "CEst" reads str_counter_cest out of ui_strings.js,
-# and a counter added to DERIVED_COUNTER_TERMS or recorded by a new
-# callgrind run needs only its entry there, never a map in the page script.
-# A counter with no entry falls back to showing its bare name.
+# How the page finds a counter's description: this prefix then the name
+# lowercased, so "CEst" reads str_counter_cest out of ui_strings.js.
 HEAT_MAP_COUNTER_DESCRIPTION_STRING_ID_PREFIX = "str_counter_"
 
-# In the home page's hot-lines table: how much of the "defined at" path a
-# row keeps, how much of the source line itself it keeps, and how wide the
-# column that source text is rendered in.
+# In the home page's hot-lines table: how much of the "defined at" path and
+# of the source line a row keeps, and how wide that text renders.
 HEAT_MAP_HOME_LINES_LOCATION_MAX_CHARS = 28
 HEAT_MAP_HOME_LINES_SOURCE_COLUMN_WIDTH_CHARS = 110
 HEAT_MAP_HOME_LINES_SOURCE_TEXT_MAX_CHARS = 36
@@ -173,9 +130,8 @@ HEAT_MAP_MINIMAP_SOURCE_WIDTH_CHARS = 80
 # marking what is on screen stays visible in a very long file.
 HEAT_MAP_MINIMAP_VIEWPORT_BOX_SMALLEST_PX = 8
 
-# The counters the heat map shows beside the selected one, in the order the
-# columns are drawn. A counter named here that the run cannot supply is
-# simply left out, so naming one no profile records costs nothing.
+# The counters the heat map shows beside the selected one, in column order.
+# One the run cannot supply is left out, so naming an unrecorded one is free.
 HEAT_MAP_SECONDARY_COUNTER_NAMES: tuple[str, ...] = ("D1m", "DLm", "Bcm")
 
 # The share of the file a line must carry to earn a jump button above the
@@ -204,39 +160,28 @@ HEAT_MAP_TREE_INDENT_PER_LEVEL_PX = 14
 HEAT_MAP_TREE_PANE_NARROWEST_PX = 120
 
 # The heat map view a summary page links, as key, link label, page path.
-# Every test has one, recorded trace or not. Spelled the same way as
-# FLAME_GRAPH_VIEW_ENTRY, and carrying a label for the same reason.
+# Every test has one. Spelled the same way as FLAME_GRAPH_VIEW_ENTRY.
 HEAT_MAP_VIEW_ENTRY: tuple[str, str, str] = (
     "heat-map",
     "heat map",
     "heat-map/index.html",
 )
 
-# How fast the outer strip's "reset columns" link may be clicked: this many
-# clicks inside this window raise the error the overlay shows. Resetting
-# every column measures the whole layout again, so hammering the link is
-# what these bound.
+# How fast "reset columns" may be clicked: this many inside this window
+# raise the overlay's error. A reset measures the whole layout again.
 LAYOUT_RESET_RATE_LIMIT_CLICKS = 3
 LAYOUT_RESET_RATE_LIMIT_WINDOW_MS = 5000
 
-# Milliseconds a window resize settles for before the page re-measures. A
-# drag fires resize continuously, and re-measuring every frame is what this
-# delay exists to avoid.
+# Milliseconds a window resize settles for before the page re-measures: a
+# drag fires resize continuously, and every frame is what this avoids.
 LAYOUT_RESIZE_SETTLE_DELAY_MS = 120
 
-# The multiple a rise stops being printed at, becoming the ">1000x" bound
-# that says the rise ran off the column rather than naming a value. A drop
-# cannot pass -100%, so only a rise ever reaches it. theme.py prints the
-# number server-side and theme.js prints it on the page, and both read this.
+# The multiple a rise stops printing at, becoming the ">1000x" bound. A drop
+# cannot pass -100%, so only a rise reaches it. theme.py and theme.js read it.
 NUMBER_LARGEST_PRINTED_MULTIPLE_TIMES = 999.99
 
-# The smallest percentage a table prints as a number. Under it a full
-# report renders "<0.01%" and a diff renders the arrow plus "≈0.00%", both
-# of which state a bound rather than a value. It is a notation floor and
-# nothing else: it picks no colour, hides no row and is never a
-# denominator. theme.py renders the number server-side and heatmap.js
-# renders it on the page, so both read this one value and the two
-# spellings of the notation cannot drift apart.
+# The smallest percentage a table prints as a number, under which it states
+# a bound. A notation floor only: no colour, no filter, never a denominator.
 NUMBER_SMALLEST_PRINTED_PERCENT = 0.01
 
 # The page font: Monaco first, then whatever else the box has.
@@ -244,16 +189,12 @@ PAGE_FONT_FAMILY = (
     'Monaco, Menlo, "DejaVu Sans Mono", "Liberation Mono", Consolas, monospace'
 )
 
-# The global the generated settings file assigns its one statement to. A page
-# links that file before every script that reads it, the way it links
-# ui_strings.js. settings_script_write() fills the handler template's name
-# marker with this, so the page calls what is spelled here.
+# The global the generated settings file assigns to, linked before every
+# script reading it. settings_script_write() fills the template's marker.
 PAGE_SETTINGS_GLOBAL_NAME = "settings"
 
-# Narrowest a dragged pane may get, in pixels, where the splitter's caller
-# names no floor of its own, and the share of the window it may not be
-# dragged past. The far pane keeps the rest, so the wide end is what stops
-# a drag from closing it entirely.
+# Narrowest a dragged pane may get where its caller names no floor, and the
+# window share it may not pass: the wide end stops a drag closing the far pane.
 PANE_SPLITTER_NARROWEST_PX = 120
 PANE_SPLITTER_WIDEST_WINDOW_SHARE = 0.6
 
@@ -265,37 +206,25 @@ RANKING_COUNTER_NAME = "CEst"
 # of each profiled file rather than one per page that references it.
 REPORT_SOURCES_DIR_NAME = "sources"
 
-# Every localStorage key a report owns, as the exact keys and the prefixes
-# a family of them shares. A key missing from both outlives every version
-# bump, because the sweep is what a bump runs and the sweep only reaches
-# what is named here. These are the browser's own keys, so they are
-# boundary names and keep their spelling.
+# Every localStorage key a report owns, exact keys and shared prefixes. One
+# missing from both outlives every bump. Browser keys, so boundary names.
 STORAGE_OWNED_KEYS: tuple[str, ...] = ("heat.scale", "heat.sort")
 STORAGE_OWNED_PREFIXES: tuple[str, ...] = ("split.",)
 
-# What a report writes under STORAGE_VERSION_KEY, and the key it writes it
-# under. Anything but exactly this string sweeps every key the report owns,
-# so bumping the version is how a stored-format change is rolled out. It is
-# a bare string in the store, not JSON.
+# What a report writes under STORAGE_VERSION_KEY, a bare string, not JSON.
+# Anything but exactly it sweeps every owned key: that is how a bump rolls out.
 STORAGE_VERSION = "perf2html v1"
 STORAGE_VERSION_KEY = "perf2html.version"
 
 # The "curl.se/perf" link in every page's util block.
 STRIP_CURL_PERF_SITE_HREF = "https://curl.se/perf/index.html"
 
-# Width of a strip's status row, its first cell. The outer one says
-# "perf2html". The inner one says the selection path, so the budget is the
-# longest test name plus separator plus the longest view label --
-# "simpleformat / flame graph" is 26 today, and "<test> / summary" is
-# shorter. flex-wrap: nowrap means too small clips mid-word. The 33 is that
-# 26 plus the margin a ruler "|---...---|" of the same width measures: it is
-# written out as a number because a setting is serialized to the browser
-# whole, and a computed one would ship only its result anyway.
+# Width of a strip's status row, its first cell: the longest "<test> /
+# <label>" is 26 today, plus margin. Too small clips mid-word.
 STRIP_STATUS_ROW_WIDTH_CHARS = 33
 
-# Where on the heat ramp the outer strip's wordmark starts, its last letter
-# always landing on the hot end. Half way up means the plate reads as the
-# ramp's warm half rather than the whole of it.
+# Where on the heat ramp the wordmark starts, its last letter always on the
+# hot end. Half way up reads as the ramp's warm half, not the whole of it.
 STRIP_WORDMARK_LOGO_START_FRACTION = 0.5
 
 # Valgrind's own preamble, dropped from the log a page shows.
@@ -350,10 +279,8 @@ THEME_COLOR_PAIR_ENTRIES: list[str] = [
     "#2F3640",
 ]
 
-# What the seven THEME_COLOR_PAIR_ENTRIES pairs are called, in the order
-# that list gives them. Each name becomes the CSS variables --<name> and
-# --<name>-l, so these are boundary names, and there must be one name for
-# every pair the entries hold.
+# What the seven THEME_COLOR_PAIR_ENTRIES pairs are called, in their order.
+# Each becomes --<name> and --<name>-l, so these are boundary names.
 THEME_COLOR_PAIR_NAMES: tuple[str, ...] = (
     "blue",
     "white",
@@ -365,18 +292,11 @@ THEME_COLOR_PAIR_NAMES: tuple[str, ...] = (
 )
 
 # How much darker than its named colour the page background is drawn. The
-# whole page follows --bg: the scrollbar track and the minimap band, so this
-# is the one number that moves them together. A heated cell does not -- it
-# carries its ramp stop opaque.
+# one number moving --bg, scrollbar and minimap; a heated cell follows none.
 THEME_COLOR_ROLE_BACKGROUND_SHADE_FACTOR = 0.90
 
-# What each colour is actually for, as the CSS variable name every page
-# reads, then which THEME_COLOR_PAIR_NAMES pair it is taken from and which
-# member of that pair. The member is "light" or "dark". "bg" is the one
-# entry the pair alone does not settle, because it is its pair's dark
-# member darkened by THEME_COLOR_ROLE_BACKGROUND_SHADE_FACTOR. Renaming a
-# role renames a CSS variable every stylesheet and page script reads, so
-# these keys are boundary names.
+# What each colour is for, as its CSS variable, then the pair and member
+# ("light"/"dark") it comes from. "bg" alone is shaded. Boundary names.
 THEME_COLOR_ROLE_SOURCES: dict[str, tuple[str, str]] = {
     "bg": ("slate", "dark"),
     "bg-alt": ("slate", "light"),
@@ -391,12 +311,8 @@ THEME_COLOR_ROLE_SOURCES: dict[str, tuple[str, str]] = {
     "bar": ("steel", "dark"),
 }
 
-# The units a printed duration is measured in, largest first, each as the
-# suffix to print and how many seconds one of them lasts. num_time() prints
-# a value in the first unit it reaches, so the order is what decides
-# whether 0.5 ms reads as 500.00us or 0.50ms. This is the printing ladder,
-# not SUMMARY_TIME_SUFFIX_SECONDS, which reads suffixes a perf log already
-# wrote.
+# The units a printed duration uses, largest first, as suffix and seconds.
+# The printing ladder, not SUMMARY_TIME_SUFFIX_SECONDS, which reads a log.
 THEME_TIME_UNIT_ENTRIES: tuple[tuple[str, float], ...] = (
     ("s", 1.0),
     ("ms", 1e-3),
@@ -406,15 +322,8 @@ THEME_TIME_UNIT_ENTRIES: tuple[tuple[str, float], ...] = (
 )
 
 
-# Everything above is a setting and everything below is the reader's own,
-# so this is the whole list of settings, taken at the line between the two
-# before a single one of the reader's constants is bound. The shell's are
-# read first, because settings.sh holds settings of this module like any
-# other: bound here under their own names, resolved by load_into() and read
-# by a page the same way. The scope is this module's from here on, and
-# nothing re-reads it -- a name bound below is not a setting, which is what
-# keeps the reader's constants out of both the browser's object and every
-# module's load.
+# The whole list of settings, taken at the line between them and the
+# reader's own constants, after the shell's are bound and before any of those.
 _SETTING_NAMES: frozenset[str] = frozenset()
 
 
@@ -425,15 +334,12 @@ def _is_setting_name(name: str) -> bool:
     return bool(bare) and bare[0].isupper() and bare.isupper()
 
 
-# The scalar types the type check tests exactly. bool sits before int
-# because bool is an int subclass, so an int annotation must not accept
-# True.
+# The scalar types the type check tests exactly. bool sits before int, being
+# an int subclass, so an int annotation must not accept True.
 _SCALAR_TYPES = (bool, int, float, str)
 
-# The types a declaration's sentinel may be written as, each accepted only
-# while it is empty: "", 0, 0.0, (), [], {}. bool is left out -- False is
-# an int to Python, and no declaration has wanted one. set() and frozenset()
-# are here so a set-typed setting has a sentinel to be declared with.
+# The types a declaration's sentinel may be written as, accepted only while
+# empty: "", 0, 0.0, (), [], {}. bool is out -- False is an int to Python.
 _SENTINEL_EMPTY_TYPES = (
     bytes,
     dict,
@@ -446,20 +352,16 @@ _SENTINEL_EMPTY_TYPES = (
     tuple,
 )
 
-# How the accepted sentinels are spelled back in every message naming them,
-# so the three errors and DECLAUDE.md say the same list. Exactly the empty
-# forms of _SENTINEL_EMPTY_TYPES -- None and Ellipsis are not among them,
-# because neither names the type the annotation asked for.
+# How the accepted sentinels are spelled in every message naming them, so
+# the errors and DECLAUDE.md say one list. None and Ellipsis are not on it.
 _SENTINEL_TEXT = '0, 0.0, "", (), [], {}'
 
 # The scripts/ directory, which is where this file, settings.sh and the
 # handler template all sit.
 _SETTINGS_DIRECTORY = os.path.dirname(os.path.abspath(__file__))
 
-# What settings_script_write() substitutes in the handler template: the
-# JSON literal of every setting, and the name the page calls the reader by.
-# Both are bare identifiers in the template, so node --check parses the
-# file before anything is filled in.
+# What settings_script_write() substitutes in the handler template. Both are
+# bare identifiers there, so node --check parses it before anything fills in.
 _SETTINGS_PAGE_DATA_MARKER = "__DATA__"
 _SETTINGS_PAGE_NAME_MARKER = "__NAME__"
 
@@ -468,9 +370,7 @@ _SETTINGS_PAGE_NAME_MARKER = "__NAME__"
 _SHELL_EXPANSION_MARKS = ("$", "`")
 
 # Each such word this file answers for itself, spelled exactly as
-# settings.sh writes it, and what Python computes to match bash. Seconds
-# since the epoch is the one so far: a plain unix integer either language
-# reads the same way.
+# settings.sh writes it, and what Python computes to match bash.
 _SHELL_EXPANSION_VALUES = {
     "$(date +%s)": lambda: str(int(time.time())),
 }
@@ -490,10 +390,8 @@ _SHELL_STATEMENT_PATTERN = re.compile(
     r"(declare -A )?([A-Za-z_][A-Za-z0-9_]*)=(.*)"
 )
 
-# One settings.sh word: single-quoted, double-quoted, or bare up to the
-# whitespace or ")" that ends it. What a word may hold is bash's question,
-# not this reader's -- every script sources the file before anything parses
-# it, so bash has already refused whatever it would refuse.
+# One settings.sh word: single-quoted, double-quoted, or bare to the
+# whitespace or ")". What it may hold is bash's question, not this reader's.
 _SHELL_WORD_PATTERN = re.compile(r"'([^']*)'|\"([^\"]*)\"|([^\s)]+)")
 
 
@@ -510,13 +408,8 @@ class SettingsReader:
         scope = globals()
         return {name: scope[name] for name in sorted(_SETTING_NAMES)}
 
-    # Whether one written initializer is an empty sentinel of a type the
-    # annotation could have named. A fixed-length tuple annotation has no
-    # empty form -- tuple[str, str, str] cannot be written () without pyright
-    # rejecting it -- so a tuple is also a sentinel when every element it
-    # holds is one. None and Ellipsis are not sentinels: neither is an empty
-    # value of any annotated type, so writing one declares nothing about the
-    # type and would slip past type_check on a container.
+    # Whether one initializer is an empty sentinel of a type the annotation
+    # could name. A fixed-length tuple counts when every element is one.
     def is_sentinel(self, written: object) -> bool:
         if type(written) not in _SENTINEL_EMPTY_TYPES:
             return False
@@ -526,13 +419,8 @@ class SettingsReader:
             self.is_sentinel(item) for item in written
         )
 
-    # An annotation is the whole request: which setting, and the type
-    # expected. Its initializer is a sentinel of that type and is always
-    # overwritten here, so nothing reads one. Every SCREAMING_SNAKE name the
-    # module has bound above this call is a setting it is asking for, and
-    # the three checks run in the order a mistake is best explained in:
-    # does the name match a setting at all, was it written with a sentinel,
-    # does its type agree. The namespace is ours until this returns.
+    # An annotation is the whole request: which setting and what type. Every
+    # SCREAMING_SNAKE name bound above this call is one being asked for.
     def load_into(self, module_name: str) -> None:
         module = sys.modules[module_name]
         scope = vars(module)
@@ -547,10 +435,8 @@ class SettingsReader:
             self.type_check(module_name, name, value, expected)
             setattr(module, name, value)
 
-    # The first check: a SCREAMING_SNAKE name bound above the call is a
-    # setting being asked for, so this file has to have one by that name.
-    # A file's own constant written above the call lands here, because it
-    # matches nothing, and so does a misspelled or undefined setting.
+    # The first check: a name bound above the call must be a setting this
+    # file holds. A file's own constant written above lands here too.
     def match_check(self, module_name: str, name: str) -> None:
         setting = name.lstrip("_")
         if setting in _SETTING_NAMES:
@@ -564,17 +450,10 @@ class SettingsReader:
         )
 
     # Build assets/settings.js: every setting as one frozen JSON literal in
-    # settings_handler.js. Every one ships, so a page reads any setting by
-    # name and no list says which ones it may see. The one kind held back
-    # is a settings.sh word bash expands, for the reason shell_word_expand()
-    # gives: its value is this import's, not the run's, so a page reading it
-    # would name a different run. Which template to read and what the page
-    # calls the reader are settings like any other, so this reads them here
-    # rather than taking them from a caller who would only spell them again.
-    # The template is opened with a plain open() rather than through
-    # theme.asset_text_read(), which would cycle: theme.py imports this
-    # module.
+    # settings_handler.js, wholesale, with no list of what a page may see.
     def script_write(self) -> str:
+        # an expanded word is held back, per shell_word_expand(). Plain
+        # open(), never theme.asset_text_read(): theme.py imports this module
         values = {
             name: value
             for name, value in self.all_named().items()
@@ -590,10 +469,8 @@ class SettingsReader:
             _SETTINGS_PAGE_NAME_MARKER, PAGE_SETTINGS_GLOBAL_NAME
         ).replace(_SETTINGS_PAGE_DATA_MARKER, data)
 
-    # The second check: the name matches a setting, so it is a declaration,
-    # and a declaration is written with an empty sentinel of its own type.
-    # Anything else is a value someone meant to be read, and load_into()
-    # overwrites every one of them.
+    # The second check: a declaration is written with an empty sentinel of
+    # its own type. Anything else is a value meant to be read, and is lost.
     def sentinel_check(
         self,
         module_name: str,
@@ -619,10 +496,8 @@ class SettingsReader:
             "nothing else."
         )
 
-    # A settings.sh name is spelled like every other setting and is bound
-    # nowhere else: not twice there, and not above in this file, where a
-    # second definition would be the hand-matched twin this reader exists
-    # to end.
+    # A settings.sh name is spelled like every other setting and bound
+    # nowhere else: a second definition is the twin this reader exists to end.
     def shell_name_check(
         self, number: int, name: str, found: dict[str, object]
     ) -> None:
@@ -661,16 +536,8 @@ class SettingsReader:
             f"error: {_SHELL_SETTINGS_FILE_NAME} line {number}: {problem}"
         )
 
-    # Every setting settings.sh holds, by name. The file is sourced by the
-    # shell and parsed here, so only what both read the same way is
-    # accepted, and anything else stops the import naming its line: blank
-    # and # comment lines; NAME=word; NAME=(word ...) and declare -A
-    # NAME=([key]=word ...), each over one or more lines up to the closing
-    # ")", giving tuple[str, ...] and dict[str, str]. A word is bare,
-    # single-quoted or double-quoted, and its contents are bash's business:
-    # every script sources the file before this runs. A scalar matching
-    # -?[0-9]+ is an int, every other scalar a str, and elements stay str.
-    # A name is a setting name and is bound in neither file already.
+    # Every setting settings.sh holds, by name. Only what shell and Python
+    # read alike is accepted; the grammar is settings.sh's own header.
     def shell_settings_read(self) -> dict[str, object]:
         path = os.path.join(_SETTINGS_DIRECTORY, _SHELL_SETTINGS_FILE_NAME)
         with open(path, encoding="utf-8") as handle:
@@ -717,20 +584,11 @@ class SettingsReader:
             )
         return found
 
-    # The value bash would give one word. A word holding no $ or backtick
-    # is already that value; one that does is looked up in the handful this
-    # file knows how to answer for itself, spelled the way settings.sh
-    # writes it. Nothing is run here -- the shell is what sources the file.
-    #
-    # DO NOT READ AN EXPANDED WORD. This is computed at import, the
-    # shell's at source, so TIMESTAMP can land a second off the run's real
-    # stamp. It exists to keep the parser whole, not to be read: the stamp
-    # a generator uses arrives as the shell's stamp= manifest row, and
-    # reading settings.TIMESTAMP would silently name a different run. Each
-    # name this answers for is remembered so script_write() can keep it
-    # out of the browser's object, where the same trap would be one a page
-    # could fall into.
+    # The value bash would give one word, looked up rather than run: the
+    # shell is what sources the file. See DECLAUDE.md 3.1.
     def shell_word_expand(self, number: int, name: str, word: str) -> str:
+        # DO NOT READ AN EXPANDED WORD: computed at import, not at source,
+        # so settings.TIMESTAMP would silently name a different run
         if not any(mark in word for mark in _SHELL_EXPANSION_MARKS):
             return word
         self.expanded_names.add(name)
@@ -742,9 +600,8 @@ class SettingsReader:
             )
         return _SHELL_EXPANSION_VALUES[word]()
 
-    # One line of a container body as (key, word) pairs -- the key is empty
-    # in a list -- and whether the line closed the container. A word ends
-    # at whitespace or the closing ")", so 'a'b is refused, never joined.
+    # One line of a container body as (key, word) pairs, the key empty in a
+    # list, and whether it closed. 'a'b is refused at the end, never joined.
     def shell_words_parse(
         self, number: int, name: str, text: str, keyed: bool
     ) -> tuple[list[tuple[str, str]], bool]:
@@ -789,9 +646,8 @@ class SettingsReader:
                 word = self.shell_word_expand(number, name, word)
             pairs.append((key, word))
 
-    # The third check: the value this file holds has to be the type the
-    # annotation names. Scalars exactly, never converted. A container is
-    # checked to the container, not walked.
+    # The third check: the value must be the type the annotation names.
+    # Scalars exactly, never converted; a container is not walked.
     def type_check(
         self, module_name: str, name: str, value: object, expected: object
     ) -> None:
@@ -816,14 +672,8 @@ class SettingsReader:
         return globals()[name.lstrip("_")]
 
 
-# The reader, then the cut. Reading settings.sh binds the shell's settings
-# here under their own names first, so that every setting is bound before
-# the list of them is taken. A setting of this file is spelled bare, the
-# way settings.sh spells every one of its own, and the reader's constants
-# above carry the leading underscore that means "mine" -- so the cut is
-# what skips them, and _is_setting_name() keeps stripping the underscore
-# for the declarations in other modules, which is where a private setting
-# name is the ordinary spelling.
+# The reader, then the cut: the shell's settings bind first, so every one
+# is bound before the list is taken. See DECLAUDE.md 6.1 for the spelling.
 _reader = SettingsReader()
 globals().update(_reader.shell_settings_read())
 _SETTING_NAMES = frozenset(
@@ -840,7 +690,6 @@ def load_into(module_name: str) -> None:
 
 
 # Build assets/settings.js: every setting this module holds, shipped to the
-# browser as one frozen object. Every one goes, so a .js file reads any
-# setting by name and nothing here says which ones it may see.
+# browser as one frozen object, with no list of which a page may see.
 def settings_script_write() -> str:
     return _reader.script_write()

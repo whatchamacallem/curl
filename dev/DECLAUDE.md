@@ -89,6 +89,9 @@ after an earlier one failed**.
 - `perf2html.sh` default DIR is `perf2html_baseline_report`, or
   `perf2html_modified_report` when cmake_flags are given - **after a
   _source_-only change pass `--report=perf2html_modified_report` yourself.**
+- **`usage_show`'s heredoc is a script's only usage text.** Never restate it
+  in the file header, which says what the script is and nothing more. It and
+  `README.md`'s option lists are the one pair kept in step by hand.
 - `toolchain_check` is the **only** toolchain check the user-facing scripts
   have, collecting **every** missing tool before exiting 1, one
   `tool -> official install command` each, **official instructions only**
@@ -239,7 +242,11 @@ link); `MANIFEST.txt` line 1 = version string, then LABEL=VALUE.
   list `LC_ALL=C` sorted, paths **relative** to the report dir.
   **Re-verified every time any tool opens a report**; mismatch is a hard
   error. Paths in pages/manifest are **relative**; `home_dir_check` fails on
-  `$HOME`.
+  `$HOME`. `shared.sh`'s `checksum_compute` and `validate_report.py`'s
+  `_REPORT_CHECKSUM_COMMAND` spell that pipeline **separately on purpose -
+  not the banned twin**: a check importing what wrote the checksum would
+  agree by construction and could never catch it being wrong, which is the
+  only thing it is for. **Do not "de-duplicate" them.**
 - **Generated pages are deterministic** - same input ⇒ byte-identical output,
   so a page diff is always code; only `stamp=` and re-measured time vary.
 - **Raw data compressed, one `tar.xz` per test**, named after the
@@ -304,6 +311,15 @@ name**, not the text, resolved via `source_text(file_path)`.
   text, a fenced `.md` block or a long template literal - split by hand.
   **Not** the 80-column source _view_ (`HEAT_MAP_SOURCE_VIEW_WIDTH_CHARS`),
   which **must never change to match**.
+- **A comment block is 2 lines, and 3 is a formatting error**
+  (`comment_block_scan.py`, `_COMMENT_BLOCK_MAX_LINES`, run by `reformat.sh`
+  as the `comments` stage). A block is consecutive **whole-line** comments,
+  so a blank line splits one and a trailing comment is invisible. **A file's
+  opening header is exempt** - line 1 to the first line of code - which is
+  what keeps `cyg_callback.c`'s format reference, `settings.sh`'s grammar and
+  `reformat.sh`'s coverage table. Longer reasoning moves **here**, not into a
+  third line; the other fix is to name the thing above and push the "why"
+  onto the code below it.
 - **ASCII plus a short allow list**: `≈`, `∞`, `▲`, `▶`, `▼`, `…`
   (`_SOURCE_SCAN_ALLOWED_NON_ASCII_CHARS` in `validate_report.py`), **written
   literally** - an entity would be double-escaped by `html_escape()` and its

@@ -24,24 +24,18 @@ _TABLE_FUNCTION_NAME_WIDTH_CHARS: int = 0
 settings.load_into(__name__)
 
 # What this exits with when a file a page is built from will not open.
-# ENOTDIR's number, the closest thing errno has to "the tree is not what the
-# run was told it was".
+# ENOTDIR: the closest errno has to "the tree is not what we were told".
 _EXIT_INPUT_UNREADABLE = 20
 
 # Valgrind's "==1234== " line prefix, stripped so the log reads as output.
 _PID_PREFIX = re.compile(r"^==\d+==\s?")
 
-# How far a test's summary page sits below the report root, which is what
-# says how many "../" its links to the shared assets need. The layout fixes
-# it: the overview is the root, every test has one directory of its own, and
-# the views it frames sit one deeper still.
+# How far a test's summary page sits below the report root, which says how
+# many "../" its shared-asset links need. The layout fixes it.
 _SUMMARY_PAGE_ASSETS_DEPTH = 1
 
-# A "Something: 1.23 ms" line of the perf log, which is the only valid speed
-# number -- callgrind's wall clock never is. Every run of blank space is
-# spelled [ \t]* rather than \s*, which under re.M would swallow the newline
-# ending the line and the blank line after it, merging two paragraphs of the
-# log into one.
+# A "Something: 1.23 ms" perf log line, the only valid speed number. Blank
+# space is [ \t]*, never \s*, which under re.M merges two paragraphs.
 _TIME_LINE = re.compile(
     r"^([ \t]*[A-Za-z][\w/ ]*:[ \t]*)"
     r"(-?\d+(?:\.\d+)?)[ \t]*"
@@ -261,11 +255,8 @@ class BuildReport:
             baseline_calls=doc["baselineCalls"],
         )
 
-    # Refuse a profile or a callers diff whose recorded counters cannot add
-    # up to the ranking counter, naming it rather than letting Profile.value
-    # raise a bare KeyError further in. Every table names that counter
-    # directly and none of them falls back to another one, so a run that
-    # cannot supply it has nothing to print.
+    # Refuse a profile whose counters cannot add up to the ranking counter,
+    # rather than a bare KeyError from Profile.value further in.
     def counters_check(self, counters: Sequence[str], path: str) -> None:
         if _RANKING_COUNTER_NAME in callgrind.counter_names(counters):
             return
@@ -275,9 +266,8 @@ class BuildReport:
             f" {' '.join(counters)}"
         )
 
-    # One collapsed section of a summary page: a heading that opens it and
-    # whatever markup it holds. Every section of every summary page, core
-    # and diff alike, is this same shape.
+    # One collapsed section of a summary page: a heading and its markup.
+    # Every section, core and diff alike, is this same shape.
     def details_section(self, title: str, body: str) -> str:
         return (
             f'<details class="sec"><summary><h2>'
@@ -336,9 +326,7 @@ class BuildReport:
                         if share is not None
                         else "",
                     ),
-                    self.function_link_cell(
-                        profile, ranked_function.function
-                    ),
+                    self.function_link_cell(profile, ranked_function.function),
                     theme.num_signed(ranked_function.cost),
                     theme.Cell(
                         theme.num_signed(call_count),
@@ -414,9 +402,8 @@ class BuildReport:
             )
         return columns, rows
 
-    # A delta as a percentage of that same thing's own baseline. Something
-    # the baseline never had is an infinite share, which prints "∞%" and
-    # colors at full scale. None when there is no change at all.
+    # A delta as a percentage of that same thing's own baseline. What the
+    # baseline never had is infinite; None when there is no change at all.
     def diff_share(self, delta: int, baseline: int | None) -> float | None:
         if not baseline:
             return math.copysign(math.inf, delta) if delta else None
@@ -447,11 +434,8 @@ class BuildReport:
             urllib.parse.quote(function, safe="/-_.!~*'()")
         )
 
-    # Read a file the page is built from. A file that will not open stops
-    # the run: standing a placeholder in for it would print the absolute
-    # path this ran under into the page, where every path is relative and
-    # none may name $HOME, and would leave a report whose manifest says it
-    # finished. Stopping here means no manifest is ever written.
+    # Read a file the page is built from; one that will not open stops the
+    # run, so no manifest is written and no page carries an absolute path.
     def file_read(self, path: str) -> str:
         try:
             with open(path, encoding="utf-8", errors="replace") as handle:
@@ -470,8 +454,7 @@ class BuildReport:
         return (_ASSET_UI_STRINGS_SCRIPT_NAME, _ASSET_FRAME_SCRIPT_NAME)
 
     # The columns of a summary's top table. A core report and a diff rank
-    # on different numbers and print them differently, but both say the
-    # same thing about each function, so both are laid out the same.
+    # differently but say the same thing, so both are laid out the same.
     def function_columns(self) -> list[theme.Column]:
         return [
             theme.Column("#", numeric=True),
@@ -543,9 +526,7 @@ class BuildReport:
                         theme.num_pct(share),
                         style=theme.heat_style(theme.heat_of_share(share)),
                     ),
-                    self.function_link_cell(
-                        profile, ranked_function.function
-                    ),
+                    self.function_link_cell(profile, ranked_function.function),
                     theme.num_human(ranked_function.cost),
                     theme.Cell(
                         theme.num_human(call_count),

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
-# No usage docs allowed here.
+# Builds, profiles and generates one report. usage_show below is the only
+# usage text here. It and README.md are kept in step by hand.
 
 set -euo pipefail
 _SCRIPT="$(readlink -f "$0")"
@@ -11,16 +12,17 @@ cd "$(dirname "$_SCRIPT")"
 
 _REPO="$(cd .. && pwd)"
 
+# usage_show - the one usage text, printed by -h and on a bad argument
 usage_show() {
   cat <<'EOF'
 perf2html.sh [debug-flags] [--report=DIR] [cmake-flags...]
     Builds RelWithDebInfo, profiles every TESTS_C test under callgrind plus a
     native perf stat timing run and a traced run for the flame graph,
     generates one report.
-    --target-dir=DIR  holds the three default-named reports (default CWD). The
-                      batch cannot rename them.
-    cmake-flags       every argument not one of its own options, applied to the
-                      modified build (default -D CMAKE_C_FLAGS=-Os).
+    --report=DIR      Defaults to perf2html_baseline_report, or
+                      perf2html_modified_report when a cmake flag is given.
+                      Pass it yourself after a source-only change.
+    cmake-flags       Everything else, e.g. -D CMAKE_C_FLAGS=-Os.
 
   debug-flags:
     --artifacts=TMP   The profiler artifacts directory. Defaults to
@@ -31,8 +33,7 @@ perf2html.sh [debug-flags] [--report=DIR] [cmake-flags...]
     --regenerate      Rebuilds all pages from the last run's profiler
                       artifacts, re-measuring nothing. Implies
                       --keep-artifacts.
-    --verbose         additive: whatever quiet prints, verbose prints too, plus
-                      each child's output as produced.
+    --verbose         Enables diagnostic information.
 EOF
 }
 
@@ -122,9 +123,8 @@ ${_flag#-DCMAKE_C_FLAGS=}"
 # stamp_reuse - takes $TIMESTAMP back from a verified report, for --regenerate.
 stamp_reuse() {
   local _manifest="$_OUT_DIR/MANIFEST.txt"
-  # a report is only a report if its version line and its recorded
-  # checksum both still hold, so --regenerate cannot read back a tree an
-  # aborted run or a later edit left behind
+  # version line and checksum must both still hold, so --regenerate cannot
+  # read back what an aborted run or a later edit left behind
   manifest_verify "$_OUT_DIR" "--regenerate input" \
     "$REPORT_MANIFEST_VERSION_FULL"
   TIMESTAMP="$(manifest_value "$_OUT_DIR" stamp)"
@@ -485,9 +485,8 @@ main() {
   build_manifest
   _HEADER_ROWS=()
   local _log_name="profile.$TIMESTAMP.log"
-  # --regenerate rebuilds this report's pages out of the artifacts dir and
-  # reads the report itself back to find them, so it is the one mode that
-  # must not start by clearing it
+  # --regenerate rebuilds the pages from the artifacts dir and reads the
+  # report back to find them, so it is the one mode that must not clear it
   if [ "$_REGENERATE" = 1 ]; then
     _log_name="regenerate.$TIMESTAMP.$(date +%s).log"
   fi

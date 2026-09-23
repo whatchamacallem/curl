@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
-# No usage docs allowed here.
+# Subtracts two reports' counters into a diff, measuring nothing. usage_show
+# below is the only usage text here. It and README.md are kept in step by hand.
 
 set -euo pipefail
 
@@ -10,7 +11,7 @@ cd "$(dirname "$_SCRIPT")"
 . ./scripts/settings.sh
 . ./scripts/shared.sh
 
-# Must be kept in sync with the README.md and no other usage docs allowed.
+# usage_show - the one usage text, printed by -h and on a bad argument
 usage_show() {
   cat <<'EOF'
 perf2html_diff.sh [debug-flags] [baseline] [modified] [diff]
@@ -28,8 +29,7 @@ perf2html_diff.sh [debug-flags] [baseline] [modified] [diff]
     --regenerate      Rebuilds all pages from the last run's profiler
                       artifacts, re-measuring nothing. Implies
                       --keep-artifacts.
-    --verbose         additive: whatever quiet prints, verbose prints too, plus
-                      each child's output as produced.
+    --verbose         Enables diagnostic information.
 EOF
 }
 
@@ -100,10 +100,8 @@ args_parse() {
   ARTIFACTS_DIR="$(absolute_path "$ARTIFACTS_DIR")"
 }
 
-# manifest_check - refuses an input whose version line is not exactly a
+# manifest_check - refuse an input whose version line is not exactly a
 # perf2html.sh report's, which is how a diff is never read back as one.
-# The one version string it names is what does that; saying so out loud
-# is all this adds over manifest_verify.
 manifest_check() {
   local _dir="$1" _role="$2" _manifest="$1/MANIFEST.txt"
   if [ -f "$_manifest" ] \
@@ -125,13 +123,11 @@ header_file_of() {
   echo "$_out"
 }
 
-# profiles_extract - unpacks one report's archives once and writes the
-# listing its caller named, synthesizing the "all" row as the union of
-# every real test's profiles. It is a statement, never $(...): it calls
-# command_run, whose verbose tee would land in the capture.
-# A listing row is "<test>" then one profile path per following line,
-# blank-line terminated, so a path holding a space survives.
+# profiles_extract - unpack one report's archives once into the named
+# listing, synthesizing "all". Never $(...): command_run's tee lands in it.
 profiles_extract() {
+  # a row is "<test>", then one profile path per line, blank-line
+  # terminated, so a path holding a space survives
   local _dir="$1" _role="$2" _listing="$3"
   local _archive _test _into _every=()
   local -a _files

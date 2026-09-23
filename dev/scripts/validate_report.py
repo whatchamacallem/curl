@@ -383,9 +383,8 @@ class ValidateReport:
                 names.append(test_name)
         return names
 
-    # Any page at all: big enough, titled, closed, and no template
-    # leftovers. Returns the page plus every asset it links, so a caller
-    # greps a contract name wherever the page keeps it.
+    # Any page at all: big enough, titled, closed, no template leftovers.
+    # Returns the page plus every asset it links, for a caller to grep.
     def page_check(
         self,
         path: str,
@@ -671,23 +670,17 @@ class ValidateReport:
         return sorted(paths)
 
 
-# What each view's directory under a test is called, taken from the view
-# entry production builds the report with rather than spelled again here.
-# Element 0 of each entry is the key, which is both the URL hash's name for
-# the view and the directory holding its page, so a rename there renames
-# what this looks for.
+# What each view's directory is called, from the entry production builds
+# with. Element 0 is the key: the URL hash's name and the page's directory.
 _FLAME_GRAPH_VIEW_KEY = _FLAME_GRAPH_VIEW_ENTRY[0]
 
-# The heat map's key, and its link label, element 1 of the same entry --
-# the half of a view page's "<test> / <label>" title that production
-# renders from the entry. Checking the title against the entry is what
-# makes the check a check rather than a second spelling of the title.
+# The heat map's key and link label, element 1 of the same entry. Checking
+# the title against it is what keeps this a check, not a second spelling.
 _HEAT_MAP_VIEW_KEY = _HEAT_MAP_VIEW_ENTRY[0]
 _HEAT_MAP_VIEW_LABEL = _HEAT_MAP_VIEW_ENTRY[1]
 
 # What a perf2html_diff.sh report must contain: no flame graph, no timing.
-# The version line is the production string, read out of settings.py, not
-# restated here: this checks the report against what wrote it.
+# The version line comes from settings.py, so this checks what wrote it.
 _LAYOUT_DIFF = ValidateReport.ReportLayout(
     subpages=(_HEAT_MAP_VIEW_KEY,),
     heading=r"<h2>top \d+ functions by change in self</h2>",
@@ -716,17 +709,8 @@ _LAYOUT_FULL = ValidateReport.ReportLayout(
     all_has_archive=False,
 )
 
-# The POSIX pipeline this file re-derives the checksum row with: sorted
-# paths, relative to the report directory. scripts/shared.sh's
-# checksum_compute computes the same thing, and the two are written out
-# separately on purpose. That is not the banned twin: a twin is one value
-# two files must be kept in step on, and being kept in step is exactly what
-# must not happen here. A checksum check that imported what wrote the
-# checksum would agree with the generator by construction and could never
-# catch it being wrong, which is the only thing this check is for. The
-# pipeline could not be a setting in any case -- it holds spaces, "!", "|",
-# "\n" and "\0", and settings.sh takes one word that bash would not expand,
-# a grammar settings.py must never widen, because it runs nothing.
+# The POSIX pipeline this file re-derives the checksum row with, spelled
+# out separately from shared.sh's on purpose. See DECLAUDE.md: not a twin.
 _REPORT_CHECKSUM_COMMAND = (
     "find . -type f ! -name MANIFEST.txt -print"
     " | LC_ALL=C sort | LC_ALL=C tr '\\n' '\\0'"
@@ -757,22 +741,15 @@ _SOURCE_SCAN_FILE_EXTENSIONS = (
 )
 _SOURCE_SCAN_FILE_NAMES = ("README.md",)
 
-# Generated output and caches, which the ASCII scan walks straight past.
-# A report directory is recognised by its name ending this way, which is
-# the rule reformat.sh's files_of() skips them by ("*_report/*") rather
-# than the three report names restated: a fourth report, or one a --report
-# flag named something else, is generated output just the same.
+# Generated output and caches the ASCII scan walks past. A report is known
+# by its name ending, as reformat.sh's files_of() skips it ("*_report/*").
 _SOURCE_SCAN_SKIPPED_DIR_SUFFIX = "_report"
 
 # Caches and recordings, neither of which is source.
 _SOURCE_SCAN_SKIPPED_DIRS = ("__pycache__", _ARTIFACTS_NAME)
 
-# Smallest a file can be before it is plainly a failed generate rather than
-# a small one. The flame graph page is a loader -- two script tags and a
-# stylesheet link pointing at the shared bundle -- so it has a floor of its
-# own, well under the one a page carrying real content must clear. The two
-# logs and the manifest are plain text a run appends to, so theirs only has
-# to be past "the file exists but nothing was written into it".
+# Smallest a file can be before it is plainly a failed generate. The flame
+# graph page is a loader and the logs are appended text, so each has its own.
 _VALIDATE_FLAME_GRAPH_LOG_LEAST_BYTES = 20
 _VALIDATE_FLAME_GRAPH_PAGE_LEAST_BYTES = 300
 _VALIDATE_FLAME_GRAPH_SCRIPT_LEAST_BYTES = 200
@@ -800,8 +777,7 @@ def main() -> int:
     namespace = parser.parse_args()
     validator = ValidateReport()
     # the sources are one tree, not a property of any report: reformat.sh
-    # runs this once, rather than once per report it happens to find, or
-    # not at all when it finds none.
+    # runs this once, not once per report it happens to find
     if namespace.source_scan_only:
         validator.unicode_check()
         return validator.exit_code()

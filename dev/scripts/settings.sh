@@ -44,9 +44,8 @@ DEFAULT_FLAGS=(-D CMAKE_C_FLAGS=-Os)
 # the report-root directory holding the one shared speedscope copy
 FLAME_GRAPH_APP_DIR_NAME=flame-graph-app
 
-# each glob must match exactly one file in the speedscope release: the
-# engine, its stylesheet and the font the stylesheet names. Quoted, so
-# sourcing never expands one against the current directory
+# each glob must match exactly one file in the speedscope release. Quoted,
+# so sourcing never expands one against the current directory
 FLAME_GRAPH_APP_FILE_GLOBS=('speedscope-*.js' 'speedscope-*.css' '*.woff2')
 
 # working file the overview reads its LABEL=VALUE rows from. MANIFEST.txt
@@ -70,14 +69,11 @@ REPORT_BASELINE_DIR_NAME=perf2html_baseline_report
 REPORT_DIFF_DIR_NAME=perf2html_diff_report
 
 # the LABEL= row a report's MANIFEST.txt records its checksum on. The shell
-# writes that row and reads it back, validate_report.py and reformat.sh
-# check it
+# writes and reads it; validate_report.py and reformat.sh check it
 REPORT_MANIFEST_CHECKSUM_LABEL=checksum
 
-# the exact first line of a MANIFEST.txt, one per kind of report. It is the
-# only thing that makes a directory a report, and a diff names
-# perf2html_diff.sh, which is how a diff can never be read back as a diff
-# input. Bump one and every tool rejects the reports written before it
+# the exact first line of a MANIFEST.txt, one per kind of report, and the only
+# thing making a directory one. Bump one and older reports are all rejected
 REPORT_MANIFEST_VERSION_DIFF='curl/perf2html_diff.sh v1'
 REPORT_MANIFEST_VERSION_FULL='curl/perf2html.sh v1'
 

@@ -25,9 +25,8 @@ settings.load_into(__name__)
 # The page skeleton every heat map is rendered into.
 BODY = theme.asset_text_read(_ASSET_TEMPLATE_HEAT_MAP_PAGE_NAME)
 
-# How far a heat map page sits below the report root, which fixes its href
-# to the shared assets and sources. The page always lives in <test>/heat-map/,
-# in a full report and in a diff alike, so there is no shallower case.
+# How far a heat map page sits below the report root, fixing its href to the
+# shared assets and sources. Always <test>/heat-map/, full report or diff.
 _HEAT_MAP_PAGE_DEPTH = 2
 
 
@@ -439,9 +438,8 @@ class CallgrindToHeatmap:
             "cold": cold,
         }, info
 
-    # Bake the model into the page. The scripts go in before the data, and
-    # the result is never scanned again: a source file's own text can hold
-    # any marker this substitutes, and a second pass would act on it.
+    # Bake the model into the page: scripts before data, and the result is
+    # never scanned again -- a source file's text can hold any marker.
     def render(
         self,
         model: CallgrindToHeatmap.HeatModel,
@@ -455,9 +453,7 @@ class CallgrindToHeatmap:
         sources_href = theme.shared_href(
             _HEAT_MAP_PAGE_DEPTH, _REPORT_SOURCES_DIR_NAME
         )
-        scripts = self.script_tags(
-            assets_href, theme.page_preamble_scripts()
-        )
+        scripts = self.script_tags(assets_href, theme.page_preamble_scripts())
         scripts += self.script_tags(
             sources_href,
             sorted(
@@ -485,9 +481,7 @@ class CallgrindToHeatmap:
         )
 
     # Every tracked .c/.h under _HEAT_MAP_TREE_ALWAYS_LISTED_DIRS, so a file
-    # with no samples still shows. A box that cannot run git would otherwise
-    # get a tree with every cold file quietly missing, which reads as a
-    # measurement rather than the failure it is.
+    # with no samples still shows: a missing cold file would read as measured.
     def repo_tracked_files(self) -> list[str]:
         command = [
             "git",
@@ -572,10 +566,8 @@ class CallgrindToHeatmap:
             return None
         return data.decode("utf-8", errors="replace")
 
-    # Write one script per profiled file into the report's sources/ dir.
-    # Two display paths can flatten to one script name, and the page reads
-    # window.report_sources by display path, so the loser would render
-    # "Source not available." with nothing said. Collapsing is the error.
+    # Write one script per profiled file into sources/. Two display paths
+    # flattening to one name is an error: the loser has no source at all.
     def sources_write(
         self,
         out_dir: str,
@@ -627,9 +619,8 @@ class CallgrindToHeatmap:
                     f" {body};\n"
                 )
 
-    # Read callgrind_diff.py's synthesized callers diff. Without it every
-    # share would divide by nothing and the page would read a flat
-    # 100% change, so a missing file is an error naming the path.
+    # Read callgrind_diff.py's synthesized callers diff. Missing, every share
+    # would divide by nothing and read a flat 100%, so it is a named error.
     def synthesized_callers_load(
         self, path: str
     ) -> CallgrindToHeatmap.SynthesizedCallers:

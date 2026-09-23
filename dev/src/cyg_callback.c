@@ -159,8 +159,8 @@ __attribute__((constructor)) static void cyg_callback_init(void)
 
 /* cyg_callback_buildid_write - one "buildid <hex> <path>" line per object,
  * walking each one's PT_NOTE for its NT_GNU_BUILD_ID. Cold: runs at exit */
-__attribute__((cold)) static int cyg_callback_buildid_write(
-    struct dl_phdr_info *info, size_t size, void *data)
+__attribute__((cold)) static int
+cyg_callback_buildid_write(struct dl_phdr_info *info, size_t size, void *data)
 {
   FILE *out = data;
   char self[4096];
@@ -189,8 +189,8 @@ __attribute__((cold)) static int cyg_callback_buildid_write(
       const unsigned char *desc = note_name + ((note->n_namesz + 3) & ~3u);
       if (desc > end || desc + note->n_descsz > end)
         break;
-      if (note->n_type == NT_GNU_BUILD_ID && note->n_namesz == 4 &&
-          !memcmp(note_name, "GNU", 4) && note->n_descsz) {
+      if (note->n_type == NT_GNU_BUILD_ID && note->n_namesz == 4
+          && !memcmp(note_name, "GNU", 4) && note->n_descsz) {
         fputs("buildid ", out);
         for (byte = 0; byte < note->n_descsz; byte++)
           fprintf(out, "%02x", desc[byte]);
@@ -226,9 +226,9 @@ __attribute__((destructor)) static void cyg_callback_dump(void)
     perror(cb->out);
     return;
   }
-  if (fwrite(hdr, sizeof(hdr), 1, f) != 1 ||
-      fwrite(cb->buf, sizeof(cyg_callback_record_t), (size_t)hdr[1], f) !=
-          (size_t)hdr[1]) {
+  if (fwrite(hdr, sizeof(hdr), 1, f) != 1
+      || fwrite(cb->buf, sizeof(cyg_callback_record_t), (size_t)hdr[1], f)
+             != (size_t)hdr[1]) {
     perror(cb->out);
     fclose(f);
     return;

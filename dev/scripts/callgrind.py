@@ -216,12 +216,8 @@ class Callgrind:
                 "ob": {},
             }
 
-        # Expand one "(7)" back to its name, learning the name when
-        # this is where it is spelled out. An id this file never spelled
-        # out is a name we would otherwise invent: callgrind compresses
-        # every kind into one space per kind, so a miss means a line the
-        # parser dropped, and resolving it to the literal "(7)" would
-        # hand a page that text as a file or function name.
+        # Expand one "(7)" back to its name, learning it where spelled out.
+        # A miss is a dropped line: "(7)" would reach a page as the name.
         def uncompress(self, kind: str, value: str) -> str:
             match = Callgrind.NAME_COMPRESSION_RE.match(value)
             if not match:
@@ -292,10 +288,8 @@ class Callgrind:
     ) -> str:
         return f"{function}\n{display}\n{line}"
 
-    # How a path is printed on a page: an external file carries the object
-    # that owns it, so two libraries' same-named headers stay apart. The
-    # writer of a baseline key and the page reading it back both come
-    # through here, or every external line misses its own baseline.
+    # How a path prints on a page: an external file carries its owning object,
+    # so same-named headers stay apart. Both sides of a baseline key use it.
     def display_path_of(self, path: str, object_path: str) -> str:
         info = self.path_norm(path)
         if info.group != "external":
@@ -516,11 +510,8 @@ class Callgrind:
                 elif key == "cfn":
                     cur_callee_function = names.uncompress("fn", val)
                 elif key in ("jfi", "jfn"):
-                    # --collect-jumps names a jump's target. It shares the
-                    # fl/fn name spaces, so it has to be learned or a later
-                    # bare "(7)" of that id resolves to nothing. The target
-                    # is not where the next cost line is attributed, so
-                    # neither current name moves.
+                    # --collect-jumps names a jump target in the fl/fn name
+                    # spaces: learned, but neither current name moves.
                     names.uncompress("fl" if key == "jfi" else "fn", val)
                 elif key == "calls":
                     parts = val.split()

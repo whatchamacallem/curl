@@ -33,9 +33,9 @@ perf2html_diff.sh [debug-flags] [baseline] [modified] [diff]
 
 perf2html_batch.sh [debug-flags] [--target-dir=DIR] [cmake-flags...]
     Profiles baseline, modified and then does a diff of them.
-    --target-dir=DIR  holds the three default-named reports (default CWD). The
+    --target-dir=DIR  Holds the three default-named reports (default CWD). The
                       batch cannot rename them.
-    cmake-flags       every argument not one of its own options, applied to the
+    cmake-flags       Every argument not one of its own options, applied to the
                       modified build (default -D CMAKE_C_FLAGS=-Os).
 ```
 
@@ -50,8 +50,7 @@ These are developer flags for the iterative development of `perf2html` itself.
     --regenerate      Rebuilds all pages from the last run's profiler
                       artifacts, re-measuring nothing. Implies
                       --keep-artifacts.
-    --verbose         additive: whatever quiet prints, verbose prints too, plus
-                      each child's output as produced.
+    --verbose         Enables diagnostic information.
 ```
 
 ## Callgrind Counters

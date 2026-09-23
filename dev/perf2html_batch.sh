@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
-# No usage docs allowed here.
+# Runs baseline, modified and diff in one go. usage_show below is the only
+# usage text here. It and README.md are kept in step by hand.
 
 set -uo pipefail
 _SCRIPT="$(readlink -f "$0")"
@@ -9,7 +10,7 @@ cd "$(dirname "$_SCRIPT")"
 . ./scripts/settings.sh
 . ./scripts/shared.sh
 
-# Must be kept in sync with the README.md and no other usage docs allowed.
+# usage_show - the one usage text, printed by -h and on a bad argument
 usage_show() {
   cat <<'EOF'
 perf2html_batch.sh [debug-flags] [--target-dir=DIR] [cmake-flags...]
@@ -28,16 +29,12 @@ perf2html_batch.sh [debug-flags] [--target-dir=DIR] [cmake-flags...]
     --regenerate      Rebuilds all pages from the last run's profiler
                       artifacts, re-measuring nothing. Implies
                       --keep-artifacts.
-    --verbose         additive: whatever quiet prints, verbose prints too, plus
-                      each child's output as produced.
+    --verbose         Enables diagnostic information.
 EOF
 }
 
-# step_run - runs one numbered step, logging it, and records a failure
-# in _STATUS and _FAILED instead of returning non-zero, so every later
-# step still runs. SETS those two caller globals, and is their canonical
-# setter: main() initializes them and reads them back once every step has
-# run. child_capture sets LOG_LINE_FROM for the failure tail.
+# step_run - run one numbered step, logging it. SETS _STATUS and _FAILED,
+# their canonical setter, rather than returning non-zero: later steps run.
 step_run() {
   local _number="$1" _name="$2"
   shift 2
@@ -63,10 +60,8 @@ step_run() {
   return 0
 }
 
-# args_parse - reads the command line into the globals, and derives every
-# absolute *_DIR and RUN_LOG path from the target directory. Every
-# argument it does not name is a cmake flag, which is why no value of a
-# separated "-D NAME=VALUE" pair can be mistaken for anything else.
+# args_parse - read the command line, deriving every absolute *_DIR and
+# RUN_LOG from the target dir. Every argument it does not name is a cmake flag.
 args_parse() {
   _KEEP_ARTIFACTS=0
   _REGENERATE=0
@@ -143,9 +138,8 @@ main() {
       echo "error: could not remove stale $ARTIFACTS_DIR/" >&2
       exit 1
     }
-    # the children keep it whatever the batch was asked, so neither can
-    # unlink the batch log out from under this run. The batch is the one
-    # thing that deletes the directory, at the end of main().
+    # children keep it whatever the batch was asked, so neither unlinks the
+    # batch log mid-run: only the batch deletes the dir, at end of main()
     _child_args+=(--keep-artifacts)
   fi
   mkdir -p "$ARTIFACTS_DIR" || {
@@ -160,9 +154,8 @@ main() {
   printf '[%ss] dev/perf2html_batch.sh %s: modified build flags: %s\n' \
     "$(elapsed_format)" "$TIMESTAMP" "${_CMAKE_FLAGS[*]}"
 
-  # --regenerate rebuilds each report's pages out of the recordings the
-  # last run kept, and reads each report's own MANIFEST.txt back to find
-  # them, so it is the one mode that must not start by deleting them.
+  # --regenerate rebuilds pages from the kept recordings and reads each
+  # MANIFEST.txt back to find them, so it must not delete them
   if [ "$_REGENERATE" = 0 ]; then
     printf '[%ss] removing previous reports\n' "$(elapsed_format)"
     reports_clean

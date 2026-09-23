@@ -21,9 +21,8 @@ settings.load_into(__name__)
 # starts up well after its own script tag has run.
 _BOOTSTRAP = theme.asset_text_read(_ASSET_TEMPLATE_FLAME_GRAPH_BOOTSTRAP_NAME)
 
-# How far a flame graph page sits below the report root, which fixes its
-# href to the shared assets. The page always lives in <test>/flame-graph/,
-# and a diff report has no flame graph, so there is no shallower case.
+# How far a flame graph page sits below the report root, fixing its href to
+# the shared assets. Always <test>/flame-graph/: a diff has no flame graph.
 _FLAME_GRAPH_PAGE_DEPTH = 2
 
 # The page itself: a link and two script tags, the markers substituted.
@@ -81,16 +80,12 @@ class BuildFlameGraph:
         )
 
     # Write the page, pointing it at the shared bundle's engine and style.
-    # The preamble scripts go in last, so nothing substituted before them
-    # can be read out of the text they bring with them. They open the page
-    # error overlay first, so a speedscope that never starts shows the
-    # failure instead of a blank one, then the settings and the vocabulary,
-    # because the bootstrap reads its poll bounds as settings and names its
-    # failure by string id.
     def page_write(self, args: BuildFlameGraph.FlameGraphArgs) -> None:
         assets_href = theme.shared_href(
             _FLAME_GRAPH_PAGE_DEPTH, _REPORT_ASSETS_DIR_NAME
         )
+        # overlay first, so a speedscope that never starts shows the failure;
+        # then settings and vocabulary, the bootstrap's bounds and failure id
         scripts = "\n    ".join(
             f'<script src="{assets_href}/{name}"></script>'
             for name in (
@@ -99,6 +94,8 @@ class BuildFlameGraph:
                 _ASSET_UI_STRINGS_SCRIPT_NAME,
             )
         )
+        # __SCRIPTS__ goes in last, so nothing substituted before it can be
+        # read back out of the text the scripts bring with them
         html = (
             _PAGE.replace("__APP_CSS__", f"{args.app_href}/{args.app_css}")
             .replace("__APP_JS__", f"{args.app_href}/{args.app_js}")
