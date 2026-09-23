@@ -46,7 +46,7 @@ dev/perf2html_diff.sh [--verbose] [--keep-artifacts] [--regenerate]
     [--artifacts=TMP] [baseline-dir] [modified-dir] [report-dir]
 dev/perf2html_batch.sh [--verbose] [--keep-artifacts] [--regenerate]
     [--artifacts=TMP] [--target-dir=DIR] [cmake_flags...]
-dev/scripts/reformat.sh [--check] [--verbose]
+dev/scripts/reformat.sh [--check] [--regenerate] [--verbose]
 ```
 
 ```sh
@@ -64,6 +64,15 @@ taskset -c 3 ./build-relwithdebinfo/tests/perf/perf <test> [loops]
   recordings, if the artifacts dir survives - it **defaults to
   `perf2html_temporary_artifacts/` in the parent directory of the report**,
   `--artifacts=TMP` overriding it in all three `.sh`.
+- **Pass `reformat.sh --regenerate` every time**, and leave it off only when
+  `perf` has been re-linked - a `dev/` edit cannot move a measured number, so
+  re-measuring buys nothing and costs an hour. **It is checked, not trusted**:
+  `regenerate_check` runs first, and a run whose recordings no longer describe
+  the executable **drops the flag and measures from scratch** rather than
+  failing (`regenerate_cancel`), because measuring again always answers.
+  So passing it when it does not hold is not an error to recover from.
+  **The three default-named reports and the artifacts dir `reformat.sh`
+  writes are debug output and may be deleted at any time without notice.**
 - `--target-dir=DIR` (default CWD) holds the three **default-named** reports -
   **the batch cannot name them**. **Every batch argument that is not its own
   option is a cmake flag.**
@@ -117,7 +126,10 @@ measures nothing and subtracts two reports' `raw/` archives;
   `REPORT_MANIFEST_VERSION_*` strings, and without the first no report can
   match its own version line.
 - **`reformat.sh`'s stage order is cost-ascending and deliberate**:
-  `surface_clear` (deletes the three reports, never the artifacts dir - the
+  `regenerate_check` **before** `surface_clear`, which reads its answer - a
+  regenerated run's input is the three reports themselves, so the clear is
+  skipped and they are reused → `surface_clear` (deletes the three reports,
+  never the artifacts dir - the
   batch owns that) → format/columns/comments/`lint_run` over `dev/` source,
   seconds each → `batch_run` → `validate_run` → `screenshots_run` →
   `source_scan_run` **last**. A formatting slip is thus reported before the
@@ -144,6 +156,17 @@ measures nothing and subtracts two reports' `raw/` archives;
   live in `scripts/`, `.clang-format` in `src/`.
   **`reformat.sh` always passes `--config`**, so a config need not sit where
   a tool's own upward search would find it.
+- **`regenerate_check` dates the recordings against the executable**, and
+  that one test is the whole of it: a timing recording (`perf-stat.*.csv`,
+  `PROFILE_TIMING_FILE_PREFIX`) **newer** than
+  `build-relwithdebinfo/tests/perf/perf` was written by it, so the pages are
+  rebuilt; at or older means perf was re-linked afterwards, and the run
+  measures again. **The modified stamp is the one dated** - that run builds
+  the tree last, so the baseline's binary is gone and its recordings need
+  only still be there. A missing executable, missing artifacts dir, a report
+  that is not finished or has no `stamp=` row each withdraw the same way.
+  **Each of the two measured reports has its own stamp**; the diff has none
+  of its own recordings, being subtracted from those two.
 - **The batch owns every deletion of the artifacts dir** - it passes
   `--keep-artifacts` down so a child can't unlink the batch log mid-run; a
   failed flagless batch _keeps_ it, because a failed step exits before the
@@ -197,7 +220,8 @@ the report's `stamp=` row. **Only a value derived from `$0` stays
 per-script** (`_REPO`), as do `usage_show`, `args_parse` and the `*_DIR` they
 derive. `_TESTS` comes from `tests/perf/Makefile.inc`. Grep the files for
 names; notable: `PROFILE_PINNED_CPU=3`, `REPORT_RAW_ARCHIVE_SUFFIX` (`.txz`,
-dot included).
+dot included), `PROFILE_TIMING_FILE_PREFIX` (`perf-stat`, read by
+`perf2html.sh` twice and by `reformat.sh`'s `regenerate_check`).
 
 **A global a script declares for itself is `_SCREAMING_SNAKE`**, leading
 underscore, the way the Python keeps a private name - `_OUT_DIR`,
@@ -529,9 +553,17 @@ server-side, so `(no recorded caller)` stays in Python, in step with
 `unhandledrejection`. **It must be the first script every page links**;
 `theme.page_preamble_scripts()` is the one place that order is written. It is
 the **only** `.js` that may not resolve strings at IIFE top (it loads before
-`ui_strings.js`), so `text_or_fallback(id)` reads at render time; **its ten
-`str_error_*` entries live only in `ui_strings.js`**. `history.pushState` to
-`#report-error` so **Back restores the page**. A `file://` page cannot
+`ui_strings.js`), so `text_or_fallback(id)` reads at render time; **its
+`str_error_*` entries live only in `ui_strings.js`**. The **source label
+leads the explanation sentence** (`bad address: perf2html stopped...`), so
+there is no message heading above the message itself. **An error owns the
+whole tab**: the page that threw may be framed two levels down, so
+`report_render` posts the report up (`report_ui: "report_error"`) until the
+**top** document replaces itself, menus and all. **It touches neither
+`history` nor the URL**, so the bad address stays in the bar and a **reload
+relaunches the page that threw** - there is no `#report-error` marker, no
+stored restore hash and no Back path; re-adding one puts the menu strips back
+around an error page. A `file://` page cannot
 `fetch()` MANIFEST.txt, so `manifest_script_write` ships
 `assets/report_manifest.js` into `window.report_manifest`, **carrying every
 row but `checksum=`**.
@@ -593,9 +625,12 @@ appears anywhere (only `<iframe title="report page">` remains).
   `per file`, `per function`); `share_in_scope()` is the door, `heat_of_line()`
   picks it or the diff's `share_of_baseline` on `IS_DIFF`. **File view only.**
   **A diff has one scope, `per line`.**
-- **Gotcha:** `.strip .title` is `--title-bg` (teal), where the hot end is
-  nearly invisible (1.39:1), so the wordmark plate is forced to `--bg` via
-  `:has(.wordmark-letter)`.
+- **Gotcha:** `.strip .title` is `--title-bg` (teal) for the framed path
+  (`all / heat map`), but the hot end of the wordmark is nearly invisible on
+  it (1.39:1), so `:has(.wordmark-letter)` forces the plate to **`--nav`,
+  the strip's own colour** (worst letter 4.31:1) - the logo sits in the menu
+  row with no plate showing at all. **It is not `--bg`**: that drew a panel
+  against the strip, which is the contradiction this replaced.
 - **`README.md`'s "Reading a Diff Report" is the specification of the diff
   notation** - `NumberFormat` and the `theme.js` functions follow it, never
   the reverse.
@@ -699,7 +734,10 @@ the reports (overview: native time, cycles, instructions), not here.
    `dev/perf2html_diff.sh`. Keep only changes that measurably help **and**
    leave everything else the test prints unchanged. Record before/after
    numbers in "Current state".
-1. After any `dev/` edit: **`dev/scripts/reformat.sh`, one run** - it clears
-   the reports, checks the source, runs the batch and checks what it wrote.
+1. After any `dev/` edit: **`dev/scripts/reformat.sh --regenerate`, one run**
+   - it checks the source, rebuilds the three reports' pages from the last
+   run's recordings and checks what it wrote. **`--regenerate` goes on every
+   run but the one after `perf` was re-linked**, where it is left off and the
+   batch measures; pass it wrongly and the run drops it and measures anyway.
 1. Before final: full suite (`tests/runtests.pl`, or `ctest` from `build/`
    with `-DBUILD_TESTING=ON`) - the perf test doesn't validate correctness.

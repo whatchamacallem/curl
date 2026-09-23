@@ -142,7 +142,7 @@ stamp_reuse() {
     _loops=$CALLGRIND_LOOPS
     for _file in "$_dir/callgrind.out.$_test_name.$_loops.$TIMESTAMP" \
       "$_dir/valgrind.$_test_name.$_loops.$TIMESTAMP.log" \
-      "$_dir/perf-stat.$_test_name.$TIMESTAMP.csv" \
+      "$_dir/$PROFILE_TIMING_FILE_PREFIX.$_test_name.$TIMESTAMP.csv" \
       "$_dir/trace.$_test_name.$_loops.$TIMESTAMP.speedscope.json"; do
       [ -f "$_file" ] || _missing+=("$_file")
     done
@@ -357,7 +357,9 @@ report_render() {
 run_one() {
   local _test="$1" _out="$2"
   local _loops _cg_file _log _start _line _timing
-  local _stat_file="$ARTIFACTS_DIR/perf-stat.$_test.$TIMESTAMP.csv"
+  local _stat_file
+  _stat_file="$ARTIFACTS_DIR/$PROFILE_TIMING_FILE_PREFIX"
+  _stat_file="$_stat_file.$_test.$TIMESTAMP.csv"
   _loops=$CALLGRIND_LOOPS
   _cg_file="$ARTIFACTS_DIR/callgrind.out.$_test.$_loops.$TIMESTAMP"
   _log="$ARTIFACTS_DIR/valgrind.$_test.$_loops.$TIMESTAMP.log"

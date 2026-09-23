@@ -1,7 +1,6 @@
 window.report_error_overlay = (function () {
   "use strict";
 
-  const OVERLAY_HASH_MARKER = "#report-error";
   const OVERLAY_ROOT_ID = "reportErrorOverlay";
   const OVERLAY_STYLE_ID = "reportErrorOverlayStyle";
   const OVERLAY_STYLE_TEXT = [
@@ -58,11 +57,10 @@ window.report_error_overlay = (function () {
     "  color: var(--hot, #d95f4b);",
     "}",
   ].join("\n");
+  const OVERLAY_MESSAGE_NAME = "report_error";
   const REPORT_MANIFEST_GLOBAL_NAME = "report_manifest";
-  const RESTORE_HASH_STORAGE_KEY = "error.restore-hash";
 
   let overlay_is_shown = false;
-  let restore_hash = "";
 
   function element_append(parent, tag_name, class_name, text) {
     const element = document.createElement(tag_name);
@@ -110,10 +108,12 @@ window.report_error_overlay = (function () {
         text_or_fallback("str_error_source_rejection"),
       );
     });
-    window.addEventListener("popstate", function () {
-      if (overlay_is_shown && location.hash !== OVERLAY_HASH_MARKER) {
-        page_restore();
+    window.addEventListener("message", function (browser_event) {
+      const payload = browser_event.data;
+      if (!payload || payload.report_ui !== OVERLAY_MESSAGE_NAME) {
+        return;
       }
+      report_render(payload.report);
     });
   }
 
@@ -125,7 +125,7 @@ window.report_error_overlay = (function () {
     return "";
   }
 
-  function overlay_build(described, source_label) {
+  function overlay_build(report) {
     const root = document.createElement("div");
     root.id = OVERLAY_ROOT_ID;
     element_append(
@@ -134,29 +134,23 @@ window.report_error_overlay = (function () {
       "report-error-title",
       text_or_fallback("str_error_page_title"),
     );
+    // the source label leads the sentence, so the message needs no heading
     element_append(
       root,
       "p",
       "",
-      text_or_fallback("str_error_page_explanation"),
+      report.source_label +
+        ": " +
+        text_or_fallback("str_error_page_explanation"),
     );
-    element_append(
-      root,
-      "h2",
-      "",
-      text_or_fallback("str_error_heading_message") +
-        " (" +
-        source_label +
-        ")",
-    );
-    element_append(root, "pre", "report-error-message", described.message);
+    element_append(root, "pre", "report-error-message", report.message);
     element_append(
       root,
       "h2",
       "",
       text_or_fallback("str_error_heading_address"),
     );
-    element_append(root, "pre", "", restore_hash || location.href);
+    element_append(root, "pre", "", report.address);
     element_append(
       root,
       "h2",
@@ -167,7 +161,7 @@ window.report_error_overlay = (function () {
       root,
       "pre",
       "",
-      described.stack || text_or_fallback("str_error_callstack_unavailable"),
+      report.stack || text_or_fallback("str_error_callstack_unavailable"),
     );
     element_append(
       root,
@@ -179,7 +173,7 @@ window.report_error_overlay = (function () {
       root,
       "pre",
       "",
-      manifest_text() || text_or_fallback("str_error_manifest_unavailable"),
+      report.manifest || text_or_fallback("str_error_manifest_unavailable"),
     );
     return root;
   }
@@ -188,15 +182,32 @@ window.report_error_overlay = (function () {
     if (overlay_is_shown) {
       return;
     }
+    const described = error_describe(reason);
+    report_render({
+      address: location.href,
+      manifest: manifest_text(),
+      message: described.message,
+      source_label: source_label,
+      stack: described.stack,
+    });
+  }
+
+  // The page that threw may be framed two levels down, so the report travels
+  // up and only the top document is replaced: an error owns the whole tab
+  function report_render(report) {
+    if (overlay_is_shown) {
+      return;
+    }
     overlay_is_shown = true;
     try {
-      restore_hash = location.href;
-      restore_hash_store(restore_hash);
-      if (location.hash !== OVERLAY_HASH_MARKER) {
-        history.pushState(null, "", OVERLAY_HASH_MARKER);
+      if (window.parent !== window) {
+        window.parent.postMessage(
+          { report_ui: OVERLAY_MESSAGE_NAME, report: report },
+          "*",
+        );
+        return;
       }
-      const described = error_describe(reason);
-      const root = overlay_build(described, source_label);
+      const root = overlay_build(report);
       style_install();
       document.body.textContent = "";
       document.body.className = "report-error-shown";
@@ -204,51 +215,6 @@ window.report_error_overlay = (function () {
       document.title = text_or_fallback("str_error_page_title");
     } catch (ignored) {
       overlay_is_shown = true;
-    }
-  }
-
-  function page_restore() {
-    const target = restore_hash || restore_hash_read();
-    overlay_is_shown = false;
-    restore_hash_clear();
-    if (target && target !== location.href) {
-      location.replace(target);
-    }
-    location.reload();
-  }
-
-  function page_restore_on_load() {
-    if (location.hash !== OVERLAY_HASH_MARKER) {
-      return;
-    }
-    const target = restore_hash_read();
-    restore_hash_clear();
-    if (target && target !== location.href) {
-      location.replace(target);
-    }
-  }
-
-  function restore_hash_clear() {
-    try {
-      sessionStorage.removeItem(RESTORE_HASH_STORAGE_KEY);
-    } catch (ignored) {
-      return;
-    }
-  }
-
-  function restore_hash_read() {
-    try {
-      return sessionStorage.getItem(RESTORE_HASH_STORAGE_KEY) || "";
-    } catch (ignored) {
-      return "";
-    }
-  }
-
-  function restore_hash_store(href) {
-    try {
-      sessionStorage.setItem(RESTORE_HASH_STORAGE_KEY, href);
-    } catch (ignored) {
-      return;
     }
   }
 
@@ -275,6 +241,5 @@ window.report_error_overlay = (function () {
   }
 
   handler_install();
-  page_restore_on_load();
   return { overlay_show };
 })();

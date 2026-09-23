@@ -45,6 +45,10 @@ LOG_FAILURE_TAIL_LINES=40
 # the core every measured run is pinned to. Unpinned WSL2 noise is ~106%
 PROFILE_PINNED_CPU=3
 
+# what one test's native timing recording is named, before its test name,
+# stamp and .csv. It is the artifact --regenerate dates the executable against
+PROFILE_TIMING_FILE_PREFIX=perf-stat
+
 # the report-root directory holding the shared copy of our own theme
 REPORT_ASSETS_DIR_NAME=assets
 

@@ -107,7 +107,7 @@ input {
   width: var(--title-w);
 }
 .strip .title:has(.wordmark-letter) {
-  background: var(--bg);
+  background: var(--nav);
 }
 .strip .title .wordmark-letter {
   flex: none;

@@ -64,10 +64,10 @@ window.ui_strings = (function () {
     str_error_heading_address: "address",
     str_error_heading_callstack: "callstack",
     str_error_heading_manifest: "manifest",
-    str_error_heading_message: "message",
     str_error_manifest_unavailable: "MANIFEST.txt not found",
     str_error_page_explanation:
-      "perf2html stopped because of an error." + " Press Back to resume.",
+      "perf2html stopped because of an error." +
+      " Reload this address to start again.",
     str_error_page_title: "perf2html error page",
     str_error_source_address: "bad address",
     str_error_source_exception: "uncaught exception",

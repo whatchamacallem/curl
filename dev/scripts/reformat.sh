@@ -1,9 +1,15 @@
 #!/usr/bin/env bash
-# dev/scripts/reformat.sh [--check] [--verbose]
+# dev/scripts/reformat.sh [--check] [--regenerate] [--verbose]
 #
 # The one hook that verifies dev/ and its output. It clears the reports,
 # formats and lints dev/, runs the batch itself with default arguments, then
 # validates and shoots the reports it wrote and scans the tree for ASCII.
+#
+# --regenerate rebuilds the pages from the last run's recordings instead of
+# measuring again, which is what a dev/ edit wants: nothing it changed can
+# move a number. It is checked rather than trusted -- the recordings must
+# still describe the executable on disk -- and a check that does not hold up
+# drops the flag and measures from scratch. See regenerate_check below.
 #
 # Any fault whatsoever is a hard error, reported where it happened: the run
 # stops, and nothing downstream prints. Reading a consequence and mistaking
@@ -59,6 +65,9 @@ _DIR_DEV=..
 _DIR_SCRIPTS=.
 _DIR_SRC=../src
 
+# the repository root, which the profiled executable is found under
+_DIR_REPO=../..
+
 # the hard column limit every kind of source is checked against
 _COLUMNS_MAX=79
 _CLANG_FORMAT_CONFIG=../src/.clang-format
@@ -90,11 +99,16 @@ _DEFAULT_REPORTS=(
 
 usage_show() {
   cat <<'EOF'
-scripts/reformat.sh [--check] [--verbose]
-    Clears the three reports, formats and lints dev/, runs
-    perf2html_batch.sh, then validates and screenshots what it wrote and
-    scans the tree for non-ASCII. Any fault stops the run where it happened.
+scripts/reformat.sh [--check] [--regenerate] [--verbose]
+    Formats and lints dev/, runs perf2html_batch.sh over the three reports
+    it cleared, then validates and screenshots what it wrote and scans the
+    tree for non-ASCII. Any fault stops the run where it happened.
     --check           Report what would change rather than writing it.
+    --regenerate      Rebuild the three reports' pages from the last run's
+                      recordings, re-measuring nothing. Pass it after every
+                      dev/ edit; leave it off once perf has been re-linked.
+                      A run whose recordings are older than the executable
+                      says so, drops the flag and measures from scratch.
     --verbose         Enables diagnostic information.
 EOF
 }
@@ -373,6 +387,10 @@ batch_run() {
   local _output _exit_code=0 _flags=()
   mapfile -t _flags < <(verbose_flags_of)
 
+  # regenerate_check held this back unless the recordings still describe the
+  # executable, so the batch is never asked to reuse a stale one
+  if [ "$_REGENERATE" = 1 ]; then _flags+=(--regenerate); fi
+
   _output="$("$_DIR_DEV/$_BATCH_SCRIPT_NAME" "${_flags[@]}" \
     "--target-dir=$_DIR_DEV" 2>&1)" || _exit_code=$?
 
@@ -412,12 +430,99 @@ screenshots_run() {
   done
 }
 
+# regenerate_cancel - say why the recordings cannot be reused, then drop
+# the flag. Measuring again always answers, so this is a notice, not a fault.
+regenerate_cancel() {
+  echo "regenerating: " "$1"
+  _REGENERATE=0
+}
+
+# regenerate_stamp_of - echo one report's stamp= row, or exit 1 having echoed
+# why it has none. The caller withdraws on that reason, so neither prints here.
+regenerate_stamp_of() {
+  local _path="$1" _name _stamp
+  _name="$(basename "$_path")"
+
+  if [ ! -f "$_path/MANIFEST.txt" ]; then
+    echo "$_name is not a finished report"
+    return 1
+  fi
+  _stamp="$(manifest_value "$_path" stamp)"
+  if [ -z "$_stamp" ]; then
+    echo "$_name records no stamp= row"
+    return 1
+  fi
+  echo "$_stamp"
+}
+
+# regenerate_check - reuse the last run's recordings only while they still
+# describe the executable on disk, else drop the flag. See DECLAUDE.md 3.
+regenerate_check() {
+  [ "$_REGENERATE" = 1 ] || return 0
+
+  local _binary="$_DIR_REPO/$BUILD_DIR/tests/perf/perf"
+  if [ ! -f "$_binary" ]; then
+    regenerate_cancel "no executable at $_binary"
+    return 0
+  fi
+
+  # the artifacts dir the batch defaults to, holding every recording the
+  # three reports were generated from
+  local _artifacts="$_DIR_DEV/$ARTIFACTS_NAME"
+  if [ ! -d "$_artifacts" ]; then
+    regenerate_cancel "no recordings at $_artifacts"
+    return 0
+  fi
+
+  # each measured report names its own recordings by stamp. The diff has no
+  # recordings of its own: it is subtracted from these two.
+  local _name _stamp _recorded=() _stamps=()
+  for _name in "$REPORT_BASELINE_DIR_NAME" "$REPORT_MODIFIED_DIR_NAME"; do
+    if ! _stamp="$(regenerate_stamp_of "$_DIR_DEV/$_name")"; then
+      regenerate_cancel "$_stamp"
+      return 0
+    fi
+
+    # one timing recording dates the pass: perf2html.sh checks for every
+    # file it wants, per test, before it reuses any of them
+    mapfile -t _recorded < <(find "$_artifacts" -maxdepth 1 -type f \
+      -name "$PROFILE_TIMING_FILE_PREFIX.*.$_stamp.csv" | sort)
+    if [ "${#_recorded[@]}" = 0 ]; then
+      regenerate_cancel "$_name has no recordings left under stamp $_stamp"
+      return 0
+    fi
+    _stamps+=("$_stamp")
+  done
+
+  # the modified run built that tree last, so its recordings are the ones
+  # the executable still on disk wrote; the baseline's binary is gone
+  local _newer _modified_stamp="${_stamps[-1]}"
+  _newer="$(find "$_artifacts" -maxdepth 1 -type f \
+    -name "$PROFILE_TIMING_FILE_PREFIX.*.$_modified_stamp.csv" \
+    -newer "$_binary" -print -quit)"
+  if [ -z "$_newer" ]; then
+    regenerate_cancel "perf was re-linked after its recordings"
+    return 0
+  fi
+
+  printf '%-12s| ok      | reusing stamp %s and %s\n' \
+    "regenerate" "${_stamps[0]}" "${_stamps[1]}"
+}
+
 # surface_clear - delete the three reports before anything runs, so every
 # stage below reads this run's output and never a previous one's.
 surface_clear() {
   # the artifacts directory is not ours to delete: the batch owns every
   # deletion of it, and being flagless below is what makes it do one
   local _path
+
+  # a regenerated run reads each report's manifest back for the stamp and
+  # rows its pages are rebuilt from, so those reports are its input
+  if [ "$_REGENERATE" = 1 ]; then
+    printf '%-12s| ok      | %s report(s) reused\n' \
+      "surface" "${#_DEFAULT_REPORTS[@]}"
+    return 0
+  fi
 
   for _path in "${_DEFAULT_REPORTS[@]}"; do
     rm -rf "$_path" || {
@@ -433,6 +538,7 @@ surface_clear() {
 # batch, and the batch writes the three default names and no others.
 args_parse() {
   _CHECK=0
+  _REGENERATE=0
 
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -442,6 +548,10 @@ args_parse() {
         ;;
       --check)
         _CHECK=1
+        shift
+        ;;
+      --regenerate)
+        _REGENERATE=1
         shift
         ;;
       --verbose)
@@ -462,6 +572,9 @@ args_parse() {
 main() {
   args_parse "$@"
 
+  # before the clear, which reads its answer: a regenerated run's input is
+  # the three reports themselves
+  regenerate_check
   surface_clear
 
   # dev/ source, seconds each and measuring nothing. A fault here would
