@@ -1,12 +1,6 @@
 (function () {
   "use strict";
 
-  const LAYOUT_RESET_RATE_LIMIT_CLICKS = settings(
-    "LAYOUT_RESET_RATE_LIMIT_CLICKS",
-  );
-  const LAYOUT_RESET_RATE_LIMIT_WINDOW_MS = settings(
-    "LAYOUT_RESET_RATE_LIMIT_WINDOW_MS",
-  );
   const STRIP_WORDMARK_LOGO_START_FRACTION = settings(
     "STRIP_WORDMARK_LOGO_START_FRACTION",
   );
@@ -18,7 +12,6 @@
 
   const home_panel = document.getElementById("home");
   const is_framed = window.report_ui.is_framed;
-  const reset_click_times = [];
   const reset_columns_link = document.getElementById("reset-cols");
   const strip_bar = document.getElementById("bar");
   const title_badge = document.getElementById("title");
@@ -77,6 +70,19 @@
     const matched_link = view_links.find(
       (link_element) => link_element.dataset.view === view_key,
     );
+    // an empty key is the home view and canonical. A key naming a view this
+    // report does not have is a bad address, and says so rather than hiding
+    if (view_key && !matched_link) {
+      window.report_error_overlay.overlay_show(
+        new Error(
+          window.ui_strings.text_fill("str_error_hash_view_unknown", {
+            view: view_key,
+          }),
+        ),
+        window.ui_strings.text_of("str_error_source_address"),
+      );
+      return;
+    }
     const active_link = matched_link || view_links[0];
     for (const link_element of view_links) {
       link_element.classList.toggle("on", link_element === active_link);
@@ -112,19 +118,6 @@
 
   reset_columns_link.addEventListener("click", (pointer_event) => {
     pointer_event.preventDefault();
-    const click_time = Date.now();
-    while (
-      reset_click_times.length &&
-      click_time - reset_click_times[0] > LAYOUT_RESET_RATE_LIMIT_WINDOW_MS
-    ) {
-      reset_click_times.shift();
-    }
-    reset_click_times.push(click_time);
-    if (reset_click_times.length >= LAYOUT_RESET_RATE_LIMIT_CLICKS) {
-      throw new Error(
-        window.ui_strings.text_of("str_error_reset_columns_too_fast"),
-      );
-    }
     reset_broadcast();
   });
   document.addEventListener("click", (click_event) => {

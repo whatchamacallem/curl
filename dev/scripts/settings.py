@@ -167,11 +167,6 @@ HEAT_MAP_VIEW_ENTRY: tuple[str, str, str] = (
     "heat-map/index.html",
 )
 
-# How fast "reset columns" may be clicked: this many inside this window
-# raise the overlay's error. A reset measures the whole layout again.
-LAYOUT_RESET_RATE_LIMIT_CLICKS = 3
-LAYOUT_RESET_RATE_LIMIT_WINDOW_MS = 5000
-
 # Milliseconds a window resize settles for before the page re-measures: a
 # drag fires resize continuously, and every frame is what this avoids.
 LAYOUT_RESIZE_SETTLE_DELAY_MS = 120

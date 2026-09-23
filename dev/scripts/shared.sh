@@ -78,14 +78,14 @@ clock_microseconds() {
   echo "${now//[!0-9]/}"
 }
 
-# command_run - run one child; on failure print what it wrote and exit with
-# its code. A measuring run's policy: later steps read what this one writes.
+# command_run - the one policy on child_capture: on failure print what the
+# child wrote and exit with its code. No caller of it collects a failure.
 command_run() {
   log_verbose "\$ $*"
   child_capture "$@"
   if [ "$CHILD_EXIT_CODE" != 0 ]; then
     echo >&2
-    failure_tail_print "$CHILD_EXIT_CODE" "$@"
+    failure_print_log_tail "$CHILD_EXIT_CODE" "$@"
     exit "$CHILD_EXIT_CODE"
   fi
 }
@@ -108,17 +108,16 @@ elapsed_format() {
   printf '%d.%02d' "$((delta / 1000000))" "$((delta % 1000000 / 10000))"
 }
 
-# failure_tail_print - on stderr, a failed child's exit code, command, and
+# failure_print_log_tail - on stderr, a failed child's exit code, command, and
 # output tail from $LOG_LINE_FROM on. Args: exit code, command, arguments.
-failure_tail_print() {
+failure_print_log_tail() {
   local exit_code="$1"
   shift
   {
     echo "error: exit $exit_code from: $*"
     tail -n +"$((LOG_LINE_FROM + 1))" "$RUN_LOG" \
       | tail -n "$LOG_FAILURE_TAIL_LINES"
-    echo "(last $LOG_FAILURE_TAIL_LINES lines; everything this run" \
-      "printed: $RUN_LOG)"
+    echo "(see: $RUN_LOG)"
   } >&2
 }
 

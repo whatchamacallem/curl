@@ -1,8 +1,19 @@
 #!/usr/bin/env bash
-# dev/scripts/reformat.sh [--check] [--verbose] [report-dir]
+# dev/scripts/reformat.sh [--check] [--verbose]
 #
-# The one hook that verifies dev/ and its output. Three things in order:
-# lint, format, validate. Every stage runs even after an earlier one failed.
+# The one hook that verifies dev/ and its output. It clears the reports,
+# formats and lints dev/, runs the batch itself with default arguments, then
+# validates and shoots the reports it wrote and scans the tree for ASCII.
+#
+# Any fault whatsoever is a hard error, reported where it happened: the run
+# stops, and nothing downstream prints. Reading a consequence and mistaking
+# it for the cause costs a reader more than a second run costs anyone.
+#
+# The stages run in ascending cost, so a formatting slip is reported in
+# seconds rather than after the profiling run.
+#
+# It takes no report argument: the batch cannot be told where to write, so
+# the three default names below are the only reports there are to verify.
 #
 # What runs over what:
 #
@@ -20,7 +31,14 @@
 # the dotfiles beside them -- is this tooling's own settings rather than
 # dev/ source, so no stage formats, lints or column-checks one.
 #
-# The ASCII scan runs once over the whole tree, not once per report.
+# A report is output, not source: no stage above reaches inside one, so a
+# generated page is neither formatted nor held to the column limit. The
+# ASCII scan is the one exception, and runs over the whole tree at once: a
+# page's characters are read by people, whoever wrote them.
+#
+# The screenshots stage shoots the modified and diff reports, prefixing a
+# file name with which report it came from. Shots land outside every report
+# for the same reason: a checksum covers a report's own files only.
 #
 # Do not document what is being validated further. The validation
 # code below and the generator code itself are the living standards
@@ -31,8 +49,8 @@ set -euo pipefail
 _SCRIPT="$(readlink -f "$0")"
 _SCRIPTS="$(dirname "$_SCRIPT")"
 
-# Where the caller stood, so a relative argument still means what they typed
-# after the cd below. absolute_path reads it.
+# Where the caller stood. This takes no path argument of its own, but
+# shared.sh's absolute_path reads it, so it is set before the cd below.
 INVOKED_FROM="$PWD"
 cd "$_SCRIPTS"
 
@@ -55,20 +73,29 @@ _MARKDOWN_NAME=README.md
 _SHELL_INDENT=2
 _RUFF_CONFIG=ruff.toml
 
-# The reports validated when the argument names none, in the order the batch
-# writes them.
-_DEFAULT_REPORTS=(
-  ../perf2html_baseline_report
-  ../perf2html_modified_report
-  ../perf2html_diff_report
-)
-
 . ./settings.sh
 . ./shared.sh
 
+# The batch this runs, and the shooter it runs after, each beside us.
+_BATCH_SCRIPT_NAME=perf2html_batch.sh
+_SCREENSHOTS_SCRIPT_NAME=screenshots.py
+
+# The reports the batch writes, in the order it writes them. The names are
+# the batch's own settings, so this agrees with it by construction.
+_DEFAULT_REPORTS=(
+  "$_DIR_DEV/$REPORT_BASELINE_DIR_NAME"
+  "$_DIR_DEV/$REPORT_MODIFIED_DIR_NAME"
+  "$_DIR_DEV/$REPORT_DIFF_DIR_NAME"
+)
+
 usage_show() {
   cat <<'EOF'
-scripts/reformat.sh [--check] [--verbose] [report-dir]
+scripts/reformat.sh [--check] [--verbose]
+    Clears the three reports, formats and lints dev/, runs
+    perf2html_batch.sh, then validates and screenshots what it wrote and
+    scans the tree for non-ASCII. Any fault stops the run where it happened.
+    --check           Report what would change rather than writing it.
+    --verbose         Enables diagnostic information.
 EOF
 }
 
@@ -87,17 +114,40 @@ tool_find() {
   return 1
 }
 
+# stage_fail - print one stage's verdict and output, then stop the run. The
+# first fault is the one a reader must act on, so nothing follows it.
+stage_fail() {
+  local _label="$1" _verdict="$2" _summary="$3" _output="$4"
+
+  printf '%-12s| %-7s| %s\n' "$_label" "$_verdict" "$_summary"
+  if [ -n "$_output" ]; then echo "$_output" >&2; fi
+  exit 1
+}
+
+# tool_missing_fail - a tool that is not installed never checked its files,
+# so the run is not a verification and stops here with how to install it.
+tool_missing_fail() {
+  local _label="$1" _name="$2"
+
+  printf '%-12s| MISSING| not installed: %s\n' "$_label" "$_name"
+  {
+    echo "error: $_name is not installed, so $_label never ran"
+    echo "  sudo apt-get install -y shfmt clang-format"
+    echo "  pip3 install --user --break-system-packages ruff"
+    echo "  npm install -g prettier pyright"
+  } >&2
+  exit 1
+}
+
 # tool_run - run one tool with _TOOL_ARGS over the files, printing a status
-# row. It sets _STATUS on failure and always returns 0, so later stages run.
+# row. Any fault at all stops the run where it happened.
 tool_run() {
   local _name="$1" _label="$2"
   shift 2
   local _binary
 
   if ! _binary="$(tool_find "$_name")"; then
-    printf '%-12s| skipped | not installed: %s\n' "$_label" "$_name"
-    _MISSING+=("$_name")
-    return 0
+    tool_missing_fail "$_label" "$_name"
   fi
 
   if [ "$#" = 0 ]; then
@@ -114,10 +164,7 @@ tool_run() {
     return 0
   fi
 
-  printf '%-12s| CHANGED | %s\n' "$_label" "$(echo "$_output" | head -n 1)"
-  echo "$_output" >&2
-  _STATUS=1
-  return 0
+  stage_fail "$_label" CHANGED "$(echo "$_output" | head -n 1)" "$_output"
 }
 
 # files_of - the one door every stage collects files through, so a name
@@ -204,9 +251,7 @@ lint_run() {
   local _binary
 
   if ! _binary="$(tool_find pyright)"; then
-    printf '%-12s| skipped | not installed: %s\n' "lint" "pyright"
-    _MISSING+=(pyright)
-    return 0
+    tool_missing_fail lint pyright
   fi
 
   local _output _exit_code=0
@@ -218,9 +263,7 @@ lint_run() {
     return 0
   fi
 
-  printf '%-12s| FAILED  | pyright\n' "lint"
-  echo "$_output" >&2
-  _STATUS=1
+  stage_fail lint FAILED pyright "$_output"
 }
 
 # long_lines_report - fail on any line still over _COLUMNS_MAX afterwards.
@@ -253,16 +296,8 @@ long_lines_report() {
     return 0
   fi
 
-  printf '%-12s| TOO_LONG| %s line(s) over %s\n' \
-    "columns" "$(echo "$_over" | grep -c ' cols$')" "$_COLUMNS_MAX"
-  echo "$_over" >&2
-  _STATUS=1
-}
-
-# report_error_add - collect one reason a directory is not a report. SETS
-# _REPORT_ERRORS, its setter: a valid report cannot hide a broken one.
-report_error_add() {
-  _REPORT_ERRORS+=("$1")
+  stage_fail columns TOO_LONG \
+    "$(echo "$_over" | grep -c ' cols$') line(s) over $_COLUMNS_MAX" "$_over"
 }
 
 # Line 1 of a directory's MANIFEST.txt, or empty when it has none.
@@ -270,67 +305,17 @@ report_version() {
   head -n 1 "$1/MANIFEST.txt" 2>/dev/null
 }
 
-# report_claim - accept a directory holding up as either kind of report,
-# else append shared.sh's reason to _REPORT_ERRORS, its canonical setter.
-report_claim() {
-  # collecting rather than exiting is the difference from manifest_verify:
-  # a broken report must not stop the reports after it being validated
-  local _path="$1" _fault
-
-  _fault="$(manifest_fault_of "$_path" \
-    "$REPORT_MANIFEST_VERSION_FULL" "$REPORT_MANIFEST_VERSION_DIFF")"
-  if [ -n "$_fault" ]; then
-    report_error_add "$_fault"
-    return 1
-  fi
-
-  _REPORTS+=("$_path")
-  return 0
-}
-
-# Claim the named report, or every default report directory that exists.
-report_find() {
-  local _path _error
-
-  if [ -n "$_REPORT_ARG" ]; then
-    report_claim "$_REPORT_ARG" || true
-    return 0
-  fi
-
-  # a directory holding no MANIFEST.txt is an aborted run: a failure to
-  # report, not one to walk past, or it hides behind a valid report
-  for _path in "${_DEFAULT_REPORTS[@]}"; do
-    if [ -d "$_path" ]; then report_claim "$_path" || true; fi
-  done
-
-  if [ "${#_REPORTS[@]}" = 0 ] && [ "${#_REPORT_ERRORS[@]}" = 0 ]; then
-    _error="no report was named, and the default location"
-    _error="$_error dev/${_DEFAULT_REPORTS[0]#../} is absent"
-    _error="$_error or has no MANIFEST.txt reading"
-    _error="$_error \"$REPORT_MANIFEST_VERSION_FULL\""
-    report_error_add "$_error"
-  fi
-}
-
-# validate_run - run validate_report.py over every claimed report.
+# validate_run - validate each report the batch wrote, in its order. Every
+# one must be there: the batch stops at its first failure, so all three are.
 validate_run() {
   local _path _args _output _exit_code
 
-  # a directory that is not a report is its own failure, and the reports
-  # that are still get validated
-  if [ "${#_REPORT_ERRORS[@]}" != 0 ]; then
-    printf '%-12s| FAILED  | %s not a report\n' \
-      "validate" "${#_REPORT_ERRORS[@]}"
-    {
-      local _reason
-      for _reason in "${_REPORT_ERRORS[@]}"; do echo "error: $_reason"; done
-      echo "       name a report directory as the argument, or run" \
-        "dev/perf2html_batch.sh to write the three default ones"
-    } >&2
-    _STATUS=1
-  fi
+  for _path in "${_DEFAULT_REPORTS[@]}"; do
+    # shared.sh's hard-error policy, taking both version strings so either
+    # kind of report is accepted and anything else stops the run
+    manifest_verify "$_path" "$(basename "$_path")" \
+      "$REPORT_MANIFEST_VERSION_FULL" "$REPORT_MANIFEST_VERSION_DIFF"
 
-  for _path in "${_REPORTS[@]}"; do
     _args=("$(cd "$_path" && pwd)")
     if [ "$(report_version "$_path")" = "$REPORT_MANIFEST_VERSION_DIFF" ]; then
       _args+=(--diff)
@@ -345,9 +330,7 @@ validate_run() {
       continue
     fi
 
-    printf '%-12s| FAILED  | %s\n' "validate" "$(basename "$_path")"
-    echo "$_output" >&2
-    _STATUS=1
+    stage_fail validate FAILED "$(basename "$_path")" "$_output"
   done
 }
 
@@ -365,14 +348,11 @@ comment_block_run() {
     return 0
   fi
 
-  printf '%-12s| TOO_LONG| %s\n' \
-    "comments" "$(echo "$_output" | tail -n 1)"
-  echo "$_output" >&2
-  _STATUS=1
+  stage_fail comments TOO_LONG "$(echo "$_output" | tail -n 1)" "$_output"
 }
 
-# source_scan_run - the dev/ tree's non-ASCII scan, once: the sources are
-# one tree, not a property of any report the validator happens to find.
+# source_scan_run - the non-ASCII scan over dev/, source and generated page
+# alike. It runs last, so the reports the batch wrote are in its walk.
 source_scan_run() {
   local _output _exit_code=0
   _output="$(python3 validate_report.py --source-scan-only 2>&1)" \
@@ -384,15 +364,75 @@ source_scan_run() {
     return 0
   fi
 
-  printf '%-12s| FAILED  | dev/\n' "ascii"
-  echo "$_output" >&2
-  _STATUS=1
+  stage_fail ascii FAILED dev/ "$_output"
 }
 
-# args_parse - read the flags and resolve _REPORT_ARG against the caller's dir.
+# batch_run - write the three reports this run verifies. Its own steps stop
+# at their first failure, and so does this: there is nothing left to check.
+batch_run() {
+  local _output _exit_code=0 _flags=()
+  mapfile -t _flags < <(verbose_flags_of)
+
+  _output="$("$_DIR_DEV/$_BATCH_SCRIPT_NAME" "${_flags[@]}" \
+    "--target-dir=$_DIR_DEV" 2>&1)" || _exit_code=$?
+
+  if [ "$_exit_code" = 0 ]; then
+    printf '%-12s| ok      | %s\n' "batch" "$_BATCH_SCRIPT_NAME"
+    log_verbose "$_output"
+    return 0
+  fi
+
+  stage_fail batch FAILED "$_BATCH_SCRIPT_NAME" "$_output"
+}
+
+# screenshots_run - shoot the modified and diff reports, each file named
+# for the report it came from. Both exist: the batch wrote them or exited.
+screenshots_run() {
+  local _name _path _prefix _output _exit_code
+
+  for _name in "$REPORT_MODIFIED_DIR_NAME" "$REPORT_DIFF_DIR_NAME"; do
+    _path="$_DIR_DEV/$_name"
+
+    # perf2html_modified_report -> modified_, the prefix naming which of the
+    # two a file came from and nothing else
+    _prefix="${_name#perf2html_}"
+    _prefix="${_prefix%_report}_"
+
+    _exit_code=0
+    _output="$(python3 "$_SCREENSHOTS_SCRIPT_NAME" "$_path" \
+      "$_prefix" 2>&1)" || _exit_code=$?
+
+    if [ "$_exit_code" = 0 ]; then
+      printf '%-12s| ok      | %s\n' "screenshots" "$_name"
+      log_verbose "$_output"
+      continue
+    fi
+
+    stage_fail screenshots FAILED "$_name" "$_output"
+  done
+}
+
+# surface_clear - delete the three reports before anything runs, so every
+# stage below reads this run's output and never a previous one's.
+surface_clear() {
+  # the artifacts directory is not ours to delete: the batch owns every
+  # deletion of it, and being flagless below is what makes it do one
+  local _path
+
+  for _path in "${_DEFAULT_REPORTS[@]}"; do
+    rm -rf "$_path" || {
+      echo "error: could not remove the previous report: $_path" >&2
+      exit 1
+    }
+  done
+  printf '%-12s| ok      | %s report(s) cleared\n' \
+    "surface" "${#_DEFAULT_REPORTS[@]}"
+}
+
+# args_parse - read the flags. There is no report argument: this runs the
+# batch, and the batch writes the three default names and no others.
 args_parse() {
   _CHECK=0
-  _REPORT_ARG=""
 
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -408,61 +448,39 @@ args_parse() {
         VERBOSE=1
         shift
         ;;
-      -*)
-        echo "unknown option: $1" >&2
-        exit 2
-        ;;
       *)
-        if [ -n "$_REPORT_ARG" ]; then
-          echo "error: one report directory at most, got: $_REPORT_ARG $1" >&2
-          exit 2
-        fi
-        _REPORT_ARG="$1"
-        shift
+        echo "unknown option: $1" >&2
+        usage_show >&2
+        exit 2
         ;;
     esac
   done
-
-  case "$_REPORT_ARG" in
-    "" | /*) ;;
-    *) _REPORT_ARG="$_INVOKED_FROM/$_REPORT_ARG" ;;
-  esac
 }
 
+# main - the stages in ascending cost, each one stopping the run where it
+# fails, so the first fault a reader sees is the one that happened first.
 main() {
   args_parse "$@"
 
-  _STATUS=0
-  _MISSING=()
-  _REPORTS=()
-  _REPORT_ERRORS=()
+  surface_clear
 
-  report_find
-
-  lint_run
-
+  # dev/ source, seconds each and measuring nothing. A fault here would
+  # otherwise be found after the profiling run, an hour further on
   format_shell
   format_python
   format_c
   format_prettier
-
   long_lines_report
   comment_block_run
-  source_scan_run
+  lint_run
+
+  # the profiling run, which writes the three reports, then what they hold
+  batch_run
   validate_run
+  screenshots_run
 
-  if [ "${#_MISSING[@]}" != 0 ]; then
-    {
-      echo
-      echo "not installed: ${_MISSING[*]}"
-      echo "  sudo apt-get install -y shfmt clang-format"
-      echo "  pip3 install --user --break-system-packages ruff"
-      echo "  npm install -g prettier"
-    } >&2
-    _STATUS=1
-  fi
-
-  return "$_STATUS"
+  # last, so the reports the batch just wrote are inside its walk
+  source_scan_run
 }
 
 main "$@"

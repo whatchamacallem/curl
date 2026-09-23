@@ -628,7 +628,7 @@ class ValidateReport:
         if layout.test_has_rawdata:
             self.perf_tool_check(out_dir, has_rawdata)
 
-    # The sources themselves must stay plain ASCII.
+    # Source and generated output alike must stay plain ASCII.
     def unicode_check(self) -> None:
         non_ascii = self.non_ascii_re()
         for path in self.unicode_scan_paths():
@@ -649,7 +649,8 @@ class ValidateReport:
                         f"{match.group()!r}: {found.line.strip()}"
                     )
 
-    # Every source file under dev/ the ASCII scan covers.
+    # Every file under dev/ the ASCII scan covers, a generated page in a
+    # report included: a reader meets one character set, whoever wrote it.
     def unicode_scan_paths(self) -> list[str]:
         dev_dir = os.path.join(callgrind.REPO_ROOT, "dev")
         paths: list[str] = []
@@ -657,9 +658,7 @@ class ValidateReport:
             dirs[:] = [
                 d
                 for d in dirs
-                if d not in _SOURCE_SCAN_SKIPPED_DIRS
-                and not d.endswith(_SOURCE_SCAN_SKIPPED_DIR_SUFFIX)
-                and not d.startswith(".")
+                if d not in _SOURCE_SCAN_SKIPPED_DIRS and not d.startswith(".")
             ]
             for name in names:
                 if (
@@ -719,7 +718,7 @@ _REPORT_CHECKSUM_COMMAND = (
 )
 
 # The diff vocabulary, spelled the same everywhere a reader sees it. These
-# are the only non-ASCII characters a dev/ source file may contain.
+# are the only non-ASCII characters dev/ may contain, generated or written.
 _SOURCE_SCAN_ALLOWED_NON_ASCII_CHARS = (
     "≈",  # almost equal to
     "∞",  # infinity
@@ -729,7 +728,8 @@ _SOURCE_SCAN_ALLOWED_NON_ASCII_CHARS = (
     "…",  # horizontal ellipsis
 )
 
-# Which files under dev/ the ASCII scan reads.
+# Which files under dev/ the ASCII scan reads, wherever they sit. A report
+# is output, but its pages are read by people, so they are scanned too.
 _SOURCE_SCAN_FILE_EXTENSIONS = (
     ".py",
     ".js",
@@ -741,11 +741,8 @@ _SOURCE_SCAN_FILE_EXTENSIONS = (
 )
 _SOURCE_SCAN_FILE_NAMES = ("README.md",)
 
-# Generated output and caches the ASCII scan walks past. A report is known
-# by its name ending, as reformat.sh's files_of() skips it ("*_report/*").
-_SOURCE_SCAN_SKIPPED_DIR_SUFFIX = "_report"
-
-# Caches and recordings, neither of which is source.
+# Caches and recordings: one is not ours and the other is a tool's bytes,
+# so neither is read by anyone. Every report directory IS scanned.
 _SOURCE_SCAN_SKIPPED_DIRS = ("__pycache__", _ARTIFACTS_NAME)
 
 # Smallest a file can be before it is plainly a failed generate. The flame

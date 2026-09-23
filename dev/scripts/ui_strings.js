@@ -53,6 +53,14 @@ window.ui_strings = (function () {
     str_error_callstack_unavailable: "(no callstack recorded)",
     str_error_flame_graph_never_started:
       "flame graph viewer did not start within {seconds}s",
+    str_error_hash_counter_unknown:
+      "the address names a counter this report has no column for: {counter}",
+    str_error_hash_file_unknown:
+      "the address names a file this report has no source for: {file}",
+    str_error_hash_function_unknown:
+      "the address names a function this report never recorded: {function}",
+    str_error_hash_view_unknown:
+      "the address names a view this report does not have: {view}",
     str_error_heading_address: "address",
     str_error_heading_callstack: "callstack",
     str_error_heading_manifest: "manifest",
@@ -61,7 +69,7 @@ window.ui_strings = (function () {
     str_error_page_explanation:
       "perf2html stopped because of an error." + " Press Back to resume.",
     str_error_page_title: "perf2html error page",
-    str_error_reset_columns_too_fast: "slow down...",
+    str_error_source_address: "bad address",
     str_error_source_exception: "uncaught exception",
     str_error_source_rejection: "internal error",
     str_function_name_unknown: "?",

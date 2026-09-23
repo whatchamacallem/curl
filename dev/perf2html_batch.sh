@@ -35,8 +35,8 @@ perf2html_batch.sh [debug-flags] [--target-dir=DIR] [cmake-flags...]
 EOF
 }
 
-# step_run - run one numbered step, logging it. SETS _STATUS and _FAILED,
-# their canonical setter, rather than returning non-zero: later steps run.
+# step_run - run one numbered step, logging it. A failed step is a hard
+# error: nothing downstream of a bad report is worth a reader's time.
 step_run() {
   local _number="$1" _name="$2"
   shift 2
@@ -53,13 +53,11 @@ step_run() {
       "$_number" "$_name" "$(duration_format "$_start")"
     return 0
   fi
-  _STATUS=1
-  _FAILED+=("$_number $_name")
   printf '[%ss] FAILED: step %s %s, exit %s, after %s\n' \
     "$(elapsed_format)" "$_number" "$_name" "$_exit_code" \
     "$(duration_format "$_start")" >&2
-  failure_tail_print "$_exit_code" "$@"
-  return 0
+  failure_print_log_tail "$_exit_code" "$@"
+  exit "$_exit_code"
 }
 
 # args_parse - read the command line, deriving every absolute *_DIR and
@@ -127,7 +125,7 @@ reports_clean() {
   }
 }
 
-# main - runs baseline, modified and diff, each step even after a failure,
+# main - runs baseline, modified and diff, stopping at the first failure,
 # and owns every deletion of the artifacts directory.
 main() {
   args_parse "$@"
@@ -148,8 +146,6 @@ main() {
     echo "error: could not create $ARTIFACTS_DIR/" >&2
     exit 1
   }
-  _STATUS=0
-  _FAILED=()
   local _verbose_args=()
   mapfile -t _verbose_args < <(verbose_flags_of)
   echo "dev/perf2html_batch.sh $TIMESTAMP: ${_CMAKE_FLAGS[*]}" >"$RUN_LOG"
@@ -169,16 +165,8 @@ main() {
   step_run 3 diff ./perf2html_diff.sh "${_verbose_args[@]}" \
     "${_child_args[@]}" "$_BASE_DIR" "$_MOD_DIR" "$_DIFF_DIR"
 
-  if [ "$_STATUS" != 0 ]; then
-    printf '[%ss] perf2html_batch: %s step(s) failed: %s\n' \
-      "$(elapsed_format)" "${#_FAILED[@]}" "${_FAILED[*]}" >&2
-    if [ "$_KEEP_ARTIFACTS" = 0 ]; then
-      printf '[%ss] perf2html_batch: %s/ kept for %s\n' \
-        "$(elapsed_format)" "$ARTIFACTS_DIR" \
-        "diagnosis (a clean run deletes it)" >&2
-    fi
-    return 1
-  fi
+  # only a run reaching here succeeded, so a failed one leaves its
+  # recordings behind for diagnosis without being told to
   if [ "$_KEEP_ARTIFACTS" = 0 ]; then
     printf '[%ss] removing %s/\n' "$(elapsed_format)" "$ARTIFACTS_DIR"
     rm -rf "$ARTIFACTS_DIR" || {

@@ -1770,8 +1770,26 @@
   function hash_canonicalize() {
     report_ui.hash_publish(hash_of_state(current_state));
   }
+  // A bad address is shown, not thrown: a file:// page is its own opaque
+  // origin, so an exception reaches a parent frame stripped to "Script error."
+  function hash_fault_show(message) {
+    window.report_error_overlay.overlay_show(
+      new Error(message),
+      text_of("str_error_source_address"),
+    );
+  }
   function route_render() {
     const parsed_state = state_of_hash(location.hash);
+    // a hash naming a counter, file or function this report does not hold is
+    // a bad address: it surfaces rather than rendering something else
+    if (parsed_state.ev && !counter_find(parsed_state.ev)) {
+      hash_fault_show(
+        text_fill("str_error_hash_counter_unknown", {
+          counter: parsed_state.ev,
+        }),
+      );
+      return;
+    }
     const counter =
       counter_find(parsed_state.ev) ||
       counter_find(profile_model.heatMapTotals.defaultCounter) ||
@@ -1792,14 +1810,17 @@
         file = function_entry.file;
         line = function_entry.line;
       } else {
-        fn = null;
-        file = null;
-        line = 0;
+        hash_fault_show(
+          text_fill("str_error_hash_function_unknown", { function: fn }),
+        );
+        return;
       }
     }
     if (file && !file_table[file]) {
-      file = null;
-      line = 0;
+      hash_fault_show(
+        text_fill("str_error_hash_file_unknown", { file: file }),
+      );
+      return;
     }
 
     const key =

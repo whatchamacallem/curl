@@ -46,7 +46,7 @@ dev/perf2html_diff.sh [--verbose] [--keep-artifacts] [--regenerate]
     [--artifacts=TMP] [baseline-dir] [modified-dir] [report-dir]
 dev/perf2html_batch.sh [--verbose] [--keep-artifacts] [--regenerate]
     [--artifacts=TMP] [--target-dir=DIR] [cmake_flags...]
-dev/scripts/reformat.sh [--check] [--verbose] [report-dir]
+dev/scripts/reformat.sh [--check] [--verbose]
 ```
 
 ```sh
@@ -55,9 +55,11 @@ cmake --build build --target perf      # EXCLUDE_FROM_ALL, must be named
 taskset -c 3 ./build-relwithdebinfo/tests/perf/perf <test> [loops]
 ```
 
-- **Verification is two runs, in this order:** `perf2html_batch.sh` measures
-  and generates, then `reformat.sh` lints, formats and validates. **The batch
-  runs no checks at all**; verifying a build invokes **both**.
+- **Verification is one run: `reformat.sh`.** It clears the reports, formats
+  and lints `dev/`, invokes `perf2html_batch.sh` itself, then validates,
+  shoots and ASCII-scans what the batch wrote. **The batch runs no checks at
+  all** - it measures and generates, and `reformat.sh` is every check there
+  is. Running the batch by hand is a measuring run, not a verification.
 - `--regenerate` rebuilds all three reports' pages from the last run's
   recordings, if the artifacts dir survives - it **defaults to
   `perf2html_temporary_artifacts/` in the parent directory of the report**,
@@ -75,8 +77,16 @@ taskset -c 3 ./build-relwithdebinfo/tests/perf/perf <test> [loops]
 `perf2html.sh` builds + profiles + generates one report; `perf2html_diff.sh`
 measures nothing and subtracts two reports' `raw/` archives;
 `perf2html_batch.sh` runs baseline, modified (`-D CMAKE_C_FLAGS=-Os`), diff;
-`reformat.sh` lints, formats, validates. In both, **every step runs even
-after an earlier one failed**.
+`reformat.sh` lints, formats, validates.
+
+- **Any error whatsoever is a hard error, reported immediately.** Every
+  `dev/*.sh` stops at its first failure, printing that failure and nothing
+  after it. **No script collects failures**: no `_STATUS`, no `_FAILED`, no
+  `_MISSING`, no "N stage(s) failed" tally, no stage recording a fault and
+  returning 0. A reader who meets a downstream consequence first will act on
+  it as if it were the cause; people are not computers, and that is serious.
+  A stage that _cannot_ run - a missing formatter, a report the batch never
+  wrote - **is a failure, not a skip**: the run is a verification or nothing.
 
 - **`--verbose` is additive, in all four**; `log_verbose()` is the one
   function deciding whether a **line** is printed, and the only other
@@ -97,13 +107,21 @@ after an earlier one failed**.
   `tool -> official install command` each, **official instructions only**
   (missing `perf` → use `linux-perf`, not `linux-tools-generic`).
   **`reformat.sh`'s tools are out of scope.**
-- `reformat.sh` **takes no path argument**; its one optional argument is a
-  report dir, recognised by `MANIFEST.txt` line 1, which also decides
-  `--diff`. **It is the only `validate_report.py`, `pyright`, `ruff` and
-  `prettier` call anywhere**, and with the batch is the generators' test
-  suite. It sources **both** `settings.sh` and `shared.sh`, like the other
-  three - it reads the two `REPORT_MANIFEST_VERSION_*` strings, and without
-  the first no report can match its own version line.
+- `reformat.sh` **takes no argument but its flags**: it **runs the batch
+  itself**, so the three default names are the only reports there are, and
+  `MANIFEST.txt` line 1 decides each one's `--diff`. **It is the only
+  `validate_report.py`, `pyright`, `ruff` and `prettier` call anywhere**,
+  and with the batch is the generators' test suite. It sources **both**
+  `settings.sh` and `shared.sh`, like the other three - it reads the two
+  `REPORT_MANIFEST_VERSION_*` strings, and without the first no report can
+  match its own version line.
+- **`reformat.sh`'s stage order is cost-ascending and deliberate**:
+  `surface_clear` (deletes the three reports, never the artifacts dir - the
+  batch owns that) → format/columns/comments/`lint_run` over `dev/` source,
+  seconds each → `batch_run` → `validate_run` → `screenshots_run` →
+  `source_scan_run` **last**. A formatting slip is thus reported before the
+  profiling run, not an hour after it; and formatting precedes the batch, so
+  a page asset is formatted _before_ the reports are generated from it.
 - **`reformat.sh` reaches source and nothing else**, collected through
   `files_of()`, the **one door** every stage uses: `*.sh` under `dev/`,
   `*.c *.h` under `src/`, `*.py *.js *.css *.html` under `scripts/`, and
@@ -116,7 +134,8 @@ after an earlier one failed**.
   a tool's own upward search would find it.
 - **The batch owns every deletion of the artifacts dir** - it passes
   `--keep-artifacts` down so a child can't unlink the batch log mid-run; a
-  failed flagless batch _keeps_ it. **`--keep` is gone.**
+  failed flagless batch _keeps_ it, because a failed step exits before the
+  delete at the end of `main` is ever reached. **`--keep` is gone.**
 - **"raw" means only the report's own `<test>/raw/` and its `raw-data` page
   links**; temporary recordings are "artifacts" everywhere else.
 - Profiling:
@@ -133,11 +152,10 @@ after an earlier one failed**.
   runner: it records the child's code in `CHILD_EXIT_CODE` rather than
   taking it, and **reports through globals, never stdout** - verbose's tee
   already owns stdout, so a `$(child_capture ...)` would capture the
-  child's own output along with the code. Two policies sit on it:
-  `command_run` exits with the child's code, and the batch's `step_run`
-  records the failure in `_STATUS` / `_FAILED` and returns 0 so every later
-  step still runs. Both print the same tail through **`failure_tail_print`**
-  (`LOG_FAILURE_TAIL_LINES` lines).
+  child's own output along with the code. **One policy sits on it**,
+  `command_run`, which exits with the child's code; the batch's `step_run`
+  does the same for a step. Both print the tail through
+  **`failure_print_log_tail`** (`LOG_FAILURE_TAIL_LINES` lines).
 
 ### 3.1 `settings.sh` and `shared.sh`
 
@@ -171,7 +189,7 @@ dot included).
 
 **A global a script declares for itself is `_SCREAMING_SNAKE`**, leading
 underscore, the way the Python keeps a private name - `_OUT_DIR`,
-`_CMAKE_FLAGS`, `_STATUS`. **The underscore means "mine": the names that
+`_CMAKE_FLAGS`, `_CHECK`. **The underscore means "mine": the names that
 cross into `shared.sh` do not carry one** - it reads `ARTIFACTS_DIR`,
 `RUN_LOG`, `START_US`, `TIMESTAMP` and `VERBOSE`, and sets
 `SPEEDSCOPE_RELEASE`, `RUN_LOG` (in `report_begin`) and
@@ -187,7 +205,7 @@ every word of a message a script prints keep their plain spelling.
 **Sourcing `shared.sh` is inert** - defines names, runs nothing. **A function
 there writes a caller global only where all callers agreed it is the canonical
 setter, and its `#` comment names every global it sets** - `toolchain_check`
-(`SPEEDSCOPE_RELEASE`), the batch's `step_run` (`_STATUS`, `_FAILED`).
+(`SPEEDSCOPE_RELEASE`).
 
 **The `MANIFEST.txt` contract is `shared.sh`'s** - `checksum_compute`,
 `manifest_fault_of`, `manifest_write`, `manifest_value`, `manifest_verify`,
@@ -195,9 +213,9 @@ setter, and its `#` comment names every global it sets** - `toolchain_check`
 echoes why a directory is not a finished report, or nothing when it holds
 up, and takes **each version string line 1 may read** - naming one is how a
 diff is never read back as a diff input, naming both is how `reformat.sh`
-accepts either. `manifest_verify` is the hard-error policy on top;
-`reformat.sh` collects the same text instead, so a broken report cannot
-hide a valid one. The two version strings
+accepts either. **`manifest_verify` is the one policy on top**, a hard
+error, and `reformat.sh` calls it like everything else. The two version
+strings
 (`curl/perf2html.sh v1`, `curl/perf2html_diff.sh v1`), the checksum label and
 the manifest script name are **settings in `settings.sh`**.
 
@@ -323,6 +341,14 @@ name**, not the text, resolved via `source_text(file_path)`.
   length corrupts the `text.length` column math. Scanned is an allow-list
   too (`_SOURCE_SCAN_FILE_EXTENSIONS` plus `_SOURCE_SCAN_FILE_NAMES` =
   `README.md`), so `DECLAUDE.md` and every config file are out.
+  **The one exception to "no stage reaches inside a report": generated
+  output is scanned for non-allow-listed unicode too.** The walk prunes
+  only `__pycache__` and the artifacts dir - there is **no `_report`
+  suffix skip**, and re-adding one puts a report's pages back out of
+  reach. A page's characters are read by people whoever wrote them, so
+  one character set covers source and output alike. `source_scan_run` is
+  `reformat.sh`'s **last** stage for exactly this: the reports the batch
+  just wrote are inside its walk.
 - Reformatting `heatmap.*`, `frame.js`, `flame_bootstrap.js`, `theme.css` or
   `theme.js` **changes a report**, so a page diff is expected. Text a script
   `echo`s into `perf-tool/output.txt` is _page content_ - split into extra `#`
@@ -657,7 +683,7 @@ the reports (overview: native time, cycles, instructions), not here.
    `dev/perf2html_diff.sh`. Keep only changes that measurably help **and**
    leave everything else the test prints unchanged. Record before/after
    numbers in "Current state".
-1. After any `dev/` edit: `dev/perf2html_batch.sh` **then**
-   `dev/scripts/reformat.sh`; the batch alone checks nothing.
+1. After any `dev/` edit: **`dev/scripts/reformat.sh`, one run** - it clears
+   the reports, checks the source, runs the batch and checks what it wrote.
 1. Before final: full suite (`tests/runtests.pl`, or `ctest` from `build/`
    with `-DBUILD_TESTING=ON`) - the perf test doesn't validate correctness.

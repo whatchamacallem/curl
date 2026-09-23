@@ -34,7 +34,7 @@ _FLAME_GRAPH_FILE_FORMAT_SCHEMA_URL = (
 _HEADER_WORDS = 8
 
 # The first word of a trace cyg_callback.c wrote, its CYG_CALLBACKS_MAGIC.
-_HEADER_MAGIC = 0xabcdef0123456789
+_HEADER_MAGIC = 0xABCDEF0123456789
 
 # How many 64-bit words one recorded event takes: the function, then the stamp.
 _RECORD_WORDS = 2
