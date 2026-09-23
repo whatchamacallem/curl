@@ -3,8 +3,8 @@
 # No usage docs allowed here.
 
 set -uo pipefail
-SCRIPT="$(readlink -f "$0")"
-cd "$(dirname "$SCRIPT")"
+_SCRIPT="$(readlink -f "$0")"
+cd "$(dirname "$_SCRIPT")"
 
 . ./scripts/settings.sh
 . ./scripts/shared.sh
@@ -34,42 +34,42 @@ EOF
 }
 
 # step_run - runs one numbered step, logging it, and records a failure
-# in STATUS and FAILED instead of returning non-zero. SETS those two
+# in _STATUS and _FAILED instead of returning non-zero. SETS those two
 # caller globals, and is their canonical setter: main() initializes them
 # and reads them back once every step has run.
 step_run() {
-  local number="$1" name="$2"
+  local _number="$1" _name="$2"
   shift 2
-  local exit_code=0 from start
-  start="$(clock_microseconds)"
+  local _exit_code=0 _from _start
+  _start="$(clock_microseconds)"
   printf '[%ss] running step %s %s: %s\n' "$(elapsed_format)" \
-    "$number" "$name" "$*"
-  log_verbose "$(printf '== %s %s ==' "$number" "$name")"
+    "$_number" "$_name" "$*"
+  log_verbose "$(printf '== %s %s ==' "$_number" "$_name")"
   printf '\n$ %s\n' "$*" >>"$RUN_LOG"
-  from="$(wc -l <"$RUN_LOG")"
+  _from="$(wc -l <"$RUN_LOG")"
   if [ "$VERBOSE" = 1 ]; then
     # tee so a step's output arrives as it is produced. The `if !` is what
     # keeps pipefail's failure from reaching PIPESTATUS's reader.
     if ! { "$@" 2>&1 | tee -a "$RUN_LOG"; }; then
-      exit_code="${PIPESTATUS[0]}"
+      _exit_code="${PIPESTATUS[0]}"
     fi
   else
-    "$@" >>"$RUN_LOG" 2>&1 || exit_code=$?
+    "$@" >>"$RUN_LOG" 2>&1 || _exit_code=$?
   fi
-  log_verbose "$(printf '== %s %s: end ==' "$number" "$name")"
-  if [ "$exit_code" = 0 ]; then
+  log_verbose "$(printf '== %s %s: end ==' "$_number" "$_name")"
+  if [ "$_exit_code" = 0 ]; then
     printf '[%ss] done: step %s %s in %s\n' "$(elapsed_format)" \
-      "$number" "$name" "$(duration_format "$start")"
+      "$_number" "$_name" "$(duration_format "$_start")"
     return 0
   fi
-  STATUS=1
-  FAILED+=("$number $name")
+  _STATUS=1
+  _FAILED+=("$_number $_name")
   printf '[%ss] FAILED: step %s %s, exit %s, after %s\n' \
-    "$(elapsed_format)" "$number" "$name" "$exit_code" \
-    "$(duration_format "$start")" >&2
+    "$(elapsed_format)" "$_number" "$_name" "$_exit_code" \
+    "$(duration_format "$_start")" >&2
   {
-    echo "error: exit $exit_code from: $*"
-    tail -n +"$((from + 1))" "$RUN_LOG" | tail -n 40
+    echo "error: exit $_exit_code from: $*"
+    tail -n +"$((_from + 1))" "$RUN_LOG" | tail -n 40
     echo "(last 40 lines; everything this run printed: $RUN_LOG)"
   } >&2
   return 0
@@ -80,12 +80,11 @@ step_run() {
 # argument it does not name is a cmake flag, which is why no value of a
 # separated "-D NAME=VALUE" pair can be mistaken for anything else.
 args_parse() {
-  VERBOSE=0
-  KEEP_ARTIFACTS=0
-  REGENERATE=0
-  PASS_ARGS=()
-  CMAKE_FLAGS=()
-  TARGET_DIR=""
+  _KEEP_ARTIFACTS=0
+  _REGENERATE=0
+  _PASS_ARGS=()
+  _CMAKE_FLAGS=()
+  _TARGET_DIR=""
   ARTIFACTS_DIR=""
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -98,14 +97,14 @@ args_parse() {
         shift
         ;;
       --keep-artifacts)
-        KEEP_ARTIFACTS=1
-        PASS_ARGS+=(--keep-artifacts)
+        _KEEP_ARTIFACTS=1
+        _PASS_ARGS+=(--keep-artifacts)
         shift
         ;;
       --regenerate)
-        REGENERATE=1
-        KEEP_ARTIFACTS=1
-        PASS_ARGS+=(--regenerate)
+        _REGENERATE=1
+        _KEEP_ARTIFACTS=1
+        _PASS_ARGS+=(--regenerate)
         shift
         ;;
       --artifacts=*)
@@ -113,32 +112,32 @@ args_parse() {
         shift
         ;;
       --target-dir=*)
-        TARGET_DIR="${1#--target-dir=}"
+        _TARGET_DIR="${1#--target-dir=}"
         shift
         ;;
       *)
-        CMAKE_FLAGS+=("$1")
+        _CMAKE_FLAGS+=("$1")
         shift
         ;;
     esac
   done
-  [ "${#CMAKE_FLAGS[@]}" -gt 0 ] || CMAKE_FLAGS=("${DEFAULT_FLAGS[@]}")
-  [ -n "$TARGET_DIR" ] || TARGET_DIR="$PWD"
-  TARGET_DIR="$(absolute_path "$TARGET_DIR")"
+  [ "${#_CMAKE_FLAGS[@]}" -gt 0 ] || _CMAKE_FLAGS=("${DEFAULT_FLAGS[@]}")
+  [ -n "$_TARGET_DIR" ] || _TARGET_DIR="$PWD"
+  _TARGET_DIR="$(absolute_path "$_TARGET_DIR")"
   if [ -z "$ARTIFACTS_DIR" ]; then
-    ARTIFACTS_DIR="$TARGET_DIR/$ARTIFACTS_NAME"
+    ARTIFACTS_DIR="$_TARGET_DIR/$ARTIFACTS_NAME"
   fi
   ARTIFACTS_DIR="$(absolute_path "$ARTIFACTS_DIR")"
-  BASE_DIR="$TARGET_DIR/$REPORT_BASELINE_DIR_NAME"
-  MOD_DIR="$TARGET_DIR/$REPORT_MODIFIED_DIR_NAME"
-  DIFF_DIR="$TARGET_DIR/$REPORT_DIFF_DIR_NAME"
+  _BASE_DIR="$_TARGET_DIR/$REPORT_BASELINE_DIR_NAME"
+  _MOD_DIR="$_TARGET_DIR/$REPORT_MODIFIED_DIR_NAME"
+  _DIFF_DIR="$_TARGET_DIR/$REPORT_DIFF_DIR_NAME"
   RUN_LOG="$ARTIFACTS_DIR/perf2html_batch.$TIMESTAMP.log"
 }
 
 # reports_clean - deletes the three report directories
 reports_clean() {
-  rm -rf "$BASE_DIR" "$MOD_DIR" "$DIFF_DIR" || {
-    echo "error: could not remove previous reports under $TARGET_DIR" >&2
+  rm -rf "$_BASE_DIR" "$_MOD_DIR" "$_DIFF_DIR" || {
+    echo "error: could not remove previous reports under $_TARGET_DIR" >&2
     exit 1
   }
 }
@@ -148,8 +147,8 @@ reports_clean() {
 main() {
   args_parse "$@"
   START_US="$(clock_microseconds)"
-  local child_args=("${PASS_ARGS[@]}" "--artifacts=$ARTIFACTS_DIR")
-  if [ "$KEEP_ARTIFACTS" = 0 ]; then
+  local _child_args=("${_PASS_ARGS[@]}" "--artifacts=$ARTIFACTS_DIR")
+  if [ "$_KEEP_ARTIFACTS" = 0 ]; then
     printf '[%ss] removing stale %s/\n' \
       "$(elapsed_format)" "$ARTIFACTS_DIR"
     rm -rf "$ARTIFACTS_DIR" || {
@@ -159,52 +158,52 @@ main() {
     # the children keep it whatever the batch was asked, so neither can
     # unlink the batch log out from under this run. The batch is the one
     # thing that deletes the directory, at the end of main().
-    child_args+=(--keep-artifacts)
+    _child_args+=(--keep-artifacts)
   fi
   mkdir -p "$ARTIFACTS_DIR" || {
     echo "error: could not create $ARTIFACTS_DIR/" >&2
     exit 1
   }
-  STATUS=0
-  FAILED=()
-  local verbose_args=()
-  if [ "$VERBOSE" = 1 ]; then verbose_args=(--verbose); fi
-  echo "dev/perf2html_batch.sh $TIMESTAMP: ${CMAKE_FLAGS[*]}" >"$RUN_LOG"
+  _STATUS=0
+  _FAILED=()
+  local _verbose_args=()
+  if [ "$VERBOSE" = 1 ]; then _verbose_args=(--verbose); fi
+  echo "dev/perf2html_batch.sh $TIMESTAMP: ${_CMAKE_FLAGS[*]}" >"$RUN_LOG"
   printf '[%ss] dev/perf2html_batch.sh %s: modified build flags: %s\n' \
-    "$(elapsed_format)" "$TIMESTAMP" "${CMAKE_FLAGS[*]}"
+    "$(elapsed_format)" "$TIMESTAMP" "${_CMAKE_FLAGS[*]}"
 
   # --regenerate rebuilds each report's pages out of the recordings the
   # last run kept, and reads each report's own MANIFEST.txt back to find
   # them, so it is the one mode that must not start by deleting them.
-  if [ "$REGENERATE" = 0 ]; then
+  if [ "$_REGENERATE" = 0 ]; then
     printf '[%ss] removing previous reports\n' "$(elapsed_format)"
     reports_clean
   fi
-  step_run 1 baseline ./perf2html.sh "${verbose_args[@]}" \
-    "${child_args[@]}" "--report=$BASE_DIR"
-  step_run 2 modified ./perf2html.sh "${verbose_args[@]}" \
-    "${child_args[@]}" "--report=$MOD_DIR" "${CMAKE_FLAGS[@]}"
-  step_run 3 diff ./perf2html_diff.sh "${verbose_args[@]}" \
-    "${child_args[@]}" "$BASE_DIR" "$MOD_DIR" "$DIFF_DIR"
+  step_run 1 baseline ./perf2html.sh "${_verbose_args[@]}" \
+    "${_child_args[@]}" "--report=$_BASE_DIR"
+  step_run 2 modified ./perf2html.sh "${_verbose_args[@]}" \
+    "${_child_args[@]}" "--report=$_MOD_DIR" "${_CMAKE_FLAGS[@]}"
+  step_run 3 diff ./perf2html_diff.sh "${_verbose_args[@]}" \
+    "${_child_args[@]}" "$_BASE_DIR" "$_MOD_DIR" "$_DIFF_DIR"
 
-  if [ "$STATUS" != 0 ]; then
+  if [ "$_STATUS" != 0 ]; then
     printf '[%ss] perf2html_batch: %s step(s) failed: %s\n' \
-      "$(elapsed_format)" "${#FAILED[@]}" "${FAILED[*]}" >&2
-    if [ "$KEEP_ARTIFACTS" = 0 ]; then
+      "$(elapsed_format)" "${#_FAILED[@]}" "${_FAILED[*]}" >&2
+    if [ "$_KEEP_ARTIFACTS" = 0 ]; then
       printf '[%ss] perf2html_batch: %s/ kept for %s\n' \
         "$(elapsed_format)" "$ARTIFACTS_DIR" \
         "diagnosis (a clean run deletes it)" >&2
     fi
     return 1
   fi
-  if [ "$KEEP_ARTIFACTS" = 0 ]; then
+  if [ "$_KEEP_ARTIFACTS" = 0 ]; then
     printf '[%ss] removing %s/\n' "$(elapsed_format)" "$ARTIFACTS_DIR"
     rm -rf "$ARTIFACTS_DIR" || {
       echo "error: could not remove $ARTIFACTS_DIR/" >&2
       exit 1
     }
   fi
-  printf '[%ss] file://%s/index.html\n' "$(elapsed_format)" "$DIFF_DIR"
+  printf '[%ss] file://%s/index.html\n' "$(elapsed_format)" "$_DIFF_DIR"
   return 0
 }
 

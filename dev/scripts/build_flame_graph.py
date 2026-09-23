@@ -11,12 +11,19 @@ import settings, theme
 # else.
 _ASSET_TEMPLATE_FLAME_GRAPH_BOOTSTRAP_NAME: str = ""
 _ASSET_TEMPLATE_FLAME_GRAPH_PAGE_NAME: str = ""
+_ASSET_UI_STRINGS_SCRIPT_NAME: str = ""
 _FLAME_GRAPH_PROFILE_SCRIPT_NAME: str = ""
+_REPORT_ASSETS_DIR_NAME: str = ""
 settings.load_into(__name__)
 
 # Hands the embedded profile to speedscope. It polls, because speedscope
 # starts up well after its own script tag has run.
 _BOOTSTRAP = theme.asset_text_read(_ASSET_TEMPLATE_FLAME_GRAPH_BOOTSTRAP_NAME)
+
+# How far a flame graph page sits below the report root, which fixes its
+# href to the shared assets. The page always lives in <test>/flame-graph/,
+# and a diff report has no flame graph, so there is no shallower case.
+_FLAME_GRAPH_PAGE_DEPTH = 2
 
 # The page itself: a link and two script tags, the markers substituted.
 _PAGE = theme.asset_text_read(_ASSET_TEMPLATE_FLAME_GRAPH_PAGE_NAME)
@@ -73,11 +80,27 @@ class BuildFlameGraph:
         )
 
     # Write the page, pointing it at the shared bundle's engine and style.
+    # The preamble scripts go in last, so nothing substituted before them
+    # can be read out of the text they bring with them. They open the page
+    # error overlay first, so a speedscope that never starts shows the
+    # failure instead of a blank one, and the vocabulary follows them,
+    # because the bootstrap names its failure by string id.
     def page_write(self, args: BuildFlameGraph.FlameGraphArgs) -> None:
+        assets_href = theme.shared_href(
+            _FLAME_GRAPH_PAGE_DEPTH, _REPORT_ASSETS_DIR_NAME
+        )
+        scripts = "\n    ".join(
+            f'<script src="{assets_href}/{name}"></script>'
+            for name in (
+                *theme.page_preamble_scripts(),
+                _ASSET_UI_STRINGS_SCRIPT_NAME,
+            )
+        )
         html = (
             _PAGE.replace("__APP_CSS__", f"{args.app_href}/{args.app_css}")
             .replace("__APP_JS__", f"{args.app_href}/{args.app_js}")
             .replace("__PROFILE_JS__", _FLAME_GRAPH_PROFILE_SCRIPT_NAME)
+            .replace("__SCRIPTS__", scripts)
         )
         index_html = os.path.join(args.flame_graph_dir, "index.html")
         with open(index_html, "w", encoding="utf-8") as handle:

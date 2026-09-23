@@ -276,9 +276,6 @@ pre.logbox {
   );
 }
 
-* {
-  scrollbar-color: var(--blue) var(--bg);
-}
 ::-webkit-scrollbar {
   width: 14px;
   height: 14px;
@@ -294,9 +291,6 @@ pre.logbox {
   background: var(--bg);
 }
 
-pre.logbox {
-  scrollbar-color: var(--blue) var(--panel);
-}
 pre.logbox::-webkit-scrollbar-track,
 pre.logbox::-webkit-scrollbar-corner {
   background: var(--panel);

@@ -95,7 +95,7 @@ A regular report shows you a percentage of a total as you might expect. In most
 places it is a percentage of a global total cycle count, however in the source
 view it may also be a percentage of a file or function if selected.
 
-| counts      |      % |
+| example     |      % |
 | ----------- | -----: |
 | 1 / 50000   | <0.01% |
 | 1 / 5000    |  0.02% |
@@ -104,19 +104,26 @@ view it may also be a percentage of a file or function if selected.
 
 ### Diff report
 
-A diff report uses percentages the same way a stock market ticker does. If the
-system under test takes half as long per-invocation in the modified profile
-then it is at 50%, where smaller is better.
+A diff report uses percentages the same way a stock market ticker does. Every
+number in it is the modified profile minus the baseline one, per function,
+file and line, and every share divides that difference by the same thing's own
+baseline count. So a share says how much this line moved against what it used
+to cost, not what part of the report it is. Half as long is `▼-50.0%`, twice
+as long is `▲100.0%`, and smaller is better.
 
-| counts             |     mine |
+| example            |        % |
 | ------------------ | -------: |
-| 0 -> 5000          |      ▲∞% |
-| 5000 -> 0          | ▼-100.0% |
-| 5000000 -> 5000001 |  ▲≈0.00% |
-| 5000000 -> 4999999 |  ▼≈0.00% |
+| 1000 -> 1000       |          |
+| 1000 -> 1000000    | ▲999.00x |
+| 1000 -> 1001000    |  ▲>1000x |
+| 1000 -> 101000     | ▲100.00x |
 | 1000 -> 2000       |  ▲100.0% |
 | 1000 -> 2010       |   ▲1.01x |
-| 1000 -> 101000     |  ▲>1000x |
+| 1000 -> 900        |  ▼-10.0% |
+| 5000 -> 0          | ▼-100.0% |
+| 5000000 -> 4999999 |  ▼≈0.00% |
+| 5000000 -> 5000001 |  ▲≈0.00% |
+| 90 -> 100          |   ▲11.1% |
 
 ## Flame Graph (speedscope)
 

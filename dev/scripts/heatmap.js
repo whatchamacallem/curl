@@ -1,8 +1,6 @@
 (function () {
   "use strict";
 
-  const HEAT_COLOR_ALPHA_HIGHEST = settings("HEAT_COLOR_ALPHA_HIGHEST");
-  const HEAT_COLOR_ALPHA_LOWEST = settings("HEAT_COLOR_ALPHA_LOWEST");
   const HEAT_COLOR_FULL_SCALE_PERCENT = settings(
     "HEAT_COLOR_FULL_SCALE_PERCENT",
   );
@@ -50,12 +48,6 @@
   );
   const HEAT_MAP_TREE_AUTO_EXPAND_ABOVE_SHARE = settings(
     "HEAT_MAP_TREE_AUTO_EXPAND_ABOVE_SHARE",
-  );
-  const HEAT_MAP_TREE_COLOR_ALPHA_HIGHEST = settings(
-    "HEAT_MAP_TREE_COLOR_ALPHA_HIGHEST",
-  );
-  const HEAT_MAP_TREE_COLOR_ALPHA_LOWEST = settings(
-    "HEAT_MAP_TREE_COLOR_ALPHA_LOWEST",
   );
   const HEAT_MAP_TREE_INDENT_FIRST_LEVEL_PX = settings(
     "HEAT_MAP_TREE_INDENT_FIRST_LEVEL_PX",
@@ -211,16 +203,17 @@
 
   const IS_DIFF = !!profile_model.heatMapTotals.diff;
   const function_baselines = profile_model.functionBaseline || [];
-  let baseline_of = () => null;
+  const file_baselines = profile_model.fileBaseline || {};
+  let counter_baseline_of = () => null;
   let share_of_baseline = (value, baseline_cost) => share_of_total(value);
   if (IS_DIFF) {
     share_text = report_ui.signed_percent_text;
     human_text = report_ui.signed_human_text;
     HEADING_PREFIX = text_of("str_heading_prefix_diff");
     CHIP_HEADING = text_of("str_chip_heading_diff");
-    baseline_of = (cost_vector) => {
+    counter_baseline_of = (cost_vector, counter) => {
       if (!cost_vector) return null;
-      const baseline_cost = absolute(current_counter.get(cost_vector));
+      const baseline_cost = absolute(counter.get(cost_vector));
       return baseline_cost ? baseline_cost : null;
     };
     share_of_baseline = (value, baseline_cost) =>
@@ -230,15 +223,27 @@
           ? Math.sign(value) * Infinity
           : 0;
   }
+  const baseline_of = (cost_vector) =>
+    counter_baseline_of(cost_vector, current_counter);
   const share_of_baseline_text = (value, baseline_cost) =>
     share_text(share_of_baseline(value, baseline_cost));
-  const line_baseline = (file_path, line_number) => {
+  const line_baseline_vector = (file_path, line_number) => {
     const baseline_table =
       file_table[file_path] && file_table[file_path].baseline;
-    return baseline_of(baseline_table && baseline_table[line_number]);
+    return (baseline_table && baseline_table[line_number]) || null;
   };
+  const line_baseline = (file_path, line_number) =>
+    baseline_of(line_baseline_vector(file_path, line_number));
+  const line_counter_baseline = (file_path, line_number, counter) =>
+    counter_baseline_of(line_baseline_vector(file_path, line_number), counter);
   const function_baseline_of = (function_index) =>
     baseline_of(function_baselines[function_index]);
+  const function_counter_baseline = (function_index, counter) =>
+    counter_baseline_of(function_baselines[function_index], counter);
+  const file_counter_baseline = (file_path, counter) =>
+    counter_baseline_of(file_baselines[file_path], counter);
+  const file_baseline_of = (file_path) =>
+    file_counter_baseline(file_path, current_counter);
 
   const scale_select = document.getElementById("scale");
   const SCOPE_CHOICES = IS_DIFF
@@ -290,7 +295,7 @@
     global: "str_column_global_share",
     file: "str_column_file_share",
     function: "str_column_function_share",
-    line: "str_column_global_share",
+    line: "str_column_baseline_share",
   };
   function scope_totals_build(file_path) {
     const file = file_table[file_path];
@@ -328,12 +333,16 @@
   };
   const share_in_scope_text = (value, counter, line_number) =>
     value ? share_text(share_in_scope(value, counter, line_number)) : "";
+  const secondary_share = (value, counter, baseline_cost, line_number) =>
+    IS_DIFF
+      ? share_of_baseline(value, baseline_cost)
+      : share_in_scope(value, counter, line_number);
+  const secondary_share_text = (value, counter, baseline_cost, line_number) =>
+    value
+      ? share_text(secondary_share(value, counter, baseline_cost, line_number))
+      : "";
   const scope_share_label = () =>
-    text_of(
-      IS_DIFF
-        ? "str_column_global_share"
-        : SCOPE_SHARE_STRING_IDS[active_scale.scope],
-    );
+    text_of(SCOPE_SHARE_STRING_IDS[active_scale.scope]);
   const line_share = (value, baseline_cost, line_number) =>
     IS_DIFF
       ? share_of_baseline(value, baseline_cost)
@@ -363,11 +372,9 @@
 
   const channels_of = (hex) =>
     [1, 3, 5].map((index) => parseInt(hex.slice(index, index + 2), 16));
-  const COLOR_STOPS = profile_model.theme.heat.map(channels_of),
-    BACKGROUND_COLOR = channels_of(profile_model.theme.bg);
-  function cell_style(heat_value, alpha_minimum, alpha_maximum) {
-    const magnitude = absolute(heat_value);
-    if (magnitude <= 0) return "";
+  const COLOR_STOPS = profile_model.theme.heat.map(channels_of);
+  function cell_style(heat_value) {
+    if (absolute(heat_value) <= 0) return "";
     const position = IS_DIFF ? (heat_value + 1) * 0.5 : heat_value;
     const scaled_position = position * (COLOR_STOPS.length - 1);
     const index = Math.min(
@@ -375,17 +382,11 @@
       COLOR_STOPS.length - 2,
     );
     const fraction = scaled_position - index;
-    const alpha_value =
-      alpha_minimum + (alpha_maximum - alpha_minimum) * magnitude;
     const mixed_channels = [0, 1, 2].map((channel) => {
       const low_channel = COLOR_STOPS[index][channel],
         high_channel = COLOR_STOPS[index + 1][channel];
       return Math.round(
-        BACKGROUND_COLOR[channel] +
-          (low_channel +
-            (high_channel - low_channel) * fraction -
-            BACKGROUND_COLOR[channel]) *
-            alpha_value,
+        low_channel + (high_channel - low_channel) * fraction,
       );
     });
     const luminance =
@@ -402,15 +403,6 @@
       `color:${foreground_color}`
     );
   }
-  const cell_style_strong = (heat_value) =>
-    cell_style(heat_value, HEAT_COLOR_ALPHA_LOWEST, HEAT_COLOR_ALPHA_HIGHEST);
-  const cell_style_soft = (heat_value) =>
-    cell_style(
-      heat_value,
-      HEAT_MAP_TREE_COLOR_ALPHA_LOWEST,
-      HEAT_MAP_TREE_COLOR_ALPHA_HIGHEST,
-    );
-
   const per_function_calls = function_table.map((function_entry) =>
     function_entry.callers.reduce(
       (running_total, caller) => running_total + caller[4],
@@ -426,7 +418,7 @@
     call_count
       ? {
           text: human_text(call_count),
-          style: cell_style_strong(
+          style: cell_style(
             heat_of_share((100 * call_count) / CALLS_TOTAL),
           ),
         }
@@ -618,17 +610,21 @@
         cls: "x",
       }),
     );
-  function secondary_cells(cost_vector, line_number) {
+  function secondary_cells(cost_vector, line_number, baseline_lookup) {
     return secondary_counters.map((secondary) => {
       const self_cost = secondary.get(cost_vector);
-      const in_scope = line_number != null;
-      const percent = in_scope
-        ? share_in_scope(self_cost, secondary, line_number)
-        : (100 * self_cost) / secondary_totals[secondary.key];
+      const percent = IS_DIFF
+        ? share_of_baseline(
+            self_cost,
+            baseline_lookup ? baseline_lookup(secondary) : null,
+          )
+        : line_number != null
+          ? share_in_scope(self_cost, secondary, line_number)
+          : (100 * self_cost) / secondary_totals[secondary.key];
       const heat_value = heat_of_share(percent);
       return {
         text: self_cost ? share_text(percent) : "",
-        style: cell_style_strong(heat_value),
+        style: cell_style(heat_value),
         cls: heat_value > HEAT_COLOR_LIGHT_TEXT_ABOVE_SHARE ? "hot" : "",
       };
     });
@@ -668,17 +664,10 @@
       });
     }
     for (const file_path of Object.keys(file_table)) {
-      let baseline_cost = 0;
-      if (IS_DIFF) {
-        const baseline_table = file_table[file_path].baseline || {};
-        for (const cost_vector of Object.values(baseline_table)) {
-          baseline_cost += absolute(current_counter.get(cost_vector));
-        }
-      }
       node_insert(
         file_path,
         current_value(file_table[file_path].self),
-        baseline_cost,
+        file_baseline_of(file_path) || 0,
         false,
       );
     }
@@ -736,7 +725,7 @@
         const is_expanded = search_query
           ? true
           : expanded_directories.has(directory_node.path);
-        const heat_style_attribute = cell_style_soft(
+        const heat_style_attribute = cell_style(
           heat_of_delta(directory_node.self, directory_node.base),
         );
         output_parts.push(
@@ -766,7 +755,7 @@
         const selected_class = file.path === current_file_path ? " sel" : "";
         const heat_style_attribute = file.cold
           ? ""
-          : cell_style_soft(heat_of_delta(file.self, file.base));
+          : cell_style(heat_of_delta(file.self, file.base));
         output_parts.push(
           `<div class="node file${file.cold ? " cold" : ""}` +
             `${heat_style_attribute ? " heat" : ""}${selected_class}"` +
@@ -926,7 +915,7 @@
             String(index + 1),
             {
               text: share_of_baseline_text(cost, baseline_cost),
-              style: cell_style_strong(heat_of_delta(cost, baseline_cost)),
+              style: cell_style(heat_of_delta(cost, baseline_cost)),
             },
             {
               text: function_name(function_index),
@@ -937,7 +926,9 @@
             },
             source_snippet,
             cell_number(cost),
-            ...secondary_cells(line_costs[0]),
+            ...secondary_cells(line_costs[0], null, (secondary) =>
+              line_counter_baseline(file_path, line_number, secondary),
+            ),
           ];
         }),
         {
@@ -1008,7 +999,7 @@
             String(index + 1),
             {
               text: share_of_baseline_text(self_cost, baseline_cost),
-              style: cell_style_strong(
+              style: cell_style(
                 heat_of_delta(self_cost, baseline_cost),
               ),
             },
@@ -1018,7 +1009,9 @@
               html: function_link(function_index, location_text),
             },
             ...calls,
-            ...secondary_cells(function_entry.self),
+            ...secondary_cells(function_entry.self, null, (secondary) =>
+              function_counter_baseline(function_index, secondary),
+            ),
           ];
         }),
         {
@@ -1053,12 +1046,7 @@
       `<div class="srcwrap"><div class="fhead band">` +
       `<span class="path">${html_escape(file_path)}</span>`;
     const file_self_cost = current_value(file.self);
-    let file_baseline_cost = 0;
-    if (IS_DIFF) {
-      for (const cost_vector of Object.values(file.baseline || {})) {
-        file_baseline_cost += absolute(current_counter.get(cost_vector));
-      }
-    }
+    const file_baseline_cost = file_baseline_of(file_path) || 0;
     const file_amount_text = human_text(file_self_cost);
     markup +=
       `<span class="stat">` +
@@ -1076,12 +1064,16 @@
     for (const secondary of secondary_counters) {
       const self_cost = secondary.get(file.self);
       if (!self_cost) continue;
+      const secondary_percent = IS_DIFF
+        ? share_of_baseline(
+            self_cost,
+            file_counter_baseline(file_path, secondary),
+          )
+        : (100 * self_cost) / secondary_totals[secondary.key];
       markup +=
         `<span class="stat">` +
         `${html_escape(counter_label(secondary))}` +
-        ` <b>${share_text(
-          (100 * self_cost) / secondary_totals[secondary.key],
-        )}</b>` +
+        ` <b>${share_text(secondary_percent)}</b>` +
         ` (${human_text(self_cost)})</span>`;
     }
     if (file.group === "external") {
@@ -1120,7 +1112,7 @@
         const baseline_cost = line_baseline(file_path, line_number);
         markup +=
           `<span class="chip" data-goto="${line_number}"` +
-          ` style="${cell_style_strong(
+          ` style="${cell_style(
             heat_of_line(cost, baseline_cost, line_number),
           )}">` +
           `${line_number} -` +
@@ -1137,7 +1129,7 @@
         calls = line_costs ? current_value(line_costs[1]) : 0;
       const baseline_cost = line_baseline(file_path, line_number);
       const heat_value = heat_of_line(self_cost, baseline_cost, line_number),
-        heat_style_attribute = cell_style_strong(heat_value);
+        heat_style_attribute = cell_style(heat_value);
       const class_names = [
         line_costs ? "clickable" : "",
         file.callees[line_number] ? "hasc" : "",
@@ -1153,7 +1145,7 @@
         ? [
             {
               text: line_share_text(calls, baseline_cost, line_number),
-              style: cell_style_strong(
+              style: cell_style(
                 heat_of_line(calls, baseline_cost, line_number),
               ),
             },
@@ -1169,7 +1161,9 @@
         { text, style: heat_style_attribute },
         ...call_cell,
         ...(line_costs
-          ? secondary_cells(line_costs[0], line_number)
+          ? secondary_cells(line_costs[0], line_number, (secondary) =>
+              line_counter_baseline(file_path, line_number, secondary),
+            )
           : secondary_counters.map(() => "")),
       ]);
     };
@@ -1536,11 +1530,12 @@
       if (!secondary_self) continue;
       popup_counter_rows.push([
         { text: counter_label(secondary) },
-        IS_DIFF
-          ? share_text(
-              (100 * secondary_self) / secondary_totals[secondary.key],
-            )
-          : share_in_scope_text(secondary_self, secondary, line_number),
+        secondary_share_text(
+          secondary_self,
+          secondary,
+          line_counter_baseline(file_path, line_number, secondary),
+          line_number,
+        ),
         cell_number(secondary_self),
       ]);
     }

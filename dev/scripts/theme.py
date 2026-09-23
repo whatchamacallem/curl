@@ -17,10 +17,8 @@ _ASSET_SETTINGS_SCRIPT_NAME: str = ""
 _ASSET_THEME_SCRIPT_NAME: str = ""
 _ASSET_THEME_STYLESHEET_NAME: str = ""
 _ASSET_UI_STRINGS_SCRIPT_NAME: str = ""
-_HEAT_COLOR_ALPHA_HIGHEST: float = 0.0
-_HEAT_COLOR_ALPHA_LOWEST: float = 0.0
+_HEAT_COLOR_FULL_SCALE_PERCENT: int = 0
 _HEAT_COLOR_LOGO_STOPS: list[str] = []
-_HEAT_COLOR_SMALLEST_VISIBLE_SHARE: float = 0.0
 _NUMBER_SMALLEST_PRINTED_PERCENT: float = 0.0
 _PAGE_FONT_FAMILY: str = ""
 _REPORT_ASSETS_DIR_NAME: str = ""
@@ -32,6 +30,11 @@ _THEME_COLOR_ROLE_BACKGROUND_SHADE_FACTOR: float = 0.0
 _THEME_COLOR_ROLE_SOURCES: dict[str, tuple[str, str]] = {}
 _THEME_TIME_UNIT_ENTRIES: tuple[tuple[str, float], ...] = ()
 settings.load_into(__name__)
+
+# The multiple a rise stops being printed at and becomes the ">1000x" bound,
+# which states that the rise ran off the column rather than a value. Kept in
+# step with theme.js's MULTIPLE_UPPER_BOUND_TIMES.
+_MULTIPLE_UPPER_BOUND_TIMES = 999.99
 
 
 # Cell - One table cell: the text, plus every way a page can dress it up.
@@ -68,8 +71,6 @@ class Column(NamedTuple):
 class ThemeRuntime(TypedDict):
     # the same 12 heat stops, for heat the JS computes itself
     heat: list[str]
-    # the page background heat blends over
-    bg: str
     # text colour to use on a light (hot) cell
     fgLight: str
     # text colour to use on a dark (cold) cell
@@ -106,6 +107,20 @@ class Theme:
 
     # NumberFormat - Every number a page prints, in its page-ready form.
     class NumberFormat:
+        # A number at a fixed number of decimal places, rounding a half
+        # away from zero rather than to the nearest even digit, which is
+        # what Python's own round() and f-string formatting would do.
+        # theme.js's fixed_text() is the twin, and the two agree digit for
+        # digit because both scale, floor and compare in IEEE-754 doubles.
+        def fixed_text(self, value: float, digit_count: int) -> str:
+            whole = self.rounded_units(value, digit_count)
+            sign = "-" if value < 0 and whole else ""
+            digits = str(whole).rjust(digit_count + 1, "0")
+            if not digit_count:
+                return sign + digits
+            split_at = len(digits) - digit_count
+            return sign + digits[:split_at] + "." + digits[split_at:]
+
         # 2.1K / 2.0G -- short enough to fit a column.
         def human(self, number: float) -> str:
             value, unit = float(number), ""
@@ -114,27 +129,33 @@ class Theme:
                     break
                 value /= 1000
                 unit = candidate
-            return (
-                f"{value:.1f}{unit}"
-                if unit and value < 9.95
-                else f"{value:.0f}{unit}"
-            )
+            digit_count = 1 if unit and value < 9.95 else 0
+            return self.fixed_text(value, digit_count) + unit
 
         # An unsigned share, as a percentage up to 100% and a multiple
-        # above it: 1.30x. Anything past 99.99x is just ">1000x".
+        # above it: 1.30x. Past the upper bound it is just ">1000x".
         def multiple(self, percent: float) -> str:
             if percent <= 100:
                 return self.percent(percent)
             times = percent / 100
-            return f"{times:.2f}x" if times < 99.99 else ">1000x"
+            if times >= _MULTIPLE_UPPER_BOUND_TIMES:
+                return ">1000x"
+            return self.fixed_text(times, 2) + "x"
 
         # 63.2% / <0.01%, and an empty cell rather than a bare 0%.
         def percent(self, percent: float) -> str:
             if percent >= 9.95:
-                return f"{percent:.1f}%"
+                return self.fixed_text(percent, 1) + "%"
             if percent >= _NUMBER_SMALLEST_PRINTED_PERCENT:
-                return f"{percent:.2f}%"
+                return self.fixed_text(percent, 2) + "%"
             return "<0.01%" if percent > 0 else ""
+
+        # How many whole units of the last printed digit a value rounds to,
+        # a half going away from zero.
+        def rounded_units(self, value: float, digit_count: int) -> int:
+            scaled = abs(value) * 10.0**digit_count
+            whole = math.floor(scaled)
+            return whole + 1 if scaled - whole >= 0.5 else whole
 
         # A diff number: same as human(), and empty at zero. Only a drop
         # is marked, with "-". A rise carries no "+".
@@ -304,10 +325,28 @@ class Theme:
             f"{script}</body>\n</html>\n"
         )
 
-    # Blend a heat position over the page background and pick readable text.
-    def heat_style(self, heat: float, signed: bool = False) -> str:
-        magnitude = abs(heat)
+    # Where a share sits on the ramp, and the whole of the colour mapping:
+    # clamp the percentage to full scale, divide by it, apply the log curve.
+    # Nothing is measured off the data, so a cell's colour depends only on
+    # the number printed beside it. heatmap.js's heat_of_share() is the twin
+    # this is kept in step with; heat_style() does the rest, multiplying by
+    # one less than the number of stops. The sign rides along for a diff,
+    # where heat_style(signed=True) remaps it around the ramp's midpoint.
+    def heat_of_share(self, percent: float) -> float:
+        sign = -1.0 if percent < 0 else 1.0
+        full_scale = float(_HEAT_COLOR_FULL_SCALE_PERCENT)
+        magnitude = min(abs(percent), full_scale)
         if magnitude <= 0:
+            return 0.0
+        fraction = magnitude / full_scale
+        return sign * math.log10(1 + 9 * fraction)
+
+    # The colour one heat position paints, and readable text over it. The
+    # ramp is painted opaque: a cell carries the stop itself, interpolated
+    # between the two it sits between, never a faded copy of it over the
+    # page background. heatmap.js's cell_style() is the twin.
+    def heat_style(self, heat: float, signed: bool = False) -> str:
+        if abs(heat) <= 0:
             return ""
         stops = [self.rgb(color) for color in _HEAT_COLOR_LOGO_STOPS]
         if signed:
@@ -316,20 +355,12 @@ class Theme:
             position = heat * (len(stops) - 1)
         index = min(max(int(position), 0), len(stops) - 2)
         fraction = position - index
-        lowest = _HEAT_COLOR_ALPHA_LOWEST
-        amount = lowest + (_HEAT_COLOR_ALPHA_HIGHEST - lowest) * magnitude
-        background = self.rgb(_ROLE["bg"])
         mixed = Theme.Rgb(
             *(
                 round(
-                    background[channel]
-                    + (
-                        stops[index][channel]
-                        + (stops[index + 1][channel] - stops[index][channel])
-                        * fraction
-                        - background[channel]
-                    )
-                    * amount
+                    stops[index][channel]
+                    + (stops[index + 1][channel] - stops[index][channel])
+                    * fraction
                 )
                 for channel in range(3)
             )
@@ -337,18 +368,6 @@ class Theme:
         return (
             f"background:rgb({mixed.red},{mixed.green},{mixed.blue});"
             f"color:{self.contrast_foreground(mixed)}"
-        )
-
-    # Where a share sits on the ramp: log-scaled, and signed for a diff.
-    def heat_t(self, share: float, max_share: float) -> float:
-        sign = -1.0 if share < 0 else 1.0
-        magnitude = abs(share)
-        smallest = _HEAT_COLOR_SMALLEST_VISIBLE_SHARE
-        if magnitude < smallest:
-            return 0.0
-        top = max(max_share, smallest * 10) / smallest
-        return sign * min(
-            1.0, math.log10(magnitude / smallest) / math.log10(top)
         )
 
     # The shared page script, read straight off disk.
@@ -401,7 +420,6 @@ class Theme:
     def runtime(self) -> ThemeRuntime:
         return {
             "heat": _HEAT_COLOR_LOGO_STOPS,
-            "bg": _ROLE["bg"],
             "fgLight": _ROLE["fg"],
             "fgDark": _ROLE["bg"],
         }
@@ -519,14 +537,14 @@ def asset_text_read(name: str) -> str:
     return _RENDERER.asset_read(name)
 
 
+# heat_of_share - Turn a share into a position on the heat ramp.
+def heat_of_share(percent: float) -> float:
+    return _RENDERER.heat_of_share(percent)
+
+
 # heat_style - The inline style one heat position paints a cell with.
 def heat_style(heat: float, signed: bool = False) -> str:
     return _RENDERER.heat_style(heat, signed)
-
-
-# heat_t - Turn a share into a position on the heat ramp.
-def heat_t(share: float, max_share: float) -> float:
-    return _RENDERER.heat_t(share, max_share)
 
 
 # html_escape - Make any value safe to drop into markup.

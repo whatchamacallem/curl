@@ -121,6 +121,9 @@ class CallgrindToHeatmap:
         cold: list[str]
         # per function, its baseline cost vector, indexed like functions
         functionBaseline: NotRequired[list[callgrind.Costs]]
+        # per display path, that whole file's baseline cost vector, which is
+        # what a tree's file and directory shares divide by
+        fileBaseline: NotRequired[dict[str, callgrind.Costs]]
 
     # HeatArgs - What this tool reads, and the page it writes.
     class HeatArgs(NamedTuple):
@@ -146,6 +149,8 @@ class CallgrindToHeatmap:
         baseline: dict[str, callgrind.Costs]
         # the baseline run's summed cost vector
         baselineTotal: callgrind.Costs
+        # per display path, that whole file's baseline cost vector
+        fileBaseline: dict[str, callgrind.Costs]
 
     # FileTally - One file's numbers while they are still being added up.
     @dataclasses.dataclass
@@ -252,11 +257,18 @@ class CallgrindToHeatmap:
         model["functionBaseline"] = [
             baseline.get(func["name"], []) for func in functions
         ]
+        model["fileBaseline"] = {
+            path: costs
+            for path, costs in synthesized["fileBaseline"].items()
+            if path in model["files"]
+        }
         for path, entry in model["files"].items():
             lines: dict[str, callgrind.Costs] = {}
             for line, index in entry["lineFunction"].items():
                 costs = baseline.get(
-                    f"{functions[index]['name']}\n{path}\n{line}"
+                    callgrind.baseline_line_key(
+                        functions[index]["name"], path, line
+                    )
                 )
                 if costs:
                     lines[line] = costs
@@ -271,16 +283,11 @@ class CallgrindToHeatmap:
     ) -> dict[str, callgrind.PathInfo]:
         info: dict[str, callgrind.PathInfo] = {}
         for raw in raw_files:
-            path_info = callgrind.path_norm(raw)
-            if path_info.group == "external":
-                object_name = (
-                    os.path.basename(profile.file_ob.get(raw, ""))
-                    or "(unknown object)"
+            info[raw] = callgrind.path_norm(raw)._replace(
+                display=callgrind.display_path_of(
+                    raw, profile.file_ob.get(raw, "")
                 )
-                path_info = path_info._replace(
-                    display=f"{object_name}/{path_info.display}"
-                )
-            info[raw] = path_info
+            )
         return info
 
     # Add every line, call and callee up per file, and read the source in.
@@ -408,11 +415,14 @@ class CallgrindToHeatmap:
             for relative in self.repo_tracked_files()
             if relative not in files
         )
-        default_counter = (
-            _RANKING_COUNTER_NAME
-            if _RANKING_COUNTER_NAME in profile.counter_names()
-            else profile.counters[0]
-        )
+        # never a substitute: another counter is a wrong column and a wrong
+        # denominator, which reads as a measurement rather than a failure.
+        if _RANKING_COUNTER_NAME not in profile.counter_names():
+            sys.exit(
+                f"error: this profile cannot supply {_RANKING_COUNTER_NAME}"
+                f" {' '.join(profile.counters)}"
+            )
+        default_counter = _RANKING_COUNTER_NAME
         return {
             "heatMapTotals": {
                 "counters": profile.counters,
@@ -583,17 +593,20 @@ class CallgrindToHeatmap:
                     f" {body};\n"
                 )
 
-    # Read callgrind_diff.py's synthesized callers diff, or nothing when there
-    # is none -- a diff built without one simply has no share to show.
+    # Read callgrind_diff.py's synthesized callers diff. Without it every
+    # share would divide by nothing and the page would read a flat
+    # 100% change, so a missing file is an error naming the path.
     def synthesized_callers_load(
         self, path: str
     ) -> CallgrindToHeatmap.SynthesizedCallers:
-        empty: CallgrindToHeatmap.SynthesizedCallers = {
-            "baseline": {},
-            "baselineTotal": [],
-        }
-        if not path or not os.path.isfile(path):
-            return empty
+        if not path:
+            sys.exit(
+                "error: --diff needs --baseline-data FILE"
+            )
+        if not os.path.isfile(path):
+            sys.exit(
+                f"error: no such --baseline-data file: {path}\n"
+            )
         with open(path, encoding="utf-8") as handle:
             doc: CallgrindToHeatmap.SynthesizedCallers = json.load(handle)
         return doc

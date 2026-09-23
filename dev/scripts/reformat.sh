@@ -9,52 +9,57 @@
 #   source            format        lint             cols  ascii
 #   ----------------- ------------- ---------------- ----- ------
 #   *.sh              shfmt         --               yes   yes
-#   *.c *.h           clang-format  --               yes   yes
-#   *.md *.json       prettier      prettier         yes   yes(1)
+#   README.md         prettier      prettier         yes   yes
+#   src/*.c *.h       clang-format  --               yes   yes
 #   scripts/*.py      ruff          pyright, ruff    yes   yes
 #   scripts/*.js      prettier      prettier         yes   yes
 #   scripts/*.css     prettier      prettier         yes   yes
 #   scripts/*.html    prettier      prettier         yes   yes
 #
-#   (1) README.md only. No *.json is: json shares the row because
-#       prettier handles both kinds.
+# Nothing else is touched at all. A config file -- .json, .yml, .toml, and
+# the dotfiles beside them -- is this tooling's own settings rather than
+# dev/ source, so no stage formats, lints or column-checks one.
+#
+# The ASCII scan runs once over the whole tree, not once per report.
 #
 # Do not document what is being validated further. The validation
 # code below and the generator code itself are the living standards
 # for a correct report. They are checked for agreement, no more.
-SCRIPT="$(readlink -f "$0")"
-SCRIPTS="$(dirname "$SCRIPT")"
+_SCRIPT="$(readlink -f "$0")"
+_SCRIPTS="$(dirname "$_SCRIPT")"
 
 # Where the caller stood, so a relative report-dir still means what they
 # typed after the cd below.
-INVOKED_FROM="$PWD"
-cd "$SCRIPTS"
+_INVOKED_FROM="$PWD"
+cd "$_SCRIPTS"
 
 # Where each kind of source lives, relative to scripts/.
-DIR_DEV=..
-DIR_SCRIPTS=.
+_DIR_DEV=..
+_DIR_SCRIPTS=.
+_DIR_SRC=../src
 
 # the hard column limit every kind of source is checked against
-COLUMNS_MAX=79
-PRETTIER_CONFIG=../.prettierrc.json
-PYRIGHT_CONFIG=../src/pyrightconfig.json
+_COLUMNS_MAX=79
+_PRETTIER_CONFIG=.prettierrc.json
+_PYRIGHT_CONFIG=../src/pyrightconfig.json
 
-# Markdown that is the author's notes rather than dev/ source. Nothing here
-# is formatted, linted or column-checked.
-SKIPPED_MARKDOWN_NAMES=(DECLAUDE.md)
+# The one markdown file that is dev/ source. Every other .md under dev/ is
+# the author's notes -- DECLAUDE.md and its kin -- and no stage reaches it.
+_MARKDOWN_NAME=README.md
 
 # spaces shfmt indents a shell block by
-SHELL_INDENT=2
-RUFF_CONFIG=ruff.toml
+_SHELL_INDENT=2
+_RUFF_CONFIG=ruff.toml
 
 # The reports validated when the argument names none, in the order the batch
 # writes them.
-DEFAULT_REPORTS=(
+_DEFAULT_REPORTS=(
   ../perf2html_baseline_report
   ../perf2html_modified_report
   ../perf2html_diff_report
 )
 
+. ./settings.sh
 . ./shared.sh
 
 usage_show() {
@@ -65,12 +70,12 @@ EOF
 
 # tool_find - echo a tool's path, searching the pip and npm user bins too.
 tool_find() {
-  local name="$1" found
+  local _name="$1" _found
 
-  for found in "$name" "$HOME/.local/bin/$name" \
-    "$HOME/.npm-global/bin/$name"; do
-    if command -v "$found" >/dev/null 2>&1; then
-      echo "$found"
+  for _found in "$_name" "$HOME/.local/bin/$_name" \
+    "$HOME/.npm-global/bin/$_name"; do
+    if command -v "$_found" >/dev/null 2>&1; then
+      echo "$_found"
       return 0
     fi
   done
@@ -78,172 +83,183 @@ tool_find() {
   return 1
 }
 
-# tool_run - run one tool with TOOL_ARGS over the files, printing a status
-# row. It sets STATUS on failure and always returns 0, so later stages run.
+# tool_run - run one tool with _TOOL_ARGS over the files, printing a status
+# row. It sets _STATUS on failure and always returns 0, so later stages run.
 tool_run() {
-  local name="$1" label="$2"
+  local _name="$1" _label="$2"
   shift 2
-  local binary
+  local _binary
 
-  if ! binary="$(tool_find "$name")"; then
-    printf '%-12s| skipped | not installed: %s\n' "$label" "$name"
-    MISSING+=("$name")
+  if ! _binary="$(tool_find "$_name")"; then
+    printf '%-12s| skipped | not installed: %s\n' "$_label" "$_name"
+    _MISSING+=("$_name")
     return 0
   fi
 
   if [ "$#" = 0 ]; then
-    printf '%-12s| ok      | no files\n' "$label"
+    printf '%-12s| ok      | no files\n' "$_label"
     return 0
   fi
 
-  local output exit_code=0
-  output="$("$binary" "${TOOL_ARGS[@]}" "$@" 2>&1)" || exit_code=$?
+  local _output _exit_code=0
+  _output="$("$_binary" "${_TOOL_ARGS[@]}" "$@" 2>&1)" || _exit_code=$?
 
-  if [ "$exit_code" = 0 ]; then
-    printf '%-12s| ok      | %s file(s)\n' "$label" "$#"
-    log_verbose "$output"
+  if [ "$_exit_code" = 0 ]; then
+    printf '%-12s| ok      | %s file(s)\n' "$_label" "$#"
+    log_verbose "$_output"
     return 0
   fi
 
-  printf '%-12s| CHANGED | %s\n' "$label" "$(echo "$output" | head -n 1)"
-  echo "$output" >&2
-  STATUS=1
+  printf '%-12s| CHANGED | %s\n' "$_label" "$(echo "$_output" | head -n 1)"
+  echo "$_output" >&2
+  _STATUS=1
   return 0
 }
 
 # files_of - the one door every stage collects files through, so a name
 # held out here is out of format, lint and the column check alike.
 files_of() {
-  local dir="$1" pattern="$2" skipped=()
+  local _dir="$1" _pattern="$2"
 
-  local name
-  for name in "${SKIPPED_MARKDOWN_NAMES[@]}"; do
-    skipped+=(-not -name "$name")
-  done
-
-  find "$dir" -name "$pattern" -type f \
+  # .vscode/ and .claude/ are this box's editor settings, not dev/ source
+  find "$_dir" -name "$_pattern" -type f \
     -not -path "*/$ARTIFACTS_NAME/*" \
     -not -path '*_report/*' -not -path '*/node_modules/*' \
-    -not -path '*/__pycache__/*' "${skipped[@]}" | sort
+    -not -path '*/__pycache__/*' -not -path '*/.*/*' | sort
 }
 
 format_shell() {
-  local files
-  mapfile -t files < <(files_of "$DIR_DEV" '*.sh')
+  local _files
+  mapfile -t _files < <(files_of "$_DIR_DEV" '*.sh')
 
-  TOOL_ARGS=(-i "$SHELL_INDENT" -bn -ci -ln bash)
-  if [ "$CHECK" = 1 ]; then
-    TOOL_ARGS+=(-d)
+  _TOOL_ARGS=(-i "$_SHELL_INDENT" -bn -ci -ln bash)
+  if [ "$_CHECK" = 1 ]; then
+    _TOOL_ARGS+=(-d)
   else
-    TOOL_ARGS+=(-w)
+    _TOOL_ARGS+=(-w)
   fi
 
-  tool_run shfmt shell "${files[@]}"
+  tool_run shfmt shell "${_files[@]}"
 }
 
 format_python() {
-  local files
-  mapfile -t files < <(files_of "$DIR_SCRIPTS" '*.py')
+  local _files
+  mapfile -t _files < <(files_of "$_DIR_SCRIPTS" '*.py')
 
-  TOOL_ARGS=(format --config "$RUFF_CONFIG")
-  if [ "$CHECK" = 1 ]; then TOOL_ARGS+=(--diff); fi
-  tool_run ruff python "${files[@]}"
+  _TOOL_ARGS=(format --config "$_RUFF_CONFIG")
+  if [ "$_CHECK" = 1 ]; then _TOOL_ARGS+=(--diff); fi
+  tool_run ruff python "${_files[@]}"
 
-  TOOL_ARGS=(check --config "$RUFF_CONFIG")
-  if [ "$CHECK" = 1 ]; then TOOL_ARGS+=(--diff); else TOOL_ARGS+=(--fix); fi
-  tool_run ruff "python lint" "${files[@]}"
+  # check mode is plain "ruff check": --diff implies --fix-only, which
+  # passes lints that have no fix (F821) and then fails the write run
+  _TOOL_ARGS=(check --config "$_RUFF_CONFIG")
+  if [ "$_CHECK" != 1 ]; then _TOOL_ARGS+=(--fix); fi
+  tool_run ruff "python lint" "${_files[@]}"
 }
 
 format_c() {
-  local files extra
-  mapfile -t files < <(files_of "$DIR_DEV" '*.c')
-  mapfile -t extra < <(files_of "$DIR_DEV" '*.h')
-  files+=("${extra[@]}")
+  local _files _extra
+  mapfile -t _files < <(files_of "$_DIR_SRC" '*.c')
+  mapfile -t _extra < <(files_of "$_DIR_SRC" '*.h')
+  _files+=("${_extra[@]}")
 
-  TOOL_ARGS=(--style=file)
-  if [ "$CHECK" = 1 ]; then
-    TOOL_ARGS+=(--dry-run --Werror)
+  _TOOL_ARGS=(--style=file)
+  if [ "$_CHECK" = 1 ]; then
+    _TOOL_ARGS+=(--dry-run --Werror)
   else
-    TOOL_ARGS+=(-i)
+    _TOOL_ARGS+=(-i)
   fi
 
-  tool_run clang-format c "${files[@]}"
+  tool_run clang-format c "${_files[@]}"
 }
 
-# format_prettier - markdown, JSON, YAML and every page asset. prettier
-# reparses what it writes, so it is these kinds' lint as well.
+# format_prettier - README.md and every page asset. prettier reparses what
+# it writes, so it is these kinds' lint as well.
 format_prettier() {
-  local files=() extra kind
+  local _files=() _extra _kind
 
-  for kind in '*.md' '*.json' '*.yml' '*.yaml'; do
-    mapfile -t extra < <(files_of "$DIR_DEV" "$kind")
-    files+=("${extra[@]}")
-  done
-  for kind in '*.js' '*.css' '*.html'; do
-    mapfile -t extra < <(files_of "$DIR_SCRIPTS" "$kind")
-    files+=("${extra[@]}")
+  mapfile -t _files < <(files_of "$_DIR_DEV" "$_MARKDOWN_NAME")
+  for _kind in '*.js' '*.css' '*.html'; do
+    mapfile -t _extra < <(files_of "$_DIR_SCRIPTS" "$_kind")
+    _files+=("${_extra[@]}")
   done
 
-  TOOL_ARGS=(--config "$PRETTIER_CONFIG" --log-level warn)
-  if [ "$CHECK" = 1 ]; then TOOL_ARGS+=(--check); else TOOL_ARGS+=(--write); fi
+  _TOOL_ARGS=(--config "$_PRETTIER_CONFIG" --log-level warn)
+  if [ "$_CHECK" = 1 ]; then
+    _TOOL_ARGS+=(--check)
+  else
+    _TOOL_ARGS+=(--write)
+  fi
 
-  tool_run prettier prettier "${files[@]}"
+  tool_run prettier prettier "${_files[@]}"
 }
 
 # pyright over the generators. The page assets are prettier's, which parses
 # every one of them.
 lint_run() {
-  local binary
+  local _binary
 
-  if ! binary="$(tool_find pyright)"; then
+  if ! _binary="$(tool_find pyright)"; then
     printf '%-12s| skipped | not installed: %s\n' "lint" "pyright"
-    MISSING+=(pyright)
+    _MISSING+=(pyright)
     return 0
   fi
 
-  local output exit_code=0
-  output="$("$binary" --project "$PYRIGHT_CONFIG" 2>&1)" || exit_code=$?
+  local _output _exit_code=0
+  _output="$("$_binary" --project "$_PYRIGHT_CONFIG" 2>&1)" || _exit_code=$?
 
-  if [ "$exit_code" = 0 ]; then
+  if [ "$_exit_code" = 0 ]; then
     printf '%-12s| ok      | pyright\n' "lint"
-    log_verbose "$output"
+    log_verbose "$_output"
     return 0
   fi
 
   printf '%-12s| FAILED  | pyright\n' "lint"
-  echo "$output" >&2
-  STATUS=1
+  echo "$_output" >&2
+  _STATUS=1
 }
 
-# long_lines_report - fail on any line still over COLUMNS_MAX afterwards.
+# long_lines_report - fail on any line still over _COLUMNS_MAX afterwards.
 long_lines_report() {
-  local files=() extra kind
+  local _files=() _extra _kind
 
-  for kind in '*.sh' '*.c' '*.h' '*.md'; do
-    mapfile -t extra < <(files_of "$DIR_DEV" "$kind")
-    files+=("${extra[@]}")
+  # 79 columns is every language dev/ is written in. A config file is not
+  # one of them: it is this tooling's settings, and no stage reads it here.
+  mapfile -t _files < <(files_of "$_DIR_DEV" '*.sh')
+  mapfile -t _extra < <(files_of "$_DIR_DEV" "$_MARKDOWN_NAME")
+  _files+=("${_extra[@]}")
+  for _kind in '*.c' '*.h'; do
+    mapfile -t _extra < <(files_of "$_DIR_SRC" "$_kind")
+    _files+=("${_extra[@]}")
   done
-  for kind in '*.py' '*.js' '*.css' '*.html'; do
-    mapfile -t extra < <(files_of "$DIR_SCRIPTS" "$kind")
-    files+=("${extra[@]}")
+  for _kind in '*.py' '*.js' '*.css' '*.html'; do
+    mapfile -t _extra < <(files_of "$_DIR_SCRIPTS" "$_kind")
+    _files+=("${_extra[@]}")
   done
 
-  if [ "${#files[@]}" = 0 ]; then return 0; fi
+  if [ "${#_files[@]}" = 0 ]; then return 0; fi
 
-  local over
-  over="$(awk -v max="$COLUMNS_MAX" \
+  local _over
+  _over="$(awk -v max="$_COLUMNS_MAX" \
     'length > max { print FILENAME ":" FNR ": " length " cols\n  " $0 }' \
-    "${files[@]}")"
+    "${_files[@]}")"
 
-  if [ -z "$over" ]; then
-    printf '%-12s| ok      | none over %s\n' "columns" "$COLUMNS_MAX"
+  if [ -z "$_over" ]; then
+    printf '%-12s| ok      | none over %s\n' "columns" "$_COLUMNS_MAX"
     return 0
   fi
 
   printf '%-12s| TOO_LONG| %s line(s) over %s\n' \
-    "columns" "$(echo "$over" | grep -c ' cols$')" "$COLUMNS_MAX"
-  echo "$over" >&2
-  STATUS=1
+    "columns" "$(echo "$_over" | grep -c ' cols$')" "$_COLUMNS_MAX"
+  echo "$_over" >&2
+  _STATUS=1
+}
+
+# report_error_add - collect one reason a directory is not a report. SETS
+# _REPORT_ERRORS, and is its canonical setter: every reason is kept, so a
+# valid report later in the list cannot hide a broken one before it.
+report_error_add() {
+  _REPORT_ERRORS+=("$1")
 }
 
 # Line 1 of a directory's MANIFEST.txt, or empty when it has none.
@@ -252,122 +268,153 @@ report_version() {
 }
 
 # report_claim - accept a directory whose MANIFEST.txt line 1 is a version
-# string and whose checksum still matches, else set REPORT_ERROR saying so.
+# string and whose checksum still matches, else append to _REPORT_ERRORS
+# saying so. SETS that caller global, and is its canonical setter: main()
+# initializes it and validate_run reads every entry back.
 report_claim() {
-  local path="$1" version recorded found
-  local full_version="$REPORT_MANIFEST_VERSION_FULL"
-  local diff_version="$REPORT_MANIFEST_VERSION_DIFF"
-  local checksum_label="$REPORT_MANIFEST_CHECKSUM_LABEL"
+  local _path="$1" _version _recorded _found _error
+  local _full_version="$REPORT_MANIFEST_VERSION_FULL"
+  local _diff_version="$REPORT_MANIFEST_VERSION_DIFF"
+  local _checksum_label="$REPORT_MANIFEST_CHECKSUM_LABEL"
 
-  if [ ! -d "$path" ]; then
-    REPORT_ERROR="no such directory: $path -- a report is a directory"
-    REPORT_ERROR="$REPORT_ERROR whose MANIFEST.txt line 1 reads"
-    REPORT_ERROR="$REPORT_ERROR \"$full_version\""
-    REPORT_ERROR="$REPORT_ERROR or \"$diff_version\""
+  if [ ! -d "$_path" ]; then
+    _error="no such directory: $_path -- a report is a directory"
+    _error="$_error whose MANIFEST.txt line 1 reads"
+    _error="$_error \"$_full_version\""
+    _error="$_error or \"$_diff_version\""
+    report_error_add "$_error"
     return 1
   fi
 
-  version="$(report_version "$path")"
-  case "$version" in
-    "$full_version" | "$diff_version") ;;
+  _version="$(report_version "$_path")"
+  case "$_version" in
+    "$_full_version" | "$_diff_version") ;;
     "")
-      REPORT_ERROR="$path has no MANIFEST.txt, so it is not a finished"
-      REPORT_ERROR="$REPORT_ERROR report; expected line 1 to read"
-      REPORT_ERROR="$REPORT_ERROR \"$full_version\""
-      REPORT_ERROR="$REPORT_ERROR or \"$diff_version\""
+      _error="$_path has no MANIFEST.txt, so it is not a finished"
+      _error="$_error report; expected line 1 to read"
+      _error="$_error \"$_full_version\""
+      _error="$_error or \"$_diff_version\""
+      report_error_add "$_error"
       return 1
       ;;
     *)
-      REPORT_ERROR="$path/MANIFEST.txt line 1 found \"$version\";"
-      REPORT_ERROR="$REPORT_ERROR expected \"$full_version\""
-      REPORT_ERROR="$REPORT_ERROR or \"$diff_version\""
+      _error="$_path/MANIFEST.txt line 1 found \"$_version\";"
+      _error="$_error expected \"$_full_version\""
+      _error="$_error or \"$_diff_version\""
+      report_error_add "$_error"
       return 1
       ;;
   esac
 
-  recorded="$(manifest_value "$path" "$checksum_label")"
-  if [ -z "$recorded" ]; then
-    REPORT_ERROR="$path/MANIFEST.txt has no $checksum_label= row, so its"
-    REPORT_ERROR="$REPORT_ERROR files cannot be verified; expected one"
-    REPORT_ERROR="$REPORT_ERROR beside the version line \"$version\""
+  _recorded="$(manifest_value "$_path" "$_checksum_label")"
+  if [ -z "$_recorded" ]; then
+    _error="$_path/MANIFEST.txt has no $_checksum_label= row, so its"
+    _error="$_error files cannot be verified; expected one"
+    _error="$_error beside the version line \"$_version\""
+    report_error_add "$_error"
     return 1
   fi
-  found="$(checksum_compute "$path")"
-  if [ "$found" != "$recorded" ]; then
-    REPORT_ERROR="$path does not match its recorded $checksum_label:"
-    REPORT_ERROR="$REPORT_ERROR found \"$found\", expected \"$recorded\""
-    REPORT_ERROR="$REPORT_ERROR -- a file was added, removed or edited"
-    REPORT_ERROR="$REPORT_ERROR after the report was written"
+  _found="$(checksum_compute "$_path")"
+  if [ "$_found" != "$_recorded" ]; then
+    _error="$_path does not match its recorded $_checksum_label:"
+    _error="$_error found \"$_found\", expected \"$_recorded\""
+    _error="$_error -- a file was added, removed or edited"
+    _error="$_error after the report was written"
+    report_error_add "$_error"
     return 1
   fi
 
-  REPORTS+=("$path")
+  _REPORTS+=("$_path")
   return 0
 }
 
-# Claim the named report, or every default report that is present.
+# Claim the named report, or every default report directory that exists.
 report_find() {
-  local path
+  local _path _error
 
-  if [ -n "$REPORT_ARG" ]; then
-    report_claim "$REPORT_ARG"
+  if [ -n "$_REPORT_ARG" ]; then
+    report_claim "$_REPORT_ARG"
     return 0
   fi
 
-  for path in "${DEFAULT_REPORTS[@]}"; do
-    if [ -e "$path/MANIFEST.txt" ]; then report_claim "$path"; fi
+  # a directory that is there but holds no MANIFEST.txt is an aborted run,
+  # which is a failure to report, not a directory to walk past: testing
+  # for the manifest here let a broken report hide behind a valid one.
+  for _path in "${_DEFAULT_REPORTS[@]}"; do
+    if [ -d "$_path" ]; then report_claim "$_path"; fi
   done
 
-  if [ "${#REPORTS[@]}" = 0 ] && [ -z "$REPORT_ERROR" ]; then
-    REPORT_ERROR="no report was named, and the default location"
-    REPORT_ERROR="$REPORT_ERROR dev/${DEFAULT_REPORTS[0]#../} is absent"
-    REPORT_ERROR="$REPORT_ERROR or has no MANIFEST.txt reading"
-    REPORT_ERROR="$REPORT_ERROR \"$REPORT_MANIFEST_VERSION_FULL\""
+  if [ "${#_REPORTS[@]}" = 0 ] && [ "${#_REPORT_ERRORS[@]}" = 0 ]; then
+    _error="no report was named, and the default location"
+    _error="$_error dev/${_DEFAULT_REPORTS[0]#../} is absent"
+    _error="$_error or has no MANIFEST.txt reading"
+    _error="$_error \"$REPORT_MANIFEST_VERSION_FULL\""
+    report_error_add "$_error"
   fi
 }
 
 # validate_run - run validate_report.py over every claimed report.
 validate_run() {
-  local path args output exit_code
+  local _path _args _output _exit_code
 
   # a directory that is not a report is its own failure, and the reports
   # that are still get validated
-  if [ -n "$REPORT_ERROR" ]; then
-    printf '%-12s| FAILED  | %s\n' "validate" "not a report"
+  if [ "${#_REPORT_ERRORS[@]}" != 0 ]; then
+    printf '%-12s| FAILED  | %s not a report\n' \
+      "validate" "${#_REPORT_ERRORS[@]}"
     {
-      echo "error: $REPORT_ERROR"
+      local _reason
+      for _reason in "${_REPORT_ERRORS[@]}"; do echo "error: $_reason"; done
       echo "       name a report directory as the argument, or run" \
         "dev/perf2html_batch.sh to write the three default ones"
     } >&2
-    STATUS=1
+    _STATUS=1
   fi
 
-  for path in "${REPORTS[@]}"; do
-    args=("$(cd "$path" && pwd)")
-    if [ "$(report_version "$path")" = "$REPORT_MANIFEST_VERSION_DIFF" ]; then
-      args+=(--diff)
+  for _path in "${_REPORTS[@]}"; do
+    _args=("$(cd "$_path" && pwd)")
+    if [ "$(report_version "$_path")" = "$REPORT_MANIFEST_VERSION_DIFF" ]; then
+      _args+=(--diff)
     fi
 
-    exit_code=0
-    output="$(python3 validate_report.py "${args[@]}" 2>&1)" || exit_code=$?
+    _exit_code=0
+    _output="$(python3 validate_report.py "${_args[@]}" 2>&1)" || _exit_code=$?
 
-    if [ "$exit_code" = 0 ]; then
-      printf '%-12s| ok      | %s\n' "validate" "$(basename "$path")"
-      log_verbose "$output"
+    if [ "$_exit_code" = 0 ]; then
+      printf '%-12s| ok      | %s\n' "validate" "$(basename "$_path")"
+      log_verbose "$_output"
       continue
     fi
 
-    printf '%-12s| FAILED  | %s\n' "validate" "$(basename "$path")"
-    echo "$output" >&2
-    STATUS=1
+    printf '%-12s| FAILED  | %s\n' "validate" "$(basename "$_path")"
+    echo "$_output" >&2
+    _STATUS=1
   done
 }
 
-# args_parse - read the flags and resolve REPORT_ARG against INVOKED_FROM.
+# source_scan_run - the dev/ tree's non-ASCII scan, once. The sources are
+# one tree, not a property of any report: running it inside the validator
+# scanned them once per report found, or not at all when none was.
+source_scan_run() {
+  local _output _exit_code=0
+  _output="$(python3 validate_report.py --source-scan-only 2>&1)" \
+    || _exit_code=$?
+
+  if [ "$_exit_code" = 0 ]; then
+    printf '%-12s| ok      | dev/ is ASCII\n' "ascii"
+    log_verbose "$_output"
+    return 0
+  fi
+
+  printf '%-12s| FAILED  | dev/\n' "ascii"
+  echo "$_output" >&2
+  _STATUS=1
+}
+
+# args_parse - read the flags and resolve _REPORT_ARG against _INVOKED_FROM.
 args_parse() {
-  CHECK=0
-  VERBOSE=0
-  REPORT_ARG=""
+  _CHECK=0
+  _REPORT_ARG=""
 
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -376,7 +423,7 @@ args_parse() {
         exit 0
         ;;
       --check)
-        CHECK=1
+        _CHECK=1
         shift
         ;;
       --verbose)
@@ -388,29 +435,29 @@ args_parse() {
         exit 2
         ;;
       *)
-        if [ -n "$REPORT_ARG" ]; then
-          echo "error: one report directory at most, got: $REPORT_ARG $1" >&2
+        if [ -n "$_REPORT_ARG" ]; then
+          echo "error: one report directory at most, got: $_REPORT_ARG $1" >&2
           exit 2
         fi
-        REPORT_ARG="$1"
+        _REPORT_ARG="$1"
         shift
         ;;
     esac
   done
 
-  case "$REPORT_ARG" in
+  case "$_REPORT_ARG" in
     "" | /*) ;;
-    *) REPORT_ARG="$INVOKED_FROM/$REPORT_ARG" ;;
+    *) _REPORT_ARG="$_INVOKED_FROM/$_REPORT_ARG" ;;
   esac
 }
 
 main() {
   args_parse "$@"
 
-  STATUS=0
-  MISSING=()
-  REPORTS=()
-  REPORT_ERROR=""
+  _STATUS=0
+  _MISSING=()
+  _REPORTS=()
+  _REPORT_ERRORS=()
 
   report_find
 
@@ -422,20 +469,21 @@ main() {
   format_prettier
 
   long_lines_report
+  source_scan_run
   validate_run
 
-  if [ "${#MISSING[@]}" != 0 ]; then
+  if [ "${#_MISSING[@]}" != 0 ]; then
     {
       echo
-      echo "not installed: ${MISSING[*]}"
+      echo "not installed: ${_MISSING[*]}"
       echo "  sudo apt-get install -y shfmt clang-format"
       echo "  pip3 install --user --break-system-packages ruff"
       echo "  npm install -g prettier"
     } >&2
-    STATUS=1
+    _STATUS=1
   fi
 
-  return "$STATUS"
+  return "$_STATUS"
 }
 
 main "$@"

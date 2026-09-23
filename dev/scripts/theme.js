@@ -13,6 +13,7 @@ window.report_ui = (function () {
   const LOGO_CHANNEL_STOPS = HEAT_COLOR_LOGO_STOPS.map((hex) =>
     [1, 3, 5].map((index) => parseInt(hex.slice(index, index + 2), 16)),
   );
+  const MULTIPLE_UPPER_BOUND_TIMES = 999.99;
   const PANE_SPLITTER_NARROWEST_PX = 120;
   const PANE_SPLITTER_WIDEST_WINDOW_SHARE = 0.6;
   const STORAGE_OWNED_KEYS = ["heat.scale", "heat.sort"];
@@ -57,6 +58,23 @@ window.report_ui = (function () {
     });
   }
 
+  function rounded_units(value, digit_count) {
+    const scaled = Math.abs(value) * Math.pow(10, digit_count);
+    const whole = Math.floor(scaled);
+    return scaled - whole >= 0.5 ? whole + 1 : whole;
+  }
+  function fixed_text(value, digit_count) {
+    const whole = rounded_units(value, digit_count);
+    const sign = value < 0 && whole !== 0 ? "-" : "";
+    const digits = String(whole).padStart(digit_count + 1, "0");
+    if (!digit_count) return sign + digits;
+    return (
+      sign +
+      digits.slice(0, digits.length - digit_count) +
+      "." +
+      digits.slice(digits.length - digit_count)
+    );
+  }
   function human_text(number) {
     let value = number,
       unit = "";
@@ -65,19 +83,24 @@ window.report_ui = (function () {
       value /= 1000;
       unit = candidate;
     }
-    return (unit && value < 9.95 ? value.toFixed(1) : value.toFixed(0)) + unit;
+    return (
+      (unit && value < 9.95 ? fixed_text(value, 1) : fixed_text(value, 0)) +
+      unit
+    );
   }
   function percent_text(percent) {
-    if (percent >= 9.95) return percent.toFixed(1) + "%";
+    if (percent >= 9.95) return fixed_text(percent, 1) + "%";
     if (percent >= NUMBER_SMALLEST_PRINTED_PERCENT) {
-      return percent.toFixed(2) + "%";
+      return fixed_text(percent, 2) + "%";
     }
     return percent > 0 ? "<0.01%" : "";
   }
   function multiple_text(percent) {
     if (percent <= 100) return percent_text(percent);
     const times = percent / 100;
-    return times < 99.99 ? times.toFixed(2) + "x" : ">1000x";
+    return times < MULTIPLE_UPPER_BOUND_TIMES
+      ? fixed_text(times, 2) + "x"
+      : ">1000x";
   }
   function signed_human_text(number) {
     if (!number) return "";

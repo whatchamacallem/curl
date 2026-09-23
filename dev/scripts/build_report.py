@@ -14,7 +14,6 @@ _ASSET_FRAME_SCRIPT_NAME: str = ""
 _ASSET_UI_STRINGS_SCRIPT_NAME: str = ""
 _DIFF_CALLER_COUNTS_FILE_SUFFIX: str = ""
 _FLAME_GRAPH_VIEW_ENTRY: tuple[str, str, str] = ("", "", "")
-_HEAT_COLOR_FULL_SCALE_PERCENT: int = 0
 _HEAT_MAP_VIEW_ENTRY: tuple[str, str, str] = ("", "", "")
 _RANKING_COUNTER_NAME: str = ""
 _STRIP_CURL_PERF_SITE_HREF: str = ""
@@ -225,9 +224,16 @@ class BuildReport:
     # recorded counters, so a derived one is added up from them here.
     def callers_data_load(self, path: str) -> BuildReport.CallersData:
         if not path:
-            return BuildReport.CallersData({}, {}, {})
-        with open(path, encoding="utf-8") as handle:
-            doc = json.load(handle)
+            sys.exit(
+                "error: --diff needs --callers-data, the callgrind_diff.py"
+            )
+        try:
+            with open(path, encoding="utf-8") as handle:
+                doc = json.load(handle)
+        except OSError as error:
+            sys.exit(
+                f"error: {path}: {error}: the callgrind_diff.py"
+            )
         counters: list[str] = doc.get("counters", [])
         self.counters_check(counters, path)
         return BuildReport.CallersData(
@@ -281,9 +287,6 @@ class BuildReport:
             )
             for cost in ranked
         ]
-        max_pct = max(
-            (abs(share) for share in shares if share is not None), default=1.0
-        )
         call_counts = {
             callee: sum(delta.count_ for delta in deltas)
             for callee, deltas in callers_data.callers.items()
@@ -294,14 +297,6 @@ class BuildReport:
             )
             for callee, count in call_counts.items()
         }
-        calls_max_pct = max(
-            (
-                abs(share)
-                for share in call_shares.values()
-                if share is not None
-            ),
-            default=1.0,
-        )
         columns = [
             theme.Column("#", numeric=True),
             theme.Column("% self", numeric=True),
@@ -325,7 +320,7 @@ class BuildReport:
                         if share is not None
                         else "",
                         style=theme.heat_style(
-                            self.diff_heat(share, max_pct), signed=True
+                            theme.heat_of_share(share), signed=True
                         )
                         if share is not None
                         else "",
@@ -341,7 +336,7 @@ class BuildReport:
                     theme.Cell(
                         theme.num_signed(call_count),
                         style=theme.heat_style(
-                            self.diff_heat(call_share, calls_max_pct),
+                            theme.heat_of_share(call_share),
                             signed=True,
                         )
                         if call_share is not None
@@ -353,15 +348,6 @@ class BuildReport:
                 ]
             )
         return theme.table_render("report.functions", columns, rows, fill=True)
-
-    # Where a diff share sits on the heat ramp. Clamped to full scale, so a
-    # line that cost 1 and moved 200K cannot flatten every honest change.
-    def diff_heat(self, share: float, max_share: float) -> float:
-        full = _HEAT_COLOR_FULL_SCALE_PERCENT
-        return theme.heat_t(
-            math.copysign(min(abs(share), full), share),
-            min(max_share, full),
-        )
 
     # Write the diff report's overview page.
     def diff_overview(self, args: BuildReport.OverviewArgs) -> None:
@@ -478,15 +464,11 @@ class BuildReport:
             ),
             key=lambda t: (-t.cost, t.function),
         )[:_SUMMARY_TOP_FUNCTION_ROWS]
-        max_pct = 100.0 * ranked[0].cost / total if ranked else 1.0
         function_calls = {
             function: sum(tally.count for tally in callers.values())
             for function, callers in profile.callers.items()
         }
         calls_total = sum(function_calls.values()) or 1
-        calls_max_pct = (
-            100.0 * max(function_calls.values(), default=0) / calls_total
-        )
         columns = [
             theme.Column("#", numeric=True),
             theme.Column("% self", numeric=True),
@@ -523,7 +505,7 @@ class BuildReport:
                     str(rank),
                     theme.Cell(
                         theme.num_pct(share),
-                        style=theme.heat_style(theme.heat_t(share, max_pct)),
+                        style=theme.heat_style(theme.heat_of_share(share)),
                     ),
                     theme.Cell(
                         ranked_function.function,
@@ -536,8 +518,8 @@ class BuildReport:
                     theme.Cell(
                         theme.num_human(call_count),
                         style=theme.heat_style(
-                            theme.heat_t(
-                                100.0 * call_count / calls_total, calls_max_pct
+                            theme.heat_of_share(
+                                100.0 * call_count / calls_total
                             )
                         ),
                     )

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import json, os, re, sys
+import json, os, re, sys, time
 from typing import NoReturn, get_origin, get_type_hints
 
 # What the report's one shared copy of the theme is written as. Every page
@@ -100,11 +100,6 @@ FLAME_GRAPH_VIEW_ENTRY: tuple[str, str, str] = (
     "flame-graph/index.html",
 )
 
-# Blend alpha of the hottest cell, and of the coldest one that still carries
-# colour.
-HEAT_COLOR_ALPHA_HIGHEST = 0.92
-HEAT_COLOR_ALPHA_LOWEST = 0.18
-
 # A share at or past this is already fully lit, so the handful of diff lines
 # reading millions of percent cannot flatten the scale.
 HEAT_COLOR_FULL_SCALE_PERCENT = 100
@@ -114,9 +109,10 @@ HEAT_COLOR_FULL_SCALE_PERCENT = 100
 HEAT_COLOR_LIGHT_TEXT_ABOVE_SHARE = 0.45
 
 # The 12-stop heat ramp, cold to hot. Exempt from the light/dark pair rule.
-# Every heated cell blends one of these over the page background, and the
-# outer strip's wordmark steps its letters across the ramp's upper half as
-# plain text colour, so a retune moves both.
+# Every heated cell carries one of these opaque, interpolated between the two
+# it sits between and never faded, and the outer strip's wordmark steps its
+# letters across the ramp's upper half as plain text colour, so a retune
+# moves both.
 HEAT_COLOR_LOGO_STOPS: list[str] = [
     "#3E4A89",
     "#31688E",
@@ -131,14 +127,6 @@ HEAT_COLOR_LOGO_STOPS: list[str] = [
     "#FF7F21",
     "#F06142",
 ]
-
-# The smallest share theme.heat_t() still paints, and the bottom of the
-# log scale it measures against its caller's own maximum. Only the summary
-# and overview tables that theme.py renders read it. It is not the "<0.01%"
-# notation floor, which is NUMBER_SMALLEST_PRINTED_PERCENT, and the heat
-# map's own heat_of_share() has no floor at all: that mapping measures
-# nothing off the data, which is why the page never reads this.
-HEAT_COLOR_SMALLEST_VISIBLE_SHARE = 0.001
 
 # Width a <select> adds beyond its longest option text, so the chosen option
 # is not clipped by the dropdown arrow.
@@ -195,11 +183,6 @@ HEAT_MAP_TREE_ALWAYS_LISTED_DIRS = ("lib", "include", "src", "tests/perf")
 # render, so a reader opens on the code that matters.
 HEAT_MAP_TREE_AUTO_EXPAND_ABOVE_SHARE = 0.05
 
-# The softer blend alphas the tree's file and directory rows carry, so a
-# column of coloured rows does not overpower the source beside it.
-HEAT_MAP_TREE_COLOR_ALPHA_HIGHEST = 0.55
-HEAT_MAP_TREE_COLOR_ALPHA_LOWEST = 0.12
-
 # How far the tree's first level is indented, and how much each level below
 # it adds, in pixels.
 HEAT_MAP_TREE_INDENT_FIRST_LEVEL_PX = 6
@@ -226,10 +209,9 @@ LAYOUT_RESIZE_SETTLE_DELAY_MS = 120
 # report renders "<0.01%" and a diff renders the arrow plus "≈0.00%", both
 # of which state a bound rather than a value. It is a notation floor and
 # nothing else: it picks no colour, hides no row and is never a
-# denominator. It is not HEAT_COLOR_SMALLEST_VISIBLE_SHARE, which is the
-# bottom of theme.heat_t()'s log colour scale. theme.py renders the number
-# server-side and heatmap.js renders it on the page, so both read this one
-# value and the two spellings of the notation cannot drift apart.
+# denominator. theme.py renders the number server-side and heatmap.js
+# renders it on the page, so both read this one value and the two
+# spellings of the notation cannot drift apart.
 NUMBER_SMALLEST_PRINTED_PERCENT = 0.01
 
 # The page font: Monaco first, then whatever else the box has.
@@ -328,8 +310,9 @@ THEME_COLOR_PAIR_NAMES: tuple[str, ...] = (
 )
 
 # How much darker than its named colour the page background is drawn. The
-# whole page follows --bg: the scrollbar track, the minimap band and every
-# heat blend, so this is the one number that moves them together.
+# whole page follows --bg: the scrollbar track and the minimap band, so this
+# is the one number that moves them together. A heated cell does not -- it
+# carries its ramp stop opaque.
 THEME_COLOR_ROLE_BACKGROUND_SHADE_FACTOR = 0.90
 
 # What each colour is actually for, as the CSS variable name every page
@@ -373,8 +356,6 @@ THEME_TIME_UNIT_ENTRIES: tuple[tuple[str, float], ...] = (
 # name off the frozen object this list builds. Python reads the same name
 # through load_into().
 _BROWSER_SETTING_NAMES = (
-    "HEAT_COLOR_ALPHA_HIGHEST",
-    "HEAT_COLOR_ALPHA_LOWEST",
     "HEAT_COLOR_FULL_SCALE_PERCENT",
     "HEAT_COLOR_LIGHT_TEXT_ABOVE_SHARE",
     "HEAT_COLOR_LOGO_STOPS",
@@ -392,8 +373,6 @@ _BROWSER_SETTING_NAMES = (
     "HEAT_MAP_SOURCE_HOT_LINE_BUTTON_MAX_COUNT",
     "HEAT_MAP_SOURCE_VIEW_WIDTH_CHARS",
     "HEAT_MAP_TREE_AUTO_EXPAND_ABOVE_SHARE",
-    "HEAT_MAP_TREE_COLOR_ALPHA_HIGHEST",
-    "HEAT_MAP_TREE_COLOR_ALPHA_LOWEST",
     "HEAT_MAP_TREE_INDENT_FIRST_LEVEL_PX",
     "HEAT_MAP_TREE_INDENT_PER_LEVEL_PX",
     "HEAT_MAP_TREE_PANE_NARROWEST_PX",
@@ -452,11 +431,22 @@ _SHELL_STATEMENT_PATTERN = re.compile(
     r"(declare -A )?([A-Za-z_][A-Za-z0-9_]*)=(.*)"
 )
 
-# One settings.sh word: single-quoted, double-quoted with nothing the shell
-# would expand, or bare from the characters no shell reads specially.
-_SHELL_WORD_PATTERN = re.compile(
-    r"'([^']*)'|\"([^\"$`\\]*)\"|([A-Za-z0-9_./,:=+%@-]+)"
-)
+# One settings.sh word: single-quoted, double-quoted, or bare up to the
+# whitespace or ")" that ends it. What a word may hold is bash's question,
+# not this reader's -- every script sources the file before anything parses
+# it, so bash has already refused whatever it would refuse.
+_SHELL_WORD_PATTERN = re.compile(r"'([^']*)'|\"([^\"]*)\"|([^\s)]+)")
+
+# What makes a word one bash would expand rather than read literally.
+_SHELL_EXPANSION_MARKS = ("$", "`")
+
+# Each such word this file answers for itself, spelled exactly as
+# settings.sh writes it, and what Python computes to match bash. Seconds
+# since the epoch is the one so far: a plain unix integer either language
+# reads the same way.
+_SHELL_EXPANSION_VALUES = {
+    "$(date +%s)": lambda: str(int(time.time())),
+}
 
 
 # Settings - the reader for the annotated settings a module declares.
@@ -589,6 +579,27 @@ class Settings:
             return int(value)
         return value
 
+    # The value bash would give one word. A word holding no $ or backtick
+    # is already that value; one that does is looked up in the handful this
+    # file knows how to answer for itself, spelled the way settings.sh
+    # writes it. Nothing is run here -- the shell is what sources the file.
+    #
+    # DO NOT USE IN PYTHON. This is computed at import, the shell's at
+    # source, so TIMESTAMP can land a second off the run's real stamp.
+    # It exists to keep the parser whole, not to be read: the stamp a
+    # generator uses arrives as the shell's stamp= manifest row. Reading
+    # settings.TIMESTAMP would silently name a different run.
+    def shell_word_expand(self, number: int, word: str) -> str:
+        if not any(mark in word for mark in _SHELL_EXPANSION_MARKS):
+            return word
+        if word not in _SHELL_EXPANSION_VALUES:
+            self.shell_settings_fail(
+                number,
+                f"{word} is not one settings.py can expand; add it to "
+                "_SHELL_EXPANSION_VALUES, or write a literal word",
+            )
+        return _SHELL_EXPANSION_VALUES[word]()
+
     # Stop the import on one settings.sh line, naming it and the fix.
     def shell_settings_fail(self, number: int, problem: str) -> NoReturn:
         raise SystemExit(
@@ -600,9 +611,9 @@ class Settings:
     # accepted, and anything else stops the import naming its line: blank
     # and # comment lines; NAME=word; NAME=(word ...) and declare -A
     # NAME=([key]=word ...), each over one or more lines up to the closing
-    # ")", giving tuple[str, ...] and dict[str, str]. A word is bare (the
-    # characters _SHELL_WORD_PATTERN allows), single-quoted, or
-    # double-quoted with no $, backtick or backslash. A scalar matching
+    # ")", giving tuple[str, ...] and dict[str, str]. A word is bare,
+    # single-quoted or double-quoted, and its contents are bash's business:
+    # every script sources the file before this runs. A scalar matching
     # -?[0-9]+ is an int, every other scalar a str, and elements stay str.
     # A name is a setting name and is bound in neither file already.
     def shell_settings_read(self) -> dict[str, object]:
@@ -682,16 +693,20 @@ class Settings:
                 self.shell_settings_fail(
                     number,
                     "expected a bare word, 'single-quoted' or "
-                    '"double-quoted" with no $, backtick or backslash',
+                    '"double-quoted"',
                 )
             position = word_match.end()
             if position < len(text) and text[position] not in " \t)":
                 self.shell_settings_fail(
                     number, 'a word ends at whitespace or the closing ")"'
                 )
+            # Group 1 is the 'single-quoted' form, which bash reads
+            # literally, so a $ inside one is text and never expanded.
             word = next(
                 group for group in word_match.groups() if group is not None
             )
+            if word_match.group(1) is None:
+                word = self.shell_word_expand(number, word)
             pairs.append((key, word))
 
     # The third check: the value settings.py holds has to be the type the

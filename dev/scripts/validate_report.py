@@ -88,6 +88,18 @@ class ValidateReport:
             return ""
         return done.stdout.strip()
 
+    # Print whatever has been recorded so far and hand back a shell status.
+    def exit_code(self) -> int:
+        if not self.errors:
+            return 0
+        print(
+            f"validate_report: {len(self.errors)} problem(s):",
+            file=sys.stderr,
+        )
+        for error in self.errors:
+            print(f"  - {error}", file=sys.stderr)
+        return 1
+
     # Record one problem -- every check runs, so one page cannot hide another.
     def fail(self, message: str) -> None:
         self.errors.append(message)
@@ -128,19 +140,15 @@ class ValidateReport:
                 "index.html has no 'trace log' section: "
                 f"{os.path.join(out_dir, 'index.html')}"
             )
+        # page_check follows every href itself, so an asset that is not
+        # there has already failed by the time this returns
         page = self.page_check(
             os.path.join(flame_dir, "index.html"),
             "flame-graph/index.html",
             _VALIDATE_FLAME_GRAPH_PAGE_LEAST_BYTES,
         )
         # the engine is not here, so the page is only a page if it reaches
-        # the shared bundle -- and every asset it names must exist
-        for href in re.findall(r'(?:src|href)="([^"]+)"', page):
-            if not os.path.isfile(os.path.join(flame_dir, href)):
-                self.fail(
-                    f"flame-graph/index.html names {href}, which is not"
-                    f" there: {flame_dir}"
-                )
+        # the shared bundle
         if f"{_FLAME_GRAPH_APP_DIR_NAME}/" not in page:
             self.fail(
                 "flame-graph/index.html does not load the shared "
@@ -198,9 +206,7 @@ class ValidateReport:
             _VALIDATE_HEAT_MAP_PAGE_LEAST_BYTES,
             f"{test_name} / heat map",
         )
-        if text and "report_ui.layout_activate" not in self.page_scripts(
-            path, text
-        ):
+        if text and "report_ui.layout_activate" not in text:
             self.fail(
                 "heat-map/index.html is missing its runtime script"
                 f" (no report_ui.layout_activate): {path}"
@@ -369,7 +375,9 @@ class ValidateReport:
                 names.append(test_name)
         return names
 
-    # Any page at all: big enough, titled, closed, and no template leftovers.
+    # Any page at all: big enough, titled, closed, and no template
+    # leftovers. Returns the page plus every asset it links, so a caller
+    # greps a contract name wherever the page keeps it.
     def page_check(
         self,
         path: str,
@@ -408,7 +416,9 @@ class ValidateReport:
                     f"{label} contains a leftover template/error marker "
                     f"{marker!r}: {path}"
                 )
-        return text
+        # every page follows its own hrefs, not heat maps alone: a
+        # misspelled assets/ link looks right until the browser opens it.
+        return self.page_scripts(path, text)
 
     # Everything a page runs or styles itself with, inline or linked. Each
     # linked asset is read off disk, so a wrong relative href fails loudly.
@@ -733,18 +743,30 @@ _VALIDATE_OVERVIEW_PAGE_LEAST_BYTES = 2000
 _VALIDATE_RAW_ARCHIVE_LEAST_BYTES = 100
 
 
-# main - Check the sources are ASCII, then check the given report.
+# main - Check one report, or scan the sources once.
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("out_dir", help="a report directory")
+    parser.add_argument("out_dir", nargs="?", help="a report directory")
     parser.add_argument(
         "--diff",
         action="store_true",
         help="a perf2html_diff.sh report: heat map only",
     )
+    parser.add_argument(
+        "--source-scan-only",
+        action="store_true",
+        help="scan dev/ for non-ASCII characters and check nothing else",
+    )
     namespace = parser.parse_args()
     validator = ValidateReport()
-    validator.unicode_check()
+    # the sources are one tree, not a property of any report: reformat.sh
+    # runs this once, rather than once per report it happens to find, or
+    # not at all when it finds none.
+    if namespace.source_scan_only:
+        validator.unicode_check()
+        return validator.exit_code()
+    if not namespace.out_dir:
+        parser.error("a report directory, or --source-scan-only")
     return validator.run(
         ValidateReport.ValidateArgs(
             out_dir=namespace.out_dir, diff=namespace.diff

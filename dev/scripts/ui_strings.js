@@ -5,6 +5,7 @@ window.ui_strings = (function () {
     str_caret_expanded: "▼",
     str_chip_heading_diff: "most changed lines",
     str_chip_heading_self: "hottest lines",
+    str_column_baseline_share: "vs baseline",
     str_column_call_count: "call count",
     str_column_called_at: "called at",
     str_column_callee: "callee",
@@ -50,6 +51,8 @@ window.ui_strings = (function () {
     str_detail_close_symbol: "[X]",
     str_detail_copy: "copy",
     str_error_callstack_unavailable: "(no callstack recorded)",
+    str_error_flame_graph_never_started:
+      "flame graph viewer did not start within {seconds}s",
     str_error_heading_address: "address",
     str_error_heading_callstack: "callstack",
     str_error_heading_manifest: "manifest",

@@ -83,7 +83,8 @@ REPORT_MODIFIED_DIR_NAME=perf2html_modified_report
 # the extension of a report's raw-data archive, one per test, page-visible
 REPORT_RAW_ARCHIVE_SUFFIX=.txz
 
-# when the script started or when the report being regenerated started.
+# When the profiler run started, the way __DATE__ is when the compiler
+# ran. Do not move.
 TIMESTAMP="$(date +%s)"
 
 # loops one native timing run of a test does
@@ -94,3 +95,6 @@ TRACE_BUILD_DIR=build-instr
 
 # UINT64_MAX: skip every event, making it a count-only trace run
 TRACE_SKIP_ALL=18446744073709551615
+
+# Debug logging flag.
+VERBOSE=0

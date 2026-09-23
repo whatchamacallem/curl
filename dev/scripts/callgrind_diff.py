@@ -43,6 +43,10 @@ class CallgrindDiff:
         baselineTotal: callgrind.Costs
         # per callee, how many times the baseline called it
         baselineCalls: dict[str, int]
+        # per display path, the whole file's baseline cost vector, which is
+        # what a tree's file and directory shares divide by. Summing the
+        # lines a diff carries would divide by the changed lines alone.
+        fileBaseline: dict[str, callgrind.Costs]
 
     # DiffArgs - The two sides to subtract, and the two files to write.
     class DiffArgs(NamedTuple):
@@ -67,15 +71,43 @@ class CallgrindDiff:
         for function, lines in baseline.function_lines.items():
             for key, costs in lines.items():
                 if any(costs):
-                    out[self.baseline_key(function, key.file, key.line)] = (
+                    out[self.baseline_key(baseline, function, key)] = (
                         self.costs_fit(baseline, costs)
                     )
         return out
 
-    # How the page spells one line's baseline slot -- the display path, the
-    # same one the heat map keys its files by.
-    def baseline_key(self, function: str, file: str, line: int) -> str:
-        return f"{function}\n{callgrind.path_norm(file).display}\n{line}"
+    # Baseline cost per display path -- the whole file's, not the sum of the
+    # lines that happened to change, which is what a tree's file and
+    # directory shares divide by.
+    def baseline_files(
+        self, baseline: callgrind.Profile
+    ) -> dict[str, callgrind.Costs]:
+        out: dict[str, callgrind.Costs] = {}
+        for lines in baseline.function_lines.values():
+            for key, costs in lines.items():
+                display = self.display_path_of(baseline, key.file)
+                total = out.get(display)
+                if total is None:
+                    out[display] = list(costs)
+                else:
+                    callgrind.costs_add(total, costs)
+        return {
+            display: self.costs_fit(baseline, costs)
+            for display, costs in out.items()
+            if any(costs)
+        }
+
+    # How the page spells one line's baseline slot -- the display path the
+    # heat map keys its files by, through the one door.
+    def baseline_key(
+        self,
+        baseline: callgrind.Profile,
+        function: str,
+        key: callgrind.SourceLine,
+    ) -> str:
+        return callgrind.baseline_line_key(
+            function, self.display_path_of(baseline, key.file), key.line
+        )
 
     # Read both sides, write the delta, then the synthesized callers diff.
     def build(self, args: CallgrindDiff.DiffArgs) -> None:
@@ -107,6 +139,21 @@ class CallgrindDiff:
             file=sys.stderr,
         )
 
+    # One callee's callers, summed per calling function. A caller that
+    # calls from several lines is several Caller keys, so keeping one of
+    # them would report a fraction of the calls as the whole.
+    def caller_tallies(
+        self, profile: callgrind.Profile, callee: str, counter: str
+    ) -> dict[str, tuple[int, int]]:
+        out: dict[str, tuple[int, int]] = {}
+        for caller, tally in profile.callers.get(callee, {}).items():
+            count, cost = out.get(caller.function, (0, 0))
+            out[caller.function] = (
+                count + tally.count,
+                cost + profile.value(tally.costs, counter),
+            )
+        return out
+
     # Per callee, which of its callers changed, biggest cost change first.
     def callers_subtract(
         self,
@@ -116,31 +163,14 @@ class CallgrindDiff:
     ) -> dict[str, list[CallgrindDiff.CallerDelta]]:
         out: dict[str, list[CallgrindDiff.CallerDelta]] = {}
         for callee in sorted(set(baseline.callers) | set(modified.callers)):
-            before = {
-                caller.function: tally
-                for caller, tally in baseline.callers.get(callee, {}).items()
-            }
-            after = {
-                caller.function: tally
-                for caller, tally in modified.callers.get(callee, {}).items()
-            }
+            before = self.caller_tallies(baseline, callee, counter)
+            after = self.caller_tallies(modified, callee, counter)
             deltas: list[CallgrindDiff.CallerDelta] = []
             for caller_name in sorted(set(before) | set(after)):
-                before_tally = before.get(caller_name)
-                after_tally = after.get(caller_name)
-                count = (after_tally.count if after_tally else 0) - (
-                    before_tally.count if before_tally else 0
-                )
-                cost = (
-                    modified.value(after_tally.costs, counter)
-                    if after_tally
-                    else 0
-                )
-                cost -= (
-                    baseline.value(before_tally.costs, counter)
-                    if before_tally
-                    else 0
-                )
+                before_count, before_cost = before.get(caller_name, (0, 0))
+                after_count, after_cost = after.get(caller_name, (0, 0))
+                count = after_count - before_count
+                cost = after_cost - before_cost
                 if count or cost:
                     deltas.append(
                         CallgrindDiff.CallerDelta(caller_name, count, cost)
@@ -180,6 +210,7 @@ class CallgrindDiff:
                 callee: sum(tally.count for tally in tallies.values())
                 for callee, tallies in baseline.callers.items()
             },
+            "fileBaseline": self.baseline_files(baseline),
         }
         os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
         with open(path, "w", encoding="utf-8") as handle:
@@ -230,6 +261,11 @@ class CallgrindDiff:
                     f" is counted in: it records"
                     f" {' '.join(profile.counters)}"
                 )
+
+    # A path as the page prints it, external files qualified by their
+    # object, through the one door the page reads it back with.
+    def display_path_of(self, profile: callgrind.Profile, file: str) -> str:
+        return callgrind.display_path_of(file, profile.file_ob.get(file, ""))
 
     # Sum of every line delta's absolute value -- what a diff's shares divide
     # by, since the signed total is near zero.
@@ -325,7 +361,21 @@ class CallgrindDiff:
             by_file.setdefault(key.file, []).append((key.line, costs))
         home = profile.function_home.get(function, "")
         if home not in by_file:
-            home = sorted(by_file)[0]
+            # its recorded home holds no changed line, so the file with the
+            # most of this function's change is the one to write it under.
+            # Naming a file by sort order would move the function somewhere
+            # nothing measured put it.
+            home = max(
+                by_file,
+                key=lambda name: (
+                    sum(
+                        abs(value)
+                        for _, costs in by_file[name]
+                        for value in costs
+                    ),
+                    name,
+                ),
+            )
         entry = profile.function_entry.get(function)
         handle.write("\n")
         for file in [home] + sorted(name for name in by_file if name != home):
@@ -340,12 +390,12 @@ class CallgrindDiff:
             if file == home:
                 handle.write(f"fn={function}\n")
                 if entry is not None and entry.file == home and entry.line:
-                    first = [
+                    # the entry line leads only when it actually changed: a
+                    # zero row here would be a cost nothing measured, and
+                    # every row in this file is a recorded difference.
+                    ordered = [
                         pair for pair in ordered if pair[0] == entry.line
-                    ] or [(entry.line, profile.zeros())]
-                    ordered = first + [
-                        pair for pair in ordered if pair[0] != entry.line
-                    ]
+                    ] + [pair for pair in ordered if pair[0] != entry.line]
             for line, costs in ordered:
                 handle.write(
                     f"{line} {' '.join(str(value) for value in costs)}\n"

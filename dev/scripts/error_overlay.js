@@ -210,10 +210,29 @@ window.report_error_overlay = (function () {
   function page_restore() {
     const target = restore_hash || restore_hash_read();
     overlay_is_shown = false;
-    if (target) {
+    restore_hash_clear();
+    if (target && target !== location.href) {
       location.replace(target);
-    } else {
-      location.reload();
+    }
+    location.reload();
+  }
+
+  function page_restore_on_load() {
+    if (location.hash !== OVERLAY_HASH_MARKER) {
+      return;
+    }
+    const target = restore_hash_read();
+    restore_hash_clear();
+    if (target && target !== location.href) {
+      location.replace(target);
+    }
+  }
+
+  function restore_hash_clear() {
+    try {
+      sessionStorage.removeItem(RESTORE_HASH_STORAGE_KEY);
+    } catch (ignored) {
+      return;
     }
   }
 
@@ -256,5 +275,6 @@ window.report_error_overlay = (function () {
   }
 
   handler_install();
+  page_restore_on_load();
   return { overlay_show };
 })();

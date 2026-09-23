@@ -277,6 +277,24 @@ class Callgrind:
                 )
             return self.previous[self.line_index]
 
+    # How one line's baseline slot is spelled, everywhere it is written
+    # and everywhere it is read back.
+    def baseline_line_key(
+        self, function: str, display: str, line: int | str
+    ) -> str:
+        return f"{function}\n{display}\n{line}"
+
+    # How a path is printed on a page: an external file carries the object
+    # that owns it, so two libraries' same-named headers stay apart. The
+    # writer of a baseline key and the page reading it back both come
+    # through here, or every external line misses its own baseline.
+    def display_path_of(self, path: str, object_path: str) -> str:
+        info = self.path_norm(path)
+        if info.group != "external":
+            return info.display
+        owner = os.path.basename(object_path) or "(unknown object)"
+        return f"{owner}/{info.display}"
+
     # Give every still-unplaced function an entry line, so the pages
     # can link to it.
     def entries_fill(self, profile: Profile) -> None:
@@ -552,6 +570,11 @@ class Callgrind:
         return PathInfo(posixpath.normpath(path), None, "external")
 
 
+# How one line's baseline slot is spelled, on both sides of the diff.
+def baseline_line_key(function: str, display: str, line: int | str) -> str:
+    return Callgrind().baseline_line_key(function, display, line)
+
+
 # Add a cost vector into a table, starting a fresh entry when the key is new.
 def costs_accumulate(
     table: dict[_Key, Costs], key: _Key, costs: Costs
@@ -579,6 +602,12 @@ def counter_names(counters: Sequence[str]) -> list[str]:
 # derived counter is computed through outside a live Profile.
 def counter_value(counters: Sequence[str], costs: Costs, name: str) -> int:
     return Profile(counters=list(counters)).value(costs, name)
+
+
+# How a path is printed on a page, an external file qualified by the
+# object owning it.
+def display_path_of(path: str, object_path: str) -> str:
+    return Callgrind().display_path_of(path, object_path)
 
 
 # Work out how to print a path, whether we can still read it, and

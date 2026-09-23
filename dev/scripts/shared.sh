@@ -1,4 +1,4 @@
-# dev/scripts/shared.sh
+# dev/scripts/shared.shz
 
 # absolute_path - echo one path made absolute: a leading "~/" expands,
 # a relative path is taken against $PWD, an absolute one is unchanged.
@@ -31,6 +31,13 @@ archive_write() {
     --numeric-owner -cJf "$out/raw/$name$REPORT_RAW_ARCHIVE_SUFFIX" \
     -C "$stage" .
   rm -rf "$stage"
+}
+
+# artifacts_clean - Deletes the temp dir because it is a debug only unless told
+# otherwise.
+artifacts_clean() {
+  [ -d "$ARTIFACTS_DIR" ] || return 0
+  rm -r "$ARTIFACTS_DIR"
 }
 
 # checksum_compute - POSIX cksum of every report file but MANIFEST.txt.
