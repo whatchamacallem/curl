@@ -1,11 +1,11 @@
 # dev/scripts/shared.shz
 
-# absolute_path - Every script resolves through here.
+# absolute_path - Every script resolves paths relative to $INVOKED_FROM.
 absolute_path() {
   case "$1" in
     "~/"*) echo "$HOME/${1#"~/"}" ;;
     /*) echo "$1" ;;
-    *) echo "$PWD/$1" ;;
+    *) echo "$INVOKED_FROM/$1" ;;
   esac
 }
 

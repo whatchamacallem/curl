@@ -148,19 +148,16 @@ No env vars. **`settings.sh` holds every setting the shell reads, `shared.sh`
 (`SettingsReader.shell_settings_read`,
 whose result `settings.py` binds under its own names; a `-?[0-9]+` scalar
 arrives as `int`). **A word may hold `$` or a command**,
-but **`settings.py` runs nothing**: `shell_word_expand` looks the word up in
-`_SHELL_EXPANSION_VALUES`, spelled exactly as `settings.sh` writes it, and
-computes the same value in Python (`$(date +%s)` -> `int(time.time())`, a
-plain unix integer either language reads the same way). **A word that table
-does not hold stops the import**, naming the line. A `'single-quoted'` word
-is literal to both and never expanded. **Never read an expanded word, from
-Python or from a page** - Python computes it at import and the shell at
-source, so `settings.TIMESTAMP` can be a second off the run's real stamp and
-would name a different run; the expansion exists to keep the parser whole, and
-a generator's stamp arrives as the shell's `stamp=` row. Each such name is
-remembered in `SettingsReader.expanded_names`, which is how
-`settings_script_write()`
-keeps it out of the browser's object. **Verification is bash
+but **`settings.py` neither runs nor reproduces one**: `shell_word_withhold`
+binds the name to `_SHELL_EXPANDED_WORD` and records it in
+`SettingsReader.expanded_names`. **Only bash may read such a word** - the
+shell expands it as it sources the file, so any Python answer would be the
+import's and would name a different run. So there is **no table of
+expansions**, and **no `$` word is ever spelled twice**: `value_of` raises on
+a withheld name, so a module declaring `TIMESTAMP` stops at import, and
+`script_write()` drops it from the browser's object. A generator's stamp
+arrives as the shell's `stamp=` row. A `'single-quoted'` word is literal to
+both and never expanded. **Verification is bash
 itself** - every script sources the file, so no character allow-list.
 Hand-written, never generated. **A shell setting is a Python setting, one name
 in all three languages.** **`TIMESTAMP` is a setting** (`$(date +%s)`, fixed
@@ -393,7 +390,7 @@ kept (`_PX`, `_MS`, `_PERCENT`, `_SHARE`, `_CHARS`, `_BYTES`).
   therefore JSON-serializable**; anything that is not belongs below the cut,
   where it is not a setting. **The one exclusion is a `settings.sh` word bash
   expands** (`TIMESTAMP`), held back by `SettingsReader.expanded_names` for the
-  reason `shell_word_expand` gives - its value is the import's, not the run's.
+  reason `shell_word_withhold` gives - only bash may read one.
   One value, one id, **no hand-matched twin** - why `FLAME_GRAPH_APP_DIR_NAME`,
   `FLAME_GRAPH_APP_FILE_GLOBS` and `REPORT_RAW_ARCHIVE_SUFFIX` live once, in
   `settings.sh`. The freeze + reader is `settings_handler.js`, which

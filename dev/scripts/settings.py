@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import json, os, re, sys, time
+import json, os, re, sys
 from typing import NoReturn, get_origin, get_type_hints
 
 # Every setting the tools have, then the reader that checks and assigns
@@ -369,11 +369,9 @@ _SETTINGS_PAGE_NAME_MARKER = "__NAME__"
 # literally.
 _SHELL_EXPANSION_MARKS = ("$", "`")
 
-# Each such word this file answers for itself, spelled exactly as
-# settings.sh writes it, and what Python computes to match bash.
-_SHELL_EXPANSION_VALUES = {
-    "$(date +%s)": lambda: str(int(time.time())),
-}
+# What an expanded word binds to instead of a value. Only bash may read one,
+# so nothing computes a second answer for it. See shell_word_withhold().
+_SHELL_EXPANDED_WORD = "<expanded by bash>"
 
 # The one scalar spelling settings.sh turns into an int rather than a str.
 _SHELL_INTEGER_PATTERN = re.compile(r"-?[0-9]+")
@@ -452,7 +450,7 @@ class SettingsReader:
     # Build assets/settings.js: every setting as one frozen JSON literal in
     # settings_handler.js, wholesale, with no list of what a page may see.
     def script_write(self) -> str:
-        # an expanded word is held back, per shell_word_expand(). Plain
+        # an expanded word is held back, per shell_word_withhold(). Plain
         # open(), never theme.asset_text_read(): theme.py imports this module
         values = {
             name: value
@@ -584,21 +582,15 @@ class SettingsReader:
             )
         return found
 
-    # The value bash would give one word, looked up rather than run: the
-    # shell is what sources the file. See DECLAUDE.md 3.1.
-    def shell_word_expand(self, number: int, name: str, word: str) -> str:
-        # DO NOT READ AN EXPANDED WORD: computed at import, not at source,
-        # so settings.TIMESTAMP would silently name a different run
+    # A word bash expands is bash's to expand: this file only records the
+    # name as one no reader may have. See DECLAUDE.md 3.1.
+    def shell_word_withhold(self, name: str, word: str) -> str:
+        # NOTHING HERE COMPUTES A SECOND ANSWER: the shell's value is the
+        # run's, so a Python one would name a different run
         if not any(mark in word for mark in _SHELL_EXPANSION_MARKS):
             return word
         self.expanded_names.add(name)
-        if word not in _SHELL_EXPANSION_VALUES:
-            self.shell_settings_fail(
-                number,
-                f"{word} is not one settings.py can expand; add it to "
-                "_SHELL_EXPANSION_VALUES, or write a literal word",
-            )
-        return _SHELL_EXPANSION_VALUES[word]()
+        return _SHELL_EXPANDED_WORD
 
     # One line of a container body as (key, word) pairs, the key empty in a
     # list, and whether it closed. 'a'b is refused at the end, never joined.
@@ -643,7 +635,7 @@ class SettingsReader:
                 group for group in word_match.groups() if group is not None
             )
             if word_match.group(1) is None:
-                word = self.shell_word_expand(number, name, word)
+                word = self.shell_word_withhold(name, word)
             pairs.append((key, word))
 
     # The third check: the value must be the type the annotation names.
@@ -669,7 +661,16 @@ class SettingsReader:
     # The value of one setting, named as the declaring module spells it.
     # match_check has already confirmed this file defines it.
     def value_of(self, name: str) -> object:
-        return globals()[name.lstrip("_")]
+        setting = name.lstrip("_")
+        if setting in self.expanded_names:
+            raise NameError(
+                f"error: only bash may read this setting: {setting} is a "
+                "settings.sh word the shell expands as it sources the file, "
+                "so its value belongs to the run, not to this import. Take "
+                "it from the shell -- a generator reads the stamp= row its "
+                "caller wrote -- or declare a different setting."
+            )
+        return globals()[setting]
 
 
 # The reader, then the cut: the shell's settings bind first, so every one

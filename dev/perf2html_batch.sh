@@ -3,8 +3,10 @@
 # Runs baseline, modified and diff in one go. usage_show below is the only
 # usage text here. It and README.md are kept in step by hand.
 
-set -uo pipefail
+set -euo pipefail
+
 _SCRIPT="$(readlink -f "$0")"
+INVOKED_FROM="$PWD"
 cd "$(dirname "$_SCRIPT")"
 
 . ./scripts/settings.sh

@@ -4,7 +4,9 @@
 # usage text here. It and README.md are kept in step by hand.
 
 set -euo pipefail
+
 _SCRIPT="$(readlink -f "$0")"
+INVOKED_FROM="$PWD"
 cd "$(dirname "$_SCRIPT")"
 
 . ./scripts/settings.sh

@@ -1,18 +1,4 @@
-# dev/scripts/settings.sh - every setting the shell reads, and nothing
-# else. shared.sh sources it, and settings.py parses it at import, binding
-# every name here as a setting of its own under the same spelling, so this
-# file stays pure: no function, no command, no $ expansion, no logic.
-#
-# The grammar settings.py accepts, and rejects anything else:
-#   - a blank line, or a # comment line
-#   - NAME=value, the value one word: bare (letters, digits and _-./,:=+%@),
-#     'single-quoted', or "double-quoted" with no $, backtick or backslash
-#   - NAME=(word word ...), over one or more lines up to the closing ")",
-#     each element a word as above -> tuple[str, ...]
-#   - declare -A NAME=([key]=word ...), over one or more lines -> dict
-# A scalar matching -?[0-9]+ is an int in Python, every other scalar a str,
-# and container elements stay str. A name is SCREAMING_SNAKE and must not
-# already be bound in settings.py.
+# dev/scripts/settings.sh
 
 # the temporary artifacts directory's default name, beside the report
 ARTIFACTS_NAME=perf2html_temporary_artifacts

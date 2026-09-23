@@ -25,12 +25,15 @@
 # Do not document what is being validated further. The validation
 # code below and the generator code itself are the living standards
 # for a correct report. They are checked for agreement, no more.
+
+set -euo pipefail
+
 _SCRIPT="$(readlink -f "$0")"
 _SCRIPTS="$(dirname "$_SCRIPT")"
 
-# Where the caller stood, so a relative report-dir still means what they
-# typed after the cd below.
-_INVOKED_FROM="$PWD"
+# Where the caller stood, so a relative argument still means what they typed
+# after the cd below. absolute_path reads it.
+INVOKED_FROM="$PWD"
 cd "$_SCRIPTS"
 
 # Where each kind of source lives, relative to scripts/.
@@ -289,14 +292,14 @@ report_find() {
   local _path _error
 
   if [ -n "$_REPORT_ARG" ]; then
-    report_claim "$_REPORT_ARG"
+    report_claim "$_REPORT_ARG" || true
     return 0
   fi
 
   # a directory holding no MANIFEST.txt is an aborted run: a failure to
   # report, not one to walk past, or it hides behind a valid report
   for _path in "${_DEFAULT_REPORTS[@]}"; do
-    if [ -d "$_path" ]; then report_claim "$_path"; fi
+    if [ -d "$_path" ]; then report_claim "$_path" || true; fi
   done
 
   if [ "${#_REPORTS[@]}" = 0 ] && [ "${#_REPORT_ERRORS[@]}" = 0 ]; then
@@ -385,7 +388,7 @@ source_scan_run() {
   _STATUS=1
 }
 
-# args_parse - read the flags and resolve _REPORT_ARG against _INVOKED_FROM.
+# args_parse - read the flags and resolve _REPORT_ARG against the caller's dir.
 args_parse() {
   _CHECK=0
   _REPORT_ARG=""
