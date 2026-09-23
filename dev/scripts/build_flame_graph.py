@@ -9,6 +9,7 @@ import settings, theme
 
 # All constants needed from settings.py have to be loaded here before anything
 # else.
+_ASSET_SETTINGS_SCRIPT_NAME: str = ""
 _ASSET_TEMPLATE_FLAME_GRAPH_BOOTSTRAP_NAME: str = ""
 _ASSET_TEMPLATE_FLAME_GRAPH_PAGE_NAME: str = ""
 _ASSET_UI_STRINGS_SCRIPT_NAME: str = ""
@@ -83,8 +84,9 @@ class BuildFlameGraph:
     # The preamble scripts go in last, so nothing substituted before them
     # can be read out of the text they bring with them. They open the page
     # error overlay first, so a speedscope that never starts shows the
-    # failure instead of a blank one, and the vocabulary follows them,
-    # because the bootstrap names its failure by string id.
+    # failure instead of a blank one, then the settings and the vocabulary,
+    # because the bootstrap reads its poll bounds as settings and names its
+    # failure by string id.
     def page_write(self, args: BuildFlameGraph.FlameGraphArgs) -> None:
         assets_href = theme.shared_href(
             _FLAME_GRAPH_PAGE_DEPTH, _REPORT_ASSETS_DIR_NAME
@@ -93,6 +95,7 @@ class BuildFlameGraph:
             f'<script src="{assets_href}/{name}"></script>'
             for name in (
                 *theme.page_preamble_scripts(),
+                _ASSET_SETTINGS_SCRIPT_NAME,
                 _ASSET_UI_STRINGS_SCRIPT_NAME,
             )
         )

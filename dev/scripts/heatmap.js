@@ -101,6 +101,7 @@
     "str_search_placeholder",
   );
   sort_select.value = sort_mode;
+  tree_panel.style.minWidth = HEAT_MAP_TREE_PANE_NARROWEST_PX + "px";
   report_ui.pane_splitter.attach(
     document.getElementById("split"),
     tree_panel,
@@ -205,7 +206,31 @@
   const function_baselines = profile_model.functionBaseline || [];
   const file_baselines = profile_model.fileBaseline || {};
   let counter_baseline_of = () => null;
+  let heat_position_of = (heat_value) => heat_value;
   let share_of_baseline = (value, baseline_cost) => share_of_total(value);
+  let scope_choices_build = () => [
+    ["global", text_of("str_scope_global")],
+    ["file", text_of("str_scope_file")],
+    ["function", text_of("str_scope_function")],
+  ];
+  let secondary_share = (value, counter, baseline_cost, line_number) =>
+    share_in_scope(value, counter, line_number);
+  let line_share = (value, baseline_cost, line_number) =>
+    share_in_scope(value, current_counter, line_number);
+  let line_share_text = (value, baseline_cost, line_number) =>
+    share_in_scope_text(value, current_counter, line_number);
+  let heat_signed = (curved) => curved;
+  let secondary_percent_of_file = (self_cost, file_path, secondary) =>
+    (100 * self_cost) / secondary_totals[secondary.key];
+  let secondary_percent_of_cell = (
+    self_cost,
+    secondary,
+    line_number,
+    baseline_lookup,
+  ) =>
+    line_number != null
+      ? share_in_scope(self_cost, secondary, line_number)
+      : (100 * self_cost) / secondary_totals[secondary.key];
   if (IS_DIFF) {
     share_text = report_ui.signed_percent_text;
     human_text = report_ui.signed_human_text;
@@ -222,6 +247,30 @@
         : value
           ? Math.sign(value) * Infinity
           : 0;
+    scope_choices_build = () => [["line", text_of("str_scope_line")]];
+    secondary_share = (value, counter, baseline_cost) =>
+      share_of_baseline(value, baseline_cost);
+    line_share = (value, baseline_cost) =>
+      share_of_baseline(value, baseline_cost);
+    line_share_text = (value, baseline_cost) =>
+      share_of_baseline_text(value, baseline_cost);
+    heat_signed = (curved, percent) => (percent < 0 ? -curved : curved);
+    heat_position_of = (heat_value) => (heat_value + 1) * 0.5;
+    secondary_percent_of_file = (self_cost, file_path, secondary) =>
+      share_of_baseline(
+        self_cost,
+        file_counter_baseline(file_path, secondary),
+      );
+    secondary_percent_of_cell = (
+      self_cost,
+      secondary,
+      line_number,
+      baseline_lookup,
+    ) =>
+      share_of_baseline(
+        self_cost,
+        baseline_lookup ? baseline_lookup(secondary) : null,
+      );
   }
   const baseline_of = (cost_vector) =>
     counter_baseline_of(cost_vector, current_counter);
@@ -246,13 +295,7 @@
     file_counter_baseline(file_path, current_counter);
 
   const scale_select = document.getElementById("scale");
-  const SCOPE_CHOICES = IS_DIFF
-    ? [["line", text_of("str_scope_line")]]
-    : [
-        ["global", text_of("str_scope_global")],
-        ["file", text_of("str_scope_file")],
-        ["function", text_of("str_scope_function")],
-      ];
+  const SCOPE_CHOICES = scope_choices_build();
   const CURVE_CHOICES = [
     ["log", text_of("str_scale_curve_log")],
     ["linear", text_of("str_scale_curve_linear")],
@@ -333,29 +376,16 @@
   };
   const share_in_scope_text = (value, counter, line_number) =>
     value ? share_text(share_in_scope(value, counter, line_number)) : "";
-  const secondary_share = (value, counter, baseline_cost, line_number) =>
-    IS_DIFF
-      ? share_of_baseline(value, baseline_cost)
-      : share_in_scope(value, counter, line_number);
   const secondary_share_text = (value, counter, baseline_cost, line_number) =>
     value
       ? share_text(secondary_share(value, counter, baseline_cost, line_number))
       : "";
   const scope_share_label = () =>
     text_of(SCOPE_SHARE_STRING_IDS[active_scale.scope]);
-  const line_share = (value, baseline_cost, line_number) =>
-    IS_DIFF
-      ? share_of_baseline(value, baseline_cost)
-      : share_in_scope(value, current_counter, line_number);
-  const line_share_text = (value, baseline_cost, line_number) =>
-    IS_DIFF
-      ? share_of_baseline_text(value, baseline_cost)
-      : share_in_scope_text(value, current_counter, line_number);
   const heat_of_line = (value, baseline_cost, line_number) =>
     heat_of_share(line_share(value, baseline_cost, line_number));
 
   function heat_of_share(percent) {
-    const heat_sign = percent < 0 ? -1 : 1;
     const magnitude = Math.min(
       absolute(percent),
       HEAT_COLOR_FULL_SCALE_PERCENT,
@@ -364,31 +394,16 @@
     const fraction = magnitude / HEAT_COLOR_FULL_SCALE_PERCENT;
     const curved =
       active_scale.curve === "log" ? Math.log10(1 + 9 * fraction) : fraction;
-    return IS_DIFF ? heat_sign * curved : curved;
+    return heat_signed(curved, percent);
   }
   function heat_of_delta(cost, baseline_cost) {
     return heat_of_share(share_of_baseline(cost, baseline_cost));
   }
 
-  const channels_of = (hex) =>
-    [1, 3, 5].map((index) => parseInt(hex.slice(index, index + 2), 16));
-  const COLOR_STOPS = profile_model.theme.heat.map(channels_of);
+  const ramp_channels_at = report_ui.ramp_channels_at;
   function cell_style(heat_value) {
     if (absolute(heat_value) <= 0) return "";
-    const position = IS_DIFF ? (heat_value + 1) * 0.5 : heat_value;
-    const scaled_position = position * (COLOR_STOPS.length - 1);
-    const index = Math.min(
-      Math.max(Math.floor(scaled_position), 0),
-      COLOR_STOPS.length - 2,
-    );
-    const fraction = scaled_position - index;
-    const mixed_channels = [0, 1, 2].map((channel) => {
-      const low_channel = COLOR_STOPS[index][channel],
-        high_channel = COLOR_STOPS[index + 1][channel];
-      return Math.round(
-        low_channel + (high_channel - low_channel) * fraction,
-      );
-    });
+    const mixed_channels = ramp_channels_at(heat_position_of(heat_value));
     const luminance =
       (0.2126 * mixed_channels[0] +
         0.7152 * mixed_channels[1] +
@@ -418,9 +433,7 @@
     call_count
       ? {
           text: human_text(call_count),
-          style: cell_style(
-            heat_of_share((100 * call_count) / CALLS_TOTAL),
-          ),
+          style: cell_style(heat_of_share((100 * call_count) / CALLS_TOTAL)),
         }
       : "";
 
@@ -613,14 +626,12 @@
   function secondary_cells(cost_vector, line_number, baseline_lookup) {
     return secondary_counters.map((secondary) => {
       const self_cost = secondary.get(cost_vector);
-      const percent = IS_DIFF
-        ? share_of_baseline(
-            self_cost,
-            baseline_lookup ? baseline_lookup(secondary) : null,
-          )
-        : line_number != null
-          ? share_in_scope(self_cost, secondary, line_number)
-          : (100 * self_cost) / secondary_totals[secondary.key];
+      const percent = secondary_percent_of_cell(
+        self_cost,
+        secondary,
+        line_number,
+        baseline_lookup,
+      );
       const heat_value = heat_of_share(percent);
       return {
         text: self_cost ? share_text(percent) : "",
@@ -999,9 +1010,7 @@
             String(index + 1),
             {
               text: share_of_baseline_text(self_cost, baseline_cost),
-              style: cell_style(
-                heat_of_delta(self_cost, baseline_cost),
-              ),
+              style: cell_style(heat_of_delta(self_cost, baseline_cost)),
             },
             { text: function_entry.name },
             {
@@ -1064,12 +1073,11 @@
     for (const secondary of secondary_counters) {
       const self_cost = secondary.get(file.self);
       if (!self_cost) continue;
-      const secondary_percent = IS_DIFF
-        ? share_of_baseline(
-            self_cost,
-            file_counter_baseline(file_path, secondary),
-          )
-        : (100 * self_cost) / secondary_totals[secondary.key];
+      const secondary_percent = secondary_percent_of_file(
+        self_cost,
+        file_path,
+        secondary,
+      );
       markup +=
         `<span class="stat">` +
         `${html_escape(counter_label(secondary))}` +

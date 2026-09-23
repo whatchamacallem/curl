@@ -10,11 +10,14 @@ import callgrind, settings
 
 # All constants needed from settings.py have to be loaded here before anything
 # else.
+_ARTIFACTS_NAME: str = ""
 _DIFF_CALLER_COUNTS_FILE_SUFFIX: str = ""
 _FLAME_GRAPH_APP_DIR_NAME: str = ""
 _FLAME_GRAPH_APP_FILE_GLOBS: tuple[str, ...] = ()
 _FLAME_GRAPH_EXPORTER_NAME: str = ""
 _FLAME_GRAPH_PAGE_FILE_NAMES: tuple[str, ...] = ()
+_FLAME_GRAPH_VIEW_ENTRY: tuple[str, str, str] = ("", "", "")
+_HEAT_MAP_VIEW_ENTRY: tuple[str, str, str] = ("", "", "")
 _REPORT_MANIFEST_CHECKSUM_LABEL: str = ""
 _REPORT_MANIFEST_VERSION_DIFF: str = ""
 _REPORT_MANIFEST_VERSION_FULL: str = ""
@@ -122,7 +125,7 @@ class ValidateReport:
     # A flame graph must hold exactly one evented profile our own tool wrote,
     # and must be absent entirely when no trace was recorded.
     def flame_graph_check(self, out_dir: str, has_trace: bool) -> None:
-        flame_dir = os.path.join(out_dir, "flame-graph")
+        flame_dir = os.path.join(out_dir, _FLAME_GRAPH_VIEW_KEY)
         index_text = self.size_check(
             os.path.join(out_dir, "index.html"),
             _VALIDATE_OVERVIEW_PAGE_LEAST_BYTES,
@@ -132,7 +135,8 @@ class ValidateReport:
             if os.path.exists(flame_dir) or "<h2>trace log</h2>" in index_text:
                 self.fail(
                     "a flame graph where no trace was recorded"
-                    f" (flame-graph/ or a 'trace log' section): {out_dir}"
+                    f" ({_FLAME_GRAPH_VIEW_KEY}/ or a 'trace log'"
+                    f" section): {out_dir}"
                 )
             return
         if index_text and "<h2>trace log</h2>" not in index_text:
@@ -144,30 +148,32 @@ class ValidateReport:
         # there has already failed by the time this returns
         page = self.page_check(
             os.path.join(flame_dir, "index.html"),
-            "flame-graph/index.html",
+            f"{_FLAME_GRAPH_VIEW_KEY}/index.html",
             _VALIDATE_FLAME_GRAPH_PAGE_LEAST_BYTES,
         )
         # the engine is not here, so the page is only a page if it reaches
         # the shared bundle
         if f"{_FLAME_GRAPH_APP_DIR_NAME}/" not in page:
             self.fail(
-                "flame-graph/index.html does not load the shared "
+                f"{_FLAME_GRAPH_VIEW_KEY}/index.html does not load the shared "
                 f"{_FLAME_GRAPH_APP_DIR_NAME}/ bundle: {flame_dir}/index.html"
             )
         self.size_check(
-            os.path.join(flame_dir, "output.txt"), 20, "flame-graph/output.txt"
+            os.path.join(flame_dir, "output.txt"),
+            _VALIDATE_FLAME_GRAPH_LOG_LEAST_BYTES,
+            f"{_FLAME_GRAPH_VIEW_KEY}/output.txt",
         )
         script = self.size_check(
             os.path.join(flame_dir, "profile.js"),
             _VALIDATE_FLAME_GRAPH_SCRIPT_LEAST_BYTES,
-            "flame-graph/profile.js",
+            f"{_FLAME_GRAPH_VIEW_KEY}/profile.js",
         )
         if not script:
             return
         if "loadFileFromBase64" not in script:
             self.fail(
-                "flame-graph/profile.js does not call loadFileFromBase64: "
-                f"{flame_dir}/profile.js"
+                f"{_FLAME_GRAPH_VIEW_KEY}/profile.js does not call"
+                f" loadFileFromBase64: {flame_dir}/profile.js"
             )
         match = re.search(r'var document_base64 = "([A-Za-z0-9+/=]+)"', script)
         try:
@@ -183,8 +189,8 @@ class ValidateReport:
             "evented"
         ]:
             self.fail(
-                "flame-graph/profile.js does not hold one recorded trace from "
-                f"{_FLAME_GRAPH_EXPORTER_NAME} (exporter"
+                f"{_FLAME_GRAPH_VIEW_KEY}/profile.js does not hold one"
+                f" recorded trace from {_FLAME_GRAPH_EXPORTER_NAME} (exporter"
                 f" {document.get('exporter')!r}, "
                 f"profiles {kinds}): {flame_dir}/profile.js"
             )
@@ -193,23 +199,23 @@ class ValidateReport:
         for stray in sorted(os.listdir(flame_dir)):
             if stray not in _FLAME_GRAPH_PAGE_FILE_NAMES:
                 self.fail(
-                    f"flame-graph/{stray} duplicates the shared "
+                    f"{_FLAME_GRAPH_VIEW_KEY}/{stray} duplicates the shared "
                     f"{_FLAME_GRAPH_APP_DIR_NAME}/ bundle: {flame_dir}"
                 )
 
     # The heat map must be there, and must carry its own runtime script.
     def heat_map_check(self, out_dir: str, test_name: str) -> None:
-        path = os.path.join(out_dir, "heat-map", "index.html")
+        path = os.path.join(out_dir, _HEAT_MAP_VIEW_KEY, "index.html")
         text = self.page_check(
             path,
-            "heat-map/index.html",
+            f"{_HEAT_MAP_VIEW_KEY}/index.html",
             _VALIDATE_HEAT_MAP_PAGE_LEAST_BYTES,
-            f"{test_name} / heat map",
+            f"{test_name} / {_HEAT_MAP_VIEW_LABEL}",
         )
         if text and "report_ui.layout_activate" not in text:
             self.fail(
-                "heat-map/index.html is missing its runtime script"
-                f" (no report_ui.layout_activate): {path}"
+                f"{_HEAT_MAP_VIEW_KEY}/index.html is missing its runtime"
+                f" script (no report_ui.layout_activate): {path}"
             )
 
     # Nothing anywhere may name the author's home directory -- a report gets
@@ -257,7 +263,7 @@ class ValidateReport:
                 f"{layout.heading!r}: {path}"
             )
         for key in layout.subpages:
-            wanted = key != "flame-graph" or has_rawdata
+            wanted = key != _FLAME_GRAPH_VIEW_KEY or has_rawdata
             if wanted != (f'href="{key}/index.html"' in text):
                 lack = "is missing its" if wanted else "should not have a"
                 self.fail(f"index.html {lack} {key} strip link: {path}")
@@ -275,7 +281,9 @@ class ValidateReport:
         self, out_dir: str, layout: ValidateReport.ReportLayout
     ) -> None:
         path = os.path.join(out_dir, "MANIFEST.txt")
-        text = self.size_check(path, 40, "MANIFEST.txt")
+        text = self.size_check(
+            path, _VALIDATE_MANIFEST_LEAST_BYTES, "MANIFEST.txt"
+        )
         if not text:
             self.fail(
                 "MANIFEST.txt is missing or unreadable, so this is not a"
@@ -382,13 +390,10 @@ class ValidateReport:
         self,
         path: str,
         label: str,
-        min_bytes: int | None = None,
+        min_bytes: int,
         want_title: str | None = None,
     ) -> str:
-        floor = _VALIDATE_ANY_PAGE_LEAST_BYTES
-        text = self.size_check(
-            path, floor if min_bytes is None else min_bytes, label
-        )
+        text = self.size_check(path, min_bytes, label)
         if not text:
             return text
         if "<title>" not in text:
@@ -436,22 +441,6 @@ class ValidateReport:
                 self.fail(f"{path} links {href}, which is unreadable: {error}")
         return "\n".join(parts)
 
-    # Every heat map's source text sits in the report's one sources/
-    # directory. Confirm.
-    def sources_check(self, out_dir: str, tests: Sequence[str]) -> None:
-        sources_dir = os.path.join(out_dir, _REPORT_SOURCES_DIR_NAME)
-        linked = False
-        for test_name in tests:
-            path = os.path.join(out_dir, test_name, "heat-map", "index.html")
-            if not os.path.isfile(path):
-                continue
-            with open(path, encoding="utf-8", errors="replace") as handle:
-                if f"/{_REPORT_SOURCES_DIR_NAME}/" in handle.read():
-                    linked = True
-                    break
-        if linked and not os.path.isdir(sources_dir):
-            self.fail(f"no shared source directory: {sources_dir}")
-
     # A page's title, which is how we tell an overview from a test page.
     def page_title(self, index_path: str) -> str:
         with open(index_path, encoding="utf-8", errors="replace") as handle:
@@ -461,7 +450,9 @@ class ValidateReport:
     # The perf log: a real timing line, and a section only where one exists.
     def perf_tool_check(self, out_dir: str, has_perf_log: bool) -> None:
         out_txt = os.path.join(out_dir, "perf-tool", "output.txt")
-        text = self.size_check(out_txt, 20, "perf-tool/output.txt")
+        text = self.size_check(
+            out_txt, _VALIDATE_PERF_LOG_LEAST_BYTES, "perf-tool/output.txt"
+        )
         if text and not re.search(r"^Time(/\w+)?:\s+\d", text, re.M):
             self.fail(
                 "perf-tool/output.txt has no recognizable timing"
@@ -564,7 +555,7 @@ class ValidateReport:
         if name == "overview":
             tests = self.overview_test_names(index_path, out_dir)
             self.overview_check(out_dir, tests, layout)
-            if "flame-graph" in layout.subpages:
+            if _FLAME_GRAPH_VIEW_KEY in layout.subpages:
                 self.flame_app_check(out_dir)
             self.sources_check(out_dir, tests)
             for test_name in tests:
@@ -604,6 +595,24 @@ class ValidateReport:
             )
         return text
 
+    # Every heat map's source text sits in the report's one sources/
+    # directory. Confirm.
+    def sources_check(self, out_dir: str, tests: Sequence[str]) -> None:
+        sources_dir = os.path.join(out_dir, _REPORT_SOURCES_DIR_NAME)
+        linked = False
+        for test_name in tests:
+            path = os.path.join(
+                out_dir, test_name, _HEAT_MAP_VIEW_KEY, "index.html"
+            )
+            if not os.path.isfile(path):
+                continue
+            with open(path, encoding="utf-8", errors="replace") as handle:
+                if f"/{_REPORT_SOURCES_DIR_NAME}/" in handle.read():
+                    linked = True
+                    break
+        if linked and not os.path.isdir(sources_dir):
+            self.fail(f"no shared source directory: {sources_dir}")
+
     # Everything one test's directory should hold, per the layout.
     def test_report_check(
         self, out_dir: str, name: str, layout: ValidateReport.ReportLayout
@@ -615,7 +624,7 @@ class ValidateReport:
         self.index_check(out_dir, name, layout, has_rawdata, has_archive)
         self.heat_map_check(out_dir, name)
         self.raw_dir_check(out_dir, has_archive)
-        if "flame-graph" in layout.subpages:
+        if _FLAME_GRAPH_VIEW_KEY in layout.subpages:
             self.flame_graph_check(out_dir, has_rawdata)
         if layout.test_has_rawdata:
             self.perf_tool_check(out_dir, has_rawdata)
@@ -649,7 +658,9 @@ class ValidateReport:
             dirs[:] = [
                 d
                 for d in dirs
-                if d not in _SOURCE_SCAN_SKIPPED_DIRS and not d.startswith(".")
+                if d not in _SOURCE_SCAN_SKIPPED_DIRS
+                and not d.endswith(_SOURCE_SCAN_SKIPPED_DIR_SUFFIX)
+                and not d.startswith(".")
             ]
             for name in names:
                 if (
@@ -660,11 +671,25 @@ class ValidateReport:
         return sorted(paths)
 
 
+# What each view's directory under a test is called, taken from the view
+# entry production builds the report with rather than spelled again here.
+# Element 0 of each entry is the key, which is both the URL hash's name for
+# the view and the directory holding its page, so a rename there renames
+# what this looks for.
+_FLAME_GRAPH_VIEW_KEY = _FLAME_GRAPH_VIEW_ENTRY[0]
+
+# The heat map's key, and its link label, element 1 of the same entry --
+# the half of a view page's "<test> / <label>" title that production
+# renders from the entry. Checking the title against the entry is what
+# makes the check a check rather than a second spelling of the title.
+_HEAT_MAP_VIEW_KEY = _HEAT_MAP_VIEW_ENTRY[0]
+_HEAT_MAP_VIEW_LABEL = _HEAT_MAP_VIEW_ENTRY[1]
+
 # What a perf2html_diff.sh report must contain: no flame graph, no timing.
 # The version line is the production string, read out of settings.py, not
 # restated here: this checks the report against what wrote it.
 _LAYOUT_DIFF = ValidateReport.ReportLayout(
-    subpages=("heat-map",),
+    subpages=(_HEAT_MAP_VIEW_KEY,),
     heading=r"<h2>top \d+ functions by change in self</h2>",
     header_blocks=("baseline", "modified"),
     manifest_version=_REPORT_MANIFEST_VERSION_DIFF,
@@ -675,7 +700,7 @@ _LAYOUT_DIFF = ValidateReport.ReportLayout(
 
 # What a perf2html.sh report must contain.
 _LAYOUT_FULL = ValidateReport.ReportLayout(
-    subpages=("flame-graph", "heat-map"),
+    subpages=(_FLAME_GRAPH_VIEW_KEY, _HEAT_MAP_VIEW_KEY),
     heading=r"<h2>top \d+ functions by self</h2>",
     header_blocks=(),
     manifest_version=_REPORT_MANIFEST_VERSION_FULL,
@@ -691,8 +716,17 @@ _LAYOUT_FULL = ValidateReport.ReportLayout(
     all_has_archive=False,
 )
 
-# scripts/shared.sh's checksum pipeline, spelled the same here so the two
-# can never disagree: sorted paths, relative to the report directory.
+# The POSIX pipeline this file re-derives the checksum row with: sorted
+# paths, relative to the report directory. scripts/shared.sh's
+# checksum_compute computes the same thing, and the two are written out
+# separately on purpose. That is not the banned twin: a twin is one value
+# two files must be kept in step on, and being kept in step is exactly what
+# must not happen here. A checksum check that imported what wrote the
+# checksum would agree with the generator by construction and could never
+# catch it being wrong, which is the only thing this check is for. The
+# pipeline could not be a setting in any case -- it holds spaces, "!", "|",
+# "\n" and "\0", and settings.sh takes one word that bash would not expand,
+# a grammar settings.py must never widen, because it runs nothing.
 _REPORT_CHECKSUM_COMMAND = (
     "find . -type f ! -name MANIFEST.txt -print"
     " | LC_ALL=C sort | LC_ALL=C tr '\\n' '\\0'"
@@ -724,22 +758,28 @@ _SOURCE_SCAN_FILE_EXTENSIONS = (
 _SOURCE_SCAN_FILE_NAMES = ("README.md",)
 
 # Generated output and caches, which the ASCII scan walks straight past.
-_SOURCE_SCAN_SKIPPED_DIRS = (
-    "__pycache__",
-    "perf2html_baseline_report",
-    "perf2html_modified_report",
-    "perf2html_diff_report",
-)
+# A report directory is recognised by its name ending this way, which is
+# the rule reformat.sh's files_of() skips them by ("*_report/*") rather
+# than the three report names restated: a fourth report, or one a --report
+# flag named something else, is generated output just the same.
+_SOURCE_SCAN_SKIPPED_DIR_SUFFIX = "_report"
+
+# Caches and recordings, neither of which is source.
+_SOURCE_SCAN_SKIPPED_DIRS = ("__pycache__", _ARTIFACTS_NAME)
 
 # Smallest a file can be before it is plainly a failed generate rather than
-# a small page. The flame graph page is a loader -- two script tags and a
+# a small one. The flame graph page is a loader -- two script tags and a
 # stylesheet link pointing at the shared bundle -- so it has a floor of its
-# own, well under the one a page carrying real content must clear.
-_VALIDATE_ANY_PAGE_LEAST_BYTES = 500
+# own, well under the one a page carrying real content must clear. The two
+# logs and the manifest are plain text a run appends to, so theirs only has
+# to be past "the file exists but nothing was written into it".
+_VALIDATE_FLAME_GRAPH_LOG_LEAST_BYTES = 20
 _VALIDATE_FLAME_GRAPH_PAGE_LEAST_BYTES = 300
 _VALIDATE_FLAME_GRAPH_SCRIPT_LEAST_BYTES = 200
 _VALIDATE_HEAT_MAP_PAGE_LEAST_BYTES = 5000
+_VALIDATE_MANIFEST_LEAST_BYTES = 40
 _VALIDATE_OVERVIEW_PAGE_LEAST_BYTES = 2000
+_VALIDATE_PERF_LOG_LEAST_BYTES = 20
 _VALIDATE_RAW_ARCHIVE_LEAST_BYTES = 100
 
 

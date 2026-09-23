@@ -29,8 +29,6 @@ class CallgrindDiff:
     # CallersDoc - The synthesized callers diff, because a delta file has no
     # calls= lines and so no call graph, and no baseline to be a share of.
     class CallersDoc(TypedDict):
-        # which counter the costs are counted in
-        counter: str
         # the recorded counters the baseline vectors are written against, so
         # a reader can resolve any counter, derived ones included, from them
         counters: list[str]
@@ -195,7 +193,6 @@ class CallgrindDiff:
         baseline: callgrind.Profile,
     ) -> None:
         doc: CallgrindDiff.CallersDoc = {
-            "counter": _RANKING_COUNTER_NAME,
             "counters": list(baseline.counters),
             "callers": {
                 callee: [

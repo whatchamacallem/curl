@@ -1,13 +1,20 @@
 (function () {
   "use strict";
 
+  const LAYOUT_RESET_RATE_LIMIT_CLICKS = settings(
+    "LAYOUT_RESET_RATE_LIMIT_CLICKS",
+  );
+  const LAYOUT_RESET_RATE_LIMIT_WINDOW_MS = settings(
+    "LAYOUT_RESET_RATE_LIMIT_WINDOW_MS",
+  );
+  const STRIP_WORDMARK_LOGO_START_FRACTION = settings(
+    "STRIP_WORDMARK_LOGO_START_FRACTION",
+  );
+
   const HOME_VIEW_LABEL = window.ui_strings.text_of("str_view_summary");
-  const LAYOUT_RESET_RATE_LIMIT_CLICKS = 3;
-  const LAYOUT_RESET_RATE_LIMIT_WINDOW_MS = 5000;
   const OUTER_STATUS_TEXT = window.ui_strings.text_of("str_report_name");
   const SELECTION_SEPARATOR = " / ";
   const WORDMARK_LETTER_CLASS = "wordmark-letter";
-  const WORDMARK_LOGO_START_FRACTION = 0.5;
 
   const home_panel = document.getElementById("home");
   const is_framed = window.report_ui.is_framed;
@@ -21,7 +28,7 @@
   const wordmark_letters = window.report_ui.logo_letters_build(
     OUTER_STATUS_TEXT,
     WORDMARK_LETTER_CLASS,
-    WORDMARK_LOGO_START_FRACTION,
+    STRIP_WORDMARK_LOGO_START_FRACTION,
   );
   let current_inner_hash = "",
     current_page_href = "",

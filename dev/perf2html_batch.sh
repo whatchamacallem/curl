@@ -9,7 +9,7 @@ cd "$(dirname "$_SCRIPT")"
 . ./scripts/settings.sh
 . ./scripts/shared.sh
 
-# Must be kept in sync with the README.txt and no other usage docs allowed.
+# Must be kept in sync with the README.md and no other usage docs allowed.
 usage_show() {
   cat <<'EOF'
 perf2html_batch.sh [debug-flags] [--target-dir=DIR] [cmake-flags...]
@@ -34,28 +34,20 @@ EOF
 }
 
 # step_run - runs one numbered step, logging it, and records a failure
-# in _STATUS and _FAILED instead of returning non-zero. SETS those two
-# caller globals, and is their canonical setter: main() initializes them
-# and reads them back once every step has run.
+# in _STATUS and _FAILED instead of returning non-zero, so every later
+# step still runs. SETS those two caller globals, and is their canonical
+# setter: main() initializes them and reads them back once every step has
+# run. child_capture sets LOG_LINE_FROM for the failure tail.
 step_run() {
   local _number="$1" _name="$2"
   shift 2
-  local _exit_code=0 _from _start
+  local _exit_code _start
   _start="$(clock_microseconds)"
   printf '[%ss] running step %s %s: %s\n' "$(elapsed_format)" \
     "$_number" "$_name" "$*"
   log_verbose "$(printf '== %s %s ==' "$_number" "$_name")"
-  printf '\n$ %s\n' "$*" >>"$RUN_LOG"
-  _from="$(wc -l <"$RUN_LOG")"
-  if [ "$VERBOSE" = 1 ]; then
-    # tee so a step's output arrives as it is produced. The `if !` is what
-    # keeps pipefail's failure from reaching PIPESTATUS's reader.
-    if ! { "$@" 2>&1 | tee -a "$RUN_LOG"; }; then
-      _exit_code="${PIPESTATUS[0]}"
-    fi
-  else
-    "$@" >>"$RUN_LOG" 2>&1 || _exit_code=$?
-  fi
+  child_capture "$@"
+  _exit_code="$CHILD_EXIT_CODE"
   log_verbose "$(printf '== %s %s: end ==' "$_number" "$_name")"
   if [ "$_exit_code" = 0 ]; then
     printf '[%ss] done: step %s %s in %s\n' "$(elapsed_format)" \
@@ -67,11 +59,7 @@ step_run() {
   printf '[%ss] FAILED: step %s %s, exit %s, after %s\n' \
     "$(elapsed_format)" "$_number" "$_name" "$_exit_code" \
     "$(duration_format "$_start")" >&2
-  {
-    echo "error: exit $_exit_code from: $*"
-    tail -n +"$((_from + 1))" "$RUN_LOG" | tail -n 40
-    echo "(last 40 lines; everything this run printed: $RUN_LOG)"
-  } >&2
+  failure_tail_print "$_exit_code" "$@"
   return 0
 }
 
@@ -167,7 +155,7 @@ main() {
   _STATUS=0
   _FAILED=()
   local _verbose_args=()
-  if [ "$VERBOSE" = 1 ]; then _verbose_args=(--verbose); fi
+  mapfile -t _verbose_args < <(verbose_flags_of)
   echo "dev/perf2html_batch.sh $TIMESTAMP: ${_CMAKE_FLAGS[*]}" >"$RUN_LOG"
   printf '[%ss] dev/perf2html_batch.sh %s: modified build flags: %s\n' \
     "$(elapsed_format)" "$TIMESTAMP" "${_CMAKE_FLAGS[*]}"

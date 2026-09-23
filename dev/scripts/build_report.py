@@ -23,14 +23,29 @@ _SUMMARY_TOP_FUNCTION_ROWS: int = 0
 _TABLE_FUNCTION_NAME_WIDTH_CHARS: int = 0
 settings.load_into(__name__)
 
+# What this exits with when a file a page is built from will not open.
+# ENOTDIR's number, the closest thing errno has to "the tree is not what the
+# run was told it was".
+_EXIT_INPUT_UNREADABLE = 20
+
 # Valgrind's "==1234== " line prefix, stripped so the log reads as output.
 _PID_PREFIX = re.compile(r"^==\d+==\s?")
 
+# How far a test's summary page sits below the report root, which is what
+# says how many "../" its links to the shared assets need. The layout fixes
+# it: the overview is the root, every test has one directory of its own, and
+# the views it frames sit one deeper still.
+_SUMMARY_PAGE_ASSETS_DEPTH = 1
+
 # A "Something: 1.23 ms" line of the perf log, which is the only valid speed
-# number -- callgrind's wall clock never is.
+# number -- callgrind's wall clock never is. Every run of blank space is
+# spelled [ \t]* rather than \s*, which under re.M would swallow the newline
+# ending the line and the blank line after it, merging two paragraphs of the
+# log into one.
 _TIME_LINE = re.compile(
-    r"^(\s*[A-Za-z][\w/ ]*:\s*)"
-    r"(-?\d+(?:\.\d+)?)\s*(usecs?|us|msecs?|ms|nsecs?|ns|secs?|s)\s*$",
+    r"^([ \t]*[A-Za-z][\w/ ]*:[ \t]*)"
+    r"(-?\d+(?:\.\d+)?)[ \t]*"
+    r"(usecs?|us|msecs?|ms|nsecs?|ns|secs?|s)[ \t]*$",
     re.I | re.M,
 )
 
@@ -93,8 +108,6 @@ class BuildReport:
         header_file: str
         # grouped rows as "block:LABEL=VALUE"
         header_block: list[str]
-        # build a diff overview: no native timing
-        diff: bool
         # each test's working diff profile as "name=path", for a diff
         # overview
         diff_profile: list[str]
@@ -133,14 +146,10 @@ class BuildReport:
         no_log: bool
         # where the "help" link points
         help_href: str
-        # the callgrind file is a delta
-        diff: bool
         # extra LABEL=VALUE rows
         header: list[str]
         # callgrind_diff.py's synthesized callers diff, for the call columns
         callers_data: str
-        # the report holds this test alone, so this page is its root
-        single_test_report: bool
 
     # TestDirectory - One test of the overview, and where its report sits.
     class TestDirectory(NamedTuple):
@@ -231,9 +240,7 @@ class BuildReport:
             with open(path, encoding="utf-8") as handle:
                 doc = json.load(handle)
         except OSError as error:
-            sys.exit(
-                f"error: {path}: {error}: the callgrind_diff.py"
-            )
+            sys.exit(f"error: {path}: {error}: the callgrind_diff.py")
         counters: list[str] = doc.get("counters", [])
         self.counters_check(counters, path)
         return BuildReport.CallersData(
@@ -254,8 +261,11 @@ class BuildReport:
             baseline_calls=doc["baselineCalls"],
         )
 
-    # Refuse a callers diff whose recorded counters cannot add up to the
-    # ranking counter -- a wrong denominator is worse than a stopped run.
+    # Refuse a profile or a callers diff whose recorded counters cannot add
+    # up to the ranking counter, naming it rather than letting Profile.value
+    # raise a bare KeyError further in. Every table names that counter
+    # directly and none of them falls back to another one, so a run that
+    # cannot supply it has nothing to print.
     def counters_check(self, counters: Sequence[str], path: str) -> None:
         if _RANKING_COUNTER_NAME in callgrind.counter_names(counters):
             return
@@ -263,6 +273,15 @@ class BuildReport:
             f"error: {path} cannot supply {_RANKING_COUNTER_NAME}, the"
             f" counter every diff share is counted in: it records"
             f" {' '.join(counters)}"
+        )
+
+    # One collapsed section of a summary page: a heading that opens it and
+    # whatever markup it holds. Every section of every summary page, core
+    # and diff alike, is this same shape.
+    def details_section(self, title: str, body: str) -> str:
+        return (
+            f'<details class="sec"><summary><h2>'
+            f"{theme.html_escape(title)}</h2></summary>{body}</details>"
         )
 
     # The diff summary's top table, ranked by |change| in self cost.
@@ -297,18 +316,10 @@ class BuildReport:
             )
             for callee, count in call_counts.items()
         }
-        columns = [
-            theme.Column("#", numeric=True),
-            theme.Column("% self", numeric=True),
-            theme.Column("symbol", width=_TABLE_FUNCTION_NAME_WIDTH_CHARS),
-            theme.Column(_RANKING_COUNTER_NAME, numeric=True),
-            theme.Column("calls", numeric=True),
-            theme.Column("callers", grow=True),
-        ]
+        columns = self.function_columns()
         rows: list[list[theme.CellOrText]] = []
         for rank, ranked_function in enumerate(ranked, 1):
             share = shares[rank - 1]
-            href = self.entry_link(profile, ranked_function.function)
             deltas = callers_data.callers.get(ranked_function.function, [])
             call_count = call_counts.get(ranked_function.function, 0)
             call_share = call_shares.get(ranked_function.function)
@@ -325,12 +336,8 @@ class BuildReport:
                         if share is not None
                         else "",
                     ),
-                    theme.Cell(
-                        ranked_function.function,
-                        html=f'<a href="{href}">'
-                        f"{theme.html_escape(ranked_function.function)}</a>"
-                        if href
-                        else None,
+                    self.function_link_cell(
+                        profile, ranked_function.function
                     ),
                     theme.num_signed(ranked_function.cost),
                     theme.Cell(
@@ -382,15 +389,12 @@ class BuildReport:
             synthesized_callers = (
                 [callers] if files and os.path.isfile(callers) else []
             )
-            link = theme.Cell(
-                test.name,
-                html=f'<a href="{theme.html_escape(test.name)}/index.html">'
-                f"{theme.html_escape(test.name)}</a>",
-            )
+            link = self.test_link_cell(test.name)
             if not files:
                 rows.append([link, "", "", ""])
                 continue
             profile = callgrind.profile_load(files)
+            self.counters_check(profile.counters, profile_path)
             delta = profile.value(profile.totals(), _RANKING_COUNTER_NAME)
             changed = sum(
                 1
@@ -421,6 +425,7 @@ class BuildReport:
     # Write one test's diff summary page.
     def diff_test(self, args: BuildReport.TestArgs) -> None:
         profile = callgrind.profile_load(args.callgrind_file)
+        self.counters_check(profile.counters, " ".join(args.callgrind_file))
         callers_data = self.callers_data_load(args.callers_data)
         self.report_page(
             args,
@@ -442,14 +447,53 @@ class BuildReport:
             urllib.parse.quote(function, safe="/-_.!~*'()")
         )
 
-    # Read a file, warning and returning a placeholder rather than failing.
+    # Read a file the page is built from. A file that will not open stops
+    # the run: standing a placeholder in for it would print the absolute
+    # path this ran under into the page, where every path is relative and
+    # none may name $HOME, and would leave a report whose manifest says it
+    # finished. Stopping here means no manifest is ever written.
     def file_read(self, path: str) -> str:
         try:
             with open(path, encoding="utf-8", errors="replace") as handle:
                 return handle.read()
         except OSError as error:
-            print(f"warning: {path}: {error}", file=sys.stderr)
-            return f"(missing: {path})"
+            print(
+                f"error: {os.path.abspath(path)}: {error}: the page cannot"
+                " be built without it",
+                file=sys.stderr,
+            )
+            sys.exit(_EXIT_INPUT_UNREADABLE)
+
+    # The scripts a framed page runs, in order: the strings first, so the
+    # frame runtime can look an id up the moment it runs.
+    def framed_page_script_names(self) -> tuple[str, str]:
+        return (_ASSET_UI_STRINGS_SCRIPT_NAME, _ASSET_FRAME_SCRIPT_NAME)
+
+    # The columns of a summary's top table. A core report and a diff rank
+    # on different numbers and print them differently, but both say the
+    # same thing about each function, so both are laid out the same.
+    def function_columns(self) -> list[theme.Column]:
+        return [
+            theme.Column("#", numeric=True),
+            theme.Column("% self", numeric=True),
+            theme.Column("symbol", width=_TABLE_FUNCTION_NAME_WIDTH_CHARS),
+            theme.Column(_RANKING_COUNTER_NAME, numeric=True),
+            theme.Column("calls", numeric=True),
+            theme.Column("callers", grow=True),
+        ]
+
+    # The "symbol" cell: the function's name, linked into the heat map when
+    # it has local source to open there and bare text when it has not.
+    def function_link_cell(
+        self, profile: callgrind.Profile, function: str
+    ) -> theme.Cell:
+        href = self.entry_link(profile, function)
+        return theme.Cell(
+            function,
+            html=f'<a href="{href}">{theme.html_escape(function)}</a>'
+            if href
+            else None,
+        )
 
     # The summary's top table, ranked by self cost in the ranking counter.
     def functions_table(self, profile: callgrind.Profile) -> str:
@@ -469,14 +513,7 @@ class BuildReport:
             for function, callers in profile.callers.items()
         }
         calls_total = sum(function_calls.values()) or 1
-        columns = [
-            theme.Column("#", numeric=True),
-            theme.Column("% self", numeric=True),
-            theme.Column("symbol", width=_TABLE_FUNCTION_NAME_WIDTH_CHARS),
-            theme.Column(_RANKING_COUNTER_NAME, numeric=True),
-            theme.Column("calls", numeric=True),
-            theme.Column("callers", grow=True),
-        ]
+        columns = self.function_columns()
         rows: list[list[theme.CellOrText]] = []
         for rank, ranked_function in enumerate(ranked, 1):
             by_caller: dict[str, int] = {}
@@ -488,7 +525,6 @@ class BuildReport:
                 )
             call_count = sum(by_caller.values())
             share = 100.0 * ranked_function.cost / total
-            href = self.entry_link(profile, ranked_function.function)
             by_caller_sorted = sorted(
                 by_caller.items(), key=lambda pair: (-pair[1], pair[0])
             )
@@ -507,12 +543,8 @@ class BuildReport:
                         theme.num_pct(share),
                         style=theme.heat_style(theme.heat_of_share(share)),
                     ),
-                    theme.Cell(
-                        ranked_function.function,
-                        html=f'<a href="{href}">'
-                        f"{theme.html_escape(ranked_function.function)}</a>"
-                        if href
-                        else None,
+                    self.function_link_cell(
+                        profile, ranked_function.function
                     ),
                     theme.num_human(ranked_function.cost),
                     theme.Cell(
@@ -540,10 +572,7 @@ class BuildReport:
             .split("\n")[_SUMMARY_PERF_LOG_SKIPPED_HEAD_LINES:]
         )
         text = "\n".join(_PID_PREFIX.sub("", line) for line in lines)
-        return (
-            f'<div class="tbl"><pre class="logbox">{theme.html_escape(text)}'
-            "</pre></div>"
-        )
+        return self.logbox_render(text)
 
     # The collapsed "valgrind log" section, empty when no log was given.
     def log_section(self, paths: Sequence[str]) -> str:
@@ -554,10 +583,13 @@ class BuildReport:
             if len(paths) > 1:
                 body += f"<p>{theme.html_escape(os.path.basename(path))}</p>"
             body += self.log_block(path)
+        return self.details_section("valgrind log", body)
+
+    # Captured output as one preformatted block, escaped for the page.
+    def logbox_render(self, text: str) -> str:
         return (
-            '<details class="sec"><summary><h2>valgrind log</h2></summary>'
-            + body
-            + "</details>"
+            f'<div class="tbl"><pre class="logbox">{theme.html_escape(text)}'
+            "</pre></div>"
         )
 
     # Every non-empty block as a heading plus its own LABEL=VALUE table.
@@ -638,15 +670,7 @@ class BuildReport:
         if not path:
             return ""
         output = self.time_humanize(self.file_read(path).rstrip())
-        body = (
-            f'<div class="tbl"><pre class="logbox">{theme.html_escape(output)}'
-            "</pre></div>"
-        )
-        return (
-            f'<details class="sec"><summary><h2>{title}</h2></summary>'
-            + body
-            + "</details>"
-        )
+        return self.details_section(title, self.logbox_render(output))
 
     # Write the full report's overview page, from each test's perf log.
     def overview(self, args: BuildReport.OverviewArgs) -> None:
@@ -670,14 +694,7 @@ class BuildReport:
             theme.Column(key, numeric=True) for key in keys
         ]
         rows: list[list[theme.CellOrText]] = [
-            [
-                theme.Cell(
-                    test.name,
-                    html=f'<a href="{theme.html_escape(test.name)}'
-                    '/index.html">'
-                    f"{theme.html_escape(test.name)}</a>",
-                )
-            ]
+            [self.test_link_cell(test.name)]
             + [numbers[test.name].get(key, "") for key in keys]
             for test in tests
         ]
@@ -709,7 +726,7 @@ class BuildReport:
         )
         body = (
             body
-            + '<main id="home"><div class="page">'
+            + self.page_main_open()
             + self.manifest_table("overview.header", pairs)
         )
         body += self.manifest_blocks_render(
@@ -718,10 +735,7 @@ class BuildReport:
         body += "<h2>test suites</h2>" + theme.table_render(
             "overview.tests", columns, rows
         )
-        body += (
-            '</div></main><iframe id="view" hidden'
-            ' title="report page"></iframe>'
-        )
+        body += self.page_main_close()
         self.page_write(
             args.output,
             theme.page_document(
@@ -744,10 +758,18 @@ class BuildReport:
         tests.sort()
         return tests
 
-    # The scripts a framed page runs, in order: the strings first, so the
-    # frame runtime can look an id up the moment it runs.
-    def framed_page_script_names(self) -> tuple[str, str]:
-        return (_ASSET_UI_STRINGS_SCRIPT_NAME, _ASSET_FRAME_SCRIPT_NAME)
+    # What closes the content of a framed page: the frame every view loads
+    # into follows it, empty until a strip link fills it.
+    def page_main_close(self) -> str:
+        return (
+            '</div></main><iframe id="view" hidden'
+            ' title="report page"></iframe>'
+        )
+
+    # What opens the content of a framed page. Both the overview and a test
+    # summary are a page inside the one frame host, so both start here.
+    def page_main_open(self) -> str:
+        return '<main id="home"><div class="page">'
 
     # Write a page, making its directory, and report its size.
     def page_write(self, path: str, page: str) -> None:
@@ -770,9 +792,8 @@ class BuildReport:
             f"{theme.html_escape(os.path.basename(path))}</a></li>"
             for path in paths
         )
-        return (
-            '<details class="sec"><summary><h2>raw data</h2></summary>'
-            f'<ul class="rawdata">{items}</ul></details>'
+        return self.details_section(
+            "raw data", f'<ul class="rawdata">{items}</ul>'
         )
 
     # Assemble and write one test's summary page around its top table.
@@ -791,7 +812,7 @@ class BuildReport:
         ]
         body = self.strip_render(args.test, links, help_href=args.help_href)
         out_dir = os.path.dirname(os.path.abspath(args.output))
-        body += '<main id="home"><div class="page">' + self.manifest_table(
+        body += self.page_main_open() + self.manifest_table(
             "report.header", self.manifest_parse_rows(args.header)
         )
         body += self.output_section("perf log", args.perf_log)
@@ -800,10 +821,7 @@ class BuildReport:
             body += self.log_section(args.log)
         body += self.rawdata_section(args.raw_data, out_dir)
         body += f"<h2>{heading}</h2>" + table
-        body += (
-            '</div></main><iframe id="view" hidden'
-            ' title="report page"></iframe>'
-        )
+        body += self.page_main_close()
         self.page_write(
             args.output,
             theme.page_document(
@@ -811,7 +829,7 @@ class BuildReport:
                 body,
                 extra_js=self.framed_page_script_names(),
                 body_class="frame",
-                depth=0 if args.single_test_report else 1,
+                depth=_SUMMARY_PAGE_ASSETS_DEPTH,
             ),
         )
 
@@ -854,6 +872,7 @@ class BuildReport:
     # Write one test's summary page.
     def test(self, args: BuildReport.TestArgs) -> None:
         profile = callgrind.profile_load(args.callgrind_file)
+        self.counters_check(profile.counters, " ".join(args.callgrind_file))
         views = [_FLAME_VIEW, _HEAT_VIEW] if args.trace_log else [_HEAT_VIEW]
         self.report_page(
             args,
@@ -862,18 +881,25 @@ class BuildReport:
             self.functions_table(profile),
         )
 
+    # An overview row's first cell: the test's name, linking the summary
+    # page in its own directory beside the overview.
+    def test_link_cell(self, name: str) -> theme.Cell:
+        escaped = theme.html_escape(name)
+        return theme.Cell(
+            name, html=f'<a href="{escaped}/index.html">{escaped}</a>'
+        )
+
     # Rewrite every "Something: 1.23 ms" line in the theme's time notation.
     def time_humanize(self, text: str) -> str:
-        def one(match: re.Match[str]) -> str:
-            scale = _SUMMARY_TIME_SUFFIX_SECONDS.get(match.group(3).lower())
-            return (
-                match.group(0)
-                if scale is None
-                else match.group(1)
-                + theme.num_time(float(match.group(2)) * scale)
-            )
+        return _TIME_LINE.sub(self.time_line_rewrite, text)
 
-        return _TIME_LINE.sub(one, text)
+    # One matched "Something: 1.23 ms" line, rewritten in the theme's time
+    # notation. A suffix the theme has no scale for is left as it was.
+    def time_line_rewrite(self, match: re.Match[str]) -> str:
+        scale = _SUMMARY_TIME_SUFFIX_SECONDS.get(match.group(3).lower())
+        if scale is None:
+            return match.group(0)
+        return match.group(1) + theme.num_time(float(match.group(2)) * scale)
 
     # The same rewrite for one already split label and value.
     def value_humanize(self, label: str, value: str) -> str:
@@ -900,12 +926,6 @@ def main() -> None:
         "callgrind_file",
         nargs="+",
         help="callgrind output file(s). several are merged into one profile",
-    )
-    test_parser.add_argument(
-        "--single-test-report",
-        action="store_true",
-        help="the report holds this test alone, so this page is its root"
-        " and the shared assets sit beside it rather than one level up",
     )
     test_parser.add_argument("-o", "--output", required=True)
     test_parser.add_argument("--test", required=True, help="the page's title")
@@ -1040,10 +1060,8 @@ def main() -> None:
             trace_log=namespace.trace_log,
             no_log=namespace.no_log,
             help_href=namespace.help_href,
-            diff=namespace.diff,
             header=namespace.header,
             callers_data=namespace.callers_data,
-            single_test_report=namespace.single_test_report,
         )
         (report.diff_test if namespace.diff else report.test)(test_args)
     else:
@@ -1053,7 +1071,6 @@ def main() -> None:
             header=namespace.header,
             header_file=namespace.header_file,
             header_block=namespace.header_block,
-            diff=namespace.diff,
             diff_profile=namespace.diff_profile,
         )
         (report.diff_overview if namespace.diff else report.overview)(

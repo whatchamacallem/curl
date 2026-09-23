@@ -31,6 +31,9 @@ changing a topic that is one line here.
    not accomplished, plus any relevant bug reports.
 1. New identifiers: at least 2 unabbreviated english words, ideally one noun
    and one verb.
+1. **A value written down twice and "kept in step" is banned.** A number,
+   colour, key, bound or named two files both need is **one setting** the two
+   read from `settings.py` or `settings.py`.
 1. All communication involving multiple items follows ISO 2145, Numbering of
    divisions and subdivisions in written documents.
 
@@ -76,8 +79,13 @@ measures nothing and subtracts two reports' `raw/` archives;
 after an earlier one failed**.
 
 - **`--verbose` is additive, in all four**; `log_verbose()` is the one
-  function testing `$VERBOSE`, **no function in `dev/*.sh` may wrap `printf`
-  without adding logic**, and quiet prints **whole lines only**.
+  function deciding whether a **line** is printed, and the only other
+  readers of `$VERBOSE` are `shared.sh`'s two **stream** routers,
+  `child_capture()` (tee or redirect, chosen before the child runs) and
+  `log_verbose_file()` (a file a step already wrote, appended to `$RUN_LOG`
+  and shown too when verbose). **No script outside `shared.sh` may test
+  `$VERBOSE`**, **no function in `dev/*.sh` may wrap `printf` without
+  adding logic**, and quiet prints **whole lines only**.
 - `perf2html.sh` default DIR is `perf2html_baseline_report`, or
   `perf2html_modified_report` when cmake_flags are given - **after a
   _source_-only change pass `--report=perf2html_modified_report` yourself.**
@@ -117,25 +125,39 @@ after an earlier one failed**.
 - Trace tree `build-instr` = same flags + `-finstrument-functions` +
   `dev/src/cyg_callback.c`; whole build instrumented, no file list.
 - The verbose tee sits behind `if ! { ...; }` so `pipefail` can't take the
-  failure before `PIPESTATUS[0]` is read. `now_us()` strips non-digits.
+  failure before `PIPESTATUS[0]` is read. `clock_microseconds()` strips
+  non-digits. That tee is in `shared.sh`'s **`child_capture`**, the one
+  runner: it records the child's code in `CHILD_EXIT_CODE` rather than
+  taking it, and **reports through globals, never stdout** - verbose's tee
+  already owns stdout, so a `$(child_capture ...)` would capture the
+  child's own output along with the code. Two policies sit on it:
+  `command_run` exits with the child's code, and the batch's `step_run`
+  records the failure in `_STATUS` / `_FAILED` and returns 0 so every later
+  step still runs. Both print the same tail through **`failure_tail_print`**
+  (`LOG_FAILURE_TAIL_LINES` lines).
 
 ### 3.1 `settings.sh` and `shared.sh`
 
 No env vars. **`settings.sh` holds every setting the shell reads, `shared.sh`
 (sourced, not executable) every shared shell function**, each alphabetical.
 `settings.sh` is **one assignment per line** because `shared.sh` sources it
-**and `settings.py` parses it at import** (`Settings.shell_settings_read`; a
-`-?[0-9]+` scalar arrives as `int`). **A word may hold `$` or a command**,
+**and `settings.py` parses it at import**
+(`SettingsReader.shell_settings_read`,
+whose result `settings.py` binds under its own names; a `-?[0-9]+` scalar
+arrives as `int`). **A word may hold `$` or a command**,
 but **`settings.py` runs nothing**: `shell_word_expand` looks the word up in
 `_SHELL_EXPANSION_VALUES`, spelled exactly as `settings.sh` writes it, and
 computes the same value in Python (`$(date +%s)` -> `int(time.time())`, a
 plain unix integer either language reads the same way). **A word that table
 does not hold stops the import**, naming the line. A `'single-quoted'` word
-is literal to both and never expanded. **Never read an expanded word from
-Python** - Python computes it at import and the shell at source, so
-`settings.TIMESTAMP` can be a second off the run's real stamp and would name
-a different run; the expansion exists to keep the parser whole, and a
-generator's stamp arrives as the shell's `stamp=` row. **Verification is bash
+is literal to both and never expanded. **Never read an expanded word, from
+Python or from a page** - Python computes it at import and the shell at
+source, so `settings.TIMESTAMP` can be a second off the run's real stamp and
+would name a different run; the expansion exists to keep the parser whole, and
+a generator's stamp arrives as the shell's `stamp=` row. Each such name is
+remembered in `SettingsReader.expanded_names`, which is how
+`settings_script_write()`
+keeps it out of the browser's object. **Verification is bash
 itself** - every script sources the file, so no character allow-list.
 Hand-written, never generated. **A shell setting is a Python setting, one name
 in all three languages.** **`TIMESTAMP` is a setting** (`$(date +%s)`, fixed
@@ -149,10 +171,12 @@ dot included).
 
 **A global a script declares for itself is `_SCREAMING_SNAKE`**, leading
 underscore, the way the Python keeps a private name - `_OUT_DIR`,
-`_CMAKE_FLAGS`, `_STATUS`. **The underscore means "mine": the six names that
+`_CMAKE_FLAGS`, `_STATUS`. **The underscore means "mine": the names that
 cross into `shared.sh` do not carry one** - it reads `ARTIFACTS_DIR`,
 `RUN_LOG`, `START_US`, `TIMESTAMP` and `VERBOSE`, and sets
-`SPEEDSCOPE_RELEASE`. **No `settings.sh` name ever takes one** (`settings.py`
+`SPEEDSCOPE_RELEASE`, `RUN_LOG` (in `report_begin`) and
+`CHILD_EXIT_CODE` / `LOG_LINE_FROM` (in `child_capture`).
+**No `settings.sh` name ever takes one** (`settings.py`
 parses that file, and a setting is one spelling in three languages), and
 neither does a name the environment owns (`CMAKE_C_FLAGS`, `PERF_TRACE_OUT`).
 So: underscore = this file's, bare = shared or foreign. **A `local` takes the
@@ -166,7 +190,14 @@ setter, and its `#` comment names every global it sets** - `toolchain_check`
 (`SPEEDSCOPE_RELEASE`), the batch's `step_run` (`_STATUS`, `_FAILED`).
 
 **The `MANIFEST.txt` contract is `shared.sh`'s** - `checksum_compute`,
-`manifest_write`, `manifest_value`, `manifest_verify`. The two version strings
+`manifest_fault_of`, `manifest_write`, `manifest_value`, `manifest_verify`,
+`manifest_wanted_phrase`. **`manifest_fault_of` is the one reader**: it
+echoes why a directory is not a finished report, or nothing when it holds
+up, and takes **each version string line 1 may read** - naming one is how a
+diff is never read back as a diff input, naming both is how `reformat.sh`
+accepts either. `manifest_verify` is the hard-error policy on top;
+`reformat.sh` collects the same text instead, so a broken report cannot
+hide a valid one. The two version strings
 (`curl/perf2html.sh v1`, `curl/perf2html_diff.sh v1`), the checksum label and
 the manifest script name are **settings in `settings.sh`**.
 
@@ -192,6 +223,15 @@ link); `MANIFEST.txt` line 1 = version string, then LABEL=VALUE.
   **written last** → an aborted run leaves none. **No tool may open a report
   whose manifest is missing or whose version line is not EXACTLY the expected
   string**; the error prints **both found and expected**.
+- **`report_begin` and `report_finish`** are the head and tail of every run
+  that writes a report. `report_begin` clears what a previous run left,
+  creates the directories, drops the stale manifest, opens `$RUN_LOG` and
+  lays down `README.md` and `assets/`; `report_finish` writes the manifest
+  last and echoes the `file://` URL. **A report is cleared only on the
+  proof that we wrote it** - its own `MANIFEST.txt`. A populated directory
+  without one is refused, never emptied, so a `--report=DIR` naming a
+  user's path is safe; an `--artifacts=TMP` **inside** the report is
+  refused for the same reason. **`--regenerate` clears nothing**.
 - **`--regenerate` reads every row it wants in `build_manifest`**, which runs
   before `main` drops the previous manifest. A new row a regenerated run needs
   is read there, never later.
@@ -212,9 +252,10 @@ link); `MANIFEST.txt` line 1 = version string, then LABEL=VALUE.
 
 **Shared once and linked**, never inlined. **No generator takes an assets
 href** - it is `theme.shared_href(depth, name)`, `depth` fixed by layout
-(overview 0, summary 1, heat map/flame graph 2); the one variable is a diff's
-`--single-test-report`. **A page that must stand alone is a new flag with a
-caller.** **The stylesheet is generated, not copied** (`Theme.css()`), and
+(overview 0, summary 1, heat map/flame graph 2) and nothing else. **A page
+that must stand alone is a new flag with a caller** - the last one, a diff's
+`--single-test-report`, was deleted as unreachable. **The
+stylesheet is generated, not copied** (`Theme.css()`), and
 pages are **classic `<script src>`/`<link>` only** - `fetch()` or an ES module
 would need a web server and is what this must never become.
 
@@ -281,10 +322,13 @@ name**, not the text, resolved via `source_text(file_path)`.
   `events:` line and the `e=` URL key keep the old spelling. **Do not open a
   renaming campaign.**
 - One enclosing class per script holds **every** non-exported function.
-  **`import X` only**, never `from X import Y`, packed one alphabetical line
-  per block - hence **`E401` and `I001` are off in `ruff.toml`**. pyright
-  gated at **0 errors**; cost vectors are `callgrind.Costs`, summed only via
-  `costs_add`.
+  **`import X` only**, packed one alphabetical line per block - hence
+  **`E401` and `I001` are off in `ruff.toml`**, whose comment is the rule's
+  long form. **Three `from X import Y` forms are allowed and no others**:
+  `from __future__ import annotations`, and the names taken from
+  `collections.abc` and from `typing`, each on its own line below the first
+  plain line, names spelled alphabetically. pyright gated at **0 errors**;
+  cost vectors are `callgrind.Costs`, summed only via `costs_add`.
 
 ### 6.1 `settings.py`
 
@@ -297,6 +341,19 @@ language. **One setting, one spelling, all three languages**
 words (`HEAT_MAP_TREE_INDENT_PER_LEVEL_PX`, not `tree_indent`), unit suffix
 kept (`_PX`, `_MS`, `_PERCENT`, `_SHARE`, `_CHARS`, `_BYTES`).
 
+- **`settings.py` (imported, never run) holds every setting, then the
+  `SettingsReader` that checks and assigns them** - settings first, the
+  reader's own constants below them, the order every file reading a setting
+  is written in. **The line between the two is `_SETTING_NAMES`**, taken
+  right after `shell_settings_read()` binds the shell's: every setting is
+  bound by then and not one of the reader's constants is, and `all_named()`
+  and `match_check` read that frozenset, never the live namespace. **A
+  setting is spelled bare and the reader's own carry the leading
+  underscore** (`_SHELL_*`, `_SENTINEL_*`, `_SETTINGS_DIRECTORY`) - the same
+  "underscore means mine" as the shell, and what keeps them out of both the
+  browser's object and every module's load. `_is_setting_name()` still
+  **strips** the underscore, because a _declaring_ module spells its
+  declaration `_RANKING_COUNTER_NAME`; do not make it stop.
 - **Stays out**: format facts nobody may retune, class instances, derived
   values, **and anything only verification reads** - so `VALIDATE_*`, the two
   `ReportLayout`s and `SOURCE_SCAN_*` are `validate_report.py`'s own
@@ -312,19 +369,28 @@ kept (`_PX`, `_MS`, `_PERCENT`, `_SHARE`, `_CHARS`, `_BYTES`).
 - **Settings come first**; a file's own constants go **below** the call.
   `E401`/`I001` stay off for the import shape, `E501` for reformat.sh's own
   column check.
-- **Everything the page's JS reads** is in `_BROWSER_SETTING_NAMES`, shipped
-  as **one generated file** from `settings_script_write()`, **frozen to its
-  leaves**, **linked before every reader**. One value, one id, **no
-  hand-matched twin** - why `FLAME_GRAPH_APP_DIR_NAME`,
+- **The browser gets every setting, wholesale**: `settings_script_write()`
+  serializes the module as one JSON literal, **frozen to its leaves**,
+  **linked before every reader**. **There is no list of what the pages may
+  see and none may come back** - a `.js` file reads a setting by naming it,
+  and nothing in Python changes when it starts or stops. **A setting is
+  therefore JSON-serializable**; anything that is not belongs below the cut,
+  where it is not a setting. **The one exclusion is a `settings.sh` word bash
+  expands** (`TIMESTAMP`), held back by `SettingsReader.expanded_names` for the
+  reason `shell_word_expand` gives - its value is the import's, not the run's.
+  One value, one id, **no hand-matched twin** - why `FLAME_GRAPH_APP_DIR_NAME`,
   `FLAME_GRAPH_APP_FILE_GLOBS` and `REPORT_RAW_ARCHIVE_SUFFIX` live once, in
   `settings.sh`. The freeze + reader is `settings_handler.js`, which
-  **`settings.py` reads with a local `open()` against its own `_DIRECTORY`,
-  never `theme.asset_text_read()`** - `theme.py` does `import settings`, so
-  importing theme here would cycle.
+  **`script_write()` reads with a local `open()` against
+  `_SETTINGS_DIRECTORY`, never `theme.asset_text_read()`** - `theme.py` does
+  `import settings`, so importing theme there would cycle.
 - **`settings` is a reader function, not an object**: `settings("NAME")`
-  throws on an unlisted name; **lexical `const`, not a `window` property**.
-  **A `.js` file resolves each setting once into a local `const` of the same
-  name** - **never call `settings()` in a loop or render path**.
+  throws on a name the module does not hold; **lexical `const`, not a `window`
+  property**. **A `.js` file resolves each setting once into a local `const`
+  of the same name, at the top of its IIFE, above its own constants** -
+  **never call `settings()` in a loop or render path**. **A number, colour,
+  key or bound a `.js` file would otherwise spell for itself is a setting** -
+  `theme.js` and `frame.js` keep none.
 
 ### 6.2 `callgrind.py` - the one parser
 
@@ -358,7 +424,9 @@ kept (`_PX`, `_MS`, `_PERCENT`, `_SHARE`, `_CHARS`, `_BYTES`).
 - **`callgrind_to_heatmap.py`**: `render()` substitutes `__SCRIPTS__`
   **before** `__DATA__`, and that result must never be scanned again. Order:
   `theme.page_preamble_scripts()`, `sources/`, `ui_strings.js`, `theme.js`,
-  `heatmap.js`.
+  `heatmap.js`. The head is `theme.page_document`'s, asked for the heat map
+  stylesheet with `extra_css` and told `body_holds_scripts` because
+  `__SCRIPTS__` sits where its own script block would go.
 - **No generator holds a multi-line HTML/CSS/JS literal** - each is a real
   file in `scripts/` read via `theme.asset_text_read()`, so **their JS is
   written plainly**. `flame_bootstrap.js` keeps bare `__NAME__`/`__DATA__`
@@ -367,12 +435,17 @@ kept (`_PX`, `_MS`, `_PERCENT`, `_SHARE`, `_CHARS`, `_BYTES`).
 - **`cyg_callback.c`**: `next` must stay a pointer and `end` a variable, so
   the hot path stays 11/12 instructions; `next == end` = not sampling. Setup
   is a constructor (incl. `memset`, so no page fault lands in a timed call).
-  Its header comment is the format reference. Single-threaded.
+  Its header comment is the format reference - including the `buildid <hex>
+  <path>` lines the dump appends to the `.maps` copy, one per loaded object,
+  which is what lets a reader refuse a stale trace. Single-threaded.
 - **`trace_to_speedscope.py`** takes the busiest run's first
   `FLAME_GRAPH_MAX_RECORDED_CALLS` = 200 complete calls, hard-coded for the
   current `TESTS_C` - retune if a test's shape changes. Must run while
   `build-instr` still holds the traced binary; GCC instruments inlined bodies,
-  so inlined helpers are frames.
+  so inlined helpers are frames. **It refuses an object whose build-id moved**
+  since the trace was recorded (`buildid_verify`), so "must run while" is now
+  enforced, not just documented: rebuild before converting and the run stops
+  naming both ids.
 - **`validate_report.py OUTDIR [--diff]`** is a structural smoke test.
   **It greps generated pages for three JS names - contract, not private**:
   `loadFileFromBase64`, `var document_base64 = "..."`,
@@ -436,11 +509,14 @@ appears anywhere (only `<iframe title="report page">` remains).
   `Theme.pairs()` fails (`HEAT_COLOR_LOGO_STOPS` exempt).
 - **Stylizing the heat map is forbidden - it renders precisely as
   advertised.** `HEAT_COLOR_LOGO_STOPS` is the user's own palette, picked to
-  be seen, so **a cell paints the stop itself** - `heat_style()` and
-  `cell_style()` interpolate between the two stops the position falls
-  between and stop there. **No alpha, no fade, no blend over the
-  background**, and no softer variant for the tree: the alpha settings were
-  removed and must not come back. A session may fix a mapping that
+  be seen, so **a cell paints the stop itself** - `ramp_channels_at()` in
+  `theme.js` is the one interpolation, between the two stops the position
+  falls between, and it stops there; `cell_style()` and `logo_color_at()`
+  are its only callers and the ramp reaches it as
+  `settings("HEAT_COLOR_LOGO_STOPS")`, never through `__DATA__`. **No
+  alpha, no fade, no blend over the background**, and no softer variant for
+  the tree: the alpha settings were removed and must not come back. A
+  session may fix a mapping that
   contradicts this file or `README.md`; it may **not** retune a stop, a
   curve or a contrast rule because the result would look better, and may not
   add a new visual treatment on top. **No redesign, ever, on a session's own
@@ -491,11 +567,14 @@ floor: `HEAT_COLOR_SMALLEST_VISIBLE_SHARE` went with `theme.heat_t()`, since
 sign (`▲11.1%`, `▼-100.0%`); an amount carries only a minus when negative, the
 **ASCII hyphen** - U+2212 is not in the allow list and neither renderer emits
 it. Under 0.01% → `▲≈0.00%`; a zero baseline → `▲∞%`. **Past 100% a diff
-share switches to a multiple** (`▲1.30x`), and at or past `999.99x` to
-`>1000x`; those two state a bound, so no sign. **A drop can't pass -100%**, so
+share switches to a multiple** (`▲1.30x`), and at or past
+**`NUMBER_LARGEST_PRINTED_MULTIPLE_TIMES`** (999.99) to `>1000x`; those two
+state a bound, so no sign. **A drop can't pass -100%**, so
 the multiple branch is rise-only - don't "fix" negative multiples. `theme.js`'s
 `report_ui` functions and `theme.py`'s `NumberFormat` are kept in step by
-hand, verified on README's rows.
+hand, verified on README's rows; **both read the bound as a setting** - it was
+once a number spelled in each file and "kept in step", which is exactly what a
+setting exists to end.
 
 ### 8.2 Frames and URL state
 
@@ -511,11 +590,12 @@ the thin top-level frame controller** - cross-frame talk (`is_framed`,
   >1 counter. **Nothing is remembered outside the URL** except
   `heat.scale`/`heat.sort` and `split.<pane>`.
 - **The local store is versioned**: `STORAGE_VERSION` = `perf2html v1` under
-  `perf2html.version`, a bare string, not JSON. Not **exactly** the current
-  string → sweep every key this report owns; **bumping it is how a
-  stored-format change is rolled out**. **A new key must go in
-  `STORAGE_OWNED_KEYS` or `STORAGE_OWNED_PREFIXES` (`split.`) or its data
-  outlives every bump.**
+  `STORAGE_VERSION_KEY` = `perf2html.version`, a bare string, not JSON. Not
+  **exactly** the current string → sweep every key this report owns;
+  **bumping it is how a stored-format change is rolled out**. **A new key must
+  go in `STORAGE_OWNED_KEYS` or `STORAGE_OWNED_PREFIXES` (`split.`) or its
+  data outlives every bump.** All four are **settings**, not `theme.js`
+  constants; the keys themselves stay boundary names.
 - `FRAME_JS` loads with `location.replace()`, passing
   `link_href + (inner_hash || "#")` - **never `iframe.src`** (a history entry
   per load, back desyncs). `"#"` not `""`: a fragment-less URL is a reload.

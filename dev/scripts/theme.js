@@ -2,45 +2,53 @@ window.report_ui = (function () {
   "use strict";
 
   const HEAT_COLOR_LOGO_STOPS = settings("HEAT_COLOR_LOGO_STOPS");
+  const LAYOUT_RESIZE_SETTLE_DELAY_MS = settings(
+    "LAYOUT_RESIZE_SETTLE_DELAY_MS",
+  );
+  const NUMBER_LARGEST_PRINTED_MULTIPLE_TIMES = settings(
+    "NUMBER_LARGEST_PRINTED_MULTIPLE_TIMES",
+  );
   const NUMBER_SMALLEST_PRINTED_PERCENT = settings(
     "NUMBER_SMALLEST_PRINTED_PERCENT",
   );
+  const PANE_SPLITTER_NARROWEST_PX = settings("PANE_SPLITTER_NARROWEST_PX");
+  const PANE_SPLITTER_WIDEST_WINDOW_SHARE = settings(
+    "PANE_SPLITTER_WIDEST_WINDOW_SHARE",
+  );
+  const STORAGE_OWNED_KEYS = settings("STORAGE_OWNED_KEYS");
+  const STORAGE_OWNED_PREFIXES = settings("STORAGE_OWNED_PREFIXES");
+  const STORAGE_VERSION = settings("STORAGE_VERSION");
+  const STORAGE_VERSION_KEY = settings("STORAGE_VERSION_KEY");
   const TABLE_COLUMN_NARROWEST_DRAG_PX = settings(
     "TABLE_COLUMN_NARROWEST_DRAG_PX",
   );
 
-  const LAYOUT_RESIZE_SETTLE_DELAY_MS = 120;
-  const LOGO_CHANNEL_STOPS = HEAT_COLOR_LOGO_STOPS.map((hex) =>
+  const RAMP_CHANNEL_STOPS = HEAT_COLOR_LOGO_STOPS.map((hex) =>
     [1, 3, 5].map((index) => parseInt(hex.slice(index, index + 2), 16)),
   );
-  const MULTIPLE_UPPER_BOUND_TIMES = 999.99;
-  const PANE_SPLITTER_NARROWEST_PX = 120;
-  const PANE_SPLITTER_WIDEST_WINDOW_SHARE = 0.6;
-  const STORAGE_OWNED_KEYS = ["heat.scale", "heat.sort"];
-  const STORAGE_OWNED_PREFIXES = ["split."];
-  const STORAGE_VERSION = "perf2html v1";
-  const STORAGE_VERSION_KEY = "perf2html.version";
 
   const is_framed = window.parent !== window;
   const registered_panes = [];
   let resize_debounce_timer = null;
   let storage_is_checked = false;
 
-  function logo_color_at(fraction) {
-    const scaled_position = fraction * (LOGO_CHANNEL_STOPS.length - 1);
+  function ramp_channels_at(fraction) {
+    const scaled_position = fraction * (RAMP_CHANNEL_STOPS.length - 1);
     const index = Math.min(
       Math.max(Math.floor(scaled_position), 0),
-      LOGO_CHANNEL_STOPS.length - 2,
+      RAMP_CHANNEL_STOPS.length - 2,
     );
     const step_fraction = scaled_position - index;
-    const mixed_channels = [0, 1, 2].map((channel) => {
-      const low_channel = LOGO_CHANNEL_STOPS[index][channel],
-        high_channel = LOGO_CHANNEL_STOPS[index + 1][channel];
+    return [0, 1, 2].map((channel) => {
+      const low_channel = RAMP_CHANNEL_STOPS[index][channel],
+        high_channel = RAMP_CHANNEL_STOPS[index + 1][channel];
       return Math.round(
         low_channel + (high_channel - low_channel) * step_fraction,
       );
     });
-    return `rgb(${mixed_channels.join(",")})`;
+  }
+  function logo_color_at(fraction) {
+    return `rgb(${ramp_channels_at(fraction).join(",")})`;
   }
   function logo_letters_build(text, class_name, start_fraction) {
     const letters = [...text];
@@ -98,7 +106,7 @@ window.report_ui = (function () {
   function multiple_text(percent) {
     if (percent <= 100) return percent_text(percent);
     const times = percent / 100;
-    return times < MULTIPLE_UPPER_BOUND_TIMES
+    return times < NUMBER_LARGEST_PRINTED_MULTIPLE_TIMES
       ? fixed_text(times, 2) + "x"
       : ">1000x";
   }
@@ -446,13 +454,14 @@ window.report_ui = (function () {
     layout_activate,
     layout_refresh,
     layout_reset,
+    logo_color_at,
+    logo_letters_build,
     multiple_text,
     pane_splitter: { attach: pane_splitter_attach },
     parent_listen,
     parent_post,
     percent_text,
-    logo_color_at,
-    logo_letters_build,
+    ramp_channels_at,
     signed_human_text,
     signed_percent_text,
     view_storage,

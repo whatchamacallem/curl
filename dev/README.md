@@ -105,11 +105,11 @@ view it may also be a percentage of a file or function if selected.
 ### Diff report
 
 A diff report uses percentages the same way a stock market ticker does. Every
-number in it is the modified profile minus the baseline one, per function,
-file and line, and every share divides that difference by the same thing's own
+number in it is the modified profile minus the baseline one, per function, file
+and line, and every share divides that difference by the same thing's own
 baseline count. So a share says how much this line moved against what it used
-to cost, not what part of the report it is. Half as long is `▼-50.0%`, twice
-as long is `▲100.0%`, and smaller is better.
+to cost, not what part of the report it is. Half as long is `▼-50.0%`, twice as
+long is `▲100.0%`, and smaller is better.
 
 | example            |        % |
 | ------------------ | -------: |

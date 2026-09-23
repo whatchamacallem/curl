@@ -267,60 +267,19 @@ report_version() {
   head -n 1 "$1/MANIFEST.txt" 2>/dev/null
 }
 
-# report_claim - accept a directory whose MANIFEST.txt line 1 is a version
-# string and whose checksum still matches, else append to _REPORT_ERRORS
-# saying so. SETS that caller global, and is its canonical setter: main()
-# initializes it and validate_run reads every entry back.
+# report_claim - accept a directory that holds up as either kind of
+# report, else append shared.sh's reason to _REPORT_ERRORS. SETS that
+# caller global, and is its canonical setter: main() initializes it and
+# validate_run reads every entry back. Collecting rather than exiting is
+# the whole difference from manifest_verify: a broken report must not
+# stop the reports after it from being validated.
 report_claim() {
-  local _path="$1" _version _recorded _found _error
-  local _full_version="$REPORT_MANIFEST_VERSION_FULL"
-  local _diff_version="$REPORT_MANIFEST_VERSION_DIFF"
-  local _checksum_label="$REPORT_MANIFEST_CHECKSUM_LABEL"
+  local _path="$1" _fault
 
-  if [ ! -d "$_path" ]; then
-    _error="no such directory: $_path -- a report is a directory"
-    _error="$_error whose MANIFEST.txt line 1 reads"
-    _error="$_error \"$_full_version\""
-    _error="$_error or \"$_diff_version\""
-    report_error_add "$_error"
-    return 1
-  fi
-
-  _version="$(report_version "$_path")"
-  case "$_version" in
-    "$_full_version" | "$_diff_version") ;;
-    "")
-      _error="$_path has no MANIFEST.txt, so it is not a finished"
-      _error="$_error report; expected line 1 to read"
-      _error="$_error \"$_full_version\""
-      _error="$_error or \"$_diff_version\""
-      report_error_add "$_error"
-      return 1
-      ;;
-    *)
-      _error="$_path/MANIFEST.txt line 1 found \"$_version\";"
-      _error="$_error expected \"$_full_version\""
-      _error="$_error or \"$_diff_version\""
-      report_error_add "$_error"
-      return 1
-      ;;
-  esac
-
-  _recorded="$(manifest_value "$_path" "$_checksum_label")"
-  if [ -z "$_recorded" ]; then
-    _error="$_path/MANIFEST.txt has no $_checksum_label= row, so its"
-    _error="$_error files cannot be verified; expected one"
-    _error="$_error beside the version line \"$_version\""
-    report_error_add "$_error"
-    return 1
-  fi
-  _found="$(checksum_compute "$_path")"
-  if [ "$_found" != "$_recorded" ]; then
-    _error="$_path does not match its recorded $_checksum_label:"
-    _error="$_error found \"$_found\", expected \"$_recorded\""
-    _error="$_error -- a file was added, removed or edited"
-    _error="$_error after the report was written"
-    report_error_add "$_error"
+  _fault="$(manifest_fault_of "$_path" \
+    "$REPORT_MANIFEST_VERSION_FULL" "$REPORT_MANIFEST_VERSION_DIFF")"
+  if [ -n "$_fault" ]; then
+    report_error_add "$_fault"
     return 1
   fi
 

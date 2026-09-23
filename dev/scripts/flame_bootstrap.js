@@ -1,6 +1,10 @@
 (function () {
-  var RETRY_LIMIT = 200;
-  var RETRY_DELAY_MS = 50;
+  var FLAME_GRAPH_STARTUP_POLL_DELAY_MS = settings(
+    "FLAME_GRAPH_STARTUP_POLL_DELAY_MS",
+  );
+  var FLAME_GRAPH_STARTUP_POLL_MAX_ATTEMPTS = settings(
+    "FLAME_GRAPH_STARTUP_POLL_MAX_ATTEMPTS",
+  );
   var STARTUP_FAILED_STRING_ID = "str_error_flame_graph_never_started";
   var document_name = __NAME__;
   var document_base64 = __DATA__;
@@ -16,7 +20,10 @@
     if (strings && typeof strings.text_fill === "function") {
       return new Error(
         strings.text_fill(STARTUP_FAILED_STRING_ID, {
-          seconds: (RETRY_LIMIT * RETRY_DELAY_MS) / 1000,
+          seconds:
+            (FLAME_GRAPH_STARTUP_POLL_MAX_ATTEMPTS *
+              FLAME_GRAPH_STARTUP_POLL_DELAY_MS) /
+            1000,
         }),
       );
     }
@@ -29,10 +36,10 @@
           clearInterval(retry_timer);
           return;
         }
-        if (++retry_count >= RETRY_LIMIT) {
+        if (++retry_count >= FLAME_GRAPH_STARTUP_POLL_MAX_ATTEMPTS) {
           clearInterval(retry_timer);
           throw startup_failure();
         }
-      }, RETRY_DELAY_MS);
+      }, FLAME_GRAPH_STARTUP_POLL_DELAY_MS);
   }
 })();

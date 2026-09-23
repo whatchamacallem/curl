@@ -20,7 +20,6 @@ body {
 }
 #tree {
   width: 280px;
-  min-width: 120px;
   flex: none;
   overflow: auto;
   padding: 4px 0 24px;

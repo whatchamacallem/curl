@@ -63,8 +63,6 @@ class PathInfo(NamedTuple):
 class Profile:
     # the recorded counters, in cost-vector order
     counters: list[str] = dataclasses.field(default_factory=list)
-    # what a cost line's leading columns mean
-    positions: list[str] = dataclasses.field(default_factory=lambda: ["line"])
     # the profiled command line
     command: str = ""
     # callgrind's own total -- the self-check divides by it
@@ -219,7 +217,11 @@ class Callgrind:
             }
 
         # Expand one "(7)" back to its name, learning the name when
-        # this is where it is spelled out.
+        # this is where it is spelled out. An id this file never spelled
+        # out is a name we would otherwise invent: callgrind compresses
+        # every kind into one space per kind, so a miss means a line the
+        # parser dropped, and resolving it to the literal "(7)" would
+        # hand a page that text as a file or function name.
         def uncompress(self, kind: str, value: str) -> str:
             match = Callgrind.NAME_COMPRESSION_RE.match(value)
             if not match:
@@ -228,7 +230,13 @@ class Callgrind:
             if name is not None:
                 self.names[kind][ident] = name
                 return name
-            return self.names[kind].get(ident, f"({ident})")
+            known = self.names[kind].get(ident)
+            if known is None:
+                sys.exit(
+                    f"error: {kind}=({ident}) refers to a name this file"
+                    " never spelled out"
+                )
+            return known
 
     # PendingCall - A "calls=" line, waiting for the cost line that follows it.
     class PendingCall(NamedTuple):
@@ -348,10 +356,7 @@ class Callgrind:
                     "error: cannot merge profiles with different counters:"
                     f" {first.counters} vs {other.counters}"
                 )
-        merged = Profile(
-            counters=list(first.counters),
-            positions=list(first.positions),
-        )
+        merged = Profile(counters=list(first.counters))
         merged.command = self.merge_command(profiles)
         if all(other.summary for other in profiles):
             merged.summary = [
@@ -510,6 +515,13 @@ class Callgrind:
                     cur_callee_file = names.uncompress("fl", val)
                 elif key == "cfn":
                     cur_callee_function = names.uncompress("fn", val)
+                elif key in ("jfi", "jfn"):
+                    # --collect-jumps names a jump's target. It shares the
+                    # fl/fn name spaces, so it has to be learned or a later
+                    # bare "(7)" of that id resolves to nothing. The target
+                    # is not where the next cost line is attributed, so
+                    # neither current name moves.
+                    names.uncompress("fl" if key == "jfi" else "fn", val)
                 elif key == "calls":
                     parts = val.split()
                     target_line = (
@@ -534,8 +546,7 @@ class Callgrind:
                 profile.counters = val.split()
                 counter_count = len(profile.counters)
             elif key == "positions":
-                profile.positions = val.split()
-                positions.reset(profile.positions)
+                positions.reset(val.split())
             elif key == "cmd":
                 profile.command = val
             elif key in ("summary", "totals"):
@@ -619,16 +630,6 @@ def path_norm(path: str) -> PathInfo:
 # Read callgrind files into one profile, refusing any that do not add up.
 def profile_load(paths: Sequence[str]) -> Profile:
     return Callgrind().load(paths)
-
-
-# Add several profiles of the same counters together.
-def profile_merge(profiles: Sequence[Profile]) -> Profile:
-    return Callgrind().merge(profiles)
-
-
-# Parse callgrind-format text that is already in hand.
-def profile_parse(text: str) -> Profile:
-    return Callgrind().parse(text)
 
 
 # Add a call count and its cost into a table, starting a fresh entry

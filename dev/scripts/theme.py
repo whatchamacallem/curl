@@ -19,6 +19,7 @@ _ASSET_THEME_STYLESHEET_NAME: str = ""
 _ASSET_UI_STRINGS_SCRIPT_NAME: str = ""
 _HEAT_COLOR_FULL_SCALE_PERCENT: int = 0
 _HEAT_COLOR_LOGO_STOPS: list[str] = []
+_NUMBER_LARGEST_PRINTED_MULTIPLE_TIMES: float = 0.0
 _NUMBER_SMALLEST_PRINTED_PERCENT: float = 0.0
 _PAGE_FONT_FAMILY: str = ""
 _REPORT_ASSETS_DIR_NAME: str = ""
@@ -30,11 +31,6 @@ _THEME_COLOR_ROLE_BACKGROUND_SHADE_FACTOR: float = 0.0
 _THEME_COLOR_ROLE_SOURCES: dict[str, tuple[str, str]] = {}
 _THEME_TIME_UNIT_ENTRIES: tuple[tuple[str, float], ...] = ()
 settings.load_into(__name__)
-
-# The multiple a rise stops being printed at and becomes the ">1000x" bound,
-# which states that the rise ran off the column rather than a value. Kept in
-# step with theme.js's MULTIPLE_UPPER_BOUND_TIMES.
-_MULTIPLE_UPPER_BOUND_TIMES = 999.99
 
 
 # Cell - One table cell: the text, plus every way a page can dress it up.
@@ -61,8 +57,6 @@ class Column(NamedTuple):
     numeric: bool = False
     # a fixed width in characters, instead of measuring the rows
     width: int | None = None
-    # the widest a measured column may get before it truncates
-    clip: int | None = None
     # the column that soaks up the leftover width in a fill table
     grow: bool = False
 
@@ -88,22 +82,6 @@ class Theme:
         light: str
         # the dark member, exposed to CSS as --<name>
         dark: str
-
-    # Rgb - One colour split into channels, so it can be mixed and measured.
-    class Rgb(NamedTuple):
-        # 0..255
-        red: int
-        # 0..255
-        green: int
-        # 0..255
-        blue: int
-
-    # TimeUnit - One time suffix and how many seconds one of it is.
-    class TimeUnit(NamedTuple):
-        # what to print, e.g. "ms"
-        suffix: str
-        # how long one of them lasts
-        seconds: float
 
     # NumberFormat - Every number a page prints, in its page-ready form.
     class NumberFormat:
@@ -138,7 +116,7 @@ class Theme:
             if percent <= 100:
                 return self.percent(percent)
             times = percent / 100
-            if times >= _MULTIPLE_UPPER_BOUND_TIMES:
+            if times >= _NUMBER_LARGEST_PRINTED_MULTIPLE_TIMES:
                 return ">1000x"
             return self.fixed_text(times, 2) + "x"
 
@@ -197,6 +175,22 @@ class Theme:
             )
             return f"{sign}{magnitude / unit.seconds:.2f}{unit.suffix}"
 
+    # Rgb - One colour split into channels, so it can be mixed and measured.
+    class Rgb(NamedTuple):
+        # 0..255
+        red: int
+        # 0..255
+        green: int
+        # 0..255
+        blue: int
+
+    # TimeUnit - One time suffix and how many seconds one of it is.
+    class TimeUnit(NamedTuple):
+        # what to print, e.g. "ms"
+        suffix: str
+        # how long one of them lasts
+        seconds: float
+
     # Read one scripts/ file off disk, to inline into a page.
     def asset_read(self, name: str) -> str:
         with open(
@@ -254,8 +248,6 @@ class Theme:
                 for row in rows:
                     if index < len(row):
                         width = max(width, len(row[index].text))
-                if column.clip is not None:
-                    width = max(len(column.label), min(width, column.clip))
             widths.append(width + _TABLE_COLUMN_EXTRA_WIDTH_CHARS)
         return widths
 
@@ -290,7 +282,14 @@ class Theme:
             + self.asset_read(_ASSET_THEME_STYLESHEET_NAME)
         )
 
-    # One page.
+    # One page. A page linking a stylesheet of its own names it in
+    # extra_css, which follows the theme's. A body that already carries its
+    # own script block says so with body_holds_scripts, and then this adds
+    # none of its own: the heat map substitutes every script it links into
+    # its body template's __SCRIPTS__ marker, which sits exactly where this
+    # block would otherwise go, and a second block would load settings.js
+    # and theme.js twice. Such a body opens with page_preamble_scripts()
+    # itself, so the error overlay is still the first script on the page.
     def document(
         self,
         title: str,
@@ -298,20 +297,26 @@ class Theme:
         extra_js: Sequence[str] = (),
         body_class: str = "",
         depth: int = 0,
+        extra_css: Sequence[str] = (),
+        body_holds_scripts: bool = False,
     ) -> str:
         assets_href = shared_href(depth, _REPORT_ASSETS_DIR_NAME)
         body_attr = f' class="{body_class}"' if body_class else ""
-        head = (
-            '<link rel="stylesheet" '
-            f'href="{assets_href}/{_ASSET_THEME_STYLESHEET_NAME}">\n'
+        head = "".join(
+            f'<link rel="stylesheet" href="{assets_href}/{name}">\n'
+            for name in (_ASSET_THEME_STYLESHEET_NAME, *extra_css)
         )
-        script = "".join(
-            f'<script src="{assets_href}/{name}"></script>\n'
-            for name in (
-                *page_preamble_scripts(),
-                _ASSET_SETTINGS_SCRIPT_NAME,
-                _ASSET_THEME_SCRIPT_NAME,
-                *extra_js,
+        script = (
+            ""
+            if body_holds_scripts
+            else "".join(
+                f'<script src="{assets_href}/{name}"></script>\n'
+                for name in (
+                    *page_preamble_scripts(),
+                    _ASSET_SETTINGS_SCRIPT_NAME,
+                    _ASSET_THEME_SCRIPT_NAME,
+                    *extra_js,
+                )
             )
         )
         return (
@@ -584,8 +589,18 @@ def page_document(
     extra_js: Sequence[str] = (),
     body_class: str = "",
     depth: int = 0,
+    extra_css: Sequence[str] = (),
+    body_holds_scripts: bool = False,
 ) -> str:
-    return _RENDERER.document(title, body, extra_js, body_class, depth)
+    return _RENDERER.document(
+        title,
+        body,
+        extra_js,
+        body_class,
+        depth,
+        extra_css,
+        body_holds_scripts,
+    )
 
 
 # page_preamble_scripts - The scripts every page links before any other,

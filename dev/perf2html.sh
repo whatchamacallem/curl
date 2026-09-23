@@ -125,8 +125,8 @@ stamp_reuse() {
   # a report is only a report if its version line and its recorded
   # checksum both still hold, so --regenerate cannot read back a tree an
   # aborted run or a later edit left behind
-  manifest_verify "$_OUT_DIR" "$REPORT_MANIFEST_VERSION_FULL" \
-    "--regenerate input"
+  manifest_verify "$_OUT_DIR" "--regenerate input" \
+    "$REPORT_MANIFEST_VERSION_FULL"
   TIMESTAMP="$(manifest_value "$_OUT_DIR" stamp)"
   [ -n "$TIMESTAMP" ] || {
     echo "error: $_manifest has no stamp= row, so its recordings" \
@@ -313,8 +313,7 @@ trace_render() {
     echo "error: the native trace of $_test failed; its output is in $_log" >&2
     exit 1
   }
-  cat "$_log" >>"$RUN_LOG"
-  if [ "$VERBOSE" = 1 ]; then cat "$_log"; fi
+  log_verbose_file "$_log"
   command_run python3 scripts/build_flame_graph.py \
     --flame-graph-dir "$_out/flame-graph" --profile-json "$_TRACE_JSON" \
     --app-href "../../$FLAME_GRAPH_APP_DIR_NAME" \
@@ -399,8 +398,7 @@ run_one() {
         "$_out/perf-tool/output.txt" >&2
       exit 1
     }
-  cat "$_out/perf-tool/output.txt" >>"$RUN_LOG"
-  if [ "$VERBOSE" = 1 ]; then cat "$_out/perf-tool/output.txt"; fi
+  log_verbose_file "$_out/perf-tool/output.txt"
   _timing="$(awk '
     /^Time\/[A-Za-z]+:/ {
       unit = $1
@@ -451,7 +449,7 @@ run_all() {
     printf '%s' "$_rows"
     echo "Time:     $_total usecs"
   } >"$_out/perf-tool/output.txt"
-  if [ "$VERBOSE" = 1 ]; then cat "$_out/perf-tool/output.txt"; fi
+  log_verbose_file "$_out/perf-tool/output.txt"
 
   rm -rf "$_out/flame-graph"
   report_render all "$_out" ""
@@ -482,25 +480,22 @@ main() {
   toolchain_check
   [ "$_KEEP_ARTIFACTS" = 1 ] || artifacts_clean
   if [ "$_REGENERATE" = 1 ]; then stamp_reuse; fi
+  # the last reader of the previous run's manifest: report_begin below
+  # drops it, and clears the report unless this is a --regenerate
   build_manifest
-  mkdir -p "$_OUT_DIR" "$ARTIFACTS_DIR"
-  # build_manifest above is the last reader of the previous run's
-  # manifest. Drop it now, so a run that aborts from here on leaves a
-  # directory no tool will open.
   _HEADER_ROWS=()
-  rm -f "$_OUT_DIR/MANIFEST.txt"
+  local _log_name="profile.$TIMESTAMP.log"
+  # --regenerate rebuilds this report's pages out of the artifacts dir and
+  # reads the report itself back to find them, so it is the one mode that
+  # must not start by clearing it
   if [ "$_REGENERATE" = 1 ]; then
-    RUN_LOG="$ARTIFACTS_DIR/regenerate.$TIMESTAMP.$(date +%s).log"
-  else
-    RUN_LOG="$ARTIFACTS_DIR/profile.$TIMESTAMP.log"
+    _log_name="regenerate.$TIMESTAMP.$(date +%s).log"
   fi
-  cp README.md "$_OUT_DIR/README.md"
-  echo "dev/perf2html.sh $TIMESTAMP: ${_CMAKE_FLAGS[*]} -> $_OUT_DIR" \
-    >"$RUN_LOG"
+  report_begin "$_OUT_DIR" "$_log_name" \
+    "dev/perf2html.sh $TIMESTAMP: ${_CMAKE_FLAGS[*]} -> $_OUT_DIR" \
+    "$_REGENERATE"
   build_compile
   flame_app_install "$_OUT_DIR"
-  command_run python3 scripts/build_report.py assets \
-    -o "$_OUT_DIR/$REPORT_ASSETS_DIR_NAME"
 
   local _test_name
   for _test_name in "${_TESTS[@]}"; do
@@ -508,17 +503,9 @@ main() {
   done
   run_all "$_OUT_DIR/all"
 
-  # last of all, once every page, asset and raw archive is in place: the
-  # manifest is what says this run finished, and its checksum covers the
-  # finished tree
-  log_verbose "== manifest -> $_OUT_DIR/MANIFEST.txt =="
-  manifest_write "$REPORT_MANIFEST_VERSION_FULL" "$_OUT_DIR" \
+  report_finish "$_OUT_DIR" "$REPORT_MANIFEST_VERSION_FULL" \
     "${_HEADER_ROWS[@]}"
-  printf '%-13s%s\n' manifest \
-    "$(manifest_value "$_OUT_DIR" "$REPORT_MANIFEST_CHECKSUM_LABEL")"
-
   if [ "$_KEEP_ARTIFACTS" != 1 ]; then artifacts_clean; fi
-  echo "file://$_OUT_DIR/index.html"
 }
 
 main "$@"

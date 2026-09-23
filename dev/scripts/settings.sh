@@ -53,6 +53,10 @@ FLAME_GRAPH_APP_FILE_GLOBS=('speedscope-*.js' 'speedscope-*.css' '*.woff2')
 # cannot be it, being written after every page exists
 HEADER_ROWS_NAME=header.overview
 
+# lines of a failed child's output reprinted on the terminal. The whole of
+# it is in $RUN_LOG either way, which the same message names
+LOG_FAILURE_TAIL_LINES=40
+
 # the core every measured run is pinned to. Unpinned WSL2 noise is ~106%
 PROFILE_PINNED_CPU=3
 

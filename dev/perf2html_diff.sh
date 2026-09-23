@@ -10,7 +10,7 @@ cd "$(dirname "$_SCRIPT")"
 . ./scripts/settings.sh
 . ./scripts/shared.sh
 
-# Must be kept in sync with the README.txt and no other usage docs allowed.
+# Must be kept in sync with the README.md and no other usage docs allowed.
 usage_show() {
   cat <<'EOF'
 perf2html_diff.sh [debug-flags] [baseline] [modified] [diff]
@@ -102,17 +102,16 @@ args_parse() {
 
 # manifest_check - refuses an input whose version line is not exactly a
 # perf2html.sh report's, which is how a diff is never read back as one.
+# The one version string it names is what does that; saying so out loud
+# is all this adds over manifest_verify.
 manifest_check() {
   local _dir="$1" _role="$2" _manifest="$1/MANIFEST.txt"
   if [ -f "$_manifest" ] \
     && [ "$(head -1 "$_manifest")" = "$REPORT_MANIFEST_VERSION_DIFF" ]; then
     echo "error: can't diff a diff -- the $_role report was written by" \
       "perf2html_diff.sh: $_dir" >&2
-    echo "       found:    $REPORT_MANIFEST_VERSION_DIFF" >&2
-    echo "       expected: $REPORT_MANIFEST_VERSION_FULL" >&2
-    exit 2
   fi
-  manifest_verify "$_dir" "$REPORT_MANIFEST_VERSION_FULL" "$_role"
+  manifest_verify "$_dir" "$_role" "$REPORT_MANIFEST_VERSION_FULL"
 }
 
 # header_file_of - writes one input's LABEL=VALUE rows for the overview
@@ -137,11 +136,9 @@ profiles_extract() {
   local _archive _test _into _every=()
   local -a _files
   : >"$_listing"
-  for _archive in "$_dir"/raw/*"$REPORT_RAW_ARCHIVE_SUFFIX" \
-    "$_dir"/*/raw/*"$REPORT_RAW_ARCHIVE_SUFFIX"; do
+  for _archive in "$_dir"/*/raw/*"$REPORT_RAW_ARCHIVE_SUFFIX"; do
     [ -f "$_archive" ] || continue
     _test="$(basename "$(dirname "$(dirname "$_archive")")")"
-    [ "$_test" = "$(basename "$_dir")" ] && _test=.
     _into="$ARTIFACTS_DIR/$_role.$_test.$TIMESTAMP"
     rm -rf "$_into"
     mkdir -p "$_into"
@@ -150,7 +147,7 @@ profiles_extract() {
       -name 'callgrind.out.*' | sort)
     [ "${#_files[@]}" -gt 0 ] || continue
     listing_row_write "$_listing" "$_test" "${_files[@]}"
-    [ "$_test" = . ] || _every+=("${_files[@]}")
+    _every+=("${_files[@]}")
   done
   [ "${#_every[@]}" -eq 0 ] \
     || listing_row_write "$_listing" all "${_every[@]}"
@@ -211,10 +208,9 @@ profiles_of() {
 # diff_one - subtracts one test and generates its summary and heat map
 diff_one() {
   local _test="$1" _out="$2" _name="$3"
-  local _diff_file _callers_file _file _help_args=()
-  local _archive _root_args=()
+  local _diff_file _callers_file _file
+  local _archive
   local -a _base_files _cur_files _args
-  [ "$_MULTI" = 1 ] || _root_args=(--single-test-report)
   _diff_file="$ARTIFACTS_DIR/callgrind.diff.$_name.$TIMESTAMP"
   _callers_file="$_diff_file.callers.json"
   mapfile -t _base_files < <(profiles_of "$_BASE_LISTING" "$_test")
@@ -230,7 +226,7 @@ diff_one() {
   log_verbose "== [$_name]: heat map -> $_out/heat-map/index.html =="
   command_run python3 scripts/callgrind_to_heatmap.py "$_diff_file" \
     -o "$_out/heat-map/index.html" \
-    --title "$_name / heat map" --diff "${_root_args[@]}" \
+    --title "$_name / heat map" --diff \
     --baseline-data "$_callers_file"
 
   log_verbose "== [$_name]: index -> $_out/index.html =="
@@ -238,11 +234,10 @@ diff_one() {
   _archive="$_out/raw/$(basename "$_out")$REPORT_RAW_ARCHIVE_SUFFIX"
   archive_write "$(basename "$_out")" "$_out" "" \
     "$_diff_file" "$_callers_file"
-  [ "$_MULTI" = 1 ] && _help_args=(--help-href ../README.md)
   command_run python3 scripts/build_report.py test "$_diff_file" \
-    -o "$_out/index.html" --test "$_name" --diff "${_root_args[@]}" \
+    -o "$_out/index.html" --test "$_name" --diff \
     --callers-data "$_callers_file" --raw-data "$_archive" \
-    "${_help_args[@]}"
+    --help-href ../README.md
   printf '%-13sdiff -> %s\n' "$_name" "${_out#"$PWD"/}/index.html"
 }
 
@@ -257,22 +252,15 @@ main() {
   if [ "$_REGENERATE" = 1 ]; then
     # reusing a previous stamp means reading that report back, so it has
     # to hold up as one first
-    manifest_verify "$_OUT_DIR" "$REPORT_MANIFEST_VERSION_DIFF" \
-      "--regenerate input"
+    manifest_verify "$_OUT_DIR" "--regenerate input" \
+      "$REPORT_MANIFEST_VERSION_DIFF"
     local _previous
     _previous="$(manifest_value "$_OUT_DIR" stamp)"
     if [ -n "$_previous" ]; then TIMESTAMP="$_previous"; fi
   fi
-  mkdir -p "$_OUT_DIR" "$ARTIFACTS_DIR"
-  # the line above is the last reader of the previous run's manifest, so a
-  # run that aborts from here on leaves a directory no tool will open
-  rm -f "$_OUT_DIR/MANIFEST.txt"
-  RUN_LOG="$ARTIFACTS_DIR/diff.$TIMESTAMP.log"
-  cp README.md "$_OUT_DIR/README.md"
-  command_run python3 scripts/build_report.py assets \
-    -o "$_OUT_DIR/$REPORT_ASSETS_DIR_NAME"
-  echo "dev/perf2html_diff.sh $TIMESTAMP: $_BASE_DIR -> $_MOD_DIR ->" \
-    "$_OUT_DIR" >"$RUN_LOG"
+  report_begin "$_OUT_DIR" "diff.$TIMESTAMP.log" \
+    "dev/perf2html_diff.sh $TIMESTAMP: $_BASE_DIR -> $_MOD_DIR -> $_OUT_DIR" \
+    "$_REGENERATE"
 
   local _tests _test_name
   local -a _args
@@ -285,45 +273,25 @@ main() {
     echo "error: the two reports have no test in common" >&2
     exit 2
   }
-  _MULTI=1
-  [ "$_tests" = "." ] && _MULTI=0
-
   echo "dev/perf2html_diff.sh $TIMESTAMP: $(basename "$_BASE_DIR") ->" \
     "$(basename "$_MOD_DIR")"
-  if [ "$_MULTI" = 0 ]; then
-    local _base_file
-    _base_file="$(profiles_of "$_BASE_LISTING" . | head -1)"
-    _test_name="$(basename "$_base_file")"
-    _test_name="${_test_name#callgrind.out.}"
-    _test_name="${_test_name%%.*}"
-    diff_one . "$_OUT_DIR" "$_test_name diff"
-  else
-    _args=(-o "$_OUT_DIR/index.html" --diff
-      --header-block "baseline=$(header_file_of "$_BASE_DIR" baseline)"
-      --header-block "modified=$(header_file_of "$_MOD_DIR" modified)")
-    for _test_name in $_tests; do
-      diff_one "$_test_name" "$_OUT_DIR/$_test_name" "$_test_name"
-      _args+=(--test "$_test_name" --diff-profile
-        "$_test_name=$ARTIFACTS_DIR/callgrind.diff.$_test_name.$TIMESTAMP")
-    done
-    log_verbose "== overview -> $_OUT_DIR/index.html =="
-    command_run python3 scripts/build_report.py overview "${_args[@]}"
-    printf '%-13s%s\n' overview "${_OUT_DIR#"$PWD"/}/index.html"
-  fi
+  _args=(-o "$_OUT_DIR/index.html" --diff
+    --header-block "baseline=$(header_file_of "$_BASE_DIR" baseline)"
+    --header-block "modified=$(header_file_of "$_MOD_DIR" modified)")
+  for _test_name in $_tests; do
+    diff_one "$_test_name" "$_OUT_DIR/$_test_name" "$_test_name"
+    _args+=(--test "$_test_name" --diff-profile
+      "$_test_name=$ARTIFACTS_DIR/callgrind.diff.$_test_name.$TIMESTAMP")
+  done
+  log_verbose "== overview -> $_OUT_DIR/index.html =="
+  command_run python3 scripts/build_report.py overview "${_args[@]}"
+  printf '%-13s%s\n' overview "${_OUT_DIR#"$PWD"/}/index.html"
 
-  # last of all, once every page, asset and raw archive is in place: the
-  # manifest is what says this run finished, and its checksum covers the
-  # finished tree
-  log_verbose "== manifest -> $_OUT_DIR/MANIFEST.txt =="
-  manifest_write "$REPORT_MANIFEST_VERSION_DIFF" "$_OUT_DIR" \
+  report_finish "$_OUT_DIR" "$REPORT_MANIFEST_VERSION_DIFF" \
     "baseline=$(path_display "$_BASE_DIR")" \
     "modified=$(path_display "$_MOD_DIR")" \
     "stamp=$TIMESTAMP"
-  printf '%-13s%s\n' manifest \
-    "$(manifest_value "$_OUT_DIR" "$REPORT_MANIFEST_CHECKSUM_LABEL")"
-
   if [ "$_KEEP_ARTIFACTS" != 1 ]; then artifacts_clean; fi
-  echo "file://$_OUT_DIR/index.html"
 }
 
 main "$@"

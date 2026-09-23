@@ -55,6 +55,30 @@ checksum_compute() {
   )
 }
 
+# child_capture - runs one child with its output going to $RUN_LOG, and
+# records the child's exit code rather than taking it, so a caller can
+# decide what a failure means. Verbose tees, so a long step's output
+# arrives as it is produced. SETS the caller globals CHILD_EXIT_CODE and
+# LOG_LINE_FROM, and is their canonical setter: the second is the line
+# $RUN_LOG had reached before the child wrote, which failure_tail_print
+# reads back. It reports through globals and never through stdout,
+# because verbose's tee already owns stdout: a $(child_capture ...) would
+# capture the child's own output along with the code.
+child_capture() {
+  CHILD_EXIT_CODE=0
+  printf '\n$ %s\n' "$*" >>"$RUN_LOG"
+  LOG_LINE_FROM="$(wc -l <"$RUN_LOG")"
+  if [ "$VERBOSE" = 1 ]; then
+    # the `if !` is what keeps pipefail's failure from reaching
+    # PIPESTATUS's reader
+    if ! { "$@" 2>&1 | tee -a "$RUN_LOG"; }; then
+      CHILD_EXIT_CODE="${PIPESTATUS[0]}"
+    fi
+  else
+    "$@" >>"$RUN_LOG" 2>&1 || CHILD_EXIT_CODE=$?
+  fi
+}
+
 # clock_microseconds - wall clock in whole microseconds, from the
 # EPOCHREALTIME builtin (its separator is the locale's, so every
 # non-digit is dropped).
@@ -63,30 +87,16 @@ clock_microseconds() {
   echo "${now//[!0-9]/}"
 }
 
-# command_run - runs one child, logs it to $RUN_LOG, and on failure
-# prints the last 40 lines it wrote and exits with the child's code.
+# command_run - runs one child and, on failure, prints what it wrote and
+# exits with its code. The policy a measuring run wants: the first failure
+# ends the run, because every later step reads what this one was to write.
 command_run() {
-  local exit_code=0 from
-  printf '\n$ %s\n' "$*" >>"$RUN_LOG"
-  from="$(wc -l <"$RUN_LOG")"
   log_verbose "\$ $*"
-  if [ "$VERBOSE" = 1 ]; then
-    # tee so a step's output arrives as it is produced. The `if !` is what
-    # keeps pipefail's failure from reaching PIPESTATUS's reader.
-    if ! { "$@" 2>&1 | tee -a "$RUN_LOG"; }; then
-      exit_code="${PIPESTATUS[0]}"
-    fi
-  else
-    "$@" >>"$RUN_LOG" 2>&1 || exit_code=$?
-  fi
-  if [ "$exit_code" != 0 ]; then
-    {
-      echo
-      echo "error: exit $exit_code from: $*"
-      tail -n +"$((from + 1))" "$RUN_LOG" | tail -n 40
-      echo "(last 40 lines; everything this run printed: $RUN_LOG)"
-    } >&2
-    exit "$exit_code"
+  child_capture "$@"
+  if [ "$CHILD_EXIT_CODE" != 0 ]; then
+    echo >&2
+    failure_tail_print "$CHILD_EXIT_CODE" "$@"
+    exit "$CHILD_EXIT_CODE"
   fi
 }
 
@@ -106,6 +116,21 @@ duration_format() {
 elapsed_format() {
   local delta=$(($(clock_microseconds) - START_US))
   printf '%d.%02d' "$((delta / 1000000))" "$((delta % 1000000 / 10000))"
+}
+
+# failure_tail_print - on stderr, what a failed child wrote: its exit
+# code, the command, and the tail of its output from $LOG_LINE_FROM on.
+# Arguments: the exit code, then the command and its arguments.
+failure_tail_print() {
+  local exit_code="$1"
+  shift
+  {
+    echo "error: exit $exit_code from: $*"
+    tail -n +"$((LOG_LINE_FROM + 1))" "$RUN_LOG" \
+      | tail -n "$LOG_FAILURE_TAIL_LINES"
+    echo "(last $LOG_FAILURE_TAIL_LINES lines; everything this run" \
+      "printed: $RUN_LOG)"
+  } >&2
 }
 
 # install_command_of - one tool's official install command. Nothing
@@ -131,9 +156,72 @@ json_quote() {
   printf '"%s"' "$text"
 }
 
-# log_verbose - the one function testing $VERBOSE. Verbose adds to quiet,
-# so nothing else may guard a printf on it.
+# log_verbose - the one function deciding whether a line is printed.
+# Verbose adds to quiet, so nothing else may guard a printf on it.
 log_verbose() { if [ "$VERBOSE" = 1 ]; then echo "$@"; fi; }
+
+# log_verbose_file - a step whose output was captured to a file rather
+# than run through command_run: append the whole of it to $RUN_LOG, the
+# way command_run would have, and show it too when verbose. Whole lines
+# either way, because it is a file that was written a line at a time.
+log_verbose_file() {
+  local path="$1"
+  cat "$path" >>"$RUN_LOG"
+  if [ "$VERBOSE" = 1 ]; then cat "$path"; fi
+}
+
+# manifest_fault_of - the one reader deciding whether a directory is a
+# finished report. Echoes why it is not, over as many lines as it takes,
+# or nothing at all when it holds up. Every caller opening a report goes
+# through this, so the checksum is re-verified every single time.
+# Arguments: the directory, then each version string line 1 may read.
+# A caller naming one string is how a diff is never read back as a diff
+# input, and naming both is how either kind is accepted.
+manifest_fault_of() {
+  local dir="$1"
+  shift
+  local manifest="$dir/MANIFEST.txt" version recorded found wanted
+  local checksum_label="$REPORT_MANIFEST_CHECKSUM_LABEL"
+  wanted="$(manifest_wanted_phrase "$@")"
+  if [ ! -d "$dir" ]; then
+    echo "no such directory: $dir -- a report is a directory whose"
+    echo "MANIFEST.txt line 1 reads $wanted"
+    return 0
+  fi
+  if [ ! -f "$manifest" ]; then
+    echo "$dir has no MANIFEST.txt, so it is not a finished report"
+    echo "       expected: $wanted"
+    echo "       (a run that aborts writes no manifest; re-run it)"
+    return 0
+  fi
+  version="$(head -1 "$manifest")"
+  local candidate matched=0
+  for candidate in "$@"; do
+    [ "$version" = "$candidate" ] && matched=1
+  done
+  if [ "$matched" = 0 ]; then
+    echo "$dir has an unrecognized MANIFEST.txt"
+    echo "       found:    $version"
+    echo "       expected: $wanted"
+    return 0
+  fi
+  recorded="$(manifest_value "$dir" "$checksum_label")"
+  if [ -z "$recorded" ]; then
+    echo "$dir has no $checksum_label= row, so its files cannot be"
+    echo "verified"
+    echo "       expected: a $checksum_label= row beside the version"
+    echo "       line $version"
+    return 0
+  fi
+  found="$(checksum_compute "$dir")"
+  if [ "$found" != "$recorded" ]; then
+    echo "$dir does not match its recorded $checksum_label"
+    echo "       found:    $found"
+    echo "       expected: $recorded"
+    echo "       (a file was added, removed or edited after the report"
+    echo "       was written)"
+  fi
+}
 
 # manifest_script_write - the assets/ script holding this report's
 # manifest text as a string, for an error page to print on a file:// URL
@@ -160,44 +248,32 @@ manifest_value() {
   sed -n "s/^$2=//p" "$1/MANIFEST.txt" | head -1
 }
 
-# manifest_verify - hard-error unless the manifest exists, its line 1 is
-# exactly "$want" and the files still checksum. Each names found/expected.
+# manifest_verify - hard-error unless the directory holds up as a report
+# whose line 1 is exactly one of the version strings named. The error
+# prints both what was found and what was expected.
+# Arguments: the directory, the role it plays in the message, then each
+# version string line 1 may read.
 manifest_verify() {
-  local dir="$1" want="$2" role="$3"
-  local manifest="$dir/MANIFEST.txt" version recorded found
-  local checksum_label="$REPORT_MANIFEST_CHECKSUM_LABEL"
-  if [ ! -f "$manifest" ]; then
-    echo "error: $role report has no MANIFEST.txt, so it is not a" \
-      "finished report: $dir" >&2
-    echo "       expected its first line to be: $want" >&2
-    echo "       (a run that aborts writes no manifest; re-run it)" >&2
+  local dir="$1" role="$2"
+  shift 2
+  local fault
+  fault="$(manifest_fault_of "$dir" "$@")"
+  if [ -n "$fault" ]; then
+    echo "error: $role report: $fault" >&2
     exit 2
   fi
-  version="$(head -1 "$manifest")"
-  if [ "$version" != "$want" ]; then
-    echo "error: $role report has an unrecognized MANIFEST.txt: $dir" >&2
-    echo "       found:    $version" >&2
-    echo "       expected: $want" >&2
-    exit 2
-  fi
-  recorded="$(manifest_value "$dir" "$checksum_label")"
-  if [ -z "$recorded" ]; then
-    echo "error: $role report has no $checksum_label= row, so its files" \
-      "cannot be verified: $dir" >&2
-    echo "       expected: a $checksum_label= row beside the version" \
-      "line $want" >&2
-    exit 2
-  fi
-  found="$(checksum_compute "$dir")"
-  if [ "$found" != "$recorded" ]; then
-    echo "error: $role report does not match its recorded" \
-      "$checksum_label: $dir" >&2
-    echo "       found:    $found" >&2
-    echo "       expected: $recorded" >&2
-    echo "       (a file was added, removed or edited after the report" \
-      "was written)" >&2
-    exit 2
-  fi
+}
+
+# manifest_wanted_phrase - the version strings an error message says were
+# expected, quoted, and joined with "or" when there is more than one.
+manifest_wanted_phrase() {
+  local phrase=""
+  local candidate
+  for candidate in "$@"; do
+    [ -z "$phrase" ] || phrase="$phrase or "
+    phrase="$phrase\"$candidate\""
+  done
+  echo "$phrase"
 }
 
 # manifest_write - write a report's MANIFEST.txt, checksum row last, and
@@ -217,6 +293,85 @@ manifest_write() {
     [ "$#" = 0 ] || printf '%s\n' "$@"
     printf '%s=%s\n' "$REPORT_MANIFEST_CHECKSUM_LABEL" "$checksum"
   } >"$manifest"
+}
+
+# report_begin - the head of every run that writes a report: clear what a
+# previous run left, create the directories, drop the stale manifest, open
+# $RUN_LOG and lay down the two things every page links, README.md and the
+# shared assets. SETS the caller global RUN_LOG, and is its canonical
+# setter: every command_run after this logs into it.
+# Arguments: the report directory, the run log's file name, the line that
+# log opens with, and 1 to keep the report's contents or 0 to clear them.
+report_begin() {
+  local dir="$1" log_name="$2" opening_line="$3" keep_contents="$4"
+  [ "$keep_contents" = 1 ] || report_contents_clear "$dir"
+  mkdir -p "$dir" "$ARTIFACTS_DIR"
+  # the caller has already read every row it wanted out of the previous
+  # run's manifest, so a run that aborts from here on leaves a directory
+  # no tool will open
+  rm -f "$dir/MANIFEST.txt"
+  RUN_LOG="$ARTIFACTS_DIR/$log_name"
+  echo "$opening_line" >"$RUN_LOG"
+  cp README.md "$dir/README.md"
+  command_run python3 scripts/build_report.py assets \
+    -o "$dir/$REPORT_ASSETS_DIR_NAME"
+}
+
+# report_contents_clear - empty a report directory that a previous run
+# wrote, so nothing it no longer generates survives into the new tree and
+# gets certified by checksum_compute: a dropped test's directory, or an
+# asset since renamed. Its MANIFEST.txt is the proof we wrote it, which is
+# why a directory holding anything else is left alone and reported rather
+# than deleted -- a --report=DIR naming a populated path of the user's own
+# must never be emptied.
+report_contents_clear() {
+  local dir="$1"
+  [ -e "$dir" ] || return 0
+  if [ ! -d "$dir" ]; then
+    echo "error: the report path is not a directory: $dir" >&2
+    exit 2
+  fi
+  # an --artifacts=TMP inside the report would be deleted by the clear
+  # below, taking this run's own recordings with it
+  case "$ARTIFACTS_DIR/" in
+    "$dir"/*)
+      echo "error: the artifacts directory is inside the report, so" \
+        "clearing the report would delete it: $ARTIFACTS_DIR" >&2
+      echo "       (pass an --artifacts=TMP outside $dir)" >&2
+      exit 2
+      ;;
+  esac
+  if [ -f "$dir/MANIFEST.txt" ]; then
+    find "$dir" -mindepth 1 -maxdepth 1 -exec rm -rf {} + || {
+      echo "error: could not empty the previous report: $dir" >&2
+      exit 1
+    }
+    return 0
+  fi
+  # an empty directory is the ordinary first run, and needs no clearing
+  [ -z "$(ls -A "$dir")" ] || {
+    echo "error: $dir holds files but no MANIFEST.txt, so it is not a" \
+      "report this can overwrite" >&2
+    echo "       (an aborted run leaves one: delete it yourself, or" \
+      "name an empty --report directory)" >&2
+    exit 2
+  }
+}
+
+# report_finish - the tail of every run that writes a report: the
+# manifest, which is written last because it is what says the run
+# finished and its checksum covers the finished tree, then the report's
+# own URL.
+# Arguments: the report directory, the version string, then each
+# LABEL=VALUE row the manifest carries.
+report_finish() {
+  local dir="$1" version="$2"
+  shift 2
+  log_verbose "== manifest -> $dir/MANIFEST.txt =="
+  manifest_write "$version" "$dir" "$@"
+  printf '%-13s%s\n' manifest \
+    "$(manifest_value "$dir" "$REPORT_MANIFEST_CHECKSUM_LABEL")"
+  echo "file://$dir/index.html"
 }
 
 # toolchain_check - the only toolchain check the user-facing scripts
@@ -252,4 +407,12 @@ toolchain_check() {
     echo "       (reinstall it: npm install -g speedscope)" >&2
     exit 1
   }
+}
+
+# verbose_flags_of - this run's verbosity as the argument a child script
+# takes, so handing it down is not a second test of $VERBOSE. It asks
+# log_verbose, the one decider, to say the flag: verbose prints it and
+# quiet prints nothing, which is exactly the array the caller wants.
+verbose_flags_of() {
+  log_verbose --verbose
 }

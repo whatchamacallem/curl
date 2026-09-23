@@ -17,14 +17,28 @@
  * masking: rdtsc counts from boot and bit 63 is ~146 years of uptime away at
  * this box's ~2GHz. Readers mask it off (trace_to_speedscope.py's ~EXIT_BIT).
  *
- * /proc/self/maps is needed to turn an address into object + offset.
+ * FILE.maps is a copy of /proc/self/maps, which turns an address into object
+ * + offset, followed by one line per loaded object naming the build the
+ * addresses came from:
+ *
+ *   buildid <hex NT_GNU_BUILD_ID> <object path>
+ *
+ * The path is what the dynamic loader called the object, or /proc/self/exe
+ * resolved for the main executable, which the loader leaves unnamed. An
+ * object carrying no build-id note gets no line. trace_to_speedscope.py
+ * refuses to symbolize an object whose build-id no longer matches, so a
+ * stale trace cannot resolve to a newer build's symbols.
  *
  */
+#define _GNU_SOURCE
+#include <elf.h>
+#include <link.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <unistd.h>
 #include <x86intrin.h>
 
 #define CYG_CALLBACKS_MAGIC 0x32475943ull
@@ -143,6 +157,52 @@ __attribute__((constructor)) static void cyg_callback_init(void)
   }
 }
 
+/* cyg_callback_buildid_write - one "buildid <hex> <path>" line per object,
+ * walking each one's PT_NOTE for its NT_GNU_BUILD_ID. Cold: runs at exit */
+__attribute__((cold)) static int cyg_callback_buildid_write(
+    struct dl_phdr_info *info, size_t size, void *data)
+{
+  FILE *out = data;
+  char self[4096];
+  const char *name = info->dlpi_name;
+  size_t index, byte;
+  ssize_t length;
+  (void)size;
+  if (!name || !name[0]) {
+    /* the loader leaves the main executable unnamed */
+    length = readlink("/proc/self/exe", self, sizeof(self) - 1);
+    if (length <= 0)
+      return 0;
+    self[length] = '\0';
+    name = self;
+  }
+  for (index = 0; index < info->dlpi_phnum; index++) {
+    const ElfW(Phdr) *header = &info->dlpi_phdr[index];
+    const unsigned char *walk, *end;
+    if (header->p_type != PT_NOTE)
+      continue;
+    walk = (const unsigned char *)(info->dlpi_addr + header->p_vaddr);
+    end = walk + header->p_memsz;
+    while (walk + sizeof(ElfW(Nhdr)) <= end) {
+      const ElfW(Nhdr) *note = (const ElfW(Nhdr) *)walk;
+      const unsigned char *note_name = walk + sizeof(*note);
+      const unsigned char *desc = note_name + ((note->n_namesz + 3) & ~3u);
+      if (desc > end || desc + note->n_descsz > end)
+        break;
+      if (note->n_type == NT_GNU_BUILD_ID && note->n_namesz == 4 &&
+          !memcmp(note_name, "GNU", 4) && note->n_descsz) {
+        fputs("buildid ", out);
+        for (byte = 0; byte < note->n_descsz; byte++)
+          fprintf(out, "%02x", desc[byte]);
+        fprintf(out, " %s\n", name);
+        return 0;
+      }
+      walk = desc + ((note->n_descsz + 3) & ~3u);
+    }
+  }
+  return 0;
+}
+
 /* cyg_callback_dump - write the trace and a /proc/self/maps copy at exit */
 __attribute__((destructor)) static void cyg_callback_dump(void)
 {
@@ -162,20 +222,35 @@ __attribute__((destructor)) static void cyg_callback_dump(void)
   hdr[7] = __rdtsc();
   hdr[6] = cyg_callback_now_ns();
   f = fopen(cb->out, "wb");
-  if (!f)
+  if (!f) {
+    perror(cb->out);
     return;
-  fwrite(hdr, sizeof(hdr), 1, f);
-  fwrite(cb->buf, sizeof(cyg_callback_record_t), (size_t)hdr[1], f);
-  fclose(f);
+  }
+  if (fwrite(hdr, sizeof(hdr), 1, f) != 1 ||
+      fwrite(cb->buf, sizeof(cyg_callback_record_t), (size_t)hdr[1], f) !=
+          (size_t)hdr[1]) {
+    perror(cb->out);
+    fclose(f);
+    return;
+  }
+  if (fclose(f)) {
+    perror(cb->out);
+    return;
+  }
   snprintf(path, sizeof(path), "%s.maps", cb->out);
   maps = fopen("/proc/self/maps", "r");
+  if (!maps)
+    perror("/proc/self/maps");
   copy = fopen(path, "w");
+  if (!copy)
+    perror(path);
   if (maps && copy) {
     while (fgets(line, sizeof(line), maps))
       fputs(line, copy);
+    dl_iterate_phdr(cyg_callback_buildid_write, copy);
   }
   if (maps)
     fclose(maps);
-  if (copy)
-    fclose(copy);
+  if (copy && fclose(copy))
+    perror(path);
 }
