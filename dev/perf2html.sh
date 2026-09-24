@@ -88,6 +88,8 @@ args_parse() {
     ARTIFACTS_DIR="$(dirname "$_OUT_DIR")/$ARTIFACTS_NAME"
   fi
   ARTIFACTS_DIR="$(absolute_path "$ARTIFACTS_DIR")"
+  # -O2 -g leads CMAKE_C_FLAGS because -O0 costs are not the shipped build's
+  # (nothing inlined); a later -O the user passes, like -Os, still wins
   local _index _seen=0 _split=0 _flag
   for _index in "${!_CMAKE_FLAGS[@]}"; do
     _flag="${_CMAKE_FLAGS[$_index]}"
@@ -196,10 +198,14 @@ tree_build() {
   command_run cmake --build "$_dir" --parallel --target perf
 }
 
-# build_paths - the two trees and perf binaries, absolute and repo-relative.
+# build_paths - this run's two trees and perf binaries, one tree per cmake
+# command line under each of the repo's two build dirs, so none is shared.
 build_paths() {
-  _BUILD_TREE="$_REPO/$BUILD_DIR"
-  _TRACE_TREE="$_REPO/$TRACE_BUILD_DIR"
+  local _flag_string="${_CMAKE_FLAGS[*]}"
+  # the flags' length, then their alphanumerics: 22_DCMAKECFLAGSO2g
+  local _tree_name="${#_flag_string}_${_flag_string//[^[:alnum:]]/}"
+  _BUILD_TREE="$_REPO/$BUILD_DIR/$_tree_name"
+  _TRACE_TREE="$_REPO/$TRACE_BUILD_DIR/$_tree_name"
   _BIN="$_BUILD_TREE/tests/perf/perf"
   _BIN_REL="$(path_display "$_BIN" "$_REPO")"
   _TRACE_BIN="$_TRACE_TREE/tests/perf/perf"
@@ -285,7 +291,7 @@ trace_render() {
   _TRACE_JSON="$_TRACE_JSON.$TIMESTAMP.speedscope.json"
 
   log_verbose "== [$_test]: native trace, pinned to CPU" \
-    "$PROFILE_PINNED_CPU, _loops=$_loops -> $_out/flame-graph/index.html =="
+    "$PROFILE_PINNED_CPU, loops=$_loops -> $_out/flame-graph/index.html =="
   if [ "$_REGENERATE" = 1 ]; then
     local _saved
     _saved="$(mktemp)"
@@ -486,9 +492,11 @@ run_all() {
 # main - the whole run, ending with the manifest and the report's URL.
 main() {
   args_parse "$@"
+  # the manifest is --regenerate's first step: nothing is created or
+  # deleted before a missing or broken one stops the run
+  if [ "$_REGENERATE" = 1 ]; then stamp_reuse; fi
   toolchain_check
   [ "$_KEEP_ARTIFACTS" = 1 ] || artifacts_clean
-  if [ "$_REGENERATE" = 1 ]; then stamp_reuse; fi
   # the last reader of the previous run's manifest: report_begin below
   # drops it, and clears the report unless this is a --regenerate
   build_manifest

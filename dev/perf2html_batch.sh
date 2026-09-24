@@ -117,6 +117,19 @@ args_parse() {
   RUN_LOG="$ARTIFACTS_DIR/perf2html_batch.$TIMESTAMP.log"
 }
 
+regenerate_inputs_verify() {
+  manifest_verify "$_BASE_DIR" "--regenerate input" \
+    "$REPORT_MANIFEST_VERSION_FULL"
+  manifest_verify "$_MOD_DIR" "--regenerate input" \
+    "$REPORT_MANIFEST_VERSION_FULL"
+  manifest_verify "$_DIFF_DIR" "--regenerate input" \
+    "$REPORT_MANIFEST_VERSION_DIFF"
+  [ -d "$ARTIFACTS_DIR" ] || {
+    echo "error: --regenerate input: no recordings at $ARTIFACTS_DIR" >&2
+    exit 2
+  }
+}
+
 # reports_clean - deletes the three report directories
 reports_clean() {
   rm -rf "$_BASE_DIR" "$_MOD_DIR" "$_DIFF_DIR" || {
@@ -129,6 +142,7 @@ reports_clean() {
 # and owns every deletion of the artifacts directory.
 main() {
   args_parse "$@"
+  if [ "$_REGENERATE" = 1 ]; then regenerate_inputs_verify; fi
   START_US="$(clock_microseconds)"
   local _child_args=("${_PASS_ARGS[@]}" "--artifacts=$ARTIFACTS_DIR")
   if [ "$_KEEP_ARTIFACTS" = 0 ]; then

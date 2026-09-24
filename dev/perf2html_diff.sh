@@ -238,14 +238,14 @@ main() {
 
   manifest_check "$_BASE_DIR" baseline
   manifest_check "$_MOD_DIR" modified
-
-  [ "$_KEEP_ARTIFACTS" = 1 ] || artifacts_clean
   if [ "$_REGENERATE" = 1 ]; then
     # a regenerated report keeps the stamp of the run that measured it, so
     # its own stamp= row never claims a measurement this run did not take
     TIMESTAMP="$(manifest_stamp_of "$_OUT_DIR" "--regenerate input" \
       "$REPORT_MANIFEST_VERSION_DIFF")"
   fi
+
+  [ "$_KEEP_ARTIFACTS" = 1 ] || artifacts_clean
   report_begin "$_OUT_DIR" "diff.$TIMESTAMP.log" \
     "dev/perf2html_diff.sh $TIMESTAMP: $_BASE_DIR -> $_MOD_DIR -> $_OUT_DIR" \
     "$_REGENERATE"

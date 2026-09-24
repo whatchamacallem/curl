@@ -31,7 +31,10 @@ numbers match it.
 1. Multi-item communication follows ISO 2145 numbering.
 1. **Every `dev/*.sh` makes paths absolute at startup; `$PWD` is never read
    again.** `INVOKED_FROM="$PWD"` sits **above** the `cd` to the script's
-   own dir; `args_parse` runs each path through `absolute_path`. After the
+   own dir; `args_parse` runs each path through `absolute_path`, which is
+   `readlink -m` on `$INVOKED_FROM/<path>` (`~/` expanded): `..` resolves
+   after symlinks, as the kernel does; spaces and missing dirs are fine,
+   so `--report=" .././../x/"` works. After the
    `cd`, `$PWD` is `dev/`, so any `$PWD` below `args_parse` is a bug. The
    way back is **`shared.sh`'s `path_display`** only, never a hand-rolled
    `#"$_REPO"/` strip. **A leaf script derives nothing from a
@@ -47,10 +50,10 @@ numbers match it.
    `perf2html_batch.sh` (porcelain) has a working dir (`--target-dir`,
    default CWD) and default names in it. **README and `usage_show` are the
    interface; code drifting from them is the bug.** **The tool is never
-   reshaped for its verifier**: `enforcer.sh` adapts to the tool's layout
-   (per-flags `dev/builds/` trees, added so `regenerate_check` could date
-   each report, were that mistake). **Uncommitted changes are not the
-   design** - the user, HEAD, README and this file are.
+   reshaped for its verifier**: `enforcer.sh` adapts to the tool's layout.
+   The trees placed by `$(dirname "$_SCRIPT")/builds` were the mistake;
+   **a tree per cmake command line is the design**. **Uncommitted changes
+   are not the design** - the user, HEAD, README and this file are.
 1. **`STORAGE_VERSION` is the user's, never a session's.** A change to a
    stored format leaves it alone, runs **without `--regenerate`** once, and
    says so.
@@ -76,15 +79,26 @@ dev/scripts/test_all.sh                 # the three modes, in order
 ```sh
 cmake -S . -B build -G Ninja -DCURL_USE_LIBPSL=OFF
 cmake --build build --target perf      # EXCLUDE_FROM_ALL, must be named
-taskset -c 3 ./build-relwithdebinfo/tests/perf/perf <test> [loops]
+taskset -c 3 ./build-relwithdebinfo/22_DCMAKECFLAGSO2g/tests/perf/perf \
+    <test> [loops]
 ```
 
-- **Build trees: `build-relwithdebinfo` (`BUILD_DIR`) and `build-instr`
-  (`TRACE_BUILD_DIR`) at the repo root**, shared by baseline and modified;
-  each run reconfigures them. A report's `executable=` row names its tree,
-  **repo-relative**. `build_paths` is the one setter of `_BUILD_TREE`/
-  `_TRACE_TREE`/`_BIN`/`_TRACE_BIN`. No tree per report or per flags;
-  **not `/tmp`** (tmpfs too small).
+- **One tree per cmake command line**, never shared: baseline and modified
+  sharing one rebuilt every object every run and left only the last
+  report's binary to date. `build_paths` names each tree after the joined
+  flag string: its length, `_`, then its alphanumerics
+  (`22_DCMAKECFLAGSO2g`, `27_DCMAKECFLAGSO2gOs`), under
+  `build-relwithdebinfo/` (`BUILD_DIR`) and `build-instr/`
+  (`TRACE_BUILD_DIR`) at the repo root. **A bandaid, not unique**: flags
+  alike but for where punctuation sits (`-DA_B=C`, `-DA=B_C`) share a
+  tree. Each run reconfigures its own two (cache dropped, ~7s, recompiles
+  nothing). A report's `executable=` row names its tree,
+  **repo-relative**; `--regenerate` recomputes it from today's naming, so
+  after a naming change run without it. `build_paths` is the one setter of
+  `_BUILD_TREE`/`_TRACE_TREE`/`_BIN`/`_TRACE_BIN`. **Not `/tmp`** (tmpfs
+  too small).
+- **Build warnings are not errors** (`CURL_WERROR` stays off): they reach
+  `$RUN_LOG` and `--verbose` through `command_run` like any build output.
 - **Verification is one run: `enforcer.sh`.** It clears reports, formats and
   lints `dev/`, runs the batch, then validates, shoots and scans. **The batch
   runs no checks** - a hand-run batch is measuring, not verifying.
@@ -99,14 +113,21 @@ taskset -c 3 ./build-relwithdebinfo/tests/perf/perf <test> [loops]
   default-named reports and `enforcer.sh`'s artifacts dir are debug output,
   deletable any time.
 - **`manifest_verify` is the one door saying why a dir is not a report**;
-  every `--regenerate` path calls it on all three reports.
+  every `--regenerate` path calls it on all three reports **as its first
+  step**, before anything is created or deleted; a missing manifest is a
+  hard error. The batch's `regenerate_inputs_verify` does it before its
+  artifacts dir and log exist.
 - **A recording in the link's own second is still that link's**: refuse only
   when the binary is **strictly newer**. `find -newer` alone was the bug.
 - `--target-dir=DIR` (default CWD) holds the three **default-named** reports.
   **Every batch argument not its own option is a cmake flag.**
 - `CURL_USE_LIBPSL=OFF` is the only intentional deviation. **Never profile
-  `./build`** (`-O0`, wrong attribution); use `build-relwithdebinfo`
-  (`-O2 -g`). **Always pin**: WSL2 noise ~106% unpinned, <1-3% pinned.
+  `./build`**: `-O0` attributes cost to the right lines of a program
+  nobody ships (nothing inlined), so its hot lines mislead. Use
+  `build-relwithdebinfo`: `args_parse` leads every tree's
+  `CMAKE_C_FLAGS` with `-O2 -g`, and a later `-O` the user passes (the
+  modified run's `-Os`) still wins. **Always pin**: WSL2 noise ~106%
+  unpinned, <1-3% pinned.
 
 ## 3 The four scripts
 
@@ -172,14 +193,13 @@ measures nothing and subtracts two reports' `raw/` archives;
   names a test**; one error view (`bad_function`).
 - **`enforcer.sh` reaches source only**, via `files_of()`; `README.md` is
   the one `.md`. **Config files are untouched**; `--config` always passed.
-- **`regenerate_check`** dates the **modified** report's newest timing
-  recording (`perf-stat.*.csv`, `PROFILE_TIMING_FILE_PREFIX`) against the
-  executable its `executable=` row names (first token, repo-relative,
-  resolved via `_DIR_REPO`): the modified run links the shared tree last,
-  so the baseline's binary is gone and its recordings need only exist. A
-  strictly newer binary refuses. The diff names no tree. Missing
-  executable/row/artifacts dir/`stamp=` row or unfinished report each
-  refuse, naming the report.
+- **`regenerate_check`** verifies all three manifests first, then dates
+  **each measured report's** newest timing recording (`perf-stat.*.csv`,
+  `PROFILE_TIMING_FILE_PREFIX`) against the executable its own
+  `executable=` row names (first token, repo-relative, resolved via
+  `_DIR_REPO`) - each has its own tree. A strictly newer binary refuses.
+  The diff names no tree. Missing executable/row/artifacts dir/`stamp=`
+  row or unfinished report each refuse, naming the report.
 - **`stamp=` is `<unix> <human date>`**; readers take the first token via
   **`manifest_stamp_of`**. **`manifest_value` stays general** (`cpu=`,
   `build=` hold spaces).

@@ -6,7 +6,8 @@ ARTIFACTS_NAME=perf2html_temporary_artifacts
 # the assets/ script an error page reads the manifest rows back from
 ASSET_REPORT_MANIFEST_SCRIPT_NAME=report_manifest.js
 
-# the tree profiling reads. -O0 attributes cost to the wrong lines
+# dir at the repo root holding the trees profiling reads, one per set of
+# cmake flags, named by build_paths
 BUILD_DIR=build-relwithdebinfo
 
 # loops one callgrind run of a test does
@@ -80,7 +81,8 @@ REPORT_RAW_ARCHIVE_SUFFIX=.txz
 # loops one native timing run of a test does
 TIMING_LOOPS=10000
 
-# the -finstrument-functions tree the flame graph's trace comes from
+# dir at the repo root holding the -finstrument-functions trees the flame
+# graph's trace comes from, named as under BUILD_DIR
 TRACE_BUILD_DIR=build-instr
 
 # UINT64_MAX: skip every event, making it a count-only trace run

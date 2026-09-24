@@ -1,12 +1,15 @@
-# dev/scripts/shared.shz
+# dev/scripts/shared.sh
 
-# absolute_path - Every script resolves paths relative to $INVOKED_FROM.
+# absolute_path - one path, relative to $INVOKED_FROM, made canonical by
+# readlink -m: no ., .., // or symlinks; nothing along it need exist yet.
 absolute_path() {
-  case "$1" in
-    "~/"*) echo "$HOME/${1#"~/"}" ;;
-    /*) echo "$1" ;;
-    *) echo "$INVOKED_FROM/$1" ;;
+  local path="$1"
+  case "$path" in
+    "~/"*) path="$HOME/${path#"~/"}" ;;
+    /*) ;;
+    *) path="$INVOKED_FROM/$path" ;;
   esac
+  readlink -m -- "$path"
 }
 
 # archive_write - one reproducible tar.xz of a test's recordings, under

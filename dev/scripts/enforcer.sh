@@ -485,13 +485,6 @@ regenerate_stamp_of() {
 regenerate_check() {
   [ "$_REGENERATE" = 1 ] || return 0
 
-  # the artifacts dir the batch defaults to, holding every recording the
-  # three reports were generated from
-  local _artifacts="$_DIR_DEV/$ARTIFACTS_NAME"
-  if [ ! -d "$_artifacts" ]; then
-    regenerate_refuse "no recordings at $_artifacts"
-  fi
-
   # all three are this run's input, and manifest_verify is the one policy
   # saying why one is not a report -- it exits, so this fails at the first
   local _name
@@ -502,8 +495,15 @@ regenerate_check() {
   manifest_verify "$_DIR_DEV/$REPORT_DIFF_DIR_NAME" \
     "--regenerate input" "$REPORT_MANIFEST_VERSION_DIFF"
 
-  # each measured report names its own recordings by stamp. The diff has no
-  # recordings of its own: it is subtracted from these two.
+  # the artifacts dir the batch defaults to, holding every recording the
+  # three reports were generated from
+  local _artifacts="$_DIR_DEV/$ARTIFACTS_NAME"
+  if [ ! -d "$_artifacts" ]; then
+    regenerate_refuse "no recordings at $_artifacts"
+  fi
+
+  # each measured report names its own recordings by stamp and its own tree
+  # by executable=. The diff has neither: it is subtracted from these two.
   local _stamp _binary _newest _recorded=() _stamps=()
   for _name in "$REPORT_BASELINE_DIR_NAME" "$REPORT_MODIFIED_DIR_NAME"; do
     if ! _stamp="$(regenerate_stamp_of "$_DIR_DEV/$_name")"; then
@@ -518,29 +518,26 @@ regenerate_check() {
       regenerate_refuse "$_name has no recordings left under stamp $_stamp"
     fi
     _stamps+=("$_stamp")
+
+    _binary="$(manifest_value "$_DIR_DEV/$_name" executable)"
+    if [ -z "$_binary" ]; then
+      regenerate_refuse "$_name records no executable= row"
+    fi
+    _binary="$_DIR_REPO/${_binary%% *}"
+    if [ ! -f "$_binary" ]; then
+      regenerate_refuse "$_name has no executable at $_binary"
+    fi
+
+    # a recording written in the link's own second is still that link's, so
+    # only a strictly newer binary means perf was re-linked after them
+    _newest="$(find "$_artifacts" -maxdepth 1 -type f \
+      -name "$PROFILE_TIMING_FILE_PREFIX.*.$_stamp.csv" \
+      -printf '%T@ %p\n' | sort -rn | head -1)"
+    _newest="${_newest#* }"
+    if [ -n "$(find "$_binary" -newer "$_newest" -print -quit)" ]; then
+      regenerate_refuse "$_name: perf was re-linked after its recordings"
+    fi
   done
-
-  # the modified run built that tree last, so its recordings are the ones
-  # the executable still on disk wrote; the baseline's binary is gone
-  _name="$REPORT_MODIFIED_DIR_NAME"
-  _binary="$(manifest_value "$_DIR_DEV/$_name" executable)"
-  if [ -z "$_binary" ]; then
-    regenerate_refuse "$_name records no executable= row"
-  fi
-  _binary="$_DIR_REPO/${_binary%% *}"
-  if [ ! -f "$_binary" ]; then
-    regenerate_refuse "$_name has no executable at $_binary"
-  fi
-
-  # a recording written in the link's own second is still that link's, so
-  # only a strictly newer binary means perf was re-linked after them
-  _newest="$(find "$_artifacts" -maxdepth 1 -type f \
-    -name "$PROFILE_TIMING_FILE_PREFIX.*.${_stamps[-1]}.csv" \
-    -printf '%T@ %p\n' | sort -rn | head -1)"
-  _newest="${_newest#* }"
-  if [ -n "$(find "$_binary" -newer "$_newest" -print -quit)" ]; then
-    regenerate_refuse "$_name: perf was re-linked after its recordings"
-  fi
 
   log_verbose "$(printf '%-12s| ok      | reusing stamp %s and %s' \
     "regenerate" "${_stamps[0]}" "${_stamps[1]}")"
