@@ -12,7 +12,7 @@
 # what is timed -- tests/perf/first.c and lib/curlx/timeval.c are in every
 # profile whatever TESTS_C holds, so no entry here names a test.
 #
-# Nothing here is a setting: reformat.sh is the only caller, no report
+# Nothing here is a setting: enforcer.sh is the only caller, no report
 # carries a shot, and a browser a page never sees is not the pages' to read.
 from __future__ import annotations
 

@@ -137,7 +137,7 @@ class CommentBlockScan:
                     name
                     for name in dirs
                     if name not in _SCAN_SKIPPED_DIRS
-                    and not name.endswith(_SCAN_SKIPPED_DIR_SUFFIX)
+                    and not name.endswith(_SCAN_SKIPPED_DIR_SUFFIXES)
                     and not name.startswith(".")
                 ]
                 for name in names:
@@ -157,9 +157,9 @@ _COMMENT_MARKS_BY_EXTENSION = (
 )
 
 # Generated output, caches and recordings, none of which is source. A report
-# is recognised by name, as the ASCII scan does it, so any report is skipped.
+# and a build tree are recognised by name, as the ASCII scan does it.
 _SCAN_SKIPPED_DIRS = ("__pycache__", _ARTIFACTS_NAME)
-_SCAN_SKIPPED_DIR_SUFFIX = "_report"
+_SCAN_SKIPPED_DIR_SUFFIXES = ("_report",)
 
 # A "#!" line is part of the header, not a comment block of its own.
 _SHEBANG_MARK = "#!"

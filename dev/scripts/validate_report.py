@@ -659,8 +659,8 @@ class ValidateReport:
                         f"{match.group()!r}: {found.line.strip()}"
                     )
 
-    # Every file under dev/ the ASCII scan covers, a generated page in a
-    # report included: a reader meets one character set, whoever wrote it.
+    # Every source file under dev/. Generated output is not source: the scan
+    # runs with the other source stages, before a report exists to walk.
     def unicode_scan_paths(self) -> list[str]:
         dev_dir = os.path.join(callgrind.REPO_ROOT, "dev")
         paths: list[str] = []
@@ -668,7 +668,9 @@ class ValidateReport:
             dirs[:] = [
                 d
                 for d in dirs
-                if d not in _SOURCE_SCAN_SKIPPED_DIRS and not d.startswith(".")
+                if d not in _SOURCE_SCAN_SKIPPED_DIRS
+                and not d.startswith(".")
+                and not d.endswith(_SOURCE_SCAN_SKIPPED_DIR_SUFFIXES)
             ]
             for name in names:
                 if (
@@ -751,9 +753,10 @@ _SOURCE_SCAN_FILE_EXTENSIONS = (
 )
 _SOURCE_SCAN_FILE_NAMES = ("README.md",)
 
-# Caches and recordings: one is not ours and the other is a tool's bytes,
-# so neither is read by anyone. Every report directory IS scanned.
+# Caches, recordings, a generated report and cmake's copy of curl: none of
+# them is dev/ source, which is the whole of what this scan is for.
 _SOURCE_SCAN_SKIPPED_DIRS = ("__pycache__", _ARTIFACTS_NAME)
+_SOURCE_SCAN_SKIPPED_DIR_SUFFIXES = ("_report",)
 
 # Smallest a file can be before it is plainly a failed generate. The flame
 # graph page is a loader and the logs are appended text, so each has its own.
@@ -783,7 +786,7 @@ def main() -> int:
     )
     namespace = parser.parse_args()
     validator = ValidateReport()
-    # the sources are one tree, not a property of any report: reformat.sh
+    # the sources are one tree, not a property of any report: enforcer.sh
     # runs this once, not once per report it happens to find
     if namespace.source_scan_only:
         validator.unicode_check()

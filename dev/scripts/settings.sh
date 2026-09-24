@@ -63,7 +63,7 @@ REPORT_BASELINE_DIR_NAME=perf2html_baseline_report
 REPORT_DIFF_DIR_NAME=perf2html_diff_report
 
 # the LABEL= row a report's MANIFEST.txt records its checksum on. The shell
-# writes and reads it; validate_report.py and reformat.sh check it
+# writes and reads it; validate_report.py and enforcer.sh check it
 REPORT_MANIFEST_CHECKSUM_LABEL=checksum
 
 # the exact first line of a MANIFEST.txt, one per kind of report, and the only

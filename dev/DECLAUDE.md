@@ -1,44 +1,63 @@
-# curl perf work (compressed)
+# curl perf work (30k)
 
-Compressed `DECLAUDE.md`. The full file is authoritative - read it before
-changing a topic that is one line here.
+Half-size `DECLAUDE.md` for quick work. **`DECLAUDE.md` is authoritative** -
+read its section before changing anything a line here only names. Section
+numbers match it.
 
 ## 1 Rules
 
-1. Keep `DECLAUDE.md` current in the same change as any
-   tooling/layout/theme/findings change. `CLAUDE.md` symlinks to it. Facts,
-   commands, numbers, gotchas. No line numbers - name an identifier.
-   **A-list only**: it goes in if a session that had not read it would get it
-   wrong, waste an hour, or break a contract. Over **40,000 bytes**, say so
-   and leave it alone. **Never compact it on your own initiative.**
-1. **`dev/README.md` is the user-facing contract and control surface.** Code
-   follows README, never the reverse. A session finding them disagreeing
-   fixes the code or asks, and never silently edits README to match. Only
-   README edits the user asked for in that session.
-1. `dev/` is throwaway profiling tooling: one shared parser, one shared theme,
-   no dead code, no duplicate systems. Everything a script writes opens from
-   `file://` with nothing fetched at view time.
-1. **No fake data.** Every page value is a recorded measurement or plain
-   arithmetic on one (sum, difference, share, `CEst`). No apportioning,
-   interpolation or "plausible" stacks. If a tool can't supply what a view
-   needs (callgrind: per-call stacks/time), the view isn't built.
-1. **Nothing test-specific, ever.** No test names, file lists or per-test
-   cases anywhere in `dev/`; every view is built for every test in `TESTS_C`.
-   Examples read `<test>`/`<file>`.
-1. Never "meta" - that is a "header" or a "manifest". No "events", "metrics"
-   or "stats", only **counters**.
-1. More than one goal in a run → conclude with a checklist of what was and was
-   not accomplished, plus any relevant bug reports.
-1. New identifiers: at least 2 unabbreviated english words, ideally one noun
-   and one verb.
-1. **A value written down twice and "kept in step" is banned.** A number,
-   colour, key, bound or named two files both need is **one setting** the two
-   read from `settings.py` or `settings.py`.
-1. All communication involving multiple items follows ISO 2145, Numbering of
-   divisions and subdivisions in written documents.
-1. **`STORAGE_VERSION` is the user's to manage, never a session's.** A session
-   whose change alters a stored format does not bump it: it leaves the setting
-   alone and runs **without `--regenerate`** that once, and says so.
+1. Keep `DECLAUDE.md` current in the same change as any tooling/layout/
+   theme/findings change (`CLAUDE.md` symlinks to it). Facts, commands,
+   numbers, gotchas; name identifiers, never line numbers. A-list only. Over
+   40,000 bytes: say so, leave it. **Never compact it unasked.**
+1. **`dev/README.md` is the user-facing contract.** Code follows README,
+   never the reverse. On disagreement fix the code or ask; edit README only
+   when the user asked in that session.
+1. `dev/` is throwaway tooling: one parser, one theme, no dead code or
+   duplicate systems. Output opens from `file://`, fetching nothing.
+1. **No fake data.** Every value is a measurement or plain arithmetic on one
+   (sum, difference, share, `CEst`). If a tool can't supply a view's data,
+   the view isn't built.
+1. **Nothing test-specific, ever.** No test names or file lists in `dev/`;
+   every view for every test in `TESTS_C`. Examples read `<test>`/`<file>`.
+1. Never "meta" (say "header"/"manifest"). No "events", "metrics", "stats" -
+   only **counters**.
+1. More than one goal → end with a done / not-done checklist and bug
+   reports.
+1. New identifiers: at least 2 unabbreviated English words, ideally noun +
+   verb.
+1. **A value written twice and "kept in step" is banned.** Anything two
+   files need is **one setting** read from `settings.sh`/`settings.py`.
+1. Multi-item communication follows ISO 2145 numbering.
+1. **Every `dev/*.sh` makes paths absolute at startup; `$PWD` is never read
+   again.** `INVOKED_FROM="$PWD"` sits **above** the `cd` to the script's
+   own dir; `args_parse` runs each path through `absolute_path`. After the
+   `cd`, `$PWD` is `dev/`, so any `$PWD` below `args_parse` is a bug. The
+   way back is **`shared.sh`'s `path_display`** only, never a hand-rolled
+   `#"$_REPO"/` strip. **A leaf script derives nothing from a
+   collection** - the batch and `enforcer.sh` own "three reports".
+1. **Plumbing vs porcelain - settled, not for debate.** `perf2html.sh` and
+   `perf2html_diff.sh` are plumbing: every path they take is
+   invocation-relative, made absolute by `absolute_path` in `args_parse`;
+   they hold no opinion about working directories, and `$_SCRIPT` only
+   finds the tool's own code - nothing is placed by
+   `$(dirname "$_SCRIPT")`. `--report=DIR` is the final report dir itself,
+   not a dir to put reports in; `--artifacts` defaulting beside it is
+   README's interface, not a derivation to remove. Only
+   `perf2html_batch.sh` (porcelain) has a working dir (`--target-dir`,
+   default CWD) and default names in it. **README and `usage_show` are the
+   interface; code drifting from them is the bug.** **The tool is never
+   reshaped for its verifier**: `enforcer.sh` adapts to the tool's layout
+   (per-flags `dev/builds/` trees, added so `regenerate_check` could date
+   each report, were that mistake). **Uncommitted changes are not the
+   design** - the user, HEAD, README and this file are.
+1. **`STORAGE_VERSION` is the user's, never a session's.** A change to a
+   stored format leaves it alone, runs **without `--regenerate`** once, and
+   says so.
+1. **Docs written on request (`plan.md`, notes, write-ups) go in
+   `dev/docs/`**, which `dev/.gitignore` ignores. `.md` only, never named
+   `README.md`: `files_of()` and the ASCII scan still walk `dev/docs/`, and
+   they match that name at any depth.
 
 ## 2 Commands
 
@@ -49,7 +68,9 @@ dev/perf2html_diff.sh [--verbose] [--keep-artifacts] [--regenerate]
     [--artifacts=TMP] [baseline-dir] [modified-dir] [report-dir]
 dev/perf2html_batch.sh [--verbose] [--keep-artifacts] [--regenerate]
     [--artifacts=TMP] [--target-dir=DIR] [cmake_flags...]
-dev/scripts/reformat.sh [--check] [--regenerate] [--verbose]
+dev/scripts/enforcer.sh [--check] [--keep-artifacts] [--regenerate]
+    [--verbose]
+dev/scripts/test_all.sh                 # the three modes, in order
 ```
 
 ```sh
@@ -58,221 +79,161 @@ cmake --build build --target perf      # EXCLUDE_FROM_ALL, must be named
 taskset -c 3 ./build-relwithdebinfo/tests/perf/perf <test> [loops]
 ```
 
-- **Verification is one run: `reformat.sh`.** It clears the reports, formats
-  and lints `dev/`, invokes `perf2html_batch.sh` itself, then validates,
-  shoots and ASCII-scans what the batch wrote. **The batch runs no checks at
-  all** - it measures and generates, and `reformat.sh` is every check there
-  is. Running the batch by hand is a measuring run, not a verification.
+- **Build trees: `build-relwithdebinfo` (`BUILD_DIR`) and `build-instr`
+  (`TRACE_BUILD_DIR`) at the repo root**, shared by baseline and modified;
+  each run reconfigures them. A report's `executable=` row names its tree,
+  **repo-relative**. `build_paths` is the one setter of `_BUILD_TREE`/
+  `_TRACE_TREE`/`_BIN`/`_TRACE_BIN`. No tree per report or per flags;
+  **not `/tmp`** (tmpfs too small).
+- **Verification is one run: `enforcer.sh`.** It clears reports, formats and
+  lints `dev/`, runs the batch, then validates, shoots and scans. **The batch
+  runs no checks** - a hand-run batch is measuring, not verifying.
 - `--regenerate` rebuilds all three reports' pages from the last run's
-  recordings, if the artifacts dir survives - it **defaults to
-  `perf2html_temporary_artifacts/` in the parent directory of the report**,
-  `--artifacts=TMP` overriding it in all three `.sh`.
-- **Pass `reformat.sh --regenerate` every time**, and leave it off only when
-  `perf` has been re-linked - a `dev/` edit cannot move a measured number, so
-  re-measuring buys nothing and costs an hour. **It is checked, not trusted**:
-  `regenerate_check` runs first, and a run whose recordings no longer describe
-  the executable **drops the flag and measures from scratch** rather than
-  failing (`regenerate_cancel`), because measuring again always answers.
-  So passing it when it does not hold is not an error to recover from.
-  **The three default-named reports and the artifacts dir `reformat.sh`
-  writes are debug output and may be deleted at any time without notice.**
-- `--target-dir=DIR` (default CWD) holds the three **default-named** reports -
-  **the batch cannot name them**. **Every batch argument that is not its own
-  option is a cmake flag.**
+  recordings. Artifacts dir **defaults to `perf2html_temporary_artifacts/`
+  in the report's parent dir**; `--artifacts=TMP` overrides in all three.
+- **Pass `enforcer.sh --regenerate` every time**, except after `perf` was
+  re-linked. It is checked: `regenerate_check` runs first and stale
+  recordings are a **hard error** (`regenerate_refuse`, exit 2) - it
+  **never** falls back to measuring. `perf2html.sh`, the batch and
+  `enforcer.sh` each prove their inputs before starting work. The three
+  default-named reports and `enforcer.sh`'s artifacts dir are debug output,
+  deletable any time.
+- **`manifest_verify` is the one door saying why a dir is not a report**;
+  every `--regenerate` path calls it on all three reports.
+- **A recording in the link's own second is still that link's**: refuse only
+  when the binary is **strictly newer**. `find -newer` alone was the bug.
+- `--target-dir=DIR` (default CWD) holds the three **default-named** reports.
+  **Every batch argument not its own option is a cmake flag.**
 - `CURL_USE_LIBPSL=OFF` is the only intentional deviation. **Never profile
-  `./build`** (`-O0`: inlining differs, attribution wrong) - use
-  `build-relwithdebinfo`. **Always pin**: WSL2 noise ~106% unpinned, \<1-3%
-  pinned.
+  `./build`** (`-O0`, wrong attribution); use `build-relwithdebinfo`
+  (`-O2 -g`). **Always pin**: WSL2 noise ~106% unpinned, <1-3% pinned.
 
 ## 3 The four scripts
 
 `perf2html.sh` builds + profiles + generates one report; `perf2html_diff.sh`
 measures nothing and subtracts two reports' `raw/` archives;
 `perf2html_batch.sh` runs baseline, modified (`-D CMAKE_C_FLAGS=-Os`), diff;
-`reformat.sh` lints, formats, validates.
+`enforcer.sh` lints, formats, validates.
 
-- **Any error whatsoever is a hard error, reported immediately.** Every
-  `dev/*.sh` stops at its first failure, printing that failure and nothing
-  after it. **No script collects failures**: no `_STATUS`, no `_FAILED`, no
-  `_MISSING`, no "N stage(s) failed" tally, no stage recording a fault and
-  returning 0. A reader who meets a downstream consequence first will act on
-  it as if it were the cause; people are not computers, and that is serious.
-  A stage that _cannot_ run - a missing formatter, a report the batch never
-  wrote - **is a failure, not a skip**: the run is a verification or nothing.
-
-- **`--verbose` is additive, in all four**; `log_verbose()` is the one
-  function deciding whether a **line** is printed, and the only other
-  readers of `$VERBOSE` are `shared.sh`'s two **stream** routers,
-  `child_capture()` (tee or redirect, chosen before the child runs) and
-  `log_verbose_file()` (a file a step already wrote, appended to `$RUN_LOG`
-  and shown too when verbose). **No script outside `shared.sh` may test
-  `$VERBOSE`**, **no function in `dev/*.sh` may wrap `printf` without
-  adding logic**, and quiet prints **whole lines only**.
+- **Any error is a hard error, reported immediately.** Stop at the first
+  failure, print it, nothing after. **No script collects failures** - no
+  `_STATUS`/`_FAILED`/`_MISSING`, no tallies, no stage recording a fault and
+  returning 0. A stage that _cannot_ run (missing formatter, missing report)
+  **is a failure, not a skip**.
+- **A silent downgrade is the same fault.** Never quietly do the more
+  expensive thing; **prefer the refusal whenever the fallback is the
+  expensive branch** - hence `--regenerate` refuses rather than measures.
+- **No news is good news.** Only `test_all.sh` prints on success; the rest
+  print on failure or under `--verbose`.
+- **Never buffer a child's output.** No shipping `dev/*.sh` captures a child
+  through `$( )` (`enforcer.sh` exempt). Children run through `shared.sh`'s
+  **`child_capture`** (tee-or-redirect chosen before start, so `--verbose`
+  streams); a step needing the text reads `$RUN_LOG` afterwards via
+  `log_verbose_file`. Values come back **through globals**
+  (`CHILD_EXIT_CODE`), never stdout. `$( )` around `printf`/`date`/
+  `basename` is fine - a value, not a stream.
+- **cmake's configure output goes to `/dev/null`**, banned from `--verbose`
+  and `$RUN_LOG` (half the log). `tree_build` runs it outside
+  `child_capture`; a failure prints only `cmake failed to build <command>`,
+  the command `%q`-quoted so it pastes and reruns; the build step still uses
+  `command_run`.
+- **`--verbose` is additive.** **Only `shared.sh` tests `$VERBOSE`**
+  (`log_verbose`, `child_capture`, `log_verbose_file`); no bare `printf`
+  wrappers.
 - `perf2html.sh` default DIR is `perf2html_baseline_report`, or
-  `perf2html_modified_report` when cmake_flags are given - **after a
-  _source_-only change pass `--report=perf2html_modified_report` yourself.**
-- **`usage_show`'s heredoc is a script's only usage text.** Never restate it
-  in the file header, which says what the script is and nothing more. It and
-  `README.md`'s option lists are the one pair kept in step by hand.
-- `toolchain_check` is the **only** toolchain check the user-facing scripts
-  have, collecting **every** missing tool before exiting 1, one
-  `tool -> official install command` each, **official instructions only**
-  (missing `perf` → use `linux-perf`, not `linux-tools-generic`).
-  **`reformat.sh`'s tools are out of scope.**
-- `reformat.sh` **takes no argument but its flags**: it **runs the batch
-  itself**, so the three default names are the only reports there are, and
-  `MANIFEST.txt` line 1 decides each one's `--diff`. **It is the only
-  `validate_report.py`, `screenshots.py`, `pyright`, `ruff` and `prettier`
-  call anywhere**,
-  and with the batch is the generators' test suite. It sources **both**
-  `settings.sh` and `shared.sh`, like the other three - it reads the two
-  `REPORT_MANIFEST_VERSION_*` strings, and without the first no report can
-  match its own version line.
-- **`reformat.sh`'s stage order is cost-ascending and deliberate**:
-  `regenerate_check` **before** `surface_clear`, which reads its answer - a
-  regenerated run's input is the three reports themselves, so the clear is
-  skipped and they are reused → `surface_clear` (deletes the three reports,
-  never the artifacts dir - the
-  batch owns that) → format/columns/comments/`lint_run` over `dev/` source,
-  seconds each → `batch_run` → `validate_run` → `screenshots_run` →
-  `source_scan_run` **last**. A formatting slip is thus reported before the
-  profiling run, not an hour after it; and formatting precedes the batch, so
-  a page asset is formatted _before_ the reports are generated from it.
-- **`screenshots.py` is verification, not shipping code**: `reformat.sh` is
-  its one caller, it shoots the modified and diff reports through
-  `index.html` at each `_VIEWS` hash, and its PNGs land in `dev/screenshots/`
-  - **outside every report**, because a checksum covers a report's own files
-  only. **It shoots every view at every `_SCREENSHOT_VIEWPORTS` entry**
-  (720p, 1080p, 4k), naming each file `<size>_<report>_<view>.png` - the
-  three are there to be compared, and a view that differs by more than
-  scale between them is the design-scale machinery failing. It imports **no
-  settings**: its browser list, render budget,
-  viewports and output directory are its own `_SCREENSHOT_*` constants, so
-  nothing about taking a shot reaches `settings.sh`, the three shipping
-  scripts or a page's settings object. A `_VIEWS` entry is a **view**, not
-  data - two hashes differing only in which test or counter they name are
-  one shot - and **no entry names a test**: the anchors come from the timer
-  framework (`lib/curlx/timeval.c`, `curlx_now`) and the synthetic `all`.
-  **One error view only** (`bad_function`): the overlay renders one way
-  whatever threw, so more entries shot the same page and overflowed a sheet.
-- **After the shots come the contact sheets**, one per viewport per report,
-  `thumbnail_<size>_<report>.png`, a `_THUMBNAIL_SHEET_*` 3x3 of the first
-  nine `_VIEWS` in order. **Always 4k whatever the shots are** - it is read
-  by a person, not compared against a report - and **every cell is the same
-  box with the shot fitted whole inside it**, so one view's 720p and 4k
-  sheets differ in content and not in size. Pillow (`import PIL.Image`) is
-  the one dependency; a sheet is temporary output no checksum covers.
-- **`reformat.sh` reaches source and nothing else**, collected through
-  `files_of()`, the **one door** every stage uses: `*.sh` under `dev/`,
-  `*.c *.h` under `src/`, `*.py *.js *.css *.html` under `scripts/`, and
-  **`README.md` is the one `.md`** (`_MARKDOWN_NAME` - an allow-list, so
-  `DECLAUDE.md` is out by not being named). **A config file is untouched
-  by every stage** - no `.json`, `.yml` or `.toml` is formatted, linted or
-  column-checked; `.prettierrc.json`, `ruff.toml` and `pyrightconfig.json`
-  live in `scripts/`, `.clang-format` in `src/`.
-  **`reformat.sh` always passes `--config`**, so a config need not sit where
-  a tool's own upward search would find it.
-- **`regenerate_check` dates the recordings against the executable**, and
-  that one test is the whole of it: a timing recording (`perf-stat.*.csv`,
-  `PROFILE_TIMING_FILE_PREFIX`) **newer** than
-  `build-relwithdebinfo/tests/perf/perf` was written by it, so the pages are
-  rebuilt; at or older means perf was re-linked afterwards, and the run
-  measures again. **The modified stamp is the one dated** - that run builds
-  the tree last, so the baseline's binary is gone and its recordings need
-  only still be there. A missing executable, missing artifacts dir, a report
-  that is not finished or has no `stamp=` row each withdraw the same way.
-  **Each of the two measured reports has its own stamp**; the diff has none
-  of its own recordings, being subtracted from those two.
-- **The `stamp=` row is `<unix> <human date>`** - `manifest_stamp_row`
-  writes both, the tail being for people and parsed by nobody. **Every
-  reader takes the first token**, `${_x%% *}` inlined at the read because
-  the unix time alone names an artifact (`perf-stat.<test>.<stamp>.csv`):
-  `perf2html.sh`'s `stamp_reuse`, `perf2html_diff.sh`'s `--regenerate`
-  branch and `reformat.sh`'s `regenerate_stamp_of`, whose result reaches a
-  `find` glob. **`manifest_value` stays general** - `cpu=` and `build=`
-  hold spaces, so narrowing it corrupts both.
-- **The batch owns every deletion of the artifacts dir** - it passes
-  `--keep-artifacts` down so a child can't unlink the batch log mid-run; a
-  failed flagless batch _keeps_ it, because a failed step exits before the
-  delete at the end of `main` is ever reached. **`--keep` is gone.**
-- **"raw" means only the report's own `<test>/raw/` and its `raw-data` page
-  links**; temporary recordings are "artifacts" everywhere else.
-- Profiling:
-  `taskset -c 3 valgrind --tool=callgrind --cache-sim=yes --branch-sim=yes`
-  plus `--LL=16777216,16,64` in `run_one` (Valgrind's LL cache auto-detects as
-  direct-mapped and overstates conflict misses). Timing is a _separate_ native
-  pinned `perf stat -x, -e cycles:u,instructions:u` run - **its `Time*` lines
-  are the only valid speed number**, never callgrind's wall clock.
-- Trace tree `build-instr` = same flags + `-finstrument-functions` +
-  `dev/src/cyg_callback.c`; whole build instrumented, no file list.
-- The verbose tee sits behind `if ! { ...; }` so `pipefail` can't take the
-  failure before `PIPESTATUS[0]` is read. `clock_microseconds()` strips
-  non-digits. That tee is in `shared.sh`'s **`child_capture`**, the one
-  runner: it records the child's code in `CHILD_EXIT_CODE` rather than
-  taking it, and **reports through globals, never stdout** - verbose's tee
-  already owns stdout, so a `$(child_capture ...)` would capture the
-  child's own output along with the code. **One policy sits on it**,
-  `command_run`, which exits with the child's code; the batch's `step_run`
-  does the same for a step. Both print the tail through
-  **`failure_print_log_tail`** (`LOG_FAILURE_TAIL_LINES` lines).
+  `perf2html_modified_report` with cmake_flags - **after a source-only change
+  pass `--report=perf2html_modified_report` yourself.**
+- **`usage_show`'s heredoc is the only usage text**, matched to README's
+  option lists by hand.
+- `toolchain_check` is the only toolchain check: lists **every** missing
+  tool with its official install command, then exits 1.
+- `enforcer.sh` **takes only flags** and runs the batch itself;
+  `MANIFEST.txt` line 1 decides each report's `--diff`. **It is the only
+  caller of `validate_report.py`, `screenshots.py`, `pyright`, `ruff`,
+  `prettier`.** It sources both `settings.sh` and `shared.sh`.
+- **`enforcer.sh` is "do as I say, not as I do".** It keeps its own
+  constants and spellings (`regenerate_stamp_of`,
+  `_REPORT_CHECKSUM_COMMAND`, `_SCREENSHOT_*`, `screenshots_run`'s `$( )`)
+  on purpose - a check built from the code it tests is no oracle. **Citing a
+  shipping-script rule against it is not a bug by itself.**
+- **Verification may read a shared value** (name, key, suffix) from the
+  settings, and **never adds a setting**. A _calculation_ it checks gets
+  local expected constants or a different-route recomputation - **never the
+  code under test** (e.g. no shared manifest validation).
+- **Stage order is cost-ascending**: `regenerate_check` → `surface_clear`
+  (skipped under `--regenerate`; deletes the three reports, never the
+  artifacts dir) → format/columns/comments/`source_scan_run`/`lint_run` →
+  `batch_run` → `validate_run` → `screenshots_run` **last**. Every source
+  stage precedes the batch; no stage reaches inside a report.
+- **`screenshots.py` is verification**: modified + diff reports, each
+  `_VIEWS` hash × `_SCREENSHOT_VIEWPORTS` (720p/1080p/4k), into
+  `dev/screenshots/<size>_<report>_<view>.png`, then 4k 3x3 contact sheets
+  `thumbnail_<size>_<report>.png`. **Imports no settings; no `_VIEWS` entry
+  names a test**; one error view (`bad_function`).
+- **`enforcer.sh` reaches source only**, via `files_of()`; `README.md` is
+  the one `.md`. **Config files are untouched**; `--config` always passed.
+- **`regenerate_check`** dates the **modified** report's newest timing
+  recording (`perf-stat.*.csv`, `PROFILE_TIMING_FILE_PREFIX`) against the
+  executable its `executable=` row names (first token, repo-relative,
+  resolved via `_DIR_REPO`): the modified run links the shared tree last,
+  so the baseline's binary is gone and its recordings need only exist. A
+  strictly newer binary refuses. The diff names no tree. Missing
+  executable/row/artifacts dir/`stamp=` row or unfinished report each
+  refuse, naming the report.
+- **`stamp=` is `<unix> <human date>`**; readers take the first token via
+  **`manifest_stamp_of`**. **`manifest_value` stays general** (`cpu=`,
+  `build=` hold spaces).
+- **The batch owns every deletion of the artifacts dir**, passing
+  `--keep-artifacts` down; a failed flagless batch keeps it. `--keep` is
+  gone.
+- **"raw"** means only `<test>/raw/` and its `raw-data` links; temporary
+  recordings are "artifacts".
+- Profiling: `taskset -c 3 valgrind --tool=callgrind --cache-sim=yes
+  --branch-sim=yes --LL=16777216,16,64` in `run_one` (auto-detected LL is
+  direct-mapped, overstates misses). Timing is a _separate_ pinned
+  `perf stat -x, -e cycles:u,instructions:u` run - **its `Time*` lines are
+  the only valid speed number**.
+- Trace tree = same flags + `-finstrument-functions` +
+  `dev/src/cyg_callback.c`; whole build, no file list.
+- `child_capture`'s tee sits behind `if ! { ...; }` (for `PIPESTATUS[0]`).
+  `command_run`/`step_run` exit with the child's code via
+  `failure_print_log_tail`.
 
 ### 3.1 `settings.sh` and `shared.sh`
 
-No env vars. **`settings.sh` holds every setting the shell reads, `shared.sh`
-(sourced, not executable) every shared shell function**, each alphabetical.
-`settings.sh` is **one assignment per line** because `shared.sh` sources it
-**and `settings.py` parses it at import**
-(`SettingsReader.shell_settings_read`,
-whose result `settings.py` binds under its own names; a `-?[0-9]+` scalar
-arrives as `int`). **No setting's word is expanded**: a setting is a constant,
-and `settings.py` parses the file a second later than bash sourced it, so a
-`$` word would give the two readers different values. Every word is therefore
-literal to both, and the reader that once held one back is gone. **Verification
-is bash itself** - every script sources the file, so no character allow-list.
-Hand-written, never generated. **A shell setting is a Python setting, one name
-in all three languages.** **`TIMESTAMP` is per-script, not a setting**
-(`$(date +%s)`, fixed at run time the way `__DATE__` is at compile time):
-each of the three shipping scripts assigns it immediately above its
-`_SCRIPT="$(readlink -f "$0")"`, and a generator's stamp arrives as the
-shell's `stamp=` row. `--regenerate` assigns it back from that row.
-`reformat.sh` declares none - it calls no `shared.sh` function that reads one.
-**A value derived from `$0` stays per-script** (`_REPO`), as do `usage_show`,
-`args_parse` and the `*_DIR` they derive. `_TESTS` comes from `tests/perf/Makefile.inc`. Grep the files for
-names; notable: `PROFILE_PINNED_CPU=3`, `REPORT_RAW_ARCHIVE_SUFFIX` (`.txz`,
-dot included), `PROFILE_TIMING_FILE_PREFIX` (`perf-stat`, read by
-`perf2html.sh` twice and by `reformat.sh`'s `regenerate_check`).
+No env vars. `settings.sh` = every shell setting; `shared.sh` (sourced) =
+every shared shell function; each alphabetical. `settings.sh` is **one
+assignment per line**, parsed also by `settings.py`
+(`SettingsReader.shell_settings_read`; `-?[0-9]+` → `int`). **No setting's
+word is expanded** - no `$` words. Hand-written. **One name in all three
+languages.** **`TIMESTAMP` is per-script** (`$(date +%s)`), assigned just
+above `_SCRIPT="$(readlink -f "$0")"` in each shipping script; `--regenerate`
+restores it from `stamp=`. `enforcer.sh` declares none. `$0`-derived values
+(`_REPO`), `usage_show`, `args_parse` stay per-script. `_TESTS` comes from
+`tests/perf/Makefile.inc`. Notable: `PROFILE_PINNED_CPU=3`,
+`REPORT_RAW_ARCHIVE_SUFFIX` (`.txz`, dot included),
+`PROFILE_TIMING_FILE_PREFIX` (`perf-stat`).
 
-**A global a script declares for itself is `_SCREAMING_SNAKE`**, leading
-underscore, the way the Python keeps a private name - `_OUT_DIR`,
-`_CMAKE_FLAGS`, `_CHECK`. **The underscore means "mine": the names that
-cross into `shared.sh` do not carry one** - it reads `ARTIFACTS_DIR`,
-`RUN_LOG`, `START_US`, `TIMESTAMP` and `VERBOSE`, and sets
-`SPEEDSCOPE_RELEASE`, `RUN_LOG` (in `report_begin`) and
-`CHILD_EXIT_CODE` / `LOG_LINE_FROM` (in `child_capture`).
-**No `settings.sh` name ever takes one** (`settings.py`
-parses that file, and a setting is one spelling in three languages), and
-neither does a name the environment owns (`CMAKE_C_FLAGS`, `PERF_TRACE_OUT`).
-So: underscore = this file's, bare = shared or foreign. **A `local` takes the
-underscore too and stays lowercase** - `local _output _exit_code`. The
-underscore is on the _variable_ only: an `awk -v max=`, a `find -name`, and
-every word of a message a script prints keep their plain spelling.
+**Naming**: a script's own global is `_SCREAMING_SNAKE` (`_OUT_DIR`); a
+`local` is `_lowercase` (`local _output _exit_code`). Names crossing into
+`shared.sh` are bare: it reads `ARTIFACTS_DIR`, `RUN_LOG`, `START_US`,
+`TIMESTAMP`, `VERBOSE`; sets `SPEEDSCOPE_RELEASE`, `RUN_LOG`
+(`report_begin`), `CHILD_EXIT_CODE`/`LOG_LINE_FROM` (`child_capture`).
+Settings and environment names (`CMAKE_C_FLAGS`, `PERF_TRACE_OUT`) are bare.
+Underscore is on variables only, not `awk -v`, `find -name` or messages.
 
-**Sourcing `shared.sh` is inert** - defines names, runs nothing. **A function
-there writes a caller global only where all callers agreed it is the canonical
-setter, and its `#` comment names every global it sets** - `toolchain_check`
-(`SPEEDSCOPE_RELEASE`).
+**Sourcing `shared.sh` is inert.** A function there sets a caller global only
+as its agreed canonical setter, and its comment names every global it sets.
 
-**The `MANIFEST.txt` contract is `shared.sh`'s** - `checksum_compute`,
-`manifest_fault_of`, `manifest_write`, `manifest_value`, `manifest_verify`,
-`manifest_wanted_phrase`. **`manifest_fault_of` is the one reader**: it
-echoes why a directory is not a finished report, or nothing when it holds
-up, and takes **each version string line 1 may read** - naming one is how a
-diff is never read back as a diff input, naming both is how `reformat.sh`
-accepts either. **`manifest_verify` is the one policy on top**, a hard
-error, and `reformat.sh` calls it like everything else. The two version
-strings
-(`curl/perf2html.sh v1`, `curl/perf2html_diff.sh v1`), the checksum label and
-the manifest script name are **settings in `settings.sh`**.
+**`MANIFEST.txt` contract is `shared.sh`'s**: `checksum_compute`,
+`manifest_fault_of`, `manifest_stamp_of`, `manifest_write`, `manifest_value`,
+`manifest_verify`, `manifest_wanted_phrase`. `manifest_stamp_of` verifies,
+reads, drops the date tail, **refuses an empty stamp** (the checksum excludes
+the manifest, so a torn row would otherwise pass). `manifest_fault_of` is
+the one reader: echoes why a dir is not a finished report, or nothing; takes
+each acceptable version string. `manifest_verify` is the hard-error policy on
+top. Version strings (`curl/perf2html.sh v1`, `curl/perf2html_diff.sh v1`),
+checksum label and manifest script name are settings.
 
 ## 4 Report layout
 
@@ -282,533 +243,325 @@ perf-tool/,raw/}  all/  assets/  flame-graph-app/  sources/  README.md
 MANIFEST.txt
 ```
 
-`raw/<test>txz` = callgrind file + speedscope JSON; `all/` is every test's
-data merged; `README.md` is copied from `dev/README.md` every run (the "help"
-link); `MANIFEST.txt` line 1 = version string, then LABEL=VALUE.
+`raw/<test>.txz` = callgrind file + speedscope JSON; `all/` = every test
+merged; `README.md` copied from `dev/README.md` each run; `MANIFEST.txt`
+line 1 = version string, then LABEL=VALUE.
 
-- **"all"** synthetic test: no perf log, trace log or flame graph, and in a
-  full report **no `raw/`** - it reads every real test's archive; a _diff_'s
-  `all` has one, the merged delta (`all_has_archive`). A **diff report** has
-  no flame graph and no native timing, and its per-test pages have no preamble
-  **except** the raw-data link to their own archive.
-- `MANIFEST.txt` line 1 is the _only_ thing making a directory a diff input
-  (a diff names `perf2html_diff.sh`, so diffs can't be diffed), and is
-  **written last** → an aborted run leaves none. **No tool may open a report
-  whose manifest is missing or whose version line is not EXACTLY the expected
-  string**; the error prints **both found and expected**.
-- **`report_begin` and `report_finish`** are the head and tail of every run
-  that writes a report. `report_begin` clears what a previous run left,
-  creates the directories, drops the stale manifest, opens `$RUN_LOG` and
-  lays down `README.md` and `assets/`; `report_finish` writes the manifest
-  last and echoes the `file://` URL. **A report is cleared only on the
-  proof that we wrote it** - its own `MANIFEST.txt`. A populated directory
-  without one is refused, never emptied, so a `--report=DIR` naming a
-  user's path is safe; an `--artifacts=TMP` **inside** the report is
-  refused for the same reason. **`--regenerate` clears nothing**.
-- **`--regenerate` reads every row it wants in `build_manifest`**, which runs
-  before `main` drops the previous manifest. A new row a regenerated run needs
-  is read there, never later.
-- **`checksum=` row**: POSIX `cksum` over every file **except the manifest**,
-  list `LC_ALL=C` sorted, paths **relative** to the report dir.
-  **Re-verified every time any tool opens a report**; mismatch is a hard
-  error. Paths in pages/manifest are **relative**; `home_dir_check` fails on
-  `$HOME`. `shared.sh`'s `checksum_compute` and `validate_report.py`'s
-  `_REPORT_CHECKSUM_COMMAND` spell that pipeline **separately on purpose -
-  not the banned twin**: a check importing what wrote the checksum would
-  agree by construction and could never catch it being wrong, which is the
-  only thing it is for. **Do not "de-duplicate" them.**
-- **Generated pages are deterministic** - same input ⇒ byte-identical output,
-  so a page diff is always code; only `stamp=` and re-measured time vary.
-- **Raw data compressed, one `tar.xz` per test**, named after the
-  **directory** holding it, never the page title. The `tar` line needs
-  **`--sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner`** or two runs
-  differ.
-- `perf2html_diff.sh` unpacks both inputs **once** in `profiles_extract` and
-  **synthesizes the `all` row**. **A diff overview reads its rows from
-  `--diff-profile NAME=FILE`**, the working subtracted profile, not `raw/`.
+- **"all"**: no perf log, trace or flame graph; in a full report **no
+  `raw/`**; a diff's `all` has one (`all_has_archive`). A **diff report** has
+  no flame graph or native timing; per-test pages have no preamble except the
+  raw-data link.
+- Manifest line 1 alone makes a dir a diff input (diffs can't be diffed); it
+  is **written last**. **No tool opens a report whose manifest is missing or
+  whose version line isn't EXACTLY expected**; errors print found and
+  expected.
+- **`report_begin`/`report_finish`** bracket every report-writing run.
+  `report_begin` clears, creates dirs, drops the stale manifest, opens
+  `$RUN_LOG`, lays down `README.md`/`assets/`; `report_finish` writes the
+  manifest and echoes the `file://` URL. **A dir is cleared only if its own
+  `MANIFEST.txt` proves we wrote it**; a populated dir without one is
+  refused, as is `--artifacts` inside the report. `--regenerate` clears
+  nothing.
+- **`--regenerate` reads every row it needs in `build_manifest`**, before
+  `main` drops the old manifest.
+- **`checksum=`**: POSIX `cksum` over every file but the manifest,
+  `LC_ALL=C` sorted, relative paths; **re-verified whenever a tool opens a
+  report**. `home_dir_check` fails on `$HOME`. `checksum_compute` and
+  `_REPORT_CHECKSUM_COMMAND` are separate **on purpose - don't merge**.
+- **Pages are deterministic** - same input, byte-identical output.
+- **One `tar.xz` per test**, named after its directory, `tar` with
+  `--sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner`.
+- A diff overview reads `--diff-profile NAME=FILE`, not `raw/`.
 
-**Shared once and linked**, never inlined. **No generator takes an assets
-href** - it is `theme.shared_href(depth, name)`, `depth` fixed by layout
-(overview 0, summary 1, heat map/flame graph 2) and nothing else. **A page
-that must stand alone is a new flag with a caller** - the last one, a diff's
-`--single-test-report`, was deleted as unreachable. **The
-stylesheet is generated, not copied** (`Theme.css()`), and
-pages are **classic `<script src>`/`<link>` only** - `fetch()` or an ES module
-would need a web server and is what this must never become.
+**Shared once and linked**, never inlined. Asset hrefs come only from
+`theme.shared_href(depth, name)` (overview 0, summary 1, heat map/flame 2).
+Stylesheet is generated (`Theme.css()`). Pages use **classic
+`<script src>`/`<link>` only** - no `fetch()`, no ES modules.
 
-**`sources/`** names each script `source_name()` (display path,
-non-alphanumerics → `_`, plus `.js`); a `FileModel`'s `source` is that **file
-name**, not the text, resolved via `source_text(file_path)`.
-`flame_app_install` **fails unless each glob matches exactly one file**
-(`*.woff2` must sit beside the CSS naming it). `page_scripts()` reads every
-`src=`/`href=` a page names, so a **missing or misspelled href fails loudly**.
+**`sources/`**: each file is `source_name()` (display path,
+non-alphanumerics → `_`, + `.js`); `FileModel.source` is that file name,
+resolved via `source_text(file_path)`. `flame_app_install` fails unless each
+glob matches exactly one file. `page_scripts()` makes a bad href fail loudly.
 
 ## 5 Diff semantics
 
-- Every number is **MODIFIED - BASELINE, per (function, file, line)** - never
-  per (file, line) alone, which hands half an inlined function's cost to its
-  neighbour.
-- The delta is plain callgrind format with **no `calls=` lines** → no call
-  graph → no call columns/caller tables in the heat map (`HAS_CALL_GRAPH`).
-  Calls/callers come from the **synthesized callers diff**, a separate JSON
-  beside the delta (`callgrind_diff.py --callers-output`), keyed by `<fn>` and
-  `<fn>\n<display path>\n<line>`; baselines ride there too.
-- **Every share divides by that same thing's own baseline cost**, never a
-  global budget: `(new - old)/old`. 1→0 = -100%, 100→90 = -10%, 90→100 =
-  +11.1%, 1→1 = 0% (rendered empty). A thing the baseline never had is an
-  **infinite share** (`float("inf")`/`Infinity`), printed `▲∞%` and
-  heat-clamped at full scale - **never a substitute finite number**.
-- **`events` is the recorded counters and nothing else.** `costs_fit()` pads
-  to recorded width, trims trailing zeros, stores **no derived slot** - a
-  slot's index never moves. `callgrind.counter_value()` is the one Python
-  door. Ranking and heat are `abs()`, so winners and losers interleave.
-- **Per-line baselines are wildly skewed**: median line ~18 Ir, 72% under
-  1,000, only ~1.8% exceed ±1000%. Hence no measured maximum - the
-  `HEAT_COLOR_FULL_SCALE_PERCENT` clamp holds those lines.
-- `profile_magnitudes()` (Σ|per-function line delta|) is what
-  `heatMapTotals.totals` carries, **not** what shares divide by.
-- `summary:` in the delta = the signed total, so the parser's 1.0000
-  self-check holds on it too.
-- **Core vs diff split** (the non-diff path stays byte-checkable against an
-  older generator): `BuildReport.test` vs `.diff_test`,
-  `CallgrindToHeatmap.model()` vs `.diff_model()`, and in heat-map JS every
-  diff override in the one `if (IS_DIFF) {...}` block.
+- Every number is **MODIFIED - BASELINE per (function, file, line)**, never
+  per (file, line).
+- The delta is callgrind format with **no `calls=`** → no call columns
+  (`HAS_CALL_GRAPH`). Callers come from the synthesized callers JSON
+  (`callgrind_diff.py --callers-output`), keyed by `<fn>` and
+  `<fn>\n<display path>\n<line>`, baselines included.
+- **Every share divides by that thing's own baseline**: `(new - old)/old`.
+  1→0 = -100%, 90→100 = +11.1%, 1→1 = 0% (empty). New in modified =
+  **infinite share** (`inf`/`Infinity`, `▲∞%`, heat-clamped) - never a
+  finite substitute.
+- **`events` = recorded counters only.** `costs_fit()` pads, trims trailing
+  zeros, stores no derived slot. `callgrind.counter_value()` is the door.
+  Ranking and heat use `abs()`.
+- `profile_magnitudes()` (Σ|delta|) feeds `heatMapTotals.totals`, not share
+  denominators. `summary:` = signed total (self-check holds).
+- **Core vs diff split**: `BuildReport.test`/`.diff_test`,
+  `CallgrindToHeatmap.model()`/`.diff_model()`, heat-map JS diff overrides
+  in the one `if (IS_DIFF) {...}` block.
 
 ## 6 `dev/scripts/` conventions
 
-- **79 columns is the hard max** for every line of `dev/` source, every
-  language, and a longer line is an **error**. Formatters cannot reach `echo`
-  text, a fenced `.md` block or a long template literal - split by hand.
-  **Not** the 80-column source _view_ (`HEAT_MAP_SOURCE_VIEW_WIDTH_CHARS`),
-  which **must never change to match**.
-- **A comment block is 2 lines, and 3 is a formatting error**
-  (`comment_block_scan.py`, `_COMMENT_BLOCK_MAX_LINES`, run by `reformat.sh`
-  as the `comments` stage). A block is consecutive **whole-line** comments,
-  so a blank line splits one and a trailing comment is invisible. **A file's
-  opening header is exempt** - line 1 to the first line of code - which is
-  what keeps `cyg_callback.c`'s format reference, `settings.sh`'s grammar and
-  `reformat.sh`'s coverage table. Longer reasoning moves **here**, not into a
-  third line; the other fix is to name the thing above and push the "why"
-  onto the code below it.
-- **ASCII plus a short allow list**: `≈`, `∞`, `▲`, `▶`, `▼`, `…`
-  (`_SOURCE_SCAN_ALLOWED_NON_ASCII_CHARS` in `validate_report.py`), **written
-  literally** - an entity would be double-escaped by `html_escape()` and its
-  length corrupts the `text.length` column math. Scanned is an allow-list
-  too (`_SOURCE_SCAN_FILE_EXTENSIONS` plus `_SOURCE_SCAN_FILE_NAMES` =
-  `README.md`), so `DECLAUDE.md` and every config file are out.
-  **The one exception to "no stage reaches inside a report": generated
-  output is scanned for non-allow-listed unicode too.** The walk prunes
-  only `__pycache__` and the artifacts dir - there is **no `_report`
-  suffix skip**, and re-adding one puts a report's pages back out of
-  reach. A page's characters are read by people whoever wrote them, so
-  one character set covers source and output alike. `source_scan_run` is
-  `reformat.sh`'s **last** stage for exactly this: the reports the batch
-  just wrote are inside its walk.
-- Reformatting `heatmap.*`, `frame.js`, `flame_bootstrap.js`, `theme.css` or
-  `theme.js` **changes a report**, so a page diff is expected. Text a script
-  `echo`s into `perf-tool/output.txt` is _page content_ - split into extra `#`
-  lines rather than overflow.
-- **No comments at all in the `scripts/` page assets**; elsewhere one
-  `# <Name> - what it is` above every class and function and one `#` line
-  above every field, never trailing, never docstrings.
-- **Names left alone:** `profile`, `stamp`, `loops`; `stamp` is a **boundary
-  name**. **`event` was renamed to `counter` throughout** - only callgrind's
-  `events:` line and the `e=` URL key keep the old spelling. **Do not open a
-  renaming campaign.**
-- One enclosing class per script holds **every** non-exported function.
-  **`import X` only**, packed one alphabetical line per block - hence
-  **`E401` and `I001` are off in `ruff.toml`**, whose comment is the rule's
-  long form. **Three `from X import Y` forms are allowed and no others**:
-  `from __future__ import annotations`, and the names taken from
-  `collections.abc` and from `typing`, each on its own line below the first
-  plain line, names spelled alphabetically. pyright gated at **0 errors**;
-  cost vectors are `callgrind.Costs`, summed only via `costs_add`.
+- **79 columns is a hard max** for all `dev/` source; split `echo` text,
+  fenced `.md` blocks and long template literals by hand. Unrelated to the
+  80-column source view (`HEAT_MAP_SOURCE_VIEW_WIDTH_CHARS`) - never change
+  it to match.
+- **A comment block is max 2 lines**; 3 is an error (`comment_block_scan.py`,
+  `_COMMENT_BLOCK_MAX_LINES`). Blocks = consecutive whole-line comments. A
+  file's opening header is exempt. Longer reasoning goes into `DECLAUDE.md`.
+- **ASCII plus `≈ ∞ ▲ ▶ ▼ …`** (`_SOURCE_SCAN_ALLOWED_NON_ASCII_CHARS`),
+  **written literally**, never as entities (double-escaping, broken
+  `text.length` math). The scan covers `dev/` source only
+  (`_SOURCE_SCAN_FILE_EXTENSIONS`, `README.md`), runs before `batch_run`, and
+  prunes `__pycache__`, artifacts dir (`_SOURCE_SCAN_SKIPPED_DIRS`) and
+  `*_report`
+  (`_SOURCE_SCAN_SKIPPED_DIR_SUFFIXES`).
+- Reformatting `heatmap.*`, `frame.js`, `flame_bootstrap.js`, `theme.css`,
+  `theme.js` changes reports. Text echoed into `perf-tool/output.txt` is page
+  content.
+- **No comments in `scripts/` page assets**; elsewhere one
+  `# <Name> - what it is` above every class/function and one `#` line above
+  every field; no trailing comments, no docstrings.
+- `event` → `counter` everywhere except callgrind's `events:` and the `e=`
+  URL key. **No renaming campaigns.**
+- One enclosing class per Python script holds every non-exported function.
+  **`import X` only**, one alphabetical line per block; the only `from`
+  forms: `from __future__ import annotations`, `collections.abc` and
+  `typing`, each alphabetical. pyright at **0 errors**; costs are
+  `callgrind.Costs`, summed via `costs_add`.
 
 ### 6.1 `settings.py`
 
-**The entire control surface for the tools' configuration**, beside
-`ui_strings.js` for the UI's vocabulary. **Single-file use is not a reason to
-keep a setting elsewhere.** `RANKING_COUNTER_NAME` is the counter every table
-ranks, colours and divides by. **"settings", never "constants"**, every
-language. **One setting, one spelling, all three languages**
-(`SCREAMING_SNAKE`); name = **full plain-word path, broad to narrow**, min two
-words (`HEAT_MAP_TREE_INDENT_PER_LEVEL_PX`, not `tree_indent`), unit suffix
-kept (`_PX`, `_MS`, `_PERCENT`, `_SHARE`, `_CHARS`, `_BYTES`).
+**The whole configuration surface** (beside `ui_strings.js` for UI words);
+single-file use is no reason to keep a setting elsewhere.
+`RANKING_COUNTER_NAME` is what every table ranks, colours and divides by.
+"settings", never "constants". `SCREAMING_SNAKE`, full broad-to-narrow
+plain-word path, two words min, unit suffix (`_PX`, `_MS`, `_PERCENT`,
+`_SHARE`, `_CHARS`, `_BYTES`).
 
-- **`settings.py` (imported, never run) holds every setting, then the
-  `SettingsReader` that checks and assigns them** - settings first, the
-  reader's own constants below them, the order every file reading a setting
-  is written in. **The line between the two is `_SETTING_NAMES`**, taken
-  right after `shell_settings_read()` binds the shell's: every setting is
-  bound by then and not one of the reader's constants is, and `all_named()`
-  and `match_check` read that frozenset, never the live namespace. **A
-  setting is spelled bare and the reader's own carry the leading
-  underscore** (`_SHELL_*`, `_SENTINEL_*`, `_SETTINGS_DIRECTORY`) - the same
-  "underscore means mine" as the shell, and what keeps them out of both the
-  browser's object and every module's load. `_is_setting_name()` still
-  **strips** the underscore, because a _declaring_ module spells its
-  declaration `_RANKING_COUNTER_NAME`; do not make it stop.
-- **Stays out**: format facts nobody may retune, class instances, derived
-  values, **and anything only verification reads** - so `VALIDATE_*`, the two
-  `ReportLayout`s and `SOURCE_SCAN_*` are `validate_report.py`'s own
-  constants, and `_SCREENSHOT_*` is `screenshots.py`'s. **Verification may
-  read production settings**, never copy one. A setting in `settings.sh`
-  is read by the three shipping scripts _and_ serialized into every
-  report's browser object, so **putting a verification-only value there
-  ships it**: `screenshots.py` imports no settings at all.
-- **A file declares what it reads; `load_into()` assigns**: an annotation
-  naming the type **plus an empty sentinel of that type**, then
-  `settings.load_into(__name__)`, before anything else. **The sentinel is
-  never read**; it binds the name, which is what lets ruff `F821` and pyright
-  `reportUnboundVariable` stay **on** - **do not turn either off again**.
-  `load_into()` walks every `SCREAMING_SNAKE` name bound and stops the run at
-  import via `match_check`, `sentinel_check`, `type_check`, in that order.
-  **No accessor, no conversion** - it is the one door.
-- **Settings come first**; a file's own constants go **below** the call.
-  `E401`/`I001` stay off for the import shape, `E501` for reformat.sh's own
-  column check.
-- **The browser gets every setting, wholesale**: `settings_script_write()`
-  serializes the module as one JSON literal, **frozen to its leaves**,
-  **linked before every reader**. **There is no list of what the pages may
-  see and none may come back** - a `.js` file reads a setting by naming it,
-  and nothing in Python changes when it starts or stops. **A setting is
-  therefore JSON-serializable**; anything that is not belongs below the cut,
-  where it is not a setting. **There is no exclusion at all** - every setting
-  is serialized, because no setting's word is expanded (3.1).
-  One value, one id, **no hand-matched twin** - why `FLAME_GRAPH_APP_DIR_NAME`,
-  `FLAME_GRAPH_APP_FILE_GLOBS` and `REPORT_RAW_ARCHIVE_SUFFIX` live once, in
-  `settings.sh`. The freeze + reader is `settings_handler.js`, which
-  **`script_write()` reads with a local `open()` against
-  `_SETTINGS_DIRECTORY`, never `theme.asset_text_read()`** - `theme.py` does
-  `import settings`, so importing theme there would cycle.
-- **`settings` is a reader function, not an object**: `settings("NAME")`
-  throws on a name the module does not hold; **lexical `const`, not a `window`
-  property**. **A `.js` file resolves each setting once into a local `const`
-  of the same name, at the top of its IIFE, above its own constants** -
-  **never call `settings()` in a loop or render path**. **A number, colour,
-  key or bound a `.js` file would otherwise spell for itself is a setting** -
-  `theme.js` and `frame.js` keep none.
+- Settings first, then `SettingsReader` (its constants carry `_`); the cut
+  is `_SETTING_NAMES`. `_is_setting_name()` **strips** a leading underscore
+  on purpose.
+- **Stays out**: format facts, class instances, derived values, anything
+  only verification reads (settings ship in every report).
+- **Declaring**: annotation + empty sentinel of that type, then
+  `settings.load_into(__name__)` before anything else. Sentinel is never
+  read; it keeps ruff `F821` and pyright `reportUnboundVariable` **on - do
+  not turn them off**. `load_into()` runs `match_check`, `sentinel_check`,
+  `type_check`. No accessor, no conversion. A file's own constants go below
+  the call. `E401`/`I001`/`E501` stay off.
+- **The browser gets every setting**: `settings_script_write()` serializes
+  the module as frozen JSON, linked before every reader; no allow-list, so
+  every setting must be JSON-serializable. `settings_handler.js` is read
+  with a local `open()`, **never `theme.asset_text_read()`** (cycle).
+- **JS**: `settings("NAME")` throws on unknown names; lexical `const`, not
+  `window`. Each `.js` resolves each setting once into a same-named `const`
+  at the top of its IIFE, above its own constants - **never in a loop or
+  render path**. Any number/colour/key/bound a `.js` would spell is a
+  setting.
 
 ### 6.2 `callgrind.py` - the one parser
 
-- `profile_load(path)` exits unless the self-check ratio is exactly
-  **1.0000** - re-verify after touching; cost conservation only.
-- `path_norm() -> PathInfo(display, local, group)` is the one path resolver;
-  no `--repo-root` flag exists. Functions are keyed by **name**, so one symbol
-  in two objects is one function.
-- Derived counters off `settings.DERIVED_COUNTER_TERMS`: `D1m`, `DLm`, `L1m`,
-  `LLm`, `Bm`, `CEst` (= Ir + 10·L1m + 100·LLm). **No coefficient and no
-  counter key is spelled in code** - only `settings.py`, and this file is
-  their one reader. Adding/dropping a counter = an edit there plus its
-  description in `ui_strings.js` and `README.md`.
-- **No Python spells out what a counter is called**; pages render descriptions
-  from `ui_strings.js` via `HEAT_MAP_COUNTER_DESCRIPTION_STRING_ID_PREFIX` +
-  name lowercased. `counter_value()`/`counter_names()` are the door for a
-  **stored** vector.
-- `function_entry` for an uncalled function = the **first** cost line
-  callgrind wrote in its home file; lowest line number does not - inlined
-  helpers sit above the entry.
+- `profile_load(path)` exits unless the self-check ratio is **1.0000**.
+- `path_norm() -> PathInfo(display, local, group)` is the one resolver; no
+  `--repo-root`. Functions keyed by **name**.
+- Derived counters from `settings.DERIVED_COUNTER_TERMS`: `D1m`, `DLm`,
+  `L1m`, `LLm`, `Bm`, `CEst` (= Ir + 10·L1m + 100·LLm). No coefficient or
+  counter key in code. Adding a counter = `settings.py` + description in
+  `ui_strings.js` and `README.md`.
+- No Python names what a counter is called; descriptions come from
+  `ui_strings.js` (`HEAT_MAP_COUNTER_DESCRIPTION_STRING_ID_PREFIX` + key
+  lowercased).
+- Uncalled `function_entry` = **first** cost line in its home file, not the
+  lowest line.
 
 ### 6.3 Other scripts
 
-- **`build_report.py`**: **every table names `_RANKING_COUNTER_NAME`
-  directly, no fallback** - `Profile.value()` raises `KeyError` on a counter a
-  profile can't supply. LABEL=VALUE rows are `ManifestRow`/`ManifestBlock` -
-  **never call any just "header"**.
-- **`callgrind_diff.py`**: `counters_check()` is a **hard error** naming both
-  lists. `--callers-output` required; its name, flags and JSON keys are
-  contract.
+- **`build_report.py`**: tables name `_RANKING_COUNTER_NAME`, no fallback
+  (`Profile.value()` raises `KeyError`). Rows are
+  `ManifestRow`/`ManifestBlock`, never "header".
+- **`callgrind_diff.py`**: `counters_check()` is a hard error naming both
+  lists. `--callers-output` required; name, flags, JSON keys are contract.
 - **`callgrind_to_heatmap.py`**: `render()` substitutes `__SCRIPTS__`
-  **before** `__DATA__`, and that result must never be scanned again. Order:
+  **before** `__DATA__`, never rescanned. Order:
   `theme.page_preamble_scripts()`, `sources/`, `ui_strings.js`, `theme.js`,
-  `heatmap.js`. The head is `theme.page_document`'s, asked for the heat map
-  stylesheet with `extra_css` and told `body_holds_scripts` because
-  `__SCRIPTS__` sits where its own script block would go.
-- **No generator holds a multi-line HTML/CSS/JS literal** - each is a real
-  file in `scripts/` read via `theme.asset_text_read()`, so **their JS is
-  written plainly**. `flame_bootstrap.js` keeps bare `__NAME__`/`__DATA__`
-  markers and **polls**: speedscope defines `window.speedscope` only once
-  started, after its script tag ran.
-- **`cyg_callback.c`**: `next` must stay a pointer and `end` a variable, so
-  the hot path stays 11/12 instructions; `next == end` = not sampling. Setup
-  is a constructor (incl. `memset`, so no page fault lands in a timed call).
-  The dump appends one `buildid <hex> <path>` line per loaded object to the
-  `.maps` copy, which is what lets a reader refuse a stale trace. **That path
-  is a `realpath`**: the loader hands `dlpi_name` the soname it asked for
-  (`libcurl.so.4`) while the maps lines name the file it resolved to
-  (`libcurl.so.4.8.0`), and `buildid_verify` matches the two by string, so
-  writing `dlpi_name` raw makes every run die "records no build-id".
-  **`CYG_CALLBACKS_MAGIC` is `trace_to_speedscope.py`'s `_MAGIC`** - a header
-  fact in two languages, so change neither alone. Single-threaded.
-- **`trace_to_speedscope.py`** takes the busiest run's first
-  `FLAME_GRAPH_MAX_RECORDED_CALLS` = 200 complete calls, hard-coded for the
-  current `TESTS_C` - retune if a test's shape changes. Must run while
-  `build-instr` still holds the traced binary; GCC instruments inlined bodies,
-  so inlined helpers are frames. **It refuses an object whose build-id moved**
-  since the trace was recorded (`buildid_verify`), so "must run while" is now
-  enforced, not just documented: rebuild before converting and the run stops
-  naming both ids.
-- **`validate_report.py OUTDIR [--diff]`** is a structural smoke test.
-  **It greps generated pages for three JS names - contract, not private**:
+  `heatmap.js`. Head from `theme.page_document` (`extra_css`,
+  `body_holds_scripts`).
+- **No multi-line HTML/CSS/JS literal in a generator** - real files in
+  `scripts/` via `theme.asset_text_read()`. `flame_bootstrap.js` keeps bare
+  `__NAME__`/`__DATA__` and **polls** for `window.speedscope`.
+- **`cyg_callback.c`**: `next` stays a pointer, `end` a variable (hot path
+  11/12 instructions). The `buildid` lines' path is a **`realpath`**, not
+  `dlpi_name`. **`CYG_CALLBACKS_MAGIC` = `trace_to_speedscope.py`'s
+  `_MAGIC`** - change both. Single-threaded.
+- **`trace_to_speedscope.py`**: busiest run's first
+  `FLAME_GRAPH_MAX_RECORDED_CALLS` (200) calls; retune if a test's shape
+  changes. Refuses an object whose build-id moved (`buildid_verify`) - run
+  it before rebuilding the trace tree. Inlined helpers are frames.
+- **`validate_report.py`** greps pages for three contract JS names:
   `loadFileFromBase64`, `var document_base64 = "..."`,
-  `report_ui.layout_activate`; rename one and every page fails validation
-  while looking correct in a browser. `flame_graph_check` requires exactly one
-  `evented` profile whose `exporter` is ours; `raw_archive_check` runs its
-  checks **inside** each `raw/*txz`.
+  `report_ui.layout_activate` - rename one and every page fails.
 
 ### 6.4 `ui_strings.js`, `error_overlay.js`, JS names
 
-**`ui_strings.js` is the whole UI vocabulary, in one object**, keyed by a
-`str_` id. **Must load before the script that reads it.** `text_of(id)`
-**throws on an unknown id** and `settings(name)` on an unlisted setting - both
-surface as the error page, deliberately. A string with a number is **one entry
-with a placeholder**, never split at the seam. **Out**: boundary names and
-number notation. **`heatmap.html` holds none.** `build_report.py` renders
-server-side, so `(no recorded caller)` stays in Python, in step with
-`str_no_caller` by hand.
+**`ui_strings.js` is the whole UI vocabulary**, keyed `str_*`, loaded before
+its readers. `text_of(id)` and `settings(name)` throw on unknowns (→ error
+page, deliberately). Strings with numbers are one entry with a placeholder.
+Out: boundary names, number notation. `heatmap.html` holds none.
+`(no recorded caller)` stays in Python, matching `str_no_caller` by hand.
 
-**`error_overlay.js`** replaces the document on an uncaught `error` or
-`unhandledrejection`. **It must be the first script every page links**;
-`theme.page_preamble_scripts()` is the one place that order is written. It is
-the **only** `.js` that may not resolve strings at IIFE top (it loads before
-`ui_strings.js` **and before `settings_handler.js`**), so `text_of_or_id(id)`
-reads at render time and **its colours, font and padding are inline
-constants, not settings** - it has no theme relationship at all, which is
-what makes it render on an unthemed page. **A thrower resolves nothing**:
-an exception message is a whitespace-delimited array, token 0 a candidate
-`str_` key and the rest its positional args (`{0}`, `{1}`), which
-`format_or_raw` looks up through `ui_strings.js`'s `text_over_args` and
-prints as `<key>:  <formatted>`. **Every failure path prints the raw
-message verbatim** - no `ui_strings.js`, an unknown key, or a `{N}` the
-args do not hold each abandon formatting rather than half-substituting, so
-a non-key throw (`no such setting: X`, any browser `TypeError`) prints
-naturally. `text_fill`'s named markers stay, for the ~10 non-error sites in
-`heatmap.js`. The page is **one `<pre>` holding a Markdown document** -
-`# perf2html error`, the source label on its own line, the message, then
-`##` `address`, `callstack` and `manifest`, the last two as
-whitespace-padded ASCII tables whose unparsed lines pass through as
-one-cell rows. **Every `file://` path printed is truncated to the report
-root** (recovered from `location.href`) so the `copy` control cannot leak a
-home directory - a privacy requirement, not cosmetics. Bottom controls are
-`copy`, `reload` and `restart`, `restart` being the one that leaves, to the
-root `index.html`. **An error owns the whole tab**: the page that threw may
-be framed two levels down, so
-`report_render` posts the report up (`report_ui: "report_error"`) until the
-**top** document replaces itself, menus and all. **It touches neither
-`history` nor the URL**, so the bad address stays in the bar and a **reload
-relaunches the page that threw** - there is no `#report-error` marker, no
-stored restore hash and no Back path; re-adding one puts the menu strips back
-around an error page. A `file://` page cannot
-`fetch()` MANIFEST.txt, so `manifest_script_write` ships
-`assets/report_manifest.js` into `window.report_manifest`, **carrying every
-row but `checksum=`**.
+**`error_overlay.js`** replaces the document on uncaught `error`/
+`unhandledrejection`; **first script on every page**
+(`theme.page_preamble_scripts()`), before `ui_strings.js` and settings, so
+it resolves strings at render time and keeps inline colours. A thrown
+message is tokens: `str_` key + `{N}` args (`format_or_raw`); **any failure
+prints the raw message verbatim**. **`file://` paths are truncated to the
+report root** (privacy). **An error owns the whole tab** (posted up as
+`report_ui: "report_error"`) and **touches neither `history` nor the URL** -
+no `#report-error` marker. `manifest_script_write` ships
+`assets/report_manifest.js` (`window.report_manifest`, every row but
+`checksum=`).
 
-**Names:** `snake_case` is ours, **camelCase means a name the browser or
-Python owns** (DOM member, CSS class, `data-*`, localStorage or URL key,
-TypedDict JSON key) - **it crosses a boundary and cannot be renamed freely**.
-`window.report_sources` is keyed by display path and read only by
-`source_text()`; break one side and every heat map silently renders "Source
-not available." The `__NAME__`/`__DATA__`/`__SCRIPTS__`/`__APP_CSS__`/
-`__APP_JS__`/`__PROFILE_JS__` substitution markers are matched literally by
-Python - **never rename them**. **A string literal left inline in a `.js` file
-is a boundary name by definition.**
+**Names**: `snake_case` is ours; **camelCase is owned by the browser or
+Python** (DOM, CSS class, `data-*`, storage/URL key, TypedDict key) - can't
+be renamed freely. `window.report_sources` is keyed by display path, read
+only by `source_text()`. Markers `__NAME__`, `__DATA__`, `__SCRIPTS__`,
+`__APP_CSS__`, `__APP_JS__`, `__PROFILE_JS__` - **never rename**. An inline
+string literal in `.js` is a boundary name by definition.
 
 ## 7 Why the heat map exists
 
-Under `-O2` small static functions inline into their callers, so the
-function-level top-N table charges their cost to the caller; the heat map
-shows it per line. Cross-check with `callgrind_annotate --show-percs=yes`.
-`/* perf #N: X.XX% */` comments in `lib/` are stale dev annotations - drop
-before submitting upstream.
+`-O2` inlines small statics into callers, so function tables misattribute;
+the heat map shows cost per line. Cross-check with
+`callgrind_annotate --show-percs=yes`. `/* perf #N: X.XX% */` comments in
+`lib/` are stale - drop before upstreaming.
 
 ## 8 Look and feel
 
-One dark theme, Monaco/monospace everywhere. **Every length in `dev/` page
-source is a design pixel, not a screen pixel**: the design box is
-`DESIGN_COORDINATES_WIDTH_PX` = 1920 wide, and `theme.js`'s
-`design_scale_apply()` fits it to the window with one `zoom` on `:root`,
-recomputed on every resize. So a 4k window draws every `px` at 2x and a
-postage-stamp window at 0.2x, with layout and apparent font size unchanged.
-**Never retune a length by looking at one screen** - it lands in design
-space, where 1920 is the whole width.
+One dark theme, Monaco/monospace. **Every `dev/` page length is a design
+pixel**: design width `DESIGN_COORDINATES_WIDTH_PX` = 1920, fitted to the
+window by `theme.js`'s `design_scale_apply()` (one `zoom` on `:root`, every
+resize). **Never retune a length by looking at one screen.**
 
-- **The fit is then multiplied by the scale slider**, the nav strip's
-  `scale:` control beside "reset columns". Its travel runs
-  `DESIGN_SCALE_SMALLEST_MULTIPLE` (1) to `DESIGN_SCALE_LARGEST_MULTIPLE`
-  (4), starting `DESIGN_SCALE_DEFAULT_TRAVEL_PERCENT` (25) of the way
-  along. **1 is the page as its lengths are written** - the doubling that
-  made the content fill a 1080p box lives in the lengths themselves, not
-  in this multiplier, so the two never stack. **The multipliers are never
-  shown** - the label is the whole vocabulary.
-  `design_scale_travel_set()` is the one door, and it and the resize
-  listener both go through `design_scale_settle()`: apply the zoom, then
-  the debounced `layout_refresh`. `frame.js` follows it with
-  `reset_broadcast()`, so a scale change costs the reader their dragged
-  column widths exactly as pressing "reset columns" does.
-
-- Because `zoom` scales fonts, `px` and `ch` together, and every measurement
-  in `heatmap.js`/`theme.js` is rect-against-rect, **almost nothing needs a
-  scale var**. The exceptions are the two spaces that stay unzoomed:
-  `window.innerWidth`/`innerHeight` and `documentElement.clientWidth`/
-  `clientHeight` (`getBoundingClientRect()` does not) - `design_px()` converts
-  one, and `pane_splitter_attach` is its one caller. And a `vh`, which
-  resolves against the unzoomed window and is then zoomed, so **a full-height
-  rule reads `--design-vh`** (`DESIGN_VIEWPORT_HEIGHT_PROPERTY`), never `vh`.
-- **A framed document scales itself by 1** - it is laid out inside an
-  already-zoomed parent, so it is in design space already and zooming again
-  would compound.
-- **A width media query cannot fire**: design width is always 1920. The heat
-  map's `max-width: 720px` block was deleted for that reason - do not add one.
-**No decorative borders**; **no tooltips** - nothing rendered carries a
-`title=`, neither `Cell` nor `Column` has a field for one, and no exact value
-appears anywhere (only `<iframe title="report page">` remains).
-
-- `--bg` = slate dark member darkened 8% via `Theme.shade()`
-  (`THEME_COLOR_ROLE_BACKGROUND_SHADE_FACTOR`) - background, scrollbar track,
-  minimap band all follow it, so **change it only there**. **A heated cell
-  does not** - it carries its ramp stop opaque, blended over nothing.
-  `THEME_COLOR_PAIR_ENTRIES`/`THEME_COLOR_PAIR_NAMES` must agree in length or
-  `Theme.pairs()` fails (`HEAT_COLOR_LOGO_STOPS` exempt).
-- **Stylizing the heat map is forbidden - it renders precisely as
-  advertised.** `HEAT_COLOR_LOGO_STOPS` is the user's own palette, picked to
-  be seen, so **a cell paints the stop itself** - `ramp_channels_at()` in
-  `theme.js` is the one interpolation, between the two stops the position
-  falls between, and it stops there; `cell_style()` and `logo_color_at()`
-  are its only callers and the ramp reaches it as
-  `settings("HEAT_COLOR_LOGO_STOPS")`, never through `__DATA__`. **No
-  alpha, no fade, no blend over the background**, and no softer variant for
-  the tree: the alpha settings were removed and must not come back. A
-  session may fix a mapping that
-  contradicts this file or `README.md`; it may **not** retune a stop, a
-  curve or a contrast rule because the result would look better, and may not
-  add a new visual treatment on top. **No redesign, ever, on a session's own
-  initiative** - propose it and leave the code alone.
+- The `scale:` slider multiplies the fit (`DESIGN_SCALE_*` settings,
+  multipliers never shown); `design_scale_travel_set()` is the door, and a
+  change resets column widths.
+- Unzoomed exceptions: `window.inner*`/`documentElement.client*` (convert
+  via `design_px()`), and `vh` - **use `--design-vh`**. A framed document
+  scales by 1. **Width media queries can't fire** - don't add one.
+- **No decorative borders, no tooltips** (no `title=` anywhere except
+  `<iframe title="report page">`).
+- `--bg` = slate dark darkened 8% via `Theme.shade()`
+  (`THEME_COLOR_ROLE_BACKGROUND_SHADE_FACTOR`) - change it only there.
+  Heated cells paint their stop opaque. `THEME_COLOR_PAIR_ENTRIES`/
+  `THEME_COLOR_PAIR_NAMES` must match in length.
+- **Stylizing the heat map is forbidden.** `HEAT_COLOR_LOGO_STOPS` is the
+  user's palette; a cell paints the stop itself. `ramp_channels_at()` is the
+  one interpolation (callers `cell_style()`, `logo_color_at()`), ramp read
+  via `settings("HEAT_COLOR_LOGO_STOPS")`. **No alpha, fade or blend**; the
+  alpha settings must not return. Fix mappings that contradict docs; **never
+  retune stops/curves/contrast for looks, never redesign on your own
+  initiative** - propose instead.
 - **`heat_of_share()` is the whole colour mapping**: clamp to
-  `HEAT_COLOR_FULL_SCALE_PERCENT`, divide, apply the curve. **Nothing is
-  measured off the data** - no `max_share`, no per-scope scan, no
-  smallest-visible floor, so a line's colour depends only on the number
-  printed beside it. **Resist re-introducing a measured ceiling.** A diff maps
-  `[-100..100%]` with **0% at the 5.5 midpoint**, the curve applied to the
-  **magnitude before** the remap. The scale dropdown is a curve × scope
-  product built at runtime; `scale` is an entry, never a bare string.
-- **Scope is only a denominator**, never a colour ceiling (`global`,
-  `per file`, `per function`); `share_in_scope()` is the door, `heat_of_line()`
-  picks it or the diff's `share_of_baseline` on `IS_DIFF`. **File view only.**
-  **A diff has one scope, `per line`.**
-- **Gotcha:** `.strip .title` is `--title-bg` (teal) for the framed path
-  (`all / heat map`), but the hot end of the wordmark is nearly invisible on
-  it (1.39:1), so `:has(.wordmark-letter)` forces the plate to **`--nav`,
-  the strip's own colour** (worst letter 4.31:1) - the logo sits in the menu
-  row with no plate showing at all. **It is not `--bg`**: that drew a panel
-  against the strip, which is the contradiction this replaced.
-- **`README.md`'s "Reading a Diff Report" is the specification of the diff
-  notation** - `NumberFormat` and the `theme.js` functions follow it, never
-  the reverse.
-- Column widths are exact `ch`, **never persisted**, and **no column is ever
-  narrower than its own title** - one rule in `column_widths()` and
-  `table_render()`; `grow_column_fill()` measures against
-  `nearest_scroller()`, never `window.innerWidth`.
-- **Counter descriptions are one vocabulary in two places that must say the
-  same words**: `ui_strings.js`'s `str_counter_<key>` and `README.md`'s
-  "Callgrind Counters" table - **byte-identical per key**, all 19, one edit;
-  Python is **not** a third place. The `<select>`'s `ch` width comes from the
-  longest `"<desc> / <key>"` (42 ch).
-- `counter_list`/`secondary_counters` list every counter the profile _can_
-  produce, **not** filtered on a zero total, so layout stays stable; all-zero
-  columns render blank, totals guard `|| 1`. **No row-wide heat.**
-- `minimap_build()` runs _before_ `layout_activate()`, narrowing the pane by
-  the minimap's own width - the fill measures it as-is. Only `th` cells are sticky - **never
-  measure the thead**.
+  `HEAT_COLOR_FULL_SCALE_PERCENT`, divide, curve. **Nothing measured off the
+  data** - no `max_share`, no floor. A diff maps `[-100..100%]`, 0% at the
+  5.5 midpoint, curve on magnitude before remap. The scale dropdown is
+  curve × scope; `scale` is an entry, not a string.
+- **Scope is only a denominator** (`global`, `per file`, `per function`;
+  `share_in_scope()`); `heat_of_line()` uses `share_of_baseline` on
+  `IS_DIFF`. File view only. A diff has one scope, `per line`.
+- **README's "Reading a Diff Report" specifies diff notation**;
+  `NumberFormat` and `theme.js` follow it.
+- Column widths are exact `ch`, never persisted, **never narrower than the
+  title** (`column_widths()`, `table_render()`); `grow_column_fill()`
+  measures `nearest_scroller()`, not `window.innerWidth`.
+- **Counter descriptions**: `ui_strings.js` `str_counter_<key>` and
+  README's "Callgrind Counters" table are **byte-identical per key**, all 19;
+  Python is not a third place. `<select>` width = longest
+  `"<desc> / <key>"` (42 ch).
+- Counter lists are not zero-filtered; zero columns render blank. No
+  row-wide heat. Only `th` is sticky - never measure the thead.
 
 ### 8.1 Number notation
 
-`2.1K`/`2.0G`, `63.2%`, `<0.01%`; exact zero renders empty. The notation floor
-is **`NUMBER_SMALLEST_PRINTED_PERCENT`** (0.01), and it is now the only such
-floor: `HEAT_COLOR_SMALLEST_VISIBLE_SHARE` went with `theme.heat_t()`, since
-`heat_of_share()` measures nothing off the data. The notation _strings_
-(`<0.01%`, `≈0.00%`, `>1000x`, `∞%`) stay inline, out of `ui_strings.js`.
+`2.1K`/`2.0G`, `63.2%`, `<0.01%`; exact zero is empty. Floor:
+`NUMBER_SMALLEST_PRINTED_PERCENT` (0.01), the only floor. Notation strings
+(`<0.01%`, `≈0.00%`, `>1000x`, `∞%`) stay inline.
 
-**A diff never prints `+`.** A share leads with an arrow, keeping a negative's
-sign (`▲11.1%`, `▼-100.0%`); an amount carries only a minus when negative, the
-**ASCII hyphen** - U+2212 is not in the allow list and neither renderer emits
-it. Under 0.01% → `▲≈0.00%`; a zero baseline → `▲∞%`. **Past 100% a diff
-share switches to a multiple** (`▲1.30x`), and at or past
-**`NUMBER_LARGEST_PRINTED_MULTIPLE_TIMES`** (999.99) to `>1000x`; those two
-state a bound, so no sign. **A drop can't pass -100%**, so
-the multiple branch is rise-only - don't "fix" negative multiples. `theme.js`'s
-`report_ui` functions and `theme.py`'s `NumberFormat` are kept in step by
-hand, verified on README's rows; **both read the bound as a setting** - it was
-once a number spelled in each file and "kept in step", which is exactly what a
-setting exists to end.
+**A diff never prints `+`.** Shares lead with an arrow and keep a negative's
+sign (`▲11.1%`, `▼-100.0%`); amounts use the **ASCII hyphen** for minus.
+Under 0.01% → `▲≈0.00%`; zero baseline → `▲∞%`. Past 100% → multiple
+(`▲1.30x`); at/past `NUMBER_LARGEST_PRINTED_MULTIPLE_TIMES` (999.99) →
+`>1000x`, unsigned. Multiples are rise-only. `theme.js`'s `report_ui` and
+`theme.py`'s `NumberFormat` match by hand (verified on README's rows); both
+read the bound as a setting.
 
 ### 8.2 Frames and URL state
 
-Two levels deep: overview frames a test summary, which frames its heat map /
-flame graph; both run `FRAME_JS`, deciding by `report_ui.is_framed`.
-**`theme.js` is the utility library for being an HTML app; `frame.js` is only
-the thin top-level frame controller** - cross-frame talk (`is_framed`,
-`parent_post`, `parent_listen`, `hash_publish`) lives in `theme.js`, and
-**moving a helper into `frame.js` is the wrong direction**.
+Overview frames a test summary, which frames its heat map/flame graph; both
+run `FRAME_JS`, deciding by `report_ui.is_framed`. **`theme.js` is the
+utility library; `frame.js` is only the thin top-level controller** -
+cross-frame helpers (`is_framed`, `parent_post`, `parent_listen`,
+`hash_publish`) stay in `theme.js`.
 
 - **URL is the whole state.** Frame `#<view>[/<inner hash>]`; heat map
   `f=<file>`, `f=<file>&l=<n>`, `fn=<name>`, none = home, `&e=<counter>` when
-  >1 counter. **Nothing is remembered outside the URL** except
-  `heat.scale`/`heat.sort`, `view.scale` (the scale slider's travel, a
-  0..1 fraction, top-level only) and `split.<pane>`.
-- **The local store is versioned**: `STORAGE_VERSION` = `perf2html v2` under
-  `STORAGE_VERSION_KEY` = `perf2html.version`, a bare string, not JSON. Not
-  **exactly** the current string → sweep every key this report owns;
-  **bumping it is how a stored-format change is rolled out**. **A new key must
-  go in `STORAGE_OWNED_KEYS` or `STORAGE_OWNED_PREFIXES` (`split.`) or its
-  data outlives every bump.** All four are **settings**, not `theme.js`
-  constants; the keys themselves stay boundary names.
-- `FRAME_JS` loads with `location.replace()`, passing
-  `link_href + (inner_hash || "#")` - **never `iframe.src`** (a history entry
-  per load, back desyncs). `"#"` not `""`: a fragment-less URL is a reload.
-- `hash_changed` is posted by the heat map _and_ by a framed `FRAME_JS`, so a
-  middle level relays its full hash up - without it the outer hash freezes at
-  `#<test>`. **Both go through `report_ui.hash_publish()`.**
-- Regression test: click test → view → file → line → counter; the outer hash
-  must end `#<test>/heat-map/f=<file>&l=<n>&e=<ev>` and load back to all three
-  levels' hashes.
+  >1 counter. Only `heat.scale`, `heat.sort`, `view.scale` (top-level
+  slider, 0..1) and `split.<pane>` are stored.
+- **Storage is versioned**: `STORAGE_VERSION` = `perf2html v2` under
+  `STORAGE_VERSION_KEY` = `perf2html.version` (bare string). Mismatch →
+  sweep owned keys. **A new key must go in `STORAGE_OWNED_KEYS` or
+  `STORAGE_OWNED_PREFIXES` (`split.`).** All four are settings.
+- `FRAME_JS` loads via `location.replace(link_href + (inner_hash || "#"))` -
+  **never `iframe.src`**; `"#"` not `""`.
+- `hash_changed` is posted by the heat map and by a framed `FRAME_JS` (the
+  middle level relays up), both via `report_ui.hash_publish()`.
+- Regression test: test → view → file → line → counter; outer hash ends
+  `#<test>/heat-map/f=<file>&l=<n>&e=<ev>` and reloads all three levels.
 
 ## 9 Measurement and byte facts
 
-- Callgrind gives no per-call stacks or time: `calls=` lines are aggregated
-  (caller, callee) totals. `--separate-callers=N` is exact but still
-  aggregated and orderless - **never feed such a file to the summary/heat
-  map**, functions come out named by full chain.
-- Hook cost is inside every traced duration → **flame graph for shape and
-  outliers, perf log for speed**. Native speed moves ~1.9× with host state -
-  only compare within one run. `rdtsc` steps by 20 ticks = 10.02 ns, so every
-  flame-graph duration is a multiple of ~10 ns.
-- `perf stat -e cycles:u,instructions:u` works in this WSL2; `perf record`
-  samples; uftrace is not installed.
-- Eight `TESTS_C` = **8.39MB**: heat-map pages 44%, flame `profile.js` base64
-  trace 36%, shared 13%, raw archives 5%. **None of it is deleted to make a
-  number smaller.** **base64 costs a flat 33%** of every trace and is **not
-  ours to remove**: `loadFileFromBase64` is the only entry point speedscope
-  exports, and its own `<script src="file:///profile">` 404s - hence the
-  polling bootstrap. **Still open.**
+- Callgrind `calls=` are aggregated. **Never feed `--separate-callers=N`
+  output to the summary/heat map.**
+- **Flame graph for shape, perf log for speed** (hook cost is in traced
+  durations). Native speed moves ~1.9× with host state - compare within one
+  run. uftrace is not installed.
+- Nothing is deleted to shrink reports; speedscope's base64 is not ours.
 
 ## 10 Current state
 
 No `lib/` change has come out of the profiling yet. Per-test numbers live in
-the reports (overview: native time, cycles, instructions), not here.
+the reports, not here.
 
 ## 11 Workflow
 
-1. Quick read: `./build/tests/perf/perf <test>`, median of 3–5 - **real
-   numbers only from the pinned RelWithDebInfo build**.
+1. Quick read: `perf <test>`, median of 3-5; **real numbers only from a
+   pinned `build-relwithdebinfo`**.
 1. One focused change, rebuild, re-run, then
    `dev/perf2html.sh --report=perf2html_modified_report` and
    `dev/perf2html_diff.sh`. Keep only changes that measurably help **and**
-   leave everything else the test prints unchanged. Record before/after
-   numbers in "Current state".
-1. After any `dev/` edit: **`dev/scripts/reformat.sh --regenerate`, one run**
-   - it checks the source, rebuilds the three reports' pages from the last
-   run's recordings and checks what it wrote. **`--regenerate` goes on every
-   run but the one after `perf` was re-linked**, where it is left off and the
-   batch measures; pass it wrongly and the run drops it and measures anyway.
-1. Before final: full suite (`tests/runtests.pl`, or `ctest` from `build/`
-   with `-DBUILD_TESTING=ON`) - the perf test doesn't validate correctness.
+   leave test output unchanged. Record before/after in "Current state".
+1. After any `dev/` edit: **`dev/scripts/enforcer.sh --regenerate`**, one
+   run. Leave `--regenerate` off only after `perf` was re-linked; wrongly
+   passed, it refuses in under a second.
+1. **Changing the scripts is verified by all three modes, in order**
+   (11.1); the daily loop is mode 3 only.
+1. Before final: `tests/runtests.pl` (perf doesn't check correctness).
+
+### 11.1 The three debug modes
+
+Each proves a different property; running one verifies a third.
+
+1. **`enforcer.sh`**: cold, deletes everything, measures. Proves measuring
+   and deletion.
+1. **`--keep-artifacts`**: same, keeps the artifacts dir. Proves recordings
+   survive.
+1. **`--regenerate`**: rebuilds pages from mode 2's recordings. Proves
+   reuse.
+
+**Run in that order** (each mode's precondition is the previous one's
+postcondition), ≈ 6 min on warm ccache; `dev/scripts/test_all.sh` does.

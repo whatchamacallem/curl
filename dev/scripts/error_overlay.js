@@ -11,6 +11,7 @@ window.report_error_overlay = (function () {
   const OVERLAY_PADDING = "24px 36px 48px";
   const ROOT_INDEX_NAME = "index.html";
   const CONTROL_GAP = "18px";
+  const OVERLAY_TABLE_TOTAL_CHARS = 120;
 
   let overlay_is_shown = false;
 
@@ -27,7 +28,7 @@ window.report_error_overlay = (function () {
     const link = document.createElement("a");
     link.textContent = label;
     link.style.color = OVERLAY_LINK_COLOR;
-    link.style.textDecoration = "none";
+    link.style.textDecoration = "underline";
     link.style.cursor = "pointer";
     link.style.marginRight = CONTROL_GAP;
     link.addEventListener("click", function (click_event) {
@@ -293,15 +294,11 @@ window.report_error_overlay = (function () {
   }
 
   function table_render(titles, rows) {
-    const widths = titles.map(function (title) {
-      return title.length;
-    });
-    for (const row of rows) {
-      for (let index = 0; index < row.length; index += 1) {
-        const cell_width = String(row[index]).length;
-        widths[index] = Math.max(widths[index] || 0, cell_width);
-      }
-    }
+    const all_rows = [titles].concat(rows);
+    const widths = column_widths(
+      column_longest(all_rows, 0),
+      column_longest(all_rows, 1),
+    );
     const written = [row_text(titles, widths), rule_text(widths)];
     for (const row of rows) {
       written.push(row_text(row, widths));
@@ -309,20 +306,45 @@ window.report_error_overlay = (function () {
     return written.join("\n");
   }
 
-  function row_text(cells, widths) {
-    const padded = [];
-    for (let index = 0; index < widths.length; index += 1) {
-      const cell = index < cells.length ? String(cells[index]) : "";
-      padded.push(cell + " ".repeat(widths[index] - cell.length));
+  function column_longest(rows, index) {
+    let longest = 0;
+    for (const row of rows) {
+      longest = Math.max(longest, String(row[index] || "").length);
     }
-    return "| " + padded.join(" | ") + " |";
+    return longest;
+  }
+
+  function column_widths(longest_a, longest_b) {
+    const sum = longest_a + longest_b;
+    let width_a = longest_a;
+    if (sum > OVERLAY_TABLE_TOTAL_CHARS) {
+      width_a = Math.floor((OVERLAY_TABLE_TOTAL_CHARS * longest_a) / sum);
+    }
+    const width_b = Math.min(longest_b, OVERLAY_TABLE_TOTAL_CHARS - width_a);
+    return [width_a, width_b];
+  }
+
+  function row_text(cells, widths) {
+    const rest = cells.length > 1 ? cells[1] : "";
+    return (
+      "| " +
+      cell_fit(cells[0], widths[0]) +
+      " | " +
+      cell_fit(rest, widths[1]) +
+      " |"
+    );
   }
 
   function rule_text(widths) {
-    const dashes = widths.map(function (width) {
-      return "-".repeat(width);
-    });
-    return "| " + dashes.join(" | ") + " |";
+    return row_text(["-".repeat(widths[0]), "-".repeat(widths[1])], widths);
+  }
+
+  function cell_fit(text, width) {
+    const cell = String(text || "");
+    if (cell.length > width) {
+      return cell.slice(cell.length - width);
+    }
+    return cell + " ".repeat(width - cell.length);
   }
 
   function text_copy(text) {

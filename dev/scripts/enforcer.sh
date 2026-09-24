@@ -1,15 +1,16 @@
 #!/usr/bin/env bash
-# dev/scripts/reformat.sh [--check] [--regenerate] [--verbose]
+# dev/scripts/enforcer.sh [--check] [--keep-artifacts] [--regenerate]
+#     [--verbose]
 #
 # The one hook that verifies dev/ and its output. It clears the reports,
-# formats and lints dev/, runs the batch itself with default arguments, then
-# validates and shoots the reports it wrote and scans the tree for ASCII.
+# formats, lints and scans dev/ source, runs the batch itself with default
+# arguments, then validates and shoots the reports it wrote.
 #
 # --regenerate rebuilds the pages from the last run's recordings instead of
 # measuring again, which is what a dev/ edit wants: nothing it changed can
 # move a number. It is checked rather than trusted -- the recordings must
 # still describe the executable on disk -- and a check that does not hold up
-# drops the flag and measures from scratch. See regenerate_check below.
+# is a hard error, never a silent hour of profiling. See regenerate_check.
 #
 # Any fault whatsoever is a hard error, reported where it happened: the run
 # stops, and nothing downstream prints. Reading a consequence and mistaking
@@ -38,9 +39,9 @@
 # dev/ source, so no stage formats, lints or column-checks one.
 #
 # A report is output, not source: no stage above reaches inside one, so a
-# generated page is neither formatted nor held to the column limit. The
-# ASCII scan is the one exception, and runs over the whole tree at once: a
-# page's characters are read by people, whoever wrote them.
+# generated page is neither formatted, linted, column-checked nor scanned
+# for ASCII. Every one of those stages runs before the batch writes a
+# report, and what a generator emits is that generator's own to get right.
 #
 # The screenshots stage shoots the modified and diff reports at each
 # viewport, naming a file for its size and report. Shots land outside every
@@ -60,13 +61,12 @@ _SCRIPTS="$(dirname "$_SCRIPT")"
 INVOKED_FROM="$PWD"
 cd "$_SCRIPTS"
 
-# Where each kind of source lives, relative to scripts/.
+# Where each kind of source lives, relative to scripts/, and the repo a
+# report's executable= row is relative to.
 _DIR_DEV=..
+_DIR_REPO=../..
 _DIR_SCRIPTS=.
 _DIR_SRC=../src
-
-# the repository root, which the profiled executable is found under
-_DIR_REPO=../..
 
 # the hard column limit every kind of source is checked against
 _COLUMNS_MAX=79
@@ -99,16 +99,19 @@ _DEFAULT_REPORTS=(
 
 usage_show() {
   cat <<'EOF'
-scripts/reformat.sh [--check] [--regenerate] [--verbose]
+scripts/enforcer.sh [--check] [--keep-artifacts] [--regenerate] [--verbose]
     Formats and lints dev/, runs perf2html_batch.sh over the three reports
     it cleared, then validates and screenshots what it wrote and scans the
     tree for non-ASCII. Any fault stops the run where it happened.
     --check           Report what would change rather than writing it.
+    --keep-artifacts  Measure as usual, but keep the recordings afterwards,
+                      which is what a later --regenerate reuses. Flagless
+                      runs delete them.
     --regenerate      Rebuild the three reports' pages from the last run's
                       recordings, re-measuring nothing. Pass it after every
                       dev/ edit; leave it off once perf has been re-linked.
-                      A run whose recordings are older than the executable
-                      says so, drops the flag and measures from scratch.
+                      Recordings that no longer describe the executable are
+                      a hard error: re-run without the flag to measure.
     --verbose         Enables diagnostic information.
 EOF
 }
@@ -126,6 +129,27 @@ tool_find() {
   done
 
   return 1
+}
+
+# child_stream - run one child, streaming it live. SETS STAGE_EXIT_CODE and
+# STAGE_OUTPUT, their canonical setter. Never $( ): that buffers the child.
+child_stream() {
+  local _log
+  _log="$(mktemp)"
+  STAGE_EXIT_CODE=0
+
+  # the tee is chosen before the child starts, so verbose watches the work
+  # happen rather than reading it replayed once the child has exited
+  if [ "$VERBOSE" = 1 ]; then
+    if ! { "$@" 2>&1 | tee "$_log"; }; then
+      STAGE_EXIT_CODE="${PIPESTATUS[0]}"
+    fi
+  else
+    "$@" >"$_log" 2>&1 || STAGE_EXIT_CODE=$?
+  fi
+
+  STAGE_OUTPUT="$(cat "$_log")"
+  rm -f "$_log"
 }
 
 # stage_fail - print one stage's verdict and output, then stop the run. The
@@ -165,20 +189,19 @@ tool_run() {
   fi
 
   if [ "$#" = 0 ]; then
-    printf '%-12s| ok      | no files\n' "$_label"
+    log_verbose "$(printf '%-12s| ok      | no files' "$_label")"
     return 0
   fi
 
-  local _output _exit_code=0
-  _output="$("$_binary" "${_TOOL_ARGS[@]}" "$@" 2>&1)" || _exit_code=$?
+  child_stream "$_binary" "${_TOOL_ARGS[@]}" "$@"
 
-  if [ "$_exit_code" = 0 ]; then
-    printf '%-12s| ok      | %s file(s)\n' "$_label" "$#"
-    log_verbose "$_output"
+  if [ "$STAGE_EXIT_CODE" = 0 ]; then
+    log_verbose "$(printf '%-12s| ok      | %s file(s)' "$_label" "$#")"
     return 0
   fi
 
-  stage_fail "$_label" CHANGED "$(echo "$_output" | head -n 1)" "$_output"
+  stage_fail "$_label" CHANGED "$(echo "$STAGE_OUTPUT" | head -n 1)" \
+    "$STAGE_OUTPUT"
 }
 
 # files_of - the one door every stage collects files through, so a name
@@ -268,16 +291,14 @@ lint_run() {
     tool_missing_fail lint pyright
   fi
 
-  local _output _exit_code=0
-  _output="$("$_binary" --project "$_PYRIGHT_CONFIG" 2>&1)" || _exit_code=$?
+  child_stream "$_binary" --project "$_PYRIGHT_CONFIG"
 
-  if [ "$_exit_code" = 0 ]; then
-    printf '%-12s| ok      | pyright\n' "lint"
-    log_verbose "$_output"
+  if [ "$STAGE_EXIT_CODE" = 0 ]; then
+    log_verbose "$(printf '%-12s| ok      | pyright' "lint")"
     return 0
   fi
 
-  stage_fail lint FAILED pyright "$_output"
+  stage_fail lint FAILED pyright "$STAGE_OUTPUT"
 }
 
 # long_lines_report - fail on any line still over _COLUMNS_MAX afterwards.
@@ -306,7 +327,8 @@ long_lines_report() {
     "${_files[@]}")"
 
   if [ -z "$_over" ]; then
-    printf '%-12s| ok      | none over %s\n' "columns" "$_COLUMNS_MAX"
+    log_verbose "$(printf '%-12s| ok      | none over %s' \
+      "columns" "$_COLUMNS_MAX")"
     return 0
   fi
 
@@ -335,50 +357,45 @@ validate_run() {
       _args+=(--diff)
     fi
 
-    _exit_code=0
-    _output="$(python3 validate_report.py "${_args[@]}" 2>&1)" || _exit_code=$?
+    child_stream python3 validate_report.py "${_args[@]}"
 
-    if [ "$_exit_code" = 0 ]; then
-      printf '%-12s| ok      | %s\n' "validate" "$(basename "$_path")"
-      log_verbose "$_output"
+    if [ "$STAGE_EXIT_CODE" = 0 ]; then
+      log_verbose "$(printf '%-12s| ok      | %s' \
+        "validate" "$(basename "$_path")")"
       continue
     fi
 
-    stage_fail validate FAILED "$(basename "$_path")" "$_output"
+    stage_fail validate FAILED "$(basename "$_path")" "$STAGE_OUTPUT"
   done
 }
 
 # comment_block_run - the dev/ tree's comment length check, once, for the
 # same reason the ASCII scan runs once: the sources are one tree.
 comment_block_run() {
-  local _output _exit_code=0
-  _output="$(python3 comment_block_scan.py 2>&1)" || _exit_code=$?
+  child_stream python3 comment_block_scan.py
 
   # the limit is the scanner's own and is never spelled here: it prints the
   # number in both the ok line and every fault, so there is one to keep.
-  if [ "$_exit_code" = 0 ]; then
-    printf '%-12s| ok      | %s\n' "comments" "$_output"
-    log_verbose "$_output"
+  if [ "$STAGE_EXIT_CODE" = 0 ]; then
+    log_verbose "$(printf '%-12s| ok      | %s' "comments" "$STAGE_OUTPUT")"
     return 0
   fi
 
-  stage_fail comments TOO_LONG "$(echo "$_output" | tail -n 1)" "$_output"
+  stage_fail comments TOO_LONG "$(echo "$STAGE_OUTPUT" | tail -n 1)" \
+    "$STAGE_OUTPUT"
 }
 
-# source_scan_run - the non-ASCII scan over dev/, source and generated page
-# alike. It runs last, so the reports the batch wrote are in its walk.
+# source_scan_run - the non-ASCII scan over dev/ source. It runs with the
+# other source stages, so no report or build tree is in its walk.
 source_scan_run() {
-  local _output _exit_code=0
-  _output="$(python3 validate_report.py --source-scan-only 2>&1)" \
-    || _exit_code=$?
+  child_stream python3 validate_report.py --source-scan-only
 
-  if [ "$_exit_code" = 0 ]; then
-    printf '%-12s| ok      | dev/ is ASCII\n' "ascii"
-    log_verbose "$_output"
+  if [ "$STAGE_EXIT_CODE" = 0 ]; then
+    log_verbose "$(printf '%-12s| ok      | dev/ is ASCII' "ascii")"
     return 0
   fi
 
-  stage_fail ascii FAILED dev/ "$_output"
+  stage_fail ascii FAILED dev/ "$STAGE_OUTPUT"
 }
 
 # batch_run - write the three reports this run verifies. Its own steps stop
@@ -391,16 +408,19 @@ batch_run() {
   # executable, so the batch is never asked to reuse a stale one
   if [ "$_REGENERATE" = 1 ]; then _flags+=(--regenerate); fi
 
-  _output="$("$_DIR_DEV/$_BATCH_SCRIPT_NAME" "${_flags[@]}" \
-    "--target-dir=$_DIR_DEV" 2>&1)" || _exit_code=$?
+  # a measuring run that keeps its recordings is what a later --regenerate
+  # reuses, and the batch owns every deletion of them
+  if [ "$_KEEP_ARTIFACTS" = 1 ]; then _flags+=(--keep-artifacts); fi
 
-  if [ "$_exit_code" = 0 ]; then
-    printf '%-12s| ok      | %s\n' "batch" "$_BATCH_SCRIPT_NAME"
-    log_verbose "$_output"
+  child_stream "$_DIR_DEV/$_BATCH_SCRIPT_NAME" "${_flags[@]}" \
+    "--target-dir=$_DIR_DEV"
+
+  if [ "$STAGE_EXIT_CODE" = 0 ]; then
+    log_verbose "$(printf '%-12s| ok      | %s' "batch" "$_BATCH_SCRIPT_NAME")"
     return 0
   fi
 
-  stage_fail batch FAILED "$_BATCH_SCRIPT_NAME" "$_output"
+  stage_fail batch FAILED "$_BATCH_SCRIPT_NAME" "$STAGE_OUTPUT"
 }
 
 # screenshots_run - shoot the modified and diff reports at every viewport
@@ -421,7 +441,7 @@ screenshots_run() {
       "$_prefix" 2>&1)" || _exit_code=$?
 
     if [ "$_exit_code" = 0 ]; then
-      printf '%-12s| ok      | %s\n' "screenshots" "$_name"
+      log_verbose "$(printf '%-12s| ok      | %s' "screenshots" "$_name")"
       log_verbose "$_output"
       continue
     fi
@@ -430,11 +450,12 @@ screenshots_run() {
   done
 }
 
-# regenerate_cancel - say why the recordings cannot be reused, then drop
-# the flag. Measuring again always answers, so this is a notice, not a fault.
-regenerate_cancel() {
-  echo "regenerating: $1"
-  _REGENERATE=0
+# regenerate_refuse - say why the recordings cannot be reused and stop. The
+# flag is the developer loop, and measuring instead costs an hour nobody asked
+regenerate_refuse() {
+  echo "error: --regenerate cannot reuse the recordings: $1" >&2
+  echo "       re-run without --regenerate to measure from scratch" >&2
+  exit 1
 }
 
 # regenerate_stamp_of - echo one report's unix stamp, or exit 1 having echoed
@@ -460,31 +481,33 @@ regenerate_stamp_of() {
 }
 
 # regenerate_check - reuse the last run's recordings only while they still
-# describe the executable on disk, else drop the flag. See DECLAUDE.md 3.
+# describe the executable on disk, else refuse. See DECLAUDE.md 3.
 regenerate_check() {
   [ "$_REGENERATE" = 1 ] || return 0
-
-  local _binary="$_DIR_REPO/$BUILD_DIR/tests/perf/perf"
-  if [ ! -f "$_binary" ]; then
-    regenerate_cancel "no executable at $_binary"
-    return 0
-  fi
 
   # the artifacts dir the batch defaults to, holding every recording the
   # three reports were generated from
   local _artifacts="$_DIR_DEV/$ARTIFACTS_NAME"
   if [ ! -d "$_artifacts" ]; then
-    regenerate_cancel "no recordings at $_artifacts"
-    return 0
+    regenerate_refuse "no recordings at $_artifacts"
   fi
+
+  # all three are this run's input, and manifest_verify is the one policy
+  # saying why one is not a report -- it exits, so this fails at the first
+  local _name
+  manifest_verify "$_DIR_DEV/$REPORT_BASELINE_DIR_NAME" \
+    "--regenerate input" "$REPORT_MANIFEST_VERSION_FULL"
+  manifest_verify "$_DIR_DEV/$REPORT_MODIFIED_DIR_NAME" \
+    "--regenerate input" "$REPORT_MANIFEST_VERSION_FULL"
+  manifest_verify "$_DIR_DEV/$REPORT_DIFF_DIR_NAME" \
+    "--regenerate input" "$REPORT_MANIFEST_VERSION_DIFF"
 
   # each measured report names its own recordings by stamp. The diff has no
   # recordings of its own: it is subtracted from these two.
-  local _name _stamp _recorded=() _stamps=()
+  local _stamp _binary _newest _recorded=() _stamps=()
   for _name in "$REPORT_BASELINE_DIR_NAME" "$REPORT_MODIFIED_DIR_NAME"; do
     if ! _stamp="$(regenerate_stamp_of "$_DIR_DEV/$_name")"; then
-      regenerate_cancel "$_stamp"
-      return 0
+      regenerate_refuse "$_stamp"
     fi
 
     # one timing recording dates the pass: perf2html.sh checks for every
@@ -492,30 +515,40 @@ regenerate_check() {
     mapfile -t _recorded < <(find "$_artifacts" -maxdepth 1 -type f \
       -name "$PROFILE_TIMING_FILE_PREFIX.*.$_stamp.csv" | sort)
     if [ "${#_recorded[@]}" = 0 ]; then
-      regenerate_cancel "$_name has no recordings left under stamp $_stamp"
-      return 0
+      regenerate_refuse "$_name has no recordings left under stamp $_stamp"
     fi
     _stamps+=("$_stamp")
   done
 
   # the modified run built that tree last, so its recordings are the ones
   # the executable still on disk wrote; the baseline's binary is gone
-  local _newer _modified_stamp="${_stamps[-1]}"
-  _newer="$(find "$_artifacts" -maxdepth 1 -type f \
-    -name "$PROFILE_TIMING_FILE_PREFIX.*.$_modified_stamp.csv" \
-    -newer "$_binary" -print -quit)"
-  if [ -z "$_newer" ]; then
-    regenerate_cancel "perf was re-linked after its recordings"
-    return 0
+  _name="$REPORT_MODIFIED_DIR_NAME"
+  _binary="$(manifest_value "$_DIR_DEV/$_name" executable)"
+  if [ -z "$_binary" ]; then
+    regenerate_refuse "$_name records no executable= row"
+  fi
+  _binary="$_DIR_REPO/${_binary%% *}"
+  if [ ! -f "$_binary" ]; then
+    regenerate_refuse "$_name has no executable at $_binary"
   fi
 
-  printf '%-12s| ok      | reusing stamp %s and %s\n' \
-    "regenerate" "${_stamps[0]}" "${_stamps[1]}"
+  # a recording written in the link's own second is still that link's, so
+  # only a strictly newer binary means perf was re-linked after them
+  _newest="$(find "$_artifacts" -maxdepth 1 -type f \
+    -name "$PROFILE_TIMING_FILE_PREFIX.*.${_stamps[-1]}.csv" \
+    -printf '%T@ %p\n' | sort -rn | head -1)"
+  _newest="${_newest#* }"
+  if [ -n "$(find "$_binary" -newer "$_newest" -print -quit)" ]; then
+    regenerate_refuse "$_name: perf was re-linked after its recordings"
+  fi
+
+  log_verbose "$(printf '%-12s| ok      | reusing stamp %s and %s' \
+    "regenerate" "${_stamps[0]}" "${_stamps[1]}")"
 }
 
-# surface_clear - delete the three reports before anything runs, so every
-# stage below reads this run's output and never a previous one's.
-surface_clear() {
+# clear_overwritten_folders - delete the three reports before anything runs, so
+# every stage below reads this run's output and never a previous one's.
+clear_overwritten_folders() {
   # the artifacts directory is not ours to delete: the batch owns every
   # deletion of it, and being flagless below is what makes it do one
   local _path
@@ -523,8 +556,8 @@ surface_clear() {
   # a regenerated run reads each report's manifest back for the stamp and
   # rows its pages are rebuilt from, so those reports are its input
   if [ "$_REGENERATE" = 1 ]; then
-    printf '%-12s| ok      | %s report(s) reused\n' \
-      "surface" "${#_DEFAULT_REPORTS[@]}"
+    log_verbose "$(printf '%-12s| ok      | %s report(s) reused' \
+      "surface" "${#_DEFAULT_REPORTS[@]}")"
     return 0
   fi
 
@@ -534,14 +567,15 @@ surface_clear() {
       exit 1
     }
   done
-  printf '%-12s| ok      | %s report(s) cleared\n' \
-    "surface" "${#_DEFAULT_REPORTS[@]}"
+  log_verbose "$(printf '%-12s| ok      | %s report(s) cleared' \
+    "surface" "${#_DEFAULT_REPORTS[@]}")"
 }
 
 # args_parse - read the flags. There is no report argument: this runs the
 # batch, and the batch writes the three default names and no others.
 args_parse() {
   _CHECK=0
+  _KEEP_ARTIFACTS=0
   _REGENERATE=0
 
   while [ $# -gt 0 ]; do
@@ -552,6 +586,10 @@ args_parse() {
         ;;
       --check)
         _CHECK=1
+        shift
+        ;;
+      --keep-artifacts)
+        _KEEP_ARTIFACTS=1
         shift
         ;;
       --regenerate)
@@ -579,7 +617,7 @@ main() {
   # before the clear, which reads its answer: a regenerated run's input is
   # the three reports themselves
   regenerate_check
-  surface_clear
+  clear_overwritten_folders
 
   # dev/ source, seconds each and measuring nothing. A fault here would
   # otherwise be found after the profiling run, an hour further on
@@ -589,15 +627,13 @@ main() {
   format_prettier
   long_lines_report
   comment_block_run
+  source_scan_run
   lint_run
 
   # the profiling run, which writes the three reports, then what they hold
   batch_run
   validate_run
   screenshots_run
-
-  # last, so the reports the batch just wrote are inside its walk
-  source_scan_run
 }
 
 main "$@"

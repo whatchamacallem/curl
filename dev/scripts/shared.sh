@@ -231,6 +231,25 @@ manifest_stamp_row() {
   echo "stamp=$TIMESTAMP $(date -d "@$TIMESTAMP" +'%F %I:%M:%S %p')"
 }
 
+# manifest_stamp_of - verify a report and echo the unix time of its stamp=
+# row, the one name its recordings carry. A fault exits inside the verify.
+manifest_stamp_of() {
+  local dir="$1" role="$2"
+  shift 2
+
+  manifest_verify "$dir" "$role" "$@"
+
+  local stamp
+  stamp="$(manifest_value "$dir" stamp)"
+  stamp="${stamp%% *}"
+
+  [ -n "$stamp" ] || {
+    echo "error: $role report $(basename "$dir") records no stamp= row" >&2
+    exit 2
+  }
+  echo "$stamp"
+}
+
 # manifest_value - one LABEL= row of a report's MANIFEST.txt.
 manifest_value() {
   sed -n "s/^$2=//p" "$1/MANIFEST.txt" | head -1
@@ -277,6 +296,13 @@ manifest_write() {
     [ "$#" = 0 ] || printf '%s\n' "$@"
     printf '%s=%s\n' "$REPORT_MANIFEST_CHECKSUM_LABEL" "$checksum"
   } >"$manifest"
+}
+
+# path_display - one absolute path written relative to a base: $INVOKED_FROM
+# unless one is given second. Never $PWD: the scripts cd to dev/ at startup.
+path_display() {
+  python3 -c 'import os, sys
+print(os.path.relpath(sys.argv[1], sys.argv[2]))' "$1" "${2:-$INVOKED_FROM}"
 }
 
 # report_begin - the head of every run writing a report: clear, create,

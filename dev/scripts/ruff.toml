@@ -11,13 +11,4 @@ docstring-code-format = false
 
 [lint]
 select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM"]
-# E401 and I001 are off because every module is imported plainly, packed
-# onto one alphabetical line per block -- one before the sys.path.insert()
-# and one after it for our own modules. Both rules would unpack those lines
-# back to one import each, and reformat.sh runs ruff with --fix, so leaving
-# them on would silently undo the shape on the next format run. Three forms
-# of "from X import Y" are allowed: "from __future__ import annotations",
-# and the names taken from collections.abc and from typing, whose lines sit
-# below the first plain line with their names spelled alphabetically. No
-# other module may be imported that way.
 ignore = ["E401", "E501", "I001"]

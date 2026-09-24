@@ -124,22 +124,10 @@ ${_flag#-DCMAKE_C_FLAGS=}"
 
 # stamp_reuse - takes $TIMESTAMP back from a verified report, for --regenerate.
 stamp_reuse() {
-  local _manifest="$_OUT_DIR/MANIFEST.txt"
   # version line and checksum must both still hold, so --regenerate cannot
   # read back what an aborted run or a later edit left behind
-  manifest_verify "$_OUT_DIR" "--regenerate input" \
-    "$REPORT_MANIFEST_VERSION_FULL"
-  # the row is the unix time then a date for people, and only the unix time
-  # names a recording, so the tail is dropped here
-  TIMESTAMP="$(manifest_value "$_OUT_DIR" stamp)"
-  TIMESTAMP="${TIMESTAMP%% *}"
-  [ -n "$TIMESTAMP" ] || {
-    echo "error: $_manifest has no stamp= row, so its recordings" \
-      "cannot be identified" >&2
-    echo "       (it predates --regenerate; re-run perf2html.sh" \
-      "--keep-artifacts once)" >&2
-    exit 2
-  }
+  TIMESTAMP="$(manifest_stamp_of "$_OUT_DIR" "--regenerate input" \
+    "$REPORT_MANIFEST_VERSION_FULL")"
   local _test_name _loops _file _missing=() _dir="$ARTIFACTS_DIR"
   for _test_name in "${_TESTS[@]}"; do
     _loops=$CALLGRIND_LOOPS
@@ -191,34 +179,47 @@ build_manifest() {
 tree_build() {
   local _dir="$1"
   shift
-  rm -f "$_REPO/$_dir/CMakeCache.txt"
-  command_run cmake -S "$_REPO" -B "$_REPO/$_dir" -G Ninja \
-    -DCURL_USE_LIBPSL=OFF -DCMAKE_C_COMPILER_LAUNCHER=ccache "$@"
-  command_run cmake --build "$_REPO/$_dir" --parallel --target perf
+  rm -f "$_dir/CMakeCache.txt"
+  local _configure_command=(cmake -S "$_REPO" -B "$_dir" -G Ninja
+    -DCURL_USE_LIBPSL=OFF -DCMAKE_C_COMPILER_LAUNCHER=ccache "$@")
+  local _command_line _exit_code=0
+  printf -v _command_line '%q ' "${_configure_command[@]}"
+  _command_line="${_command_line% }"
+  log_verbose "\$ $_command_line"
+  # configure output is banned from --verbose: it is half the log, and users
+  # can run the printed cmake command in its printed tree to continue
+  "${_configure_command[@]}" >/dev/null 2>&1 || _exit_code=$?
+  if [ "$_exit_code" != 0 ]; then
+    printf 'cmake failed to build %s\n' "$_command_line" >&2
+    exit "$_exit_code"
+  fi
+  command_run cmake --build "$_dir" --parallel --target perf
 }
 
-# build_paths - the two perf binaries, absolute and repo-relative.
+# build_paths - the two trees and perf binaries, absolute and repo-relative.
 build_paths() {
-  _BIN="$_REPO/$BUILD_DIR/tests/perf/perf"
-  _BIN_REL="${_BIN#"$_REPO"/}"
-  _TRACE_BIN="$_REPO/$TRACE_BUILD_DIR/tests/perf/perf"
-  _TRACE_BIN_REL="${_TRACE_BIN#"$_REPO"/}"
+  _BUILD_TREE="$_REPO/$BUILD_DIR"
+  _TRACE_TREE="$_REPO/$TRACE_BUILD_DIR"
+  _BIN="$_BUILD_TREE/tests/perf/perf"
+  _BIN_REL="$(path_display "$_BIN" "$_REPO")"
+  _TRACE_BIN="$_TRACE_TREE/tests/perf/perf"
+  _TRACE_BIN_REL="$(path_display "$_TRACE_BIN" "$_REPO")"
 }
 
 # build_compile - builds both trees, the traced one with the hook linked in.
 build_compile() {
+  build_paths
   if [ "$_REGENERATE" = 1 ]; then
-    build_paths
     printf '%-11s%s | reused\n' build "${_CMAKE_FLAGS[*]}"
     return
   fi
-  log_verbose "== 1: cmake + build $BUILD_DIR and $TRACE_BUILD_DIR:" \
+  log_verbose "== 1: cmake + build $_BUILD_TREE and $_TRACE_TREE:" \
     "${_CMAKE_FLAGS[*]} =="
   local _line
   _line="$(printf '%-11s%s' build "${_CMAKE_FLAGS[*]}")"
   local _start _flag _trace_flags=()
   _start="$(clock_microseconds)"
-  tree_build "$BUILD_DIR" "${_CMAKE_FLAGS[@]}"
+  tree_build "$_BUILD_TREE" "${_CMAKE_FLAGS[@]}"
   for _flag in "${_CMAKE_FLAGS[@]}"; do
     case "$_flag" in
       -DCMAKE_C_FLAGS=* | CMAKE_C_FLAGS=*)
@@ -227,16 +228,16 @@ build_compile() {
     esac
     _trace_flags+=("$_flag")
   done
-  mkdir -p "$_REPO/$TRACE_BUILD_DIR"
+  mkdir -p "$_TRACE_TREE"
   command_run cc -O2 -fcf-protection=none -c src/cyg_callback.c \
-    -o "$_REPO/$TRACE_BUILD_DIR/cyg_callback.o"
-  rm -f "$_REPO/$TRACE_BUILD_DIR/tests/perf/perf"
-  local _hook="$_REPO/$TRACE_BUILD_DIR/cyg_callback.o"
-  tree_build "$TRACE_BUILD_DIR" "${_trace_flags[@]}" \
+    -o "$_TRACE_TREE/cyg_callback.o"
+  rm -f "$_TRACE_BIN"
+  local _hook="$_TRACE_TREE/cyg_callback.o"
+  tree_build "$_TRACE_TREE" "${_trace_flags[@]}" \
     "-DCMAKE_EXE_LINKER_FLAGS=$_hook -Wl,--export-dynamic"
   printf '%s | %s\n' "$_line" "$(duration_format "$_start")"
-  build_paths
-  _BUILD_DESC="$BUILD_DIR, ${_CMAKE_FLAGS[*]}, $(cc --version | head -1)"
+  _BUILD_DESC="$(path_display "$_BUILD_TREE" "$_REPO"), ${_CMAKE_FLAGS[*]},"
+  _BUILD_DESC="$_BUILD_DESC $(cc --version | head -1)"
 }
 
 # trace_record - one pinned run of the traced binary, writing a trace file.
@@ -277,7 +278,7 @@ flame_app_install() {
 # trace_render - counting run, then sampling run, then the flame graph page.
 trace_render() {
   local _test="$1" _out="$2" _loops="$3"
-  local _seen
+  local _seen _tree_display
   local _trace_file="$ARTIFACTS_DIR/trace.$_test.$_loops.$TIMESTAMP.bin"
   local _log="$_out/flame-graph/output.txt"
   _TRACE_JSON="$ARTIFACTS_DIR/trace.$_test.$_loops"
@@ -301,8 +302,9 @@ trace_render() {
   fi
   rm -rf "$_out/flame-graph"
   mkdir -p "$_out/flame-graph"
+  _tree_display="$(path_display "$_TRACE_TREE" "$_REPO")"
   {
-    echo "# $TRACE_BUILD_DIR = this report's build flags +"
+    echo "# $_tree_display = this report's build flags +"
     echo "# -finstrument-functions, linked with dev/src/cyg_callback.c, which"
     echo "# reads rdtsc at every function enter and exit. Run 1 counts events,"
     echo "# run 2 keeps the ones right after the run's midpoint"
@@ -478,7 +480,7 @@ run_all() {
   for _test_name in "${_TESTS[@]}" all; do _args+=(--test "$_test_name"); done
   command_run python3 scripts/build_report.py overview "${_args[@]}"
   printf '%-13s%d profiles merged -> %s\n' all "${#_TESTS[@]}" \
-    "${_OUT_DIR#"$_REPO"/}/index.html"
+    "$(path_display "$_OUT_DIR")/index.html"
 }
 
 # main - the whole run, ending with the manifest and the report's URL.

@@ -90,6 +90,7 @@
     title_publish(active_link.dataset.title);
     utility_block.hidden =
       !is_framed && !!(matched_link && view_key && matched_link.dataset.frame);
+    scale_label.hidden = utility_block.hidden;
     if (!matched_link || !view_key) {
       view_frame.hidden = true;
       home_panel.hidden = false;
@@ -116,22 +117,31 @@
       view_frame.contentWindow.postMessage("report_ui:reset_columns", "*");
   }
 
-  // A framed page is drawn inside its parent's zoom, so only the top
-  // document carries the control that sets it.
+  function scale_apply(travel) {
+    if (is_framed) {
+      window.report_ui.parent_post({
+        report_ui: "scale_changed",
+        travel: travel,
+      });
+      return;
+    }
+    window.report_ui.design_scale_travel_set(travel);
+    window.report_ui.view_storage.value_write("view.scale", travel);
+    reset_broadcast();
+  }
   function scale_activate() {
-    scale_label.hidden = is_framed;
-    if (is_framed) return;
     scale_text.textContent = SCALE_LABEL_TEXT;
     const saved_travel =
       window.report_ui.view_storage.value_read("view.scale");
-    if (saved_travel != null)
+    if (saved_travel != null && !is_framed)
       window.report_ui.design_scale_travel_set(saved_travel);
-    scale_slider.value = String(window.report_ui.design_scale_travel_now());
+    scale_slider.value = String(
+      saved_travel != null
+        ? saved_travel
+        : window.report_ui.design_scale_travel_now(),
+    );
     scale_slider.addEventListener("input", () => {
-      const travel = Number(scale_slider.value);
-      window.report_ui.design_scale_travel_set(travel);
-      window.report_ui.view_storage.value_write("view.scale", travel);
-      reset_broadcast();
+      scale_apply(Number(scale_slider.value));
     });
   }
 
@@ -168,6 +178,8 @@
       return;
     if (message_event.data.report_ui === "title_changed")
       title_publish(message_event.data.title);
+    else if (message_event.data.report_ui === "scale_changed")
+      scale_apply(Number(message_event.data.travel));
     else if (
       message_event.data.report_ui === "hash_changed" &&
       current_page_href

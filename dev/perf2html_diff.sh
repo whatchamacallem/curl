@@ -34,12 +34,6 @@ perf2html_diff.sh [debug-flags] [baseline] [modified] [diff]
 EOF
 }
 
-# path_display - a path rewritten relative to the working directory
-path_display() {
-  python3 -c 'import os, sys
-print(os.path.relpath(sys.argv[1], sys.argv[2]))' "$1" "$PWD"
-}
-
 # args_parse - reads the flags and the three directories, all absolute
 args_parse() {
   _KEEP_ARTIFACTS=0
@@ -235,7 +229,7 @@ diff_one() {
     -o "$_out/index.html" --test "$_name" --diff \
     --callers-data "$_callers_file" --raw-data "$_archive" \
     --help-href ../README.md
-  printf '%-13sdiff -> %s\n' "$_name" "${_out#"$PWD"/}/index.html"
+  printf '%-13sdiff -> %s\n' "$_name" "$(path_display "$_out")/index.html"
 }
 
 # main - checks both inputs, diffs every shared test, stamps the report
@@ -247,16 +241,10 @@ main() {
 
   [ "$_KEEP_ARTIFACTS" = 1 ] || artifacts_clean
   if [ "$_REGENERATE" = 1 ]; then
-    # reusing a previous stamp means reading that report back, so it has
-    # to hold up as one first
-    manifest_verify "$_OUT_DIR" "--regenerate input" \
-      "$REPORT_MANIFEST_VERSION_DIFF"
-    local _previous
-    # the row is the unix time then a date for people, and only the unix
-    # time names a recording, so the tail is dropped here
-    _previous="$(manifest_value "$_OUT_DIR" stamp)"
-    _previous="${_previous%% *}"
-    if [ -n "$_previous" ]; then TIMESTAMP="$_previous"; fi
+    # a regenerated report keeps the stamp of the run that measured it, so
+    # its own stamp= row never claims a measurement this run did not take
+    TIMESTAMP="$(manifest_stamp_of "$_OUT_DIR" "--regenerate input" \
+      "$REPORT_MANIFEST_VERSION_DIFF")"
   fi
   report_begin "$_OUT_DIR" "diff.$TIMESTAMP.log" \
     "dev/perf2html_diff.sh $TIMESTAMP: $_BASE_DIR -> $_MOD_DIR -> $_OUT_DIR" \
@@ -285,7 +273,7 @@ main() {
   done
   log_verbose "== overview -> $_OUT_DIR/index.html =="
   command_run python3 scripts/build_report.py overview "${_args[@]}"
-  printf '%-13s%s\n' overview "${_OUT_DIR#"$PWD"/}/index.html"
+  printf '%-13s%s\n' overview "$(path_display "$_OUT_DIR")/index.html"
 
   report_finish "$_OUT_DIR" "$REPORT_MANIFEST_VERSION_DIFF" \
     "baseline=$(path_display "$_BASE_DIR")" \
