@@ -44,6 +44,19 @@ DERIVED_COUNTER_TERMS: dict[str, dict[str, int]] = {
     },
 }
 
+# The width of the coordinate space every page is designed in: every length
+# is written for this box, which report_ui.design_scale_apply() then fits.
+DESIGN_COORDINATES_WIDTH_PX = 1920
+
+# What the scale slider multiplies the window's own fit by, at each end of
+# its travel. 1 is the page as its lengths are written. See DECLAUDE.md 8.
+DESIGN_SCALE_LARGEST_MULTIPLE = 4
+DESIGN_SCALE_SMALLEST_MULTIPLE = 1
+
+# The CSS variable carrying the window's height in design pixels. A vh is
+# zoomed like any length, so a full-height rule reads this instead. Boundary.
+DESIGN_VIEWPORT_HEIGHT_PROPERTY = "--design-vh"
+
 # What callgrind_diff.py's synthesized callers diff is named, beside the
 # delta. Written by perf2html_diff.sh, read back by build_report.py.
 DIFF_CALLER_COUNTS_FILE_SUFFIX = ".callers.json"
@@ -203,12 +216,16 @@ REPORT_SOURCES_DIR_NAME = "sources"
 
 # Every localStorage key a report owns, exact keys and shared prefixes. One
 # missing from both outlives every bump. Browser keys, so boundary names.
-STORAGE_OWNED_KEYS: tuple[str, ...] = ("heat.scale", "heat.sort")
+STORAGE_OWNED_KEYS: tuple[str, ...] = (
+    "heat.scale",
+    "heat.sort",
+    "view.scale",
+)
 STORAGE_OWNED_PREFIXES: tuple[str, ...] = ("split.",)
 
 # What a report writes under STORAGE_VERSION_KEY, a bare string, not JSON.
 # Anything but exactly it sweeps every owned key: that is how a bump rolls out.
-STORAGE_VERSION = "perf2html v1"
+STORAGE_VERSION = "perf2html v2"
 STORAGE_VERSION_KEY = "perf2html.version"
 
 # The "curl.se/perf" link in every page's util block.
@@ -360,14 +377,6 @@ _SETTINGS_DIRECTORY = os.path.dirname(os.path.abspath(__file__))
 _SETTINGS_PAGE_DATA_MARKER = "__DATA__"
 _SETTINGS_PAGE_NAME_MARKER = "__NAME__"
 
-# What makes a settings.sh word one bash would expand rather than read
-# literally.
-_SHELL_EXPANSION_MARKS = ("$", "`")
-
-# What an expanded word binds to instead of a value. Only bash may read one,
-# so nothing computes a second answer for it. See shell_word_withhold().
-_SHELL_EXPANDED_WORD = "<expanded by bash>"
-
 # The one scalar spelling settings.sh turns into an int rather than a str.
 _SHELL_INTEGER_PATTERN = re.compile(r"-?[0-9]+")
 
@@ -390,12 +399,6 @@ _SHELL_WORD_PATTERN = re.compile(r"'([^']*)'|\"([^\"]*)\"|([^\s)]+)")
 
 # SettingsReader - the reader for the annotated settings a module declares.
 class SettingsReader:
-    # Every settings.sh name whose word bash expands, filled in by
-    # shell_settings_read() as it parses them.
-    def __init__(self) -> None:
-        # names script_write() keeps out of the browser's object
-        self.expanded_names: set[str] = set()
-
     # Every setting this module exports, by name.
     def all_named(self) -> dict[str, object]:
         scope = globals()
@@ -445,13 +448,9 @@ class SettingsReader:
     # Build assets/settings.js: every setting as one frozen JSON literal in
     # settings_handler.js, wholesale, with no list of what a page may see.
     def script_write(self) -> str:
-        # an expanded word is held back, per shell_word_withhold(). Plain
-        # open(), never theme.asset_text_read(): theme.py imports this module
-        values = {
-            name: value
-            for name, value in self.all_named().items()
-            if name not in self.expanded_names
-        }
+        # Plain open(), never theme.asset_text_read(): theme.py imports this
+        # module, so reaching for theme here would cycle.
+        values = self.all_named()
         data = json.dumps(values, indent=2, sort_keys=True, ensure_ascii=False)
         path = os.path.join(
             _SETTINGS_DIRECTORY, ASSET_TEMPLATE_SETTINGS_HANDLER_NAME
@@ -510,10 +509,8 @@ class SettingsReader:
             )
 
     # One scalar: exactly one word, an int when it matches -?[0-9]+.
-    def shell_scalar_parse(
-        self, number: int, name: str, text: str
-    ) -> int | str:
-        pairs, closed = self.shell_words_parse(number, name, text, False)
+    def shell_scalar_parse(self, number: int, text: str) -> int | str:
+        pairs, closed = self.shell_words_parse(number, text, False)
         if closed or len(pairs) != 1:
             self.shell_settings_fail(
                 number, "a scalar is exactly one bare or quoted word"
@@ -558,12 +555,12 @@ class SettingsReader:
                         self.shell_settings_fail(
                             number, "declare -A NAME takes =([key]=word ...)"
                         )
-                    found[name] = self.shell_scalar_parse(number, name, text)
+                    found[name] = self.shell_scalar_parse(number, text)
                     continue
                 opened = (name, number, keyed, [])
                 text = text[1:]
             name, start, keyed, pairs = opened
-            more, closed = self.shell_words_parse(number, name, text, keyed)
+            more, closed = self.shell_words_parse(number, text, keyed)
             pairs.extend(more)
             if closed:
                 if keyed:
@@ -577,20 +574,10 @@ class SettingsReader:
             )
         return found
 
-    # A word bash expands is bash's to expand: this file only records the
-    # name as one no reader may have. See DECLAUDE.md 3.1.
-    def shell_word_withhold(self, name: str, word: str) -> str:
-        # NOTHING HERE COMPUTES A SECOND ANSWER: the shell's value is the
-        # run's, so a Python one would name a different run
-        if not any(mark in word for mark in _SHELL_EXPANSION_MARKS):
-            return word
-        self.expanded_names.add(name)
-        return _SHELL_EXPANDED_WORD
-
     # One line of a container body as (key, word) pairs, the key empty in a
     # list, and whether it closed. 'a'b is refused at the end, never joined.
     def shell_words_parse(
-        self, number: int, name: str, text: str, keyed: bool
+        self, number: int, text: str, keyed: bool
     ) -> tuple[list[tuple[str, str]], bool]:
         pairs: list[tuple[str, str]] = []
         position = 0
@@ -624,13 +611,10 @@ class SettingsReader:
                 self.shell_settings_fail(
                     number, 'a word ends at whitespace or the closing ")"'
                 )
-            # Group 1 is the 'single-quoted' form, which bash reads
-            # literally, so a $ inside one is text and never expanded.
+            # Whichever of the three quoting forms matched holds the word.
             word = next(
                 group for group in word_match.groups() if group is not None
             )
-            if word_match.group(1) is None:
-                word = self.shell_word_withhold(name, word)
             pairs.append((key, word))
 
     # The third check: the value must be the type the annotation names.
@@ -656,16 +640,7 @@ class SettingsReader:
     # The value of one setting, named as the declaring module spells it.
     # match_check has already confirmed this file defines it.
     def value_of(self, name: str) -> object:
-        setting = name.lstrip("_")
-        if setting in self.expanded_names:
-            raise NameError(
-                f"error: only bash may read this setting: {setting} is a "
-                "settings.sh word the shell expands as it sources the file, "
-                "so its value belongs to the run, not to this import. Take "
-                "it from the shell -- a generator reads the stamp= row its "
-                "caller wrote -- or declare a different setting."
-            )
-        return globals()[setting]
+        return globals()[name.lstrip("_")]
 
 
 # The reader, then the cut: the shell's settings bind first, so every one

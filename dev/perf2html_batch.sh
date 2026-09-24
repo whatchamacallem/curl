@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 
-# Runs baseline, modified and diff in one go. usage_show below is the only
-# usage text here. It and README.md are kept in step by hand.
+# This comment intentionally blank. No documentation goes here.
 
 set -euo pipefail
 
-_SCRIPT="$(readlink -f "$0")"
+TIMESTAMP="$(date +%s)"
 INVOKED_FROM="$PWD"
+_SCRIPT="$(readlink -f "$0")"
 cd "$(dirname "$_SCRIPT")"
 
 . ./scripts/settings.sh

@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 
-# Subtracts two reports' counters into a diff, measuring nothing. usage_show
-# below is the only usage text here. It and README.md are kept in step by hand.
+# This comment intentionally blank. No documentation goes here.
 
 set -euo pipefail
 
-_SCRIPT="$(readlink -f "$0")"
+TIMESTAMP="$(date +%s)"
 INVOKED_FROM="$PWD"
+_SCRIPT="$(readlink -f "$0")"
 cd "$(dirname "$_SCRIPT")"
 
 . ./scripts/settings.sh

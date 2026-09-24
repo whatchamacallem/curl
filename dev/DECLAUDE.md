@@ -36,6 +36,9 @@ changing a topic that is one line here.
    read from `settings.py` or `settings.py`.
 1. All communication involving multiple items follows ISO 2145, Numbering of
    divisions and subdivisions in written documents.
+1. **`STORAGE_VERSION` is the user's to manage, never a session's.** A session
+   whose change alters a stored format does not bump it: it leaves the setting
+   alone and runs **without `--regenerate`** that once, and says so.
 
 ## 2 Commands
 
@@ -139,13 +142,26 @@ measures nothing and subtracts two reports' `raw/` archives;
   its one caller, it shoots the modified and diff reports through
   `index.html` at each `_VIEWS` hash, and its PNGs land in `dev/screenshots/`
   - **outside every report**, because a checksum covers a report's own files
-  only. It imports **no settings**: its browser list, render budget,
-  viewport and output directory are its own `_SCREENSHOT_*` constants, so
+  only. **It shoots every view at every `_SCREENSHOT_VIEWPORTS` entry**
+  (720p, 1080p, 4k), naming each file `<size>_<report>_<view>.png` - the
+  three are there to be compared, and a view that differs by more than
+  scale between them is the design-scale machinery failing. It imports **no
+  settings**: its browser list, render budget,
+  viewports and output directory are its own `_SCREENSHOT_*` constants, so
   nothing about taking a shot reaches `settings.sh`, the three shipping
   scripts or a page's settings object. A `_VIEWS` entry is a **view**, not
   data - two hashes differing only in which test or counter they name are
   one shot - and **no entry names a test**: the anchors come from the timer
   framework (`lib/curlx/timeval.c`, `curlx_now`) and the synthetic `all`.
+  **One error view only** (`bad_function`): the overlay renders one way
+  whatever threw, so more entries shot the same page and overflowed a sheet.
+- **After the shots come the contact sheets**, one per viewport per report,
+  `thumbnail_<size>_<report>.png`, a `_THUMBNAIL_SHEET_*` 3x3 of the first
+  nine `_VIEWS` in order. **Always 4k whatever the shots are** - it is read
+  by a person, not compared against a report - and **every cell is the same
+  box with the shot fitted whole inside it**, so one view's 720p and 4k
+  sheets differ in content and not in size. Pillow (`import PIL.Image`) is
+  the one dependency; a sheet is temporary output no checksum covers.
 - **`reformat.sh` reaches source and nothing else**, collected through
   `files_of()`, the **one door** every stage uses: `*.sh` under `dev/`,
   `*.c *.h` under `src/`, `*.py *.js *.css *.html` under `scripts/`, and
@@ -208,25 +224,20 @@ No env vars. **`settings.sh` holds every setting the shell reads, `shared.sh`
 **and `settings.py` parses it at import**
 (`SettingsReader.shell_settings_read`,
 whose result `settings.py` binds under its own names; a `-?[0-9]+` scalar
-arrives as `int`). **A word may hold `$` or a command**,
-but **`settings.py` neither runs nor reproduces one**: `shell_word_withhold`
-binds the name to `_SHELL_EXPANDED_WORD` and records it in
-`SettingsReader.expanded_names`. **Only bash may read such a word** - the
-shell expands it as it sources the file, so any Python answer would be the
-import's and would name a different run. So there is **no table of
-expansions**, and **no `$` word is ever spelled twice**: `value_of` raises on
-a withheld name, so a module declaring `TIMESTAMP` stops at import, and
-`script_write()` drops it from the browser's object. A generator's stamp
-arrives as the shell's `stamp=` row. A `'single-quoted'` word is literal to
-both and never expanded. **Verification is bash
-itself** - every script sources the file, so no character allow-list.
+arrives as `int`). **No setting's word is expanded**: a setting is a constant,
+and `settings.py` parses the file a second later than bash sourced it, so a
+`$` word would give the two readers different values. Every word is therefore
+literal to both, and the reader that once held one back is gone. **Verification
+is bash itself** - every script sources the file, so no character allow-list.
 Hand-written, never generated. **A shell setting is a Python setting, one name
-in all three languages.** **`TIMESTAMP` is a setting** (`$(date +%s)`, fixed
-at profiler run time the way `__DATE__` is at compile time), which is why the
-scripts declare none of their own; `--regenerate` still assigns it back from
-the report's `stamp=` row. **Only a value derived from `$0` stays
-per-script** (`_REPO`), as do `usage_show`, `args_parse` and the `*_DIR` they
-derive. `_TESTS` comes from `tests/perf/Makefile.inc`. Grep the files for
+in all three languages.** **`TIMESTAMP` is per-script, not a setting**
+(`$(date +%s)`, fixed at run time the way `__DATE__` is at compile time):
+each of the three shipping scripts assigns it immediately above its
+`_SCRIPT="$(readlink -f "$0")"`, and a generator's stamp arrives as the
+shell's `stamp=` row. `--regenerate` assigns it back from that row.
+`reformat.sh` declares none - it calls no `shared.sh` function that reads one.
+**A value derived from `$0` stays per-script** (`_REPO`), as do `usage_show`,
+`args_parse` and the `*_DIR` they derive. `_TESTS` comes from `tests/perf/Makefile.inc`. Grep the files for
 names; notable: `PROFILE_PINNED_CPU=3`, `REPORT_RAW_ARCHIVE_SUFFIX` (`.txz`,
 dot included), `PROFILE_TIMING_FILE_PREFIX` (`perf-stat`, read by
 `perf2html.sh` twice and by `reformat.sh`'s `regenerate_check`).
@@ -462,9 +473,8 @@ kept (`_PX`, `_MS`, `_PERCENT`, `_SHARE`, `_CHARS`, `_BYTES`).
   see and none may come back** - a `.js` file reads a setting by naming it,
   and nothing in Python changes when it starts or stops. **A setting is
   therefore JSON-serializable**; anything that is not belongs below the cut,
-  where it is not a setting. **The one exclusion is a `settings.sh` word bash
-  expands** (`TIMESTAMP`), held back by `SettingsReader.expanded_names` for the
-  reason `shell_word_withhold` gives - only bash may read one.
+  where it is not a setting. **There is no exclusion at all** - every setting
+  is serialized, because no setting's word is expanded (3.1).
   One value, one id, **no hand-matched twin** - why `FLAME_GRAPH_APP_DIR_NAME`,
   `FLAME_GRAPH_APP_FILE_GLOBS` and `REPORT_RAW_ARCHIVE_SUFFIX` live once, in
   `settings.sh`. The freeze + reader is `settings_handler.js`, which
@@ -613,7 +623,42 @@ before submitting upstream.
 
 ## 8 Look and feel
 
-One dark theme, Monaco/monospace everywhere. Target viewport **1366×768**.
+One dark theme, Monaco/monospace everywhere. **Every length in `dev/` page
+source is a design pixel, not a screen pixel**: the design box is
+`DESIGN_COORDINATES_WIDTH_PX` = 1920 wide, and `theme.js`'s
+`design_scale_apply()` fits it to the window with one `zoom` on `:root`,
+recomputed on every resize. So a 4k window draws every `px` at 2x and a
+postage-stamp window at 0.2x, with layout and apparent font size unchanged.
+**Never retune a length by looking at one screen** - it lands in design
+space, where 1920 is the whole width.
+
+- **The fit is then multiplied by the scale slider**, the nav strip's
+  `scale:` control beside "reset columns". Its travel runs
+  `DESIGN_SCALE_SMALLEST_MULTIPLE` (1) to `DESIGN_SCALE_LARGEST_MULTIPLE`
+  (4), starting `DESIGN_SCALE_DEFAULT_TRAVEL_PERCENT` (25) of the way
+  along. **1 is the page as its lengths are written** - the doubling that
+  made the content fill a 1080p box lives in the lengths themselves, not
+  in this multiplier, so the two never stack. **The multipliers are never
+  shown** - the label is the whole vocabulary.
+  `design_scale_travel_set()` is the one door, and it and the resize
+  listener both go through `design_scale_settle()`: apply the zoom, then
+  the debounced `layout_refresh`. `frame.js` follows it with
+  `reset_broadcast()`, so a scale change costs the reader their dragged
+  column widths exactly as pressing "reset columns" does.
+
+- Because `zoom` scales fonts, `px` and `ch` together, and every measurement
+  in `heatmap.js`/`theme.js` is rect-against-rect, **almost nothing needs a
+  scale var**. The exceptions are the two spaces that stay unzoomed:
+  `window.innerWidth`/`innerHeight` and `documentElement.clientWidth`/
+  `clientHeight` (`getBoundingClientRect()` does not) - `design_px()` converts
+  one, and `pane_splitter_attach` is its one caller. And a `vh`, which
+  resolves against the unzoomed window and is then zoomed, so **a full-height
+  rule reads `--design-vh`** (`DESIGN_VIEWPORT_HEIGHT_PROPERTY`), never `vh`.
+- **A framed document scales itself by 1** - it is laid out inside an
+  already-zoomed parent, so it is in design space already and zooming again
+  would compound.
+- **A width media query cannot fire**: design width is always 1920. The heat
+  map's `max-width: 720px` block was deleted for that reason - do not add one.
 **No decorative borders**; **no tooltips** - nothing rendered carries a
 `title=`, neither `Cell` nor `Column` has a field for one, and no exact value
 appears anywhere (only `<iframe title="report page">` remains).
@@ -672,7 +717,7 @@ appears anywhere (only `<iframe title="report page">` remains).
   produce, **not** filtered on a zero total, so layout stays stable; all-zero
   columns render blank, totals guard `|| 1`. **No row-wide heat.**
 - `minimap_build()` runs _before_ `layout_activate()`, narrowing the pane by
-  110px - the fill measures it as-is. Only `th` cells are sticky - **never
+  the minimap's own width - the fill measures it as-is. Only `th` cells are sticky - **never
   measure the thead**.
 
 ### 8.1 Number notation
@@ -708,8 +753,9 @@ the thin top-level frame controller** - cross-frame talk (`is_framed`,
 - **URL is the whole state.** Frame `#<view>[/<inner hash>]`; heat map
   `f=<file>`, `f=<file>&l=<n>`, `fn=<name>`, none = home, `&e=<counter>` when
   >1 counter. **Nothing is remembered outside the URL** except
-  `heat.scale`/`heat.sort` and `split.<pane>`.
-- **The local store is versioned**: `STORAGE_VERSION` = `perf2html v1` under
+  `heat.scale`/`heat.sort`, `view.scale` (the scale slider's travel, a
+  0..1 fraction, top-level only) and `split.<pane>`.
+- **The local store is versioned**: `STORAGE_VERSION` = `perf2html v2` under
   `STORAGE_VERSION_KEY` = `perf2html.version`, a bare string, not JSON. Not
   **exactly** the current string → sweep every key this report owns;
   **bumping it is how a stored-format change is rolled out**. **A new key must

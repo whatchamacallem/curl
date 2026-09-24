@@ -42,9 +42,9 @@
 # ASCII scan is the one exception, and runs over the whole tree at once: a
 # page's characters are read by people, whoever wrote them.
 #
-# The screenshots stage shoots the modified and diff reports, prefixing a
-# file name with which report it came from. Shots land outside every report
-# for the same reason: a checksum covers a report's own files only.
+# The screenshots stage shoots the modified and diff reports at each
+# viewport, naming a file for its size and report. Shots land outside every
+# report for the same reason: a checksum covers a report's own files only.
 #
 # Do not document what is being validated further. The validation
 # code below and the generator code itself are the living standards
@@ -403,8 +403,8 @@ batch_run() {
   stage_fail batch FAILED "$_BATCH_SCRIPT_NAME" "$_output"
 }
 
-# screenshots_run - shoot the modified and diff reports, each file named
-# for the report it came from. Both exist: the batch wrote them or exited.
+# screenshots_run - shoot the modified and diff reports at every viewport
+# screenshots.py names. Both exist: the batch wrote them or exited.
 screenshots_run() {
   local _name _path _prefix _output _exit_code
 

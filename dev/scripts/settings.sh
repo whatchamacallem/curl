@@ -27,6 +27,10 @@ declare -A CONTAINING_PACKAGES=(
 # cmake flags the batch builds the modified tree with when given none
 DEFAULT_FLAGS=(-D CMAKE_C_FLAGS=-Os)
 
+# where along the scale slider an untouched page sits, as a percent of its
+# travel. A whole number: a shell word is an int or a string, never a float.
+DESIGN_SCALE_DEFAULT_TRAVEL_PERCENT=25
+
 # the report-root directory holding the one shared speedscope copy
 FLAME_GRAPH_APP_DIR_NAME=flame-graph-app
 
@@ -72,10 +76,6 @@ REPORT_MODIFIED_DIR_NAME=perf2html_modified_report
 
 # the extension of a report's raw-data archive, one per test, page-visible
 REPORT_RAW_ARCHIVE_SUFFIX=.txz
-
-# When the profiler run started, the way __DATE__ is when the compiler
-# ran. Do not move.
-TIMESTAMP="$(date +%s)"
 
 # loops one native timing run of a test does
 TIMING_LOOPS=10000

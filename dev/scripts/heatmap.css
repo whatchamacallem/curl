@@ -1,7 +1,7 @@
 body {
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  height: var(--design-vh, 100vh);
 }
 #hdr {
   gap: 4px 14px;
@@ -37,7 +37,7 @@ body {
 }
 
 .srctail {
-  height: 50vh;
+  height: calc(0.5 * var(--design-vh, 100vh));
 }
 
 .srcwrap > :not(.tbl-cols) {
@@ -272,21 +272,4 @@ table.src tr.detail > td {
 }
 .home h2:first-of-type {
   margin-top: 10px;
-}
-@media (max-width: 720px) {
-  #layout {
-    flex-direction: column;
-  }
-  #tree {
-    width: auto !important;
-    max-height: 38vh;
-    background: var(--panel);
-  }
-  .split,
-  #minimap {
-    display: none;
-  }
-  #hdr input {
-    width: 12ch;
-  }
 }

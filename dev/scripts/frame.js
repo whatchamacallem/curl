@@ -7,12 +7,16 @@
 
   const HOME_VIEW_LABEL = window.ui_strings.text_of("str_view_summary");
   const OUTER_STATUS_TEXT = window.ui_strings.text_of("str_report_name");
+  const SCALE_LABEL_TEXT = window.ui_strings.text_of("str_control_view_scale");
   const SELECTION_SEPARATOR = " / ";
   const WORDMARK_LETTER_CLASS = "wordmark-letter";
 
   const home_panel = document.getElementById("home");
   const is_framed = window.report_ui.is_framed;
   const reset_columns_link = document.getElementById("reset-cols");
+  const scale_label = document.getElementById("scale-label");
+  const scale_slider = document.getElementById("scale-slider");
+  const scale_text = document.getElementById("scale-text");
   const strip_bar = document.getElementById("bar");
   const title_badge = document.getElementById("title");
   const utility_block = document.getElementById("util");
@@ -112,6 +116,25 @@
       view_frame.contentWindow.postMessage("report_ui:reset_columns", "*");
   }
 
+  // A framed page is drawn inside its parent's zoom, so only the top
+  // document carries the control that sets it.
+  function scale_activate() {
+    scale_label.hidden = is_framed;
+    if (is_framed) return;
+    scale_text.textContent = SCALE_LABEL_TEXT;
+    const saved_travel =
+      window.report_ui.view_storage.value_read("view.scale");
+    if (saved_travel != null)
+      window.report_ui.design_scale_travel_set(saved_travel);
+    scale_slider.value = String(window.report_ui.design_scale_travel_now());
+    scale_slider.addEventListener("input", () => {
+      const travel = Number(scale_slider.value);
+      window.report_ui.design_scale_travel_set(travel);
+      window.report_ui.view_storage.value_write("view.scale", travel);
+      reset_broadcast();
+    });
+  }
+
   reset_columns_link.addEventListener("click", (pointer_event) => {
     pointer_event.preventDefault();
     reset_broadcast();
@@ -161,5 +184,6 @@
     else if (message_data === "report_ui:reset_columns") reset_broadcast();
   });
   window.addEventListener("hashchange", () => view_show(location.hash));
+  scale_activate();
   view_show(location.hash);
 })();

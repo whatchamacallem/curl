@@ -30,6 +30,10 @@ _EXIT_INPUT_UNREADABLE = 20
 # Valgrind's "==1234== " line prefix, stripped so the log reads as output.
 _PID_PREFIX = re.compile(r"^==\d+==\s?")
 
+# How fine the scale slider's travel is, as an HTML range step over 0..1.
+# Fine enough to feel continuous, coarse enough not to redraw per pixel.
+_STRIP_SCALE_SLIDER_STEP = 0.01
+
 # How far a test's summary page sits below the report root, which says how
 # many "../" its shared-asset links need. The layout fixes it.
 _SUMMARY_PAGE_ASSETS_DEPTH = 1
@@ -834,7 +838,15 @@ class BuildReport:
                 f"{theme.html_escape(link.label)}</a>"
             )
         parts.append('<span class="sp"></span>')
+        parts.append(
+            '<label class="scale" id="scale-label" for="scale-slider">'
+            '<span id="scale-text"></span>'
+            '<input type="range" id="scale-slider" min="0" max="1"'
+            f' step="{_STRIP_SCALE_SLIDER_STEP}">'
+            "</label>"
+        )
         parts.append('<span class="util" id="util">')
+        parts.append(separator)
         parts.append('<a href="#" id="reset-cols">reset columns</a>')
         parts.append(separator)
         parts.append(

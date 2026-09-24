@@ -1,6 +1,19 @@
 window.report_ui = (function () {
   "use strict";
 
+  const DESIGN_COORDINATES_WIDTH_PX = settings("DESIGN_COORDINATES_WIDTH_PX");
+  const DESIGN_SCALE_DEFAULT_TRAVEL_PERCENT = settings(
+    "DESIGN_SCALE_DEFAULT_TRAVEL_PERCENT",
+  );
+  const DESIGN_SCALE_LARGEST_MULTIPLE = settings(
+    "DESIGN_SCALE_LARGEST_MULTIPLE",
+  );
+  const DESIGN_SCALE_SMALLEST_MULTIPLE = settings(
+    "DESIGN_SCALE_SMALLEST_MULTIPLE",
+  );
+  const DESIGN_VIEWPORT_HEIGHT_PROPERTY = settings(
+    "DESIGN_VIEWPORT_HEIGHT_PROPERTY",
+  );
   const HEAT_COLOR_LOGO_STOPS = settings("HEAT_COLOR_LOGO_STOPS");
   const LAYOUT_RESIZE_SETTLE_DELAY_MS = settings(
     "LAYOUT_RESIZE_SETTLE_DELAY_MS",
@@ -31,6 +44,8 @@ window.report_ui = (function () {
   const registered_panes = [];
   let resize_debounce_timer = null;
   let storage_is_checked = false;
+  let design_scale = 1;
+  let design_scale_travel = DESIGN_SCALE_DEFAULT_TRAVEL_PERCENT / 100;
 
   function ramp_channels_at(fraction) {
     const scaled_position = fraction * (RAMP_CHANNEL_STOPS.length - 1);
@@ -64,6 +79,56 @@ window.report_ui = (function () {
       );
       return letter_element;
     });
+  }
+
+  // The multiple of the window's own fit the slider is asking for, its
+  // travel read as a fraction from the smallest multiple to the largest.
+  function design_scale_multiple_of(travel_fraction) {
+    const span =
+      DESIGN_SCALE_LARGEST_MULTIPLE - DESIGN_SCALE_SMALLEST_MULTIPLE;
+    return DESIGN_SCALE_SMALLEST_MULTIPLE + span * travel_fraction;
+  }
+  function design_scale_of(viewport_width_px) {
+    const fitted = viewport_width_px / DESIGN_COORDINATES_WIDTH_PX;
+    return fitted * design_scale_multiple_of(design_scale_travel);
+  }
+  function design_scale_travel_now() {
+    return design_scale_travel;
+  }
+  // Take the slider's new position and redraw at it, the way a resize does.
+  // A framed page never calls this: it inherits its parent's zoom.
+  function design_scale_travel_set(travel_fraction) {
+    if (!isFinite(travel_fraction)) return false;
+    design_scale_travel = Math.min(Math.max(travel_fraction, 0), 1);
+    design_scale_settle();
+    return true;
+  }
+  function design_scale_apply() {
+    const root_element = document.documentElement;
+    // a framed document is laid out inside an already-zoomed parent, so its
+    // own box is design space already and it scales itself by 1
+    const wanted = is_framed
+      ? 1
+      : design_scale_of(root_element.clientWidth) || 1;
+    if (!isFinite(wanted) || wanted <= 0) return false;
+    design_scale = wanted;
+    root_element.style.zoom = String(wanted);
+    // a vh resolves against the unzoomed window and is then zoomed with
+    // everything else, so a full-height rule reads this design-space height
+    root_element.style.setProperty(
+      DESIGN_VIEWPORT_HEIGHT_PROPERTY,
+      root_element.clientHeight / wanted + "px",
+    );
+    return true;
+  }
+  function design_scale_now() {
+    return design_scale;
+  }
+  function design_px(screen_px) {
+    return screen_px / design_scale;
+  }
+  function screen_px(design_length_px) {
+    return design_length_px * design_scale;
   }
 
   function rounded_units(value, digit_count) {
@@ -415,7 +480,7 @@ window.report_ui = (function () {
         );
         pane_element.style.width =
           Math.min(
-            window.innerWidth * PANE_SPLITTER_WIDEST_WINDOW_SHARE,
+            design_px(window.innerWidth) * PANE_SPLITTER_WIDEST_WINDOW_SHARE,
             wanted_width_px,
           ) + "px";
         if (animation_frame) return;
@@ -437,17 +502,28 @@ window.report_ui = (function () {
     });
   }
 
-  window.addEventListener("resize", () => {
+  // Redraw at the scale in force and settle the layout after it. The one
+  // path a resize and a scale change both take.
+  function design_scale_settle() {
+    design_scale_apply();
     clearTimeout(resize_debounce_timer);
     resize_debounce_timer = setTimeout(
       layout_refresh,
       LAYOUT_RESIZE_SETTLE_DELAY_MS,
     );
-  });
+  }
+
+  design_scale_apply();
+  window.addEventListener("resize", design_scale_settle);
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", () => layout_activate());
   } else layout_activate();
   return {
+    design_px,
+    design_scale_apply,
+    design_scale_now,
+    design_scale_travel_now,
+    design_scale_travel_set,
     hash_publish,
     human_text,
     is_framed,
@@ -462,6 +538,7 @@ window.report_ui = (function () {
     parent_post,
     percent_text,
     ramp_channels_at,
+    screen_px,
     signed_human_text,
     signed_percent_text,
     view_storage,

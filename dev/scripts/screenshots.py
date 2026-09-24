@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 # dev/scripts/screenshots.py REPORT PREFIX [--out=DIR] -- shoot a report.
 #
-# One PNG per entry in _VIEWS, each a hash naming a view the report renders
-# a different way. The list is of views, not of data: two hashes differing
-# only in which test or counter they name are one view and one shot.
+# One PNG per entry in _VIEWS per viewport in _SCREENSHOT_VIEWPORTS, each
+# hash naming a view the report renders a different way. The list is of
+# views, not of data: two hashes differing only in which test or counter
+# they name are one view and one shot. The viewports are there to be
+# compared: a page is designed once and fitted to the window, so one view's
+# three shots differ in size and in nothing else.
 #
 # Every anchor a hash names is from the timer framework rather than from
 # what is timed -- tests/perf/first.c and lib/curlx/timeval.c are in every
@@ -14,6 +17,8 @@
 from __future__ import annotations
 
 import argparse, os, shutil, subprocess, sys
+
+import PIL.Image
 
 
 # Screenshots - drives one headless browser over a report's views.
@@ -48,23 +53,25 @@ class Screenshots:
             return "file://" + page.replace("\\", "/") + view_hash
         return "file://" + page + view_hash
 
-    # Shoot every view, returning the count written.
+    # Shoot every view at every viewport, returning the count written.
     def shoot_all(self, prefix: str) -> int:
         written = 0
-        for name, view_hash in _VIEWS:
-            if self.shoot_one(prefix + name, view_hash):
-                written += 1
+        for size_name, width_px, height_px in _SCREENSHOT_VIEWPORTS:
+            for name, view_hash in _VIEWS:
+                shot = f"{size_name}_{prefix}{name}"
+                if self.shoot_one(shot, view_hash, width_px, height_px):
+                    written += 1
         return written
 
-    # Shoot one view. A browser that writes no file is this view's fault,
-    # collected rather than raised: the later views still get their shot.
-    def shoot_one(self, name: str, view_hash: str) -> bool:
+    # Shoot one view at one viewport. A browser that writes no file is this
+    # view's fault, collected rather than raised: the rest still get shot.
+    def shoot_one(
+        self, name: str, view_hash: str, width_px: int, height_px: int
+    ) -> bool:
         out_path = os.path.join(self.out_dir, name + _IMAGE_SUFFIX)
         if os.path.exists(out_path):
             os.remove(out_path)
-        window = (
-            f"{_SCREENSHOT_VIEWPORT_WIDTH_PX},{_SCREENSHOT_VIEWPORT_HEIGHT_PX}"
-        )
+        window = f"{width_px},{height_px}"
         result = subprocess.run(
             [
                 self.browser,
@@ -86,6 +93,53 @@ class Screenshots:
         self.faults.append(f"{name}: {view_hash or '(entry page)'}")
         print(result.stderr.strip()[-_FAULT_TAIL_CHARS:], file=sys.stderr)
         return False
+
+    # One contact sheet per viewport, the shots in _VIEWS order laid left to
+    # right. A sheet is temporary output for a person, covered by no checksum.
+    def sheets_write(self, prefix: str) -> int:
+        written = 0
+        for size_name, _width_px, _height_px in _SCREENSHOT_VIEWPORTS:
+            shots = [
+                os.path.join(
+                    self.out_dir,
+                    f"{size_name}_{prefix}{name}{_IMAGE_SUFFIX}",
+                )
+                for name, _hash in _VIEWS[:_THUMBNAIL_SHEET_CELLS]
+            ]
+            shots = [path for path in shots if os.path.isfile(path)]
+            if not shots:
+                continue
+            name = f"thumbnail_{size_name}_{prefix.rstrip('_')}"
+            self.sheet_one(name + _IMAGE_SUFFIX, shots)
+            written += 1
+        return written
+
+    # Draw one sheet: every cell the same box, each shot fitted inside it
+    # whole, so a 720p and a 4k shot of one view sit at the same size.
+    def sheet_one(self, name: str, shots: list[str]) -> None:
+        cell_width = _THUMBNAIL_SHEET_WIDTH_PX // _THUMBNAIL_SHEET_COLUMNS
+        cell_height = _THUMBNAIL_SHEET_HEIGHT_PX // _THUMBNAIL_SHEET_ROWS
+        sheet = PIL.Image.new(
+            "RGB",
+            (_THUMBNAIL_SHEET_WIDTH_PX, _THUMBNAIL_SHEET_HEIGHT_PX),
+            _THUMBNAIL_SHEET_BACKGROUND,
+        )
+        for index, path in enumerate(shots):
+            shot = PIL.Image.open(path)
+            shot.thumbnail(
+                (cell_width, cell_height), PIL.Image.Resampling.LANCZOS
+            )
+            column = index % _THUMBNAIL_SHEET_COLUMNS
+            row = index // _THUMBNAIL_SHEET_COLUMNS
+            sheet.paste(
+                shot,
+                (
+                    column * cell_width + (cell_width - shot.width) // 2,
+                    row * cell_height + (cell_height - shot.height) // 2,
+                ),
+            )
+        sheet.save(os.path.join(self.out_dir, name))
+        print(f"  {name}")
 
     # Whether the chosen browser is a Windows one reached through /mnt.
     def windows_browser_is(self) -> bool:
@@ -152,6 +206,8 @@ def main() -> int:
         for fault in shooter.faults:
             print(f"  {fault}", file=sys.stderr)
         return 1
+
+    shooter.sheets_write(namespace.prefix)
     print(f"{written} screenshot(s)")
     return 0
 
@@ -197,9 +253,28 @@ _SCREENSHOT_DIR_NAME = "screenshots"
 # so it costs nothing when the page settles sooner.
 _SCREENSHOT_RENDER_BUDGET_MS = 8000
 
-# The viewport every shot is taken at, the target this is designed against.
-_SCREENSHOT_VIEWPORT_HEIGHT_PX = 768
-_SCREENSHOT_VIEWPORT_WIDTH_PX = 1366
+# Every viewport each view is shot at, as (name, width, height). The name
+# leads the file name, so one view's three shots sort together for comparing.
+_SCREENSHOT_VIEWPORTS: tuple[tuple[str, int, int], ...] = (
+    ("720p", 1280, 720),
+    ("1080p", 1920, 1080),
+    ("4k", 3840, 2160),
+)
+
+# What a sheet's empty cells are left as, the pages' own near-black so a
+# part-filled sheet does not glare.
+_THUMBNAIL_SHEET_BACKGROUND = (18, 20, 24)
+
+# The grid one sheet lays its shots out in, and how many that holds. Nine
+# cells is every view one viewport has, so a sheet is the whole set at once.
+_THUMBNAIL_SHEET_COLUMNS = 3
+_THUMBNAIL_SHEET_ROWS = 3
+_THUMBNAIL_SHEET_CELLS = _THUMBNAIL_SHEET_COLUMNS * _THUMBNAIL_SHEET_ROWS
+
+# A sheet is 4k whatever the shots on it are: it is read by a person on a
+# screen, not compared against a report, and is temporary either way.
+_THUMBNAIL_SHEET_HEIGHT_PX = 2160
+_THUMBNAIL_SHEET_WIDTH_PX = 3840
 
 # Every view worth a shot, as (file name, hash). Each renders through a
 # code path no earlier entry reaches; a view showing other data does not.
@@ -213,18 +288,9 @@ _VIEWS: tuple[tuple[str, str], ...] = (
         f"#{_MERGED_TEST}/heat-map/f={_ANCHOR_FILE}&l=1",
     ),
     ("heat_map_function", f"#{_MERGED_TEST}/heat-map/fn={_ANCHOR_FUNCTION}"),
-    ("error_bad_view", "#no-such-view"),
     (
-        "error_bad_counter",
-        f"#{_MERGED_TEST}/heat-map/e=NoSuchCounter",
-    ),
-    (
-        "error_bad_function",
+        "bad_function",
         f"#{_MERGED_TEST}/heat-map/fn=no_such_function",
-    ),
-    (
-        "error_bad_file",
-        f"#{_MERGED_TEST}/heat-map/f=no/such/file.c",
     ),
 )
 

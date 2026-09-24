@@ -27,6 +27,7 @@ window.ui_strings = (function () {
     str_control_counter: "counter:",
     str_control_scale: "scale:",
     str_control_search: "search:",
+    str_control_view_scale: "scale:",
     str_control_tree: "tree:",
     str_counter_bc: "conditional branches executed",
     str_counter_bcm: "conditional branches mispredicted",
