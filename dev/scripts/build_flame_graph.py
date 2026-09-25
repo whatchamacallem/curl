@@ -86,13 +86,11 @@ class BuildFlameGraph:
         )
         # overlay first, so a speedscope that never starts shows the failure;
         # then settings and vocabulary, the bootstrap's bounds and failure id
-        scripts = "\n    ".join(
-            f'<script src="{assets_href}/{name}"></script>'
-            for name in (
-                *theme.page_preamble_scripts(),
-                _ASSET_SETTINGS_SCRIPT_NAME,
-                _ASSET_UI_STRINGS_SCRIPT_NAME,
-            )
+        scripts = theme.script_tags(
+            assets_href, theme.page_preamble_scripts()
+        ) + theme.script_tags(
+            assets_href,
+            (_ASSET_SETTINGS_SCRIPT_NAME, _ASSET_UI_STRINGS_SCRIPT_NAME),
         )
         # __SCRIPTS__ goes in last, so nothing substituted before it can be
         # read back out of the text the scripts bring with them

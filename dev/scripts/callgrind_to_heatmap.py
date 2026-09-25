@@ -453,8 +453,8 @@ class CallgrindToHeatmap:
         sources_href = theme.shared_href(
             _HEAT_MAP_PAGE_DEPTH, _REPORT_SOURCES_DIR_NAME
         )
-        scripts = self.script_tags(assets_href, theme.page_preamble_scripts())
-        scripts += self.script_tags(
+        scripts = theme.script_tags(assets_href, theme.page_preamble_scripts())
+        scripts += theme.script_tags(
             sources_href,
             sorted(
                 entry["source"]
@@ -462,7 +462,7 @@ class CallgrindToHeatmap:
                 if entry["source"] is not None
             ),
         )
-        scripts += self.script_tags(
+        scripts += theme.script_tags(
             assets_href,
             (
                 _ASSET_SETTINGS_SCRIPT_NAME,
@@ -542,13 +542,6 @@ class CallgrindToHeatmap:
         print(
             f"wrote {args.output} ({len(html.encode('utf-8')):,} bytes)",
             file=sys.stderr,
-        )
-
-    # Script tags for the named assets, under one href, in the order given.
-    @staticmethod
-    def script_tags(href: str, names: Sequence[str]) -> str:
-        return "".join(
-            f'<script src="{href}/{name}"></script>\n' for name in names
         )
 
     # The sources/ script file name for one display path.

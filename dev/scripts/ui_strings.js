@@ -59,14 +59,18 @@ window.ui_strings = (function () {
     str_error_control_copy: "copy",
     str_error_control_reload: "reload",
     str_error_control_restart: "restart",
+    str_error_counter_unknown: "this report has no column for counter {0}",
     str_error_flame_graph_never_started:
       "flame graph viewer did not start within {0}s",
+    str_error_font_refused:
+      "the browser refused the page font",
     str_error_hash_counter_unknown:
       "url encodes counter this report has no column for: {0}",
     str_error_hash_file_unknown:
       "url encodes a file this report has no source for: {0}",
     str_error_hash_function_unknown:
       "url encodes a function address this report never recorded: {0}",
+    str_error_hash_part_unknown: "url part unrecognized: {0}",
     str_error_hash_view_unknown:
       "url encodes a view this report does not have: {0}",
     str_error_heading_address: "address",
@@ -75,9 +79,15 @@ window.ui_strings = (function () {
     str_error_manifest_unavailable: "MANIFEST.txt not found",
     str_error_page_heading: "perf2html error",
     str_error_page_title: "perf2html error page",
+    str_error_scale_ends_disordered:
+      "DESIGN_SCALE_* out of order: smallest {0}, default {1}, largest {2}",
+    str_error_scale_multiple_outside: "scale multiple {0} is outside {1}..{2}",
+    str_error_scale_unusable: "the page scale came out as {0}",
     str_error_source_address: "bad address",
     str_error_source_exception: "uncaught exception",
     str_error_source_rejection: "internal error",
+    str_error_test_menu_focus_refused:
+      "the browser kept focus on {0}, so keys cannot reach the test menu",
     str_function_name_unknown: "?",
     str_heading_functions_by_self: "{prefix} functions by self {counter}",
     str_heading_lines_by_counter: "{prefix} lines by {counter}",
@@ -86,6 +96,7 @@ window.ui_strings = (function () {
     str_in_function: " in {function}",
     str_line_self: "line self",
     str_no_caller: "(no recorded caller)",
+    str_no_match: "(no match)",
     str_no_samples: "no samples",
     str_not_in_repo: "not in this repo ({path})",
     str_popup_callees: "calls from this line (total {counter})",

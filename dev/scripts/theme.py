@@ -17,6 +17,9 @@ _ASSET_SETTINGS_SCRIPT_NAME: str = ""
 _ASSET_THEME_SCRIPT_NAME: str = ""
 _ASSET_THEME_STYLESHEET_NAME: str = ""
 _ASSET_UI_STRINGS_SCRIPT_NAME: str = ""
+_CSS_LAYOUT: bool = False
+_DESIGN_FONT_FIT_PROPERTY: str = ""
+_DESIGN_FONT_SIZE_PX: int = 0
 _HEAT_COLOR_FULL_SCALE_PERCENT: int = 0
 _HEAT_COLOR_LOGO_STOPS: list[str] = []
 _NUMBER_LARGEST_PRINTED_MULTIPLE_TIMES: float = 0.0
@@ -25,6 +28,7 @@ _PAGE_FONT_FAMILY: str = ""
 _REPORT_ASSETS_DIR_NAME: str = ""
 _STRIP_STATUS_ROW_WIDTH_CHARS: int = 0
 _TABLE_COLUMN_EXTRA_WIDTH_CHARS: int = 0
+_TABLE_GROW_COLUMN_NARROWEST_CHARS: int = 0
 _THEME_COLOR_PAIR_ENTRIES: list[str] = []
 _THEME_COLOR_PAIR_NAMES: tuple[str, ...] = ()
 _THEME_COLOR_ROLE_BACKGROUND_SHADE_FACTOR: float = 0.0
@@ -51,7 +55,7 @@ CellOrText: TypeAlias = Cell | str
 
 # Column - One table column: its label and how wide it is allowed to get.
 class Column(NamedTuple):
-    # the header text, and every column's width floor
+    # the heading, which the column's widest width always fits
     label: str
     # right-align this column, because it holds numbers
     numeric: bool = False
@@ -59,6 +63,15 @@ class Column(NamedTuple):
     width: int | None = None
     # the column that soaks up the leftover width in a fill table
     grow: bool = False
+
+
+# ColumnExtent - How many characters one column's heading and cells ask for.
+# theme.js's column_extents() builds the same pair under the same names.
+class ColumnExtent(NamedTuple):
+    # the heading's length, which only the column's widest width must fit
+    heading_chars: int
+    # the longest cell's length, the fixed width, or a CSS_LAYOUT grow floor
+    content_chars: int
 
 
 # ThemeRuntime - The few theme values the page's JavaScript needs at runtime.
@@ -231,23 +244,71 @@ class Theme:
     def cell(self, value: CellOrText) -> Cell:
         return value if isinstance(value, Cell) else Cell(text=value)
 
-    # How wide each column ends up: its title is always the floor.
-    def column_widths(
+    # What each column's heading and cells ask for, in characters. Under
+    # CSS_LAYOUT a grow column is cut at its container: it asks its floor.
+    def column_extents(
         self,
         columns: Sequence[Column],
         rows: Sequence[Sequence[Cell]],
-    ) -> list[int]:
-        widths: list[int] = []
+        grow_index: int,
+    ) -> list[ColumnExtent]:
+        extents: list[ColumnExtent] = []
         for index, column in enumerate(columns):
-            width = len(column.label)
             if column.width is not None:
-                width = max(width, column.width)
+                content_chars = column.width
+            elif _CSS_LAYOUT and index == grow_index:
+                content_chars = _TABLE_GROW_COLUMN_NARROWEST_CHARS
             else:
-                for row in rows:
-                    if index < len(row):
-                        width = max(width, len(row[index].text))
-            widths.append(width + _TABLE_COLUMN_EXTRA_WIDTH_CHARS)
-        return widths
+                content_chars = self.column_longest(rows, index)
+            extents.append(ColumnExtent(len(column.label), content_chars))
+        return extents
+
+    # The narrowest and widest one column may be, in characters: the heading
+    # or, under CSS_LAYOUT, the cells alone; then heading and cells both.
+    def column_limits(self, extent: ColumnExtent) -> tuple[int, int]:
+        narrowest = (
+            extent.content_chars if _CSS_LAYOUT else extent.heading_chars
+        )
+        widest = max(extent.heading_chars, extent.content_chars)
+        return (
+            narrowest + _TABLE_COLUMN_EXTRA_WIDTH_CHARS,
+            widest + _TABLE_COLUMN_EXTRA_WIDTH_CHARS,
+        )
+
+    # The longest text any row holds in one column, 0 when there are no rows.
+    def column_longest(
+        self, rows: Sequence[Sequence[Cell]], index: int
+    ) -> int:
+        return max((len(row[index].text) for row in rows), default=0)
+
+    # One column's <col> width: its widest in ch; under CSS_LAYOUT, CSS
+    # automatic table layout on its container's 100cqw. See DECLAUDE.md 8.
+    def column_width_text(
+        self, limits: Sequence[tuple[int, int]], index: int, grow_index: int
+    ) -> str:
+        narrowest, widest = limits[index]
+        if not _CSS_LAYOUT:
+            return f"{widest}ch"
+        shared = [
+            limit for other, limit in enumerate(limits) if other != grow_index
+        ]
+        low_total = sum(limit[0] for limit in shared)
+        high_total = sum(limit[1] for limit in shared)
+        # the non-grow columns sum to clamp(low, 100cqw - grow, high); the
+        # grow column takes the rest and never goes under its own narrowest
+        if index == grow_index:
+            return (
+                f"max({narrowest}ch, 100cqw - clamp({low_total}ch, "
+                f"100cqw - {narrowest}ch, {high_total}ch))"
+            )
+        if narrowest == widest:
+            return f"{narrowest}ch"
+        grow_narrowest = limits[grow_index][0] if grow_index >= 0 else 0
+        return (
+            f"clamp({narrowest}ch, {narrowest}ch + (100cqw - "
+            f"{low_total + grow_narrowest}ch) * {widest - narrowest} / "
+            f"{high_total - low_total}, {widest}ch)"
+        )
 
     # Dark or light text, whichever the background can actually be read on.
     def contrast_foreground(self, color: Theme.Rgb) -> str:
@@ -273,6 +334,9 @@ class Theme:
             f"  --title-w: calc({_STRIP_STATUS_ROW_WIDTH_CHARS}ch + 16px);"
         )
         lines.append(f"  --font: {_PAGE_FONT_FAMILY};")
+        # the design font fits by 1; theme.js replaces it with the box's own
+        lines.append(f"  --font-px: {_DESIGN_FONT_SIZE_PX}px;")
+        lines.append(f"  {_DESIGN_FONT_FIT_PROPERTY}: 1;")
         lines.append("}")
         return (
             "\n".join(lines)
@@ -293,6 +357,9 @@ class Theme:
         body_holds_scripts: bool = False,
     ) -> str:
         assets_href = shared_href(depth, _REPORT_ASSETS_DIR_NAME)
+        # the class makes each box holding a table a container, so every
+        # CSS_LAYOUT <col>'s 100cqw measures the room its table has
+        root_attr = ' class="css-layout"' if _CSS_LAYOUT else ""
         body_attr = f' class="{body_class}"' if body_class else ""
         head = "".join(
             f'<link rel="stylesheet" href="{assets_href}/{name}">\n'
@@ -303,18 +370,18 @@ class Theme:
         script = (
             ""
             if body_holds_scripts
-            else "".join(
-                f'<script src="{assets_href}/{name}"></script>\n'
-                for name in (
-                    *page_preamble_scripts(),
+            else script_tags(assets_href, page_preamble_scripts())
+            + script_tags(
+                assets_href,
+                (
                     _ASSET_SETTINGS_SCRIPT_NAME,
                     _ASSET_THEME_SCRIPT_NAME,
                     *extra_js,
-                )
+                ),
             )
         )
         return (
-            '<!doctype html>\n<html lang="en">\n'
+            f'<!doctype html>\n<html lang="en"{root_attr}>\n'
             '<head>\n<meta charset="utf-8">\n'
             '<meta name="viewport"'
             ' content="width=device-width, initial-scale=1">\n'
@@ -425,7 +492,7 @@ class Theme:
             for component in self.rgb(hex_color)
         )
 
-    # One whole table: a colgroup of exact ch widths, then the rows.
+    # One whole table: a colgroup of character widths, then the rows.
     def table(
         self,
         key: str,
@@ -436,27 +503,28 @@ class Theme:
     ) -> str:
         cells = [[self.cell(value) for value in row] for row in rows]
         for row in cells:
-            if len(row) > len(columns):
+            if len(row) != len(columns):
                 raise ValueError(
                     f"table {key!r}: a row has {len(row)} cells "
                     f"for {len(columns)} columns"
                 )
-        grow_index = (
-            next(
+        grow_index = -1
+        if fill:
+            grow_index = next(
                 (index for index, column in enumerate(columns) if column.grow),
-                len(columns) - 1,
+                -1,
             )
-            if fill
-            else -1
-        )
-        widths = self.column_widths(columns, cells)
+            if grow_index < 0:
+                raise ValueError(f"table {key!r}: fill but no grow column")
+        extents = self.column_extents(columns, cells, grow_index)
+        limits = [self.column_limits(extent) for extent in extents]
         out = [f'<div class="tbl{" fill" if fill else ""}">']
         table_classes = "cols" + (" fill" if fill else "")
         out.append(
             f'<div class="tbl-cols"><table class="{table_classes}" '
             f'data-key="{html_escape(key)}"><colgroup>'
         )
-        for index, width in enumerate(widths):
+        for index, limit in enumerate(limits):
             col_classes = " ".join(
                 class_name
                 for class_name in (
@@ -466,16 +534,17 @@ class Theme:
                 if class_name
             )
             attr = f' class="{col_classes}"' if col_classes else ""
-            floor = len(columns[index].label) + _TABLE_COLUMN_EXTRA_WIDTH_CHARS
+            width = self.column_width_text(limits, index, grow_index)
             out.append(
-                f'<col{attr} data-min="{floor}ch" style="width:{width}ch">'
+                f'<col{attr} data-min="{limit[0]}ch" style="width:{width}">'
             )
         out.append("</colgroup>")
         if column_titles:
             out.append("<thead><tr>")
             for column in columns:
                 attrs = ' class="n"' if column.numeric else ""
-                out.append(f"<th{attrs}>{html_escape(column.label)}</th>")
+                label = html_escape(column.label)
+                out.append(f'<th{attrs} title="{label}">{label}</th>')
             out.append("</tr></thead>")
         out.append("<tbody>")
         for row in cells:
@@ -600,6 +669,13 @@ def page_preamble_scripts() -> tuple[str, ...]:
     return (
         _ASSET_ERROR_OVERLAY_SCRIPT_NAME,
         _ASSET_REPORT_MANIFEST_SCRIPT_NAME,
+    )
+
+
+# script_tags - Script tags for the named assets, under one href, in order.
+def script_tags(href: str, names: Sequence[str]) -> str:
+    return "".join(
+        f'<script src="{href}/{name}"></script>\n' for name in names
     )
 
 

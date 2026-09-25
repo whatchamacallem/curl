@@ -79,6 +79,9 @@ class Screenshots:
                 "--disable-gpu",
                 "--no-sandbox",
                 "--hide-scrollbars",
+                # a shot is of the page as shipped: nothing a browser stored
+                # (a moved slider, a dragged pane) may reach it
+                "--incognito",
                 f"--window-size={window}",
                 f"--screenshot={self.browser_path_of(out_path)}",
                 f"--virtual-time-budget={_SCREENSHOT_RENDER_BUDGET_MS}",
@@ -88,7 +91,6 @@ class Screenshots:
             text=True,
         )
         if os.path.exists(out_path) and os.path.getsize(out_path):
-            print(f"  {os.path.basename(out_path)}")
             return True
         self.faults.append(f"{name}: {view_hash or '(entry page)'}")
         print(result.stderr.strip()[-_FAULT_TAIL_CHARS:], file=sys.stderr)
@@ -139,7 +141,6 @@ class Screenshots:
                 ),
             )
         sheet.save(os.path.join(self.out_dir, name))
-        print(f"  {name}")
 
     # Whether the chosen browser is a Windows one reached through /mnt.
     def windows_browser_is(self) -> bool:

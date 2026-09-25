@@ -50,7 +50,8 @@ These are developer flags for the iterative development of `perf2html` itself.
     --regenerate      Rebuilds all pages from the last run's profiler
                       artifacts, re-measuring nothing. Implies
                       --keep-artifacts.
-    --verbose         Enables diagnostic information.
+    --verbose         Enables diagnostic information. Repeating it (--verbose
+                      --verbose) increments the verbosity level.
 ```
 
 ## Callgrind Counters

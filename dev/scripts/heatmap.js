@@ -1,6 +1,9 @@
 (function () {
   "use strict";
 
+  const DESIGN_FONT_CHARACTER_WIDTH_PX = settings(
+    "DESIGN_FONT_CHARACTER_WIDTH_PX",
+  );
   const HEAT_COLOR_FULL_SCALE_PERCENT = settings(
     "HEAT_COLOR_FULL_SCALE_PERCENT",
   );
@@ -16,11 +19,11 @@
   const HEAT_MAP_HOME_LINES_LOCATION_MAX_CHARS = settings(
     "HEAT_MAP_HOME_LINES_LOCATION_MAX_CHARS",
   );
-  const HEAT_MAP_HOME_LINES_SOURCE_COLUMN_WIDTH_CHARS = settings(
-    "HEAT_MAP_HOME_LINES_SOURCE_COLUMN_WIDTH_CHARS",
+  const HEAT_MAP_HOME_LINES_SOURCE_COLUMN_MAX_CHARS = settings(
+    "HEAT_MAP_HOME_LINES_SOURCE_COLUMN_MAX_CHARS",
   );
-  const HEAT_MAP_HOME_LINES_SOURCE_TEXT_MAX_CHARS = settings(
-    "HEAT_MAP_HOME_LINES_SOURCE_TEXT_MAX_CHARS",
+  const HEAT_MAP_HOME_LINES_SOURCE_SNIPPET_MAX_CHARS = settings(
+    "HEAT_MAP_HOME_LINES_SOURCE_SNIPPET_MAX_CHARS",
   );
   const HEAT_MAP_HOME_TABLE_MAX_ROWS = settings(
     "HEAT_MAP_HOME_TABLE_MAX_ROWS",
@@ -60,9 +63,6 @@
   );
   const LAYOUT_RESIZE_SETTLE_DELAY_MS = settings(
     "LAYOUT_RESIZE_SETTLE_DELAY_MS",
-  );
-  const TABLE_COLUMN_EXTRA_WIDTH_CHARS = settings(
-    "TABLE_COLUMN_EXTRA_WIDTH_CHARS",
   );
   const TABLE_FUNCTION_NAME_WIDTH_CHARS = settings(
     "TABLE_FUNCTION_NAME_WIDTH_CHARS",
@@ -133,9 +133,14 @@
   }
   const counter_find = (key) =>
     counter_list.find((counter) => counter.key === key);
-  let current_counter =
-    counter_find(profile_model.heatMapTotals.defaultCounter) ||
-    counter_list[0];
+  // a key the column list must hold: the ranking counter, a select entry,
+  // or the one an address names once route_render has checked it
+  function counter_of(key) {
+    const counter = counter_find(key);
+    if (!counter) throw new Error("str_error_counter_unknown " + key);
+    return counter;
+  }
+  let current_counter = counter_of(profile_model.heatMapTotals.defaultCounter);
   const secondary_counters =
     HEAT_MAP_SECONDARY_COUNTER_NAMES.map(counter_find).filter(Boolean);
 
@@ -196,7 +201,7 @@
     CHIP_HEADING = text_of("str_chip_heading_self");
   const SELF_COLUMN = {
     label: text_of("str_column_self"),
-    num: true,
+    numeric: true,
   };
   const HAS_CALL_GRAPH = function_table.some(
     (function_entry) => function_entry.callers.length > 0,
@@ -491,26 +496,27 @@
       ? value
       : { text: value == null ? "" : String(value) };
 
-  function column_widths(columns, cell_rows) {
-    return columns.map((column, column_index) => {
-      let width = column.label.length;
-      if (column.width != null) width = Math.max(width, column.width);
-      else {
-        for (const row of cell_rows) {
-          if (!row[column_index]) continue;
-          width = Math.max(width, (row[column_index].text || "").length);
-        }
-        if (column.clip != null) {
-          width = Math.max(column.label.length, Math.min(width, column.clip));
-        }
-      }
-      return width + TABLE_COLUMN_EXTRA_WIDTH_CHARS;
-    });
-  }
-  function table_html(key, columns, rows, options) {
+  function table_render(key, columns, rows, options) {
     options = options || {};
     const cell_rows = rows.map((row) => row.map(cell_normalize));
-    const column_width_list = column_widths(columns, cell_rows);
+    for (const row of cell_rows) {
+      if (row.length !== columns.length) {
+        throw new Error(
+          `table ${key}: a row has ${row.length} cells ` +
+            `for ${columns.length} columns`,
+        );
+      }
+    }
+    let grow_index = -1;
+    if (options.fill) {
+      grow_index = columns.findIndex((column) => column.grow);
+      if (grow_index < 0) {
+        throw new Error(`table ${key}: fill but no grow column`);
+      }
+    }
+    const column_limit_list = report_ui
+      .column_extents(columns, cell_rows, grow_index)
+      .map(report_ui.column_limits);
     const table_classes = [
       "cols",
       options.fill ? "fill" : "",
@@ -518,29 +524,34 @@
     ]
       .filter(Boolean)
       .join(" ");
-    let markup = options.bare ? "" : `<div class="tbl">`;
+    let markup = options.bare
+      ? ""
+      : `<div class="tbl${options.fill ? " fill" : ""}">`;
     markup +=
       `<div class="tbl-cols"><table class="${table_classes}"` +
       ` data-key="${html_escape(key)}"><colgroup>`;
-    columns.forEach((column, column_index) => {
+    column_limit_list.forEach((limit, column_index) => {
       const column_classes = [
         column_index % 2 ? "alt" : "",
-        column.grow ? "grow" : "",
+        column_index === grow_index ? "grow" : "",
       ]
         .filter(Boolean)
         .join(" ");
-      const minimum_chars =
-        column.label.length + TABLE_COLUMN_EXTRA_WIDTH_CHARS;
+      const width_text = report_ui.column_width_text(
+        column_limit_list,
+        column_index,
+        grow_index,
+      );
       markup +=
         `<col${column_classes ? ` class="${column_classes}"` : ""}` +
-        ` data-min="${minimum_chars}ch"` +
-        ` style="width:${column_width_list[column_index]}ch">`;
+        ` data-min="${limit[0]}ch" style="width:${width_text}">`;
     });
     markup += `</colgroup><thead><tr>`;
     for (const column of columns) {
+      const heading = html_escape(column.label);
       markup +=
-        `<th${column.num ? ' class="n"' : ""}>` +
-        `${html_escape(column.label)}</th>`;
+        `<th${column.numeric ? ' class="n"' : ""} title="${heading}">` +
+        `${heading}</th>`;
     }
     markup += `</tr></thead><tbody>`;
     cell_rows.forEach((row, row_index) => {
@@ -551,9 +562,9 @@
           ? `<tr ${options.row_attributes[row_index]}>`
           : "<tr>";
       row.forEach((cell, column_index) => {
-        const column = columns[column_index] || {};
+        const column = columns[column_index];
         const class_names = [
-          column.num ? "n" : "",
+          column.numeric ? "n" : "",
           column.cls || "",
           cell.cls || "",
         ]
@@ -573,14 +584,12 @@
 
   function table_markdown(columns, rows) {
     const cell_rows = rows.map((row) => row.map(cell_normalize));
-    const column_width_list = columns.map((column, column_index) => {
-      let width = column.label.length;
-      for (const row of cell_rows) {
-        if (!row[column_index]) continue;
-        width = Math.max(width, (row[column_index].text || "").length);
-      }
-      return width;
-    });
+    const column_width_list = columns.map((column, column_index) =>
+      Math.max(
+        column.label.length,
+        report_ui.column_longest(cell_rows, column_index),
+      ),
+    );
     const pad = (text, width, numeric) =>
       numeric ? text.padStart(width) : text.padEnd(width);
     const line = (cells) =>
@@ -590,14 +599,14 @@
           pad(
             text,
             column_width_list[column_index],
-            columns[column_index].num,
+            columns[column_index].numeric,
           ),
         )
         .join(" | ") +
       " |";
     const output_parts = [line(columns.map((column) => column.label))];
     const rule = columns.map((column, column_index) =>
-      column.num
+      column.numeric
         ? "-".repeat(column_width_list[column_index] - 1) + ":"
         : "-".repeat(column_width_list[column_index]),
     );
@@ -615,7 +624,7 @@
     return output_parts.join("\n");
   }
   const counter_column = (counter, extra) =>
-    Object.assign({ label: counter.key, num: true }, extra || {});
+    Object.assign({ label: counter.key, numeric: true }, extra || {});
   const secondary_columns = () =>
     secondary_counters.map((secondary) =>
       counter_column(secondary, {
@@ -873,7 +882,7 @@
         if (entry[1] >= 1 && entry[1] <= source_lines.length) {
           source_snippet = source_lines[entry[1] - 1]
             .trim()
-            .slice(0, HEAT_MAP_HOME_LINES_SOURCE_COLUMN_WIDTH_CHARS);
+            .slice(0, HEAT_MAP_HOME_LINES_SOURCE_SNIPPET_MAX_CHARS);
         }
       }
       return [entry[0], entry[1], entry[2], entry[3], source_snippet];
@@ -891,10 +900,10 @@
           counter: counter_label(current_counter),
         }),
       )}</h2>` +
-      table_html(
+      table_render(
         "heat.home.lines",
         [
-          { label: text_of("str_column_rank"), num: true },
+          { label: text_of("str_column_rank"), numeric: true },
           SELF_COLUMN,
           {
             label: text_of("str_column_function"),
@@ -906,7 +915,7 @@
           },
           {
             label: text_of("str_column_source"),
-            clip: HEAT_MAP_HOME_LINES_SOURCE_TEXT_MAX_CHARS,
+            clip: HEAT_MAP_HOME_LINES_SOURCE_COLUMN_MAX_CHARS,
           },
           counter_column(current_counter),
           ...secondary_columns(),
@@ -960,11 +969,11 @@
       ? [
           {
             label: text_of("str_column_calls"),
-            num: true,
+            numeric: true,
           },
           {
             label: text_of("str_column_inclusive"),
-            num: true,
+            numeric: true,
           },
         ]
       : [];
@@ -975,10 +984,10 @@
           counter: counter_label(current_counter),
         }),
       )}</h2>` +
-      table_html(
+      table_render(
         "heat.home.functions",
         [
-          { label: text_of("str_column_rank"), num: true },
+          { label: text_of("str_column_rank"), numeric: true },
           SELF_COLUMN,
           {
             label: text_of("str_column_function"),
@@ -1041,10 +1050,7 @@
 
   function file_render(file_path, line) {
     const file = file_table[file_path];
-    if (!file) {
-      home_render();
-      return;
-    }
+    if (!file) throw new Error("str_error_hash_file_unknown " + file_path);
     const is_first_view = current_file_path !== file_path,
       kept_scroll_top = is_first_view ? -1 : main_panel.scrollTop;
     current_file_path = file_path;
@@ -1193,7 +1199,7 @@
       ? [
           {
             label: text_of("str_column_calls"),
-            num: true,
+            numeric: true,
             cls: "incl",
           },
         ]
@@ -1204,7 +1210,7 @@
       }),
       {
         label: text_of("str_column_line"),
-        num: true,
+        numeric: true,
         width: String(line_count).length + 2,
         cls: "ln",
       },
@@ -1217,7 +1223,7 @@
       ...call_column,
       ...secondary_columns(),
     ];
-    markup += table_html("heat.src", columns, rows, {
+    markup += table_render("heat.src", columns, rows, {
       row_attributes: attrs,
       fill: 1,
       cls: "src",
@@ -1282,15 +1288,14 @@
     const rows = table_element.tBodies[0].rows,
       last = rows[rows.length - 1];
     if (!last) return;
-    const cover = covered_height(table_element),
-      row_height_px = last.getBoundingClientRect().height;
+    const covered_px = report_ui.design_px(
+      covered_height(table_element) + last.getBoundingClientRect().height,
+    );
     tail.style.height =
-      Math.max(0, (main_panel.clientHeight - cover - row_height_px) / 2) +
-      "px";
+      Math.max(0, (main_panel.clientHeight - covered_px) / 2) + "px";
   }
 
-  let character_width_px = 0,
-    scale_factor = 1,
+  let scale_factor = 1,
     clone_height_px = 0;
   function minimap_clear() {
     minimap_panel.classList.add("empty");
@@ -1307,19 +1312,6 @@
       minimap_clear();
       return;
     }
-
-    const probe_cell = table_body.rows[0].querySelector("td.code");
-    if (!probe_cell) {
-      minimap_clear();
-      return;
-    }
-    const probe_span = document.createElement("span");
-    probe_span.textContent = "0123456789";
-    probe_span.style.cssText =
-      "position:absolute;visibility:hidden;white-space:pre;font:inherit";
-    probe_cell.appendChild(probe_span);
-    character_width_px = probe_span.getBoundingClientRect().width / 10 || 7.2;
-    probe_cell.removeChild(probe_span);
 
     const clone_table = document.createElement("table");
     clone_table.className = "src";
@@ -1347,10 +1339,11 @@
     const band_width_px = minimap_panel.clientWidth,
       band_height_px = minimap_panel.clientHeight;
 
+    // the font fit makes a ch the design ch, so the source's width is known
     scale_factor = Math.min(
       1,
       band_width_px /
-        (HEAT_MAP_MINIMAP_SOURCE_WIDTH_CHARS * character_width_px),
+        (HEAT_MAP_MINIMAP_SOURCE_WIDTH_CHARS * DESIGN_FONT_CHARACTER_WIDTH_PX),
       band_height_px / clone_height_px,
     );
     minimap_box.style.transform = `scale(${scale_factor})`;
@@ -1384,7 +1377,7 @@
       body: clone_body,
       detail,
       top: main.top,
-      bottom: main.top + main_panel.clientHeight,
+      bottom: main.top + report_ui.screen_px(main_panel.clientHeight),
       head: table_element.tHead.rows[0].cells[0].getBoundingClientRect()
         .bottom,
     };
@@ -1509,8 +1502,8 @@
     );
     const popup_counter_columns = [
       { label: text_of("str_column_counter") },
-      { label: scope_share_label(), num: true },
-      { label: text_of("str_column_count"), num: true },
+      { label: scope_share_label(), numeric: true },
+      { label: text_of("str_column_count"), numeric: true },
     ];
     const popup_counter_rows = [
       [
@@ -1568,7 +1561,7 @@
     markup +=
       `<div>${html_escape(file_path)}:` +
       `${line_number}${in_function_html}</div>`;
-    markup += table_html(
+    markup += table_render(
       "heat.detail.stats",
       popup_counter_columns,
       popup_counter_rows,
@@ -1580,9 +1573,9 @@
     ];
     if (callees.length) {
       const columns = [
-        { label: text_of("str_column_share_of_total"), num: true },
+        { label: text_of("str_column_share_of_total"), numeric: true },
         counter_column(current_counter),
-        { label: text_of("str_column_call_count"), num: true },
+        { label: text_of("str_column_call_count"), numeric: true },
         function_column(text_of("str_column_callee")),
         location_column,
       ];
@@ -1610,7 +1603,7 @@
       });
       markup +=
         `<h4>${html_escape(heading)}</h4>` +
-        table_html("heat.detail.callees", columns, rows);
+        table_render("heat.detail.callees", columns, rows);
       text_parts.push(heading + "\n" + table_markdown(columns, rows));
     }
     if (function_index != null) {
@@ -1643,8 +1636,8 @@
       markup += `<h4>${html_escape(heading)}</h4>`;
       if (callers.length) {
         const columns = [
-          { label: text_of("str_column_call_count"), num: true },
-          { label: text_of("str_column_share_of_total"), num: true },
+          { label: text_of("str_column_call_count"), numeric: true },
+          { label: text_of("str_column_share_of_total"), numeric: true },
           counter_column(current_counter),
           function_column(text_of("str_column_caller")),
           {
@@ -1671,7 +1664,7 @@
             ];
           },
         );
-        markup += table_html("heat.detail.callers", columns, rows);
+        markup += table_render("heat.detail.callers", columns, rows);
         text_parts.push(heading + "\n" + table_markdown(columns, rows));
       } else if (HAS_CALL_GRAPH) {
         const none = text_of("str_no_caller");
@@ -1734,27 +1727,28 @@
 
   let current_state = { file: null, line: 0, fn: null };
   let rendered_key = "";
+  // The address's parts. An empty hash is home; a part this cannot read (no
+  // "=", a key it has no field for, a bad escape or line) is a bad address.
   function state_of_hash(hash) {
     const parsed_state = { file: null, line: 0, fn: null, ev: null };
-    for (const part of (hash || "").replace(/^#/, "").split("&")) {
+    for (const part of hash.replace(/^#/, "").split("&")) {
+      if (part === "") continue;
       const equals_index = part.indexOf("=");
-      if (equals_index < 0) continue;
-      let value;
-      try {
-        value = decodeURIComponent(part.slice(equals_index + 1));
-      } catch (decode_error) {
-        continue;
-      }
       const key = part.slice(0, equals_index);
+      const value = decodeURIComponent(part.slice(equals_index + 1));
+      if (equals_index < 0 || (key === "l" && !Number.isInteger(+value))) {
+        throw new Error("str_error_hash_part_unknown " + part);
+      }
       if (key === "f") parsed_state.file = value;
-      else if (key === "l") parsed_state.line = +value || 0;
+      else if (key === "l") parsed_state.line = +value;
       else if (key === "fn") parsed_state.fn = value;
       else if (key === "e") parsed_state.ev = value;
+      else throw new Error("str_error_hash_part_unknown " + part);
     }
     return parsed_state;
   }
   function counter_apply(key) {
-    current_counter = counter_find(key) || counter_list[0];
+    current_counter = counter_of(key);
     counter_select.value = current_counter.key;
     scale_recompute();
     tree_root = tree_build();
@@ -1786,10 +1780,9 @@
       hash_fault_show("str_error_hash_counter_unknown " + parsed_state.ev);
       return;
     }
-    const counter =
-      counter_find(parsed_state.ev) ||
-      counter_find(profile_model.heatMapTotals.defaultCounter) ||
-      counter_list[0];
+    const counter = counter_of(
+      parsed_state.ev || profile_model.heatMapTotals.defaultCounter,
+    );
     if (counter.key !== current_counter.key) counter_apply(counter.key);
     let file = parsed_state.file,
       line = parsed_state.line,
@@ -1835,7 +1828,7 @@
   }
   window.addEventListener("hashchange", route_render);
   report_ui.parent_listen((message_data) => {
-    if (message_data === "report_ui:reset_columns") {
+    if (message_data === "report_ui:layout_reset") {
       report_ui.layout_reset();
     }
   });

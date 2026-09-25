@@ -28,10 +28,6 @@ declare -A CONTAINING_PACKAGES=(
 # cmake flags the batch builds the modified tree with when given none
 DEFAULT_FLAGS=(-D CMAKE_C_FLAGS=-Os)
 
-# where along the scale slider an untouched page sits, as a percent of its
-# travel. A whole number: a shell word is an int or a string, never a float.
-DESIGN_SCALE_DEFAULT_TRAVEL_PERCENT=25
-
 # the report-root directory holding the one shared speedscope copy
 FLAME_GRAPH_APP_DIR_NAME=flame-graph-app
 
@@ -88,5 +84,9 @@ TRACE_BUILD_DIR=build-instr
 # UINT64_MAX: skip every event, making it a count-only trace run
 TRACE_SKIP_ALL=18446744073709551615
 
-# Debug logging flag.
+# the diagnostic level, one per --verbose given: 0 prints no diagnostics, 1
+# the steps and their output, 2 cmake's configure output too
 VERBOSE=0
+
+# the column every --verbose line wraps at, the markdown's own hard max
+VERBOSE_LINE_WIDTH_CHARS=79

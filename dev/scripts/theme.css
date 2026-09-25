@@ -9,10 +9,14 @@ body {
   height: 100%;
   margin: 0;
 }
+/* every font size is the design size times the fit theme.js measured, so a
+   ch is the design ch under whatever monospace this box has */
 body {
   background: var(--bg);
   color: var(--fg);
-  font: 12px/1.5 var(--font);
+  font-family: var(--font);
+  font-size: calc(var(--font-px) * var(--font-fit));
+  line-height: 1.5;
 }
 a {
   color: var(--link);
@@ -26,7 +30,7 @@ a:hover {
   outline-offset: 1px;
 }
 h2 {
-  font-size: 12px;
+  font-size: calc(var(--font-px) * var(--font-fit));
   font-weight: 600;
   color: var(--fg-dim);
   margin: 22px 0 6px;
@@ -84,13 +88,22 @@ input {
   color: var(--nav);
   text-decoration: none;
 }
-.strip a.on {
+.strip .test-menu-list a:hover {
+  background: none;
+  color: var(--link);
+}
+.strip a.on,
+.strip .test-menu-list a.on {
   background: var(--hot);
   color: var(--hot-fg);
 }
+.strip .test-menu-list a.highlighted-entry {
+  background: var(--link);
+  color: var(--nav);
+}
 
 .strip .title {
-  font-size: 13px;
+  font-size: calc(13px * var(--font-fit));
   font-weight: 600;
   color: var(--title-fg);
   background: var(--title-bg);
@@ -108,6 +121,7 @@ input {
 }
 .strip .title:has(.wordmark-letter) {
   background: var(--nav);
+  cursor: pointer;
 }
 .strip .title .wordmark-letter {
   flex: none;
@@ -142,6 +156,56 @@ input {
   flex: none;
 }
 
+.strip:has(.test-menu) {
+  overflow: visible;
+}
+.strip .test-menu {
+  position: relative;
+  display: inline-grid;
+  grid-template-columns: auto auto;
+  flex: none;
+}
+.strip .test-menu input {
+  padding: 2px 0;
+  text-align: center;
+}
+.strip .test-menu input[readonly] {
+  cursor: pointer;
+}
+.strip .test-menu button {
+  font: inherit;
+  font-size: calc(9px * var(--font-fit));
+  color: var(--muted);
+  background: var(--bg);
+  border: 0;
+  padding: 0 6px;
+  cursor: pointer;
+}
+.strip .test-menu-list {
+  position: absolute;
+  grid-column: 1;
+  grid-row: 1;
+  top: 100%;
+  left: 0;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  min-width: 100%;
+  max-height: calc(0.6 * var(--design-vh));
+  overflow-y: auto;
+  background: var(--nav);
+}
+.strip .test-menu-list a,
+.strip .test-menu-no-match {
+  max-width: none;
+  padding: 2px 6px;
+  text-align: center;
+  white-space: nowrap;
+}
+.strip .test-menu-no-match {
+  color: var(--muted);
+}
+
 html:has(body.frame),
 body.frame {
   overflow: hidden;
@@ -165,6 +229,9 @@ body.frame > iframe {
 }
 .page {
   padding: 24px 36px 48px;
+}
+.css-layout .page {
+  container-type: inline-size;
 }
 
 .tbl {

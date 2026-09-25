@@ -31,7 +31,8 @@ perf2html_batch.sh [debug-flags] [--target-dir=DIR] [cmake-flags...]
     --regenerate      Rebuilds all pages from the last run's profiler
                       artifacts, re-measuring nothing. Implies
                       --keep-artifacts.
-    --verbose         Enables diagnostic information.
+    --verbose         Enables diagnostic information. Repeating it (--verbose
+                      --verbose) increments the verbosity level.
 EOF
 }
 
@@ -42,21 +43,21 @@ step_run() {
   shift 2
   local _exit_code _start
   _start="$(clock_microseconds)"
-  printf '[%ss] running step %s %s: %s\n' "$(elapsed_format)" \
-    "$_number" "$_name" "$*"
-  log_verbose "$(printf '== %s %s ==' "$_number" "$_name")"
-  child_capture "$@"
+  log_verbose "== $_number $_name =="
+  # the child prints its own title and every line under it, so nothing is
+  # announced here: its output is relayed as it is
+  script_capture "$@"
   _exit_code="$CHILD_EXIT_CODE"
-  log_verbose "$(printf '== %s %s: end ==' "$_number" "$_name")"
+  log_verbose "== $_number $_name: end =="
   if [ "$_exit_code" = 0 ]; then
-    printf '[%ss] done: step %s %s in %s\n' "$(elapsed_format)" \
-      "$_number" "$_name" "$(duration_format "$_start")"
+    log_verbose "[$(elapsed_format)s] done: step $_number $_name in" \
+      "$(duration_format "$_start")"
     return 0
   fi
-  printf '[%ss] FAILED: step %s %s, exit %s, after %s\n' \
+  printf '\n[%ss] FAILED: step %s %s, exit %s, after %s\n\n' \
     "$(elapsed_format)" "$_number" "$_name" "$_exit_code" \
     "$(duration_format "$_start")" >&2
-  failure_print_log_tail "$_exit_code" "$@"
+  failure_relay
   exit "$_exit_code"
 }
 
@@ -67,7 +68,7 @@ args_parse() {
   _REGENERATE=0
   _PASS_ARGS=()
   _CMAKE_FLAGS=()
-  _TARGET_DIR=""
+  _TARGET_DIR="."
   ARTIFACTS_DIR=""
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -76,7 +77,7 @@ args_parse() {
         exit 0
         ;;
       --verbose)
-        VERBOSE=1
+        VERBOSE=$((VERBOSE + 1))
         shift
         ;;
       --keep-artifacts)
@@ -105,7 +106,6 @@ args_parse() {
     esac
   done
   [ "${#_CMAKE_FLAGS[@]}" -gt 0 ] || _CMAKE_FLAGS=("${DEFAULT_FLAGS[@]}")
-  [ -n "$_TARGET_DIR" ] || _TARGET_DIR="$PWD"
   _TARGET_DIR="$(absolute_path "$_TARGET_DIR")"
   if [ -z "$ARTIFACTS_DIR" ]; then
     ARTIFACTS_DIR="$_TARGET_DIR/$ARTIFACTS_NAME"
@@ -124,52 +124,44 @@ regenerate_inputs_verify() {
     "$REPORT_MANIFEST_VERSION_FULL"
   manifest_verify "$_DIFF_DIR" "--regenerate input" \
     "$REPORT_MANIFEST_VERSION_DIFF"
-  [ -d "$ARTIFACTS_DIR" ] || {
-    echo "error: --regenerate input: no recordings at $ARTIFACTS_DIR" >&2
-    exit 2
-  }
+  [ -d "$ARTIFACTS_DIR" ] || error_exit 2 \
+    "error: --regenerate input: no recordings at $ARTIFACTS_DIR"
 }
 
 # reports_clean - deletes the three report directories
 reports_clean() {
-  rm -rf "$_BASE_DIR" "$_MOD_DIR" "$_DIFF_DIR" || {
-    echo "error: could not remove previous reports under $_TARGET_DIR" >&2
-    exit 1
-  }
+  rm -rf "$_BASE_DIR" "$_MOD_DIR" "$_DIFF_DIR" || error_exit 1 \
+    "error: could not remove previous reports under $_TARGET_DIR"
 }
 
 # main - runs baseline, modified and diff, stopping at the first failure,
 # and owns every deletion of the artifacts directory.
 main() {
   args_parse "$@"
+  verbose_begin
+  title_print "$_SCRIPT" "$@"
   if [ "$_REGENERATE" = 1 ]; then regenerate_inputs_verify; fi
-  START_US="$(clock_microseconds)"
   local _child_args=("${_PASS_ARGS[@]}" "--artifacts=$ARTIFACTS_DIR")
   if [ "$_KEEP_ARTIFACTS" = 0 ]; then
-    printf '[%ss] removing stale %s/\n' \
-      "$(elapsed_format)" "$ARTIFACTS_DIR"
-    rm -rf "$ARTIFACTS_DIR" || {
-      echo "error: could not remove stale $ARTIFACTS_DIR/" >&2
-      exit 1
-    }
+    log_verbose "[$(elapsed_format)s] removing stale $ARTIFACTS_DIR/"
+    rm -rf "$ARTIFACTS_DIR" \
+      || error_exit 1 "error: could not remove stale $ARTIFACTS_DIR/"
     # children keep it whatever the batch was asked, so neither unlinks the
     # batch log mid-run: only the batch deletes the dir, at end of main()
     _child_args+=(--keep-artifacts)
   fi
-  mkdir -p "$ARTIFACTS_DIR" || {
-    echo "error: could not create $ARTIFACTS_DIR/" >&2
-    exit 1
-  }
+  mkdir -p "$ARTIFACTS_DIR" \
+    || error_exit 1 "error: could not create $ARTIFACTS_DIR/"
   local _verbose_args=()
   mapfile -t _verbose_args < <(verbose_flags_of)
   echo "dev/perf2html_batch.sh $TIMESTAMP: ${_CMAKE_FLAGS[*]}" >"$RUN_LOG"
-  printf '[%ss] dev/perf2html_batch.sh %s: modified build flags: %s\n' \
-    "$(elapsed_format)" "$TIMESTAMP" "${_CMAKE_FLAGS[*]}"
+  log_verbose "[$(elapsed_format)s] $_SCRIPT $TIMESTAMP: modified build" \
+    "flags: ${_CMAKE_FLAGS[*]}"
 
   # --regenerate rebuilds pages from the kept recordings and reads each
   # MANIFEST.txt back to find them, so it must not delete them
   if [ "$_REGENERATE" = 0 ]; then
-    printf '[%ss] removing previous reports\n' "$(elapsed_format)"
+    log_verbose "[$(elapsed_format)s] removing previous reports"
     reports_clean
   fi
   step_run 1 baseline ./perf2html.sh "${_verbose_args[@]}" \
@@ -182,13 +174,13 @@ main() {
   # only a run reaching here succeeded, so a failed one leaves its
   # recordings behind for diagnosis without being told to
   if [ "$_KEEP_ARTIFACTS" = 0 ]; then
-    printf '[%ss] removing %s/\n' "$(elapsed_format)" "$ARTIFACTS_DIR"
-    rm -rf "$ARTIFACTS_DIR" || {
-      echo "error: could not remove $ARTIFACTS_DIR/" >&2
-      exit 1
-    }
+    log_verbose "[$(elapsed_format)s] removing $ARTIFACTS_DIR/"
+    rm -rf "$ARTIFACTS_DIR" \
+      || error_exit 1 "error: could not remove $ARTIFACTS_DIR/"
+  else
+    log_verbose "[$(elapsed_format)s] artifacts kept"
   fi
-  printf '[%ss] file://%s/index.html\n' "$(elapsed_format)" "$_DIFF_DIR"
+  log_verbose "[$(elapsed_format)s] $_DIFF_DIR/index.html"
   return 0
 }
 

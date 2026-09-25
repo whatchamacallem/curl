@@ -1,9 +1,18 @@
 window.report_ui = (function () {
   "use strict";
 
+  const CSS_LAYOUT = settings("CSS_LAYOUT");
   const DESIGN_COORDINATES_WIDTH_PX = settings("DESIGN_COORDINATES_WIDTH_PX");
-  const DESIGN_SCALE_DEFAULT_TRAVEL_PERCENT = settings(
-    "DESIGN_SCALE_DEFAULT_TRAVEL_PERCENT",
+  const DESIGN_FONT_CHARACTER_WIDTH_PX = settings(
+    "DESIGN_FONT_CHARACTER_WIDTH_PX",
+  );
+  const DESIGN_FONT_FIT_PROPERTY = settings("DESIGN_FONT_FIT_PROPERTY");
+  const DESIGN_FONT_SIZE_PX = settings("DESIGN_FONT_SIZE_PX");
+  const DESIGN_SCALE_DEFAULT_MULTIPLE = settings(
+    "DESIGN_SCALE_DEFAULT_MULTIPLE",
+  );
+  const DESIGN_SCALE_DEFAULT_TRAVEL_SHARE = settings(
+    "DESIGN_SCALE_DEFAULT_TRAVEL_SHARE",
   );
   const DESIGN_SCALE_LARGEST_MULTIPLE = settings(
     "DESIGN_SCALE_LARGEST_MULTIPLE",
@@ -24,7 +33,7 @@ window.report_ui = (function () {
   const NUMBER_SMALLEST_PRINTED_PERCENT = settings(
     "NUMBER_SMALLEST_PRINTED_PERCENT",
   );
-  const PANE_SPLITTER_NARROWEST_PX = settings("PANE_SPLITTER_NARROWEST_PX");
+  const PAGE_FONT_FAMILY = settings("PAGE_FONT_FAMILY");
   const PANE_SPLITTER_WIDEST_WINDOW_SHARE = settings(
     "PANE_SPLITTER_WIDEST_WINDOW_SHARE",
   );
@@ -32,10 +41,18 @@ window.report_ui = (function () {
   const STORAGE_OWNED_PREFIXES = settings("STORAGE_OWNED_PREFIXES");
   const STORAGE_VERSION = settings("STORAGE_VERSION");
   const STORAGE_VERSION_KEY = settings("STORAGE_VERSION_KEY");
+  const TABLE_COLUMN_EXTRA_WIDTH_CHARS = settings(
+    "TABLE_COLUMN_EXTRA_WIDTH_CHARS",
+  );
   const TABLE_COLUMN_NARROWEST_DRAG_PX = settings(
     "TABLE_COLUMN_NARROWEST_DRAG_PX",
   );
+  const TABLE_GROW_COLUMN_NARROWEST_CHARS = settings(
+    "TABLE_GROW_COLUMN_NARROWEST_CHARS",
+  );
 
+  // what CSS measures a ch as: the advance width of this glyph
+  const CH_UNIT_GLYPH = "0";
   const RAMP_CHANNEL_STOPS = HEAT_COLOR_LOGO_STOPS.map((hex) =>
     [1, 3, 5].map((index) => parseInt(hex.slice(index, index + 2), 16)),
   );
@@ -45,7 +62,20 @@ window.report_ui = (function () {
   let resize_debounce_timer = null;
   let storage_is_checked = false;
   let design_scale = 1;
-  let design_scale_travel = DESIGN_SCALE_DEFAULT_TRAVEL_PERCENT / 100;
+  // ends out of order would run a slider half backwards: a broken setting
+  if (
+    !(DESIGN_SCALE_SMALLEST_MULTIPLE < DESIGN_SCALE_DEFAULT_MULTIPLE) ||
+    !(DESIGN_SCALE_DEFAULT_MULTIPLE < DESIGN_SCALE_LARGEST_MULTIPLE)
+  ) {
+    throw new Error(
+      "str_error_scale_ends_disordered " +
+        `${DESIGN_SCALE_SMALLEST_MULTIPLE} ${DESIGN_SCALE_DEFAULT_MULTIPLE} ` +
+        `${DESIGN_SCALE_LARGEST_MULTIPLE}`,
+    );
+  }
+  let design_scale_travel = design_scale_travel_of(
+    DESIGN_SCALE_DEFAULT_MULTIPLE,
+  );
 
   function ramp_channels_at(fraction) {
     const scaled_position = fraction * (RAMP_CHANNEL_STOPS.length - 1);
@@ -81,12 +111,55 @@ window.report_ui = (function () {
     });
   }
 
-  // The multiple of the window's own fit the slider is asking for, its
-  // travel read as a fraction from the smallest multiple to the largest.
+  // One half of the slider: the multiples it runs between and the travel
+  // it covers. The lower half ends at the default, the upper starts at it.
+  function design_scale_half_of(is_lower_half) {
+    return is_lower_half
+      ? {
+          from_multiple: DESIGN_SCALE_SMALLEST_MULTIPLE,
+          to_multiple: DESIGN_SCALE_DEFAULT_MULTIPLE,
+          travel_start: 0,
+          travel_width: DESIGN_SCALE_DEFAULT_TRAVEL_SHARE,
+        }
+      : {
+          from_multiple: DESIGN_SCALE_DEFAULT_MULTIPLE,
+          to_multiple: DESIGN_SCALE_LARGEST_MULTIPLE,
+          travel_start: DESIGN_SCALE_DEFAULT_TRAVEL_SHARE,
+          travel_width: 1 - DESIGN_SCALE_DEFAULT_TRAVEL_SHARE,
+        };
+  }
+  // The multiple of the window's own fit the slider is asking for: each
+  // half climbs geometrically, so a step feels the same at either end.
   function design_scale_multiple_of(travel_fraction) {
-    const span =
-      DESIGN_SCALE_LARGEST_MULTIPLE - DESIGN_SCALE_SMALLEST_MULTIPLE;
-    return DESIGN_SCALE_SMALLEST_MULTIPLE + span * travel_fraction;
+    const half = design_scale_half_of(
+      travel_fraction < DESIGN_SCALE_DEFAULT_TRAVEL_SHARE,
+    );
+    const half_fraction =
+      (travel_fraction - half.travel_start) / half.travel_width;
+    return (
+      half.from_multiple *
+      Math.pow(half.to_multiple / half.from_multiple, half_fraction)
+    );
+  }
+  // The travel a multiple sits at, the inverse of the above. Only the two
+  // ends' own span is a travel: anything past them is a broken setting.
+  function design_scale_travel_of(multiple) {
+    if (
+      !(multiple >= DESIGN_SCALE_SMALLEST_MULTIPLE) ||
+      !(multiple <= DESIGN_SCALE_LARGEST_MULTIPLE)
+    ) {
+      throw new Error(
+        `str_error_scale_multiple_outside ${multiple} ` +
+          `${DESIGN_SCALE_SMALLEST_MULTIPLE} ${DESIGN_SCALE_LARGEST_MULTIPLE}`,
+      );
+    }
+    const half = design_scale_half_of(
+      multiple < DESIGN_SCALE_DEFAULT_MULTIPLE,
+    );
+    const half_fraction =
+      Math.log(multiple / half.from_multiple) /
+      Math.log(half.to_multiple / half.from_multiple);
+    return half.travel_start + half_fraction * half.travel_width;
   }
   function design_scale_of(viewport_width_px) {
     const fitted = viewport_width_px / DESIGN_COORDINATES_WIDTH_PX;
@@ -98,19 +171,37 @@ window.report_ui = (function () {
   // Take the slider's new position and redraw at it, the way a resize does.
   // A framed page never calls this: it inherits its parent's zoom.
   function design_scale_travel_set(travel_fraction) {
-    if (!isFinite(travel_fraction)) return false;
+    if (!isFinite(travel_fraction)) {
+      throw new Error("str_error_scale_unusable " + travel_fraction);
+    }
     design_scale_travel = Math.min(Math.max(travel_fraction, 0), 1);
     design_scale_settle();
-    return true;
+  }
+  // Fit the box's font to the design font: measure what its ch comes out
+  // as at the design size, and scale every font size so a ch is the design ch.
+  function font_fit_apply() {
+    const context = document.createElement("canvas").getContext("2d");
+    const wanted_font = `${DESIGN_FONT_SIZE_PX}px ${PAGE_FONT_FAMILY}`;
+    const default_font = context.font;
+    context.font = wanted_font;
+    // a font string the canvas cannot read leaves its default in place
+    if (context.font === default_font) {
+      throw new Error("str_error_font_refused");
+    }
+    const measured_px = context.measureText(CH_UNIT_GLYPH).width;
+    document.documentElement.style.setProperty(
+      DESIGN_FONT_FIT_PROPERTY,
+      String(DESIGN_FONT_CHARACTER_WIDTH_PX / measured_px),
+    );
   }
   function design_scale_apply() {
     const root_element = document.documentElement;
     // a framed document is laid out inside an already-zoomed parent, so its
     // own box is design space already and it scales itself by 1
-    const wanted = is_framed
-      ? 1
-      : design_scale_of(root_element.clientWidth) || 1;
-    if (!isFinite(wanted) || wanted <= 0) return false;
+    const wanted = is_framed ? 1 : design_scale_of(root_element.clientWidth);
+    if (!isFinite(wanted) || !(wanted > 0)) {
+      throw new Error("str_error_scale_unusable " + wanted);
+    }
     design_scale = wanted;
     root_element.style.zoom = String(wanted);
     // a vh resolves against the unzoomed window and is then zoomed with
@@ -119,7 +210,6 @@ window.report_ui = (function () {
       DESIGN_VIEWPORT_HEIGHT_PROPERTY,
       root_element.clientHeight / wanted + "px",
     );
-    return true;
   }
   function design_scale_now() {
     return design_scale;
@@ -208,6 +298,66 @@ window.report_ui = (function () {
     });
   }
 
+  function width_total(widths) {
+    return widths.reduce((total, width) => total + width, 0);
+  }
+  // theme.py's Theme has the twin of each column_ function below, under the
+  // same name, doing the same arithmetic, so both kinds of page agree
+  function column_longest(cell_rows, column_index) {
+    let longest = 0;
+    for (const row of cell_rows) {
+      longest = Math.max(longest, row[column_index].text.length);
+    }
+    return longest;
+  }
+  function column_extents(columns, cell_rows, grow_index) {
+    return columns.map((column, column_index) => {
+      let content_chars;
+      if (column.width != null) content_chars = column.width;
+      else if (CSS_LAYOUT && column_index === grow_index) {
+        content_chars = TABLE_GROW_COLUMN_NARROWEST_CHARS;
+      } else {
+        content_chars = column_longest(cell_rows, column_index);
+        if (column.clip != null) {
+          content_chars = Math.min(content_chars, column.clip);
+        }
+      }
+      return { heading_chars: column.label.length, content_chars };
+    });
+  }
+  function column_limits(extent) {
+    const narrowest = CSS_LAYOUT ? extent.content_chars : extent.heading_chars;
+    const widest = Math.max(extent.heading_chars, extent.content_chars);
+    return [
+      narrowest + TABLE_COLUMN_EXTRA_WIDTH_CHARS,
+      widest + TABLE_COLUMN_EXTRA_WIDTH_CHARS,
+    ];
+  }
+  // Under CSS_LAYOUT, automatic table layout on the container's 100cqw: all
+  // widest if they fit, all narrowest if not even those, else between
+  function column_width_text(limits, column_index, grow_index) {
+    const [narrowest, widest] = limits[column_index];
+    if (!CSS_LAYOUT) return widest + "ch";
+    const shared = limits.filter(
+      (limit, other_index) => other_index !== grow_index,
+    );
+    const low_total = width_total(shared.map((limit) => limit[0]));
+    const high_total = width_total(shared.map((limit) => limit[1]));
+    if (column_index === grow_index) {
+      return (
+        `max(${narrowest}ch, 100cqw - clamp(${low_total}ch, ` +
+        `100cqw - ${narrowest}ch, ${high_total}ch))`
+      );
+    }
+    if (narrowest === widest) return narrowest + "ch";
+    const grow_narrowest = grow_index >= 0 ? limits[grow_index][0] : 0;
+    return (
+      `clamp(${narrowest}ch, ${narrowest}ch + (100cqw - ` +
+      `${low_total + grow_narrowest}ch) * ${widest - narrowest} / ` +
+      `${high_total - low_total}, ${widest}ch)`
+    );
+  }
+
   function header_cells(table_element) {
     const header_row = table_element.tHead
       ? table_element.tHead.rows[0]
@@ -227,16 +377,32 @@ window.report_ui = (function () {
     handle_bar[listener_method]("pointerup", on_pointer_release);
     handle_bar[listener_method]("pointercancel", on_pointer_release);
   }
+  // Both table emitters write data-min on every <col>: one without it is
+  // markup this file does not know, so it throws
+  function floor_text_read(column_element) {
+    const floor_text = column_element.dataset.min;
+    if (!floor_text) throw new Error("table <col> has no data-min");
+    return floor_text;
+  }
   function minimum_width_px(column_element) {
-    const floor_px = column_element.dataset.min || column_element.dataset.w;
-    if (!floor_px) return TABLE_COLUMN_NARROWEST_DRAG_PX;
     const probe_element = column_element.ownerDocument.createElement("div");
     probe_element.style.cssText =
-      "position:absolute;visibility:hidden;width:" + floor_px;
+      "position:absolute;visibility:hidden;width:" +
+      floor_text_read(column_element);
     column_element.ownerDocument.body.appendChild(probe_element);
-    const width_px = probe_element.getBoundingClientRect().width;
+    const width_px = design_px(probe_element.getBoundingClientRect().width);
     probe_element.remove();
     return Math.max(TABLE_COLUMN_NARROWEST_DRAG_PX, Math.ceil(width_px));
+  }
+  // A drag is in pixels. Under CSS_LAYOUT its floor stays the <col>'s own
+  // characters, which CSS max() compares, where the old layout probes them
+  function drag_width_formatter(column_element) {
+    if (CSS_LAYOUT) {
+      const floor_text = floor_text_read(column_element);
+      return (width_px) => `max(${floor_text}, ${width_px}px)`;
+    }
+    const floor_px = minimum_width_px(column_element);
+    return (width_px) => Math.max(floor_px, width_px) + "px";
   }
   function column_elements_of(table_element) {
     return [...table_element.querySelectorAll("colgroup > col")];
@@ -249,7 +415,7 @@ window.report_ui = (function () {
       handle_bar.hidden = !cells[column_index];
       if (!cells[column_index]) return;
       const right = cells[column_index].getBoundingClientRect().right;
-      handle_bar.style.left = right - container_left_px + "px";
+      handle_bar.style.left = design_px(right - container_left_px) + "px";
     });
   }
   function handle_drag_begin(
@@ -263,15 +429,19 @@ window.report_ui = (function () {
     if (!column_element || !header_cell) return;
     table_element.was_hand_resized = true;
     const start_client_x = pointer_event.clientX,
-      floor_px = minimum_width_px(column_element);
-    const start_width_px = header_cell.getBoundingClientRect().width;
+      width_text_of = drag_width_formatter(column_element);
+    // a rect and clientX are screen px on a zoomed page; a style is design px
+    const start_width_px = design_px(
+      header_cell.getBoundingClientRect().width,
+    );
     handle_bar.classList.add("active");
     if (handle_bar.setPointerCapture) {
       handle_bar.setPointerCapture(pointer_event.pointerId);
     }
     const on_pointer_move = (move_event) => {
-      const width = start_width_px + move_event.clientX - start_client_x;
-      column_element.style.width = Math.max(floor_px, width) + "px";
+      const width =
+        start_width_px + design_px(move_event.clientX - start_client_x);
+      column_element.style.width = width_text_of(width);
       handles_position(table_element);
     };
     const on_pointer_release = () => {
@@ -336,14 +506,15 @@ window.report_ui = (function () {
     const scroll_container = nearest_scroller(table_element);
     const table_box = table_element.getBoundingClientRect();
     const edge_inset_px =
-      table_box.left -
-      scroll_container.getBoundingClientRect().left +
-      scroll_container.scrollLeft;
+      design_px(
+        table_box.left - scroll_container.getBoundingClientRect().left,
+      ) + scroll_container.scrollLeft;
     const target_width_px = Math.floor(
       scroll_container.clientWidth - 2 * edge_inset_px,
     );
-    const other_columns_px =
-      table_box.width - grow_column.getBoundingClientRect().width;
+    const other_columns_px = design_px(
+      table_box.width - grow_column.getBoundingClientRect().width,
+    );
     grow_column.style.width =
       Math.max(floor_px, target_width_px - other_columns_px) + "px";
   }
@@ -354,7 +525,7 @@ window.report_ui = (function () {
       ":scope > .band",
     )) {
       band_element.style.top = stacked_top_px + "px";
-      stacked_top_px += band_element.getBoundingClientRect().height;
+      stacked_top_px += design_px(band_element.getBoundingClientRect().height);
     }
     for (const header_cell of scroll_container.querySelectorAll("th")) {
       const owning_table = header_cell.closest(".tbl") || scroll_container;
@@ -368,6 +539,7 @@ window.report_ui = (function () {
     for (const table_element of root_element.querySelectorAll("table.cols")) {
       if (!table_element.resize_handles) continue;
       if (
+        !CSS_LAYOUT &&
         table_element.classList.contains("fill") &&
         !table_element.was_hand_resized
       ) {
@@ -395,7 +567,7 @@ window.report_ui = (function () {
         column_element.style.width = column_element.dataset.w;
       }
       table_element.was_hand_resized = false;
-      if (table_element.classList.contains("fill")) {
+      if (!CSS_LAYOUT && table_element.classList.contains("fill")) {
         grow_column_fill(table_element);
       }
       handles_position(table_element);
@@ -467,7 +639,9 @@ window.report_ui = (function () {
     if (saved_width) pane_element.style.width = saved_width + "px";
     handle_bar.addEventListener("pointerdown", (pointer_event) => {
       const start_client_x = pointer_event.clientX;
-      const start_width_px = pane_element.getBoundingClientRect().width;
+      const start_width_px = design_px(
+        pane_element.getBoundingClientRect().width,
+      );
       handle_bar.classList.add("active");
       if (handle_bar.setPointerCapture) {
         handle_bar.setPointerCapture(pointer_event.pointerId);
@@ -475,8 +649,8 @@ window.report_ui = (function () {
       let animation_frame = 0;
       const on_pointer_move = (move_event) => {
         const wanted_width_px = Math.max(
-          minimum_px || PANE_SPLITTER_NARROWEST_PX,
-          start_width_px + move_event.clientX - start_client_x,
+          minimum_px,
+          start_width_px + design_px(move_event.clientX - start_client_x),
         );
         pane_element.style.width =
           Math.min(
@@ -494,7 +668,7 @@ window.report_ui = (function () {
         listeners_bind(handle_bar, on_pointer_move, on_pointer_release, false);
         view_storage.value_write(
           storage_key,
-          pane_element.getBoundingClientRect().width,
+          design_px(pane_element.getBoundingClientRect().width),
         );
       };
       listeners_bind(handle_bar, on_pointer_move, on_pointer_release, true);
@@ -513,12 +687,17 @@ window.report_ui = (function () {
     );
   }
 
+  font_fit_apply();
   design_scale_apply();
   window.addEventListener("resize", design_scale_settle);
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", () => layout_activate());
   } else layout_activate();
   return {
+    column_extents,
+    column_limits,
+    column_longest,
+    column_width_text,
     design_px,
     design_scale_apply,
     design_scale_now,

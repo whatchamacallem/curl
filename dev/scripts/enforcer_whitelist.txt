@@ -1,0 +1,9 @@
+perf2html*.sh
+README.md
+src/*.c
+src/*.h
+scripts/*.sh
+scripts/*.py
+scripts/*.js
+scripts/*.css
+scripts/*.html

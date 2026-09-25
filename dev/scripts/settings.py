@@ -25,6 +25,10 @@ ASSET_THEME_SCRIPT_NAME = "theme.js"
 ASSET_THEME_STYLESHEET_NAME = "theme.css"
 ASSET_UI_STRINGS_SCRIPT_NAME = "ui_strings.js"
 
+# The character table layout: each <col> is a CSS clamp() on its container's
+# 100cqw, automatic table layout in CSS. False keeps the pixel-fitted layout.
+CSS_LAYOUT = True
+
 # Every counter callgrind never records, as the recorded ones it sums from
 # and each one's coefficient. Nothing stores one. See DECLAUDE.md 6.2.
 DERIVED_COUNTER_TERMS: dict[str, dict[str, int]] = {
@@ -48,10 +52,24 @@ DERIVED_COUNTER_TERMS: dict[str, dict[str, int]] = {
 # is written for this box, which report_ui.design_scale_apply() then fits.
 DESIGN_COORDINATES_WIDTH_PX = 1920
 
-# What the scale slider multiplies the window's own fit by, at each end of
-# its travel. 1 is the page as its lengths are written. See DECLAUDE.md 8.
-DESIGN_SCALE_LARGEST_MULTIPLE = 4
-DESIGN_SCALE_SMALLEST_MULTIPLE = 1
+# The design font, Monaco at this size, is this many px per ch. theme.js's
+# font_fit_apply() scales the box's own font to it: a ch is the design ch.
+DESIGN_FONT_CHARACTER_WIDTH_PX = 7.2
+DESIGN_FONT_SIZE_PX = 12
+
+# The CSS variable carrying the font fit, a multiplier on every font size
+# the theme sets: 1 is the design font itself. Boundary.
+DESIGN_FONT_FIT_PROPERTY = "--font-fit"
+
+# What the scale slider multiplies the window's own fit by: on an untouched
+# page (mid-travel whatever the ends, each half geometric), then at each end.
+DESIGN_SCALE_DEFAULT_MULTIPLE = 1
+DESIGN_SCALE_LARGEST_MULTIPLE = 2
+DESIGN_SCALE_SMALLEST_MULTIPLE = 0.5
+
+# Where along the slider's 0..1 travel the default multiple sits: the
+# middle, so the knob starts centred whatever the two ends are.
+DESIGN_SCALE_DEFAULT_TRAVEL_SHARE = 0.5
 
 # The CSS variable carrying the window's height in design pixels. A vh is
 # zoomed like any length, so a full-height rule reads this instead. Boundary.
@@ -122,11 +140,11 @@ HEAT_MAP_CONTROL_DROPDOWN_EXTRA_WIDTH_CHARS = 4
 # lowercased, so "CEst" reads str_counter_cest out of ui_strings.js.
 HEAT_MAP_COUNTER_DESCRIPTION_STRING_ID_PREFIX = "str_counter_"
 
-# In the home page's hot-lines table: how much of the "defined at" path and
-# of the source line a row keeps, and how wide that text renders.
+# In the home page's hot-lines table: the widest the "defined at" and source
+# columns measure (each one's clip), and how much of a source line a row keeps.
 HEAT_MAP_HOME_LINES_LOCATION_MAX_CHARS = 28
-HEAT_MAP_HOME_LINES_SOURCE_COLUMN_WIDTH_CHARS = 110
-HEAT_MAP_HOME_LINES_SOURCE_TEXT_MAX_CHARS = 36
+HEAT_MAP_HOME_LINES_SOURCE_COLUMN_MAX_CHARS = 36
+HEAT_MAP_HOME_LINES_SOURCE_SNIPPET_MAX_CHARS = 110
 
 # Rows in each of the two home tables.
 HEAT_MAP_HOME_TABLE_MAX_ROWS = 60
@@ -201,9 +219,8 @@ PAGE_FONT_FAMILY = (
 # script reading it. settings_script_write() fills the template's marker.
 PAGE_SETTINGS_GLOBAL_NAME = "settings"
 
-# Narrowest a dragged pane may get where its caller names no floor, and the
-# window share it may not pass: the wide end stops a drag closing the far pane.
-PANE_SPLITTER_NARROWEST_PX = 120
+# The window share a dragged pane may not pass: the wide end stops a drag
+# closing the far pane. Each pane's own floor is its caller's setting.
 PANE_SPLITTER_WIDEST_WINDOW_SHARE = 0.6
 
 # The one counter every generator ranks, colours and divides by, recorded or
@@ -235,6 +252,27 @@ STRIP_CURL_PERF_SITE_HREF = "https://curl.se/perf/index.html"
 # <label>" is 26 today, plus margin. Too small clips mid-word.
 STRIP_STATUS_ROW_WIDTH_CHARS = 33
 
+# Spaces the overview's test menu box adds beyond its longest test name,
+# shared either side of the centered name.
+STRIP_TEST_MENU_EXTRA_WIDTH_CHARS = 2
+
+# The keys the open test menu answers, and a framed summary forwards up to
+# it, as KeyboardEvent.key names. "next" also opens a closed, focused menu.
+STRIP_TEST_MENU_KEY_NAMES: dict[str, str] = {
+    "close": "Escape",
+    "next": "ArrowDown",
+    "previous": "ArrowUp",
+    "select": "Enter",
+}
+
+# The test merging every other, named as perf2html.sh names its directory.
+# The test menu reads it while the overview shows: data, not a UI word.
+STRIP_TEST_MENU_MERGED_TEST_NAME = "all"
+
+# Printable keys that, typed outside a field, stay with the page instead of
+# opening the test menu: space scrolls it.
+STRIP_TEST_MENU_SKIPPED_KEY_NAMES: tuple[str, ...] = (" ",)
+
 # Where on the heat ramp the wordmark starts, its last letter always on the
 # hot end. Half way up reads as the ramp's warm half, not the whole of it.
 STRIP_WORDMARK_LOGO_START_FRACTION = 0.5
@@ -264,11 +302,16 @@ SUMMARY_TOP_FUNCTION_ROWS = 50
 # Spaces added to every table column beyond its widest cell.
 TABLE_COLUMN_EXTRA_WIDTH_CHARS = 3
 
-# Narrowest a dragged table column may get, in pixels.
+# Pixels no table column is dragged or filled narrower than when CSS_LAYOUT
+# is False: a floor under the width each <col>'s data-min probes to.
 TABLE_COLUMN_NARROWEST_DRAG_PX = 24
 
 # Width of a table's function-name column, in characters.
 TABLE_FUNCTION_NAME_WIDTH_CHARS = 20
+
+# Under CSS_LAYOUT, the fewest characters a fill table's grow column without a
+# fixed width keeps, so it never looks gone: one function name's worth.
+TABLE_GROW_COLUMN_NARROWEST_CHARS = 20
 
 # Where a table cuts a long "defined at" path.
 TABLE_LOCATION_COLUMN_MAX_CHARS = 48
@@ -351,8 +394,9 @@ def _is_setting_name(name: str) -> bool:
 _SCALAR_TYPES = (bool, int, float, str)
 
 # The types a declaration's sentinel may be written as, accepted only while
-# empty: "", 0, 0.0, (), [], {}. bool is out -- False is an int to Python.
+# empty: False, "", 0, 0.0, (), [], {}. Matched by exact type, not isinstance.
 _SENTINEL_EMPTY_TYPES = (
+    bool,
     bytes,
     dict,
     float,
@@ -366,7 +410,7 @@ _SENTINEL_EMPTY_TYPES = (
 
 # How the accepted sentinels are spelled in every message naming them, so
 # the errors and DECLAUDE.md say one list. None and Ellipsis are not on it.
-_SENTINEL_TEXT = '0, 0.0, "", (), [], {}'
+_SENTINEL_TEXT = 'False, 0, 0.0, "", (), [], {}'
 
 # The scripts/ directory, which is where this file, settings.sh and the
 # handler template all sit.

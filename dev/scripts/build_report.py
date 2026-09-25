@@ -17,6 +17,8 @@ _FLAME_GRAPH_VIEW_ENTRY: tuple[str, str, str] = ("", "", "")
 _HEAT_MAP_VIEW_ENTRY: tuple[str, str, str] = ("", "", "")
 _RANKING_COUNTER_NAME: str = ""
 _STRIP_CURL_PERF_SITE_HREF: str = ""
+_STRIP_TEST_MENU_EXTRA_WIDTH_CHARS: int = 0
+_STRIP_TEST_MENU_MERGED_TEST_NAME: str = ""
 _SUMMARY_PERF_LOG_SKIPPED_HEAD_LINES: int = 0
 _SUMMARY_TIME_SUFFIX_SECONDS: dict[str, float] = {}
 _SUMMARY_TOP_FUNCTION_ROWS: int = 0
@@ -34,8 +36,11 @@ _PID_PREFIX = re.compile(r"^==\d+==\s?")
 # Fine enough to feel continuous, coarse enough not to redraw per pixel.
 _STRIP_SCALE_SLIDER_STEP = 0.01
 
-# How far a test's summary page sits below the report root, which says how
-# many "../" its shared-asset links need. The layout fixes it.
+# The overview page sits at the report root: its links need no "../".
+_OVERVIEW_PAGE_ASSETS_DEPTH = 0
+
+# How far a test's summary page sits below the report root: how many "../"
+# its shared-asset, logo and help links need. The layout fixes it.
 _SUMMARY_PAGE_ASSETS_DEPTH = 1
 
 # A "Something: 1.23 ms" perf log line, the only valid speed number. Blank
@@ -118,7 +123,7 @@ class BuildReport:
         label: str
         # where it points
         href: str
-        # its hover text
+        # what the status row and the tab title read while it is shown
         title: str
         # load it into the frame rather than navigating
         frame: bool = False
@@ -142,8 +147,6 @@ class BuildReport:
         trace_log: str
         # embed no log at all
         no_log: bool
-        # where the "help" link points
-        help_href: str
         # extra LABEL=VALUE rows
         header: list[str]
         # callgrind_diff.py's synthesized callers diff, for the call columns
@@ -166,21 +169,14 @@ class BuildReport:
         path: str
 
     # The baseline run's total in this page's counter, from the synthesized
-    # callers diff. None means no denominator, so an empty share cell.
-    def baseline_total_load(self, paths: Sequence[str]) -> int | None:
-        total = 0
-        found = False
-        for path in paths:
-            with open(path, encoding="utf-8") as handle:
-                doc = json.load(handle)
-            counters: list[str] = doc.get("counters", [])
-            costs: list[int] = doc.get("baselineTotal", [])
-            self.counters_check(counters, path)
-            total += callgrind.counter_value(
-                counters, costs, _RANKING_COUNTER_NAME
-            )
-            found = True
-        return total if found else None
+    # callers diff beside the delta.
+    def baseline_total_load(self, path: str) -> int:
+        with open(path, encoding="utf-8") as handle:
+            doc = json.load(handle)
+        counters: list[str] = doc["counters"]
+        costs: list[int] = doc["baselineTotal"]
+        self.counters_check(counters, path)
+        return callgrind.counter_value(counters, costs, _RANKING_COUNTER_NAME)
 
     # The "callers" cell of a diff row: each caller and how its calls moved.
     def caller_delta_cell(
@@ -239,7 +235,7 @@ class BuildReport:
                 doc = json.load(handle)
         except OSError as error:
             sys.exit(f"error: {path}: {error}: the callgrind_diff.py")
-        counters: list[str] = doc.get("counters", [])
+        counters: list[str] = doc["counters"]
         self.counters_check(counters, path)
         return BuildReport.CallersData(
             callers={
@@ -366,26 +362,20 @@ class BuildReport:
             theme.Column("% of change", numeric=True),
             theme.Column("functions changed", numeric=True),
         ]
-        profile_of = dict(
-            entry.split("=", 1) for entry in diff_profiles if "=" in entry
-        )
+        profile_of: dict[str, str] = {}
+        for entry in diff_profiles:
+            if "=" not in entry:
+                sys.exit(f"error: --diff-profile wants NAME=FILE: {entry!r}")
+            name, path = entry.split("=", 1)
+            profile_of[name] = path
         rows: list[list[theme.CellOrText]] = []
         for test in tests:
-            profile_path = profile_of.get(test.name, "")
-            files = (
-                [profile_path]
-                if profile_path and os.path.isfile(profile_path)
-                else []
-            )
+            # every test the diff paired has its delta and its callers file
+            # beside it: one without is a broken run, never an empty row
+            profile_path = profile_of[test.name]
             callers = profile_path + _DIFF_CALLER_COUNTS_FILE_SUFFIX
-            synthesized_callers = (
-                [callers] if files and os.path.isfile(callers) else []
-            )
             link = self.test_link_cell(test.name)
-            if not files:
-                rows.append([link, "", "", ""])
-                continue
-            profile = callgrind.profile_load(files)
+            profile = callgrind.profile_load([profile_path])
             self.counters_check(profile.counters, profile_path)
             delta = profile.value(profile.totals(), _RANKING_COUNTER_NAME)
             changed = sum(
@@ -393,9 +383,7 @@ class BuildReport:
                 for costs in profile.function_self.values()
                 if profile.value(costs, _RANKING_COUNTER_NAME) != 0
             )
-            share = self.diff_share(
-                delta, self.baseline_total_load(synthesized_callers)
-            )
+            share = self.diff_share(delta, self.baseline_total_load(callers))
             rows.append(
                 [
                     link,
@@ -693,7 +681,8 @@ class BuildReport:
         columns: Sequence[theme.Column],
         rows: Sequence[Sequence[theme.CellOrText]],
     ) -> None:
-        links = [BuildReport.StripLink("", "overview", "#", "overview")] + [
+        links = [BuildReport.StripLink("", "overview", "#", "overview")]
+        test_menu_entries = [
             BuildReport.StripLink(
                 test.name,
                 test.name,
@@ -703,7 +692,12 @@ class BuildReport:
             )
             for test in tests
         ]
-        body = self.strip_render("overview", links)
+        body = self.strip_render(
+            "overview",
+            links,
+            depth=_OVERVIEW_PAGE_ASSETS_DEPTH,
+            test_menu_entries=test_menu_entries,
+        )
         pairs = self.manifest_parse_rows(args.header) + (
             self.manifest_read_file(args.header_file)
             if args.header_file
@@ -728,6 +722,7 @@ class BuildReport:
                 body,
                 extra_js=self.framed_page_script_names(),
                 body_class="frame",
+                depth=_OVERVIEW_PAGE_ASSETS_DEPTH,
             ),
         )
 
@@ -795,7 +790,9 @@ class BuildReport:
             )
             for view in views
         ]
-        body = self.strip_render(args.test, links, help_href=args.help_href)
+        body = self.strip_render(
+            args.test, links, depth=_SUMMARY_PAGE_ASSETS_DEPTH
+        )
         out_dir = os.path.dirname(os.path.abspath(args.output))
         body += self.page_main_open() + self.manifest_table(
             "report.header", self.manifest_parse_rows(args.header)
@@ -818,25 +815,44 @@ class BuildReport:
             ),
         )
 
-    # The top strip: title, view links, and the utility links on the right.
+    # One link of a strip. A test menu entry is the same link, kept out of
+    # the tab order: the menu's search box moves between its entries.
+    def strip_link_render(
+        self, link: BuildReport.StripLink, in_tab_order: bool = True
+    ) -> str:
+        return (
+            f'<a href="{theme.html_escape(link.href)}"'
+            f' data-view="{theme.html_escape(link.key)}"'
+            f' data-title="{theme.html_escape(link.title)}"'
+            f"{' data-frame=1' if link.frame else ''}"
+            f"{'' if in_tab_order else ' tabindex=-1'}>"
+            f"{theme.html_escape(link.label)}</a>"
+        )
+
+    # The top strip: the title cell, which as the logo leads to the report
+    # root, the view links, the test menu, and the utility links on the right.
     def strip_render(
         self,
         title: str,
         links: Sequence[BuildReport.StripLink],
-        help_href: str = "README.md",
+        depth: int,
+        test_menu_entries: Sequence[BuildReport.StripLink] = (),
     ) -> str:
         separator = '<span class="sep">|</span>'
-        parts = [f'<b class="title" id="title">{theme.html_escape(title)}</b>']
+        root_href = theme.shared_href(depth, "index.html")
+        help_href = theme.shared_href(depth, "README.md")
+        parts = [
+            '<b class="title" id="title"'
+            f' data-root-href="{theme.html_escape(root_href)}">'
+            f"{theme.html_escape(title)}</b>"
+        ]
         for index, link in enumerate(links):
             if index:
                 parts.append(separator)
-            parts.append(
-                f'<a href="{theme.html_escape(link.href)}"'
-                f' data-view="{theme.html_escape(link.key)}"'
-                f' data-title="{theme.html_escape(link.title)}"'
-                f"{' data-frame=1' if link.frame else ''}>"
-                f"{theme.html_escape(link.label)}</a>"
-            )
+            parts.append(self.strip_link_render(link))
+        if test_menu_entries:
+            parts.append(separator)
+            parts.append(self.test_menu_render(test_menu_entries))
         parts.append('<span class="sp"></span>')
         parts.append(
             '<label class="scale" id="scale-label" for="scale-slider">'
@@ -847,7 +863,7 @@ class BuildReport:
         )
         parts.append('<span class="util" id="util">')
         parts.append(separator)
-        parts.append('<a href="#" id="reset-cols">reset columns</a>')
+        parts.append('<a href="#" id="layout-reset">reset</a>')
         parts.append(separator)
         parts.append(
             f'<a href="{theme.html_escape(help_href)}"'
@@ -882,16 +898,48 @@ class BuildReport:
             name, html=f'<a href="{escaped}/index.html">{escaped}</a>'
         )
 
+    # The overview's test menu: a box fitting every test name and reading the
+    # merged one, its caret button, and each test's strip link in a list below.
+    def test_menu_render(
+        self, entries: Sequence[BuildReport.StripLink]
+    ) -> str:
+        names = [entry.label for entry in entries]
+        if _STRIP_TEST_MENU_MERGED_TEST_NAME not in names:
+            sys.exit(
+                "error: the overview's test menu reads"
+                f" {_STRIP_TEST_MENU_MERGED_TEST_NAME!r}, the merged test,"
+                f" which is not one of its tests: {' '.join(names)}"
+            )
+        width = (
+            max(len(name) for name in names)
+            + _STRIP_TEST_MENU_EXTRA_WIDTH_CHARS
+        )
+        merged_name = theme.html_escape(_STRIP_TEST_MENU_MERGED_TEST_NAME)
+        items = "".join(
+            self.strip_link_render(entry, in_tab_order=False)
+            for entry in entries
+        )
+        return (
+            '<span class="test-menu">'
+            '<input id="test-menu-search" type="text"'
+            f' style="width:{width}ch" value="{merged_name}"'
+            ' readonly autocomplete="off" spellcheck="false">'
+            '<button id="test-menu-button" type="button" tabindex=-1>'
+            "</button>"
+            '<span class="test-menu-list" id="test-menu-list" hidden>'
+            f"{items}"
+            '<span class="test-menu-no-match" id="test-menu-no-match"'
+            " hidden></span></span></span>"
+        )
+
     # Rewrite every "Something: 1.23 ms" line in the theme's time notation.
     def time_humanize(self, text: str) -> str:
         return _TIME_LINE.sub(self.time_line_rewrite, text)
 
     # One matched "Something: 1.23 ms" line, rewritten in the theme's time
-    # notation. A suffix the theme has no scale for is left as it was.
+    # notation. _TIME_LINE matches exactly the suffixes the setting scales.
     def time_line_rewrite(self, match: re.Match[str]) -> str:
-        scale = _SUMMARY_TIME_SUFFIX_SECONDS.get(match.group(3).lower())
-        if scale is None:
-            return match.group(0)
+        scale = _SUMMARY_TIME_SUFFIX_SECONDS[match.group(3).lower()]
         return match.group(1) + theme.num_time(float(match.group(2)) * scale)
 
     # The same rewrite for one already split label and value.
@@ -954,13 +1002,6 @@ def main() -> None:
         "--no-log",
         action="store_true",
         help="omit the valgrind log section even if --log was given",
-    )
-    test_parser.add_argument(
-        "--help-href",
-        default="README.md",
-        help="the strip's 'help' target, relative to this page (default:"
-        " README.md. a per-test page under an overview needs"
-        " ../README.md)",
     )
     test_parser.add_argument(
         "--diff",
@@ -1052,7 +1093,6 @@ def main() -> None:
             perf_log=namespace.perf_log,
             trace_log=namespace.trace_log,
             no_log=namespace.no_log,
-            help_href=namespace.help_href,
             header=namespace.header,
             callers_data=namespace.callers_data,
         )

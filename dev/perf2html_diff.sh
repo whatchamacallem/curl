@@ -7,7 +7,8 @@ set -euo pipefail
 TIMESTAMP="$(date +%s)"
 INVOKED_FROM="$PWD"
 _SCRIPT="$(readlink -f "$0")"
-cd "$(dirname "$_SCRIPT")"
+PERF2HTML_DIR_="$(dirname "$_SCRIPT")"
+cd "$PERF2HTML_DIR_"
 
 . ./scripts/settings.sh
 . ./scripts/shared.sh
@@ -30,7 +31,8 @@ perf2html_diff.sh [debug-flags] [baseline] [modified] [diff]
     --regenerate      Rebuilds all pages from the last run's profiler
                       artifacts, re-measuring nothing. Implies
                       --keep-artifacts.
-    --verbose         Enables diagnostic information.
+    --verbose         Enables diagnostic information. Repeating it (--verbose
+                      --verbose) increments the verbosity level.
 EOF
 }
 
@@ -46,7 +48,7 @@ args_parse() {
         exit 0
         ;;
       --verbose)
-        VERBOSE=1
+        VERBOSE=$((VERBOSE + 1))
         shift
         ;;
       --keep-artifacts)
@@ -101,8 +103,8 @@ manifest_check() {
   local _dir="$1" _role="$2" _manifest="$1/MANIFEST.txt"
   if [ -f "$_manifest" ] \
     && [ "$(head -1 "$_manifest")" = "$REPORT_MANIFEST_VERSION_DIFF" ]; then
-    echo "error: can't diff a diff -- the $_role report was written by" \
-      "perf2html_diff.sh: $_dir" >&2
+    error_exit 2 "error: can't diff a diff -- the $_role report was" \
+      "       written by perf2html_diff.sh: $_dir"
   fi
   manifest_verify "$_dir" "$_role" "$REPORT_MANIFEST_VERSION_FULL"
 }
@@ -113,7 +115,8 @@ header_file_of() {
   local _out="$ARTIFACTS_DIR/header.$_role.$TIMESTAMP.txt"
   {
     echo "report=$(path_display "$_dir")"
-    grep '=' "$_dir/MANIFEST.txt" || true
+    grep '=' "$_dir/MANIFEST.txt" \
+      || error_exit 2 "error: no LABEL=VALUE row in $_dir/MANIFEST.txt"
   } >"$_out"
   echo "$_out"
 }
@@ -136,7 +139,8 @@ profiles_extract() {
     command_run tar xJf "$_archive" -C "$_into"
     mapfile -t _files < <(find "$_into" -maxdepth 1 -type f \
       -name 'callgrind.out.*' | sort)
-    [ "${#_files[@]}" -gt 0 ] || continue
+    [ "${#_files[@]}" != 0 ] \
+      || error_exit 2 "error: no callgrind.out.* file in $_archive"
     listing_row_write "$_listing" "$_test" "${_files[@]}"
     _every+=("${_files[@]}")
   done
@@ -163,26 +167,19 @@ tests_names_of() {
        BEGIN { head = 1 }' "$1" | sort -u
 }
 
-# tests_pair - the tests both reports hold, noting each one-sided name
+# tests_pair - the tests both reports hold; a one-sided name is a hard error
 tests_pair() {
   local _base_tests _cur_tests _name
   _base_tests="$(tests_names_of "$_BASE_LISTING")"
   _cur_tests="$(tests_names_of "$_MODIFIED_LISTING")"
-  if [ -z "$_base_tests" ]; then
-    echo "error: no */raw/*$REPORT_RAW_ARCHIVE_SUFFIX archive holding" \
-      "callgrind.out.* in the baseline report: $_BASE_DIR" >&2
-    exit 2
-  fi
-  if [ -z "$_cur_tests" ]; then
-    echo "error: no */raw/*$REPORT_RAW_ARCHIVE_SUFFIX archive holding" \
-      "callgrind.out.* in the modified report: $_MOD_DIR" >&2
-    exit 2
-  fi
-  for _name in $(comm -23 <(echo "$_base_tests") <(echo "$_cur_tests")); do
-    echo "note: '$_name' is only in the baseline report; skipped" >&2
-  done
-  for _name in $(comm -13 <(echo "$_base_tests") <(echo "$_cur_tests")); do
-    echo "note: '$_name' is only in the modified report; skipped" >&2
+  local _holding="error: no */raw/*$REPORT_RAW_ARCHIVE_SUFFIX archive holding"
+  [ -n "$_base_tests" ] || error_exit 2 \
+    "$_holding callgrind.out.* in the baseline report: $_BASE_DIR"
+  [ -n "$_cur_tests" ] || error_exit 2 \
+    "$_holding callgrind.out.* in the modified report: $_MOD_DIR"
+  for _name in $(comm -3 <(echo "$_base_tests") <(echo "$_cur_tests")); do
+    error_exit 2 "error: '$_name' is in only one of the two reports, so" \
+      "       it has no delta: $_BASE_DIR vs $_MOD_DIR"
   done
   comm -12 <(echo "$_base_tests") <(echo "$_cur_tests")
 }
@@ -207,34 +204,35 @@ diff_one() {
   mapfile -t _base_files < <(profiles_of "$_BASE_LISTING" "$_test")
   mapfile -t _cur_files < <(profiles_of "$_MODIFIED_LISTING" "$_test")
 
-  log_verbose "== [$_name]: diff -> $_diff_file =="
-  _args=(python3 scripts/callgrind_diff.py -o "$_diff_file"
+  heading_print "python3 callgrind_diff.py $_name"
+  _args=(python3 "$PERF2HTML_DIR_/scripts/callgrind_diff.py" -o "$_diff_file"
     --callers-output "$_callers_file")
   for _file in "${_base_files[@]}"; do _args+=(--baseline "$_file"); done
   for _file in "${_cur_files[@]}"; do _args+=(--current "$_file"); done
   command_run "${_args[@]}"
 
-  log_verbose "== [$_name]: heat map -> $_out/heat-map/index.html =="
-  command_run python3 scripts/callgrind_to_heatmap.py "$_diff_file" \
-    -o "$_out/heat-map/index.html" \
+  heading_print "python3 callgrind_to_heatmap.py $_name --diff"
+  command_run python3 "$PERF2HTML_DIR_/scripts/callgrind_to_heatmap.py" \
+    "$_diff_file" -o "$_out/heat-map/index.html" \
     --title "$_name / heat map" --diff \
     --baseline-data "$_callers_file"
 
-  log_verbose "== [$_name]: index -> $_out/index.html =="
+  heading_print "python3 build_report.py test $_name"
   rm -rf "$_out/raw"
   _archive="$_out/raw/$(basename "$_out")$REPORT_RAW_ARCHIVE_SUFFIX"
   archive_write "$(basename "$_out")" "$_out" "" \
     "$_diff_file" "$_callers_file"
-  command_run python3 scripts/build_report.py test "$_diff_file" \
-    -o "$_out/index.html" --test "$_name" --diff \
-    --callers-data "$_callers_file" --raw-data "$_archive" \
-    --help-href ../README.md
-  printf '%-13sdiff -> %s\n' "$_name" "$(path_display "$_out")/index.html"
+  command_run python3 "$PERF2HTML_DIR_/scripts/build_report.py" test \
+    "$_diff_file" -o "$_out/index.html" --test "$_name" --diff \
+    --callers-data "$_callers_file" --raw-data "$_archive"
+  log_verbose "$(printf '%-13sdiff -> %s' "$_name" "$_out/index.html")"
 }
 
 # main - checks both inputs, diffs every shared test, stamps the report
 main() {
   args_parse "$@"
+  verbose_begin
+  title_print "$_SCRIPT" "$@"
 
   manifest_check "$_BASE_DIR" baseline
   manifest_check "$_MOD_DIR" modified
@@ -257,11 +255,9 @@ main() {
   profiles_extract "$_BASE_DIR" baseline "$_BASE_LISTING"
   profiles_extract "$_MOD_DIR" modified "$_MODIFIED_LISTING"
   _tests="$(tests_pair)"
-  [ -n "$_tests" ] || {
-    echo "error: the two reports have no test in common" >&2
-    exit 2
-  }
-  echo "dev/perf2html_diff.sh $TIMESTAMP: $(basename "$_BASE_DIR") ->" \
+  [ -n "$_tests" ] \
+    || error_exit 2 "error: the two reports have no test in common"
+  log_verbose "$_SCRIPT $TIMESTAMP: $(basename "$_BASE_DIR") ->" \
     "$(basename "$_MOD_DIR")"
   _args=(-o "$_OUT_DIR/index.html" --diff
     --header-block "baseline=$(header_file_of "$_BASE_DIR" baseline)"
@@ -271,9 +267,10 @@ main() {
     _args+=(--test "$_test_name" --diff-profile
       "$_test_name=$ARTIFACTS_DIR/callgrind.diff.$_test_name.$TIMESTAMP")
   done
-  log_verbose "== overview -> $_OUT_DIR/index.html =="
-  command_run python3 scripts/build_report.py overview "${_args[@]}"
-  printf '%-13s%s\n' overview "$(path_display "$_OUT_DIR")/index.html"
+  heading_print "python3 build_report.py overview --diff"
+  command_run python3 "$PERF2HTML_DIR_/scripts/build_report.py" overview \
+    "${_args[@]}"
+  log_verbose "$(printf '%-13s%s' overview "$_OUT_DIR/index.html")"
 
   report_finish "$_OUT_DIR" "$REPORT_MANIFEST_VERSION_DIFF" \
     "baseline=$(path_display "$_BASE_DIR")" \

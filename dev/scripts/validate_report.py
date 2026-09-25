@@ -10,7 +10,6 @@ import callgrind, settings
 
 # All constants needed from settings.py have to be loaded here before anything
 # else.
-_ARTIFACTS_NAME: str = ""
 _DIFF_CALLER_COUNTS_FILE_SUFFIX: str = ""
 _FLAME_GRAPH_APP_DIR_NAME: str = ""
 _FLAME_GRAPH_APP_FILE_GLOBS: tuple[str, ...] = ()
@@ -29,15 +28,6 @@ settings.load_into(__name__)
 # ValidateReport - A structural smoke test over a finished report directory:
 # every page present, closed, titled, and free of leftover markers.
 class ValidateReport:
-    # NonAsciiLine - One line of one file that broke the ASCII rule.
-    class NonAsciiLine(NamedTuple):
-        # the file it is in
-        path: str
-        # which line, 1-based
-        line_no: int
-        # the line itself, for the message
-        line: str
-
     # ReportLayout - What one kind of report is expected to contain -- this is
     # the whole difference between checking a full report and a diff.
     class ReportLayout(NamedTuple):
@@ -90,18 +80,6 @@ class ValidateReport:
             )
             return ""
         return done.stdout.strip()
-
-    # Print whatever has been recorded so far and hand back a shell status.
-    def exit_code(self) -> int:
-        if not self.errors:
-            return 0
-        print(
-            f"validate_report: {len(self.errors)} problem(s):",
-            file=sys.stderr,
-        )
-        for error in self.errors:
-            print(f"  - {error}", file=sys.stderr)
-        return 1
 
     # Record one problem -- every check runs, so one page cannot hide another.
     def fail(self, message: str) -> None:
@@ -175,13 +153,29 @@ class ValidateReport:
                 f"{_FLAME_GRAPH_VIEW_KEY}/profile.js does not call"
                 f" loadFileFromBase64: {flame_dir}/profile.js"
             )
+        # the engine is shared at the report root, so a copy of it here is
+        # the per-test duplication that sharing exists to remove
+        for stray in sorted(os.listdir(flame_dir)):
+            if stray not in _FLAME_GRAPH_PAGE_FILE_NAMES:
+                self.fail(
+                    f"{_FLAME_GRAPH_VIEW_KEY}/{stray} duplicates the shared "
+                    f"{_FLAME_GRAPH_APP_DIR_NAME}/ bundle: {flame_dir}"
+                )
         match = re.search(r'var document_base64 = "([A-Za-z0-9+/=]+)"', script)
-        try:
-            document = (
-                json.loads(base64.b64decode(match.group(1))) if match else {}
+        if not match:
+            self.fail(
+                f"{_FLAME_GRAPH_VIEW_KEY}/profile.js has no"
+                f" document_base64 line: {flame_dir}/profile.js"
             )
-        except ValueError:
-            document = {}
+            return
+        try:
+            document = json.loads(base64.b64decode(match.group(1)))
+        except ValueError as error:
+            self.fail(
+                f"{_FLAME_GRAPH_VIEW_KEY}/profile.js document_base64 is not"
+                f" JSON: {error}: {flame_dir}/profile.js"
+            )
+            return
         kinds = [
             profile.get("type") for profile in document.get("profiles", [])
         ]
@@ -194,14 +188,6 @@ class ValidateReport:
                 f" {document.get('exporter')!r}, "
                 f"profiles {kinds}): {flame_dir}/profile.js"
             )
-        # the engine is shared at the report root, so a copy of it here is
-        # the per-test duplication that sharing exists to remove
-        for stray in sorted(os.listdir(flame_dir)):
-            if stray not in _FLAME_GRAPH_PAGE_FILE_NAMES:
-                self.fail(
-                    f"{_FLAME_GRAPH_VIEW_KEY}/{stray} duplicates the shared "
-                    f"{_FLAME_GRAPH_APP_DIR_NAME}/ bundle: {flame_dir}"
-                )
 
     # The heat map must be there, and must carry its own runtime script.
     def heat_map_check(self, out_dir: str, test_name: str) -> None:
@@ -219,22 +205,18 @@ class ValidateReport:
             )
 
     # Nothing anywhere may name the author's home directory -- a report gets
-    # copied off this box.
+    # copied off this box. Bytes: the archives are not text.
     def home_dir_check(self, out_dir: str) -> None:
         home = os.path.expanduser("~")
         if home == "~":
+            self.fail("no home directory to check the report against")
             return
         for root, _dirs, names in os.walk(out_dir):
             for name in names:
                 path = os.path.join(root, name)
-                try:
-                    with open(
-                        path, encoding="utf-8", errors="replace"
-                    ) as handle:
-                        text = handle.read()
-                except OSError:
-                    continue
-                if home in text:
+                with open(path, "rb") as handle:
+                    data = handle.read()
+                if home.encode("utf-8") in data:
                     self.fail(
                         f"{os.path.relpath(path, out_dir)} leaks the"
                         f" author's home directory {home!r} -- reports are"
@@ -344,13 +326,8 @@ class ValidateReport:
     ) -> str:
         handle = archive.extractfile(member)
         if handle is None:
-            return ""
-        return handle.read().decode("utf-8", errors="replace")
-
-    # Anything outside plain ASCII that the allow list does not permit.
-    def non_ascii_re(self) -> re.Pattern[str]:
-        allowed = "".join(_SOURCE_SCAN_ALLOWED_NON_ASCII_CHARS)
-        return re.compile(r"[^\x00-\x7F" + allowed + r"]")
+            raise ValueError(f"{member.name} in {archive.name} is not a file")
+        return handle.read().decode("utf-8")
 
     # The overview page: its test-suites table, one link per test, its blocks.
     def overview_check(
@@ -382,15 +359,21 @@ class ValidateReport:
                     f" header block: {path}"
                 )
 
-    # Which tests this report holds, taken from the overview's own links.
+    # Which tests this report holds, taken from the overview's own links. A
+    # link to a directory that is not there is a broken test link.
     def overview_test_names(self, index_path: str, out_dir: str) -> list[str]:
-        with open(index_path, encoding="utf-8", errors="replace") as handle:
+        with open(index_path, encoding="utf-8") as handle:
             text = handle.read()
         names: list[str] = []
         for match in re.finditer(r'href="([\w.-]+)/index\.html"', text):
             test_name = match.group(1)
-            if os.path.isdir(os.path.join(out_dir, test_name)):
-                names.append(test_name)
+            if not os.path.isdir(os.path.join(out_dir, test_name)):
+                self.fail(
+                    f"overview index.html links {test_name}/index.html, and"
+                    f" there is no {test_name}/ directory: {index_path}"
+                )
+                continue
+            names.append(test_name)
         return names
 
     # Any page at all: big enough, titled, closed, no template leftovers.
@@ -444,17 +427,18 @@ class ValidateReport:
         ):
             asset = os.path.join(page_dir, href)
             try:
-                with open(asset, encoding="utf-8", errors="replace") as handle:
+                with open(asset, encoding="utf-8") as handle:
                     parts.append(handle.read())
             except OSError as error:
                 self.fail(f"{path} links {href}, which is unreadable: {error}")
         return "\n".join(parts)
 
     # A page's title, which is how we tell an overview from a test page.
-    def page_title(self, index_path: str) -> str:
-        with open(index_path, encoding="utf-8", errors="replace") as handle:
+    # None when it has none, which run() stops on: no title, no layout.
+    def page_title(self, index_path: str) -> str | None:
+        with open(index_path, encoding="utf-8") as handle:
             match = re.search(r"<title>(.*?)</title>", handle.read())
-        return match.group(1) if match else ""
+        return match.group(1) if match else None
 
     # The perf log: a real timing line, and a section only where one exists.
     def perf_tool_check(self, out_dir: str, has_perf_log: bool) -> None:
@@ -487,7 +471,13 @@ class ValidateReport:
     # One archive: openable, holding a callgrind file, and naming no
     # absolute path from the box that made it.
     def raw_archive_check(self, path: str, name: str) -> None:
-        self.size_check(path, _VALIDATE_RAW_ARCHIVE_LEAST_BYTES, f"raw/{name}")
+        # bytes, never size_check's text: an archive is not utf-8
+        size = os.path.getsize(path)
+        if size < _VALIDATE_RAW_ARCHIVE_LEAST_BYTES:
+            self.fail(
+                f"raw/{name} suspiciously small ({size} bytes <"
+                f" {_VALIDATE_RAW_ARCHIVE_LEAST_BYTES}): {path}"
+            )
         try:
             with tarfile.open(path, "r:xz") as archive:
                 texts = {
@@ -526,7 +516,10 @@ class ValidateReport:
                     f": {raw_dir}"
                 )
             return
-        names = sorted(os.listdir(raw_dir)) if os.path.isdir(raw_dir) else []
+        if not os.path.isdir(raw_dir):
+            self.fail(f"no raw/ where a test records its own data: {raw_dir}")
+            return
+        names = sorted(os.listdir(raw_dir))
         archives = [
             name for name in names if name.endswith(_REPORT_RAW_ARCHIVE_SUFFIX)
         ]
@@ -557,6 +550,9 @@ class ValidateReport:
             )
             return 1
         name = self.page_title(index_path)
+        if name is None:
+            print(f"error: no <title> in {index_path}", file=sys.stderr)
+            return 1
         layout = _LAYOUT_DIFF if args.diff else _LAYOUT_FULL
 
         self.home_dir_check(out_dir)
@@ -572,9 +568,7 @@ class ValidateReport:
                     os.path.join(out_dir, test_name), test_name, layout
                 )
         else:
-            self.test_report_check(
-                out_dir, name or os.path.basename(out_dir), layout
-            )
+            self.test_report_check(out_dir, name, layout)
 
         if self.errors:
             print(
@@ -588,11 +582,11 @@ class ValidateReport:
         print(f"validate_report: ok ({out_dir})", file=sys.stderr)
         return 0
 
-    # Read a file, complaining if it is missing or implausibly small.
+    # Read a text file, complaining if it is missing or implausibly small.
     def size_check(self, path: str, min_bytes: int, label: str) -> str:
         try:
             size = os.path.getsize(path)
-            with open(path, encoding="utf-8", errors="replace") as handle:
+            with open(path, encoding="utf-8") as handle:
                 text = handle.read()
         except OSError as error:
             self.fail(f"{label}: {path}: {error}")
@@ -615,7 +609,7 @@ class ValidateReport:
             )
             if not os.path.isfile(path):
                 continue
-            with open(path, encoding="utf-8", errors="replace") as handle:
+            with open(path, encoding="utf-8") as handle:
                 if f"/{_REPORT_SOURCES_DIR_NAME}/" in handle.read():
                     linked = True
                     break
@@ -637,48 +631,6 @@ class ValidateReport:
             self.flame_graph_check(out_dir, has_rawdata)
         if layout.test_has_rawdata:
             self.perf_tool_check(out_dir, has_rawdata)
-
-    # Source and generated output alike must stay plain ASCII.
-    def unicode_check(self) -> None:
-        non_ascii = self.non_ascii_re()
-        for path in self.unicode_scan_paths():
-            try:
-                with open(path, encoding="utf-8", errors="replace") as handle:
-                    lines = handle.readlines()
-            except OSError:
-                continue
-            for line_no, line in enumerate(lines, start=1):
-                match = non_ascii.search(line)
-                if match:
-                    found = ValidateReport.NonAsciiLine(
-                        path=path, line_no=line_no, line=line.rstrip("\n")
-                    )
-                    self.fail(
-                        f"{os.path.relpath(found.path, callgrind.REPO_ROOT)}:"
-                        f"{found.line_no} contains a non-ASCII character "
-                        f"{match.group()!r}: {found.line.strip()}"
-                    )
-
-    # Every source file under dev/. Generated output is not source: the scan
-    # runs with the other source stages, before a report exists to walk.
-    def unicode_scan_paths(self) -> list[str]:
-        dev_dir = os.path.join(callgrind.REPO_ROOT, "dev")
-        paths: list[str] = []
-        for root, dirs, names in os.walk(dev_dir):
-            dirs[:] = [
-                d
-                for d in dirs
-                if d not in _SOURCE_SCAN_SKIPPED_DIRS
-                and not d.startswith(".")
-                and not d.endswith(_SOURCE_SCAN_SKIPPED_DIR_SUFFIXES)
-            ]
-            for name in names:
-                if (
-                    name.endswith(_SOURCE_SCAN_FILE_EXTENSIONS)
-                    or name in _SOURCE_SCAN_FILE_NAMES
-                ):
-                    paths.append(os.path.join(root, name))
-        return sorted(paths)
 
 
 # What each view's directory is called, from the entry production builds
@@ -729,35 +681,6 @@ _REPORT_CHECKSUM_COMMAND = (
     " | LC_ALL=C sort | cksum"
 )
 
-# The diff vocabulary, spelled the same everywhere a reader sees it. These
-# are the only non-ASCII characters dev/ may contain, generated or written.
-_SOURCE_SCAN_ALLOWED_NON_ASCII_CHARS = (
-    "≈",  # almost equal to
-    "∞",  # infinity
-    "▲",  # up-pointing triangle
-    "▶",  # right-pointing triangle, the heat map's collapsed caret
-    "▼",  # down-pointing triangle
-    "…",  # horizontal ellipsis
-)
-
-# Which files under dev/ the ASCII scan reads, wherever they sit. A report
-# is output, but its pages are read by people, so they are scanned too.
-_SOURCE_SCAN_FILE_EXTENSIONS = (
-    ".py",
-    ".js",
-    ".css",
-    ".sh",
-    ".html",
-    ".c",
-    ".h",
-)
-_SOURCE_SCAN_FILE_NAMES = ("README.md",)
-
-# Caches, recordings, a generated report and cmake's copy of curl: none of
-# them is dev/ source, which is the whole of what this scan is for.
-_SOURCE_SCAN_SKIPPED_DIRS = ("__pycache__", _ARTIFACTS_NAME)
-_SOURCE_SCAN_SKIPPED_DIR_SUFFIXES = ("_report",)
-
 # Smallest a file can be before it is plainly a failed generate. The flame
 # graph page is a loader and the logs are appended text, so each has its own.
 _VALIDATE_FLAME_GRAPH_LOG_LEAST_BYTES = 20
@@ -770,29 +693,17 @@ _VALIDATE_PERF_LOG_LEAST_BYTES = 20
 _VALIDATE_RAW_ARCHIVE_LEAST_BYTES = 100
 
 
-# main - Check one report, or scan the sources once.
+# main - Check one report. Source is source_scan.py's, never this file's.
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("out_dir", nargs="?", help="a report directory")
+    parser.add_argument("out_dir", help="a report directory")
     parser.add_argument(
         "--diff",
         action="store_true",
         help="a perf2html_diff.sh report: heat map only",
     )
-    parser.add_argument(
-        "--source-scan-only",
-        action="store_true",
-        help="scan dev/ for non-ASCII characters and check nothing else",
-    )
     namespace = parser.parse_args()
     validator = ValidateReport()
-    # the sources are one tree, not a property of any report: enforcer.sh
-    # runs this once, not once per report it happens to find
-    if namespace.source_scan_only:
-        validator.unicode_check()
-        return validator.exit_code()
-    if not namespace.out_dir:
-        parser.error("a report directory, or --source-scan-only")
     return validator.run(
         ValidateReport.ValidateArgs(
             out_dir=namespace.out_dir, diff=namespace.diff

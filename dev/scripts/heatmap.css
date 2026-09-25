@@ -30,6 +30,18 @@ body {
   overflow: auto;
   background: var(--bg);
 }
+/* each box a table sits in is a container, so 100cqw in a <col> is exactly
+   the room its own table has: .home and .dbox pad inside #main */
+.css-layout #main,
+.css-layout .home,
+.css-layout .dbox {
+  container-type: inline-size;
+}
+/* Chrome sizes an auto-scrollbar container before its scrollbar exists, so
+   100cqw would include it; a stable gutter makes it the visible width */
+.css-layout #main {
+  scrollbar-gutter: stable;
+}
 
 .srcwrap {
   width: max-content;
@@ -103,7 +115,7 @@ body {
   flex: none;
   text-align: center;
   color: var(--muted);
-  font-size: 9px;
+  font-size: calc(9px * var(--font-fit));
 }
 .node.file .caret {
   visibility: hidden;
@@ -243,7 +255,7 @@ table.src tr.detail > td {
 }
 .dbox h4 {
   margin: 6px 0 2px;
-  font-size: 12px;
+  font-size: calc(var(--font-px) * var(--font-fit));
   color: var(--muted);
   font-weight: 600;
 }

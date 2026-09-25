@@ -1,57 +1,41 @@
 #!/usr/bin/env bash
-# dev/scripts/enforcer.sh [--check] [--keep-artifacts] [--regenerate]
-#     [--verbose]
+
+#   source          format        lint           79 cols ascii
+#   --------------- ------------- -------------- ------- ------
+#   *.sh            shfmt         --             yes     yes
+#   README.md       prettier      prettier       yes     yes
+#   src/*.c *.h     clang-format  --             yes     yes
+#   scripts/*.py    ruff          pyright, ruff  yes     yes
+#   scripts/*.js    prettier      prettier       yes     yes
+#   scripts/*.css   prettier      prettier       yes     yes
+#   scripts/*.html  prettier      prettier       yes     yes
 #
-# The one hook that verifies dev/ and its output. It clears the reports,
-# formats, lints and scans dev/ source, runs the batch itself with default
-# arguments, then validates and shoots the reports it wrote.
-#
-# --regenerate rebuilds the pages from the last run's recordings instead of
-# measuring again, which is what a dev/ edit wants: nothing it changed can
-# move a number. It is checked rather than trusted -- the recordings must
-# still describe the executable on disk -- and a check that does not hold up
-# is a hard error, never a silent hour of profiling. See regenerate_check.
-#
-# Any fault whatsoever is a hard error, reported where it happened: the run
-# stops, and nothing downstream prints. Reading a consequence and mistaking
-# it for the cause costs a reader more than a second run costs anyone.
-#
-# The stages run in ascending cost, so a formatting slip is reported in
-# seconds rather than after the profiling run.
-#
-# It takes no report argument: the batch cannot be told where to write, so
-# the three default names below are the only reports there are to verify.
-#
-# What runs over what:
-#
-#   source            format        lint             cols  ascii
-#   ----------------- ------------- ---------------- ----- ------
-#   *.sh              shfmt         --               yes   yes
-#   README.md         prettier      prettier         yes   yes
-#   src/*.c *.h       clang-format  --               yes   yes
-#   scripts/*.py      ruff          pyright, ruff    yes   yes
-#   scripts/*.js      prettier      prettier         yes   yes
-#   scripts/*.css     prettier      prettier         yes   yes
-#   scripts/*.html    prettier      prettier         yes   yes
-#
-# Nothing else is touched at all. A config file -- .json, .yml, .toml, and
-# the dotfiles beside them -- is this tooling's own settings rather than
-# dev/ source, so no stage formats, lints or column-checks one.
-#
-# A report is output, not source: no stage above reaches inside one, so a
-# generated page is neither formatted, linted, column-checked nor scanned
-# for ASCII. Every one of those stages runs before the batch writes a
-# report, and what a generator emits is that generator's own to get right.
-#
-# The screenshots stage shoots the modified and diff reports at each
-# viewport, naming a file for its size and report. Shots land outside every
-# report for the same reason: a checksum covers a report's own files only.
-#
-# Do not document what is being validated further. The validation
-# code below and the generator code itself are the living standards
-# for a correct report. They are checked for agreement, no more.
+# The rest of this comment is intentionally blank. No documentation goes here.
 
 set -euo pipefail
+
+usage_show() {
+  cat <<'EOF'
+enforcer.sh [debug-flags] [--check-formatting]
+    Formats, lints and scans the files scripts/enforcer_whitelist.txt lists,
+    runs perf2html_batch.sh over the three reports it cleared, then
+    validates and screenshots what it wrote. Any fault stops the run where
+    it happened.
+    --check-formatting  Report what would change rather than writing it.
+
+  These are the same debug-flags as the README.md documents:
+    --keep-artifacts    Measure as usual, but keep the recordings afterwards,
+                        which is what a later --regenerate reuses. Flagless
+                        runs delete them.
+    --regenerate        Rebuild the three reports' pages from the last run's
+                        recordings, re-measuring nothing. Pass it after every
+                        dev/ edit; leave it off once perf has been re-linked.
+                        Recordings that no longer describe the executable are
+                        a hard error: re-run without the flag to measure.
+    --verbose           Enables diagnostic information. Repeating it (--verbose
+                        --verbose) increments the verbosity level.
+EOF
+}
 
 _SCRIPT="$(readlink -f "$0")"
 _SCRIPTS="$(dirname "$_SCRIPT")"
@@ -61,26 +45,23 @@ _SCRIPTS="$(dirname "$_SCRIPT")"
 INVOKED_FROM="$PWD"
 cd "$_SCRIPTS"
 
-# Where each kind of source lives, relative to scripts/, and the repo a
-# report's executable= row is relative to.
+# dev/, which the whitelist's globs and the reports sit under, and the repo
+# a report's executable= row is relative to, each as seen from scripts/.
 _DIR_DEV=..
 _DIR_REPO=../..
-_DIR_SCRIPTS=.
-_DIR_SRC=../src
 
-# the hard column limit every kind of source is checked against
+# the hard column limit every whitelisted file is checked against
 _COLUMNS_MAX=79
 _CLANG_FORMAT_CONFIG=../src/.clang-format
 _PRETTIER_CONFIG=.prettierrc.json
 _PYRIGHT_CONFIG=pyrightconfig.json
 
-# The one markdown file that is dev/ source. Every other .md under dev/ is
-# the author's notes -- DECLAUDE.md and its kin -- and no stage reaches it.
-_MARKDOWN_NAME=README.md
-
 # spaces shfmt indents a shell block by
 _SHELL_INDENT=2
 _RUFF_CONFIG=ruff.toml
+
+# the one list of what the source stages touch, beside this script
+_WHITELIST_FILE=enforcer_whitelist.txt
 
 . ./settings.sh
 . ./shared.sh
@@ -97,24 +78,11 @@ _DEFAULT_REPORTS=(
   "$_DIR_DEV/$REPORT_DIFF_DIR_NAME"
 )
 
-usage_show() {
-  cat <<'EOF'
-scripts/enforcer.sh [--check] [--keep-artifacts] [--regenerate] [--verbose]
-    Formats and lints dev/, runs perf2html_batch.sh over the three reports
-    it cleared, then validates and screenshots what it wrote and scans the
-    tree for non-ASCII. Any fault stops the run where it happened.
-    --check           Report what would change rather than writing it.
-    --keep-artifacts  Measure as usual, but keep the recordings afterwards,
-                      which is what a later --regenerate reuses. Flagless
-                      runs delete them.
-    --regenerate      Rebuild the three reports' pages from the last run's
-                      recordings, re-measuring nothing. Pass it after every
-                      dev/ edit; leave it off once perf has been re-linked.
-                      Recordings that no longer describe the executable are
-                      a hard error: re-run without the flag to measure.
-    --verbose         Enables diagnostic information.
-EOF
-}
+# the headings of the stage table every row below sits in
+_STAGE_TABLE_HEADINGS=('#' stage result detail)
+
+# counts the stage rows printed, the number leading each row
+_STAGE_NUMBER=0
 
 # tool_find - echo a tool's path, searching the pip and npm user bins too.
 tool_find() {
@@ -131,25 +99,48 @@ tool_find() {
   return 1
 }
 
-# child_stream - run one child, streaming it live. SETS STAGE_EXIT_CODE and
-# STAGE_OUTPUT, their canonical setter. Never $( ): that buffers the child.
+# child_stream - run one child, streaming it live as rows of the stage table.
+# SETS STAGE_EXIT_CODE and STAGE_OUTPUT. Never $( ): that buffers the child.
 child_stream() {
-  local _log
+  # args: the row's stage label, then the command
+  local _label="$1" _log _statuses=() _status
+  shift
   _log="$(mktemp)"
   STAGE_EXIT_CODE=0
 
   # the tee is chosen before the child starts, so verbose watches the work
   # happen rather than reading it replayed once the child has exited
-  if [ "$VERBOSE" = 1 ]; then
-    if ! { "$@" 2>&1 | tee "$_log"; }; then
-      STAGE_EXIT_CODE="${PIPESTATUS[0]}"
+  if [ "$VERBOSE" -ge 1 ]; then
+    if ! { "$@" 2>&1 | tee "$_log" | verbose_filter row "$_label"; }; then
+      _statuses=("${PIPESTATUS[@]}")
     fi
-  else
-    "$@" >"$_log" 2>&1 || STAGE_EXIT_CODE=$?
+  elif ! { "$@" 2>&1 | tee "$_log" >/dev/null; }; then
+    _statuses=("${PIPESTATUS[@]}")
   fi
 
   STAGE_OUTPUT="$(cat "$_log")"
   rm -f "$_log"
+  [ "${#_statuses[@]}" != 0 ] || return 0
+  STAGE_EXIT_CODE="${_statuses[0]}"
+  for _status in "${_statuses[@]:1}"; do
+    [ "$_status" = 0 ] || error_exit 1 \
+      "error: tee or verbose_filter exited $_status behind: $*"
+  done
+}
+
+# stage_row_print - one stage's row of the table, numbered on: label,
+# verdict, detail.
+stage_row_print() {
+  _STAGE_NUMBER=$((_STAGE_NUMBER + 1))
+  table_row_print "$_STAGE_NUMBER" "$1" "$2" "$3"
+}
+
+# stage_row_fail - a failed stage's row, on stderr whatever the verbosity:
+# it is the verdict a reader acts on.
+stage_row_fail() {
+  _STAGE_NUMBER=$((_STAGE_NUMBER + 1))
+  printf '\n| %s | %s | %s | %s |\n' "$_STAGE_NUMBER" "$1" "$2" "$3" \
+    | verbose_filter paths >&2
 }
 
 # stage_fail - print one stage's verdict and output, then stop the run. The
@@ -157,9 +148,9 @@ child_stream() {
 stage_fail() {
   local _label="$1" _verdict="$2" _summary="$3" _output="$4"
 
-  printf '%-12s| %-7s| %s\n' "$_label" "$_verdict" "$_summary"
-  if [ -n "$_output" ]; then echo "$_output" >&2; fi
-  exit 1
+  stage_row_fail "$_label" "$_verdict" "$_summary"
+  [ -n "$_output" ] || _output="$_label: $_verdict, and it printed nothing"
+  error_exit 1 "$_output"
 }
 
 # tool_missing_fail - a tool that is not installed never checked its files,
@@ -167,14 +158,11 @@ stage_fail() {
 tool_missing_fail() {
   local _label="$1" _name="$2"
 
-  printf '%-12s| MISSING| not installed: %s\n' "$_label" "$_name"
-  {
-    echo "error: $_name is not installed, so $_label never ran"
-    echo "  sudo apt-get install -y shfmt clang-format"
-    echo "  pip3 install --user --break-system-packages ruff"
-    echo "  npm install -g prettier pyright"
-  } >&2
-  exit 1
+  stage_row_fail "$_label" MISSING "not installed: $_name"
+  error_exit 1 "error: $_name is not installed, so $_label never ran" \
+    "  sudo apt-get install -y shfmt clang-format" \
+    "  pip3 install --user --break-system-packages ruff" \
+    "  npm install -g prettier pyright"
 }
 
 # tool_run - run one tool with _TOOL_ARGS over the files, printing a status
@@ -189,14 +177,14 @@ tool_run() {
   fi
 
   if [ "$#" = 0 ]; then
-    log_verbose "$(printf '%-12s| ok      | no files' "$_label")"
+    stage_row_print "$_label" ok "no files"
     return 0
   fi
 
-  child_stream "$_binary" "${_TOOL_ARGS[@]}" "$@"
+  child_stream "$_label" "$_binary" "${_TOOL_ARGS[@]}" "$@"
 
   if [ "$STAGE_EXIT_CODE" = 0 ]; then
-    log_verbose "$(printf '%-12s| ok      | %s file(s)' "$_label" "$#")"
+    stage_row_print "$_label" ok "$# file(s)"
     return 0
   fi
 
@@ -204,21 +192,63 @@ tool_run() {
     "$STAGE_OUTPUT"
 }
 
-# files_of - the one door every stage collects files through, so a name
-# held out here is out of format, lint and the column check alike.
-files_of() {
-  local _dir="$1" _pattern="$2"
+# whitelist_refuse - say why the whitelist cannot be enforced and stop.
+whitelist_refuse() {
+  error_exit 1 "error: $_WHITELIST_FILE: $1"
+}
 
-  # .vscode/ and .claude/ are this box's editor settings, not dev/ source
-  find "$_dir" -name "$_pattern" -type f \
-    -not -path "*/$ARTIFACTS_NAME/*" \
-    -not -path '*_report/*' -not -path '*/node_modules/*' \
-    -not -path '*/__pycache__/*' -not -path '*/.*/*' | sort
+# whitelist_expand - expand _WHITELIST_FILE's globs against dev/, once. SETS
+# _WHITELISTED_FILES, its canonical setter, sorted and without repeats.
+whitelist_expand() {
+  local _glob _match _line=0 _found=() _matches=()
+
+  if [ ! -f "$_WHITELIST_FILE" ]; then
+    whitelist_refuse "not found beside enforcer.sh, so nothing is enforced"
+  fi
+
+  while IFS= read -r _glob || [ -n "$_glob" ]; do
+    _line=$((_line + 1))
+    if [[ -z "$_glob" || "$_glob" == '#'* || "$_glob" == *[[:space:]]* ]]; then
+      whitelist_refuse "line $_line is not one glob: '$_glob'"
+    fi
+
+    # a tool handed a directory walks it, which is what this list replaces
+    mapfile -t _matches < <(compgen -G "$_DIR_DEV/$_glob")
+    for _match in "${_matches[@]}"; do
+      if [ ! -f "$_match" ]; then
+        whitelist_refuse "line $_line, $_glob, matches $_match, not a file"
+      fi
+    done
+    _found+=("${_matches[@]}")
+  done <"$_WHITELIST_FILE"
+
+  if [ "${#_found[@]}" = 0 ]; then
+    whitelist_refuse "matches no file, so nothing would be enforced"
+  fi
+
+  mapfile -t _WHITELISTED_FILES < <(printf '%s\n' "${_found[@]}" \
+    | LC_ALL=C sort -u)
+  stage_row_print whitelist ok "${#_WHITELISTED_FILES[@]} file(s)"
+}
+
+# files_of - echo each whitelisted file ending in one of the extensions
+# given. The one door a stage choosing files by kind collects them through.
+files_of() {
+  local _file _extension
+
+  for _file in "${_WHITELISTED_FILES[@]}"; do
+    for _extension in "$@"; do
+      if [[ "$_file" == *"$_extension" ]]; then
+        printf '%s\n' "$_file"
+        break
+      fi
+    done
+  done
 }
 
 format_shell() {
   local _files
-  mapfile -t _files < <(files_of "$_DIR_DEV" '*.sh')
+  mapfile -t _files < <(files_of .sh)
 
   _TOOL_ARGS=(-i "$_SHELL_INDENT" -bn -ci -ln bash)
   if [ "$_CHECK" = 1 ]; then
@@ -232,7 +262,7 @@ format_shell() {
 
 format_python() {
   local _files
-  mapfile -t _files < <(files_of "$_DIR_SCRIPTS" '*.py')
+  mapfile -t _files < <(files_of .py)
 
   _TOOL_ARGS=(format --config "$_RUFF_CONFIG")
   if [ "$_CHECK" = 1 ]; then _TOOL_ARGS+=(--diff); fi
@@ -246,10 +276,8 @@ format_python() {
 }
 
 format_c() {
-  local _files _extra
-  mapfile -t _files < <(files_of "$_DIR_SRC" '*.c')
-  mapfile -t _extra < <(files_of "$_DIR_SRC" '*.h')
-  _files+=("${_extra[@]}")
+  local _files
+  mapfile -t _files < <(files_of .c .h)
 
   _TOOL_ARGS=(--style=file:"$_CLANG_FORMAT_CONFIG")
   if [ "$_CHECK" = 1 ]; then
@@ -261,16 +289,11 @@ format_c() {
   tool_run clang-format c "${_files[@]}"
 }
 
-# format_prettier - README.md and every page asset. prettier reparses what
-# it writes, so it is these kinds' lint as well.
+# format_prettier - every whitelisted markdown file and page asset. prettier
+# reparses what it writes, so it is these kinds' lint as well.
 format_prettier() {
-  local _files=() _extra _kind
-
-  mapfile -t _files < <(files_of "$_DIR_DEV" "$_MARKDOWN_NAME")
-  for _kind in '*.js' '*.css' '*.html'; do
-    mapfile -t _extra < <(files_of "$_DIR_SCRIPTS" "$_kind")
-    _files+=("${_extra[@]}")
-  done
+  local _files
+  mapfile -t _files < <(files_of .md .js .css .html)
 
   _TOOL_ARGS=(--config "$_PRETTIER_CONFIG" --log-level warn)
   if [ "$_CHECK" = 1 ]; then
@@ -282,53 +305,42 @@ format_prettier() {
   tool_run prettier prettier "${_files[@]}"
 }
 
-# pyright over the generators. The page assets are prettier's, which parses
-# every one of them.
+# pyright over the whitelisted generators. pyrightconfig.json names no
+# files: the ones given here, from the whitelist, are pyright's whole list.
 lint_run() {
-  local _binary
+  local _binary _files
+  mapfile -t _files < <(files_of .py)
 
   if ! _binary="$(tool_find pyright)"; then
     tool_missing_fail lint pyright
   fi
 
-  child_stream "$_binary" --project "$_PYRIGHT_CONFIG"
+  # named no file, pyright would check its whole project directory instead
+  if [ "${#_files[@]}" = 0 ]; then
+    stage_row_print lint ok "no files"
+    return 0
+  fi
+
+  child_stream lint "$_binary" --project "$_PYRIGHT_CONFIG" "${_files[@]}"
 
   if [ "$STAGE_EXIT_CODE" = 0 ]; then
-    log_verbose "$(printf '%-12s| ok      | pyright' "lint")"
+    stage_row_print lint ok pyright
     return 0
   fi
 
   stage_fail lint FAILED pyright "$STAGE_OUTPUT"
 }
 
-# long_lines_report - fail on any line still over _COLUMNS_MAX afterwards.
+# long_lines_report - fail on any whitelisted line still over _COLUMNS_MAX
+# once the formatters have run.
 long_lines_report() {
-  local _files=() _extra _kind
-
-  # 79 columns is every language dev/ is written in. A config file is not
-  # one of them: it is this tooling's settings, and no stage reads it here.
-  mapfile -t _files < <(files_of "$_DIR_DEV" '*.sh')
-  mapfile -t _extra < <(files_of "$_DIR_DEV" "$_MARKDOWN_NAME")
-  _files+=("${_extra[@]}")
-  for _kind in '*.c' '*.h'; do
-    mapfile -t _extra < <(files_of "$_DIR_SRC" "$_kind")
-    _files+=("${_extra[@]}")
-  done
-  for _kind in '*.py' '*.js' '*.css' '*.html'; do
-    mapfile -t _extra < <(files_of "$_DIR_SCRIPTS" "$_kind")
-    _files+=("${_extra[@]}")
-  done
-
-  if [ "${#_files[@]}" = 0 ]; then return 0; fi
-
   local _over
   _over="$(awk -v max="$_COLUMNS_MAX" \
     'length > max { print FILENAME ":" FNR ": " length " cols\n  " $0 }' \
-    "${_files[@]}")"
+    "${_WHITELISTED_FILES[@]}")"
 
   if [ -z "$_over" ]; then
-    log_verbose "$(printf '%-12s| ok      | none over %s' \
-      "columns" "$_COLUMNS_MAX")"
+    stage_row_print columns ok "none over $_COLUMNS_MAX"
     return 0
   fi
 
@@ -336,9 +348,9 @@ long_lines_report() {
     "$(echo "$_over" | grep -c ' cols$') line(s) over $_COLUMNS_MAX" "$_over"
 }
 
-# Line 1 of a directory's MANIFEST.txt, or empty when it has none.
+# Line 1 of a directory's MANIFEST.txt, which manifest_verify has proved.
 report_version() {
-  head -n 1 "$1/MANIFEST.txt" 2>/dev/null
+  head -n 1 "$1/MANIFEST.txt"
 }
 
 # validate_run - validate each report the batch wrote, in its order. Every
@@ -357,11 +369,10 @@ validate_run() {
       _args+=(--diff)
     fi
 
-    child_stream python3 validate_report.py "${_args[@]}"
+    child_stream validate python3 validate_report.py "${_args[@]}"
 
     if [ "$STAGE_EXIT_CODE" = 0 ]; then
-      log_verbose "$(printf '%-12s| ok      | %s' \
-        "validate" "$(basename "$_path")")"
+      stage_row_print validate ok "$(basename "$_path")"
       continue
     fi
 
@@ -369,39 +380,26 @@ validate_run() {
   done
 }
 
-# comment_block_run - the dev/ tree's comment length check, once, for the
-# same reason the ASCII scan runs once: the sources are one tree.
-comment_block_run() {
-  child_stream python3 comment_block_scan.py
-
-  # the limit is the scanner's own and is never spelled here: it prints the
-  # number in both the ok line and every fault, so there is one to keep.
-  if [ "$STAGE_EXIT_CODE" = 0 ]; then
-    log_verbose "$(printf '%-12s| ok      | %s' "comments" "$STAGE_OUTPUT")"
-    return 0
-  fi
-
-  stage_fail comments TOO_LONG "$(echo "$STAGE_OUTPUT" | tail -n 1)" \
-    "$STAGE_OUTPUT"
-}
-
-# source_scan_run - the non-ASCII scan over dev/ source. It runs with the
-# other source stages, so no report or build tree is in its walk.
+# source_scan_run - source_scan.py's comment block and ASCII checks, over
+# every whitelisted file and in one read of each.
 source_scan_run() {
-  child_stream python3 validate_report.py --source-scan-only
+  child_stream "source scan" python3 source_scan.py "${_WHITELISTED_FILES[@]}"
 
+  # the limit and the allowed set are the scanner's own and never spelled
+  # here: its ok line and every fault it prints carry them
   if [ "$STAGE_EXIT_CODE" = 0 ]; then
-    log_verbose "$(printf '%-12s| ok      | dev/ is ASCII' "ascii")"
+    stage_row_print "source scan" ok "$STAGE_OUTPUT"
     return 0
   fi
 
-  stage_fail ascii FAILED dev/ "$STAGE_OUTPUT"
+  stage_fail "source scan" FAILED "$(echo "$STAGE_OUTPUT" | head -n 1)" \
+    "$STAGE_OUTPUT"
 }
 
 # batch_run - write the three reports this run verifies. Its own steps stop
 # at their first failure, and so does this: there is nothing left to check.
 batch_run() {
-  local _output _exit_code=0 _flags=()
+  local _flags=()
   mapfile -t _flags < <(verbose_flags_of)
 
   # regenerate_check held this back unless the recordings still describe the
@@ -412,21 +410,27 @@ batch_run() {
   # reuses, and the batch owns every deletion of them
   if [ "$_KEEP_ARTIFACTS" = 1 ]; then _flags+=(--keep-artifacts); fi
 
-  child_stream "$_DIR_DEV/$_BATCH_SCRIPT_NAME" "${_flags[@]}" \
-    "--target-dir=$_DIR_DEV"
+  # our own script: its lines are already formatted and relayed as they are,
+  # and on failure its report climbs through failure_relay
+  script_capture "$_DIR_DEV/$_BATCH_SCRIPT_NAME" "${_flags[@]}" \
+    "--target-dir=$(cd "$_DIR_DEV" && pwd)"
 
-  if [ "$STAGE_EXIT_CODE" = 0 ]; then
-    log_verbose "$(printf '%-12s| ok      | %s' "batch" "$_BATCH_SCRIPT_NAME")"
+  if [ "$CHILD_EXIT_CODE" = 0 ]; then
+    heading_print "$_SCRIPT, after the batch"
+    table_head_print "${_STAGE_TABLE_HEADINGS[@]}"
+    stage_row_print batch ok "$_BATCH_SCRIPT_NAME"
     return 0
   fi
 
-  stage_fail batch FAILED "$_BATCH_SCRIPT_NAME" "$STAGE_OUTPUT"
+  stage_row_fail batch FAILED "$_BATCH_SCRIPT_NAME"
+  failure_relay
+  exit 1
 }
 
 # screenshots_run - shoot the modified and diff reports at every viewport
 # screenshots.py names. Both exist: the batch wrote them or exited.
 screenshots_run() {
-  local _name _path _prefix _output _exit_code
+  local _name _path _prefix
 
   for _name in "$REPORT_MODIFIED_DIR_NAME" "$REPORT_DIFF_DIR_NAME"; do
     _path="$_DIR_DEV/$_name"
@@ -436,26 +440,23 @@ screenshots_run() {
     _prefix="${_name#perf2html_}"
     _prefix="${_prefix%_report}_"
 
-    _exit_code=0
-    _output="$(python3 "$_SCREENSHOTS_SCRIPT_NAME" "$_path" \
-      "$_prefix" 2>&1)" || _exit_code=$?
+    child_stream screenshots python3 "$_SCREENSHOTS_SCRIPT_NAME" "$_path" \
+      "$_prefix"
 
-    if [ "$_exit_code" = 0 ]; then
-      log_verbose "$(printf '%-12s| ok      | %s' "screenshots" "$_name")"
-      log_verbose "$_output"
+    if [ "$STAGE_EXIT_CODE" = 0 ]; then
+      stage_row_print screenshots ok "$_name"
       continue
     fi
 
-    stage_fail screenshots FAILED "$_name" "$_output"
+    stage_fail screenshots FAILED "$_name" "$STAGE_OUTPUT"
   done
 }
 
 # regenerate_refuse - say why the recordings cannot be reused and stop. The
 # flag is the developer loop, and measuring instead costs an hour nobody asked
 regenerate_refuse() {
-  echo "error: --regenerate cannot reuse the recordings: $1" >&2
-  echo "       re-run without --regenerate to measure from scratch" >&2
-  exit 1
+  error_exit 2 "error: --regenerate cannot reuse the recordings: $1" \
+    "       re-run without --regenerate to measure from scratch"
 }
 
 # regenerate_stamp_of - echo one report's unix stamp, or exit 1 having echoed
@@ -539,8 +540,8 @@ regenerate_check() {
     fi
   done
 
-  log_verbose "$(printf '%-12s| ok      | reusing stamp %s and %s' \
-    "regenerate" "${_stamps[0]}" "${_stamps[1]}")"
+  stage_row_print regenerate ok \
+    "reusing stamp ${_stamps[0]} and ${_stamps[1]}"
 }
 
 # clear_overwritten_folders - delete the three reports before anything runs, so
@@ -553,19 +554,15 @@ clear_overwritten_folders() {
   # a regenerated run reads each report's manifest back for the stamp and
   # rows its pages are rebuilt from, so those reports are its input
   if [ "$_REGENERATE" = 1 ]; then
-    log_verbose "$(printf '%-12s| ok      | %s report(s) reused' \
-      "surface" "${#_DEFAULT_REPORTS[@]}")"
+    stage_row_print surface ok "${#_DEFAULT_REPORTS[@]} report(s) reused"
     return 0
   fi
 
   for _path in "${_DEFAULT_REPORTS[@]}"; do
-    rm -rf "$_path" || {
-      echo "error: could not remove the previous report: $_path" >&2
-      exit 1
-    }
+    rm -rf "$_path" \
+      || error_exit 1 "error: could not remove the previous report: $_path"
   done
-  log_verbose "$(printf '%-12s| ok      | %s report(s) cleared' \
-    "surface" "${#_DEFAULT_REPORTS[@]}")"
+  stage_row_print surface ok "${#_DEFAULT_REPORTS[@]} report(s) cleared"
 }
 
 # args_parse - read the flags. There is no report argument: this runs the
@@ -581,7 +578,7 @@ args_parse() {
         usage_show
         exit 0
         ;;
-      --check)
+      --check-formatting)
         _CHECK=1
         shift
         ;;
@@ -594,13 +591,11 @@ args_parse() {
         shift
         ;;
       --verbose)
-        VERBOSE=1
+        VERBOSE=$((VERBOSE + 1))
         shift
         ;;
       *)
-        echo "unknown option: $1" >&2
-        usage_show >&2
-        exit 2
+        error_exit 2 "unknown option: $1" "$(usage_show)"
         ;;
     esac
   done
@@ -610,6 +605,18 @@ args_parse() {
 # fails, so the first fault a reader sees is the one that happened first.
 main() {
   args_parse "$@"
+  verbose_begin
+  title_print "$_SCRIPT" "$@"
+
+  # the batch's lines pass through this log on their way up, and a failed
+  # batch is reprinted from it; no report keeps it, so it is a temporary
+  RUN_LOG="$(mktemp)"
+  trap 'rm -f "$RUN_LOG"' EXIT
+  table_head_print "${_STAGE_TABLE_HEADINGS[@]}"
+
+  # the cheapest input to prove, and proved before a report is read or
+  # deleted: the one list every source stage below takes its files from
+  whitelist_expand
 
   # before the clear, which reads its answer: a regenerated run's input is
   # the three reports themselves
@@ -623,7 +630,6 @@ main() {
   format_c
   format_prettier
   long_lines_report
-  comment_block_run
   source_scan_run
   lint_run
 

@@ -1,6 +1,4 @@
 {
-  "include": ["."],
-  "exclude": ["**/__pycache__"],
   "executionEnvironments": [{ "root": "." }],
   "typeCheckingMode": "standard",
   "pythonVersion": "3.11",
