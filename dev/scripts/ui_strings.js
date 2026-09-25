@@ -59,11 +59,9 @@ window.ui_strings = (function () {
     str_error_control_copy: "copy",
     str_error_control_reload: "reload",
     str_error_control_restart: "restart",
-    str_error_counter_unknown: "this report has no column for counter {0}",
     str_error_flame_graph_never_started:
       "flame graph viewer did not start within {0}s",
-    str_error_font_refused:
-      "the browser refused the page font",
+    str_error_font_refused: "the browser refused the page font",
     str_error_hash_counter_unknown:
       "url encodes counter this report has no column for: {0}",
     str_error_hash_file_unknown:
@@ -79,9 +77,6 @@ window.ui_strings = (function () {
     str_error_manifest_unavailable: "MANIFEST.txt not found",
     str_error_page_heading: "perf2html error",
     str_error_page_title: "perf2html error page",
-    str_error_scale_ends_disordered:
-      "DESIGN_SCALE_* out of order: smallest {0}, default {1}, largest {2}",
-    str_error_scale_multiple_outside: "scale multiple {0} is outside {1}..{2}",
     str_error_scale_unusable: "the page scale came out as {0}",
     str_error_source_address: "bad address",
     str_error_source_exception: "uncaught exception",

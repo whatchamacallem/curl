@@ -27,7 +27,7 @@ perf2html.sh [debug-flags] [--report=DIR] [cmake-flags...]
                       Pass it yourself after a source-only change.
     cmake-flags       Everything else, e.g. -D CMAKE_C_FLAGS=-Os.
 
-  debug-flags:
+    These are the same debug-flags as the README.md documents:
     --artifacts=TMP   The profiler artifacts directory. Defaults to
                       perf2html_temporary_artifacts/ beside the report
                       directory (inside the target dir for a batch).
@@ -142,10 +142,8 @@ stamp_reuse() {
   done
   [ "${#_missing[@]}" != 0 ] || return 0
   local _lines=("error: --regenerate is missing ${#_missing[@]} recorded")
-  _lines[0]="${_lines[0]} file(s) for stamp $TIMESTAMP:"
-  for _file in "${_missing[@]}"; do _lines+=("       $_file"); done
-  _lines+=("       ($ARTIFACTS_DIR was cleaned; re-run perf2html.sh"
-    "       --keep-artifacts to record them again)")
+  _lines[0]="${_lines[0]} file(s) for stamp $TIMESTAMP in $ARTIFACTS_DIR:"
+  for _file in "${_missing[@]}"; do _lines+=("  $_file"); done
   error_exit 2 "${_lines[@]}"
 }
 
@@ -160,24 +158,16 @@ build_manifest() {
     _BUILD_DESC="$(manifest_value "$_OUT_DIR" build)"
     # the checksum leaves the manifest out, so a torn row passes it and
     # would be copied into the new manifest as nothing
+    local _reason="error: --regenerate: $_OUT_DIR/MANIFEST.txt is missing"
     if [ -z "$_SAMPLED" ] || [ -z "$_REVISION" ] || [ -z "$_CPU_MODEL" ] \
       || [ -z "$_BUILD_DESC" ]; then
-      error_exit 2 "error: --regenerate: $_OUT_DIR/MANIFEST.txt is missing" \
-        "       one of its sampled=, revision=, cpu= or build= rows"
+      error_exit 2 \
+        "$_reason one of its sampled=, revision=, cpu= or build= rows"
     fi
     return
   fi
   _SAMPLED="$(date +'%Y/%m/%d %H:%M:%S %Z')"
-  # dev/ lives in the curl checkout, so git failing here is git's own error
-  _REVISION="$(cd "$_REPO" && git rev-parse --short HEAD)"
-  # git diff --quiet answers 1 for a dirty tree; any other code is a fault
-  local _dirty=0
-  (cd "$_REPO" && git diff --quiet HEAD --) || _dirty=$?
-  if [ "$_dirty" = 1 ]; then
-    _REVISION="$_REVISION-dirty"
-  elif [ "$_dirty" != 0 ]; then
-    error_exit 1 "error: git diff --quiet exited $_dirty in $_REPO"
-  fi
+  _REVISION="$(revision_describe "$_REPO")"
   # a box whose lscpu prints no model name is not a failure, so the grep
   # cannot be allowed to end the run under pipefail
   _CPU_MODEL="$(lscpu | grep -E 'Model name' | head -1 \
@@ -190,6 +180,9 @@ tree_build() {
   local _dir="$1"
   shift
   rm -f "$_dir/CMakeCache.txt"
+  # ccache's own variable, exported to this function's two cmake children
+  # alone: it tags every compile so clean.sh can evict ours by name
+  local -x CCACHE_NAMESPACE="$BUILD_CCACHE_NAMESPACE"
   local _configure_command=(cmake -S "$_REPO" -B "$_dir" -G Ninja
     -DCURL_USE_LIBPSL=OFF -DCMAKE_C_COMPILER_LAUNCHER=ccache "$@")
   local _command_line _exit_code=0
@@ -200,7 +193,7 @@ tree_build() {
   # below that, users can run the printed cmake command in its printed tree
   child_capture_noisy "${_configure_command[@]}" || _exit_code=$?
   [ "$_exit_code" = 0 ] \
-    || error_exit "$_exit_code" "cmake failed to build $_command_line"
+    || error_exit "$_exit_code" "error: cmake failed to build $_command_line"
   command_run cmake --build "$_dir" --parallel --target perf
 }
 
@@ -300,9 +293,9 @@ flame_app_install() {
     # word-split by the expansion and match nothing that exists.
     mapfile -t _found < <(find "$SPEEDSCOPE_RELEASE" -maxdepth 1 \
       -name "$_pattern" | sort)
+    local _reason="error: $_pattern matched ${#_found[@]} files in"
     [ "${#_found[@]}" = 1 ] || error_exit 1 \
-      "error: $_pattern matched ${#_found[@]} files in" \
-      "       $SPEEDSCOPE_RELEASE, expected exactly 1"
+      "$_reason $SPEEDSCOPE_RELEASE, expected exactly 1"
     cp "${_found[0]}" "$_out/$FLAME_GRAPH_APP_DIR_NAME"/
     case "$_pattern" in
       *.js) _FLAME_APP_JS="$(basename "${_found[0]}")" ;;

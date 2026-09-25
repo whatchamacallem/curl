@@ -30,13 +30,12 @@ a:hover {
   outline-offset: 1px;
 }
 h2 {
-  font-size: calc(var(--font-px) * var(--font-fit));
   font-weight: 600;
   color: var(--fg-dim);
-  margin: 22px 0 6px;
+  margin: 0;
 }
 p {
-  margin: 4px 0;
+  margin: 0;
   color: var(--muted);
   max-width: 96ch;
 }
@@ -56,7 +55,7 @@ input {
   font: inherit;
   color: var(--fg);
   background: var(--bg);
-  padding: 2px 6px;
+  padding: 0;
   border: 0;
   border-radius: 0;
 }
@@ -66,12 +65,10 @@ input {
   flex-wrap: nowrap;
   align-items: center;
   flex: none;
-  padding: 5px 12px;
   background: var(--nav);
   overflow: hidden;
 }
 .strip a {
-  padding: 2px 6px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -80,7 +77,7 @@ input {
 }
 .strip .sep {
   flex: none;
-  margin: 0 8px;
+  margin: 0 1ch;
   color: var(--muted);
 }
 .strip a:hover {
@@ -103,15 +100,12 @@ input {
 }
 
 .strip .title {
-  font-size: calc(13px * var(--font-fit));
   font-weight: 600;
   color: var(--title-fg);
   background: var(--title-bg);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  padding: 3px 8px;
-  margin: -5px 6px -5px -12px;
   align-self: stretch;
   display: flex;
   align-items: center;
@@ -138,7 +132,7 @@ input {
 .strip .scale {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 1ch;
   flex: none;
   color: var(--muted);
   white-space: nowrap;
@@ -166,7 +160,6 @@ input {
   flex: none;
 }
 .strip .test-menu input {
-  padding: 2px 0;
   text-align: center;
 }
 .strip .test-menu input[readonly] {
@@ -174,11 +167,10 @@ input {
 }
 .strip .test-menu button {
   font: inherit;
-  font-size: calc(9px * var(--font-fit));
   color: var(--muted);
   background: var(--bg);
   border: 0;
-  padding: 0 6px;
+  padding: 0;
   cursor: pointer;
 }
 .strip .test-menu-list {
@@ -198,7 +190,6 @@ input {
 .strip .test-menu-list a,
 .strip .test-menu-no-match {
   max-width: none;
-  padding: 2px 6px;
   text-align: center;
   white-space: nowrap;
 }
@@ -227,17 +218,15 @@ body.frame > iframe {
   border: 0;
   background: var(--bg);
 }
+/* the box a page's tables sit in is a container, so 100cqw in a <col> is
+   exactly the room its own table has */
 .page {
-  padding: 24px 36px 48px;
-}
-.css-layout .page {
   container-type: inline-size;
 }
 
 .tbl {
   position: relative;
   width: fit-content;
-  margin: 4px 14px 14px 0;
 }
 .band {
   position: sticky;
@@ -259,7 +248,7 @@ table.cols col.alt {
 }
 table.cols th,
 table.cols td {
-  padding: 1px 1ch;
+  padding: 0 1ch;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -313,9 +302,10 @@ table.cols .dim {
   left: 5px;
 }
 
+/* the list marker is drawn in the padding: one glyph and one blank */
 ul.rawdata {
-  margin: 4px 0 10px;
-  padding-left: 20px;
+  margin: 0;
+  padding-left: 2ch;
 }
 
 details.sec summary {
@@ -327,14 +317,9 @@ details.sec summary::marker {
 }
 details.sec summary h2 {
   display: inline;
-  margin: 22px 0 6px;
   color: inherit;
 }
-details.sec[open] summary {
-  margin-bottom: 2px;
-}
 pre.logbox {
-  padding: 8px 12px;
   background: var(--panel);
   max-height: calc(0.6 * var(--design-vh, 100vh));
   overflow: auto;

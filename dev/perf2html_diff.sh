@@ -22,7 +22,7 @@ perf2html_diff.sh [debug-flags] [baseline] [modified] [diff]
     ./perf2html_{baseline,modified,diff}_report. Both baseline and modified
     must be a perf2html.sh report. A diff can't be diffed.
 
-  debug-flags:
+    These are the same debug-flags as the README.md documents:
     --artifacts=TMP   The profiler artifacts directory. Defaults to
                       perf2html_temporary_artifacts/ beside the report
                       directory (inside the target dir for a batch).
@@ -64,6 +64,7 @@ args_parse() {
         ARTIFACTS_DIR="${1#--artifacts=}"
         shift
         ;;
+      -*) error_exit 2 "error: unknown option: $1" ;;
       *) break ;;
     esac
   done
@@ -83,8 +84,8 @@ args_parse() {
       _OUT_DIR="$3"
       ;;
     *)
-      usage_show >&2
-      exit 2
+      error_exit 2 \
+        "error: unknown argument: $4, at most 3 directories are taken"
       ;;
   esac
   local _dir
@@ -97,16 +98,20 @@ args_parse() {
   ARTIFACTS_DIR="$(absolute_path "$ARTIFACTS_DIR")"
 }
 
-# manifest_check - refuse an input whose version line is not exactly a
-# perf2html.sh report's, which is how a diff is never read back as one.
+# manifest_check - refuse a diff as input, verify a perf2html.sh report once,
+# and echo its stamp= value verbatim, which this diff's own manifest records.
 manifest_check() {
-  local _dir="$1" _role="$2" _manifest="$1/MANIFEST.txt"
+  local _dir="$1" _role="$2" _manifest="$1/MANIFEST.txt" _reason
   if [ -f "$_manifest" ] \
     && [ "$(head -1 "$_manifest")" = "$REPORT_MANIFEST_VERSION_DIFF" ]; then
-    error_exit 2 "error: can't diff a diff -- the $_role report was" \
-      "       written by perf2html_diff.sh: $_dir"
+    _reason="error: can't diff a diff: the $_role report was written by"
+    error_exit 2 "$_reason perf2html_diff.sh: $_dir"
   fi
-  manifest_verify "$_dir" "$_role" "$REPORT_MANIFEST_VERSION_FULL"
+  # the one verify, refusing an empty stamp too; its unix time is dropped
+  # because the row below is recorded whole, human date and all
+  manifest_stamp_of "$_dir" "$_role" "$REPORT_MANIFEST_VERSION_FULL" \
+    >/dev/null
+  manifest_value "$_dir" stamp
 }
 
 # header_file_of - writes one input's LABEL=VALUE rows for the overview
@@ -177,9 +182,9 @@ tests_pair() {
     "$_holding callgrind.out.* in the baseline report: $_BASE_DIR"
   [ -n "$_cur_tests" ] || error_exit 2 \
     "$_holding callgrind.out.* in the modified report: $_MOD_DIR"
+  local _one_sided="is in only one of the two reports, so it has no delta:"
   for _name in $(comm -3 <(echo "$_base_tests") <(echo "$_cur_tests")); do
-    error_exit 2 "error: '$_name' is in only one of the two reports, so" \
-      "       it has no delta: $_BASE_DIR vs $_MOD_DIR"
+    error_exit 2 "error: '$_name' $_one_sided $_BASE_DIR vs $_MOD_DIR"
   done
   comm -12 <(echo "$_base_tests") <(echo "$_cur_tests")
 }
@@ -228,19 +233,22 @@ diff_one() {
   log_verbose "$(printf '%-13sdiff -> %s' "$_name" "$_out/index.html")"
 }
 
-# main - checks both inputs, diffs every shared test, stamps the report
+# main - checks both inputs, diffs every shared test, records their stamps
 main() {
   args_parse "$@"
   verbose_begin
   title_print "$_SCRIPT" "$@"
 
-  manifest_check "$_BASE_DIR" baseline
-  manifest_check "$_MOD_DIR" modified
+  # the inputs' stamps are this report's identity: it measures nothing of
+  # its own, so this run's TIMESTAMP names artifacts and is recorded nowhere
+  local _base_stamp _mod_stamp
+  _base_stamp="$(manifest_check "$_BASE_DIR" baseline)"
+  _mod_stamp="$(manifest_check "$_MOD_DIR" modified)"
+  # --regenerate re-derives everything from the two inputs; the one thing
+  # it keeps is the output directory, so that must already be a diff report
   if [ "$_REGENERATE" = 1 ]; then
-    # a regenerated report keeps the stamp of the run that measured it, so
-    # its own stamp= row never claims a measurement this run did not take
-    TIMESTAMP="$(manifest_stamp_of "$_OUT_DIR" "--regenerate input" \
-      "$REPORT_MANIFEST_VERSION_DIFF")"
+    manifest_verify "$_OUT_DIR" "--regenerate input" \
+      "$REPORT_MANIFEST_VERSION_DIFF"
   fi
 
   [ "$_KEEP_ARTIFACTS" = 1 ] || artifacts_clean
@@ -255,8 +263,8 @@ main() {
   profiles_extract "$_BASE_DIR" baseline "$_BASE_LISTING"
   profiles_extract "$_MOD_DIR" modified "$_MODIFIED_LISTING"
   _tests="$(tests_pair)"
-  [ -n "$_tests" ] \
-    || error_exit 2 "error: the two reports have no test in common"
+  [ -n "$_tests" ] || error_exit 2 \
+    "error: no test in common between $_BASE_DIR and $_MOD_DIR"
   log_verbose "$_SCRIPT $TIMESTAMP: $(basename "$_BASE_DIR") ->" \
     "$(basename "$_MOD_DIR")"
   _args=(-o "$_OUT_DIR/index.html" --diff
@@ -275,7 +283,8 @@ main() {
   report_finish "$_OUT_DIR" "$REPORT_MANIFEST_VERSION_DIFF" \
     "baseline=$(path_display "$_BASE_DIR")" \
     "modified=$(path_display "$_MOD_DIR")" \
-    "$(manifest_stamp_row)"
+    "baseline_stamp=$_base_stamp" \
+    "modified_stamp=$_mod_stamp"
   if [ "$_KEEP_ARTIFACTS" != 1 ]; then artifacts_clean; fi
 }
 

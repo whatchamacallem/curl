@@ -6,6 +6,10 @@ ARTIFACTS_NAME=perf2html_temporary_artifacts
 # the assets/ script an error page reads the manifest rows back from
 ASSET_REPORT_MANIFEST_SCRIPT_NAME=report_manifest.js
 
+# the ccache namespace tree_build tags every compile with, so clean.sh
+# evicts our entries and nobody else's
+BUILD_CCACHE_NAMESPACE=perf2html
+
 # dir at the repo root holding the trees profiling reads, one per set of
 # cmake flags, named by build_paths
 BUILD_DIR=build-relwithdebinfo

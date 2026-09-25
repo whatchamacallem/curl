@@ -23,7 +23,7 @@ enforcer.sh [debug-flags] [--check-formatting]
     it happened.
     --check-formatting  Report what would change rather than writing it.
 
-  These are the same debug-flags as the README.md documents:
+    These are the same debug-flags as the README.md documents:
     --keep-artifacts    Measure as usual, but keep the recordings afterwards,
                         which is what a later --regenerate reuses. Flagless
                         runs delete them.
@@ -159,7 +159,7 @@ tool_missing_fail() {
   local _label="$1" _name="$2"
 
   stage_row_fail "$_label" MISSING "not installed: $_name"
-  error_exit 1 "error: $_name is not installed, so $_label never ran" \
+  error_exit 1 "error: $_name is missing, so $_label never ran" \
     "  sudo apt-get install -y shfmt clang-format" \
     "  pip3 install --user --break-system-packages ruff" \
     "  npm install -g prettier pyright"
@@ -246,6 +246,8 @@ files_of() {
   done
 }
 
+# format_shell - shfmt over the whitelisted shell, writing or, under
+# --check-formatting, diffing.
 format_shell() {
   local _files
   mapfile -t _files < <(files_of .sh)
@@ -260,6 +262,7 @@ format_shell() {
   tool_run shfmt shell "${_files[@]}"
 }
 
+# format_python - ruff format, then ruff check, over the whitelisted python.
 format_python() {
   local _files
   mapfile -t _files < <(files_of .py)
@@ -275,6 +278,7 @@ format_python() {
   tool_run ruff "python lint" "${_files[@]}"
 }
 
+# format_c - clang-format over the whitelisted C, with src/'s own style.
 format_c() {
   local _files
   mapfile -t _files < <(files_of .c .h)
@@ -305,8 +309,8 @@ format_prettier() {
   tool_run prettier prettier "${_files[@]}"
 }
 
-# pyright over the whitelisted generators. pyrightconfig.json names no
-# files: the ones given here, from the whitelist, are pyright's whole list.
+# lint_run - pyright over the whitelisted python. pyrightconfig.json names
+# no files: the ones given here, from the whitelist, are its whole list.
 lint_run() {
   local _binary _files
   mapfile -t _files < <(files_of .py)
@@ -348,7 +352,8 @@ long_lines_report() {
     "$(echo "$_over" | grep -c ' cols$') line(s) over $_COLUMNS_MAX" "$_over"
 }
 
-# Line 1 of a directory's MANIFEST.txt, which manifest_verify has proved.
+# report_version - line 1 of a report's MANIFEST.txt, once manifest_verify
+# has proved it is one.
 report_version() {
   head -n 1 "$1/MANIFEST.txt"
 }
@@ -399,8 +404,9 @@ source_scan_run() {
 # batch_run - write the three reports this run verifies. Its own steps stop
 # at their first failure, and so does this: there is nothing left to check.
 batch_run() {
-  local _flags=()
+  local _flags=() _target _exit_code=0
   mapfile -t _flags < <(verbose_flags_of)
+  _target="$(cd "$_DIR_DEV" && pwd)"
 
   # regenerate_check held this back unless the recordings still describe the
   # executable, so the batch is never asked to reuse a stale one
@@ -410,12 +416,16 @@ batch_run() {
   # reuses, and the batch owns every deletion of them
   if [ "$_KEEP_ARTIFACTS" = 1 ]; then _flags+=(--keep-artifacts); fi
 
-  # our own script: its lines are already formatted and relayed as they are,
-  # and on failure its report climbs through failure_relay
-  script_capture "$_DIR_DEV/$_BATCH_SCRIPT_NAME" "${_flags[@]}" \
-    "--target-dir=$(cd "$_DIR_DEV" && pwd)"
+  # a paragraph of its own, ending the stage table: the batch's first line
+  # is its title, which a parent leads with a blank line
+  log_verbose "$_BATCH_SCRIPT_NAME ${_flags[*]} --target-dir=$_target"
 
-  if [ "$CHILD_EXIT_CODE" = 0 ]; then
+  # a plain child, nothing captured: its lines reach the terminal as they
+  # are, and a failed batch has printed its own refusal before the row below
+  "$_DIR_DEV/$_BATCH_SCRIPT_NAME" "${_flags[@]}" "--target-dir=$_target" \
+    || _exit_code=$?
+
+  if [ "$_exit_code" = 0 ]; then
     heading_print "$_SCRIPT, after the batch"
     table_head_print "${_STAGE_TABLE_HEADINGS[@]}"
     stage_row_print batch ok "$_BATCH_SCRIPT_NAME"
@@ -423,8 +433,7 @@ batch_run() {
   fi
 
   stage_row_fail batch FAILED "$_BATCH_SCRIPT_NAME"
-  failure_relay
-  exit 1
+  exit "$_exit_code"
 }
 
 # screenshots_run - shoot the modified and diff reports at every viewport
@@ -455,8 +464,7 @@ screenshots_run() {
 # regenerate_refuse - say why the recordings cannot be reused and stop. The
 # flag is the developer loop, and measuring instead costs an hour nobody asked
 regenerate_refuse() {
-  error_exit 2 "error: --regenerate cannot reuse the recordings: $1" \
-    "       re-run without --regenerate to measure from scratch"
+  error_exit 2 "error: --regenerate cannot reuse the recordings: $1"
 }
 
 # regenerate_stamp_of - echo one report's unix stamp, or exit 1 having echoed
@@ -595,7 +603,7 @@ args_parse() {
         shift
         ;;
       *)
-        error_exit 2 "unknown option: $1" "$(usage_show)"
+        error_exit 2 "error: unknown option: $1"
         ;;
     esac
   done
@@ -604,36 +612,40 @@ args_parse() {
 # main - the stages in ascending cost, each one stopping the run where it
 # fails, so the first fault a reader sees is the one that happened first.
 main() {
+  # read the flags: -h prints the usage, an unknown one refuses
   args_parse "$@"
+  # start the printer's clock and take this script's heading depth
   verbose_begin
+  # the run's own heading: this script's path and its arguments
   title_print "$_SCRIPT" "$@"
-
-  # the batch's lines pass through this log on their way up, and a failed
-  # batch is reprinted from it; no report keeps it, so it is a temporary
-  RUN_LOG="$(mktemp)"
-  trap 'rm -f "$RUN_LOG"' EXIT
+  # the stage table's header row, under --verbose
   table_head_print "${_STAGE_TABLE_HEADINGS[@]}"
-
+  # expand enforcer_whitelist.txt once into _WHITELISTED_FILES
   whitelist_expand
-
-  # before the clear, which reads its answer: a regenerated run's input is
-  # the three reports themselves
+  # 0.07s under --regenerate only.
   regenerate_check
+  # delete the three reports, unless --regenerate reads them back
   clear_overwritten_folders
-
-  # dev/ source, seconds each and measuring nothing. A fault here would
-  # otherwise be found after the profiling run.
+  # 0.02s shfmt over shell
   format_shell
+  # 0.04s Ruff over Python
   format_python
+  # 0.03s clang-format over C
   format_c
+  # 0.61s prettier over .md, .js, .css and .html
   format_prettier
+  # 0.01s 79 column check
   long_lines_report
+  # 0.04s source_scan.py check comment sizes and ASCII.
   source_scan_run
+  # 2.61s Pyright over the Python
   lint_run
-
-  # the profiling run, which writes the three reports, then what they hold
+  # [98.58/97.19/12.19s] perf2html_batch.sh: baseline, modified and diff,
+  # under dev/
   batch_run
+  # 0.59s validate_report.py over each of the three reports
   validate_run
+  # 40.40s screenshots.py over the modified and diff reports
   screenshots_run
 }
 

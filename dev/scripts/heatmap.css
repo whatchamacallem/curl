@@ -4,7 +4,7 @@ body {
   height: var(--design-vh, 100vh);
 }
 #hdr {
-  gap: 4px 14px;
+  gap: 0 1ch;
 }
 #hdr label {
   color: var(--muted);
@@ -22,25 +22,22 @@ body {
   width: 280px;
   flex: none;
   overflow: auto;
-  padding: 4px 0 24px;
 }
+/* Chrome sizes an auto-scrollbar container before its scrollbar exists, so
+   100cqw would include it; a stable gutter makes it the visible width */
 #main {
   flex: 1;
   min-width: 0;
   overflow: auto;
+  scrollbar-gutter: stable;
   background: var(--bg);
 }
 /* each box a table sits in is a container, so 100cqw in a <col> is exactly
-   the room its own table has: .home and .dbox pad inside #main */
-.css-layout #main,
-.css-layout .home,
-.css-layout .dbox {
+   the room its own table has: .home and .dbox sit inside #main */
+#main,
+.home,
+.dbox {
   container-type: inline-size;
-}
-/* Chrome sizes an auto-scrollbar container before its scrollbar exists, so
-   100cqw would include it; a stable gutter makes it the visible width */
-.css-layout #main {
-  scrollbar-gutter: stable;
 }
 
 .srcwrap {
@@ -98,8 +95,7 @@ body {
 .node {
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding-right: 8px;
+  gap: 1ch;
   cursor: pointer;
   white-space: nowrap;
 }
@@ -111,11 +107,10 @@ body {
   background: var(--sel);
 }
 .node .caret {
-  width: 12px;
+  width: 2ch;
   flex: none;
   text-align: center;
   color: var(--muted);
-  font-size: calc(9px * var(--font-fit));
 }
 .node.file .caret {
   visibility: hidden;
@@ -159,9 +154,8 @@ body {
 }
 .fhead {
   background: var(--sel);
-  padding: 5px 14px;
   display: flex;
-  gap: 4px 18px;
+  gap: 0 2ch;
   align-items: baseline;
   flex-wrap: wrap;
 }
@@ -174,20 +168,17 @@ body {
 
 .chips {
   display: flex;
-  gap: 4px;
+  gap: 1ch;
   flex-wrap: nowrap;
-  padding: 5px 14px;
   background: var(--sel);
   overflow: hidden;
 }
 .chips .lbl {
   color: var(--muted);
   align-self: center;
-  margin-right: 4px;
   flex: none;
 }
 .chip {
-  padding: 0 7px;
   background: var(--bg-alt);
   cursor: pointer;
   flex: none;
@@ -198,15 +189,10 @@ body {
   outline-offset: -1px;
 }
 .nosrc {
-  padding: 8px 14px;
   color: var(--muted);
 }
 table.src th {
   background: var(--sel);
-}
-table.src > tbody > tr > td {
-  padding-top: 0;
-  padding-bottom: 0;
 }
 table.src td.ln {
   color: var(--muted);
@@ -249,20 +235,17 @@ table.src tr.detail > td {
 }
 .dbox {
   position: relative;
-  margin: 3px 12px 8px;
-  padding: 6px 12px;
   background: var(--panel);
 }
 .dbox h4 {
-  margin: 6px 0 2px;
-  font-size: calc(var(--font-px) * var(--font-fit));
+  margin: 0;
   color: var(--muted);
   font-weight: 600;
 }
 .dbox .dclose {
   position: absolute;
-  top: 6px;
-  right: 10px;
+  top: 0;
+  right: 0;
   color: var(--muted);
 }
 .dbox .dclose:hover {
@@ -272,16 +255,6 @@ table.src tr.detail > td {
 .dbox .tbl {
   background: var(--bg);
 }
-.dactions {
-  margin-top: 8px;
-}
 .dactions a {
   color: var(--link);
-  margin-right: 14px;
-}
-.home {
-  padding: 12px 14px 40px;
-}
-.home h2:first-of-type {
-  margin-top: 10px;
 }

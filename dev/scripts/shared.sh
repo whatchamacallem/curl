@@ -55,13 +55,13 @@ checksum_compute() {
   )
 }
 
-# child_capture - run one child into $RUN_LOG, and a page file when one is
+# child_capture - run one tool into $RUN_LOG, and a page file when one is
 # named, teeing under --verbose. SETS CHILD_EXIT_CODE and LOG_LINE_FROM.
 child_capture() {
-  # args: page file or "", verbose_filter mode (list for a tool, relay for
-  # one of our scripts), the command. Never stdout: the tee owns it
-  local page_file="$1" mode="$2"
-  shift 2
+  # args: page file or "", then the command. Only a tool is captured, never
+  # one of our own scripts. Never stdout: the tee owns it
+  local page_file="$1"
+  shift
   local logs=("$RUN_LOG") statuses=() status
   [ -z "$page_file" ] || logs+=("$page_file")
   CHILD_EXIT_CODE=0
@@ -71,7 +71,7 @@ child_capture() {
   # reader; the tee and the filter are chosen before the child starts
   if [ "$VERBOSE" -ge 1 ]; then
     if ! { "$@" 2>&1 | tee -a "${logs[@]}" \
-      | verbose_filter "$mode" "$ITEM_INDENT"; }; then
+      | verbose_filter list "$VERBOSE_ITEM_INDENT"; }; then
       statuses=("${PIPESTATUS[@]}")
     fi
   elif ! { "$@" 2>&1 | tee -a "${logs[@]}" >/dev/null; }; then
@@ -93,7 +93,7 @@ child_capture_noisy() {
   # a return code, not CHILD_EXIT_CODE: child_capture is that global's one
   # setter, and below level 2 nothing reaches $RUN_LOG or the terminal
   if [ "$VERBOSE" -ge 2 ]; then
-    child_capture "" list "$@"
+    child_capture "" "$@"
     return "$CHILD_EXIT_CODE"
   fi
   "$@" >/dev/null 2>&1
@@ -107,12 +107,12 @@ clock_microseconds() {
 }
 
 # command_item_print - the numbered item a command's output nests under:
-# `$ command`, wrapped. SETS ITEM_INDENT, and counts COMMAND_NUMBER on.
+# `$ command`, wrapped. SETS VERBOSE_ITEM_INDENT, VERBOSE_COMMAND_NUMBER.
 command_item_print() {
-  local marker="$COMMAND_NUMBER. "
-  ITEM_INDENT="${#marker}"
-  COMMAND_NUMBER=$((COMMAND_NUMBER + 1))
-  OUTPUT_ENDS_BLANK=0
+  local marker="$VERBOSE_COMMAND_NUMBER. "
+  VERBOSE_ITEM_INDENT="${#marker}"
+  VERBOSE_COMMAND_NUMBER=$((VERBOSE_COMMAND_NUMBER + 1))
+  VERBOSE_OUTPUT_ENDS_BLANK=0
   [ "$VERBOSE" -ge 1 ] || return 0
   printf '`$ %s`\n' "$1" | verbose_filter wrap "$marker"
 }
@@ -134,21 +134,21 @@ duration_format() {
   fi
 }
 
-# elapsed_format - seconds since $START_US, two decimals, for the [Ns]
-# prefix a whole run's lines carry.
+# elapsed_format - seconds since $VERBOSE_START_US, two decimals, for the
+# [Ns] prefix a whole run's lines carry.
 elapsed_format() {
-  local delta=$(($(clock_microseconds) - START_US))
+  local delta=$(($(clock_microseconds) - VERBOSE_START_US))
   printf '%d.%02d' "$((delta / 1000000))" "$((delta % 1000000 / 10000))"
 }
 
-# error_exit - the one way a script refuses: its lines in one ```sh fence on
-# stderr, then exit with the code given first. Nothing collects a failure.
+# error_exit - the one way a script refuses: its lines in one ```txt fence
+# on stderr, then exit with the code given first. Nothing collects a failure.
 error_exit() {
   local exit_code="$1"
   shift
   {
     echo
-    echo '```sh'
+    echo '```txt'
     printf '%s\n' "$@"
     echo '```'
     echo
@@ -156,13 +156,13 @@ error_exit() {
   exit "$exit_code"
 }
 
-# failure_print_log_tail - on stderr, in one ```sh fence, a failed child's
+# failure_print_log_tail - on stderr, in one ```txt fence, a failed child's
 # exit code, command and output tail from $LOG_LINE_FROM on.
 failure_print_log_tail() {
   local exit_code="$1" shown="$2"
   {
     echo
-    echo '```sh'
+    echo '```txt'
     echo "error: exit $exit_code from: $shown"
     tail -n +"$((LOG_LINE_FROM + 1))" "$RUN_LOG" \
       | tail -n "$LOG_FAILURE_TAIL_LINES"
@@ -172,31 +172,24 @@ failure_print_log_tail() {
   } | verbose_filter paths >&2
 }
 
-# failure_relay - one of our scripts failed as a child: unless --verbose
-# streamed it already, reprint its output from the log, fence and all.
-failure_relay() {
-  if [ "$VERBOSE" -ge 1 ]; then return 0; fi
-  tail -n +"$((LOG_LINE_FROM + 1))" "$RUN_LOG" | verbose_filter paths >&2
-}
-
 # heading_print - one piece of work, a heading one level below the script's
 # own title, reading `[elapsed] text`; the item numbers restart under it.
 heading_print() {
-  heading_write "$((HEADING_DEPTH + 1))" "$*"
+  heading_write "$((VERBOSE_HEADING_DEPTH + 1))" "$*"
 }
 
 # heading_write - a heading at the depth given, printed under --verbose with
-# a blank line each side. SETS COMMAND_NUMBER back to 1.
+# a blank line each side. SETS VERBOSE_COMMAND_NUMBER back to 1.
 heading_write() {
   local depth="$1" text="$2" hashes
-  COMMAND_NUMBER=1
+  VERBOSE_COMMAND_NUMBER=1
   [ "$VERBOSE" -ge 1 ] || return 0
   printf -v hashes '%*s' "$depth" ''
   hashes="${hashes// /#}"
-  [ "$OUTPUT_ENDS_BLANK" = 1 ] || echo
+  [ "$VERBOSE_OUTPUT_ENDS_BLANK" = 1 ] || echo
   printf '%s `[%ss] %s`\n\n' "$hashes" "$(elapsed_format)" "$text" \
     | verbose_filter paths
-  OUTPUT_ENDS_BLANK=1
+  VERBOSE_OUTPUT_ENDS_BLANK=1
 }
 
 # install_command_of - one tool's official install command. Nothing
@@ -218,7 +211,7 @@ install_command_of() {
 # --verbose, through the filter a child's output takes.
 item_output_print() {
   [ "$VERBOSE" -ge 1 ] || return 0
-  printf '%s\n' "$@" | verbose_filter list "$ITEM_INDENT"
+  printf '%s\n' "$@" | verbose_filter list "$VERBOSE_ITEM_INDENT"
 }
 
 # json_quote - one string as a JSON string literal, for a generated .js.
@@ -233,10 +226,10 @@ json_quote() {
 # --verbose, wrapped. Verbose adds to quiet, so nothing else guards a printf.
 log_verbose() {
   [ "$VERBOSE" -ge 1 ] || return 0
-  [ "$OUTPUT_ENDS_BLANK" = 1 ] || echo
+  [ "$VERBOSE_OUTPUT_ENDS_BLANK" = 1 ] || echo
   printf '%s\n' "$*" | verbose_filter wrap ""
   echo
-  OUTPUT_ENDS_BLANK=1
+  VERBOSE_OUTPUT_ENDS_BLANK=1
 }
 
 # manifest_fault_of - the one reader deciding whether a directory is a
@@ -250,14 +243,12 @@ manifest_fault_of() {
   local checksum_label="$REPORT_MANIFEST_CHECKSUM_LABEL"
   wanted="$(manifest_wanted_phrase "$@")"
   if [ ! -d "$dir" ]; then
-    echo "no such directory: $dir -- a report is a directory whose"
-    echo "MANIFEST.txt line 1 reads $wanted"
+    echo "no such directory: $dir, expected a report whose MANIFEST.txt" \
+      "line 1 reads $wanted"
     return 0
   fi
   if [ ! -f "$manifest" ]; then
-    echo "$dir has no MANIFEST.txt, so it is not a finished report"
-    echo "       expected: $wanted"
-    echo "       (a run that aborts writes no manifest; re-run it)"
+    echo "$dir has no MANIFEST.txt, expected one whose line 1 reads $wanted"
     return 0
   fi
   version="$(head -1 "$manifest")"
@@ -266,26 +257,20 @@ manifest_fault_of() {
     [ "$version" = "$candidate" ] && matched=1
   done
   if [ "$matched" = 0 ]; then
-    echo "$dir has an unrecognized MANIFEST.txt"
-    echo "       found:    $version"
-    echo "       expected: $wanted"
+    echo "$dir has an unrecognized MANIFEST.txt: found \"$version\"," \
+      "expected $wanted"
     return 0
   fi
   recorded="$(manifest_value "$dir" "$checksum_label")"
   if [ -z "$recorded" ]; then
-    echo "$dir has no $checksum_label= row, so its files cannot be"
-    echo "verified"
-    echo "       expected: a $checksum_label= row beside the version"
-    echo "       line $version"
+    echo "$dir has no $checksum_label= row in its MANIFEST.txt, expected" \
+      "one beside the version line $version"
     return 0
   fi
   found="$(checksum_compute "$dir")"
   if [ "$found" != "$recorded" ]; then
-    echo "$dir does not match its recorded $checksum_label"
-    echo "       found:    $found"
-    echo "       expected: $recorded"
-    echo "       (a file was added, removed or edited after the report"
-    echo "       was written)"
+    echo "$dir does not match its recorded $checksum_label: found $found," \
+      "expected $recorded"
   fi
 }
 
@@ -308,8 +293,8 @@ manifest_script_write() {
   } >"$out"
 }
 
-# manifest_stamp_row - the stamp= row every report writes: the unix time a
-# reader identifies recordings by, then a human date nothing parses.
+# manifest_stamp_row - the stamp= row a measured report writes: the unix time
+# a reader identifies recordings by, then a human date nothing parses.
 manifest_stamp_row() {
   echo "stamp=$TIMESTAMP $(date -d "@$TIMESTAMP" +'%F %I:%M:%S %p')"
 }
@@ -382,7 +367,7 @@ page_command_run() {
   local page_file="$1" shown="$2"
   shift 2
   command_item_print "$shown"
-  child_capture "$page_file" list "$@"
+  child_capture "$page_file" "$@"
   [ "$CHILD_EXIT_CODE" = 0 ] || {
     failure_print_log_tail "$CHILD_EXIT_CODE" "$shown"
     exit "$CHILD_EXIT_CODE"
@@ -428,10 +413,8 @@ report_contents_clear() {
   local reason
   case "$ARTIFACTS_DIR/" in
     "$dir"/*)
-      reason="error: the artifacts directory is inside the report, so"
-      error_exit 2 \
-        "$reason clearing the report would delete it: $ARTIFACTS_DIR" \
-        "       (pass an --artifacts=TMP outside $dir)"
+      reason="error: the artifacts directory $ARTIFACTS_DIR is inside the"
+      error_exit 2 "$reason report $dir, which is cleared first"
       ;;
   esac
   if [ -f "$dir/MANIFEST.txt" ]; then
@@ -442,9 +425,7 @@ report_contents_clear() {
   # an empty directory is the ordinary first run, and needs no clearing
   [ -z "$(ls -A "$dir")" ] && return 0
   reason="error: $dir holds files but no MANIFEST.txt, so it is not a"
-  error_exit 2 "$reason report this can overwrite" \
-    "       (an aborted run leaves one: delete it yourself, or name an" \
-    "       empty --report directory)"
+  error_exit 2 "$reason report this can overwrite"
 }
 
 # report_finish - the tail of every run writing a report: the manifest last,
@@ -459,21 +440,27 @@ report_finish() {
   log_verbose "$dir/index.html"
 }
 
-# script_capture - child_capture for one of our own scripts: its output is
-# already formatted, so it is relayed untouched. SETS CHILD_EXIT_CODE.
-script_capture() {
-  # the parent separates: the child's title starts at its first line, and
-  # every script's last verbose line is a paragraph, so a blank line ends it
-  if [ "$VERBOSE" -ge 1 ] && [ "$OUTPUT_ENDS_BLANK" != 1 ]; then echo; fi
-  child_capture "" relay "$@"
-  OUTPUT_ENDS_BLANK=1
+# revision_describe - the checkout's short revision, -dirty appended while
+# it holds uncommitted changes. Args: the repository directory.
+revision_describe() {
+  local repository="$1" revision dirty=0
+  # the checkout is the curl repository, so git failing here is git's own
+  # error; git diff --quiet answers 1 for a dirty tree, anything else a fault
+  revision="$(git -C "$repository" rev-parse --short HEAD)"
+  git -C "$repository" diff --quiet HEAD -- || dirty=$?
+  if [ "$dirty" = 1 ]; then
+    revision="$revision-dirty"
+  elif [ "$dirty" != 0 ]; then
+    error_exit 1 "error: git diff --quiet exited $dirty in $repository"
+  fi
+  echo "$revision"
 }
 
 # table_head_print - a table's header row and rule, under --verbose, after
 # a blank line. Args: one heading per column.
 table_head_print() {
   [ "$VERBOSE" -ge 1 ] || return 0
-  [ "$OUTPUT_ENDS_BLANK" = 1 ] || echo
+  [ "$VERBOSE_OUTPUT_ENDS_BLANK" = 1 ] || echo
   table_row_print "$@"
   local cell row='|'
   for cell in "$@"; do row="$row --- |"; done
@@ -489,7 +476,7 @@ table_row_print() {
     if [ -z "$cell" ]; then row="$row |"; else row="$row $cell |"; fi
   done
   printf '%s\n' "$row" | verbose_filter paths
-  OUTPUT_ENDS_BLANK=0
+  VERBOSE_OUTPUT_ENDS_BLANK=0
 }
 
 # title_print - the script's own heading, at its depth: its path and the
@@ -497,8 +484,8 @@ table_row_print() {
 title_print() {
   # the first line printed, so no blank line leads it: a parent running
   # this script has ended its own output with one
-  OUTPUT_ENDS_BLANK=1
-  heading_write "$HEADING_DEPTH" "$*"
+  VERBOSE_OUTPUT_ENDS_BLANK=1
+  heading_write "$VERBOSE_HEADING_DEPTH" "$*"
 }
 
 # toolchain_check - the scripts' only toolchain check, collecting every
@@ -515,45 +502,34 @@ toolchain_check() {
       lines+=("$(printf '  %-12s -> %s' "$tool" \
         "$(install_command_of "$tool")")")
     done
-    case " ${missing[*]} " in
-      *" perf "*)
-        lines+=("  note: linux-tools-generic is built against an Ubuntu"
-          "        kernel WSL does not run. linux-perf is the"
-          "        kernel-independent build.")
-        ;;
-    esac
     error_exit 1 "${lines[@]}"
   fi
   SPEEDSCOPE_RELEASE="$(dirname \
     "$(dirname "$(readlink -f "$(command -v speedscope)")")")/dist/release"
+  local reason="error: no speedscope bundle at $SPEEDSCOPE_RELEASE/index.html"
   [ -f "$SPEEDSCOPE_RELEASE/index.html" ] || error_exit 1 \
-    "error: no speedscope bundle at $SPEEDSCOPE_RELEASE" \
-    "       (reinstall it: npm install -g speedscope)"
+    "$reason -> $(install_command_of speedscope)"
 }
 
 # verbose_begin - the printer's state, once per script after args_parse. SETS
-# START_US, HEADING_DEPTH, COMMAND_NUMBER, ITEM_INDENT, OUTPUT_ENDS_BLANK.
+# every VERBOSE_* global the printer reads.
 verbose_begin() {
-  # PERF2HTML_HEADER_DEPTH is the one environment variable: read as this
+  # PERF2HTML_HEADING_DEPTH is the one environment variable: read as this
   # script's heading depth, exported one deeper for the scripts it runs
-  START_US="$(clock_microseconds)"
-  HEADING_DEPTH="${PERF2HTML_HEADER_DEPTH:-1}"
-  export PERF2HTML_HEADER_DEPTH=$((HEADING_DEPTH + 1))
-  COMMAND_NUMBER=1
-  ITEM_INDENT=0
-  OUTPUT_ENDS_BLANK=0
+  VERBOSE_START_US="$(clock_microseconds)"
+  VERBOSE_HEADING_DEPTH="${PERF2HTML_HEADING_DEPTH:-1}"
+  export PERF2HTML_HEADING_DEPTH=$((VERBOSE_HEADING_DEPTH + 1))
+  VERBOSE_COMMAND_NUMBER=1
+  VERBOSE_ITEM_INDENT=0
+  VERBOSE_OUTPUT_ENDS_BLANK=0
 }
 
 # verbose_filter - the one formatter every printed line streams through,
-# by mode: paths, wrap PREFIX, list INDENT, row LABEL, or relay (untouched).
+# by mode: paths, wrap PREFIX, list INDENT or row LABEL.
 verbose_filter() {
   # list: $HOME/ is ~/, blank lines go, a run of two or more `words: number
   # [unit]` lines is one single-row table, anything else a numbered item
   local mode="$1" argument="${2:-}"
-  if [ "$mode" = relay ]; then
-    cat
-    return 0
-  fi
   awk -v mode="$mode" -v argument="$argument" -v home="$HOME/" \
     -v width="$VERBOSE_LINE_WIDTH_CHARS" '
 function shown(text,    at, out) {

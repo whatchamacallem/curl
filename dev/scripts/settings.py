@@ -25,10 +25,6 @@ ASSET_THEME_SCRIPT_NAME = "theme.js"
 ASSET_THEME_STYLESHEET_NAME = "theme.css"
 ASSET_UI_STRINGS_SCRIPT_NAME = "ui_strings.js"
 
-# The character table layout: each <col> is a CSS clamp() on its container's
-# 100cqw, automatic table layout in CSS. False keeps the pixel-fitted layout.
-CSS_LAYOUT = True
-
 # Every counter callgrind never records, as the recorded ones it sums from
 # and each one's coefficient. Nothing stores one. See DECLAUDE.md 6.2.
 DERIVED_COUNTER_TERMS: dict[str, dict[str, int]] = {
@@ -302,15 +298,11 @@ SUMMARY_TOP_FUNCTION_ROWS = 50
 # Spaces added to every table column beyond its widest cell.
 TABLE_COLUMN_EXTRA_WIDTH_CHARS = 3
 
-# Pixels no table column is dragged or filled narrower than when CSS_LAYOUT
-# is False: a floor under the width each <col>'s data-min probes to.
-TABLE_COLUMN_NARROWEST_DRAG_PX = 24
-
 # Width of a table's function-name column, in characters.
 TABLE_FUNCTION_NAME_WIDTH_CHARS = 20
 
-# Under CSS_LAYOUT, the fewest characters a fill table's grow column without a
-# fixed width keeps, so it never looks gone: one function name's worth.
+# The fewest characters a fill table's grow column without a fixed width
+# keeps, so it never looks gone: one function name's worth.
 TABLE_GROW_COLUMN_NARROWEST_CHARS = 20
 
 # Where a table cuts a long "defined at" path.

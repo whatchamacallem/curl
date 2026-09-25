@@ -133,14 +133,11 @@
   }
   const counter_find = (key) =>
     counter_list.find((counter) => counter.key === key);
-  // a key the column list must hold: the ranking counter, a select entry,
-  // or the one an address names once route_render has checked it
-  function counter_of(key) {
-    const counter = counter_find(key);
-    if (!counter) throw new Error("str_error_counter_unknown " + key);
-    return counter;
-  }
-  let current_counter = counter_of(profile_model.heatMapTotals.defaultCounter);
+  // the generator proved the default is a column it emitted; a select entry
+  // is one too, and route_render checks the counter an address names
+  let current_counter = counter_find(
+    profile_model.heatMapTotals.defaultCounter,
+  );
   const secondary_counters =
     HEAT_MAP_SECONDARY_COUNTER_NAMES.map(counter_find).filter(Boolean);
 
@@ -499,21 +496,9 @@
   function table_render(key, columns, rows, options) {
     options = options || {};
     const cell_rows = rows.map((row) => row.map(cell_normalize));
-    for (const row of cell_rows) {
-      if (row.length !== columns.length) {
-        throw new Error(
-          `table ${key}: a row has ${row.length} cells ` +
-            `for ${columns.length} columns`,
-        );
-      }
-    }
-    let grow_index = -1;
-    if (options.fill) {
-      grow_index = columns.findIndex((column) => column.grow);
-      if (grow_index < 0) {
-        throw new Error(`table ${key}: fill but no grow column`);
-      }
-    }
+    const grow_index = options.fill
+      ? columns.findIndex((column) => column.grow)
+      : -1;
     const column_limit_list = report_ui
       .column_extents(columns, cell_rows, grow_index)
       .map(report_ui.column_limits);
@@ -1748,7 +1733,7 @@
     return parsed_state;
   }
   function counter_apply(key) {
-    current_counter = counter_of(key);
+    current_counter = counter_find(key);
     counter_select.value = current_counter.key;
     scale_recompute();
     tree_root = tree_build();
@@ -1780,7 +1765,7 @@
       hash_fault_show("str_error_hash_counter_unknown " + parsed_state.ev);
       return;
     }
-    const counter = counter_of(
+    const counter = counter_find(
       parsed_state.ev || profile_model.heatMapTotals.defaultCounter,
     );
     if (counter.key !== current_counter.key) counter_apply(counter.key);

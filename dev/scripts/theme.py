@@ -17,9 +17,11 @@ _ASSET_SETTINGS_SCRIPT_NAME: str = ""
 _ASSET_THEME_SCRIPT_NAME: str = ""
 _ASSET_THEME_STYLESHEET_NAME: str = ""
 _ASSET_UI_STRINGS_SCRIPT_NAME: str = ""
-_CSS_LAYOUT: bool = False
 _DESIGN_FONT_FIT_PROPERTY: str = ""
 _DESIGN_FONT_SIZE_PX: int = 0
+_DESIGN_SCALE_DEFAULT_MULTIPLE: int = 0
+_DESIGN_SCALE_LARGEST_MULTIPLE: int = 0
+_DESIGN_SCALE_SMALLEST_MULTIPLE: float = 0.0
 _HEAT_COLOR_FULL_SCALE_PERCENT: int = 0
 _HEAT_COLOR_LOGO_STOPS: list[str] = []
 _NUMBER_LARGEST_PRINTED_MULTIPLE_TIMES: float = 0.0
@@ -35,6 +37,18 @@ _THEME_COLOR_ROLE_BACKGROUND_SHADE_FACTOR: float = 0.0
 _THEME_COLOR_ROLE_SOURCES: dict[str, tuple[str, str]] = {}
 _THEME_TIME_UNIT_ENTRIES: tuple[tuple[str, float], ...] = ()
 settings.load_into(__name__)
+
+if not (
+    _DESIGN_SCALE_SMALLEST_MULTIPLE
+    < _DESIGN_SCALE_DEFAULT_MULTIPLE
+    < _DESIGN_SCALE_LARGEST_MULTIPLE
+):
+    raise ValueError(
+        "DESIGN_SCALE_* out of order: smallest"
+        f" {_DESIGN_SCALE_SMALLEST_MULTIPLE}, default"
+        f" {_DESIGN_SCALE_DEFAULT_MULTIPLE}, largest"
+        f" {_DESIGN_SCALE_LARGEST_MULTIPLE}"
+    )
 
 
 # Cell - One table cell: the text, plus every way a page can dress it up.
@@ -70,7 +84,7 @@ class Column(NamedTuple):
 class ColumnExtent(NamedTuple):
     # the heading's length, which only the column's widest width must fit
     heading_chars: int
-    # the longest cell's length, the fixed width, or a CSS_LAYOUT grow floor
+    # the longest cell's length, the fixed width, or the grow column's floor
     content_chars: int
 
 
@@ -244,8 +258,8 @@ class Theme:
     def cell(self, value: CellOrText) -> Cell:
         return value if isinstance(value, Cell) else Cell(text=value)
 
-    # What each column's heading and cells ask for, in characters. Under
-    # CSS_LAYOUT a grow column is cut at its container: it asks its floor.
+    # What each column's heading and cells ask for, in characters. A grow
+    # column is cut at its container, so it asks only its floor.
     def column_extents(
         self,
         columns: Sequence[Column],
@@ -256,22 +270,19 @@ class Theme:
         for index, column in enumerate(columns):
             if column.width is not None:
                 content_chars = column.width
-            elif _CSS_LAYOUT and index == grow_index:
+            elif index == grow_index:
                 content_chars = _TABLE_GROW_COLUMN_NARROWEST_CHARS
             else:
                 content_chars = self.column_longest(rows, index)
             extents.append(ColumnExtent(len(column.label), content_chars))
         return extents
 
-    # The narrowest and widest one column may be, in characters: the heading
-    # or, under CSS_LAYOUT, the cells alone; then heading and cells both.
+    # The narrowest and widest one column may be, in characters: the cells
+    # alone (only a heading is ever cut), then heading and cells both.
     def column_limits(self, extent: ColumnExtent) -> tuple[int, int]:
-        narrowest = (
-            extent.content_chars if _CSS_LAYOUT else extent.heading_chars
-        )
         widest = max(extent.heading_chars, extent.content_chars)
         return (
-            narrowest + _TABLE_COLUMN_EXTRA_WIDTH_CHARS,
+            extent.content_chars + _TABLE_COLUMN_EXTRA_WIDTH_CHARS,
             widest + _TABLE_COLUMN_EXTRA_WIDTH_CHARS,
         )
 
@@ -281,14 +292,12 @@ class Theme:
     ) -> int:
         return max((len(row[index].text) for row in rows), default=0)
 
-    # One column's <col> width: its widest in ch; under CSS_LAYOUT, CSS
-    # automatic table layout on its container's 100cqw. See DECLAUDE.md 8.
+    # One column's <col> width: CSS automatic table layout on its container's
+    # 100cqw, between its narrowest and widest. See DECLAUDE.md 8.
     def column_width_text(
         self, limits: Sequence[tuple[int, int]], index: int, grow_index: int
     ) -> str:
         narrowest, widest = limits[index]
-        if not _CSS_LAYOUT:
-            return f"{widest}ch"
         shared = [
             limit for other, limit in enumerate(limits) if other != grow_index
         ]
@@ -330,9 +339,7 @@ class Theme:
         lines.append(
             f"  --title-fg: {self.contrast_foreground(self.rgb(stops[2]))};"
         )
-        lines.append(
-            f"  --title-w: calc({_STRIP_STATUS_ROW_WIDTH_CHARS}ch + 16px);"
-        )
+        lines.append(f"  --title-w: {_STRIP_STATUS_ROW_WIDTH_CHARS}ch;")
         lines.append(f"  --font: {_PAGE_FONT_FAMILY};")
         # the design font fits by 1; theme.js replaces it with the box's own
         lines.append(f"  --font-px: {_DESIGN_FONT_SIZE_PX}px;")
@@ -357,9 +364,6 @@ class Theme:
         body_holds_scripts: bool = False,
     ) -> str:
         assets_href = shared_href(depth, _REPORT_ASSETS_DIR_NAME)
-        # the class makes each box holding a table a container, so every
-        # CSS_LAYOUT <col>'s 100cqw measures the room its table has
-        root_attr = ' class="css-layout"' if _CSS_LAYOUT else ""
         body_attr = f' class="{body_class}"' if body_class else ""
         head = "".join(
             f'<link rel="stylesheet" href="{assets_href}/{name}">\n'
@@ -381,7 +385,7 @@ class Theme:
             )
         )
         return (
-            f'<!doctype html>\n<html lang="en"{root_attr}>\n'
+            '<!doctype html>\n<html lang="en">\n'
             '<head>\n<meta charset="utf-8">\n'
             '<meta name="viewport"'
             ' content="width=device-width, initial-scale=1">\n'

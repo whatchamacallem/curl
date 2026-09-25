@@ -416,8 +416,8 @@ class CallgrindToHeatmap:
             for relative in self.repo_tracked_files()
             if relative not in files
         )
-        # never a substitute: another counter is a wrong column and a wrong
-        # denominator, which reads as a measurement rather than a failure.
+        # the page opens on this counter, so it must be one of the columns
+        # it is handed below: counter_names() is exactly those two lists
         if _RANKING_COUNTER_NAME not in profile.counter_names():
             sys.exit(
                 f"error: this profile cannot supply {_RANKING_COUNTER_NAME}"

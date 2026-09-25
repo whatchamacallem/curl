@@ -41,6 +41,8 @@ class ValidateReport:
         manifest_version: str
         # the LABEL= rows MANIFEST.txt must have
         manifest_labels: tuple[str, ...]
+        # those of them whose value starts with a unix time
+        manifest_stamp_labels: tuple[str, ...]
         # whether a test records runs of its own: a perf log, a trace, a
         # flame graph. never true of the synthesized "all"
         test_has_rawdata: bool
@@ -285,12 +287,13 @@ class ValidateReport:
                     f"MANIFEST.txt has no '{label}=' header row, so a"
                     f" reader of this report cannot show it: {path}"
                 )
-        stamp = self.manifest_stamp_value(text)
-        if not stamp.isdigit():
-            self.fail(
-                f"MANIFEST.txt stamp= row starts {stamp!r}, expected the"
-                f" unix time: {path}"
-            )
+        for label in layout.manifest_stamp_labels:
+            stamp = self.manifest_stamp_value(text, label)
+            if not stamp.isdigit():
+                self.fail(
+                    f"MANIFEST.txt {label}= row starts {stamp!r}, expected"
+                    f" the unix time: {path}"
+                )
         recorded = self.manifest_value(text, _REPORT_MANIFEST_CHECKSUM_LABEL)
         if not recorded:
             self.fail(
@@ -311,9 +314,9 @@ class ValidateReport:
                 f" after the report was written: {out_dir}"
             )
 
-    # The unix time out of a stamp= row, whose human tail nothing parses.
-    def manifest_stamp_value(self, text: str) -> str:
-        return self.manifest_value(text, "stamp").split(" ", 1)[0]
+    # The unix time out of one stamp row, whose human tail nothing parses.
+    def manifest_stamp_value(self, text: str, label: str) -> str:
+        return self.manifest_value(text, label).split(" ", 1)[0]
 
     # One LABEL= row out of a manifest's text.
     def manifest_value(self, text: str, label: str) -> str:
@@ -649,7 +652,13 @@ _LAYOUT_DIFF = ValidateReport.ReportLayout(
     heading=r"<h2>top \d+ functions by change in self</h2>",
     header_blocks=("baseline", "modified"),
     manifest_version=_REPORT_MANIFEST_VERSION_DIFF,
-    manifest_labels=("baseline", "modified", "stamp"),
+    manifest_labels=(
+        "baseline",
+        "modified",
+        "baseline_stamp",
+        "modified_stamp",
+    ),
+    manifest_stamp_labels=("baseline_stamp", "modified_stamp"),
     test_has_rawdata=False,
     all_has_archive=True,
 )
@@ -668,6 +677,7 @@ _LAYOUT_FULL = ValidateReport.ReportLayout(
         "executable",
         "stamp",
     ),
+    manifest_stamp_labels=("stamp",),
     test_has_rawdata=True,
     all_has_archive=False,
 )

@@ -57,14 +57,15 @@ perf2html_batch.sh [debug-flags] [--target-dir=DIR] [cmake-flags...]
     Profiles baseline, modified and then does a diff of them.
     --target-dir=DIR  Holds the three default-named reports (default CWD). The
                       batch cannot rename them.
-    cmake-flags       Every argument not one of its own options, applied to the
+    cmake-flags:      Every argument not one of its own options, applied to the
                       modified build (default -D CMAKE_C_FLAGS=-Os).
 ```
 
-These are shared developer flags for the iterative development of `perf2html` itself.
+These are shared developer flags for the iterative development of `perf2html`
+itself.
 
 ```txt
-  debug-flags:
+    These are the same debug-flags as the README.md documents:
     --artifacts=TMP   The profiler artifacts directory. Defaults to
                       perf2html_temporary_artifacts/ beside the report
                       directory (inside the target dir for a batch).
@@ -107,7 +108,7 @@ the heat map, under these same names.
 
 `CEst` weights a miss by roughly what it costs and is used by default.
 
-See the [callgrind](https://valgrind.org/docs/manual/cl-manual.html) docs. GPL
+See the [callgrind](https://valgrind.org/tmp/manual/cl-manual.html) tmp. GPL
 Version 3, 29 June 2007.
 
 ## Reading A Diff Report

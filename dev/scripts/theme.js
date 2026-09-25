@@ -1,7 +1,6 @@
 window.report_ui = (function () {
   "use strict";
 
-  const CSS_LAYOUT = settings("CSS_LAYOUT");
   const DESIGN_COORDINATES_WIDTH_PX = settings("DESIGN_COORDINATES_WIDTH_PX");
   const DESIGN_FONT_CHARACTER_WIDTH_PX = settings(
     "DESIGN_FONT_CHARACTER_WIDTH_PX",
@@ -44,9 +43,6 @@ window.report_ui = (function () {
   const TABLE_COLUMN_EXTRA_WIDTH_CHARS = settings(
     "TABLE_COLUMN_EXTRA_WIDTH_CHARS",
   );
-  const TABLE_COLUMN_NARROWEST_DRAG_PX = settings(
-    "TABLE_COLUMN_NARROWEST_DRAG_PX",
-  );
   const TABLE_GROW_COLUMN_NARROWEST_CHARS = settings(
     "TABLE_GROW_COLUMN_NARROWEST_CHARS",
   );
@@ -62,17 +58,6 @@ window.report_ui = (function () {
   let resize_debounce_timer = null;
   let storage_is_checked = false;
   let design_scale = 1;
-  // ends out of order would run a slider half backwards: a broken setting
-  if (
-    !(DESIGN_SCALE_SMALLEST_MULTIPLE < DESIGN_SCALE_DEFAULT_MULTIPLE) ||
-    !(DESIGN_SCALE_DEFAULT_MULTIPLE < DESIGN_SCALE_LARGEST_MULTIPLE)
-  ) {
-    throw new Error(
-      "str_error_scale_ends_disordered " +
-        `${DESIGN_SCALE_SMALLEST_MULTIPLE} ${DESIGN_SCALE_DEFAULT_MULTIPLE} ` +
-        `${DESIGN_SCALE_LARGEST_MULTIPLE}`,
-    );
-  }
   let design_scale_travel = design_scale_travel_of(
     DESIGN_SCALE_DEFAULT_MULTIPLE,
   );
@@ -141,18 +126,9 @@ window.report_ui = (function () {
       Math.pow(half.to_multiple / half.from_multiple, half_fraction)
     );
   }
-  // The travel a multiple sits at, the inverse of the above. Only the two
-  // ends' own span is a travel: anything past them is a broken setting.
+  // The travel a multiple sits at, the inverse of the above. Only the
+  // default is ever asked, and theme.py refused ends it is not between.
   function design_scale_travel_of(multiple) {
-    if (
-      !(multiple >= DESIGN_SCALE_SMALLEST_MULTIPLE) ||
-      !(multiple <= DESIGN_SCALE_LARGEST_MULTIPLE)
-    ) {
-      throw new Error(
-        `str_error_scale_multiple_outside ${multiple} ` +
-          `${DESIGN_SCALE_SMALLEST_MULTIPLE} ${DESIGN_SCALE_LARGEST_MULTIPLE}`,
-      );
-    }
     const half = design_scale_half_of(
       multiple < DESIGN_SCALE_DEFAULT_MULTIPLE,
     );
@@ -314,7 +290,7 @@ window.report_ui = (function () {
     return columns.map((column, column_index) => {
       let content_chars;
       if (column.width != null) content_chars = column.width;
-      else if (CSS_LAYOUT && column_index === grow_index) {
+      else if (column_index === grow_index) {
         content_chars = TABLE_GROW_COLUMN_NARROWEST_CHARS;
       } else {
         content_chars = column_longest(cell_rows, column_index);
@@ -326,18 +302,16 @@ window.report_ui = (function () {
     });
   }
   function column_limits(extent) {
-    const narrowest = CSS_LAYOUT ? extent.content_chars : extent.heading_chars;
     const widest = Math.max(extent.heading_chars, extent.content_chars);
     return [
-      narrowest + TABLE_COLUMN_EXTRA_WIDTH_CHARS,
+      extent.content_chars + TABLE_COLUMN_EXTRA_WIDTH_CHARS,
       widest + TABLE_COLUMN_EXTRA_WIDTH_CHARS,
     ];
   }
-  // Under CSS_LAYOUT, automatic table layout on the container's 100cqw: all
-  // widest if they fit, all narrowest if not even those, else between
+  // Automatic table layout on the container's 100cqw: all widest if they
+  // fit, all narrowest if not even those, else between
   function column_width_text(limits, column_index, grow_index) {
     const [narrowest, widest] = limits[column_index];
-    if (!CSS_LAYOUT) return widest + "ch";
     const shared = limits.filter(
       (limit, other_index) => other_index !== grow_index,
     );
@@ -377,32 +351,11 @@ window.report_ui = (function () {
     handle_bar[listener_method]("pointerup", on_pointer_release);
     handle_bar[listener_method]("pointercancel", on_pointer_release);
   }
-  // Both table emitters write data-min on every <col>: one without it is
-  // markup this file does not know, so it throws
-  function floor_text_read(column_element) {
-    const floor_text = column_element.dataset.min;
-    if (!floor_text) throw new Error("table <col> has no data-min");
-    return floor_text;
-  }
-  function minimum_width_px(column_element) {
-    const probe_element = column_element.ownerDocument.createElement("div");
-    probe_element.style.cssText =
-      "position:absolute;visibility:hidden;width:" +
-      floor_text_read(column_element);
-    column_element.ownerDocument.body.appendChild(probe_element);
-    const width_px = design_px(probe_element.getBoundingClientRect().width);
-    probe_element.remove();
-    return Math.max(TABLE_COLUMN_NARROWEST_DRAG_PX, Math.ceil(width_px));
-  }
-  // A drag is in pixels. Under CSS_LAYOUT its floor stays the <col>'s own
-  // characters, which CSS max() compares, where the old layout probes them
+  // A drag is in pixels; its floor stays the <col>'s own characters, the
+  // data-min both table emitters write, which CSS max() compares
   function drag_width_formatter(column_element) {
-    if (CSS_LAYOUT) {
-      const floor_text = floor_text_read(column_element);
-      return (width_px) => `max(${floor_text}, ${width_px}px)`;
-    }
-    const floor_px = minimum_width_px(column_element);
-    return (width_px) => Math.max(floor_px, width_px) + "px";
+    const floor_text = column_element.dataset.min;
+    return (width_px) => `max(${floor_text}, ${width_px}px)`;
   }
   function column_elements_of(table_element) {
     return [...table_element.querySelectorAll("colgroup > col")];
@@ -427,7 +380,6 @@ window.report_ui = (function () {
     const column_element = column_elements_of(table_element)[column_index];
     const header_cell = header_cells(table_element)[column_index];
     if (!column_element || !header_cell) return;
-    table_element.was_hand_resized = true;
     const start_client_x = pointer_event.clientX,
       width_text_of = drag_width_formatter(column_element);
     // a rect and clientX are screen px on a zoomed page; a style is design px
@@ -479,46 +431,6 @@ window.report_ui = (function () {
       table_element.resize_handles.push(handle_bar);
     }
   }
-  function nearest_scroller(start_element) {
-    let ancestor_element = start_element.parentElement;
-    for (
-      ;
-      ancestor_element;
-      ancestor_element = ancestor_element.parentElement
-    ) {
-      const overflow_y = getComputedStyle(ancestor_element).overflowY;
-      if (overflow_y === "auto" || overflow_y === "scroll") {
-        return ancestor_element;
-      }
-    }
-    return document.documentElement;
-  }
-  function grow_column_fill(table_element) {
-    if (!table_element.offsetWidth) return;
-    const column_elements = column_elements_of(table_element);
-    if (!column_elements.length) return;
-    const grow_column =
-      column_elements.find((column_element) =>
-        column_element.classList.contains("grow"),
-      ) || column_elements[column_elements.length - 1];
-    grow_column.style.width = grow_column.dataset.w;
-    const floor_px = minimum_width_px(grow_column);
-    const scroll_container = nearest_scroller(table_element);
-    const table_box = table_element.getBoundingClientRect();
-    const edge_inset_px =
-      design_px(
-        table_box.left - scroll_container.getBoundingClientRect().left,
-      ) + scroll_container.scrollLeft;
-    const target_width_px = Math.floor(
-      scroll_container.clientWidth - 2 * edge_inset_px,
-    );
-    const other_columns_px = design_px(
-      table_box.width - grow_column.getBoundingClientRect().width,
-    );
-    grow_column.style.width =
-      Math.max(floor_px, target_width_px - other_columns_px) + "px";
-  }
-
   function offsets_align(scroll_container) {
     let stacked_top_px = 0;
     for (const band_element of scroll_container.querySelectorAll(
@@ -538,13 +450,6 @@ window.report_ui = (function () {
     root_element = root_element || document.body;
     for (const table_element of root_element.querySelectorAll("table.cols")) {
       if (!table_element.resize_handles) continue;
-      if (
-        !CSS_LAYOUT &&
-        table_element.classList.contains("fill") &&
-        !table_element.was_hand_resized
-      ) {
-        grow_column_fill(table_element);
-      }
       handles_position(table_element);
     }
     const band_elements = [...root_element.querySelectorAll(".band")];
@@ -565,10 +470,6 @@ window.report_ui = (function () {
       if (!table_element.resize_handles) continue;
       for (const column_element of column_elements_of(table_element)) {
         column_element.style.width = column_element.dataset.w;
-      }
-      table_element.was_hand_resized = false;
-      if (!CSS_LAYOUT && table_element.classList.contains("fill")) {
-        grow_column_fill(table_element);
       }
       handles_position(table_element);
     }

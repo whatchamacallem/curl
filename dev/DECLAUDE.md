@@ -74,9 +74,9 @@ numbers match it.
    stored format leaves it alone, runs **without `--regenerate`** once, and
    says so.
 1. **Docs written on request (`plan.md`, notes, write-ups) go in
-   `dev/docs/`**, which `dev/.gitignore` ignores and `clean.sh`
-   (`git clean -Xdf`) deletes. `.md` only, any name: no whitelist glob
-   reaches it.
+   `dev/tmp/`**, which `dev/.gitignore` ignores and `clean.sh`
+   (`git clean -Xdf -e '!tmp/'`) spares. `.md` only, any name: no
+   whitelist glob reaches it.
 
 ## 2 Commands
 
@@ -89,7 +89,9 @@ dev/perf2html_batch.sh [--verbose] [--keep-artifacts] [--regenerate]
     [--artifacts=TMP] [--target-dir=DIR] [cmake_flags...]
 dev/scripts/enforcer.sh [--check-formatting] [--keep-artifacts] [--regenerate]
     [--verbose]
-dev/scripts/test_all.sh [forwarded-args]  # bare run: docs/test_all.md
+dev/scripts/test_all.sh    # enforcer.sh --keep-artifacts --verbose, then
+                           # the failure tests; no argument but --help
+dev/clean.sh [-h|--help]   # any other argument refuses before it cleans
 ```
 
 ```sh
@@ -165,17 +167,21 @@ measures nothing and subtracts two reports' `raw/` archives;
 - **No news is good news.** Only `test_all.sh` prints on success; the rest
   print on failure or under `--verbose`. Every success line of the four
   scripts (`build ... | 15s`, `<test> loops=...`, `manifest`, `overview`,
-  the entry page's path, the batch's `[Ns] ...` lines) is a `log_verbose`
-  paragraph. Nothing prints a `file://` URL, a host or a user name;
+  the entry page's path) is a `log_verbose` paragraph; the batch's two
+  tables (`header_table_print` after its title: started/git/cmake/cc/curl/
+  kernel/pinned cpu; `<script>, after the three steps`: `baseline |
+  modified | diff` seconds) are `table_head_print`/`table_row_print`.
+  Nothing prints a `file://` URL, a host or a user name;
   `$HOME/` prints as `~/`.
-- **`--verbose` prints the markdown `docs/verbose2.md` shows, in real time,
+- **`--verbose` prints the markdown `tmp/verbose2.md` shows, in real time,
   one sub command at a time; no post processor.** `verbose_begin` (after
-  `args_parse`) reads `PERF2HTML_HEADER_DEPTH` as the script's own depth
-  (1 unset) and exports one deeper for its children: test_all 1, enforcer
-  2, batch 3, perf2html/diff 4, a piece of work 5. `title_print` is the
-  script's heading (path + arguments), `heading_print` one piece of work
-  one level deeper, each `` `[elapsed] text` `` on `START_US`; item numbers
-  restart under every heading. A command is `command_item_print`'s
+  `args_parse`) reads `PERF2HTML_HEADING_DEPTH` as the script's own depth
+  (1 unset) and exports one deeper for its children: enforcer 1, batch 2,
+  perf2html/diff 3, a piece of work 4 (`test_all.sh` sets none).
+  `title_print` is the script's heading (path + arguments), `heading_print`
+  one piece of work one level deeper, each `` `[elapsed] text` `` on
+  `VERBOSE_START_US`; item numbers restart under every heading. A command
+  is `command_item_print`'s
   `` N. `$ cmd` ``, its child's lines nested by **`verbose_filter`**, the
   one awk formatter every printed line streams through, by mode: `list`
   (child output: `$HOME/` → `~/`, blank lines dropped, a run of two or more
@@ -183,54 +189,56 @@ measures nothing and subtracts two reports' `raw/` archives;
   knowing no tool and no test - else `M. line` wrapped at
   `VERBOSE_LINE_WIDTH_CHARS` with a hanging indent), `wrap PREFIX`
   (paragraphs and items), `row LABEL` (the enforcer's tool-output rows),
-  `paths` (headings, fences, table rows) and `relay` (`cat`, one of our own
-  scripts). It flushes every line; only a stat run is held, until the line
+  `paths` (headings, fences, table rows). It flushes every line; only a
+  stat run is held, until the line
   that ends it. `table_head_print`/`table_row_print` print a table;
   `item_output_print` nests our own lines like a child's (`run_all`'s sum).
   Level 2 is level 1 plus cmake's configure lines, however they format.
 - **Never buffer a child's output.** No shipping `dev/*.sh` captures a child
   through `$( )` (`enforcer.sh` exempt). Children run through `shared.sh`'s
-  **`child_capture PAGE_FILE MODE cmd`** (tee-or-redirect chosen before
+  **`child_capture PAGE_FILE cmd`** (tee-or-redirect chosen before
   start, so `--verbose` streams): `command_run` for a tool,
   **`page_command_run PAGE SHOWN cmd`** for a child whose lines are page
   content (`perf-tool/output.txt`, `flame-graph/output.txt`: the same bytes
   are teed into the page file, whose own `$` line and `#` comments the
-  caller writes and `--verbose` never shows), `script_capture` for one of
-  our scripts (relayed untouched). Values come back **through globals**
+  caller writes and `--verbose` never shows). One of our own scripts is a
+  plain child (`step_run`'s `"$@"`), captured by nothing: it prints
+  straight to the terminal. Values come back **through globals**
   (`CHILD_EXIT_CODE`), never stdout. `$( )` around `printf`/`date`/
   `basename` is fine - a value, not a stream.
 - **Failure is one fence.** `error_exit CODE LINE...` is the one refusal:
-  its lines in a ```` ```sh ```` fence on stderr, then exit. A failed tool
+  its lines in a ```` ```txt ```` fence on stderr, then exit. A failed tool
   child gets `failure_print_log_tail`: the same fence holding
   `error: exit N from: <shown command>`, the last `LOG_FAILURE_TAIL_LINES`
   of its output and `(see: log)`. A parent of one of our scripts
-  (`step_run`, `batch_run`) prints one line and `failure_relay`: only when
-  not verbose (the terminal saw nothing) the child's output from
-  `LOG_LINE_FROM` on, so the inner fence climbs once; verbose already
-  streamed it. `test_all.sh`'s `mode_fail` exits with the enforcer's code;
-  the bare run's `| tee` keeps it under `pipefail`. Nothing collects.
+  (`step_run`, `batch_run`) prints one line on stderr and exits with the
+  child's code; the child's own fence already reached the terminal.
+  `test_all.sh`'s `enforcer_run` prints `FAILED: enforcer.sh exited N` and
+  exits N; its `| tee` keeps that code under `pipefail`. Nothing collects.
 - **cmake's configure output is half the log**, so below level 2
   (`--verbose --verbose`) it goes to `/dev/null`, out of the terminal and
   `$RUN_LOG`. `tree_build` prints the item and runs it through
   `child_capture_noisy`, which at level 2 is `child_capture` and returns
   the child's code. At every level a failure is `error_exit` with only
-  `cmake failed to build <command>`, the command `%q`-quoted so it pastes
-  and reruns, and no log tail (level 2 just streamed it); the build step
+  `error: cmake failed to build <command>`, the command `%q`-quoted so it
+  pastes and reruns, and no log tail (level 2 just streamed it); the build step
   still uses `command_run`.
 - **`--verbose` is additive and counted**: each adds 1 to `VERBOSE`
   (`settings.sh`'s `VERBOSE=0`) in every parser sourcing that file.
   **Only `shared.sh` tests `$VERBOSE`**, always as `[ "$VERBOSE" -ge N ]`
   (`log_verbose`, `heading_write`, `command_item_print`,
   `item_output_print`, `table_head_print`, `table_row_print`,
-  `child_capture`, `failure_relay` at 1; `child_capture_noisy` at 2), plus
+  `child_capture` at 1; `child_capture_noisy` at 2), plus
   the enforcer's own `child_stream`; no bare `printf` wrappers.
   `verbose_flags_of` hands a child the same level: one `--verbose` per
   level, one per line, for `mapfile -t`.
 - `perf2html.sh` default DIR is `perf2html_baseline_report`, or
   `perf2html_modified_report` with cmake_flags - **after a source-only change
   pass `--report=perf2html_modified_report` yourself.**
-- **`usage_show`'s heredoc is the only usage text**, matched to README's
-  option lists by hand.
+- **`usage_show`'s heredoc is the only usage text**; README's ```txt block
+  per script documents it but is not tested against it - the two are
+  allowed to differ, on purpose, and no test diffs them. `clean.sh` and
+  `test_all.sh` answer `--help` with one line.
 - `toolchain_check` is the only toolchain check: lists **every** missing
   tool with its official install command, then exits 1.
 - `enforcer.sh` **takes only flags** and runs the batch itself;
@@ -248,8 +256,11 @@ measures nothing and subtracts two reports' `raw/` archives;
   the batch"`): `stage_row_print` numbers them (`_STAGE_NUMBER`); a tool's
   lines stream as rows before its row (`child_stream LABEL cmd`, mode
   `row`); a failed row is `stage_row_fail` on stderr, then `stage_fail`'s
-  fence. `batch_run` is `script_capture` + `failure_relay`, over a
-  `mktemp` `RUN_LOG` a trap removes.
+  fence. `batch_run` runs the batch as a plain child (a `log_verbose` line
+  first ends the stage table); a failure is `stage_row_fail`, then the
+  batch's code. It sets no `RUN_LOG`. Every call in `main()` carries
+  `# [a/b/c s] what`: seconds in the flagless, `--keep-artifacts` and
+  `--regenerate` runs.
 - **Verification may read a shared value** (name, key, suffix) from the
   settings, and **never adds a setting**. A _calculation_ it checks gets
   local expected constants or a different-route recomputation - **never the
@@ -274,7 +285,7 @@ measures nothing and subtracts two reports' `raw/` archives;
   extension. A glob matching nothing is allowed (`src/*.h`); a match that
   is not a regular file, or a list matching no file, is a hard error. **No
   directory walk, no skip list**: an unlisted file (`clean.sh`,
-  `dev/docs/`, configs) is never touched. `--config`/`--project` always
+  `dev/tmp/`, configs) is never touched. `--config`/`--project` always
   passed; pyright is handed the whitelisted `.py` files, and
   `pyrightconfig.json` names none.
 - **`regenerate_check`** verifies all three manifests first, then dates
@@ -299,13 +310,15 @@ measures nothing and subtracts two reports' `raw/` archives;
   the only valid speed number**.
 - Trace tree = same flags + `-finstrument-functions` +
   `dev/src/cyg_callback.c`; whole build, no file list.
+- `revision_describe REPO` (`shared.sh`) is the one `<short>[-dirty]`
+  computation (`build_manifest`, `header_table_print`).
 - `child_capture`'s tee sits behind `if ! { ...; }` (for `PIPESTATUS[0]`);
   tee failing is a hard error whatever the child did. `command_run`/
   `step_run` exit with the child's code via `failure_print_log_tail`.
 
 ### 3.1 `settings.sh` and `shared.sh`
 
-No env vars but `PERF2HTML_HEADER_DEPTH`, whitelisted: heading depth for a
+No env vars but `PERF2HTML_HEADING_DEPTH`, whitelisted: heading depth for a
 child, read by `verbose_begin`, never a setting. `settings.sh` = every shell
 setting; `shared.sh` (sourced) = every shared shell function; each
 alphabetical. `settings.sh` is **one
@@ -313,21 +326,24 @@ assignment per line**, parsed also by `settings.py`
 (`SettingsReader.shell_settings_read`; `-?[0-9]+` → `int`). **No setting's
 word is expanded** - no `$` words. Hand-written. **One name in all three
 languages.** **`TIMESTAMP` is per-script** (`$(date +%s)`), assigned just
-above `_SCRIPT="$(readlink -f "$0")"` in each shipping script; `--regenerate`
-restores it from `stamp=`. `enforcer.sh` declares none. `$0`-derived values
-(`_REPO`), `usage_show`, `args_parse` stay per-script. `_TESTS` comes from
-`tests/perf/Makefile.inc`. Notable: `PROFILE_PINNED_CPU=3`,
-`REPORT_RAW_ARCHIVE_SUFFIX` (`.txz`, dot included),
-`PROFILE_TIMING_FILE_PREFIX` (`perf-stat`).
+above `_SCRIPT="$(readlink -f "$0")"` in each shipping script;
+`perf2html.sh --regenerate` restores it from `stamp=`, the diff's never does
+(it names artifacts only, recorded nowhere). `enforcer.sh` declares none.
+`$0`-derived values (`_REPO`), `usage_show`, `args_parse` stay per-script.
+`_TESTS` comes from `tests/perf/Makefile.inc`. Notable:
+`PROFILE_PINNED_CPU=3`, `REPORT_RAW_ARCHIVE_SUFFIX` (`.txz`, dot included),
+`PROFILE_TIMING_FILE_PREFIX` (`perf-stat`), `BUILD_CCACHE_NAMESPACE`
+(`perf2html`: `tree_build`'s `local -x CCACHE_NAMESPACE`, what `clean.sh`
+evicts).
 
 **Naming**: a script's own global is `_SCREAMING_SNAKE` (`_OUT_DIR`); a
 `local` is `_lowercase` (`local _output _exit_code`). Names crossing into
 `shared.sh` are bare: it reads `ARTIFACTS_DIR`, `PERF2HTML_DIR_` (each
 report writer's own dir, so every script it runs is named in full),
-`INVOKED_FROM`, `RUN_LOG`, `TIMESTAMP`, `VERBOSE`; sets
-`SPEEDSCOPE_RELEASE`, `RUN_LOG` (`report_begin`),
-`CHILD_EXIT_CODE`/`LOG_LINE_FROM` (`child_capture`), `START_US`/
-`HEADING_DEPTH`/`COMMAND_NUMBER`/`ITEM_INDENT`/`OUTPUT_ENDS_BLANK`
+`INVOKED_FROM`, `RUN_LOG` (the batch has none), `TIMESTAMP`, `VERBOSE`;
+sets `SPEEDSCOPE_RELEASE`, `RUN_LOG` (`report_begin`),
+`CHILD_EXIT_CODE`/`LOG_LINE_FROM` (`child_capture`), `VERBOSE_{START_US,
+HEADING_DEPTH,COMMAND_NUMBER,ITEM_INDENT,OUTPUT_ENDS_BLANK}`
 (`verbose_begin`; `command_item_print` and `heading_write` count the
 last three on).
 Settings and environment names (`CMAKE_C_FLAGS`, `PERF_TRACE_OUT`) are bare.
@@ -356,7 +372,10 @@ MANIFEST.txt
 
 `raw/<test>.txz` = callgrind file + speedscope JSON; `all/` = every test
 merged; `README.md` copied from `dev/README.md` each run; `MANIFEST.txt`
-line 1 = version string, then LABEL=VALUE.
+line 1 = version string, then LABEL=VALUE: full `sampled`, `revision`,
+`cpu`, `build`, `executable`, `stamp`, `checksum`; diff `baseline`,
+`modified`, `baseline_stamp`, `modified_stamp`, `checksum` - **no
+`stamp=`**, each input's row copied verbatim (`manifest_check`).
 
 - **"all"**: no perf log, trace or flame graph; in a full report **no
   `raw/`**; a diff's `all` has one (`all_has_archive`). A **diff report** has
@@ -369,8 +388,8 @@ line 1 = version string, then LABEL=VALUE.
 - **`report_begin`/`report_finish`** bracket every report-writing run.
   `report_begin` clears, creates dirs, drops the stale manifest, opens
   `$RUN_LOG`, lays down `README.md`/`assets/`; `report_finish` writes the
-  manifest and echoes the `file://` URL. **A dir is cleared only if its own
-  `MANIFEST.txt` proves we wrote it**; a populated dir without one is
+  manifest and `log_verbose`s the entry page. **A dir is cleared only if its
+  own `MANIFEST.txt` proves we wrote it**; a populated dir without one is
   refused, as is `--artifacts` inside the report. `--regenerate` clears
   nothing.
 - **`--regenerate` reads every row it needs in `build_manifest`**, before
@@ -441,7 +460,7 @@ glob matches exactly one file. `page_scripts()` makes a bad href fail loudly.
 - **`scripts/` page assets may carry comments**, under the 2-line limit.
   In Python and shell, one `# <Name> - what it is` above every
   class/function and one `#` line above every field; no trailing comments,
-  no docstrings.
+  no tmptrings.
 - `event` → `counter` everywhere except callgrind's `events:` and the `e=`
   URL key. **No renaming campaigns.**
 - One enclosing class per Python script holds every non-exported function.
@@ -506,7 +525,8 @@ plain-word path, two words min, unit suffix (`_PX`, `_MS`, `_PERCENT`,
   **before** `__DATA__`, never rescanned. Order:
   `theme.page_preamble_scripts()`, `sources/`, `ui_strings.js`, `theme.js`,
   `heatmap.js`. Head from `theme.page_document` (`extra_css`,
-  `body_holds_scripts`).
+  `body_holds_scripts`). `model()` refusing an unemitted
+  `RANKING_COUNTER_NAME` is the page's proof; JS trusts it.
 - **No multi-line HTML/CSS/JS literal in a generator** - real files in
   `scripts/` via `theme.asset_text_read()`. `flame_bootstrap.js` keeps bare
   `__NAME__`/`__DATA__` and **polls** for `window.speedscope`.
@@ -521,7 +541,8 @@ plain-word path, two words min, unit suffix (`_PX`, `_MS`, `_PERCENT`,
 - **`validate_report.py`** greps pages for three contract JS names:
   `loadFileFromBase64`, `var document_base64 = "..."`,
   `report_ui.layout_activate` - rename one and every page fails. Reports
-  only; the report dir is required.
+  only; the report dir is required. A layout's `manifest_stamp_labels`
+  (full `stamp`, diff both `*_stamp`) get the unix-time check.
 - **`source_scan.py`**: file paths only (`nargs="+"`), each read once for
   the comment block and ASCII checks. Each kind's syntax is in
   `_COMMENT_SYNTAX_BY_EXTENSION` (`.html` adds `//`, `/* */`); an unknown
@@ -572,23 +593,29 @@ resize). **Never retune a length by looking at one screen.**
 
 - **Design resolution: think in design px and ch, then scale.** 1920 px
   (1080p) at scale 1 (`DESIGN_SCALE_DEFAULT_MULTIPLE`), 7.2 px per ch:
-  266 ch. Table rooms: `.page` 254 ch, heat map `.home` 220, file view
-  `#main` 209, `.dbox` 202. A table's room is its container's `100cqw`,
-  re-measured on every resize, slider move and reset: half the scale is
-  twice the page's ch, more for a table.
+  266 ch. A table's room is its container's `100cqw` (its full width less
+  the scrollbar gutter; no padding), re-measured on every resize, slider
+  move and reset: half the scale is twice the page's ch, more for a table.
 - **Design font: Monaco 12px (`DESIGN_FONT_SIZE_PX`), 7.2 px per ch
   (`DESIGN_FONT_CHARACTER_WIDTH_PX`) - keep these numbers.**
   `font_fit_apply()` measures the box's own ch at the design size (canvas
   `measureText` of `0`) and sets `--font-fit` (`DESIGN_FONT_FIT_PROPERTY`)
-  on `:root`; every theme font size is `calc(<px> * var(--font-fit))`,
-  `--font-px` the design size, so Consolas (0.55 em) draws at 13.09px and
-  1ch stays 7.2 design px, in every document.
+  on `:root`; the one font size is `body`'s
+  `calc(var(--font-px) * var(--font-fit))`, inherited everywhere (controls
+  `font: inherit`; `line-height` only on `body`), so Consolas (0.55 em)
+  draws at 13.09px and 1ch stays 7.2 design px, in every document.
+- **Terminal-editor geometry**: no text box has vertical `padding`,
+  `margin` or `gap`; horizontal room is a blank, `1ch` or `2ch` where two
+  texts would touch (cells `0 1ch`, `.fhead` 2ch, `ul.rawdata` marker
+  2ch); `--title-w` = `STRIP_STATUS_ROW_WIDTH_CHARS` ch; tree indent stays
+  px (`HEAT_MAP_TREE_INDENT_*_PX`).
 - The `scale:` slider multiplies the fit (`DESIGN_SCALE_*` settings, 0.5
   to 2; multipliers never shown). **The default sits mid-travel
   (`DESIGN_SCALE_DEFAULT_TRAVEL_SHARE`) whatever the ends**: each half is
   geometric, smallest→default and default→largest
   (`design_scale_multiple_of()`/`design_scale_travel_of()`); ends out of
-  order throw. `design_scale_travel_set()` is the door, and a change
+  order are refused by `theme.py` (`ValueError` after `load_into`), so no
+  page ever loads them. `design_scale_travel_set()` is the door, and a change
   resets column widths. `screenshots.py` shoots `--incognito`: nothing
   stored reaches a shot.
 - Unzoomed exceptions: `window.inner*`/`documentElement.client*` (convert
@@ -604,7 +631,7 @@ resize). **Never retune a length by looking at one screen.**
   user's palette; a cell paints the stop itself. `ramp_channels_at()` is the
   one interpolation (callers `cell_style()`, `logo_color_at()`), ramp read
   via `settings("HEAT_COLOR_LOGO_STOPS")`. **No alpha, fade or blend**; the
-  alpha settings must not return. Fix mappings that contradict docs; **never
+  alpha settings must not return. Fix mappings that contradict tmp; **never
   retune stops/curves/contrast for looks, never redesign on your own
   initiative** - propose instead.
 - **`heat_of_share()` is the whole colour mapping**: clamp to
@@ -620,8 +647,8 @@ resize). **Never retune a length by looking at one screen.**
 - **Column widths are characters, never persisted**: `column_extents()` →
   `column_limits()` (lo, hi, each + `TABLE_COLUMN_EXTRA_WIDTH_CHARS`) →
   `column_width_text()`, twins in `theme.py` and `theme.js`; lo is
-  `data-min`. **`CSS_LAYOUT` on**: lo is the cells (only a heading is cut),
-  hi heading and cells; with L/H = Σlo/Σhi of non-grow columns, S = H - L,
+  `data-min`, the cells (only a heading is cut); hi heading and cells;
+  with L/H = Σlo/Σhi of non-grow columns, S = H - L,
   G = grow lo (else 0): `{lo}ch` if hi = lo, else
   `clamp(lo, lo + (100cqw - (L+G)) * (hi-lo) / S, hi)`; grow
   `max(G, 100cqw - clamp(L, 100cqw - G, H))` (Gecko). G is the grow
@@ -629,9 +656,7 @@ resize). **Never retune a length by looking at one screen.**
   table sits in is an inline-size container (`.page`, `#main`, `.home`,
   `.dbox`). A scrolling one needs `scrollbar-gutter: stable`: Chrome
   sizes it before its auto scrollbar, so `100cqw` would include the bar.
-  Drags `design_px()` rects and `clientX`. **Off**: each widest,
-  **never narrower than the title**; `grow_column_fill()` measures
-  `nearest_scroller()`, not `window.innerWidth`.
+  Drags `design_px()` rects and `clientX`, floored at `data-min`.
 - **Counter descriptions**: `ui_strings.js` `str_counter_<key>` and
   README's "Callgrind Counters" table are **byte-identical per key**, all 19;
   Python is not a third place. `<select>` width = longest
@@ -737,7 +762,8 @@ Each proves a different property; running one verifies a third.
    reuse.
 
 **Run in that order** (each mode's precondition is the previous one's
-postcondition), ≈ 6 min on warm ccache; `dev/scripts/test_all.sh` does,
-reading only `--help`; every argument goes to each mode's `enforcer.sh`. A
-bare run is `--verbose`, teed into `dev/docs/test_all.md` (one build's
-snapshot, for a reader or an AI); any flag at all writes nothing.
+postcondition), ≈ 6 min on warm ccache. `dev/scripts/test_all.sh` runs mode
+2 alone, `--verbose`, stdout teed into `dev/enforcer.md` and stderr into
+`dev/enforcer.log` (both gitignored), then the failure-mode tests on copies
+of its reports (`tmp/failure-modes.md`, `tmp/error-handling-tests.md`);
+it takes no argument but `--help`.
