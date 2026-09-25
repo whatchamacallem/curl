@@ -614,8 +614,6 @@ main() {
   trap 'rm -f "$RUN_LOG"' EXIT
   table_head_print "${_STAGE_TABLE_HEADINGS[@]}"
 
-  # the cheapest input to prove, and proved before a report is read or
-  # deleted: the one list every source stage below takes its files from
   whitelist_expand
 
   # before the clear, which reads its answer: a regenerated run's input is
@@ -624,7 +622,7 @@ main() {
   clear_overwritten_folders
 
   # dev/ source, seconds each and measuring nothing. A fault here would
-  # otherwise be found after the profiling run, an hour further on
+  # otherwise be found after the profiling run.
   format_shell
   format_python
   format_c

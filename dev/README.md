@@ -1,9 +1,18 @@
-# perf2html README
+# perf2html README.md
 
-The HTML will open straight from disk, with no server. If you start by opening
-the top level `index.html` in the report then bookmarks should work.
+`perf2html` is a collection of scripts that profile `perf` and generate html
+reports about the results.
 
-## The Scripts
+## Using A Report
+
+The HTML will open straight from disk, with no server. Start by opening the top
+level `index.html` in the report and then bookmarks will work.
+
+The html app is stateless following REST style. This means the navigation URLs
+are immutable (so bookmarks work) and the file URLs used by JavaScript are also
+immutable (so no server is needed and perfect caching is possible).
+
+## Running the Generator Scripts
 
 These are the scripts for using `perf2html`. While the scripts directory does
 contain a few more interesting files, none of them should be needed to use the
@@ -87,9 +96,9 @@ the heat map, under these same names.
 See the [callgrind](https://valgrind.org/docs/manual/cl-manual.html) docs. GPL
 Version 3, 29 June 2007.
 
-## Reading a Diff Report
+## Reading A Diff Report
 
-### Regular report
+### Regular Report
 
 A regular report shows you a percentage of a total as you might expect. In most
 places it is a percentage of a global total cycle count, however in the source
@@ -102,7 +111,7 @@ view it may also be a percentage of a file or function if selected.
 | 500 / 5000  |  10.0% |
 | 5000 / 5000 | 100.0% |
 
-### Diff report
+### Diff Report
 
 A diff report uses percentages the same way a stock market ticker does. Every
 number in it is the modified profile minus the baseline one, per function, file
