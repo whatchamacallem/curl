@@ -23,6 +23,15 @@ generators.
   `perf2html.sh` reports.
 - `perf2html_batch.sh` : Generate 3 reports, a baseline version, a modified
   version, and a diff.
+- `scripts/enforcer.sh` : Format, lint and scan the tooling, run the batch,
+  then validate and screenshot the three reports it wrote.
+- `scripts/test_all.sh` : Run `enforcer.sh --keep-artifacts`, then the
+  failure-mode tests on copies of its reports. Takes no arguments.
+- `clean.sh` : Delete every generated file under `dev/` and the ccache entries
+  the builds made. `--help` is its only argument.
+
+Each script's `--help` prints its block below, byte for byte; `test_all.sh`
+checks that.
 
 ```txt
 perf2html.sh [debug-flags] [--report=DIR] [cmake-flags...]
@@ -33,13 +42,17 @@ perf2html.sh [debug-flags] [--report=DIR] [cmake-flags...]
                       perf2html_modified_report when a cmake flag is given.
                       Pass it yourself after a source-only change.
     cmake-flags       Everything else, e.g. -D CMAKE_C_FLAGS=-Os.
+```
 
+```txt
 perf2html_diff.sh [debug-flags] [baseline] [modified] [diff]
     Measures nothing: Compares the counters in two profiling reports and
     generates a diff. Directories default to
     ./perf2html_{baseline,modified,diff}_report. Both baseline and modified
     must be a perf2html.sh report. A diff can't be diffed.
+```
 
+```txt
 perf2html_batch.sh [debug-flags] [--target-dir=DIR] [cmake-flags...]
     Profiles baseline, modified and then does a diff of them.
     --target-dir=DIR  Holds the three default-named reports (default CWD). The
@@ -48,9 +61,10 @@ perf2html_batch.sh [debug-flags] [--target-dir=DIR] [cmake-flags...]
                       modified build (default -D CMAKE_C_FLAGS=-Os).
 ```
 
-These are developer flags for the iterative development of `perf2html` itself.
+These are shared developer flags for the iterative development of `perf2html` itself.
 
 ```txt
+  debug-flags:
     --artifacts=TMP   The profiler artifacts directory. Defaults to
                       perf2html_temporary_artifacts/ beside the report
                       directory (inside the target dir for a batch).
