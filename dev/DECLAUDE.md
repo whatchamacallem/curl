@@ -122,8 +122,10 @@ taskset -c 3 ./build-relwithdebinfo/22_DCMAKECFLAGSO2g/tests/perf/perf \
   shoots. **The batch runs no checks** - a hand-run batch is measuring, not
   verifying.
 - `--regenerate` rebuilds all three reports' pages from the last run's
-  recordings. Artifacts dir **defaults to `perf2html_temporary_artifacts/`
-  in the report's parent dir**; `--artifacts=TMP` overrides in all three.
+  recordings, **its whole input: a report is output only, emptied on every
+  run and read back by nothing.** Artifacts dir **defaults to
+  `perf2html_temporary_artifacts/` in the report's parent dir**;
+  `--artifacts=TMP` overrides in all three.
 - **Pass `enforcer.sh --regenerate` every time**, except after `perf` was
   re-linked. It is checked: `regenerate_check` runs before any work (after
   only `whitelist_expand`) and stale recordings are a **hard error**
@@ -132,11 +134,13 @@ taskset -c 3 ./build-relwithdebinfo/22_DCMAKECFLAGSO2g/tests/perf/perf \
   before starting work. The three
   default-named reports and `enforcer.sh`'s artifacts dir are debug output,
   deletable any time.
-- **`manifest_verify` is the one door saying why a dir is not a report**;
-  every `--regenerate` path calls it on all three reports **as its first
-  step**, before anything is created or deleted; a missing manifest is a
-  hard error. The batch's `regenerate_inputs_verify` does it before its
-  artifacts dir and log exist.
+- **`manifest_verify` is the one door saying why a dir is not a report**.
+  `--regenerate` opens no report: each measuring run leaves its rows in the
+  artifacts dir as `header.overview.<report basename>.txt`
+  (`HEADER_ROWS_NAME`), and `perf2html.sh`'s `stamp_reuse`, the batch's
+  `regenerate_inputs_verify` and the enforcer's `regenerate_check` each
+  prove that file and its recordings exist **as their first step**, before
+  anything is created or deleted; a missing one is a hard error.
 - **A recording in the link's own second is still that link's**: refuse only
   when the binary is **strictly newer**. `find -newer` alone was the bug.
 - `--target-dir=DIR` (default CWD) holds the three **default-named** reports.
@@ -164,20 +168,33 @@ measures nothing and subtracts two reports' `raw/` archives;
 - **A silent downgrade is the same fault.** Never quietly do the more
   expensive thing; **prefer the refusal whenever the fallback is the
   expensive branch** - hence `--regenerate` refuses rather than measures.
-- **No news is good news.** Only `test_all.sh` prints on success; the rest
-  print on failure or under `--verbose`. Every success line of the four
-  scripts (`build ... | 15s`, `<test> loops=...`, `manifest`, `overview`,
-  the entry page's path) is a `log_verbose` paragraph; the batch's two
-  tables (`header_table_print` after its title: started/git/cmake/cc/curl/
-  kernel/pinned cpu; `<script>, after the three steps`: `baseline |
-  modified | diff` seconds) are `table_head_print`/`table_row_print`.
-  Nothing prints a `file://` URL, a host or a user name;
-  `$HOME/` prints as `~/`.
+- **No news is good news: nothing prints a success line unless
+  `--verbose`.** Only `test_all.sh` prints on success (`ok <test>`, on
+  stdout); the rest print on failure or under `--verbose`. **Every line
+  our scripts print is on stderr**: `verbose_filter`, the one formatter
+  every printed line streams through, writes there, so the `--verbose`
+  markdown and every refusal are one stream and
+  `enforcer.sh --verbose 2> enforcer.md` is the whole run, formatted;
+  stdout carries only what a child prints there. Every success line of the
+  four scripts (`build ... | 15s`, `<test> loops=...`, `manifest`,
+  `overview`, the entry page's path) is a `log_verbose` paragraph; the
+  batch's two tables (`header_table_print` after its title:
+  started/git/cmake/cc/curl/kernel/pinned cpu; `<script>, after the three
+  steps`: `baseline | modified | diff` seconds) are
+  `table_head_print`/`table_row_print`. Our python tools
+  (`validate_report.py`, `source_scan.py`, `screenshots.py`) take
+  `--verbose` for their ok lines, on stdout like any tool's own result:
+  under `2>` they stay on the terminal. **An outside tool with a quiet
+  switch gets it unless `--verbose`** (`ruff --quiet`, prettier
+  `--log-level warn`); pyright has none, so its `0 errors` summary is the
+  one success line a quiet run prints: found that way, left as it is, like
+  any good news a tool prints that we cannot switch off. Nothing prints a
+  `file://` URL, a host or a user name; `$HOME/` prints as `~/`.
 - **`--verbose` prints the markdown `tmp/verbose2.md` shows, in real time,
-  one sub command at a time; no post processor.** `verbose_begin` (after
-  `args_parse`) reads `PERF2HTML_HEADING_DEPTH` as the script's own depth
-  (1 unset) and exports one deeper for its children: enforcer 1, batch 2,
-  perf2html/diff 3, a piece of work 4 (`test_all.sh` sets none).
+  one sub command at a time, on stderr; no post processor.** `verbose_begin`
+  (after `args_parse`) reads `PERF2HTML_HEADING_DEPTH` as the script's own
+  depth (1 unset) and exports one deeper for its children: enforcer 1,
+  batch 2, perf2html/diff 3, a piece of work 4 (`test_all.sh` sets none).
   `title_print` is the script's heading (path + arguments), `heading_print`
   one piece of work one level deeper, each `` `[elapsed] text` `` on
   `VERBOSE_START_US`; item numbers restart under every heading. A command
@@ -188,8 +205,8 @@ measures nothing and subtracts two reports' `raw/` archives;
   `words: number [unit]` lines → one single-row table - the one shape rule,
   knowing no tool and no test - else `M. line` wrapped at
   `VERBOSE_LINE_WIDTH_CHARS` with a hanging indent), `wrap PREFIX`
-  (paragraphs and items), `row LABEL` (the enforcer's tool-output rows),
-  `paths` (headings, fences, table rows). It flushes every line; only a
+  (paragraphs and items), `paths` (headings, fences, table rows). It
+  flushes every line; only a
   stat run is held, until the line
   that ends it. `table_head_print`/`table_row_print` print a table;
   `item_output_print` nests our own lines like a child's (`run_all`'s sum).
@@ -199,10 +216,11 @@ measures nothing and subtracts two reports' `raw/` archives;
   **`child_capture PAGE_FILE cmd`** (tee-or-redirect chosen before
   start, so `--verbose` streams): `command_run` for a tool,
   **`page_command_run PAGE SHOWN cmd`** for a child whose lines are page
-  content (`perf-tool/output.txt`, `flame-graph/output.txt`: the same bytes
-  are teed into the page file, whose own `$` line and `#` comments the
-  caller writes and `--verbose` never shows). One of our own scripts is a
-  plain child (`step_run`'s `"$@"`), captured by nothing: it prints
+  content (the artifacts dir's `perf-stat.<test>.<stamp>.txt` and
+  `trace.<test>.<loops>.<stamp>.log`, recordings the summary embeds: the
+  same bytes are teed into that file, whose own `$` line and `#` comments
+  the caller writes and `--verbose` never shows). One of our own scripts is
+  a plain child (`step_run`'s `"$@"`), captured by nothing: it prints
   straight to the terminal. Values come back **through globals**
   (`CHILD_EXIT_CODE`), never stdout. `$( )` around `printf`/`date`/
   `basename` is fine - a value, not a stream.
@@ -210,11 +228,14 @@ measures nothing and subtracts two reports' `raw/` archives;
   its lines in a ```` ```txt ```` fence on stderr, then exit. A failed tool
   child gets `failure_print_log_tail`: the same fence holding
   `error: exit N from: <shown command>`, the last `LOG_FAILURE_TAIL_LINES`
-  of its output and `(see: log)`. A parent of one of our scripts
-  (`step_run`, `batch_run`) prints one line on stderr and exits with the
-  child's code; the child's own fence already reached the terminal.
-  `test_all.sh`'s `enforcer_run` prints `FAILED: enforcer.sh exited N` and
-  exits N; its `| tee` keeps that code under `pipefail`. Nothing collects.
+  of its output and `(see: log)`. A parent of one of our scripts exits
+  with the child's code after one line on stderr (`step_run`) or the same
+  fence (the enforcer's `batch_run`, `child_run`); the child's own fence
+  already reached the terminal. `test_all.sh`'s `enforcer_run` redirects
+  the enforcer's stderr, the whole markdown and every fence, into
+  `dev/enforcer.md` (`2>`, the one file any script writes a run's output
+  to; gitignored), prints `FAILED: enforcer.sh exited N` and exits N.
+  Nothing collects.
 - **cmake's configure output is half the log**, so below level 2
   (`--verbose --verbose`) it goes to `/dev/null`, out of the terminal and
   `$RUN_LOG`. `tree_build` prints the item and runs it through
@@ -228,8 +249,8 @@ measures nothing and subtracts two reports' `raw/` archives;
   **Only `shared.sh` tests `$VERBOSE`**, always as `[ "$VERBOSE" -ge N ]`
   (`log_verbose`, `heading_write`, `command_item_print`,
   `item_output_print`, `table_head_print`, `table_row_print`,
-  `child_capture` at 1; `child_capture_noisy` at 2), plus
-  the enforcer's own `child_stream`; no bare `printf` wrappers.
+  `child_capture` at 1; `child_capture_noisy` at 2); no bare `printf`
+  wrappers.
   `verbose_flags_of` hands a child the same level: one `--verbose` per
   level, one per line, for `mapfile -t`.
 - `perf2html.sh` default DIR is `perf2html_baseline_report`, or
@@ -247,27 +268,34 @@ measures nothing and subtracts two reports' `raw/` archives;
   `pyright`, `ruff`, `prettier`.** It sources both `settings.sh` and
   `shared.sh`.
 - **`enforcer.sh` is "do as I say, not as I do".** It keeps its own
-  constants and spellings (`regenerate_stamp_of`,
-  `_REPORT_CHECKSUM_COMMAND`, `_SCREENSHOT_*`, `child_stream`'s `$( )` of
-  its temp log) on purpose - a check built from the code it tests is no
-  oracle. **Citing a shipping-script rule against it is not a bug by
-  itself.** Its rows are one table (`_STAGE_TABLE_HEADINGS`, header from
-  `main` and again after the batch under `heading_print "<script>, after
-  the batch"`): `stage_row_print` numbers them (`_STAGE_NUMBER`); a tool's
-  lines stream as rows before its row (`child_stream LABEL cmd`, mode
-  `row`); a failed row is `stage_row_fail` on stderr, then `stage_fail`'s
-  fence. `batch_run` runs the batch as a plain child (a `log_verbose` line
-  first ends the stage table); a failure is `stage_row_fail`, then the
-  batch's code. It sets no `RUN_LOG`. Every call in `main()` carries
-  `# [a/b/c s] what`: seconds in the flagless, `--keep-artifacts` and
-  `--regenerate` runs.
+  constants and spellings (`header_row_of`, `_REPORT_CHECKSUM_COMMAND`,
+  `_SCREENSHOT_*`, `tool_find`'s `$( )`) on purpose - a check built from
+  the code it tests is no oracle. **Citing a shipping-script rule against
+  it is not a bug by itself.** **It captures, redirects and reformats no
+  output, its own or a child's**: every child (a formatter, `pyright`,
+  `validate_report.py`, `source_scan.py`, `screenshots.py`) runs through
+  `child_run` - `command_item_print`, then the plain `"$@"`, whose lines
+  reach the terminal as they are, a non-zero exit being `error_exit` with
+  `error: exit N from: <command>`; `python_run` is `child_run` for one of
+  our python tools, handing it `verbose_flags_of`'s flags after its name.
+  Each stage is a `heading_print` (the tool's name) over its
+  `` N. `$ cmd` `` items; its own status lines (`whitelist`, `regenerate`,
+  `cleared`, `columns`) are `log_verbose`; `ruff` and `prettier` get their
+  quiet switch unless `--verbose`.
+  `tools_resolve` finds every formatter and linter once, before anything
+  is deleted (`_SHFMT`, `_RUFF`, `_CLANG_FORMAT`, `_PRETTIER`,
+  `_PYRIGHT`), naming every missing one with its install command.
+  `batch_run` runs the batch as a plain child after a `log_verbose` line;
+  a failure is `error_exit` with the batch's code. It sets no `RUN_LOG`.
+  Every call in `main()` carries `# [a/b/c s] what`: seconds in the
+  flagless, `--keep-artifacts` and `--regenerate` runs.
 - **Verification may read a shared value** (name, key, suffix) from the
   settings, and **never adds a setting**. A _calculation_ it checks gets
   local expected constants or a different-route recomputation - **never the
   code under test** (e.g. no shared manifest validation).
 - **Stage order is cost-ascending**: `whitelist_expand` →
-  `regenerate_check` → `clear_overwritten_folders` (verbose row `surface`;
-  skipped under `--regenerate`; deletes the three reports, never the
+  `regenerate_check` → `tools_resolve` → `clear_overwritten_folders`
+  (deletes the three reports, `--regenerate` included, never the
   artifacts dir) → shfmt, ruff, clang-format, prettier →
   `long_lines_report` → `source_scan_run` → `lint_run` (pyright) →
   `batch_run` → `validate_run` → `screenshots_run` **last**. Every source
@@ -276,8 +304,8 @@ measures nothing and subtracts two reports' `raw/` archives;
   `_VIEWS` hash × `_SCREENSHOT_VIEWPORTS` (720p/1080p/4k), into
   `dev/screenshots/<size>_<report>_<view>.png`, then 4k 3x3 contact sheets
   `thumbnail_<size>_<report>.png`. **Imports no settings; no `_VIEWS` entry
-  names a test**; one error view (`bad_function`). It prints
-  `<report> -> <dir>` and `N screenshot(s)`, never a file name.
+  names a test**; one error view (`bad_function`). Under `--verbose` it
+  prints `<report> -> <dir>` and `N screenshot(s)`, never a file name.
 - **`scripts/enforcer_whitelist.txt` is the one list of what the source
   stages touch**: one glob per line, relative to `dev/` (a blank, `#` or
   whitespace line is refused). `whitelist_expand` expands it once, first,
@@ -288,13 +316,14 @@ measures nothing and subtracts two reports' `raw/` archives;
   `dev/tmp/`, configs) is never touched. `--config`/`--project` always
   passed; pyright is handed the whitelisted `.py` files, and
   `pyrightconfig.json` names none.
-- **`regenerate_check`** verifies all three manifests first, then dates
-  **each measured report's** newest timing recording (`perf-stat.*.csv`,
-  `PROFILE_TIMING_FILE_PREFIX`) against the executable its own
-  `executable=` row names (first token, repo-relative, resolved via
-  `_DIR_REPO`) - each has its own tree. A strictly newer binary refuses.
-  The diff names no tree. Missing executable/row/artifacts dir/`stamp=`
-  row or unfinished report each refuse, naming the report.
+- **`regenerate_check`** reads **each measured report's** rows file in the
+  artifacts dir (`header.overview.<report>.txt`; no report is opened),
+  then dates its newest timing recording (`perf-stat.*.csv`,
+  `PROFILE_TIMING_FILE_PREFIX`) against the executable its `executable=`
+  row names (first token, repo-relative, resolved via `_DIR_REPO`) - each
+  has its own tree. A strictly newer binary refuses. The diff names no
+  tree. Missing artifacts dir/rows file/`stamp=` row/recordings/
+  `executable=` row/executable each refuse, naming the report.
 - **`stamp=` is `<unix> <human date>`**; readers take the first token via
   **`manifest_stamp_of`**. **`manifest_value` stays general** (`cpu=`,
   `build=` hold spaces).
@@ -327,8 +356,11 @@ assignment per line**, parsed also by `settings.py`
 word is expanded** - no `$` words. Hand-written. **One name in all three
 languages.** **`TIMESTAMP` is per-script** (`$(date +%s)`), assigned just
 above `_SCRIPT="$(readlink -f "$0")"` in each shipping script;
-`perf2html.sh --regenerate` restores it from `stamp=`, the diff's never does
-(it names artifacts only, recorded nowhere). `enforcer.sh` declares none.
+`perf2html.sh --regenerate` restores it from the `stamp=` row of
+`$ARTIFACTS_DIR/header.overview.<report basename>.txt` (`_HEADER_FILE`,
+set in `args_parse`; `run_all` writes it, the overview reads it), the
+diff's never does (it names artifacts only, recorded nowhere).
+`enforcer.sh` declares none.
 `$0`-derived values (`_REPO`), `usage_show`, `args_parse` stay per-script.
 `_TESTS` comes from `tests/perf/Makefile.inc`. Notable:
 `PROFILE_PINNED_CPU=3`, `REPORT_RAW_ARCHIVE_SUFFIX` (`.txz`, dot included),
@@ -366,12 +398,16 @@ checksum label and manifest script name are settings.
 
 ```text
 OUTDIR/  index.html (overview)  <test>/{index.html,flame-graph/,heat-map/,
-perf-tool/,raw/}  all/  assets/  flame-graph-app/  sources/  README.md
-MANIFEST.txt
+raw/}  all/  assets/  flame-graph-app/  sources/  README.md  MANIFEST.txt
 ```
 
 `raw/<test>.txz` = callgrind file + speedscope JSON; `all/` = every test
-merged; `README.md` copied from `dev/README.md` each run; `MANIFEST.txt`
+merged; **no `output.txt` ships**: the perf and trace logs are recordings
+in the artifacts dir (`perf-stat.<test>.<stamp>.txt`,
+`trace.<test>.<loops>.<stamp>.log`, `perf_page_of`/`_TRACE_LOG`), embedded
+in the summary's `perf log`/`trace log` sections and read by the overview
+through `--perf-log NAME=FILE`, one per test, `all` included;
+`README.md` copied from `dev/README.md` each run; `MANIFEST.txt`
 line 1 = version string, then LABEL=VALUE: full `sampled`, `revision`,
 `cpu`, `build`, `executable`, `stamp`, `checksum`; diff `baseline`,
 `modified`, `baseline_stamp`, `modified_stamp`, `checksum` - **no
@@ -391,9 +427,11 @@ line 1 = version string, then LABEL=VALUE: full `sampled`, `revision`,
   manifest and `log_verbose`s the entry page. **A dir is cleared only if its
   own `MANIFEST.txt` proves we wrote it**; a populated dir without one is
   refused, as is `--artifacts` inside the report. `--regenerate` clears
-  nothing.
-- **`--regenerate` reads every row it needs in `build_manifest`**, before
-  `main` drops the old manifest.
+  too: a report is output only.
+- **`--regenerate` reads every row it needs from the rows file**
+  (`stamp_reuse` the stamp, `build_manifest` the rest, both before
+  `report_begin`); the diff's `--regenerate` is `--keep-artifacts` alone,
+  everything being re-derived from its two inputs on every run.
 - **`checksum=`**: POSIX `cksum` over every file but the manifest,
   `LC_ALL=C` sorted, relative paths; **re-verified whenever a tool opens a
   report**. `home_dir_check` fails on `$HOME`. `checksum_compute` and
@@ -455,8 +493,8 @@ glob matches exactly one file. `page_scripts()` makes a bad href fail loudly.
   `text.length` math). `source_scan.py` checks exactly the whitelisted
   files, before `batch_run`.
 - Reformatting `heatmap.*`, `frame.js`, `flame_bootstrap.js`, `theme.css`,
-  `theme.js` changes reports. Text echoed into `perf-tool/output.txt` is page
-  content.
+  `theme.js` changes reports. Text echoed into a perf or trace log
+  recording is page content.
 - **`scripts/` page assets may carry comments**, under the 2-line limit.
   In Python and shell, one `# <Name> - what it is` above every
   class/function and one `#` line above every field; no trailing comments,
@@ -542,12 +580,15 @@ plain-word path, two words min, unit suffix (`_PX`, `_MS`, `_PERCENT`,
   `loadFileFromBase64`, `var document_base64 = "..."`,
   `report_ui.layout_activate` - rename one and every page fails. Reports
   only; the report dir is required. A layout's `manifest_stamp_labels`
-  (full `stamp`, diff both `*_stamp`) get the unix-time check.
+  (full `stamp`, diff both `*_stamp`) get the unix-time check. The timing
+  line is checked in the summary's `perf log` section (`perf_tool_check`).
+  Its ok line prints under `--verbose` only, on stdout.
 - **`source_scan.py`**: file paths only (`nargs="+"`), each read once for
   the comment block and ASCII checks. Each kind's syntax is in
   `_COMMENT_SYNTAX_BY_EXTENSION` (`.html` adds `//`, `/* */`); an unknown
   kind or an unreadable or non-UTF-8 file stops it at once. Faults print
-  sorted as `path:line: message`, no tally.
+  sorted as `path:line: message`, no tally; the ok line (count, limit,
+  allowed set) under `--verbose` only.
 
 ### 6.4 `ui_strings.js`, `error_overlay.js`, JS names
 
@@ -763,7 +804,14 @@ Each proves a different property; running one verifies a third.
 
 **Run in that order** (each mode's precondition is the previous one's
 postcondition), ≈ 6 min on warm ccache. `dev/scripts/test_all.sh` runs mode
-2 alone, `--verbose`, stdout teed into `dev/enforcer.md` and stderr into
-`dev/enforcer.log` (both gitignored), then the failure-mode tests on copies
-of its reports (`tmp/failure-modes.md`, `tmp/error-handling-tests.md`);
-it takes no argument but `--help`.
+2 alone, `--verbose`, its stderr (the whole markdown) redirected (`2>`)
+into `dev/enforcer.md` (gitignored), its stdout (what the children print
+there) on the terminal, then the failure-mode tests
+(`tmp/failure-modes.md`) on copies of its reports in
+`dev/build/test_all_scratch/` (`_TEST_ALL_SCRATCH`; under `build/`, being
+no output; gitignored; replaced by each run, deleted once every test
+passed, kept by a failed one). **It captures nothing and makes no temp
+file**: each refusal streams to the terminal as it prints, `failure_expect`
+proves the exit code alone and prints `ok <test>`, and a wrong code is
+`FAILED: <test>: exit N, expected M` on stderr, exit 1. It takes no
+argument but `--help`.

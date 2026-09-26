@@ -167,6 +167,12 @@ def main() -> int:
         default="",
         help=f"where the PNGs go (default dev/{_SCREENSHOT_DIR_NAME})",
     )
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="print where the shots go and how many; a quiet run prints"
+        " nothing on success",
+    )
     namespace = parser.parse_args()
 
     report = os.path.abspath(namespace.report)
@@ -195,7 +201,8 @@ def main() -> int:
     out_dir = os.path.abspath(out_dir)
     os.makedirs(out_dir, exist_ok=True)
 
-    print(f"{os.path.basename(report)} -> {out_dir}")
+    if namespace.verbose:
+        print(f"{os.path.basename(report)} -> {out_dir}")
     shooter = Screenshots(browser, report, out_dir)
     written = shooter.shoot_all(namespace.prefix)
 
@@ -209,7 +216,8 @@ def main() -> int:
         return 1
 
     shooter.sheets_write(namespace.prefix)
-    print(f"{written} screenshot(s)")
+    if namespace.verbose:
+        print(f"{written} screenshot(s)")
     return 0
 
 

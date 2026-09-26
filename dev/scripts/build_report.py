@@ -114,6 +114,8 @@ class BuildReport:
         # each test's working diff profile as "name=path", for a diff
         # overview
         diff_profile: list[str]
+        # each test's perf log as "name=path", for a full overview
+        perf_log: list[str]
 
     # StripLink - One link in a page's top strip.
     class StripLink(NamedTuple):
@@ -362,12 +364,7 @@ class BuildReport:
             theme.Column("% of change", numeric=True),
             theme.Column("functions changed", numeric=True),
         ]
-        profile_of: dict[str, str] = {}
-        for entry in diff_profiles:
-            if "=" not in entry:
-                sys.exit(f"error: --diff-profile wants NAME=FILE: {entry!r}")
-            name, path = entry.split("=", 1)
-            profile_of[name] = path
+        profile_of = self.named_paths_of(diff_profiles, "--diff-profile")
         rows: list[list[theme.CellOrText]] = []
         for test in tests:
             # every test the diff paired has its delta and its callers file
@@ -638,6 +635,19 @@ class BuildReport:
             column_titles=False,
         )
 
+    # The NAME=FILE arguments of one repeatable flag as a name to path map;
+    # an entry without the "=" is a broken command line, stopped here.
+    def named_paths_of(
+        self, entries: Sequence[str], flag: str
+    ) -> dict[str, str]:
+        path_of: dict[str, str] = {}
+        for entry in entries:
+            if "=" not in entry:
+                sys.exit(f"error: {flag} wants NAME=FILE: {entry!r}")
+            name, path = entry.split("=", 1)
+            path_of[name] = path
+        return path_of
+
     # A collapsed section holding a captured log, with its times humanized.
     def output_section(self, title: str, path: str) -> str:
         if not path:
@@ -648,13 +658,14 @@ class BuildReport:
     # Write the full report's overview page, from each test's perf log.
     def overview(self, args: BuildReport.OverviewArgs) -> None:
         tests = self.overview_tests(args)
+        perf_log_of = self.named_paths_of(args.perf_log, "--perf-log")
         keys: list[str] = []
         numbers: dict[str, dict[str, str]] = {}
         for test in tests:
             values: dict[str, str] = {}
-            for line in self.file_read(
-                os.path.join(test.directory, "perf-tool", "output.txt")
-            ).splitlines():
+            # every test named has its perf log named too: one without is a
+            # broken run, never an empty row
+            for line in self.file_read(perf_log_of[test.name]).splitlines():
                 match = re.match(r"^([A-Za-z][^:]{0,30}):\s+(.+?)\s*$", line)
                 if match:
                     values[match.group(1)] = self.value_humanize(
@@ -994,9 +1005,8 @@ def main() -> None:
         "--trace-log",
         default="",
         metavar="FILE",
-        help="the native trace run's captured output"
-        " (flame-graph/output.txt), shown in a collapsed 'trace log'"
-        " section; without it the page has no flame graph link",
+        help="the native trace run's captured output, shown in a collapsed"
+        " 'trace log' section; without it the page has no flame graph link",
     )
     test_parser.add_argument(
         "--no-log",
@@ -1053,6 +1063,14 @@ def main() -> None:
         f" that name plus {_DIFF_CALLER_COUNTS_FILE_SUFFIX}). repeatable",
     )
     overview_parser.add_argument(
+        "--perf-log",
+        action="append",
+        metavar="NAME=FILE",
+        default=[],
+        help="without --diff, a test's perf log as the timing run wrote it,"
+        " to read its row from. repeatable, one per --test",
+    )
+    overview_parser.add_argument(
         "--header", action="append", metavar="LABEL=VALUE", default=[]
     )
     overview_parser.add_argument(
@@ -1105,6 +1123,7 @@ def main() -> None:
             header_file=namespace.header_file,
             header_block=namespace.header_block,
             diff_profile=namespace.diff_profile,
+            perf_log=namespace.perf_log,
         )
         (report.diff_overview if namespace.diff else report.overview)(
             overview_args

@@ -56,6 +56,8 @@ class ValidateReport:
         out_dir: str
         # check it as a diff report rather than a full one
         diff: bool
+        # print the ok line, on stdout: a quiet run prints nothing on success
+        verbose: bool
 
     def __init__(self) -> None:
         # every problem found so far, printed together at the end
@@ -138,11 +140,6 @@ class ValidateReport:
                 f"{_FLAME_GRAPH_VIEW_KEY}/index.html does not load the shared "
                 f"{_FLAME_GRAPH_APP_DIR_NAME}/ bundle: {flame_dir}/index.html"
             )
-        self.size_check(
-            os.path.join(flame_dir, "output.txt"),
-            _VALIDATE_FLAME_GRAPH_LOG_LEAST_BYTES,
-            f"{_FLAME_GRAPH_VIEW_KEY}/output.txt",
-        )
         script = self.size_check(
             os.path.join(flame_dir, "profile.js"),
             _VALIDATE_FLAME_GRAPH_SCRIPT_LEAST_BYTES,
@@ -443,33 +440,29 @@ class ValidateReport:
             match = re.search(r"<title>(.*?)</title>", handle.read())
         return match.group(1) if match else None
 
-    # The perf log: a real timing line, and a section only where one exists.
+    # The perf log section: only where a timing run exists, and then holding
+    # a real timing line. The recording itself is an artifact, not shipped.
     def perf_tool_check(self, out_dir: str, has_perf_log: bool) -> None:
-        out_txt = os.path.join(out_dir, "perf-tool", "output.txt")
-        text = self.size_check(
-            out_txt, _VALIDATE_PERF_LOG_LEAST_BYTES, "perf-tool/output.txt"
-        )
-        if text and not re.search(r"^Time(/\w+)?:\s+\d", text, re.M):
-            self.fail(
-                "perf-tool/output.txt has no recognizable timing"
-                f" line: {out_txt}"
-            )
+        index_path = os.path.join(out_dir, "index.html")
         index_text = self.size_check(
-            os.path.join(out_dir, "index.html"),
-            _VALIDATE_OVERVIEW_PAGE_LEAST_BYTES,
-            "index.html",
+            index_path, _VALIDATE_OVERVIEW_PAGE_LEAST_BYTES, "index.html"
         )
-        if index_text:
-            if has_perf_log and "<h2>perf log</h2>" not in index_text:
+        if not index_text:
+            return
+        if not has_perf_log:
+            if "<h2>perf log</h2>" in index_text:
                 self.fail(
-                    "index.html has no 'perf log' section: "
-                    f"{os.path.join(out_dir, 'index.html')}"
+                    "index.html has a 'perf log' section, but it should"
+                    f" not: {index_path}"
                 )
-            elif not has_perf_log and "<h2>perf log</h2>" in index_text:
-                self.fail(
-                    f"index.html has a 'perf log' section, but it should not: "
-                    f"{os.path.join(out_dir, 'index.html')}"
-                )
+            return
+        if "<h2>perf log</h2>" not in index_text:
+            self.fail(f"index.html has no 'perf log' section: {index_path}")
+        elif not re.search(r"^Time(/\w+)?:\s+\d", index_text, re.M):
+            self.fail(
+                "index.html's 'perf log' section has no recognizable"
+                f" timing line: {index_path}"
+            )
 
     # One archive: openable, holding a callgrind file, and naming no
     # absolute path from the box that made it.
@@ -582,7 +575,8 @@ class ValidateReport:
             for error in self.errors:
                 print(f"  - {error}", file=sys.stderr)
             return 1
-        print(f"validate_report: ok ({out_dir})", file=sys.stderr)
+        if args.verbose:
+            print(f"validate_report: ok ({out_dir})")
         return 0
 
     # Read a text file, complaining if it is missing or implausibly small.
@@ -692,14 +686,12 @@ _REPORT_CHECKSUM_COMMAND = (
 )
 
 # Smallest a file can be before it is plainly a failed generate. The flame
-# graph page is a loader and the logs are appended text, so each has its own.
-_VALIDATE_FLAME_GRAPH_LOG_LEAST_BYTES = 20
+# graph page is a loader, so it has its own.
 _VALIDATE_FLAME_GRAPH_PAGE_LEAST_BYTES = 300
 _VALIDATE_FLAME_GRAPH_SCRIPT_LEAST_BYTES = 200
 _VALIDATE_HEAT_MAP_PAGE_LEAST_BYTES = 5000
 _VALIDATE_MANIFEST_LEAST_BYTES = 40
 _VALIDATE_OVERVIEW_PAGE_LEAST_BYTES = 2000
-_VALIDATE_PERF_LOG_LEAST_BYTES = 20
 _VALIDATE_RAW_ARCHIVE_LEAST_BYTES = 100
 
 
@@ -712,11 +704,18 @@ def main() -> int:
         action="store_true",
         help="a perf2html_diff.sh report: heat map only",
     )
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="print the ok line; a quiet run prints nothing on success",
+    )
     namespace = parser.parse_args()
     validator = ValidateReport()
     return validator.run(
         ValidateReport.ValidateArgs(
-            out_dir=namespace.out_dir, diff=namespace.diff
+            out_dir=namespace.out_dir,
+            diff=namespace.diff,
+            verbose=namespace.verbose,
         )
     )
 

@@ -78,12 +78,6 @@ _DEFAULT_REPORTS=(
   "$_DIR_DEV/$REPORT_DIFF_DIR_NAME"
 )
 
-# the headings of the stage table every row below sits in
-_STAGE_TABLE_HEADINGS=('#' stage result detail)
-
-# counts the stage rows printed, the number leading each row
-_STAGE_NUMBER=0
-
 # tool_find - echo a tool's path, searching the pip and npm user bins too.
 tool_find() {
   local _name="$1" _found
@@ -99,97 +93,56 @@ tool_find() {
   return 1
 }
 
-# child_stream - run one child, streaming it live as rows of the stage table.
-# SETS STAGE_EXIT_CODE and STAGE_OUTPUT. Never $( ): that buffers the child.
-child_stream() {
-  # args: the row's stage label, then the command
-  local _label="$1" _log _statuses=() _status
-  shift
-  _log="$(mktemp)"
-  STAGE_EXIT_CODE=0
-
-  # the tee is chosen before the child starts, so verbose watches the work
-  # happen rather than reading it replayed once the child has exited
-  if [ "$VERBOSE" -ge 1 ]; then
-    if ! { "$@" 2>&1 | tee "$_log" | verbose_filter row "$_label"; }; then
-      _statuses=("${PIPESTATUS[@]}")
-    fi
-  elif ! { "$@" 2>&1 | tee "$_log" >/dev/null; }; then
-    _statuses=("${PIPESTATUS[@]}")
-  fi
-
-  STAGE_OUTPUT="$(cat "$_log")"
-  rm -f "$_log"
-  [ "${#_statuses[@]}" != 0 ] || return 0
-  STAGE_EXIT_CODE="${_statuses[0]}"
-  for _status in "${_statuses[@]:1}"; do
-    [ "$_status" = 0 ] || error_exit 1 \
-      "error: tee or verbose_filter exited $_status behind: $*"
-  done
-}
-
-# stage_row_print - one stage's row of the table, numbered on: label,
-# verdict, detail.
-stage_row_print() {
-  _STAGE_NUMBER=$((_STAGE_NUMBER + 1))
-  table_row_print "$_STAGE_NUMBER" "$1" "$2" "$3"
-}
-
-# stage_row_fail - a failed stage's row, on stderr whatever the verbosity:
-# it is the verdict a reader acts on.
-stage_row_fail() {
-  _STAGE_NUMBER=$((_STAGE_NUMBER + 1))
-  printf '\n| %s | %s | %s | %s |\n' "$_STAGE_NUMBER" "$1" "$2" "$3" \
-    | verbose_filter paths >&2
-}
-
-# stage_fail - print one stage's verdict and output, then stop the run. The
-# first fault is the one a reader must act on, so nothing follows it.
-stage_fail() {
-  local _label="$1" _verdict="$2" _summary="$3" _output="$4"
-
-  stage_row_fail "$_label" "$_verdict" "$_summary"
-  [ -n "$_output" ] || _output="$_label: $_verdict, and it printed nothing"
-  error_exit 1 "$_output"
-}
-
-# tool_missing_fail - a tool that is not installed never checked its files,
-# so the run is not a verification and stops here with how to install it.
-tool_missing_fail() {
-  local _label="$1" _name="$2"
-
-  stage_row_fail "$_label" MISSING "not installed: $_name"
-  error_exit 1 "error: $_name is missing, so $_label never ran" \
+# tools_resolve - find every tool the source stages run, before any work.
+# SETS _SHFMT, _RUFF, _CLANG_FORMAT, _PRETTIER and _PYRIGHT.
+tools_resolve() {
+  # a tool that is not installed never checked its files, so the run would
+  # be no verification: every missing one is named with its install command
+  local _missing=()
+  _SHFMT="$(tool_find shfmt)" || _missing+=(shfmt)
+  _RUFF="$(tool_find ruff)" || _missing+=(ruff)
+  _CLANG_FORMAT="$(tool_find clang-format)" || _missing+=(clang-format)
+  _PRETTIER="$(tool_find prettier)" || _missing+=(prettier)
+  _PYRIGHT="$(tool_find pyright)" || _missing+=(pyright)
+  [ "${#_missing[@]}" = 0 ] || error_exit 1 \
+    "error: ${#_missing[@]} tool(s) missing, so nothing is verified:" \
+    "${_missing[*]}" \
     "  sudo apt-get install -y shfmt clang-format" \
     "  pip3 install --user --break-system-packages ruff" \
     "  npm install -g prettier pyright"
 }
 
-# tool_run - run one tool with _TOOL_ARGS over the files, printing a status
-# row. Any fault at all stops the run where it happened.
-tool_run() {
-  local _name="$1" _label="$2"
-  shift 2
-  local _binary
+# child_run - one plain child, printed as an item: its lines reach the
+# terminal as they are, and a non-zero exit is a hard error naming it.
+child_run() {
+  local _exit_code=0
+  command_item_print "$*"
+  "$@" || _exit_code=$?
+  [ "$_exit_code" = 0 ] \
+    || error_exit "$_exit_code" "error: exit $_exit_code from: $*"
+}
 
-  if ! _binary="$(tool_find "$_name")"; then
-    tool_missing_fail "$_label" "$_name"
-  fi
+# tool_run - one tool with _TOOL_ARGS over the files given. A kind the
+# whitelist holds none of leaves it nothing to run.
+tool_run() {
+  local _binary="$1" _name="$2"
+  shift 2
 
   if [ "$#" = 0 ]; then
-    stage_row_print "$_label" ok "no files"
+    log_verbose "$_name: no files"
     return 0
   fi
 
-  child_stream "$_label" "$_binary" "${_TOOL_ARGS[@]}" "$@"
+  child_run "$_binary" "${_TOOL_ARGS[@]}" "$@"
+}
 
-  if [ "$STAGE_EXIT_CODE" = 0 ]; then
-    stage_row_print "$_label" ok "$# file(s)"
-    return 0
-  fi
-
-  stage_fail "$_label" CHANGED "$(echo "$STAGE_OUTPUT" | head -n 1)" \
-    "$STAGE_OUTPUT"
+# python_run - one of our python tools as a child, handed this run's
+# --verbose level after its name: its good news prints only then, on stdout.
+python_run() {
+  local _script="$1" _flags=()
+  shift
+  mapfile -t _flags < <(verbose_flags_of)
+  child_run python3 "$_script" "${_flags[@]}" "$@"
 }
 
 # whitelist_refuse - say why the whitelist cannot be enforced and stop.
@@ -228,7 +181,7 @@ whitelist_expand() {
 
   mapfile -t _WHITELISTED_FILES < <(printf '%s\n' "${_found[@]}" \
     | LC_ALL=C sort -u)
-  stage_row_print whitelist ok "${#_WHITELISTED_FILES[@]} file(s)"
+  log_verbose "whitelist: ${#_WHITELISTED_FILES[@]} file(s)"
 }
 
 # files_of - echo each whitelisted file ending in one of the extensions
@@ -252,6 +205,7 @@ format_shell() {
   local _files
   mapfile -t _files < <(files_of .sh)
 
+  heading_print shfmt
   _TOOL_ARGS=(-i "$_SHELL_INDENT" -bn -ci -ln bash)
   if [ "$_CHECK" = 1 ]; then
     _TOOL_ARGS+=(-d)
@@ -259,7 +213,7 @@ format_shell() {
     _TOOL_ARGS+=(-w)
   fi
 
-  tool_run shfmt shell "${_files[@]}"
+  tool_run "$_SHFMT" shfmt "${_files[@]}"
 }
 
 # format_python - ruff format, then ruff check, over the whitelisted python.
@@ -267,15 +221,20 @@ format_python() {
   local _files
   mapfile -t _files < <(files_of .py)
 
+  heading_print ruff
+  # --quiet prints diagnostics and nothing else: no good news unless
+  # --verbose, when ruff's own summary line streams like any child's
   _TOOL_ARGS=(format --config "$_RUFF_CONFIG")
+  [ "$VERBOSE" -ge 1 ] || _TOOL_ARGS+=(--quiet)
   if [ "$_CHECK" = 1 ]; then _TOOL_ARGS+=(--diff); fi
-  tool_run ruff python "${_files[@]}"
+  tool_run "$_RUFF" ruff "${_files[@]}"
 
   # check mode is plain "ruff check": --diff implies --fix-only, which
   # passes lints that have no fix (F821) and then fails the write run
   _TOOL_ARGS=(check --config "$_RUFF_CONFIG")
+  [ "$VERBOSE" -ge 1 ] || _TOOL_ARGS+=(--quiet)
   if [ "$_CHECK" != 1 ]; then _TOOL_ARGS+=(--fix); fi
-  tool_run ruff "python lint" "${_files[@]}"
+  tool_run "$_RUFF" ruff "${_files[@]}"
 }
 
 # format_c - clang-format over the whitelisted C, with src/'s own style.
@@ -283,6 +242,7 @@ format_c() {
   local _files
   mapfile -t _files < <(files_of .c .h)
 
+  heading_print clang-format
   _TOOL_ARGS=(--style=file:"$_CLANG_FORMAT_CONFIG")
   if [ "$_CHECK" = 1 ]; then
     _TOOL_ARGS+=(--dry-run --Werror)
@@ -290,7 +250,7 @@ format_c() {
     _TOOL_ARGS+=(-i)
   fi
 
-  tool_run clang-format c "${_files[@]}"
+  tool_run "$_CLANG_FORMAT" clang-format "${_files[@]}"
 }
 
 # format_prettier - every whitelisted markdown file and page asset. prettier
@@ -299,40 +259,33 @@ format_prettier() {
   local _files
   mapfile -t _files < <(files_of .md .js .css .html)
 
-  _TOOL_ARGS=(--config "$_PRETTIER_CONFIG" --log-level warn)
+  heading_print prettier
+  # at log level warn prettier names no file it formatted: no good news
+  # unless --verbose, when its per-file lines stream like any child's
+  _TOOL_ARGS=(--config "$_PRETTIER_CONFIG")
+  [ "$VERBOSE" -ge 1 ] || _TOOL_ARGS+=(--log-level warn)
   if [ "$_CHECK" = 1 ]; then
     _TOOL_ARGS+=(--check)
   else
     _TOOL_ARGS+=(--write)
   fi
 
-  tool_run prettier prettier "${_files[@]}"
+  tool_run "$_PRETTIER" prettier "${_files[@]}"
 }
 
 # lint_run - pyright over the whitelisted python. pyrightconfig.json names
 # no files: the ones given here, from the whitelist, are its whole list.
 lint_run() {
-  local _binary _files
+  local _files
   mapfile -t _files < <(files_of .py)
 
-  if ! _binary="$(tool_find pyright)"; then
-    tool_missing_fail lint pyright
-  fi
-
-  # named no file, pyright would check its whole project directory instead
-  if [ "${#_files[@]}" = 0 ]; then
-    stage_row_print lint ok "no files"
-    return 0
-  fi
-
-  child_stream lint "$_binary" --project "$_PYRIGHT_CONFIG" "${_files[@]}"
-
-  if [ "$STAGE_EXIT_CODE" = 0 ]; then
-    stage_row_print lint ok pyright
-    return 0
-  fi
-
-  stage_fail lint FAILED pyright "$STAGE_OUTPUT"
+  # named no file, pyright would check its whole project directory instead,
+  # which tool_run's empty case keeps from happening
+  heading_print pyright
+  # pyright has no quiet switch: its "0 errors" summary line is the one
+  # success line a quiet run prints, on stdout, found and left as it is
+  _TOOL_ARGS=(--project "$_PYRIGHT_CONFIG")
+  tool_run "$_PYRIGHT" pyright "${_files[@]}"
 }
 
 # long_lines_report - fail on any whitelisted line still over _COLUMNS_MAX
@@ -344,12 +297,12 @@ long_lines_report() {
     "${_WHITELISTED_FILES[@]}")"
 
   if [ -z "$_over" ]; then
-    stage_row_print columns ok "none over $_COLUMNS_MAX"
+    log_verbose "columns: none over $_COLUMNS_MAX"
     return 0
   fi
 
-  stage_fail columns TOO_LONG \
-    "$(echo "$_over" | grep -c ' cols$') line(s) over $_COLUMNS_MAX" "$_over"
+  error_exit 1 "error: $(echo "$_over" | grep -c ' cols$') line(s) over" \
+    "$_COLUMNS_MAX columns:" "$_over"
 }
 
 # report_version - line 1 of a report's MANIFEST.txt, once manifest_verify
@@ -361,8 +314,9 @@ report_version() {
 # validate_run - validate each report the batch wrote, in its order. Every
 # one must be there: the batch stops at its first failure, so all three are.
 validate_run() {
-  local _path _args _output _exit_code
+  local _path _args
 
+  heading_print validate_report.py
   for _path in "${_DEFAULT_REPORTS[@]}"; do
     # shared.sh's hard-error policy, taking both version strings so either
     # kind of report is accepted and anything else stops the run
@@ -374,31 +328,17 @@ validate_run() {
       _args+=(--diff)
     fi
 
-    child_stream validate python3 validate_report.py "${_args[@]}"
-
-    if [ "$STAGE_EXIT_CODE" = 0 ]; then
-      stage_row_print validate ok "$(basename "$_path")"
-      continue
-    fi
-
-    stage_fail validate FAILED "$(basename "$_path")" "$STAGE_OUTPUT"
+    python_run validate_report.py "${_args[@]}"
   done
 }
 
 # source_scan_run - source_scan.py's comment block and ASCII checks, over
 # every whitelisted file and in one read of each.
 source_scan_run() {
-  child_stream "source scan" python3 source_scan.py "${_WHITELISTED_FILES[@]}"
-
   # the limit and the allowed set are the scanner's own and never spelled
-  # here: its ok line and every fault it prints carry them
-  if [ "$STAGE_EXIT_CODE" = 0 ]; then
-    stage_row_print "source scan" ok "$STAGE_OUTPUT"
-    return 0
-  fi
-
-  stage_fail "source scan" FAILED "$(echo "$STAGE_OUTPUT" | head -n 1)" \
-    "$STAGE_OUTPUT"
+  # here: every fault it prints, and its --verbose ok line, carry them
+  heading_print source_scan.py
+  python_run source_scan.py "${_WHITELISTED_FILES[@]}"
 }
 
 # batch_run - write the three reports this run verifies. Its own steps stop
@@ -416,24 +356,17 @@ batch_run() {
   # reuses, and the batch owns every deletion of them
   if [ "$_KEEP_ARTIFACTS" = 1 ]; then _flags+=(--keep-artifacts); fi
 
-  # a paragraph of its own, ending the stage table: the batch's first line
-  # is its title, which a parent leads with a blank line
+  # a paragraph of its own: the batch's first line is its title, which a
+  # parent leads with a blank line
   log_verbose "$_BATCH_SCRIPT_NAME ${_flags[*]} --target-dir=$_target"
 
   # a plain child, nothing captured: its lines reach the terminal as they
-  # are, and a failed batch has printed its own refusal before the row below
+  # are, and a failed batch has printed its own refusal before this one
   "$_DIR_DEV/$_BATCH_SCRIPT_NAME" "${_flags[@]}" "--target-dir=$_target" \
     || _exit_code=$?
-
-  if [ "$_exit_code" = 0 ]; then
-    heading_print "$_SCRIPT, after the batch"
-    table_head_print "${_STAGE_TABLE_HEADINGS[@]}"
-    stage_row_print batch ok "$_BATCH_SCRIPT_NAME"
-    return 0
-  fi
-
-  stage_row_fail batch FAILED "$_BATCH_SCRIPT_NAME"
-  exit "$_exit_code"
+  [ "$_exit_code" = 0 ] || error_exit "$_exit_code" \
+    "error: exit $_exit_code from: $_BATCH_SCRIPT_NAME ${_flags[*]}" \
+    "--target-dir=$_target"
 }
 
 # screenshots_run - shoot the modified and diff reports at every viewport
@@ -441,6 +374,7 @@ batch_run() {
 screenshots_run() {
   local _name _path _prefix
 
+  heading_print "$_SCREENSHOTS_SCRIPT_NAME"
   for _name in "$REPORT_MODIFIED_DIR_NAME" "$REPORT_DIFF_DIR_NAME"; do
     _path="$_DIR_DEV/$_name"
 
@@ -449,15 +383,7 @@ screenshots_run() {
     _prefix="${_name#perf2html_}"
     _prefix="${_prefix%_report}_"
 
-    child_stream screenshots python3 "$_SCREENSHOTS_SCRIPT_NAME" "$_path" \
-      "$_prefix"
-
-    if [ "$STAGE_EXIT_CODE" = 0 ]; then
-      stage_row_print screenshots ok "$_name"
-      continue
-    fi
-
-    stage_fail screenshots FAILED "$_name" "$STAGE_OUTPUT"
+    python_run "$_SCREENSHOTS_SCRIPT_NAME" "$_path" "$_prefix"
   done
 }
 
@@ -467,26 +393,9 @@ regenerate_refuse() {
   error_exit 2 "error: --regenerate cannot reuse the recordings: $1"
 }
 
-# regenerate_stamp_of - echo one report's unix stamp, or exit 1 having echoed
-# why it has none. The caller withdraws on that reason, so neither prints here.
-regenerate_stamp_of() {
-  local _path="$1" _name _stamp
-  _name="$(basename "$_path")"
-
-  if [ ! -f "$_path/MANIFEST.txt" ]; then
-    echo "$_name is not a finished report"
-    return 1
-  fi
-
-  # the row carries a human date after the unix time, and an artifact is
-  # named by the unix time alone, so the tail must not reach a find glob
-  _stamp="$(manifest_value "$_path" stamp)"
-  _stamp="${_stamp%% *}"
-  if [ -z "$_stamp" ]; then
-    echo "$_name records no stamp= row"
-    return 1
-  fi
-  echo "$_stamp"
+# header_row_of - one LABEL= row of a measuring run's header rows file.
+header_row_of() {
+  sed -n "s/^$2=//p" "$1" | head -1
 }
 
 # regenerate_check - reuse the last run's recordings only while they still
@@ -494,29 +403,28 @@ regenerate_stamp_of() {
 regenerate_check() {
   [ "$_REGENERATE" = 1 ] || return 0
 
-  # all three are this run's input, and manifest_verify is the one policy
-  # saying why one is not a report -- it exits, so this fails at the first
-  local _name
-  manifest_verify "$_DIR_DEV/$REPORT_BASELINE_DIR_NAME" \
-    "--regenerate input" "$REPORT_MANIFEST_VERSION_FULL"
-  manifest_verify "$_DIR_DEV/$REPORT_MODIFIED_DIR_NAME" \
-    "--regenerate input" "$REPORT_MANIFEST_VERSION_FULL"
-  manifest_verify "$_DIR_DEV/$REPORT_DIFF_DIR_NAME" \
-    "--regenerate input" "$REPORT_MANIFEST_VERSION_DIFF"
-
   # the artifacts dir the batch defaults to, holding every recording the
-  # three reports were generated from
+  # three reports are rebuilt from; the reports themselves are output
   local _artifacts="$_DIR_DEV/$ARTIFACTS_NAME"
   if [ ! -d "$_artifacts" ]; then
     regenerate_refuse "no recordings at $_artifacts"
   fi
 
-  # each measured report names its own recordings by stamp and its own tree
-  # by executable=. The diff has neither: it is subtracted from these two.
-  local _stamp _binary _newest _recorded=() _stamps=()
+  # each measuring run left its rows under its report's name: the stamp
+  # names its recordings, executable= its tree. The diff has neither.
+  local _name _rows _stamp _binary _newest _recorded=() _stamps=()
   for _name in "$REPORT_BASELINE_DIR_NAME" "$REPORT_MODIFIED_DIR_NAME"; do
-    if ! _stamp="$(regenerate_stamp_of "$_DIR_DEV/$_name")"; then
-      regenerate_refuse "$_stamp"
+    _rows="$_artifacts/$HEADER_ROWS_NAME.$_name.txt"
+    if [ ! -f "$_rows" ]; then
+      regenerate_refuse "$_name has no recordings, $_rows is missing"
+    fi
+
+    # the row carries a human date after the unix time, and an artifact is
+    # named by the unix time alone, so the tail must not reach a find glob
+    _stamp="$(header_row_of "$_rows" stamp)"
+    _stamp="${_stamp%% *}"
+    if [ -z "$_stamp" ]; then
+      regenerate_refuse "$_name records no stamp= row in $_rows"
     fi
 
     # one timing recording dates the pass: perf2html.sh checks for every
@@ -528,9 +436,9 @@ regenerate_check() {
     fi
     _stamps+=("$_stamp")
 
-    _binary="$(manifest_value "$_DIR_DEV/$_name" executable)"
+    _binary="$(header_row_of "$_rows" executable)"
     if [ -z "$_binary" ]; then
-      regenerate_refuse "$_name records no executable= row"
+      regenerate_refuse "$_name records no executable= row in $_rows"
     fi
     _binary="$_DIR_REPO/${_binary%% *}"
     if [ ! -f "$_binary" ]; then
@@ -548,8 +456,7 @@ regenerate_check() {
     fi
   done
 
-  stage_row_print regenerate ok \
-    "reusing stamp ${_stamps[0]} and ${_stamps[1]}"
+  log_verbose "regenerate: reusing stamp ${_stamps[0]} and ${_stamps[1]}"
 }
 
 # clear_overwritten_folders - delete the three reports before anything runs, so
@@ -559,18 +466,11 @@ clear_overwritten_folders() {
   # deletion of it, and being flagless below is what makes it do one
   local _path
 
-  # a regenerated run reads each report's manifest back for the stamp and
-  # rows its pages are rebuilt from, so those reports are its input
-  if [ "$_REGENERATE" = 1 ]; then
-    stage_row_print surface ok "${#_DEFAULT_REPORTS[@]} report(s) reused"
-    return 0
-  fi
-
   for _path in "${_DEFAULT_REPORTS[@]}"; do
     rm -rf "$_path" \
       || error_exit 1 "error: could not remove the previous report: $_path"
   done
-  stage_row_print surface ok "${#_DEFAULT_REPORTS[@]} report(s) cleared"
+  log_verbose "cleared ${#_DEFAULT_REPORTS[@]} report(s)"
 }
 
 # args_parse - read the flags. There is no report argument: this runs the
@@ -618,13 +518,13 @@ main() {
   verbose_begin
   # the run's own heading: this script's path and its arguments
   title_print "$_SCRIPT" "$@"
-  # the stage table's header row, under --verbose
-  table_head_print "${_STAGE_TABLE_HEADINGS[@]}"
   # expand enforcer_whitelist.txt once into _WHITELISTED_FILES
   whitelist_expand
   # 0.07s under --regenerate only.
   regenerate_check
-  # delete the three reports, unless --regenerate reads them back
+  # find every formatter and linter, before anything is deleted or written
+  tools_resolve
+  # delete the three reports: every stage below reads this run's output
   clear_overwritten_folders
   # 0.02s shfmt over shell
   format_shell
@@ -640,7 +540,7 @@ main() {
   source_scan_run
   # 2.61s Pyright over the Python
   lint_run
-  # [98.58/97.19/12.19s] perf2html_batch.sh: baseline, modified and diff,
+  # [100.35/97.42/12.01s] perf2html_batch.sh: baseline, modified and diff,
   # under dev/
   batch_run
   # 0.59s validate_report.py over each of the three reports

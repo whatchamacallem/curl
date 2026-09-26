@@ -83,9 +83,9 @@ FLAME_GRAPH_EXPORTER_NAME = "dev/scripts/trace_to_speedscope.py"
 # TESTS_C's 79-202 range. Retune if a test's shape changes.
 FLAME_GRAPH_MAX_RECORDED_CALLS = 200
 
-# All a per-test flame graph directory may hold: its page, its profile, the
-# trace log. Everything else is the shared bundle at the report root.
-FLAME_GRAPH_PAGE_FILE_NAMES = ("index.html", "output.txt", "profile.js")
+# All a per-test flame graph directory may hold: its page and its profile.
+# Everything else is the shared bundle at the report root.
+FLAME_GRAPH_PAGE_FILE_NAMES = ("index.html", "profile.js")
 
 # What the bootstrap plus its embedded profile gets written as.
 FLAME_GRAPH_PROFILE_SCRIPT_NAME = "profile.js"

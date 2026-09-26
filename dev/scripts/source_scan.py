@@ -87,13 +87,15 @@ class SourceScan:
             " file; add its extension to _COMMENT_SYNTAX_BY_EXTENSION"
         )
 
-    # Print every fault, or the one ok line, and give the exit code.
-    def exit_code(self, file_count: int) -> int:
+    # Print every fault, or under --verbose the one ok line, and give the
+    # exit code. A quiet run prints nothing on success.
+    def exit_code(self, file_count: int, verbose: bool) -> int:
         if not self.faults:
-            print(
-                f"{file_count} file(s): no comment block over"
-                f" {_COMMENT_BLOCK_MAX_LINES} lines, no stray non-ASCII"
-            )
+            if verbose:
+                print(
+                    f"{file_count} file(s): no comment block over"
+                    f" {_COMMENT_BLOCK_MAX_LINES} lines, no stray non-ASCII"
+                )
             return 0
         for fault in sorted(self.faults):
             relative = os.path.relpath(fault.path, callgrind.REPO_ROOT)
@@ -220,10 +222,15 @@ def main() -> int:
         nargs="+",
         help="the files to scan, as enforcer.sh expands its whitelist",
     )
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="print the ok line; a quiet run prints nothing on success",
+    )
     namespace = parser.parse_args()
     scanner = SourceScan()
     scanner.files_scan(namespace.paths)
-    return scanner.exit_code(len(namespace.paths))
+    return scanner.exit_code(len(namespace.paths), namespace.verbose)
 
 
 if __name__ == "__main__":

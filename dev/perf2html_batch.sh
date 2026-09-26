@@ -136,17 +136,19 @@ args_parse() {
   _DIFF_DIR="$_TARGET_DIR/$REPORT_DIFF_DIR_NAME"
 }
 
-# regenerate_inputs_verify - --regenerate's first step: all three reports
-# and the recordings must be there before anything is created or deleted.
+# regenerate_inputs_verify - --regenerate's first step: the recordings of
+# both measured reports must be there before anything is created or deleted.
 regenerate_inputs_verify() {
-  manifest_verify "$_BASE_DIR" "--regenerate input" \
-    "$REPORT_MANIFEST_VERSION_FULL"
-  manifest_verify "$_MOD_DIR" "--regenerate input" \
-    "$REPORT_MANIFEST_VERSION_FULL"
-  manifest_verify "$_DIFF_DIR" "--regenerate input" \
-    "$REPORT_MANIFEST_VERSION_DIFF"
   [ -d "$ARTIFACTS_DIR" ] || error_exit 2 \
     "error: --regenerate input: no recordings at $ARTIFACTS_DIR"
+  # each measuring run leaves its rows under its report's name; perf2html.sh
+  # proves every recording those rows name before it reuses one
+  local _name _rows
+  for _name in "$REPORT_BASELINE_DIR_NAME" "$REPORT_MODIFIED_DIR_NAME"; do
+    _rows="$ARTIFACTS_DIR/$HEADER_ROWS_NAME.$_name.txt"
+    [ -f "$_rows" ] || error_exit 2 \
+      "error: --regenerate input: no recordings for $_name, $_rows is missing"
+  done
 }
 
 # reports_clean - deletes the three report directories
@@ -179,12 +181,10 @@ main() {
   log_verbose "[$(elapsed_format)s] $_SCRIPT $TIMESTAMP: modified build" \
     "flags: ${_CMAKE_FLAGS[*]}"
 
-  # --regenerate rebuilds pages from the kept recordings and reads each
-  # MANIFEST.txt back to find them, so it must not delete them
-  if [ "$_REGENERATE" = 0 ]; then
-    log_verbose "[$(elapsed_format)s] removing previous reports"
-    reports_clean
-  fi
+  # the reports are output only: a --regenerate rebuilds them from the kept
+  # recordings, reading nothing back from them
+  log_verbose "[$(elapsed_format)s] removing previous reports"
+  reports_clean
   _STEP_NAMES=()
   _STEP_SECONDS=()
   step_run 1 baseline ./perf2html.sh "${_verbose_args[@]}" \

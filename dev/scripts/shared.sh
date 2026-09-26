@@ -152,7 +152,7 @@ error_exit() {
     printf '%s\n' "$@"
     echo '```'
     echo
-  } | verbose_filter paths >&2
+  } | verbose_filter paths
   exit "$exit_code"
 }
 
@@ -169,7 +169,7 @@ failure_print_log_tail() {
     echo "(see: $RUN_LOG)"
     echo '```'
     echo
-  } | verbose_filter paths >&2
+  } | verbose_filter paths
 }
 
 # heading_print - one piece of work, a heading one level below the script's
@@ -186,7 +186,7 @@ heading_write() {
   [ "$VERBOSE" -ge 1 ] || return 0
   printf -v hashes '%*s' "$depth" ''
   hashes="${hashes// /#}"
-  [ "$VERBOSE_OUTPUT_ENDS_BLANK" = 1 ] || echo
+  [ "$VERBOSE_OUTPUT_ENDS_BLANK" = 1 ] || echo >&2
   printf '%s `[%ss] %s`\n\n' "$hashes" "$(elapsed_format)" "$text" \
     | verbose_filter paths
   VERBOSE_OUTPUT_ENDS_BLANK=1
@@ -226,9 +226,9 @@ json_quote() {
 # --verbose, wrapped. Verbose adds to quiet, so nothing else guards a printf.
 log_verbose() {
   [ "$VERBOSE" -ge 1 ] || return 0
-  [ "$VERBOSE_OUTPUT_ENDS_BLANK" = 1 ] || echo
+  [ "$VERBOSE_OUTPUT_ENDS_BLANK" = 1 ] || echo >&2
   printf '%s\n' "$*" | verbose_filter wrap ""
-  echo
+  echo >&2
   VERBOSE_OUTPUT_ENDS_BLANK=1
 }
 
@@ -385,9 +385,10 @@ print(os.path.relpath(sys.argv[1], sys.argv[2]))' "$1" "${2:-$INVOKED_FROM}"
 # drop the stale manifest, open $RUN_LOG, lay down README.md and assets.
 report_begin() {
   # SETS RUN_LOG, its canonical setter: every command_run after this logs
-  # into it. Args: dir, log name, opening line, 1 to keep contents else 0
-  local dir="$1" log_name="$2" opening_line="$3" keep_contents="$4"
-  [ "$keep_contents" = 1 ] || report_contents_clear "$dir"
+  # into it. Args: dir, log name, opening line
+  local dir="$1" log_name="$2" opening_line="$3"
+  # a report is output only: every run, --regenerate included, empties it
+  report_contents_clear "$dir"
   mkdir -p "$dir" "$ARTIFACTS_DIR"
   # the caller has read every row it wanted from the previous manifest, so
   # a run aborting from here leaves a directory no tool will open
@@ -460,11 +461,11 @@ revision_describe() {
 # a blank line. Args: one heading per column.
 table_head_print() {
   [ "$VERBOSE" -ge 1 ] || return 0
-  [ "$VERBOSE_OUTPUT_ENDS_BLANK" = 1 ] || echo
+  [ "$VERBOSE_OUTPUT_ENDS_BLANK" = 1 ] || echo >&2
   table_row_print "$@"
   local cell row='|'
   for cell in "$@"; do row="$row --- |"; done
-  echo "$row"
+  echo "$row" >&2
 }
 
 # table_row_print - one table row under --verbose, a cell per argument, an
@@ -524,8 +525,8 @@ verbose_begin() {
   VERBOSE_OUTPUT_ENDS_BLANK=0
 }
 
-# verbose_filter - the one formatter every printed line streams through,
-# by mode: paths, wrap PREFIX, list INDENT or row LABEL.
+# verbose_filter - the one formatter every printed line streams through, by
+# mode (paths, wrap PREFIX, list INDENT), onto stderr: `2>` keeps the run.
 verbose_filter() {
   # list: $HOME/ is ~/, blank lines go, a run of two or more `words: number
   # [unit]` lines is one single-row table, anything else a numbered item
@@ -611,11 +612,6 @@ BEGIN {
     next
   }
   if (line == "") next
-  if (mode == "row") {
-    gsub(/\|/, "\\|", line)
-    line_flush("| | " argument " | | `" line "` |")
-    next
-  }
   if (line ~ /^[A-Za-z][A-Za-z0-9\/ ]*: +-?[0-9][0-9.,]*( [A-Za-z\/]+)?$/) {
     match(line, /: +/)
     held++
@@ -628,7 +624,7 @@ BEGIN {
   item_print(line)
 }
 END { group_flush() }
-'
+' >&2
 }
 
 # verbose_flags_of - this run's --verbose level as a child's arguments: one

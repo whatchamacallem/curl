@@ -39,7 +39,6 @@ EOF
 # args_parse - reads the flags and the three directories, all absolute
 args_parse() {
   _KEEP_ARTIFACTS=0
-  _REGENERATE=0
   ARTIFACTS_DIR=""
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -56,7 +55,8 @@ args_parse() {
         shift
         ;;
       --regenerate)
-        _REGENERATE=1
+        # a diff measures nothing and re-derives every page from its two
+        # inputs on every run, so here the flag is --keep-artifacts alone
         _KEEP_ARTIFACTS=1
         shift
         ;;
@@ -244,17 +244,10 @@ main() {
   local _base_stamp _mod_stamp
   _base_stamp="$(manifest_check "$_BASE_DIR" baseline)"
   _mod_stamp="$(manifest_check "$_MOD_DIR" modified)"
-  # --regenerate re-derives everything from the two inputs; the one thing
-  # it keeps is the output directory, so that must already be a diff report
-  if [ "$_REGENERATE" = 1 ]; then
-    manifest_verify "$_OUT_DIR" "--regenerate input" \
-      "$REPORT_MANIFEST_VERSION_DIFF"
-  fi
 
   [ "$_KEEP_ARTIFACTS" = 1 ] || artifacts_clean
   report_begin "$_OUT_DIR" "diff.$TIMESTAMP.log" \
-    "dev/perf2html_diff.sh $TIMESTAMP: $_BASE_DIR -> $_MOD_DIR -> $_OUT_DIR" \
-    "$_REGENERATE"
+    "dev/perf2html_diff.sh $TIMESTAMP: $_BASE_DIR -> $_MOD_DIR -> $_OUT_DIR"
 
   local _tests _test_name
   local -a _args

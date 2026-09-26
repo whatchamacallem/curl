@@ -39,8 +39,8 @@ FLAME_GRAPH_APP_DIR_NAME=flame-graph-app
 # so sourcing never expands one against the current directory
 FLAME_GRAPH_APP_FILE_GLOBS=('speedscope-*.js' 'speedscope-*.css' '*.woff2')
 
-# working file the overview reads its LABEL=VALUE rows from. MANIFEST.txt
-# cannot be it, being written after every page exists
+# working file holding a measured run's LABEL=VALUE rows, named after its
+# report: the overview reads it, and --regenerate finds the run's stamp by it
 HEADER_ROWS_NAME=header.overview
 
 # lines of a failed child's output reprinted on the terminal. The whole of

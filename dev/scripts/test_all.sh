@@ -16,10 +16,9 @@ _DEV="$(dirname "$_SCRIPTS")"
 _REPO="$(dirname "$_DEV")"
 _ENFORCER="$_SCRIPTS/enforcer.sh"
 
-# the enforcer's stdout, the run's markdown, and its stderr, both beside the
-# reports it writes; dev/.gitignore names both
+# the enforcer's stderr, its whole markdown and every refusal, beside the
+# reports it writes; dev/.gitignore names it. Its stdout stays on the terminal
 _ENFORCER_DOCUMENT="$_DEV/enforcer.md"
-_ENFORCER_LOG="$_DEV/enforcer.log"
 
 # the three reports the enforcer's batch writes, by its default names. The
 # failure tests copy them; only the last one reads an original, touching it
@@ -27,51 +26,43 @@ _BASELINE_REPORT="$_DEV/perf2html_baseline_report"
 _MODIFIED_REPORT="$_DEV/perf2html_modified_report"
 _DIFF_REPORT="$_DEV/perf2html_diff_report"
 
+# the recordings the enforcer's batch keeps, by its default name: what a
+# --regenerate reads, and the one thing the relink test reads a row from
+_ARTIFACTS="$_DEV/perf2html_temporary_artifacts"
+
 # the row a report's MANIFEST.txt records its checksum on, re-recorded on a
 # copy whose files a test changed on purpose
 _MANIFEST_CHECKSUM_LABEL=checksum
 
-# where every copy and captured output goes: made by main and deleted only
-# once every test passed, so a failed run keeps its diagnostics
-_SCRATCH=""
+# every copy and fixture, under build/ as it is no output (dev/.gitignore):
+# replaced by each run, deleted once every test passed, kept by a failed one
+_TEST_ALL_SCRATCH="$_DEV/build/test_all_scratch"
 
 # path_shown - one path with $HOME/ written as ~/, for a printed line
 path_shown() {
   printf '%s' "${1//"$HOME"\//"~/"}"
 }
 
-# test_fail - the failed test, why, and the output it captured in one txt
-# fence, all on stderr, then stop: the scratch dir is kept for a reader.
+# test_fail - the failed test and why, on stderr, then stop: the refusal
+# streamed just above, and the scratch dir is kept for a reader.
 test_fail() {
-  local _name="$1" _reason="$2" _output="${3:-}"
   {
-    printf '\nFAILED: %s: %s\n' "$_name" "$_reason"
-    if [ -n "$_output" ]; then
-      echo '```txt'
-      cat "$_output"
-      echo '```'
-    fi
-    echo "(kept: $(path_shown "$_SCRATCH"))"
+    printf '\nFAILED: %s: %s\n' "$1" "$2"
+    echo "(kept: $(path_shown "$_TEST_ALL_SCRATCH"))"
   } >&2
   exit 1
 }
 
-# failure_expect - run a command that must refuse with the exit code given
-# and the keyword in its output. Args: NAME CODE KEYWORD -- command...
+# failure_expect - run a command that must refuse with the exit code given.
+# Nothing is captured: its refusal streams as it prints. Args: NAME CODE --
 failure_expect() {
-  local _name="$1" _wanted_code="$2" _keyword="$3"
-  shift 3
+  local _name="$1" _wanted_code="$2" _code=0
+  shift 2
   [ "${1:-}" = -- ] || test_fail "$_name" "failure_expect wants -- first"
   shift
-  local _output="$_SCRATCH/output.$_name.txt" _code=0
-  "$@" >"$_output" 2>&1 || _code=$?
-  if [ "$_code" != "$_wanted_code" ]; then
-    test_fail "$_name" "exit $_code, expected $_wanted_code, from: $*" \
-      "$_output"
-  fi
-  if ! grep -q -F -- "$_keyword" "$_output"; then
-    test_fail "$_name" "no '$_keyword' in the output of: $*" "$_output"
-  fi
+  "$@" || _code=$?
+  [ "$_code" = "$_wanted_code" ] \
+    || test_fail "$_name" "exit $_code, expected $_wanted_code, from: $*"
   echo "ok $_name"
 }
 
@@ -85,7 +76,7 @@ report_copy() {
 # path_without_tool - a PATH holding every command on this one but the tool
 # named: links in the scratch dir, the tool's removed. Echoes the dir.
 path_without_tool() {
-  local _tool="$1" _bin="$_SCRATCH/bin_without_$1" _dirs=() _dir
+  local _tool="$1" _bin="$_TEST_ALL_SCRATCH/bin_without_$1" _dirs=() _dir
   mkdir "$_bin"
   IFS=: read -r -a _dirs <<<"$PATH"
   for _dir in "${_dirs[@]}"; do
@@ -133,15 +124,14 @@ relink_regenerate_run() {
   return "$_code"
 }
 
-# enforcer_run - the one measuring run, verbose, its stdout teed into the
-# markdown and its stderr into the log. Its failure is this script's.
+# enforcer_run - the one measuring run, verbose, its stderr redirected into
+# the markdown and nothing else touched. Its failure is this script's.
 enforcer_run() {
   local _code=0
-  "$_ENFORCER" --keep-artifacts --verbose 2>"$_ENFORCER_LOG" \
-    | tee "$_ENFORCER_DOCUMENT" || _code=$?
+  "$_ENFORCER" --keep-artifacts --verbose 2>"$_ENFORCER_DOCUMENT" || _code=$?
   if [ "$_code" != 0 ]; then
     printf 'FAILED: enforcer.sh exited %s, see %s\n' "$_code" \
-      "$(path_shown "$_ENFORCER_LOG")" >&2
+      "$(path_shown "$_ENFORCER_DOCUMENT")" >&2
     exit "$_code"
   fi
 }
@@ -149,23 +139,20 @@ enforcer_run() {
 # unknown_option_tests - every script refusing an argument it does not know,
 # before it does anything. Each one is cheap and writes nothing.
 unknown_option_tests() {
-  failure_expect enforcer_unknown_option 2 'unknown option' -- \
-    "$_ENFORCER" --bogus-option
-  failure_expect test_all_unknown_option 2 'unknown option' -- \
-    "$_SCRIPT" --bogus-option
+  failure_expect enforcer_unknown_option 2 -- "$_ENFORCER" --bogus-option
+  failure_expect test_all_unknown_option 2 -- "$_SCRIPT" --bogus-option
 
   # clean.sh once read no arguments and cleaned on any, so its refusal is
   # proved to be in its text before it is run with an argument at all
   grep -q 'unknown option' "$_DEV/clean.sh" \
     || test_fail clean_unknown_option "clean.sh holds no 'unknown option'"
-  failure_expect clean_unknown_option 2 'unknown option' -- \
-    "$_DEV/clean.sh" --bogus-option
+  failure_expect clean_unknown_option 2 -- "$_DEV/clean.sh" --bogus-option
 
   # perf2html.sh and the batch take every unknown argument as a cmake flag,
   # by design, so only the diff among the three is asked
-  failure_expect diff_unknown_option 2 'unknown option' -- \
-    "$_DEV/perf2html_diff.sh" "--artifacts=$_SCRATCH/artifacts_unknown" \
-    --bogus-option
+  failure_expect diff_unknown_option 2 -- \
+    "$_DEV/perf2html_diff.sh" \
+    "--artifacts=$_TEST_ALL_SCRATCH/artifacts_unknown" --bogus-option
 }
 
 # diff_tests - perf2html_diff.sh refusing an input, every one before it
@@ -174,59 +161,61 @@ diff_tests() {
   local _baseline="$1" _modified="$2" _diff="$3" _copy _archive
   local _tool="$_DEV/perf2html_diff.sh"
 
-  failure_expect diff_of_a_diff 2 "can't diff a diff" -- \
-    "$_tool" "--artifacts=$_SCRATCH/artifacts_diff_of_a_diff" \
-    "$_diff" "$_modified" "$_SCRATCH/out_diff_of_a_diff"
+  failure_expect diff_of_a_diff 2 -- \
+    "$_tool" "--artifacts=$_TEST_ALL_SCRATCH/artifacts_diff_of_a_diff" \
+    "$_diff" "$_modified" "$_TEST_ALL_SCRATCH/out_diff_of_a_diff"
 
-  failure_expect diff_missing_directory 2 'no such directory' -- \
-    "$_tool" "--artifacts=$_SCRATCH/artifacts_missing" \
-    "$_baseline" "$_SCRATCH/never_made" "$_SCRATCH/out_missing"
+  failure_expect diff_missing_directory 2 -- \
+    "$_tool" "--artifacts=$_TEST_ALL_SCRATCH/artifacts_missing" \
+    "$_baseline" "$_TEST_ALL_SCRATCH/never_made" \
+    "$_TEST_ALL_SCRATCH/out_missing"
 
-  failure_expect diff_four_directories 2 'unknown argument' -- \
-    "$_tool" "--artifacts=$_SCRATCH/artifacts_four" \
-    "$_baseline" "$_modified" "$_SCRATCH/out_four" "$_SCRATCH/fourth"
+  failure_expect diff_four_directories 2 -- \
+    "$_tool" "--artifacts=$_TEST_ALL_SCRATCH/artifacts_four" \
+    "$_baseline" "$_modified" "$_TEST_ALL_SCRATCH/out_four" \
+    "$_TEST_ALL_SCRATCH/fourth"
 
-  _copy="$(report_copy "$_SCRATCH/modified_no_manifest" "$_modified")"
+  _copy="$(report_copy "$_TEST_ALL_SCRATCH/modified_no_manifest" "$_modified")"
   rm "$_copy/MANIFEST.txt"
-  failure_expect diff_no_manifest 2 'no MANIFEST.txt' -- \
-    "$_tool" "--artifacts=$_SCRATCH/artifacts_no_manifest" \
-    "$_baseline" "$_copy" "$_SCRATCH/out_no_manifest"
+  failure_expect diff_no_manifest 2 -- \
+    "$_tool" "--artifacts=$_TEST_ALL_SCRATCH/artifacts_no_manifest" \
+    "$_baseline" "$_copy" "$_TEST_ALL_SCRATCH/out_no_manifest"
 
-  _copy="$(report_copy "$_SCRATCH/modified_bad_version" "$_modified")"
+  _copy="$(report_copy "$_TEST_ALL_SCRATCH/modified_bad_version" "$_modified")"
   sed -i '1s/.*/edited by test_all.sh/' "$_copy/MANIFEST.txt"
-  failure_expect diff_unrecognized_manifest 2 'unrecognized MANIFEST.txt' -- \
-    "$_tool" "--artifacts=$_SCRATCH/artifacts_bad_version" \
-    "$_baseline" "$_copy" "$_SCRATCH/out_bad_version"
+  failure_expect diff_unrecognized_manifest 2 -- \
+    "$_tool" "--artifacts=$_TEST_ALL_SCRATCH/artifacts_bad_version" \
+    "$_baseline" "$_copy" "$_TEST_ALL_SCRATCH/out_bad_version"
 
-  _copy="$(report_copy "$_SCRATCH/baseline_extra_file" "$_baseline")"
+  _copy="$(report_copy "$_TEST_ALL_SCRATCH/baseline_extra_file" "$_baseline")"
   echo 'added by test_all.sh' >"$_copy/extra_file.txt"
-  failure_expect diff_checksum_added_file 2 checksum -- \
-    "$_tool" "--artifacts=$_SCRATCH/artifacts_added_file" \
-    "$_copy" "$_modified" "$_SCRATCH/out_added_file"
+  failure_expect diff_checksum_added_file 2 -- \
+    "$_tool" "--artifacts=$_TEST_ALL_SCRATCH/artifacts_added_file" \
+    "$_copy" "$_modified" "$_TEST_ALL_SCRATCH/out_added_file"
 
-  _copy="$(report_copy "$_SCRATCH/modified_edited_page" "$_modified")"
+  _copy="$(report_copy "$_TEST_ALL_SCRATCH/modified_edited_page" "$_modified")"
   echo >>"$_copy/index.html"
-  failure_expect diff_checksum_edited_page 2 checksum -- \
-    "$_tool" "--artifacts=$_SCRATCH/artifacts_edited_page" \
-    "$_baseline" "$_copy" "$_SCRATCH/out_edited_page"
+  failure_expect diff_checksum_edited_page 2 -- \
+    "$_tool" "--artifacts=$_TEST_ALL_SCRATCH/artifacts_edited_page" \
+    "$_baseline" "$_copy" "$_TEST_ALL_SCRATCH/out_edited_page"
 
   # one test's archive gone and the checksum re-recorded over what is left,
   # so the pairing, not the checksum, is what refuses
-  _copy="$(report_copy "$_SCRATCH/modified_one_sided" "$_modified")"
+  _copy="$(report_copy "$_TEST_ALL_SCRATCH/modified_one_sided" "$_modified")"
   _archive="$(archive_first_of "$_copy")"
   rm "$_archive"
   manifest_checksum_rewrite "$_copy"
-  failure_expect diff_one_sided_test 2 'only one of the two reports' -- \
-    "$_tool" "--artifacts=$_SCRATCH/artifacts_one_sided" \
-    "$_baseline" "$_copy" "$_SCRATCH/out_one_sided"
+  failure_expect diff_one_sided_test 2 -- \
+    "$_tool" "--artifacts=$_TEST_ALL_SCRATCH/artifacts_one_sided" \
+    "$_baseline" "$_copy" "$_TEST_ALL_SCRATCH/out_one_sided"
 }
 
 # batch_tests - perf2html_batch.sh --regenerate refusing, before it deletes
 # or writes anything, when the recordings are gone. Args: the target dir.
 batch_tests() {
-  failure_expect batch_regenerate_no_recordings 2 'no recordings' -- \
+  failure_expect batch_regenerate_no_recordings 2 -- \
     "$_DEV/perf2html_batch.sh" --regenerate "--target-dir=$1" \
-    "--artifacts=$_SCRATCH/artifacts_batch_none"
+    "--artifacts=$_TEST_ALL_SCRATCH/artifacts_batch_none"
 }
 
 # toolchain_tests - perf2html.sh refusing before any build once one tool is
@@ -234,10 +223,10 @@ batch_tests() {
 toolchain_tests() {
   local _bin
   _bin="$(path_without_tool valgrind)"
-  failure_expect toolchain_missing_tool 1 'not found on PATH' -- \
+  failure_expect toolchain_missing_tool 1 -- \
     env PATH="$_bin" "$_DEV/perf2html.sh" \
-    "--report=$_SCRATCH/report_no_valgrind" \
-    "--artifacts=$_SCRATCH/artifacts_no_valgrind"
+    "--report=$_TEST_ALL_SCRATCH/report_no_valgrind" \
+    "--artifacts=$_TEST_ALL_SCRATCH/artifacts_no_valgrind"
 }
 
 # report_dir_tests - perf2html.sh refusing a report or artifacts path, each
@@ -245,53 +234,55 @@ toolchain_tests() {
 report_dir_tests() {
   local _baseline="$1" _tool="$_DEV/perf2html.sh" _populated _file _empty
 
-  _populated="$_SCRATCH/populated_no_manifest"
+  _populated="$_TEST_ALL_SCRATCH/populated_no_manifest"
   mkdir "$_populated"
   echo 'left by test_all.sh' >"$_populated/leftover.txt"
-  failure_expect report_populated_no_manifest 2 \
-    'holds files but no MANIFEST.txt' -- \
+  failure_expect report_populated_no_manifest 2 -- \
     "$_tool" "--report=$_populated" \
-    "--artifacts=$_SCRATCH/artifacts_populated"
+    "--artifacts=$_TEST_ALL_SCRATCH/artifacts_populated"
 
-  _file="$_SCRATCH/report_is_a_file.txt"
+  _file="$_TEST_ALL_SCRATCH/report_is_a_file.txt"
   echo 'a file, not a directory' >"$_file"
-  failure_expect report_is_a_file 2 'not a directory' -- \
-    "$_tool" "--report=$_file" "--artifacts=$_SCRATCH/artifacts_file"
+  failure_expect report_is_a_file 2 -- \
+    "$_tool" "--report=$_file" "--artifacts=$_TEST_ALL_SCRATCH/artifacts_file"
 
-  failure_expect artifacts_inside_report 2 'inside the report' -- \
+  failure_expect artifacts_inside_report 2 -- \
     "$_tool" "--report=$_baseline" "--artifacts=$_baseline/inside"
 
-  _empty="$_SCRATCH/artifacts_empty"
+  _empty="$_TEST_ALL_SCRATCH/artifacts_empty"
   mkdir "$_empty"
-  failure_expect regenerate_missing_recordings 2 missing -- \
+  failure_expect regenerate_missing_recordings 2 -- \
     "$_tool" --regenerate "--report=$_baseline" "--artifacts=$_empty"
 }
 
-# enforcer_tests - enforcer.sh refusing, reading the real reports and
-# writing nothing: a stage's tool off the PATH, then perf re-linked.
+# enforcer_tests - enforcer.sh refusing before it clears the real reports:
+# a stage's tool off the PATH, then perf re-linked.
 enforcer_tests() {
   local _bin
-  # --regenerate reads the reports rather than clearing them; the fake HOME
-  # is because tool_find looks under it too, past the PATH
+  # both refusals come before the reports are cleared; the fake HOME is
+  # because tool_find looks under it too, past the PATH
   _bin="$(path_without_tool shfmt)"
-  mkdir "$_SCRATCH/home"
-  failure_expect enforcer_missing_tool 1 missing -- \
-    env PATH="$_bin" HOME="$_SCRATCH/home" "$_ENFORCER" --regenerate
+  mkdir "$_TEST_ALL_SCRATCH/home"
+  failure_expect enforcer_missing_tool 1 -- \
+    env PATH="$_bin" HOME="$_TEST_ALL_SCRATCH/home" "$_ENFORCER" --regenerate
   relink_test
 }
 
-# relink_test - enforcer.sh --regenerate against the real reports, refusing
-# once the baseline's perf binary is newer than its recordings.
+# relink_test - enforcer.sh --regenerate against the real recordings,
+# refusing once the baseline's perf binary is newer than they are.
 relink_test() {
-  local _row _binary _reference="$_SCRATCH/mtime_reference"
-  _row="$(sed -n 's/^executable=//p' "$_BASELINE_REPORT/MANIFEST.txt" \
-    | head -n 1)"
+  local _row _rows _binary _reference="$_TEST_ALL_SCRATCH/mtime_reference"
+  # the baseline's rows file in the artifacts dir names its executable: the
+  # same file the enforcer's --regenerate reads, and no report
+  _rows="$_ARTIFACTS/header.overview.$(basename "$_BASELINE_REPORT").txt"
+  [ -f "$_rows" ] || test_fail regenerate_after_relink "no $_rows"
+  _row="$(sed -n 's/^executable=//p' "$_rows" | head -n 1)"
   [ -n "$_row" ] || test_fail regenerate_after_relink \
-    "no executable= row in $_BASELINE_REPORT/MANIFEST.txt"
+    "no executable= row in $_rows"
   _binary="$_REPO/${_row%% *}"
   [ -f "$_binary" ] || test_fail regenerate_after_relink \
     "no executable at $_binary"
-  failure_expect regenerate_after_relink 2 --regenerate -- \
+  failure_expect regenerate_after_relink 2 -- \
     relink_regenerate_run "$_binary" "$_reference"
 }
 
@@ -299,12 +290,14 @@ relink_test() {
 # stopping at the first that does not refuse as it must.
 failure_tests_run() {
   local _target _baseline _modified _diff
-  _SCRATCH="$(mktemp -d)"
+  # a failed run left its fixtures here for a reader; this run's replace them
+  rm -rf "$_TEST_ALL_SCRATCH"
+  mkdir -p "$_TEST_ALL_SCRATCH"
   unknown_option_tests
 
   # the clean copies sit in one dir under the batch's own names, as the
   # batch wrote them, so its --regenerate can be asked about them too
-  _target="$_SCRATCH/target"
+  _target="$_TEST_ALL_SCRATCH/target"
   mkdir "$_target"
   _baseline="$(report_copy "$_target/$(basename "$_BASELINE_REPORT")" \
     "$_BASELINE_REPORT")"
@@ -318,7 +311,7 @@ failure_tests_run() {
   report_dir_tests "$_baseline"
   toolchain_tests
   enforcer_tests
-  rm -rf "$_SCRATCH"
+  rm -rf "$_TEST_ALL_SCRATCH"
 }
 
 # args_check - -h prints the usage line; any other argument, however many,
