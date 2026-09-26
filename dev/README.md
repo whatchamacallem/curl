@@ -74,8 +74,8 @@ itself.
     --regenerate      Rebuilds all pages from the last run's profiler
                       artifacts, re-measuring nothing. Implies
                       --keep-artifacts.
-    --verbose         Enables diagnostic information. Repeating it (--verbose
-                      --verbose) increments the verbosity level.
+    --verbose         Enables diagnostic information in Markdown. Repeating it
+                      (--verbose --verbose) increments the verbosity level.
 ```
 
 ## Callgrind Counters
