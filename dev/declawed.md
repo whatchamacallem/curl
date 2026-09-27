@@ -1,9 +1,11 @@
 # Agent Interaction Guide
 
-Do not modify this document or the README.md without approval. This is an
-exclusive control surface for the project maintainer. Mention discrepancies
-when observed. The maintainer is the final authority and oracle, however
-discrepancies are worth fixing.
+Do not modify CLAUDE.md or the README.md without approval. CLAUDE.md may be a
+symbolic link to this document and in that case make editing this document
+part of the same request. This is an exclusive control surface for the project
+maintainer. Mention discrepancies when observed. The maintainer is the final
+authority and decides correctness and requirements, however discrepancies are
+worth fixing.
 
 Maintain a task list for each session in `dev/tmp` following this format:
 `dev/tmp/tasks.sat_0959am.md`. Use ISO 2145 for tasks and do not restart
@@ -93,8 +95,12 @@ The single function/check owning each concern - never bypass or duplicate:
 - Every `dev/*.sh` makes paths absolute at startup; `$PWD` is never read again
   below `args_parse`. Getting this wrong breaks every relative invocation
   silently.
-- `mktemp` is banned because log files are banned. only `test_all.sh` creates a
-  log file by redirecting `enforcer.sh ... 2> enforcer.md`.
+- buffering command stdout and stderr with `mktemp` is banned. The single door
+  policy on `mktemp` is that it is to be used when `--artifacts=TMP`,
+  `--keep-artifacts` and `--regenerate` have not been used. In this case TMP
+  is to be a directory created with mktmp. The design goal is that perf2html
+  users get /tmp used as normal and cleaned up after too. And development work
+  on perf2html uses a local artifact dir that can be debugged.
 - No news is good news: nothing prints a success line unless `--verbose`, and
   when it does print, a success line goes to stdout and failures go to stderr -
   not the other way round.
