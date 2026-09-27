@@ -31,13 +31,13 @@ perf2html.sh [debug-flags] [--report=DIR] [cmake-flags...]
     --artifacts=TMP   The profiler artifacts directory. Defaults to
                       perf2html_temporary_artifacts/ beside the report
                       directory (inside the target dir for a batch).
-    --keep-artifacts  Do not delete the profiler artifacts directory after use.
-                      Required for a later --regenerate.
+    --keep-artifacts  Flushes the report's stale artifacts subdirectory, then
+                      keeps this run's recordings, which is what a later
+                      --regenerate reuses.
     --regenerate      Rebuilds all pages from the last run's profiler
-                      artifacts, re-measuring nothing. Implies
-                      --keep-artifacts.
-    --verbose         Enables diagnostic information. Repeating it (--verbose
-                      --verbose) increments the verbosity level.
+                      artifacts, re-measuring nothing and keeping them.
+    --verbose         Enables diagnostic information in Markdown. Repeating it
+                      (--verbose --verbose) increments the verbosity level.
 EOF
 }
 
@@ -90,6 +90,9 @@ args_parse() {
     ARTIFACTS_DIR="$(dirname "$_OUT_DIR")/$ARTIFACTS_NAME"
   fi
   ARTIFACTS_DIR="$(absolute_path "$ARTIFACTS_DIR")"
+  # each report owns one subdirectory of the artifacts dir, so no run can
+  # flush or keep a sibling report's recordings
+  ARTIFACTS_DIR="$ARTIFACTS_DIR/$(basename "$_OUT_DIR")"
   # the run's rows, named after its report: what --regenerate reads back
   _HEADER_FILE="$ARTIFACTS_DIR/$HEADER_ROWS_NAME.$(basename "$_OUT_DIR").txt"
   # -O2 -g leads CMAKE_C_FLAGS because -O0 costs are not the shipped build's
@@ -131,18 +134,18 @@ header_row_of() {
   sed -n "s/^$1=//p" "$_HEADER_FILE" | head -1
 }
 
-# stamp_reuse - takes $TIMESTAMP back from the header rows file the last
+# recorded_reuse - takes $TIMESTAMP back from the recorded= row the last
 # measuring run left in the artifacts dir, and proves every recording it names.
-stamp_reuse() {
+recorded_reuse() {
   [ -d "$ARTIFACTS_DIR" ] || error_exit 2 \
     "error: --regenerate: no recordings at $ARTIFACTS_DIR"
   [ -f "$_HEADER_FILE" ] || error_exit 2 \
     "error: --regenerate: $ARTIFACTS_DIR is missing $(basename \
       "$_HEADER_FILE"), the rows of the run to reuse"
-  TIMESTAMP="$(header_row_of stamp)"
+  TIMESTAMP="$(header_row_of recorded)"
   TIMESTAMP="${TIMESTAMP%% *}"
   [ -n "$TIMESTAMP" ] || error_exit 2 \
-    "error: --regenerate: no stamp= row in $_HEADER_FILE"
+    "error: --regenerate: no recorded= row in $_HEADER_FILE"
   local _test_name _loops _file _missing=() _dir="$ARTIFACTS_DIR"
   for _test_name in "${_TESTS[@]}"; do
     _loops=$CALLGRIND_LOOPS
@@ -156,8 +159,8 @@ stamp_reuse() {
     done
   done
   [ "${#_missing[@]}" != 0 ] || return 0
-  local _lines=("error: --regenerate is missing ${#_missing[@]} recorded")
-  _lines[0]="${_lines[0]} file(s) for stamp $TIMESTAMP in $ARTIFACTS_DIR:"
+  local _lines=("error: --regenerate is missing ${#_missing[@]} file(s)")
+  _lines[0]="${_lines[0]} recorded at $TIMESTAMP in $ARTIFACTS_DIR:"
   for _file in "${_missing[@]}"; do _lines+=("  $_file"); done
   error_exit 2 "${_lines[@]}"
 }
@@ -165,20 +168,18 @@ stamp_reuse() {
 # build_manifest - collects the rows describing what was measured and how.
 build_manifest() {
   if [ "$_REGENERATE" = 1 ]; then
-    _SAMPLED="$(header_row_of sampled)"
     _REVISION="$(header_row_of revision)"
     _CPU_MODEL="$(header_row_of cpu)"
     # build_compile wants this one too: every read of the measuring run's
     # rows happens here, and an empty one is a torn file, never a value
     _BUILD_DESC="$(header_row_of build)"
-    if [ -z "$_SAMPLED" ] || [ -z "$_REVISION" ] || [ -z "$_CPU_MODEL" ] \
+    if [ -z "$_REVISION" ] || [ -z "$_CPU_MODEL" ] \
       || [ -z "$_BUILD_DESC" ]; then
-      error_exit 2 "error: --regenerate: $_HEADER_FILE is missing one of" \
-        "its sampled=, revision=, cpu= or build= rows"
+      error_exit 2 "error: --regenerate: $_HEADER_FILE is missing one of its \
+revision=, cpu= or build= rows"
     fi
     return
   fi
-  _SAMPLED="$(date +'%Y/%m/%d %H:%M:%S %Z')"
   _REVISION="$(revision_describe "$_REPO")"
   # a box whose lscpu prints no model name is not a failure, so the grep
   # cannot be allowed to end the run under pipefail
@@ -278,7 +279,7 @@ trace_run() {
 }
 
 # trace_convert - the trace file to speedscope JSON, its lines written the
-# way the page reads them: no artifacts dir, no stamp. Args: bin, json, name.
+# way the page reads them: no artifacts dir or time. Args: bin, json, name.
 trace_convert() {
   python3 "$PERF2HTML_DIR_/scripts/trace_to_speedscope.py" "$1" -o "$2" \
     --name "$3" 2>&1 | sed "s#$ARTIFACTS_DIR/##g; s#\\.$TIMESTAMP##g"
@@ -298,7 +299,6 @@ flame_app_install() {
   local _out="$1"
   local _pattern
   local -a _found
-  rm -rf "$_out/$FLAME_GRAPH_APP_DIR_NAME"
   mkdir -p "$_out/$FLAME_GRAPH_APP_DIR_NAME"
   for _pattern in "${FLAME_GRAPH_APP_FILE_GLOBS[@]}"; do
     # find, not a bare glob: a release directory holding a space would be
@@ -346,6 +346,7 @@ trace_render() {
   trace_run "$_test" "$_loops" "$_trace_file" "$TRACE_SKIP_ALL" "$_TRACE_LOG"
   _seen="$(python3 "$PERF2HTML_DIR_/scripts/trace_to_speedscope.py" --seen \
     "$_trace_file")"
+  [ -n "$_seen" ] || error_exit 1 "error: no --seen count for $_trace_file"
   trace_run "$_test" "$_loops" "$_trace_file" "$((_seen / 2))" "$_TRACE_LOG"
   local _shown="python3 $PERF2HTML_DIR_/scripts/trace_to_speedscope.py"
   _shown="$_shown $_trace_file -o $_TRACE_JSON"
@@ -368,7 +369,6 @@ report_render() {
     --title "$_name / heat map"
 
   heading_print "python3 build_report.py test $_name"
-  rm -rf "$_out/raw"
   for _log_file in "${_LOG_FILES[@]}"; do _log_args+=(--log "$_log_file"); done
   if [ "$_name" = all ]; then
     _log_args+=(--no-log)
@@ -505,12 +505,11 @@ run_all() {
   # the rows the overview renders, in the run's header rows file, which a
   # later --regenerate reads back: MANIFEST.txt is written after every page
   _HEADER_ROWS=(
-    "sampled=$_SAMPLED"
     "revision=$_REVISION"
     "cpu=$_CPU_MODEL"
     "build=$_BUILD_DESC"
     "executable=$_BIN_REL <test>  (native, pinned to CPU $PROFILE_PINNED_CPU)"
-    "$(manifest_stamp_row)"
+    "$(manifest_recorded_row)"
   )
   printf '%s\n' "${_HEADER_ROWS[@]}" >"$_HEADER_FILE"
   _args=(-o "$_OUT_DIR/index.html" --header-file "$_HEADER_FILE"
@@ -529,16 +528,19 @@ main() {
   title_print "$_SCRIPT" "$@"
   # the recordings are --regenerate's whole input: nothing is created or
   # deleted before a missing one stops the run
-  if [ "$_REGENERATE" = 1 ]; then stamp_reuse; fi
+  if [ "$_REGENERATE" = 1 ]; then recorded_reuse; fi
   toolchain_check
-  [ "$_KEEP_ARTIFACTS" = 1 ] || artifacts_clean
   build_manifest
+  # the report is output only, deleted whatever the mode, and before the
+  # flush below: a refused delete leaves the last run's recordings standing
+  report_delete "$_OUT_DIR"
+  # --keep-artifacts flushes stale recordings first; only --regenerate reuses
+  [ "$_REGENERATE" = 1 ] || artifacts_clean
   _HEADER_ROWS=()
   local _log_name="profile.$TIMESTAMP.log"
   if [ "$_REGENERATE" = 1 ]; then
     _log_name="regenerate.$TIMESTAMP.$(date +%s).log"
   fi
-  # the report is output only, emptied here whatever the mode
   report_begin "$_OUT_DIR" "$_log_name" \
     "dev/perf2html.sh $TIMESTAMP: ${_CMAKE_FLAGS[*]} -> $_OUT_DIR"
   build_compile

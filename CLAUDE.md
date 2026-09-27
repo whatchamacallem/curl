@@ -1,1 +1,1 @@
-dev/DECLAUDE.md
+dev/declawed.md

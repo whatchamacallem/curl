@@ -6,19 +6,18 @@ from collections.abc import Sequence
 from typing import NamedTuple
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import callgrind, settings, theme
+import callgrind, callgrind_to_heatmap, settings, theme
 
 # All constants needed from settings.py have to be loaded here before anything
 # else.
 _ASSET_FRAME_SCRIPT_NAME: str = ""
-_ASSET_UI_STRINGS_SCRIPT_NAME: str = ""
 _DIFF_CALLER_COUNTS_FILE_SUFFIX: str = ""
 _FLAME_GRAPH_VIEW_ENTRY: tuple[str, str, str] = ("", "", "")
 _HEAT_MAP_VIEW_ENTRY: tuple[str, str, str] = ("", "", "")
 _RANKING_COUNTER_NAME: str = ""
 _STRIP_CURL_PERF_SITE_HREF: str = ""
-_STRIP_TEST_MENU_EXTRA_WIDTH_CHARS: int = 0
-_STRIP_TEST_MENU_MERGED_TEST_NAME: str = ""
+_STRIP_PULLDOWN_EXTRA_WIDTH_CHARS: int = 0
+_STRIP_PULLDOWN_MERGED_TEST_NAME: str = ""
 _SUMMARY_PERF_LOG_SKIPPED_HEAD_LINES: int = 0
 _SUMMARY_TIME_SUFFIX_SECONDS: dict[str, float] = {}
 _SUMMARY_TOP_FUNCTION_ROWS: int = 0
@@ -410,14 +409,10 @@ class BuildReport:
             self.diff_functions_table(profile, callers_data),
         )
 
-    # The heat map href for a function, or "" when it has no local source.
+    # The heat map href for a function, or "" when it has no entry line.
     def entry_link(self, profile: callgrind.Profile, function: str) -> str:
         entry = profile.function_entry.get(function)
-        if (
-            entry is None
-            or not entry.line
-            or callgrind.path_norm(entry.file).local is None
-        ):
+        if entry is None or not entry.line:
             return ""
         return "heat-map/index.html#fn=" + theme.html_escape(
             urllib.parse.quote(function, safe="/-_.!~*'()")
@@ -437,10 +432,10 @@ class BuildReport:
             )
             sys.exit(_EXIT_INPUT_UNREADABLE)
 
-    # The scripts a framed page runs, in order: the strings first, so the
-    # frame runtime can look an id up the moment it runs.
-    def framed_page_script_names(self) -> tuple[str, str]:
-        return (_ASSET_UI_STRINGS_SCRIPT_NAME, _ASSET_FRAME_SCRIPT_NAME)
+    # The scripts a framed page runs after the theme: the frame runtime,
+    # whose strings theme.page_preamble_scripts() has already loaded.
+    def framed_page_script_names(self) -> tuple[str]:
+        return (_ASSET_FRAME_SCRIPT_NAME,)
 
     # The columns of a summary's top table. A core report and a diff rank
     # differently but say the same thing, so both are laid out the same.
@@ -455,7 +450,7 @@ class BuildReport:
         ]
 
     # The "symbol" cell: the function's name, linked into the heat map when
-    # it has local source to open there and bare text when it has not.
+    # it has an entry line to open there and bare text when it has not.
     def function_link_cell(
         self, profile: callgrind.Profile, function: str
     ) -> theme.Cell:
@@ -693,7 +688,7 @@ class BuildReport:
         rows: Sequence[Sequence[theme.CellOrText]],
     ) -> None:
         links = [BuildReport.StripLink("", "overview", "#", "overview")]
-        test_menu_entries = [
+        test_entries = [
             BuildReport.StripLink(
                 test.name,
                 test.name,
@@ -707,7 +702,7 @@ class BuildReport:
             "overview",
             links,
             depth=_OVERVIEW_PAGE_ASSETS_DEPTH,
-            test_menu_entries=test_menu_entries,
+            pulldowns=self.strip_pulldowns_render(test_entries),
         )
         pairs = self.manifest_parse_rows(args.header) + (
             self.manifest_read_file(args.header_file)
@@ -722,16 +717,24 @@ class BuildReport:
         body += self.manifest_blocks_render(
             "overview.block", self.manifest_parse_blocks(args.header_block)
         )
-        body += "<h2>test suites</h2>" + theme.table_render(
+        body += "<h2>tests</h2>" + theme.table_render(
             "overview.tests", columns, rows
         )
         body += self.page_main_close()
+        # each test's names script goes first: frame.js lists its files and
+        # functions pulldowns from them
+        names_scripts = tuple(
+            callgrind_to_heatmap.CallgrindToHeatmap.pulldown_names_script_name(
+                test.name
+            )
+            for test in tests
+        )
         self.page_write(
             args.output,
             theme.page_document(
                 "overview",
                 body,
-                extra_js=self.framed_page_script_names(),
+                extra_js=names_scripts + self.framed_page_script_names(),
                 body_class="frame",
                 depth=_OVERVIEW_PAGE_ASSETS_DEPTH,
             ),
@@ -770,6 +773,24 @@ class BuildReport:
         print(
             f"wrote {path} ({len(page.encode('utf-8')):,} bytes)",
             file=sys.stderr,
+        )
+
+    # One strip pulldown: its label, the caret pointing at its box, the box
+    # reading closed_text, and the list of entries dropping below the box.
+    def pulldown_render(
+        self, key: str, width: int, closed_text: str, entries: str
+    ) -> str:
+        return (
+            f'<span class="pulldown" id="{key}-pulldown">'
+            '<span class="pulldown-label"></span>'
+            '<button class="pulldown-caret" type="button" tabindex=-1>'
+            "</button>"
+            '<input class="pulldown-search" type="text"'
+            f' style="width:{width}ch"'
+            f' value="{theme.html_escape(closed_text)}"'
+            ' readonly autocomplete="off" spellcheck="false">'
+            f'<span class="pulldown-list" hidden>{entries}'
+            '<span class="pulldown-no-match" hidden></span></span></span>'
         )
 
     # The collapsed "raw data" section linking this test's archives.
@@ -826,8 +847,8 @@ class BuildReport:
             ),
         )
 
-    # One link of a strip. A test menu entry is the same link, kept out of
-    # the tab order: the menu's search box moves between its entries.
+    # One link of a strip. A tests pulldown entry is the same link, kept out
+    # of the tab order: the pulldown's search box moves between its entries.
     def strip_link_render(
         self, link: BuildReport.StripLink, in_tab_order: bool = True
     ) -> str:
@@ -840,14 +861,42 @@ class BuildReport:
             f"{theme.html_escape(link.label)}</a>"
         )
 
+    # The overview's pulldowns: its tests, each linking that test's summary,
+    # then the files and functions frame.js lists for the active test.
+    def strip_pulldowns_render(
+        self, test_entries: Sequence[BuildReport.StripLink]
+    ) -> list[str]:
+        names = [entry.label for entry in test_entries]
+        if _STRIP_PULLDOWN_MERGED_TEST_NAME not in names:
+            sys.exit(
+                "error: the overview's pulldowns start in"
+                f" {_STRIP_PULLDOWN_MERGED_TEST_NAME!r}, the merged test,"
+                f" which is not one of its tests: {' '.join(names)}"
+            )
+        width = (
+            max(len(name) for name in names)
+            + _STRIP_PULLDOWN_EXTRA_WIDTH_CHARS
+        )
+        test_links = "".join(
+            self.strip_link_render(entry, in_tab_order=False)
+            for entry in test_entries
+        )
+        return [
+            self.pulldown_render(
+                "tests", width, _STRIP_PULLDOWN_MERGED_TEST_NAME, test_links
+            ),
+            self.pulldown_render("files", width, "", ""),
+            self.pulldown_render("functions", width, "", ""),
+        ]
+
     # The top strip: the title cell, which as the logo leads to the report
-    # root, the view links, the test menu, and the utility links on the right.
+    # root, the view links, the pulldowns, and the utility links on the right.
     def strip_render(
         self,
         title: str,
         links: Sequence[BuildReport.StripLink],
         depth: int,
-        test_menu_entries: Sequence[BuildReport.StripLink] = (),
+        pulldowns: Sequence[str] = (),
     ) -> str:
         separator = '<span class="sep">|</span>'
         root_href = theme.shared_href(depth, "index.html")
@@ -861,9 +910,9 @@ class BuildReport:
             if index:
                 parts.append(separator)
             parts.append(self.strip_link_render(link))
-        if test_menu_entries:
+        for pulldown in pulldowns:
             parts.append(separator)
-            parts.append(self.test_menu_render(test_menu_entries))
+            parts.append(pulldown)
         parts.append('<span class="sp"></span>')
         parts.append(
             '<label class="scale" id="scale-label" for="scale-slider">'
@@ -907,40 +956,6 @@ class BuildReport:
         escaped = theme.html_escape(name)
         return theme.Cell(
             name, html=f'<a href="{escaped}/index.html">{escaped}</a>'
-        )
-
-    # The overview's test menu: a box fitting every test name and reading the
-    # merged one, its caret button, and each test's strip link in a list below.
-    def test_menu_render(
-        self, entries: Sequence[BuildReport.StripLink]
-    ) -> str:
-        names = [entry.label for entry in entries]
-        if _STRIP_TEST_MENU_MERGED_TEST_NAME not in names:
-            sys.exit(
-                "error: the overview's test menu reads"
-                f" {_STRIP_TEST_MENU_MERGED_TEST_NAME!r}, the merged test,"
-                f" which is not one of its tests: {' '.join(names)}"
-            )
-        width = (
-            max(len(name) for name in names)
-            + _STRIP_TEST_MENU_EXTRA_WIDTH_CHARS
-        )
-        merged_name = theme.html_escape(_STRIP_TEST_MENU_MERGED_TEST_NAME)
-        items = "".join(
-            self.strip_link_render(entry, in_tab_order=False)
-            for entry in entries
-        )
-        return (
-            '<span class="test-menu">'
-            '<input id="test-menu-search" type="text"'
-            f' style="width:{width}ch" value="{merged_name}"'
-            ' readonly autocomplete="off" spellcheck="false">'
-            '<button id="test-menu-button" type="button" tabindex=-1>'
-            "</button>"
-            '<span class="test-menu-list" id="test-menu-list" hidden>'
-            f"{items}"
-            '<span class="test-menu-no-match" id="test-menu-no-match"'
-            " hidden></span></span></span>"
         )
 
     # Rewrite every "Something: 1.23 ms" line in the theme's time notation.

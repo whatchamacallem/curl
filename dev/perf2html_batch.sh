@@ -29,13 +29,13 @@ perf2html_batch.sh [debug-flags] [--target-dir=DIR] [cmake-flags...]
     --artifacts=TMP   The profiler artifacts directory. Defaults to
                       perf2html_temporary_artifacts/ beside the report
                       directory (inside the target dir for a batch).
-    --keep-artifacts  Do not delete the profiler artifacts directory after use.
-                      Required for a later --regenerate.
+    --keep-artifacts  Flushes the report's stale artifacts subdirectory, then
+                      keeps this run's recordings, which is what a later
+                      --regenerate reuses.
     --regenerate      Rebuilds all pages from the last run's profiler
-                      artifacts, re-measuring nothing. Implies
-                      --keep-artifacts.
-    --verbose         Enables diagnostic information. Repeating it (--verbose
-                      --verbose) increments the verbosity level.
+                      artifacts, re-measuring nothing and keeping them.
+    --verbose         Enables diagnostic information in Markdown. Repeating it
+                      (--verbose --verbose) increments the verbosity level.
 EOF
 }
 
@@ -76,9 +76,9 @@ header_table_print() {
     "$_REPO/include/curl/curlver.h")"
   [ -n "$_curl_version" ] || error_exit 1 \
     "error: no LIBCURL_VERSION define in $_REPO/include/curl/curlver.h"
-  table_head_print started git cmake cc curl kernel "pinned cpu"
-  table_row_print "$(date '+%F %T %z')" "$_revision" "$_cmake_version" \
-    "$_cc_version" "$_curl_version" "$(uname -r)" "$PROFILE_PINNED_CPU"
+  table_print 7 started git cmake cc curl kernel "pinned cpu" \
+    "$(date '+%F %T %z')" "$_revision" "$_cmake_version" "$_cc_version" \
+    "$_curl_version" "$(uname -r)" "$PROFILE_PINNED_CPU"
 }
 
 # args_parse - read the command line, deriving every absolute *_DIR from
@@ -136,46 +136,29 @@ args_parse() {
   _DIFF_DIR="$_TARGET_DIR/$REPORT_DIFF_DIR_NAME"
 }
 
-# regenerate_inputs_verify - --regenerate's first step: the recordings of
-# both measured reports must be there before anything is created or deleted.
-regenerate_inputs_verify() {
-  [ -d "$ARTIFACTS_DIR" ] || error_exit 2 \
-    "error: --regenerate input: no recordings at $ARTIFACTS_DIR"
-  # each measuring run leaves its rows under its report's name; perf2html.sh
-  # proves every recording those rows name before it reuses one
-  local _name _rows
-  for _name in "$REPORT_BASELINE_DIR_NAME" "$REPORT_MODIFIED_DIR_NAME"; do
-    _rows="$ARTIFACTS_DIR/$HEADER_ROWS_NAME.$_name.txt"
-    [ -f "$_rows" ] || error_exit 2 \
-      "error: --regenerate input: no recordings for $_name, $_rows is missing"
-  done
-}
-
-# reports_clean - deletes the three report directories
-reports_clean() {
-  rm -rf "$_BASE_DIR" "$_MOD_DIR" "$_DIFF_DIR" || error_exit 1 \
-    "error: could not remove previous reports under $_TARGET_DIR"
-}
-
 # main - runs baseline, modified and diff, stopping at the first failure,
-# and owns every deletion of the artifacts directory.
+# and owns the end-of-run deletion of the artifacts directory.
 main() {
   args_parse "$@"
   verbose_begin
   title_print "$_SCRIPT" "$@"
   header_table_print
-  if [ "$_REGENERATE" = 1 ]; then regenerate_inputs_verify; fi
+
+  local _dir _cache
+  for _dir in "$_BASE_DIR" "$_MOD_DIR" "$_DIFF_DIR"; do
+    path_overlap_check "$ARTIFACTS_DIR" "artifacts dir" "$_dir" report
+  done
+  if [ "$_REGENERATE" = 1 ]; then
+    for _dir in "$_BASE_DIR" "$_MOD_DIR" "$_DIFF_DIR"; do
+      _cache="$ARTIFACTS_DIR/$(basename "$_dir")"
+      [ -d "$_cache" ] || error_exit 2 \
+        "error: --regenerate: no recordings at $_cache"
+    done
+  fi
   local _child_args=("${_PASS_ARGS[@]}" "--artifacts=$ARTIFACTS_DIR")
   if [ "$_KEEP_ARTIFACTS" = 0 ]; then
-    log_verbose "[$(elapsed_format)s] removing stale $ARTIFACTS_DIR/"
-    rm -rf "$ARTIFACTS_DIR" \
-      || error_exit 1 "error: could not remove stale $ARTIFACTS_DIR/"
-    # children keep it whatever the batch was asked: only the batch deletes
-    # the dir, at the end of main(), so a failed run leaves its recordings
     _child_args+=(--keep-artifacts)
   fi
-  mkdir -p "$ARTIFACTS_DIR" \
-    || error_exit 1 "error: could not create $ARTIFACTS_DIR/"
   local _verbose_args=()
   mapfile -t _verbose_args < <(verbose_flags_of)
   log_verbose "[$(elapsed_format)s] $_SCRIPT $TIMESTAMP: modified build" \
@@ -184,7 +167,10 @@ main() {
   # the reports are output only: a --regenerate rebuilds them from the kept
   # recordings, reading nothing back from them
   log_verbose "[$(elapsed_format)s] removing previous reports"
-  reports_clean
+  for _dir in "$_BASE_DIR" "$_MOD_DIR" "$_DIFF_DIR"; do
+    report_delete "$_dir"
+  done
+
   _STEP_NAMES=()
   _STEP_SECONDS=()
   step_run 1 baseline ./perf2html.sh "${_verbose_args[@]}" \
@@ -193,9 +179,9 @@ main() {
     "${_child_args[@]}" "--report=$_MOD_DIR" "${_CMAKE_FLAGS[@]}"
   step_run 3 diff ./perf2html_diff.sh "${_verbose_args[@]}" \
     "${_child_args[@]}" "$_BASE_DIR" "$_MOD_DIR" "$_DIFF_DIR"
+
   heading_print "$_SCRIPT, after the three steps"
-  table_head_print "${_STEP_NAMES[@]}"
-  table_row_print "${_STEP_SECONDS[@]}"
+  table_print "${#_STEP_NAMES[@]}" "${_STEP_NAMES[@]}" "${_STEP_SECONDS[@]}"
 
   # only a run reaching here succeeded, so a failed one leaves its
   # recordings behind for diagnosis without being told to
@@ -207,7 +193,6 @@ main() {
     log_verbose "[$(elapsed_format)s] artifacts kept"
   fi
   log_verbose "[$(elapsed_format)s] $_DIFF_DIR/index.html"
-  return 0
 }
 
 main "$@"

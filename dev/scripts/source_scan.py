@@ -157,7 +157,7 @@ class SourceScan:
                     f"a comment block of {length} lines, over the limit of"
                     f" {_COMMENT_BLOCK_MAX_LINES}. Say it in"
                     f" {_COMMENT_BLOCK_MAX_LINES} lines or move the rest"
-                    " into README.md or DECLAUDE.md",
+                    " into README.md or declawed.md",
                 )
             )
 

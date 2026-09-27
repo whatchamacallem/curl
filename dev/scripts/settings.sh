@@ -40,7 +40,7 @@ FLAME_GRAPH_APP_DIR_NAME=flame-graph-app
 FLAME_GRAPH_APP_FILE_GLOBS=('speedscope-*.js' 'speedscope-*.css' '*.woff2')
 
 # working file holding a measured run's LABEL=VALUE rows, named after its
-# report: the overview reads it, and --regenerate finds the run's stamp by it
+# report: the overview reads it; --regenerate finds the run's recorded= in it
 HEADER_ROWS_NAME=header.overview
 
 # lines of a failed child's output reprinted on the terminal. The whole of
@@ -51,7 +51,7 @@ LOG_FAILURE_TAIL_LINES=40
 PROFILE_PINNED_CPU=3
 
 # what one test's native timing recording is named, before its test name,
-# stamp and .csv. It is the artifact --regenerate dates the executable against
+# recorded time and .csv: what --regenerate dates the executable against
 PROFILE_TIMING_FILE_PREFIX=perf-stat
 
 # the report-root directory holding the shared copy of our own theme
@@ -91,6 +91,3 @@ TRACE_SKIP_ALL=18446744073709551615
 # the diagnostic level, one per --verbose given: 0 prints no diagnostics, 1
 # the steps and their output, 2 cmake's configure output too
 VERBOSE=0
-
-# the column every --verbose line wraps at, the markdown's own hard max
-VERBOSE_LINE_WIDTH_CHARS=79

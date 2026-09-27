@@ -23,15 +23,10 @@ generators.
   `perf2html.sh` reports.
 - `perf2html_batch.sh` : Generate 3 reports, a baseline version, a modified
   version, and a diff.
-- `scripts/enforcer.sh` : Format, lint and scan the tooling, run the batch,
-  then validate and screenshot the three reports it wrote.
-- `scripts/test_all.sh` : Run `enforcer.sh --keep-artifacts`, then the
-  failure-mode tests on copies of its reports. Takes no arguments.
 - `clean.sh` : Delete every generated file under `dev/` and the ccache entries
-  the builds made. `--help` is its only argument.
+  the builds made.
 
-Each script's `--help` prints its block below, byte for byte; `test_all.sh`
-checks that.
+Each script's `--help` prints the following.
 
 ```txt
 perf2html.sh [debug-flags] [--report=DIR] [cmake-flags...]
@@ -69,11 +64,11 @@ itself.
     --artifacts=TMP   The profiler artifacts directory. Defaults to
                       perf2html_temporary_artifacts/ beside the report
                       directory (inside the target dir for a batch).
-    --keep-artifacts  Do not delete the profiler artifacts directory after use.
-                      Required for a later --regenerate.
+    --keep-artifacts  Flushes the report's stale artifacts subdirectory, then
+                      keeps this run's recordings, which is what a later
+                      --regenerate reuses.
     --regenerate      Rebuilds all pages from the last run's profiler
-                      artifacts, re-measuring nothing. Implies
-                      --keep-artifacts.
+                      artifacts, re-measuring nothing and keeping them.
     --verbose         Enables diagnostic information in Markdown. Repeating it
                       (--verbose --verbose) increments the verbosity level.
 ```

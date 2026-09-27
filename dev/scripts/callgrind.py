@@ -132,15 +132,11 @@ class Profile:
             if all(input_name in self.counters for input_name in terms)
         ]
 
-    # The whole run's cost: callgrind's own summary, or every line
-    # added up when it wrote none.
+    # The whole run's cost: callgrind's own summary line.
     def totals(self) -> Costs:
-        if self.summary:
-            return list(self.summary)
-        total = self.zeros()
-        for costs in self.line_self.values():
-            costs_add(total, costs)
-        return total
+        if not self.summary:
+            raise ValueError(f"no summary: command={self.command!r}")
+        return list(self.summary)
 
     # Pull one named counter out of a cost vector, recorded or derived.
     def value(self, costs: Costs, name: str) -> int:
@@ -326,13 +322,15 @@ class Callgrind:
         self_sum = sum(
             costs[0] for costs in profile.line_self.values() if costs
         )
-        total = profile.summary[0] if profile.summary else self_sum
-        ratio = self_sum / total if total else float("nan")
+        total = profile.totals()[0]
+        if total == 0:
+            sys.exit(f"error: callgrind summary total is 0 ({path})")
+        ratio = self_sum / total
         print(
             f"ratio (must be 1.0000): {ratio:.4f}  {os.path.basename(path)}",
             file=sys.stderr,
         )
-        if total and abs(ratio - 1.0) > 1e-6:
+        if abs(ratio - 1.0) > 1e-6:
             sys.exit(
                 "error: per-line self cost does not add up to"
                 f" callgrind's summary ({path})"
@@ -352,16 +350,18 @@ class Callgrind:
                 )
         merged = Profile(counters=list(first.counters))
         merged.command = self.merge_command(profiles)
-        if all(other.summary for other in profiles):
-            merged.summary = [
-                sum(
-                    other.summary[index] if index < len(other.summary) else 0
-                    for other in profiles
-                )
-                for index in range(
-                    max(len(other.summary) for other in profiles)
-                )
-            ]
+        if not all(other.summary for other in profiles):
+            sys.exit(
+                "error: cannot merge profiles, one has no summary:"
+                f" {[other.command for other in profiles]}"
+            )
+        merged.summary = [
+            sum(
+                other.summary[index] if index < len(other.summary) else 0
+                for other in profiles
+            )
+            for index in range(max(len(other.summary) for other in profiles))
+        ]
         for other in profiles:
             self.merge_one(merged, other)
         return merged
@@ -515,13 +515,10 @@ class Callgrind:
                     names.uncompress("fl" if key == "jfi" else "fn", val)
                 elif key == "calls":
                     parts = val.split()
-                    target_line = (
-                        positions.decode(
-                            parts[1 + positions.line_index],
-                            positions.line_index,
-                        )
-                        if len(parts) > 1 + positions.line_index
-                        else 0
+                    if len(parts) <= 1 + positions.line_index:
+                        sys.exit(f"error: malformed 'calls=' line: {raw_line}")
+                    target_line = positions.decode(
+                        parts[1 + positions.line_index], positions.line_index
                     )
                     pending_call = Callgrind.PendingCall(
                         int(parts[0]), target_line

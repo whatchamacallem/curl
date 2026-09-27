@@ -25,8 +25,11 @@ window.ui_strings = (function () {
     str_column_share_of_total: "% of total",
     str_column_source: "source",
     str_control_counter: "counter:",
+    str_control_files: "files:",
+    str_control_functions: "functions:",
     str_control_scale: "scale:",
     str_control_search: "search:",
+    str_control_tests: "tests:",
     str_control_view_scale: "scale:",
     str_control_tree: "tree:",
     str_counter_bc: "conditional branches executed",
@@ -53,19 +56,16 @@ window.ui_strings = (function () {
     str_detail_copy: "copy",
     str_error_callstack_unavailable: "(no callstack recorded)",
     str_error_column_frame: "frame",
-    str_error_column_label: "label",
     str_error_column_location: "location",
-    str_error_column_value: "value",
+    str_error_control_back: "back",
     str_error_control_copy: "copy",
-    str_error_control_reload: "reload",
-    str_error_control_restart: "restart",
     str_error_flame_graph_never_started:
       "flame graph viewer did not start within {0}s",
     str_error_font_refused: "the browser refused the page font",
     str_error_hash_counter_unknown:
       "url encodes counter this report has no column for: {0}",
     str_error_hash_file_unknown:
-      "url encodes a file this report has no source for: {0}",
+      "url encodes a file this report never profiled: {0}",
     str_error_hash_function_unknown:
       "url encodes a function address this report never recorded: {0}",
     str_error_hash_part_unknown: "url part unrecognized: {0}",
@@ -74,15 +74,16 @@ window.ui_strings = (function () {
     str_error_heading_address: "address",
     str_error_heading_callstack: "callstack",
     str_error_heading_manifest: "manifest",
-    str_error_manifest_unavailable: "MANIFEST.txt not found",
+    str_error_message_tag_unknown: "cross-frame message tag unrecognized: {0}",
     str_error_page_heading: "perf2html error",
     str_error_page_title: "perf2html error page",
+    str_error_pulldown_focus_refused:
+      "the browser kept focus on {0}, so keys cannot reach the pulldown",
+    str_error_pulldown_names_missing:
+      "no file and function names were shipped for test {0}",
+    str_error_report_incomplete:
+      "report incomplete, MANIFEST.txt not written.",
     str_error_scale_unusable: "the page scale came out as {0}",
-    str_error_source_address: "bad address",
-    str_error_source_exception: "uncaught exception",
-    str_error_source_rejection: "internal error",
-    str_error_test_menu_focus_refused:
-      "the browser kept focus on {0}, so keys cannot reach the test menu",
     str_function_name_unknown: "?",
     str_heading_functions_by_self: "{prefix} functions by self {counter}",
     str_heading_lines_by_counter: "{prefix} lines by {counter}",
@@ -113,7 +114,9 @@ window.ui_strings = (function () {
     str_source_beyond_end:
       "(line beyond end of file: source changed since the profile was" +
       " taken)",
-    str_source_unavailable: "Source not available.",
+    str_source_unavailable:
+      "Source not available on this machine; showing only the lines that" +
+      " carry cost.",
     str_view_summary: "summary",
   };
   function text_fill(string_id, replacements) {

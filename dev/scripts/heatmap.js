@@ -116,6 +116,7 @@
     counter_list.push({
       key: name,
       get: (cost_vector) => vector_at(cost_vector, index),
+      contributing_counters: [],
     });
   });
   for (const [name, terms] of profile_model.heatMapTotals.derived) {
@@ -125,10 +126,13 @@
           running_total + term[0] * vector_at(cost_vector, term[1]),
         0,
       );
+    // the recorded counters fill counter_list's first slots in cost-vector
+    // order, so a term's slot is the index of the counter it reads
     counter_list.push({
       key: name,
       get,
       derived: true,
+      contributing_counters: terms.map((term) => counter_list[term[1]]),
     });
   }
   const counter_find = (key) =>
@@ -345,10 +349,9 @@
   function scope_totals_build(file_path) {
     const file = file_table[file_path];
     const totals = { file: {}, function: {} };
-    if (!file) return totals;
     for (const [line_number, line_costs] of Object.entries(file.lines)) {
       const owner = file.lineFunction[line_number];
-      for (const counter of [current_counter].concat(secondary_counters)) {
+      for (const counter of counter_list) {
         const self_cost = absolute(counter.get(line_costs[0]));
         if (!self_cost) continue;
         totals.file[counter.key] = (totals.file[counter.key] || 0) + self_cost;
@@ -439,23 +442,20 @@
         }
       : "";
 
-  const hash_encode = (value) =>
-    encodeURIComponent(value).replace(/%2F/g, "/");
-  function hash_of_state(state) {
-    const hash_parts = [];
-    if (state.fn) hash_parts.push("fn=" + hash_encode(state.fn));
-    else if (state.file) {
-      hash_parts.push("f=" + hash_encode(state.file));
-      if (state.line) hash_parts.push("l=" + state.line);
-    }
-    if (counter_list.length > 1) {
-      hash_parts.push("e=" + hash_encode(state.ev || current_counter.key));
-    }
-    return hash_parts.length ? "#" + hash_parts.join("&") : "";
-  }
+  const hash_of_state = report_ui.heat_map_address.hash_of_state;
+  const state_of_hash = report_ui.heat_map_address.state_of_hash;
+  // The counter an address on this page names: the one shown, whenever the
+  // report has more than one to choose between.
+  const addressed_counter_key = () =>
+    counter_list.length > 1 ? current_counter.key : null;
   const hash_for_line = (file_path, line) =>
-    hash_of_state({ file: file_path, line: line });
-  const hash_for_function = (name) => hash_of_state({ fn: name });
+    hash_of_state({
+      file: file_path,
+      line: line,
+      ev: addressed_counter_key(),
+    });
+  const hash_for_function = (name) =>
+    hash_of_state({ fn: name, ev: addressed_counter_key() });
   function function_name(index) {
     return index != null && function_table[index]
       ? function_table[index].name
@@ -541,10 +541,12 @@
     markup += `</tr></thead><tbody>`;
     cell_rows.forEach((row, row_index) => {
       const href = options.row_href && options.row_href[row_index];
+      const row_attribute_text =
+        options.row_attributes && options.row_attributes[row_index];
       markup += href
         ? `<tr class="rowlink" data-href="${html_escape(href)}">`
-        : options.row_attributes
-          ? `<tr ${options.row_attributes[row_index]}>`
+        : row_attribute_text
+          ? `<tr ${row_attribute_text}>`
           : "<tr>";
       row.forEach((cell, column_index) => {
         const column = columns[column_index];
@@ -1083,12 +1085,7 @@
     const file_source = source_text(file_path);
     if (file_source == null) {
       const note = html_escape(text_of("str_source_unavailable"));
-      markup += `<div class="nosrc">${note}</div></div>`;
-      main_panel.innerHTML = markup;
-      tree_render();
-      report_ui.layout_activate(main_panel);
-      minimap_clear();
-      return;
+      markup += `<div class="nosrc">${note}</div>`;
     }
 
     const hot_lines = Object.keys(lines)
@@ -1129,8 +1126,9 @@
       const baseline_cost = line_baseline(file_path, line_number);
       const heat_value = heat_of_line(self_cost, baseline_cost, line_number),
         heat_style_attribute = cell_style(heat_value);
+      // no address names line 0, so its row opens no panel
       const class_names = [
-        line_costs ? "clickable" : "",
+        line_costs && line_number ? "clickable" : "",
         file.callees[line_number] ? "hasc" : "",
       ]
         .filter(Boolean)
@@ -1166,7 +1164,7 @@
           : secondary_counters.map(() => "")),
       ]);
     };
-    const source_lines = file_source.split("\n");
+    const source_lines = file_source == null ? [] : file_source.split("\n");
     if (source_lines.length && source_lines[source_lines.length - 1] === "") {
       source_lines.pop();
     }
@@ -1174,10 +1172,14 @@
     for (let line_index = 0; line_index < source_lines.length; line_index++) {
       source_row_emit(line_index + 1, source_lines[line_index]);
     }
+    // with no text on this box the lines that carry cost are the whole view,
+    // line 0 (callgrind's no-line bucket) too: none of the file's cost hides
+    const beyond_end_text =
+      file_source == null ? "" : text_of("str_source_beyond_end");
     for (const line_key of Object.keys(lines)) {
-      if (+line_key <= source_lines.length) continue;
+      if (file_source != null && +line_key <= source_lines.length) continue;
       line_count = Math.max(line_count, +line_key);
-      source_row_emit(+line_key, text_of("str_source_beyond_end"));
+      source_row_emit(+line_key, beyond_end_text);
     }
 
     const call_column = HAS_CALL_GRAPH
@@ -1490,7 +1492,35 @@
       { label: scope_share_label(), numeric: true },
       { label: text_of("str_column_count"), numeric: true },
     ];
-    const popup_counter_rows = [
+    const popup_counter_rows = [],
+      popup_row_attributes = [];
+    const popup_row_push = (row, row_class) => {
+      popup_counter_rows.push(row);
+      popup_row_attributes.push(row_class ? `class="${row_class}"` : "");
+    };
+    const counter_row_class = (counter) =>
+      counter.derived ? "derived-counter" : "";
+    // an estimate never hides what it was summed from: a derived counter's
+    // recorded contributors follow its row, each with its own line cost
+    const contributing_rows_push = (counter) => {
+      for (const contributor of counter.contributing_counters) {
+        const contributor_self = contributor.get(line_costs[0]);
+        popup_row_push(
+          [
+            { text: counter_label(contributor) },
+            secondary_share_text(
+              contributor_self,
+              contributor,
+              line_counter_baseline(file_path, line_number, contributor),
+              line_number,
+            ),
+            contributor_self ? cell_number(contributor_self) : "",
+          ],
+          "contributing-counter",
+        );
+      }
+    };
+    popup_row_push(
       [
         {
           text: `${self_label} ${counter_label(current_counter)}`,
@@ -1498,14 +1528,16 @@
         line_share_text(self_cost, line_baseline_cost, line_number),
         cell_number(self_cost),
       ],
-    ];
+      counter_row_class(current_counter),
+    );
+    contributing_rows_push(current_counter);
     if (call_cost) {
-      popup_counter_rows.push([
+      popup_row_push([
         { text: text_of("str_column_calls") },
         line_share_text(call_cost, line_baseline_cost, line_number),
         cell_number(call_cost),
       ]);
-      popup_counter_rows.push([
+      popup_row_push([
         { text: text_of("str_column_call_count") },
         "",
         call_count_cell(line_costs[2]),
@@ -1513,17 +1545,25 @@
     }
     for (const secondary of secondary_counters) {
       const secondary_self = secondary.get(line_costs[0]);
-      if (!secondary_self) continue;
-      popup_counter_rows.push([
-        { text: counter_label(secondary) },
-        secondary_share_text(
-          secondary_self,
-          secondary,
-          line_counter_baseline(file_path, line_number, secondary),
-          line_number,
-        ),
-        cell_number(secondary_self),
-      ]);
+      // a diff's derived delta can cancel to zero while its parts moved
+      const contributor_moved = secondary.contributing_counters.some(
+        (contributor) => contributor.get(line_costs[0]),
+      );
+      if (!secondary_self && !contributor_moved) continue;
+      popup_row_push(
+        [
+          { text: counter_label(secondary) },
+          secondary_share_text(
+            secondary_self,
+            secondary,
+            line_counter_baseline(file_path, line_number, secondary),
+            line_number,
+          ),
+          secondary_self ? cell_number(secondary_self) : "",
+        ],
+        counter_row_class(secondary),
+      );
+      contributing_rows_push(secondary);
     }
     const in_function_note =
       line_function_index != null
@@ -1550,6 +1590,7 @@
       "heat.detail.stats",
       popup_counter_columns,
       popup_counter_rows,
+      { row_attributes: popup_row_attributes },
     );
     const text_parts = [
       heading_line +
@@ -1662,7 +1703,7 @@
     markup +=
       `<div class="dactions"><a href="#" class="dcopy">` +
       `${html_escape(text_of("str_detail_copy"))}</a>` +
-      ` <a href="#" class="dclose2">` +
+      `<span class="sep"> | </span><a href="#" class="dclose2">` +
       `${html_escape(text_of("str_detail_close"))}</a></div>`;
     markup += `</div>`;
     const detail_row = document.createElement("tr");
@@ -1710,28 +1751,8 @@
     }
   });
 
-  let current_state = { file: null, line: 0, fn: null };
+  let current_state = { file: null, line: 0, fn: null, ev: null };
   let rendered_key = "";
-  // The address's parts. An empty hash is home; a part this cannot read (no
-  // "=", a key it has no field for, a bad escape or line) is a bad address.
-  function state_of_hash(hash) {
-    const parsed_state = { file: null, line: 0, fn: null, ev: null };
-    for (const part of hash.replace(/^#/, "").split("&")) {
-      if (part === "") continue;
-      const equals_index = part.indexOf("=");
-      const key = part.slice(0, equals_index);
-      const value = decodeURIComponent(part.slice(equals_index + 1));
-      if (equals_index < 0 || (key === "l" && !Number.isInteger(+value))) {
-        throw new Error("str_error_hash_part_unknown " + part);
-      }
-      if (key === "f") parsed_state.file = value;
-      else if (key === "l") parsed_state.line = +value;
-      else if (key === "fn") parsed_state.fn = value;
-      else if (key === "e") parsed_state.ev = value;
-      else throw new Error("str_error_hash_part_unknown " + part);
-    }
-    return parsed_state;
-  }
   function counter_apply(key) {
     current_counter = counter_find(key);
     counter_select.value = current_counter.key;
@@ -1752,10 +1773,7 @@
   // A bad address is shown, not thrown: a file:// page is its own opaque
   // origin, so an exception reaches a parent frame stripped to "Script error."
   function hash_fault_show(message) {
-    window.report_error_overlay.overlay_show(
-      new Error(message),
-      text_of("str_error_source_address"),
-    );
+    window.report_error_overlay.overlay_show(new Error(message));
   }
   function route_render() {
     const parsed_state = state_of_hash(location.hash);
@@ -1808,14 +1826,23 @@
       if (line && !document.getElementById("L" + line)) line = 0;
       detail_set(line);
     }
-    current_state = { file: file, line: line, fn: fn };
+    current_state = {
+      file: file,
+      line: line,
+      fn: fn,
+      ev: addressed_counter_key(),
+    };
     hash_canonicalize();
   }
   window.addEventListener("hashchange", route_render);
   report_ui.parent_listen((message_data) => {
     if (message_data === "report_ui:layout_reset") {
       report_ui.layout_reset();
-    }
+    } else if (
+      typeof message_data === "string" &&
+      message_data.startsWith("report_ui:")
+    )
+      throw new Error("str_error_message_tag_unknown " + message_data);
   });
 
   let resize_debounce_timer = null;

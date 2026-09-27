@@ -255,6 +255,17 @@ table.src tr.detail > td {
 .dbox .tbl {
   background: var(--bg);
 }
+/* a derived counter's row takes the slate pair's light member, each recorded
+   contributor below it the dark one; a heated cell still paints its stop */
+.dbox tr.derived-counter > td {
+  background: var(--slate-l);
+}
+.dbox tr.contributing-counter > td {
+  background: var(--slate);
+}
 .dactions a {
   color: var(--link);
+}
+.dactions .sep {
+  color: var(--muted);
 }

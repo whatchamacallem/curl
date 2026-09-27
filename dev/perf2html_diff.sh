@@ -26,19 +26,20 @@ perf2html_diff.sh [debug-flags] [baseline] [modified] [diff]
     --artifacts=TMP   The profiler artifacts directory. Defaults to
                       perf2html_temporary_artifacts/ beside the report
                       directory (inside the target dir for a batch).
-    --keep-artifacts  Do not delete the profiler artifacts directory after use.
-                      Required for a later --regenerate.
+    --keep-artifacts  Flushes the report's stale artifacts subdirectory, then
+                      keeps this run's recordings, which is what a later
+                      --regenerate reuses.
     --regenerate      Rebuilds all pages from the last run's profiler
-                      artifacts, re-measuring nothing. Implies
-                      --keep-artifacts.
-    --verbose         Enables diagnostic information. Repeating it (--verbose
-                      --verbose) increments the verbosity level.
+                      artifacts, re-measuring nothing and keeping them.
+    --verbose         Enables diagnostic information in Markdown. Repeating it
+                      (--verbose --verbose) increments the verbosity level.
 EOF
 }
 
 # args_parse - reads the flags and the three directories, all absolute
 args_parse() {
   _KEEP_ARTIFACTS=0
+  _REGENERATE=0
   ARTIFACTS_DIR=""
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -56,7 +57,8 @@ args_parse() {
         ;;
       --regenerate)
         # a diff measures nothing and re-derives every page from its two
-        # inputs on every run, so here the flag is --keep-artifacts alone
+        # inputs on every run, so here the flag keeps without the flush
+        _REGENERATE=1
         _KEEP_ARTIFACTS=1
         shift
         ;;
@@ -96,10 +98,13 @@ args_parse() {
     ARTIFACTS_DIR="$(dirname "$_OUT_DIR")/$ARTIFACTS_NAME"
   fi
   ARTIFACTS_DIR="$(absolute_path "$ARTIFACTS_DIR")"
+  # each report owns one subdirectory of the artifacts dir, so no run can
+  # flush or keep a sibling report's recordings
+  ARTIFACTS_DIR="$ARTIFACTS_DIR/$(basename "$_OUT_DIR")"
 }
 
 # manifest_check - refuse a diff as input, verify a perf2html.sh report once,
-# and echo its stamp= value verbatim, which this diff's own manifest records.
+# and echo its recorded= value verbatim, which this diff's manifest copies.
 manifest_check() {
   local _dir="$1" _role="$2" _manifest="$1/MANIFEST.txt" _reason
   if [ -f "$_manifest" ] \
@@ -107,11 +112,11 @@ manifest_check() {
     _reason="error: can't diff a diff: the $_role report was written by"
     error_exit 2 "$_reason perf2html_diff.sh: $_dir"
   fi
-  # the one verify, refusing an empty stamp too; its unix time is dropped
-  # because the row below is recorded whole, human date and all
-  manifest_stamp_of "$_dir" "$_role" "$REPORT_MANIFEST_VERSION_FULL" \
+  # the one verify, refusing an empty recorded= row too; its unix time is
+  # dropped because the row below is copied whole, human date and all
+  manifest_recorded_of "$_dir" "$_role" "$REPORT_MANIFEST_VERSION_FULL" \
     >/dev/null
-  manifest_value "$_dir" stamp
+  manifest_value "$_dir" recorded
 }
 
 # header_file_of - writes one input's LABEL=VALUE rows for the overview
@@ -223,7 +228,6 @@ diff_one() {
     --baseline-data "$_callers_file"
 
   heading_print "python3 build_report.py test $_name"
-  rm -rf "$_out/raw"
   _archive="$_out/raw/$(basename "$_out")$REPORT_RAW_ARCHIVE_SUFFIX"
   archive_write "$(basename "$_out")" "$_out" "" \
     "$_diff_file" "$_callers_file"
@@ -233,19 +237,32 @@ diff_one() {
   log_verbose "$(printf '%-13sdiff -> %s' "$_name" "$_out/index.html")"
 }
 
-# main - checks both inputs, diffs every shared test, records their stamps
+# main - checks both inputs, diffs every shared test, copies their recorded=
 main() {
   args_parse "$@"
   verbose_begin
   title_print "$_SCRIPT" "$@"
 
-  # the inputs' stamps are this report's identity: it measures nothing of
-  # its own, so this run's TIMESTAMP names artifacts and is recorded nowhere
-  local _base_stamp _mod_stamp
-  _base_stamp="$(manifest_check "$_BASE_DIR" baseline)"
-  _mod_stamp="$(manifest_check "$_MOD_DIR" modified)"
+  # the inputs' recorded= rows are this report's identity: it measures
+  # nothing, so this run's TIMESTAMP names artifacts and is recorded nowhere
+  local _base_recorded _mod_recorded
+  _base_recorded="$(manifest_check "$_BASE_DIR" baseline)"
+  _mod_recorded="$(manifest_check "$_MOD_DIR" modified)"
 
-  [ "$_KEEP_ARTIFACTS" = 1 ] || artifacts_clean
+  path_overlap_check "$_OUT_DIR" "diff report" "$_BASE_DIR" "baseline report"
+  path_overlap_check "$_OUT_DIR" "diff report" "$_MOD_DIR" "modified report"
+  path_overlap_check "$ARTIFACTS_DIR" "artifacts dir" "$_BASE_DIR" \
+    "baseline report"
+  path_overlap_check "$ARTIFACTS_DIR" "artifacts dir" "$_MOD_DIR" \
+    "modified report"
+
+  if [ "$_REGENERATE" = 1 ] && [ ! -d "$ARTIFACTS_DIR" ]; then
+    error_exit 2 "error: --regenerate: no recordings at $ARTIFACTS_DIR"
+  fi
+
+  report_delete "$_OUT_DIR"
+  # --keep-artifacts flushes stale recordings first; only --regenerate reuses
+  [ "$_REGENERATE" = 1 ] || artifacts_clean
   report_begin "$_OUT_DIR" "diff.$TIMESTAMP.log" \
     "dev/perf2html_diff.sh $TIMESTAMP: $_BASE_DIR -> $_MOD_DIR -> $_OUT_DIR"
 
@@ -256,8 +273,6 @@ main() {
   profiles_extract "$_BASE_DIR" baseline "$_BASE_LISTING"
   profiles_extract "$_MOD_DIR" modified "$_MODIFIED_LISTING"
   _tests="$(tests_pair)"
-  [ -n "$_tests" ] || error_exit 2 \
-    "error: no test in common between $_BASE_DIR and $_MOD_DIR"
   log_verbose "$_SCRIPT $TIMESTAMP: $(basename "$_BASE_DIR") ->" \
     "$(basename "$_MOD_DIR")"
   _args=(-o "$_OUT_DIR/index.html" --diff
@@ -276,8 +291,8 @@ main() {
   report_finish "$_OUT_DIR" "$REPORT_MANIFEST_VERSION_DIFF" \
     "baseline=$(path_display "$_BASE_DIR")" \
     "modified=$(path_display "$_MOD_DIR")" \
-    "baseline_stamp=$_base_stamp" \
-    "modified_stamp=$_mod_stamp"
+    "baseline_recorded=$_base_recorded" \
+    "modified_recorded=$_mod_recorded"
   if [ "$_KEEP_ARTIFACTS" != 1 ]; then artifacts_clean; fi
 }
 

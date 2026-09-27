@@ -4,11 +4,19 @@
 
 set -euo pipefail
 
-# usage_show - the one usage line, printed by -h and on any other argument
+# usage_show - the one usage text, printed by -h and on a bad argument
 usage_show() {
-  printf '%s %s\n' 'test_all.sh  no arguments: enforcer.sh --keep-artifacts,' \
-    'then the failure tests'
+  cat <<'EOF'
+test_all.sh [--help]
+    Runs enforcer.sh --keep-artifacts --verbose into dev/enforcer.md, checks
+    a --regenerate from the recordings it kept, runs the failure-mode tests
+    on copies of its reports, then prettier --check over that markdown.
+    --help is its only argument.
+EOF
 }
+
+[ $# = 0 ] || { [[ $* =~ ^(-h|--help)$ ]] && usage_show && exit 0; } \
+  || { echo "error: unknown option: $*" && usage_show && exit 22; } >&2
 
 _SCRIPT="$(readlink -f "$0")"
 _SCRIPTS="$(dirname "$_SCRIPT")"
@@ -16,9 +24,18 @@ _DEV="$(dirname "$_SCRIPTS")"
 _REPO="$(dirname "$_DEV")"
 _ENFORCER="$_SCRIPTS/enforcer.sh"
 
+# for tool_find, so this finds the prettier the enforcer finds
+. "$_SCRIPTS/shared.sh"
+
 # the enforcer's stderr, its whole markdown and every refusal, beside the
 # reports it writes; dev/.gitignore names it. Its stdout stays on the terminal
 _ENFORCER_DOCUMENT="$_DEV/enforcer.md"
+
+# the formatter proving that markdown valid: the one the enforcer runs, with
+# its config, so the markdown is what prettier would print. Its install command
+_MARKDOWN_FORMATTER=prettier
+_MARKDOWN_FORMATTER_CONFIG="$_SCRIPTS/.prettierrc.json"
+_MARKDOWN_FORMATTER_INSTALL="npm install -g prettier"
 
 # the three reports the enforcer's batch writes, by its default names. The
 # failure tests copy them; only the last one reads an original, touching it
@@ -26,9 +43,14 @@ _BASELINE_REPORT="$_DEV/perf2html_baseline_report"
 _MODIFIED_REPORT="$_DEV/perf2html_modified_report"
 _DIFF_REPORT="$_DEV/perf2html_diff_report"
 
-# the recordings the enforcer's batch keeps, by its default name: what a
-# --regenerate reads, and the one thing the relink test reads a row from
+# the recordings the enforcer's batch keeps, one subdirectory per report:
+# what a --regenerate reads, and where the relink test reads a row from
 _ARTIFACTS="$_DEV/perf2html_temporary_artifacts"
+
+# the recordings' fixed name parts, spelled here on purpose: verification
+# never reads the settings the code under test reads
+_CALLGRIND_LOOPS=200
+_TIMING_FILE_PREFIX=perf-stat
 
 # the row a report's MANIFEST.txt records its checksum on, re-recorded on a
 # copy whose files a test changed on purpose
@@ -60,7 +82,9 @@ failure_expect() {
   shift 2
   [ "${1:-}" = -- ] || test_fail "$_name" "failure_expect wants -- first"
   shift
-  "$@" || _code=$?
+  # stdin is closed: a delete prompt a test reaches gets no answer, a no,
+  # instead of waiting on the terminal
+  "$@" </dev/null || _code=$?
   [ "$_code" = "$_wanted_code" ] \
     || test_fail "$_name" "exit $_code, expected $_wanted_code, from: $*"
   echo "ok $_name"
@@ -124,16 +148,127 @@ relink_regenerate_run() {
   return "$_code"
 }
 
+# markdown_formatter_check - find the last step's formatter, or refuse before
+# the enforcer's minutes are spent, naming its install command. SETS _PRETTIER.
+markdown_formatter_check() {
+  _PRETTIER="$(tool_find "$_MARKDOWN_FORMATTER")" && return 0
+  {
+    echo "error: 1 tool(s) missing, so $(path_shown "$_ENFORCER_DOCUMENT")" \
+      "is not checked: $_MARKDOWN_FORMATTER"
+    echo "  $_MARKDOWN_FORMATTER_INSTALL"
+  } >&2
+  exit 1
+}
+
+# markdown_check_run - prettier --check over the enforcer's document, once
+# every test passed: a failed run's error matters more. Exit 1 names the file.
+markdown_check_run() {
+  local _code=0
+  # at log level warn prettier names only a file it would change
+  "$_PRETTIER" --config "$_MARKDOWN_FORMATTER_CONFIG" \
+    --log-level warn --check "$_ENFORCER_DOCUMENT" || _code=$?
+  if [ "$_code" != 0 ]; then
+    printf 'FAILED: %s --check exited %s on %s\n' "$_MARKDOWN_FORMATTER" \
+      "$_code" "$(path_shown "$_ENFORCER_DOCUMENT")" >&2
+    exit "$_code"
+  fi
+  echo "ok enforcer_markdown_check"
+}
+
 # enforcer_run - the one measuring run, verbose, its stderr redirected into
 # the markdown and nothing else touched. Its failure is this script's.
 enforcer_run() {
-  local _code=0
-  "$_ENFORCER" --keep-artifacts --verbose 2>"$_ENFORCER_DOCUMENT" || _code=$?
+  local _code=0 _start=$SECONDS
+  # stdin is closed: a delete prompt would sit unseen in the redirected
+  # stderr, so it gets no answer, a no, and the markdown's tail names the dir
+  "$_ENFORCER" --keep-artifacts --verbose 2>"$_ENFORCER_DOCUMENT" </dev/null \
+    || _code=$?
   if [ "$_code" != 0 ]; then
     printf 'FAILED: enforcer.sh exited %s, see %s\n' "$_code" \
       "$(path_shown "$_ENFORCER_DOCUMENT")" >&2
     exit "$_code"
   fi
+  printf 'enforcer.sh --keep-artifacts: %ss\n' "$((SECONDS - _start))"
+}
+
+# makefile_test_names - every TESTS_C test in tests/perf/Makefile.inc, one
+# name per line: the inventory the cache must hold recordings for.
+makefile_test_names() {
+  # grep answers 1 on no match; the caller counts the names and refuses,
+  # naming the file, instead of dying wordless under pipefail
+  sed -n '/^TESTS_C *=/,/^$/p' "$_REPO/tests/perf/Makefile.inc" \
+    | grep -o '[A-Za-z0-9_]*\.c' | sed 's/\.c$//' | sort || true
+}
+
+# cache_populated_check - after the measuring run, every recording a later
+# --regenerate reads must sit in the kept artifacts dir, for both reports.
+cache_populated_check() {
+  local _tests=() _report _name _rows _recorded _test _file
+  mapfile -t _tests < <(makefile_test_names)
+  [ "${#_tests[@]}" -gt 0 ] || test_fail cache_populated \
+    "no TESTS_C entry in $_REPO/tests/perf/Makefile.inc"
+  for _report in "$_BASELINE_REPORT" "$_MODIFIED_REPORT"; do
+    _name="$(basename "$_report")"
+    _rows="$_ARTIFACTS/$_name/header.overview.$_name.txt"
+    [ -f "$_rows" ] || test_fail cache_populated "no rows file $_rows"
+    _recorded="$(sed -n 's/^recorded=//p' "$_rows" | head -n 1)"
+    _recorded="${_recorded%% *}"
+    [ -n "$_recorded" ] \
+      || test_fail cache_populated "no recorded= row in $_rows"
+    for _test in "${_tests[@]}"; do
+      for _file in \
+        "callgrind.out.$_test.$_CALLGRIND_LOOPS.$_recorded" \
+        "valgrind.$_test.$_CALLGRIND_LOOPS.$_recorded.log" \
+        "$_TIMING_FILE_PREFIX.$_test.$_recorded.csv" \
+        "$_TIMING_FILE_PREFIX.$_test.$_recorded.txt" \
+        "trace.$_test.$_CALLGRIND_LOOPS.$_recorded.log" \
+        "trace.$_test.$_CALLGRIND_LOOPS.$_recorded.speedscope.json"; do
+        [ -f "$_ARTIFACTS/$_name/$_file" ] || test_fail cache_populated \
+          "no recording $_ARTIFACTS/$_name/$_file"
+      done
+    done
+  done
+}
+
+# cache_snapshot_of - one line per file under the kept artifacts dir: its
+# cksum, its size and its relative path, the whole listing sorted.
+cache_snapshot_of() {
+  (cd "$_ARTIFACTS" && find . -type f -print | LC_ALL=C sort \
+    | LC_ALL=C tr '\n' '\0' | xargs -0 -r cksum -- | LC_ALL=C sort)
+}
+
+# regenerate_cache_check - the batch's --regenerate must run from the kept
+# cache: no kept file changed or removed, and no new recording measured.
+regenerate_cache_check() {
+  local _before _after _gone _new _line _path _name _start=$SECONDS _code=0
+  _before="$(cache_snapshot_of)"
+  "$_DEV/perf2html_batch.sh" --regenerate "--target-dir=$_DEV" </dev/null \
+    || _code=$?
+  [ "$_code" = 0 ] || test_fail regenerate_from_cache \
+    "perf2html_batch.sh --regenerate exited $_code"
+  printf 'perf2html_batch.sh --regenerate: %ss\n' "$((SECONDS - _start))"
+  _after="$(cache_snapshot_of)"
+  _gone="$(comm -23 <(printf '%s\n' "$_before") <(printf '%s\n' "$_after"))"
+  [ -z "$_gone" ] || test_fail regenerate_cache_unchanged \
+    "$(grep -c . <<<"$_gone") kept file(s) changed: ${_gone%%$'\n'*}"
+  _new="$(comm -13 <(printf '%s\n' "$_before") <(printf '%s\n' "$_after"))"
+  # a recording-named file in a measured report's own subdirectory; the
+  # diff's subdirectory re-extracts callgrind.out.* copies by design
+  while IFS= read -r _line; do
+    [ -n "$_line" ] || continue
+    _path="${_line##* }"
+    for _name in "$(basename "$_BASELINE_REPORT")" \
+      "$(basename "$_MODIFIED_REPORT")"; do
+      case "$_path" in
+        "./$_name/callgrind.out."* | "./$_name/valgrind."* | \
+          "./$_name/trace."* | "./$_name/$_TIMING_FILE_PREFIX".*)
+          test_fail regenerate_no_new_recordings \
+            "--regenerate recorded a new file: $_path"
+          ;;
+      esac
+    done
+  done <<<"$_new"
+  echo "ok regenerate_cache_unchanged"
 }
 
 # unknown_option_tests - every script refusing an argument it does not know,
@@ -174,6 +309,12 @@ diff_tests() {
     "$_tool" "--artifacts=$_TEST_ALL_SCRATCH/artifacts_four" \
     "$_baseline" "$_modified" "$_TEST_ALL_SCRATCH/out_four" \
     "$_TEST_ALL_SCRATCH/fourth"
+
+  # the output is deleted first thing, so one naming an input must refuse
+  _copy="$(report_copy "$_TEST_ALL_SCRATCH/modified_as_output" "$_modified")"
+  failure_expect diff_output_is_an_input 2 -- \
+    "$_tool" "--artifacts=$_TEST_ALL_SCRATCH/artifacts_output_input" \
+    "$_baseline" "$_copy" "$_copy"
 
   _copy="$(report_copy "$_TEST_ALL_SCRATCH/modified_no_manifest" "$_modified")"
   rm "$_copy/MANIFEST.txt"
@@ -234,17 +375,27 @@ toolchain_tests() {
 report_dir_tests() {
   local _baseline="$1" _tool="$_DEV/perf2html.sh" _populated _file _empty
 
+  # a populated dir with no MANIFEST.txt goes only on a typed y: with stdin
+  # closed the prompt is a no, exit 1, and the dir is left as it was
   _populated="$_TEST_ALL_SCRATCH/populated_no_manifest"
   mkdir "$_populated"
   echo 'left by test_all.sh' >"$_populated/leftover.txt"
-  failure_expect report_populated_no_manifest 2 -- \
+  failure_expect report_populated_no_manifest 1 -- \
     "$_tool" "--report=$_populated" \
     "--artifacts=$_TEST_ALL_SCRATCH/artifacts_populated"
+  [ -f "$_populated/leftover.txt" ] || test_fail report_populated_kept \
+    "$(path_shown "$_populated/leftover.txt") is gone after a refused prompt"
+  echo "ok report_populated_kept"
 
+  # a target that is no directory gets the same prompt: with stdin closed
+  # that is a no, exit 1, and the file is left as it was
   _file="$_TEST_ALL_SCRATCH/report_is_a_file.txt"
   echo 'a file, not a directory' >"$_file"
-  failure_expect report_is_a_file 2 -- \
+  failure_expect report_is_a_file 1 -- \
     "$_tool" "--report=$_file" "--artifacts=$_TEST_ALL_SCRATCH/artifacts_file"
+  [ -f "$_file" ] || test_fail report_file_kept \
+    "$(path_shown "$_file") is gone after a refused prompt"
+  echo "ok report_file_kept"
 
   failure_expect artifacts_inside_report 2 -- \
     "$_tool" "--report=$_baseline" "--artifacts=$_baseline/inside"
@@ -274,7 +425,8 @@ relink_test() {
   local _row _rows _binary _reference="$_TEST_ALL_SCRATCH/mtime_reference"
   # the baseline's rows file in the artifacts dir names its executable: the
   # same file the enforcer's --regenerate reads, and no report
-  _rows="$_ARTIFACTS/header.overview.$(basename "$_BASELINE_REPORT").txt"
+  _rows="$_ARTIFACTS/$(basename "$_BASELINE_REPORT")"
+  _rows="$_rows/header.overview.$(basename "$_BASELINE_REPORT").txt"
   [ -f "$_rows" ] || test_fail regenerate_after_relink "no $_rows"
   _row="$(sed -n 's/^executable=//p' "$_rows" | head -n 1)"
   [ -n "$_row" ] || test_fail regenerate_after_relink \
@@ -314,30 +466,16 @@ failure_tests_run() {
   rm -rf "$_TEST_ALL_SCRATCH"
 }
 
-# args_check - -h prints the usage line; any other argument, however many,
-# is refused before anything runs.
-args_check() {
-  local _argument
-  for _argument in "$@"; do
-    if [ "$_argument" != -h ] && [ "$_argument" != --help ]; then
-      {
-        echo "error: unknown option: $_argument"
-        usage_show
-      } >&2
-      exit 2
-    fi
-  done
-  [ $# = 0 ] || {
-    usage_show
-    exit 0
-  }
-}
-
-# main - the enforcer's measuring run, then the failure tests on its reports
+# main - the enforcer's measuring run, the cache checks over its recordings,
+# the failure tests on copies of its reports, then the markdown check
 main() {
-  args_check "$@"
+  markdown_formatter_check
   enforcer_run
+  cache_populated_check
+  regenerate_cache_check
   failure_tests_run
+  markdown_check_run
+  printf 'test_all.sh: %ss total\n' "$SECONDS"
 }
 
-main "$@"
+main

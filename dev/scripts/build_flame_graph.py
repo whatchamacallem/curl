@@ -12,7 +12,6 @@ import settings, theme
 _ASSET_SETTINGS_SCRIPT_NAME: str = ""
 _ASSET_TEMPLATE_FLAME_GRAPH_BOOTSTRAP_NAME: str = ""
 _ASSET_TEMPLATE_FLAME_GRAPH_PAGE_NAME: str = ""
-_ASSET_UI_STRINGS_SCRIPT_NAME: str = ""
 _FLAME_GRAPH_PROFILE_SCRIPT_NAME: str = ""
 _REPORT_ASSETS_DIR_NAME: str = ""
 settings.load_into(__name__)
@@ -49,9 +48,7 @@ class BuildFlameGraph:
     def bootstrap_write(
         self, args: BuildFlameGraph.FlameGraphArgs, raw: bytes
     ) -> None:
-        doc_name = json.loads(raw.decode("utf-8")).get(
-            "name"
-        ) or os.path.basename(args.profile_json)
+        doc_name = json.loads(raw.decode("utf-8"))["name"]
         script = _BOOTSTRAP.replace("__NAME__", json.dumps(doc_name)).replace(
             "__DATA__", json.dumps(base64.b64encode(raw).decode("ascii"))
         )
@@ -84,14 +81,11 @@ class BuildFlameGraph:
         assets_href = theme.shared_href(
             _FLAME_GRAPH_PAGE_DEPTH, _REPORT_ASSETS_DIR_NAME
         )
-        # overlay first, so a speedscope that never starts shows the failure;
-        # then settings and vocabulary, the bootstrap's bounds and failure id
+        # overlay and vocabulary first, so a speedscope that never starts
+        # shows the failure; then settings, the bootstrap's bounds
         scripts = theme.script_tags(
             assets_href, theme.page_preamble_scripts()
-        ) + theme.script_tags(
-            assets_href,
-            (_ASSET_SETTINGS_SCRIPT_NAME, _ASSET_UI_STRINGS_SCRIPT_NAME),
-        )
+        ) + theme.script_tags(assets_href, (_ASSET_SETTINGS_SCRIPT_NAME,))
         # __SCRIPTS__ goes in last, so nothing substituted before it can be
         # read back out of the text the scripts bring with them
         html = (

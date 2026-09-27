@@ -293,7 +293,7 @@ class Theme:
         return max((len(row[index].text) for row in rows), default=0)
 
     # One column's <col> width: CSS automatic table layout on its container's
-    # 100cqw, between its narrowest and widest. See DECLAUDE.md 8.
+    # 100cqw, between its narrowest and widest. See declawed.md 8.
     def column_width_text(
         self, limits: Sequence[tuple[int, int]], index: int, grow_index: int
     ) -> str:
@@ -666,12 +666,13 @@ def page_document(
 
 
 # page_preamble_scripts - The scripts every page links before any other, in
-# this order. Both are shared assets, one copy each per report.
+# this order. Each is a shared asset, one copy per report.
 def page_preamble_scripts() -> tuple[str, ...]:
-    # the overlay installs the window handlers, so nothing that can throw
-    # precedes it; the manifest is second, giving it a report to name
+    # the overlay's handlers first; the strings next, needing nothing, so a
+    # fault in any later script reads as text; the manifest names the report
     return (
         _ASSET_ERROR_OVERLAY_SCRIPT_NAME,
+        _ASSET_UI_STRINGS_SCRIPT_NAME,
         _ASSET_REPORT_MANIFEST_SCRIPT_NAME,
     )
 

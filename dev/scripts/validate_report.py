@@ -42,7 +42,7 @@ class ValidateReport:
         # the LABEL= rows MANIFEST.txt must have
         manifest_labels: tuple[str, ...]
         # those of them whose value starts with a unix time
-        manifest_stamp_labels: tuple[str, ...]
+        manifest_recorded_labels: tuple[str, ...]
         # whether a test records runs of its own: a perf log, a trace, a
         # flame graph. never true of the synthesized "all"
         test_has_rawdata: bool
@@ -284,12 +284,12 @@ class ValidateReport:
                     f"MANIFEST.txt has no '{label}=' header row, so a"
                     f" reader of this report cannot show it: {path}"
                 )
-        for label in layout.manifest_stamp_labels:
-            stamp = self.manifest_stamp_value(text, label)
-            if not stamp.isdigit():
+        for label in layout.manifest_recorded_labels:
+            recorded_unix = self.manifest_recorded_value(text, label)
+            if not recorded_unix.isdigit():
                 self.fail(
-                    f"MANIFEST.txt {label}= row starts {stamp!r}, expected"
-                    f" the unix time: {path}"
+                    f"MANIFEST.txt {label}= row starts {recorded_unix!r},"
+                    f" expected the unix time: {path}"
                 )
         recorded = self.manifest_value(text, _REPORT_MANIFEST_CHECKSUM_LABEL)
         if not recorded:
@@ -311,8 +311,8 @@ class ValidateReport:
                 f" after the report was written: {out_dir}"
             )
 
-    # The unix time out of one stamp row, whose human tail nothing parses.
-    def manifest_stamp_value(self, text: str, label: str) -> str:
+    # The unix time out of one recorded row, whose human tail nothing parses.
+    def manifest_recorded_value(self, text: str, label: str) -> str:
         return self.manifest_value(text, label).split(" ", 1)[0]
 
     # One LABEL= row out of a manifest's text.
@@ -342,10 +342,8 @@ class ValidateReport:
         )
         if not text:
             return
-        if "<h2>test suites</h2>" not in text:
-            self.fail(
-                f"overview index.html has no 'test suites' section: {path}"
-            )
+        if "<h2>tests</h2>" not in text:
+            self.fail(f"overview index.html has no 'tests' section: {path}")
         for test_name in tests:
             if f'href="{test_name}/index.html"' not in text:
                 self.fail(
@@ -649,10 +647,10 @@ _LAYOUT_DIFF = ValidateReport.ReportLayout(
     manifest_labels=(
         "baseline",
         "modified",
-        "baseline_stamp",
-        "modified_stamp",
+        "baseline_recorded",
+        "modified_recorded",
     ),
-    manifest_stamp_labels=("baseline_stamp", "modified_stamp"),
+    manifest_recorded_labels=("baseline_recorded", "modified_recorded"),
     test_has_rawdata=False,
     all_has_archive=True,
 )
@@ -664,20 +662,19 @@ _LAYOUT_FULL = ValidateReport.ReportLayout(
     header_blocks=(),
     manifest_version=_REPORT_MANIFEST_VERSION_FULL,
     manifest_labels=(
-        "sampled",
         "revision",
         "cpu",
         "build",
         "executable",
-        "stamp",
+        "recorded",
     ),
-    manifest_stamp_labels=("stamp",),
+    manifest_recorded_labels=("recorded",),
     test_has_rawdata=True,
     all_has_archive=False,
 )
 
 # The POSIX pipeline this file re-derives the checksum row with, spelled
-# out separately from shared.sh's on purpose. See DECLAUDE.md: not a twin.
+# out separately from shared.sh's on purpose. See declawed.md: not a twin.
 _REPORT_CHECKSUM_COMMAND = (
     "find . -type f ! -name MANIFEST.txt -print"
     " | LC_ALL=C sort | LC_ALL=C tr '\\n' '\\0'"

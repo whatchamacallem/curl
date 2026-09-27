@@ -4,7 +4,7 @@ import json, os, re, sys
 from typing import NoReturn, get_origin, get_type_hints
 
 # Every setting the tools have, then the reader that checks and assigns
-# them. _SETTING_NAMES is the line between the two. See DECLAUDE.md 6.1.
+# them. _SETTING_NAMES is the line between the two. See declawed.md 6.1.
 
 # What the report's one shared copy of the theme is written as: written once
 # at the report root and linked, never inlined. Each page links what it uses.
@@ -12,6 +12,11 @@ ASSET_ERROR_OVERLAY_SCRIPT_NAME = "error_overlay.js"
 ASSET_FRAME_SCRIPT_NAME = "frame.js"
 ASSET_HEAT_MAP_SCRIPT_NAME = "heatmap.js"
 ASSET_HEAT_MAP_STYLESHEET_NAME = "heatmap.css"
+
+# What each test's script in assets/ ends in, after the test's name: every
+# file and function its heat map opens, which the overview's pulldowns offer.
+ASSET_PULLDOWN_NAMES_SCRIPT_SUFFIX = ".pulldown_names.js"
+
 ASSET_SETTINGS_SCRIPT_NAME = "settings.js"
 
 # The four scripts/ files a generator reads as a template, each holding the
@@ -26,7 +31,7 @@ ASSET_THEME_STYLESHEET_NAME = "theme.css"
 ASSET_UI_STRINGS_SCRIPT_NAME = "ui_strings.js"
 
 # Every counter callgrind never records, as the recorded ones it sums from
-# and each one's coefficient. Nothing stores one. See DECLAUDE.md 6.2.
+# and each one's coefficient. Nothing stores one. See declawed.md 6.2.
 DERIVED_COUNTER_TERMS: dict[str, dict[str, int]] = {
     "D1m": {"D1mr": 1, "D1mw": 1},
     "DLm": {"DLmr": 1, "DLmw": 1},
@@ -244,17 +249,13 @@ STORAGE_VERSION_KEY = "perf2html.version"
 # The "curl.se/perf" link in every page's util block.
 STRIP_CURL_PERF_SITE_HREF = "https://curl.se/perf/index.html"
 
-# Width of a strip's status row, its first cell: the longest "<test> /
-# <label>" is 26 today, plus margin. Too small clips mid-word.
-STRIP_STATUS_ROW_WIDTH_CHARS = 33
+# Spaces each overview pulldown's box adds beyond the longest test name, the
+# longest text a closed box reads. All three boxes are this one width.
+STRIP_PULLDOWN_EXTRA_WIDTH_CHARS = 2
 
-# Spaces the overview's test menu box adds beyond its longest test name,
-# shared either side of the centered name.
-STRIP_TEST_MENU_EXTRA_WIDTH_CHARS = 2
-
-# The keys the open test menu answers, and a framed summary forwards up to
-# it, as KeyboardEvent.key names. "next" also opens a closed, focused menu.
-STRIP_TEST_MENU_KEY_NAMES: dict[str, str] = {
+# The keys an open pulldown answers, and a framed summary forwards up to the
+# tests one, as KeyboardEvent.key names. "next" also opens a focused one.
+STRIP_PULLDOWN_KEY_NAMES: dict[str, str] = {
     "close": "Escape",
     "next": "ArrowDown",
     "previous": "ArrowUp",
@@ -262,12 +263,16 @@ STRIP_TEST_MENU_KEY_NAMES: dict[str, str] = {
 }
 
 # The test merging every other, named as perf2html.sh names its directory.
-# The test menu reads it while the overview shows: data, not a UI word.
-STRIP_TEST_MENU_MERGED_TEST_NAME = "all"
+# The pulldowns work in it at the overview's home: data, not a UI word.
+STRIP_PULLDOWN_MERGED_TEST_NAME = "all"
 
-# Printable keys that, typed outside a field, stay with the page instead of
-# opening the test menu: space scrolls it.
-STRIP_TEST_MENU_SKIPPED_KEY_NAMES: tuple[str, ...] = (" ",)
+# Printable keys no pulldown takes as typed: outside a field they stay with
+# the page (space scrolls it), in an open box they type themselves.
+STRIP_PULLDOWN_SKIPPED_KEY_NAMES: tuple[str, ...] = (" ",)
+
+# Width of a strip's status row, its first cell: the longest "<test> /
+# <label>" is 26 today, plus margin. Too small clips mid-word.
+STRIP_STATUS_ROW_WIDTH_CHARS = 33
 
 # Where on the heat ramp the wordmark starts, its last letter always on the
 # hot end. Half way up reads as the ramp's warm half, not the whole of it.
@@ -401,7 +406,7 @@ _SENTINEL_EMPTY_TYPES = (
 )
 
 # How the accepted sentinels are spelled in every message naming them, so
-# the errors and DECLAUDE.md say one list. None and Ellipsis are not on it.
+# the errors and declawed.md say one list. None and Ellipsis are not on it.
 _SENTINEL_TEXT = 'False, 0, 0.0, "", (), [], {}'
 
 # The scripts/ directory, which is where this file, settings.sh and the
@@ -680,7 +685,7 @@ class SettingsReader:
 
 
 # The reader, then the cut: the shell's settings bind first, so every one
-# is bound before the list is taken. See DECLAUDE.md 6.1 for the spelling.
+# is bound before the list is taken. See declawed.md 6.1 for the spelling.
 _reader = SettingsReader()
 globals().update(_reader.shell_settings_read())
 _SETTING_NAMES = frozenset(

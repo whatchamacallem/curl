@@ -33,11 +33,25 @@ archive_write() {
   rm -rf "$stage"
 }
 
-# artifacts_clean - Deletes the temp dir because it is a debug only unless told
-# otherwise.
+# artifacts_clean - deletes this run's artifacts subdir, and its parent once
+# no sibling run keeps files there: the cache is debug only unless kept.
 artifacts_clean() {
   [ -d "$ARTIFACTS_DIR" ] || return 0
   rm -r "$ARTIFACTS_DIR"
+  rmdir --ignore-fail-on-non-empty "$(dirname "$ARTIFACTS_DIR")"
+}
+
+# block_lead - the blank line before a block, none before a hand-run script's
+# first or after a tight item before the next. SETS VERBOSE_BLOCK_PRINTED.
+block_lead() {
+  # kinds: item, or other for a heading, paragraph or table. Unset, before
+  # verbose_begin, the state is a parent's: something is printed above
+  local kind="$1" printed="${VERBOSE_BLOCK_PRINTED-other}"
+  # only an item right after a tight one goes without: loose, the state
+  # verbose_filter leaves after a table, wants the blank line whatever comes
+  [ "$printed" = none ] || { [ "$kind" = item ] && [ "$printed" = item ]; } \
+    || echo >&2
+  VERBOSE_BLOCK_PRINTED="$kind"
 }
 
 # checksum_compute - POSIX cksum of every report file but MANIFEST.txt.
@@ -58,8 +72,8 @@ checksum_compute() {
 # child_capture - run one tool into $RUN_LOG, and a page file when one is
 # named, teeing under --verbose. SETS CHILD_EXIT_CODE and LOG_LINE_FROM.
 child_capture() {
-  # args: page file or "", then the command. Only a tool is captured, never
-  # one of our own scripts. Never stdout: the tee owns it
+  # args: page file or "", then the command: a tool, never one of our own
+  # scripts; under --verbose its lines nest in a fence under the last item
   local page_file="$1"
   shift
   local logs=("$RUN_LOG") statuses=() status
@@ -71,7 +85,7 @@ child_capture() {
   # reader; the tee and the filter are chosen before the child starts
   if [ "$VERBOSE" -ge 1 ]; then
     if ! { "$@" 2>&1 | tee -a "${logs[@]}" \
-      | verbose_filter list "$VERBOSE_ITEM_INDENT"; }; then
+      | verbose_filter "$VERBOSE_ITEM_INDENT"; }; then
       statuses=("${PIPESTATUS[@]}")
     fi
   elif ! { "$@" 2>&1 | tee -a "${logs[@]}" >/dev/null; }; then
@@ -88,7 +102,7 @@ child_capture() {
 }
 
 # child_capture_noisy - a child whose output is noise, like cmake's configure:
-# child_capture at --verbose --verbose, discarded below. Returns its code.
+# at --verbose --verbose one ```txt fence, discarded below. Returns its code.
 child_capture_noisy() {
   # a return code, not CHILD_EXIT_CODE: child_capture is that global's one
   # setter, and below level 2 nothing reaches $RUN_LOG or the terminal
@@ -106,15 +120,29 @@ clock_microseconds() {
   echo "${now//[!0-9]/}"
 }
 
+# code_span - text as --verbose shows it, $HOME/ written ~/, in one code span
+# as prettier prints one: the shortest backtick run the text lacks around it.
+code_span() {
+  local text="${1//"${HOME:?}"\//\~/}" run='`' gap='' edge='[^`]'
+  while [[ "$text" =~ (^|$edge)"$run"($edge|$) ]]; do run+='`'; done
+  # a space inside where the markdown would else eat one: a backtick at an
+  # end, or spaces at both ends of text that is not all spaces
+  if [[ "$text" == \`* || "$text" == *\` ||
+    ("$text" == ' '*' ' && "$text" == *[!' ']*) ]]; then
+    gap=' '
+  fi
+  printf '%s%s%s%s%s\n' "$run" "$gap" "$text" "$gap" "$run"
+}
+
 # command_item_print - the numbered item a command's output nests under:
-# `$ command`, wrapped. SETS VERBOSE_ITEM_INDENT, VERBOSE_COMMAND_NUMBER.
+# `$ command`, one code span. SETS VERBOSE_ITEM_INDENT, VERBOSE_COMMAND_NUMBER.
 command_item_print() {
   local marker="$VERBOSE_COMMAND_NUMBER. "
   VERBOSE_ITEM_INDENT="${#marker}"
   VERBOSE_COMMAND_NUMBER=$((VERBOSE_COMMAND_NUMBER + 1))
-  VERBOSE_OUTPUT_ENDS_BLANK=0
   [ "$VERBOSE" -ge 1 ] || return 0
-  printf '`$ %s`\n' "$1" | verbose_filter wrap "$marker"
+  block_lead item
+  printf '%s%s\n' "$marker" "$(code_span "\$ $1")" >&2
 }
 
 # command_run - the one policy on child_capture: on failure print what the
@@ -134,10 +162,10 @@ duration_format() {
   fi
 }
 
-# elapsed_format - seconds since $VERBOSE_START_US, two decimals, for the
-# [Ns] prefix a whole run's lines carry.
+# elapsed_format - seconds since $PERF2HTML_CLOCK_START_US, two decimals, for
+# the [Ns] prefix every line of a run carries, its child scripts' included.
 elapsed_format() {
-  local delta=$(($(clock_microseconds) - VERBOSE_START_US))
+  local delta=$(($(clock_microseconds) - PERF2HTML_CLOCK_START_US))
   printf '%d.%02d' "$((delta / 1000000))" "$((delta % 1000000 / 10000))"
 }
 
@@ -146,13 +174,7 @@ elapsed_format() {
 error_exit() {
   local exit_code="$1"
   shift
-  {
-    echo
-    echo '```txt'
-    printf '%s\n' "$@"
-    echo '```'
-    echo
-  } | verbose_filter paths
+  printf '%s\n' "$@" | verbose_filter 0
   exit "$exit_code"
 }
 
@@ -161,35 +183,29 @@ error_exit() {
 failure_print_log_tail() {
   local exit_code="$1" shown="$2"
   {
-    echo
-    echo '```txt'
     echo "error: exit $exit_code from: $shown"
     tail -n +"$((LOG_LINE_FROM + 1))" "$RUN_LOG" \
       | tail -n "$LOG_FAILURE_TAIL_LINES"
     echo "(see: $RUN_LOG)"
-    echo '```'
-    echo
-  } | verbose_filter paths
+  } | verbose_filter 0
 }
 
 # heading_print - one piece of work, a heading one level below the script's
 # own title, reading `[elapsed] text`; the item numbers restart under it.
 heading_print() {
-  heading_write "$((VERBOSE_HEADING_DEPTH + 1))" "$*"
+  heading_write "$((PERF2HTML_HEADER_DEPTH + 1))" "$*"
 }
 
-# heading_write - a heading at the depth given, printed under --verbose with
-# a blank line each side. SETS VERBOSE_COMMAND_NUMBER back to 1.
+# heading_write - a heading at the depth given, printed under --verbose as
+# one code span. SETS VERBOSE_COMMAND_NUMBER back to 1.
 heading_write() {
-  local depth="$1" text="$2" hashes
+  local depth="$1" text="$2" marks
   VERBOSE_COMMAND_NUMBER=1
   [ "$VERBOSE" -ge 1 ] || return 0
-  printf -v hashes '%*s' "$depth" ''
-  hashes="${hashes// /#}"
-  [ "$VERBOSE_OUTPUT_ENDS_BLANK" = 1 ] || echo >&2
-  printf '%s `[%ss] %s`\n\n' "$hashes" "$(elapsed_format)" "$text" \
-    | verbose_filter paths
-  VERBOSE_OUTPUT_ENDS_BLANK=1
+  printf -v marks '%*s' "$depth" ''
+  block_lead other
+  printf '%s %s\n' "${marks// /#}" \
+    "$(code_span "[$(elapsed_format)s] $text")" >&2
 }
 
 # install_command_of - one tool's official install command. Nothing
@@ -211,7 +227,7 @@ install_command_of() {
 # --verbose, through the filter a child's output takes.
 item_output_print() {
   [ "$VERBOSE" -ge 1 ] || return 0
-  printf '%s\n' "$@" | verbose_filter list "$VERBOSE_ITEM_INDENT"
+  printf '%s\n' "$@" | verbose_filter "$VERBOSE_ITEM_INDENT"
 }
 
 # json_quote - one string as a JSON string literal, for a generated .js.
@@ -222,14 +238,12 @@ json_quote() {
   printf '"%s"' "$text"
 }
 
-# log_verbose - one plain status line, a paragraph of its own under
-# --verbose, wrapped. Verbose adds to quiet, so nothing else guards a printf.
+# log_verbose - one status line, a paragraph of one code span under
+# --verbose. Verbose adds to quiet, so nothing else guards a printf.
 log_verbose() {
   [ "$VERBOSE" -ge 1 ] || return 0
-  [ "$VERBOSE_OUTPUT_ENDS_BLANK" = 1 ] || echo >&2
-  printf '%s\n' "$*" | verbose_filter wrap ""
-  echo >&2
-  VERBOSE_OUTPUT_ENDS_BLANK=1
+  block_lead other
+  code_span "$*" >&2
 }
 
 # manifest_fault_of - the one reader deciding whether a directory is a
@@ -239,7 +253,7 @@ manifest_fault_of() {
   # keeps a diff out of a diff, naming both accepts either kind
   local dir="$1"
   shift
-  local manifest="$dir/MANIFEST.txt" version recorded found wanted
+  local manifest="$dir/MANIFEST.txt" version expected found wanted
   local checksum_label="$REPORT_MANIFEST_CHECKSUM_LABEL"
   wanted="$(manifest_wanted_phrase "$@")"
   if [ ! -d "$dir" ]; then
@@ -261,17 +275,40 @@ manifest_fault_of() {
       "expected $wanted"
     return 0
   fi
-  recorded="$(manifest_value "$dir" "$checksum_label")"
-  if [ -z "$recorded" ]; then
+  expected="$(manifest_value "$dir" "$checksum_label")"
+  if [ -z "$expected" ]; then
     echo "$dir has no $checksum_label= row in its MANIFEST.txt, expected" \
       "one beside the version line $version"
     return 0
   fi
   found="$(checksum_compute "$dir")"
-  if [ "$found" != "$recorded" ]; then
+  if [ "$found" != "$expected" ]; then
     echo "$dir does not match its recorded $checksum_label: found $found," \
-      "expected $recorded"
+      "expected $expected"
   fi
+}
+
+# manifest_recorded_of - verify a report and echo the unix time of its
+# recorded= row, the one name its recordings carry. A fault exits inside.
+manifest_recorded_of() {
+  local dir="$1" role="$2"
+  shift 2
+
+  manifest_verify "$dir" "$role" "$@"
+
+  local recorded
+  recorded="$(manifest_value "$dir" recorded)"
+  recorded="${recorded%% *}"
+
+  [ -n "$recorded" ] || error_exit 2 \
+    "error: $role report $(basename "$dir") records no recorded= row"
+  echo "$recorded"
+}
+
+# manifest_recorded_row - the recorded= row a measured report writes: the
+# unix time every reader takes, then a date for a human, which nothing parses.
+manifest_recorded_row() {
+  echo "recorded=$TIMESTAMP $(date -d "@$TIMESTAMP" +'%F %I:%M:%S %p')"
 }
 
 # manifest_script_write - the assets/ script holding the manifest text, for
@@ -291,29 +328,6 @@ manifest_script_write() {
     done
     printf '].join("\\n");\n'
   } >"$out"
-}
-
-# manifest_stamp_row - the stamp= row a measured report writes: the unix time
-# a reader identifies recordings by, then a human date nothing parses.
-manifest_stamp_row() {
-  echo "stamp=$TIMESTAMP $(date -d "@$TIMESTAMP" +'%F %I:%M:%S %p')"
-}
-
-# manifest_stamp_of - verify a report and echo the unix time of its stamp=
-# row, the one name its recordings carry. A fault exits inside the verify.
-manifest_stamp_of() {
-  local dir="$1" role="$2"
-  shift 2
-
-  manifest_verify "$dir" "$role" "$@"
-
-  local stamp
-  stamp="$(manifest_value "$dir" stamp)"
-  stamp="${stamp%% *}"
-
-  [ -n "$stamp" ] || error_exit 2 \
-    "error: $role report $(basename "$dir") records no stamp= row"
-  echo "$stamp"
 }
 
 # manifest_value - one LABEL= row of a report's MANIFEST.txt.
@@ -349,9 +363,8 @@ manifest_write() {
   local version="$1" dir="$2"
   shift 2
   local manifest="$dir/MANIFEST.txt" checksum
-  # over the finished tree, before the redirect below creates the file the
-  # checksum is written into
-  rm -f "$manifest"
+  # the script first, as the checksum counts it; report_delete deleted the
+  # directory, so MANIFEST.txt appears only here, last
   manifest_script_write "$dir" "$version" "$@"
   checksum="$(checksum_compute "$dir")"
   {
@@ -381,18 +394,35 @@ path_display() {
 print(os.path.relpath(sys.argv[1], sys.argv[2]))' "$1" "${2:-$INVOKED_FROM}"
 }
 
-# report_begin - the head of every run writing a report: clear, create,
-# drop the stale manifest, open $RUN_LOG, lay down README.md and assets.
+# path_overlap_check - refuse two paths where one is, holds or sits inside
+# the other, as deleting or writing either would damage the other.
+path_overlap_check() {
+  # args: a path and its role, then another path and its role
+  local first="${1%/}/" first_role="$2" second="${3%/}/" second_role="$4"
+  local reason="error: the $first_role $first and the $second_role $second"
+  [ "${first#"$second"}" != "$first" ] \
+    || [ "${second#"$first"}" != "$second" ] || return 0
+  error_exit 2 "$reason overlap: deleting or writing one damages the other"
+}
+
+# quiet_switch_set - an outside tool's own quiet switch, left empty under
+# --verbose so its good news shows. SETS QUIET_SWITCH, its canonical setter.
+quiet_switch_set() {
+  QUIET_SWITCH=()
+  case "$1" in
+    prettier) [ "$VERBOSE" -ge 1 ] || QUIET_SWITCH=(--log-level warn) ;;
+    ruff) [ "$VERBOSE" -ge 1 ] || QUIET_SWITCH=(--quiet) ;;
+    *) error_exit 1 "error: no quiet switch is recorded for $1" ;;
+  esac
+}
+
+# report_begin - the head of every run writing a report, once report_delete
+# took the last one: create it, open $RUN_LOG, lay down README.md and assets.
 report_begin() {
   # SETS RUN_LOG, its canonical setter: every command_run after this logs
   # into it. Args: dir, log name, opening line
   local dir="$1" log_name="$2" opening_line="$3"
-  # a report is output only: every run, --regenerate included, empties it
-  report_contents_clear "$dir"
   mkdir -p "$dir" "$ARTIFACTS_DIR"
-  # the caller has read every row it wanted from the previous manifest, so
-  # a run aborting from here leaves a directory no tool will open
-  rm -f "$dir/MANIFEST.txt"
   RUN_LOG="$ARTIFACTS_DIR/$log_name"
   echo "$opening_line" >"$RUN_LOG"
   cp README.md "$dir/README.md"
@@ -400,33 +430,24 @@ report_begin() {
     -o "$dir/$REPORT_ASSETS_DIR_NAME"
 }
 
-# report_contents_clear - empty a report a previous run wrote, so a dropped
-# test or renamed asset is not certified by checksum_compute.
-report_contents_clear() {
-  # its MANIFEST.txt is the proof we wrote it: a directory holding anything
-  # else is reported, never emptied -- --report=DIR may name a user's path
-  local dir="$1"
-  [ -e "$dir" ] || return 0
-  [ -d "$dir" ] || error_exit 2 \
-    "error: the report path is not a directory: $dir"
-  # an --artifacts=TMP inside the report would be deleted by the clear
-  # below, taking this run's own recordings with it
-  local reason
-  case "$ARTIFACTS_DIR/" in
-    "$dir"/*)
-      reason="error: the artifacts directory $ARTIFACTS_DIR is inside the"
-      error_exit 2 "$reason report $dir, which is cleared first"
-      ;;
-  esac
-  if [ -f "$dir/MANIFEST.txt" ]; then
-    find "$dir" -mindepth 1 -maxdepth 1 -exec rm -rf {} + \
-      || error_exit 1 "error: could not empty the previous report: $dir"
-    return 0
+# report_delete - delete a report: it is output only. A path that is no
+# directory, or a directory with no MANIFEST.txt, goes only on a typed y.
+report_delete() {
+  local dir="$1" answer
+  path_overlap_check "$dir" report "$ARTIFACTS_DIR" "artifacts dir"
+  if [ -e "$dir" ] \
+    && { [ ! -d "$dir" ] || [ ! -e "$dir/MANIFEST.txt" ]; }; then
+    # the file's existence alone, never its contents; no answer at all, as
+    # from /dev/null, ends the prompt's line and is a no
+    printf 'Delete %s? [y/N] ' "$(path_display "$dir")" >&2
+    read -r answer || {
+      echo >&2
+      answer=
+    }
+    [ "$answer" = y ] || error_exit 1 \
+      "error: the report is not deleted without a typed y: $dir"
   fi
-  # an empty directory is the ordinary first run, and needs no clearing
-  [ -z "$(ls -A "$dir")" ] && return 0
-  reason="error: $dir holds files but no MANIFEST.txt, so it is not a"
-  error_exit 2 "$reason report this can overwrite"
+  rm -rf "$dir" || error_exit 1 "error: could not delete the report: $dir"
 }
 
 # report_finish - the tail of every run writing a report: the manifest last,
@@ -436,8 +457,8 @@ report_finish() {
   shift 2
   log_verbose "== manifest -> $dir/MANIFEST.txt =="
   manifest_write "$version" "$dir" "$@"
-  log_verbose "$(printf '%-13s%s' manifest \
-    "$(manifest_value "$dir" "$REPORT_MANIFEST_CHECKSUM_LABEL")")"
+  log_verbose "manifest $(manifest_value "$dir" \
+    "$REPORT_MANIFEST_CHECKSUM_LABEL")"
   log_verbose "$dir/index.html"
 }
 
@@ -457,36 +478,63 @@ revision_describe() {
   echo "$revision"
 }
 
-# table_head_print - a table's header row and rule, under --verbose, after
-# a blank line. Args: one heading per column.
-table_head_print() {
+# table_print - one table under --verbose, padded as prettier pads one. Args:
+# the column count, then every cell, our header words first, row by row.
+table_print() {
   [ "$VERBOSE" -ge 1 ] || return 0
-  [ "$VERBOSE_OUTPUT_ENDS_BLANK" = 1 ] || echo >&2
-  table_row_print "$@"
-  local cell row='|'
-  for cell in "$@"; do row="$row --- |"; done
-  echo "$row" >&2
-}
-
-# table_row_print - one table row under --verbose, a cell per argument, an
-# empty argument an empty cell.
-table_row_print() {
-  [ "$VERBOSE" -ge 1 ] || return 0
-  local cell row='|'
-  for cell in "$@"; do
-    if [ -z "$cell" ]; then row="$row |"; else row="$row $cell |"; fi
+  local columns="$1" cells=() widths=() rule=() cell line row column
+  shift
+  if [ "$#" -le "$columns" ] || [ "$(($# % columns))" != 0 ]; then
+    error_exit 1 \
+      "error: table_print: $# cell(s) are no header and whole rows of $columns"
+  fi
+  # a value is one code span, its pipes escaped as a table wants
+  cells=("${@:1:columns}")
+  for cell in "${@:columns+1}"; do
+    cells+=("$(code_span "${cell//|/\\|}")")
   done
-  printf '%s\n' "$row" | verbose_filter paths
-  VERBOSE_OUTPUT_ENDS_BLANK=0
+  # a column is as wide as its widest cell, three at least, and the rule row
+  # below the header is dashes that wide
+  for ((column = 0; column < columns; column++)); do
+    widths[column]=3
+    for ((row = column; row < ${#cells[@]}; row += columns)); do
+      [ "${#cells[row]}" -le "${widths[column]}" ] \
+        || widths[column]="${#cells[row]}"
+    done
+    printf -v cell '%*s' "${widths[column]}" ''
+    rule+=("${cell// /-}")
+  done
+  cells=("${cells[@]:0:columns}" "${rule[@]}" "${cells[@]:columns}")
+  block_lead other
+  for ((row = 0; row < ${#cells[@]}; row += columns)); do
+    line='|'
+    for ((column = 0; column < columns; column++)); do
+      printf -v cell '%-*s' "${widths[column]}" "${cells[row + column]}"
+      line+=" $cell |"
+    done
+    printf '%s\n' "$line" >&2
+  done
 }
 
 # title_print - the script's own heading, at its depth: its path and the
 # arguments it was given. Args: the script's path, then its arguments.
 title_print() {
-  # the first line printed, so no blank line leads it: a parent running
-  # this script has ended its own output with one
-  VERBOSE_OUTPUT_ENDS_BLANK=1
-  heading_write "$VERBOSE_HEADING_DEPTH" "$*"
+  # the first line printed: verbose_begin's VERBOSE_BLOCK_PRINTED is why a
+  # blank line leads it only below a parent's lines
+  heading_write "$PERF2HTML_HEADER_DEPTH" "$*"
+}
+
+# tool_find - echo a tool's path, searching the pip and npm user bins too.
+tool_find() {
+  local name="$1" found
+  for found in "$name" "$HOME/.local/bin/$name" \
+    "$HOME/.npm-global/bin/$name"; do
+    if command -v "$found" >/dev/null 2>&1; then
+      echo "$found"
+      return 0
+    fi
+  done
+  return 1
 }
 
 # toolchain_check - the scripts' only toolchain check, collecting every
@@ -513,118 +561,119 @@ toolchain_check() {
 }
 
 # verbose_begin - the printer's state, once per script after args_parse. SETS
-# every VERBOSE_* global the printer reads.
+# lastpipe, the two PERF2HTML_* environment variables, the VERBOSE_* globals.
 verbose_begin() {
-  # PERF2HTML_HEADING_DEPTH is the one environment variable: read as this
-  # script's heading depth, exported one deeper for the scripts it runs
-  VERBOSE_START_US="$(clock_microseconds)"
-  VERBOSE_HEADING_DEPTH="${PERF2HTML_HEADING_DEPTH:-1}"
-  export PERF2HTML_HEADING_DEPTH=$((VERBOSE_HEADING_DEPTH + 1))
+  # a script's depth is the one it inherits plus 1, and 1 run by hand; the
+  # clock is the outermost script's, which every script it runs inherits
+  export PERF2HTML_HEADER_DEPTH=$((${PERF2HTML_HEADER_DEPTH:-0} + 1))
+  PERF2HTML_CLOCK_START_US="${PERF2HTML_CLOCK_START_US:-$(clock_microseconds)}"
+  export PERF2HTML_CLOCK_START_US
+  # verbose_filter ends a pipeline and sets VERBOSE_BLOCK_PRINTED: lastpipe
+  # runs that last stage in this shell, where the setting has to land
+  shopt -s lastpipe
   VERBOSE_COMMAND_NUMBER=1
   VERBOSE_ITEM_INDENT=0
-  VERBOSE_OUTPUT_ENDS_BLANK=0
+  # none only for a verbose run's first line: under a parent, or quiet, a
+  # blank line leads the first block, as something may be printed above it
+  VERBOSE_BLOCK_PRINTED=other
+  if [ "$PERF2HTML_HEADER_DEPTH" = 1 ] && [ "$VERBOSE" -ge 1 ]; then
+    VERBOSE_BLOCK_PRINTED=none
+  fi
 }
 
-# verbose_filter - the one formatter every printed line streams through, by
-# mode (paths, wrap PREFIX, list INDENT), onto stderr: `2>` keeps the run.
+# verbose_filter - the one formatter a child's lines stream through, onto
+# stderr at the indent given. SETS VERBOSE_BLOCK_PRINTED loose after a table.
 verbose_filter() {
-  # list: $HOME/ is ~/, blank lines go, a run of two or more `words: number
-  # [unit]` lines is one single-row table, anything else a numbered item
-  local mode="$1" argument="${2:-}"
-  awk -v mode="$mode" -v argument="$argument" -v home="$HOME/" \
-    -v width="$VERBOSE_LINE_WIDTH_CHARS" '
-function shown(text,    at, out) {
-  out = ""
-  while ((at = index(text, home)) > 0) {
-    out = out substr(text, 1, at - 1) "~/"
-    text = substr(text, at + length(home))
+  # two or more `words: number [unit]` lines in a row are one single-row
+  # table under the item; any other line sits in a ```txt fence, $HOME/ as ~/
+  local separate=0 lead=0 loose status=0
+  # at indent 0 blocks are apart, the first led by a blank line unless it is
+  # the script's first; indented, they nest in the item above, tight
+  if [ "$1" = 0 ]; then
+    separate=1
+    [ "${VERBOSE_BLOCK_PRINTED-other}" = none ] || lead=1
+  fi
+  # the lines go to stderr as they come; stdout is the awk's one answer, a
+  # value: loose when a table led the output, so a blank line had to lead it
+  loose="$(awk -v indent="$(printf '%*s' "$1" '')" -v home="${HOME:?}/" \
+    -v separate="$separate" -v lead="$lead" '
+  function line_print(text) {
+    print text > "/dev/stderr"
+    fflush("/dev/stderr")
   }
-  return out text
-}
-function spaces(count,    text) {
-  text = ""
-  while (count-- > 0) text = text " "
-  return text
-}
-function line_flush(line) {
-  print line
-  fflush()
-}
-function wrap(text, first, rest,    words, count, i, line, filled) {
-  count = split(text, words, / /)
-  line = first
-  filled = 0
-  for (i = 1; i <= count; i++) {
-    if (filled && length(line) + 1 + length(words[i]) > width) {
-      line_flush(line)
-      line = rest words[i]
-    } else if (filled) {
-      line = line " " words[i]
-    } else {
-      line = line words[i]
+  function block_open() {
+    if (blocks ? separate : lead) line_print("")
+    blocks++
+  }
+  function fence_close() {
+    if (open) line_print(indent fence)
+    open = 0
+  }
+  # a fence is as long as prettier makes one, three backticks or one past the
+  # longest run inside: a line running that long closes it and opens a longer
+  function text_print(text,    run, rest) {
+    run = 0
+    for (rest = text; match(rest, /`+/); rest = substr(rest, RSTART + RLENGTH))
+      if (RLENGTH > run) run = RLENGTH
+    if (!open || run >= length(fence)) {
+      fence_close()
+      block_open()
+      for (fence = "```"; run >= length(fence);) fence = fence "`"
+      line_print(indent fence "txt")
+      open = 1
     }
-    filled = 1
+    line_print(indent text)
   }
-  line_flush(line)
-}
-function item_print(text,    marker) {
-  if (after_table) {
-    line_flush("")
-    after_table = 0
-  }
-  number++
-  marker = indent number ". "
-  wrap(text, marker, spaces(length(marker)))
-}
-function group_flush(    i, line) {
-  if (held == 0) return
-  if (held == 1) {
+  function padded(text, width) { return sprintf("%-" width "s", text) }
+  # the held run as a table: tight after a fence, but right after the item
+  # line it needs a blank line, which makes the item loose, its blocks apart
+  function held_print(    column, width, cell, dashes, head, rule, row) {
+    if (held < 2) {
+      if (held) text_print(held_line[1])
+      held = 0
+      return
+    }
+    fence_close()
+    if (!blocks && !separate) { separate = 1; lead = 1; loose = 1 }
+    block_open()
+    head = indent "|"
+    rule = indent "|"
+    row = indent "|"
+    # a column is as wide as its header word or its value in a code span,
+    # whichever is longer, the way prettier pads; the rule is dashes that wide
+    for (column = 1; column <= held; column++) {
+      cell = "`" held_value[column] "`"
+      width = length(held_key[column])
+      if (length(cell) > width) width = length(cell)
+      dashes = padded("", width)
+      gsub(/ /, "-", dashes)
+      head = head " " padded(held_key[column], width) " |"
+      rule = rule " " dashes " |"
+      row = row " " padded(cell, width) " |"
+    }
+    line_print(head)
+    line_print(rule)
+    line_print(row)
     held = 0
-    item_print(held_line[1])
-    return
   }
-  line_flush("")
-  line = indent "|"
-  for (i = 1; i <= held; i++) line = line " " key[i] " |"
-  line_flush(line)
-  line = indent "|"
-  for (i = 1; i <= held; i++) line = line " --- |"
-  line_flush(line)
-  line = indent "|"
-  for (i = 1; i <= held; i++) line = line " " value[i] " |"
-  line_flush(line)
-  after_table = 1
-  held = 0
-}
-BEGIN {
-  if (mode == "list") indent = spaces(argument)
-  if (mode == "wrap") rest = spaces(length(argument))
-}
-{
-  sub(/[ \t\r]+$/, "")
-  line = shown($0)
-  if (mode == "paths") {
-    line_flush(line)
-    next
-  }
-  if (mode == "wrap") {
-    wrap(line, argument, rest)
-    next
-  }
-  if (line == "") next
-  if (line ~ /^[A-Za-z][A-Za-z0-9\/ ]*: +-?[0-9][0-9.,]*( [A-Za-z\/]+)?$/) {
-    match(line, /: +/)
+  { sub(/[ \t\r]+$/, "") }
+  $0 == "" { next }
+  { while (at = index($0, home))
+      $0 = substr($0, 1, at - 1) "~/" substr($0, at + length(home)) }
+  indent != "" &&
+  /^[A-Za-z][A-Za-z0-9\/ ]*: +-?[0-9][0-9.,]*( [A-Za-z\/]+)?$/ {
+    match($0, /: +/)
     held++
-    key[held] = substr(line, 1, RSTART - 1)
-    value[held] = substr(line, RSTART + RLENGTH)
-    held_line[held] = line
+    held_key[held] = substr($0, 1, RSTART - 1)
+    held_value[held] = substr($0, RSTART + RLENGTH)
+    held_line[held] = $0
     next
   }
-  group_flush()
-  item_print(line)
-}
-END { group_flush() }
-' >&2
+  { held_print(); text_print($0) }
+  END { held_print(); fence_close(); if (loose) print "loose" }
+  ')" || status=$?
+  [ "$loose" != loose ] || VERBOSE_BLOCK_PRINTED=loose
+  return "$status"
 }
 
 # verbose_flags_of - this run's --verbose level as a child's arguments: one

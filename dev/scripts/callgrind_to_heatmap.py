@@ -12,10 +12,10 @@ import callgrind, callgrind_diff, settings, theme
 # else.
 _ASSET_HEAT_MAP_SCRIPT_NAME: str = ""
 _ASSET_HEAT_MAP_STYLESHEET_NAME: str = ""
+_ASSET_PULLDOWN_NAMES_SCRIPT_SUFFIX: str = ""
 _ASSET_SETTINGS_SCRIPT_NAME: str = ""
 _ASSET_TEMPLATE_HEAT_MAP_PAGE_NAME: str = ""
 _ASSET_THEME_SCRIPT_NAME: str = ""
-_ASSET_UI_STRINGS_SCRIPT_NAME: str = ""
 _HEAT_MAP_TREE_ALWAYS_LISTED_DIRS: tuple[str, ...] = ()
 _RANKING_COUNTER_NAME: str = ""
 _REPORT_ASSETS_DIR_NAME: str = ""
@@ -333,11 +333,13 @@ class CallgrindToHeatmap:
                 function_index[function]
             )
         for site, tally in profile.callees.items():
+            if site.callee not in profile.function_home:
+                raise KeyError(
+                    f"callee {site.callee!r} is missing from function_home"
+                )
             entry_line = profile.function_entry.get(
                 site.callee,
-                callgrind.SourceLine(
-                    profile.function_home.get(site.callee, "???"), 0
-                ),
+                callgrind.SourceLine(profile.function_home[site.callee], 0),
             )
             accumulators[display[site.file]].callees.setdefault(
                 str(site.line), []
@@ -351,6 +353,15 @@ class CallgrindToHeatmap:
                 )
             )
         return {name: entry.emit() for name, entry in accumulators.items()}
+
+    # Whether the heat map opens this function by name: it has a line in a
+    # file the page holds. heatmap.js's function_is_linkable is the twin.
+    def function_is_linkable(
+        self,
+        function: CallgrindToHeatmap.FunctionModel,
+        files: dict[str, CallgrindToHeatmap.FileModel],
+    ) -> bool:
+        return bool(function["line"]) and function["file"] in files
 
     # Every function with its entry point and its callers, dearest first.
     def functions_model(
@@ -438,6 +449,38 @@ class CallgrindToHeatmap:
             "cold": cold,
         }, info
 
+    # What one test's names script in assets/ is called.
+    @staticmethod
+    def pulldown_names_script_name(test: str) -> str:
+        return test + _ASSET_PULLDOWN_NAMES_SCRIPT_SUFFIX
+
+    # Write one test's names script into the report's assets/: every file and
+    # function its heat map opens, from the model that page is built from.
+    def pulldown_names_write(
+        self, report_root: str, test: str, model: CallgrindToHeatmap.HeatModel
+    ) -> None:
+        files = model["files"]
+        names = {
+            "files": sorted(files),
+            "functions": [
+                function["name"]
+                for function in model["functions"]
+                if self.function_is_linkable(function, files)
+            ],
+        }
+        path = os.path.join(
+            report_root,
+            _REPORT_ASSETS_DIR_NAME,
+            self.pulldown_names_script_name(test),
+        )
+        data = json.dumps(names, separators=(",", ":"), ensure_ascii=False)
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write(
+                "window.report_pulldown_names ="
+                " window.report_pulldown_names || {};\n"
+                f"window.report_pulldown_names[{json.dumps(test)}] = {data};\n"
+            )
+
     # Bake the model into the page: scripts before data, and the result is
     # never scanned again -- a source file's text can hold any marker.
     def render(
@@ -466,7 +509,6 @@ class CallgrindToHeatmap:
             assets_href,
             (
                 _ASSET_SETTINGS_SCRIPT_NAME,
-                _ASSET_UI_STRINGS_SCRIPT_NAME,
                 _ASSET_THEME_SCRIPT_NAME,
                 _ASSET_HEAT_MAP_SCRIPT_NAME,
             ),
@@ -514,14 +556,14 @@ class CallgrindToHeatmap:
         if args.diff:
             self.diff_model(model, profile, args.baseline_data)
         page_dir = os.path.dirname(os.path.abspath(args.output))
+        report_root = os.path.join(page_dir, *[".."] * _HEAT_MAP_PAGE_DEPTH)
         self.sources_write(
-            os.path.join(
-                page_dir,
-                *[".."] * _HEAT_MAP_PAGE_DEPTH,
-                _REPORT_SOURCES_DIR_NAME,
-            ),
-            info,
-            model,
+            os.path.join(report_root, _REPORT_SOURCES_DIR_NAME), info, model
+        )
+        # the test is named by its directory, the one holding heat-map/, as
+        # the overview's <test>/index.html links have it
+        self.pulldown_names_write(
+            report_root, os.path.basename(os.path.dirname(page_dir)), model
         )
         html = self.render(model, args.title)
         os.makedirs(page_dir, exist_ok=True)
@@ -599,9 +641,12 @@ class CallgrindToHeatmap:
         }
         os.makedirs(out_dir, exist_ok=True)
         for name, display in sorted(names.items()):
-            text = self.source_read(local_of.get(display, ""))
+            text = self.source_read(local_of[display])
             if text is None:
-                continue
+                raise RuntimeError(
+                    f"source for {display!r} was readable earlier but"
+                    " is not now"
+                )
             body = json.dumps(text, ensure_ascii=False).replace("</", "<\\/")
             with open(
                 os.path.join(out_dir, str(name)), "w", encoding="utf-8"

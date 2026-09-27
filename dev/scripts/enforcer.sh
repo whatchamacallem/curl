@@ -56,6 +56,9 @@ _CLANG_FORMAT_CONFIG=../src/.clang-format
 _PRETTIER_CONFIG=.prettierrc.json
 _PYRIGHT_CONFIG=pyrightconfig.json
 
+# pyright's all-clear summary, the line --verbose drops from its stdout
+_PYRIGHT_ALL_CLEAR_LINE='0 errors, 0 warnings, 0 informations'
+
 # spaces shfmt indents a shell block by
 _SHELL_INDENT=2
 _RUFF_CONFIG=ruff.toml
@@ -77,21 +80,6 @@ _DEFAULT_REPORTS=(
   "$_DIR_DEV/$REPORT_MODIFIED_DIR_NAME"
   "$_DIR_DEV/$REPORT_DIFF_DIR_NAME"
 )
-
-# tool_find - echo a tool's path, searching the pip and npm user bins too.
-tool_find() {
-  local _name="$1" _found
-
-  for _found in "$_name" "$HOME/.local/bin/$_name" \
-    "$HOME/.npm-global/bin/$_name"; do
-    if command -v "$_found" >/dev/null 2>&1; then
-      echo "$_found"
-      return 0
-    fi
-  done
-
-  return 1
-}
 
 # tools_resolve - find every tool the source stages run, before any work.
 # SETS _SHFMT, _RUFF, _CLANG_FORMAT, _PRETTIER and _PYRIGHT.
@@ -224,15 +212,14 @@ format_python() {
   heading_print ruff
   # --quiet prints diagnostics and nothing else: no good news unless
   # --verbose, when ruff's own summary line streams like any child's
-  _TOOL_ARGS=(format --config "$_RUFF_CONFIG")
-  [ "$VERBOSE" -ge 1 ] || _TOOL_ARGS+=(--quiet)
+  quiet_switch_set ruff
+  _TOOL_ARGS=(format --config "$_RUFF_CONFIG" "${QUIET_SWITCH[@]}")
   if [ "$_CHECK" = 1 ]; then _TOOL_ARGS+=(--diff); fi
   tool_run "$_RUFF" ruff "${_files[@]}"
 
   # check mode is plain "ruff check": --diff implies --fix-only, which
   # passes lints that have no fix (F821) and then fails the write run
-  _TOOL_ARGS=(check --config "$_RUFF_CONFIG")
-  [ "$VERBOSE" -ge 1 ] || _TOOL_ARGS+=(--quiet)
+  _TOOL_ARGS=(check --config "$_RUFF_CONFIG" "${QUIET_SWITCH[@]}")
   if [ "$_CHECK" != 1 ]; then _TOOL_ARGS+=(--fix); fi
   tool_run "$_RUFF" ruff "${_files[@]}"
 }
@@ -262,8 +249,8 @@ format_prettier() {
   heading_print prettier
   # at log level warn prettier names no file it formatted: no good news
   # unless --verbose, when its per-file lines stream like any child's
-  _TOOL_ARGS=(--config "$_PRETTIER_CONFIG")
-  [ "$VERBOSE" -ge 1 ] || _TOOL_ARGS+=(--log-level warn)
+  quiet_switch_set prettier
+  _TOOL_ARGS=(--config "$_PRETTIER_CONFIG" "${QUIET_SWITCH[@]}")
   if [ "$_CHECK" = 1 ]; then
     _TOOL_ARGS+=(--check)
   else
@@ -282,16 +269,36 @@ lint_run() {
   # named no file, pyright would check its whole project directory instead,
   # which tool_run's empty case keeps from happening
   heading_print pyright
-  # pyright has no quiet switch: its "0 errors" summary line is the one
-  # success line a quiet run prints, on stdout, found and left as it is
   _TOOL_ARGS=(--project "$_PYRIGHT_CONFIG")
-  tool_run "$_PYRIGHT" pyright "${_files[@]}"
+  # pyright has no quiet switch: a quiet run prints its all-clear summary on
+  # stdout, the one success line left; --verbose pipes it out
+  if [ "$VERBOSE" -ge 1 ] && [ "${#_files[@]}" != 0 ]; then
+    pyright_filtered_run "${_files[@]}"
+  else
+    tool_run "$_PYRIGHT" pyright "${_files[@]}"
+  fi
+}
+
+# pyright_filtered_run - pyright over the files given, its stdout through
+# grep -v, the user's one exception to this script reformatting no output.
+pyright_filtered_run() {
+  local _command=("$_PYRIGHT" "${_TOOL_ARGS[@]}" "$@") _statuses=(0 0)
+  local _filter=(grep --line-buffered -v -x)
+  local _filter_shown="${_filter[*]} '$_PYRIGHT_ALL_CLEAR_LINE'"
+  command_item_print "${_command[*]} | $_filter_shown"
+  "${_command[@]}" | "${_filter[@]}" "$_PYRIGHT_ALL_CLEAR_LINE" \
+    || _statuses=("${PIPESTATUS[@]}")
+  # pyright's code is the verdict; grep's 1 only says it printed nothing
+  [ "${_statuses[0]}" = 0 ] || error_exit "${_statuses[0]}" \
+    "error: exit ${_statuses[0]} from: ${_command[*]}"
+  [ "${_statuses[1]}" -le 1 ] || error_exit "${_statuses[1]}" \
+    "error: exit ${_statuses[1]} from: $_filter_shown"
 }
 
 # long_lines_report - fail on any whitelisted line still over _COLUMNS_MAX
 # once the formatters have run.
 long_lines_report() {
-  local _over
+  local _over _count
   _over="$(awk -v max="$_COLUMNS_MAX" \
     'length > max { print FILENAME ":" FNR ": " length " cols\n  " $0 }' \
     "${_WHITELISTED_FILES[@]}")"
@@ -301,8 +308,8 @@ long_lines_report() {
     return 0
   fi
 
-  error_exit 1 "error: $(echo "$_over" | grep -c ' cols$') line(s) over" \
-    "$_COLUMNS_MAX columns:" "$_over"
+  _count="$(echo "$_over" | grep -c ' cols$')"
+  error_exit 1 "error: $_count line(s) over $_COLUMNS_MAX columns:" "$_over"
 }
 
 # report_version - line 1 of a report's MANIFEST.txt, once manifest_verify
@@ -344,7 +351,7 @@ source_scan_run() {
 # batch_run - write the three reports this run verifies. Its own steps stop
 # at their first failure, and so does this: there is nothing left to check.
 batch_run() {
-  local _flags=() _target _exit_code=0
+  local _flags=() _target _shown _exit_code=0
   mapfile -t _flags < <(verbose_flags_of)
   _target="$(cd "$_DIR_DEV" && pwd)"
 
@@ -355,18 +362,18 @@ batch_run() {
   # a measuring run that keeps its recordings is what a later --regenerate
   # reuses, and the batch owns every deletion of them
   if [ "$_KEEP_ARTIFACTS" = 1 ]; then _flags+=(--keep-artifacts); fi
+  _shown="$_BATCH_SCRIPT_NAME ${_flags[*]} --target-dir=$_target"
 
   # a paragraph of its own: the batch's first line is its title, which a
   # parent leads with a blank line
-  log_verbose "$_BATCH_SCRIPT_NAME ${_flags[*]} --target-dir=$_target"
+  log_verbose "$_shown"
 
   # a plain child, nothing captured: its lines reach the terminal as they
   # are, and a failed batch has printed its own refusal before this one
   "$_DIR_DEV/$_BATCH_SCRIPT_NAME" "${_flags[@]}" "--target-dir=$_target" \
     || _exit_code=$?
-  [ "$_exit_code" = 0 ] || error_exit "$_exit_code" \
-    "error: exit $_exit_code from: $_BATCH_SCRIPT_NAME ${_flags[*]}" \
-    "--target-dir=$_target"
+  [ "$_exit_code" = 0 ] \
+    || error_exit "$_exit_code" "error: exit $_exit_code from: $_shown"
 }
 
 # screenshots_run - shoot the modified and diff reports at every viewport
@@ -399,42 +406,47 @@ header_row_of() {
 }
 
 # regenerate_check - reuse the last run's recordings only while they still
-# describe the executable on disk, else refuse. See DECLAUDE.md 3.
+# describe the executable on disk, else refuse. See declawed.md 3.
 regenerate_check() {
   [ "$_REGENERATE" = 1 ] || return 0
 
-  # the artifacts dir the batch defaults to, holding every recording the
-  # three reports are rebuilt from; the reports themselves are output
+  # the artifacts dir the batch defaults to, one subdirectory of recordings
+  # per report; the reports themselves are output
   local _artifacts="$_DIR_DEV/$ARTIFACTS_NAME"
   if [ ! -d "$_artifacts" ]; then
     regenerate_refuse "no recordings at $_artifacts"
   fi
 
-  # each measuring run left its rows under its report's name: the stamp
+  # each measuring run left its rows in its report's subdirectory: recorded=
   # names its recordings, executable= its tree. The diff has neither.
-  local _name _rows _stamp _binary _newest _recorded=() _stamps=()
+  local _name _report_artifacts _rows _recorded _binary _newest
+  local _timing_files=() _recorded_times=()
   for _name in "$REPORT_BASELINE_DIR_NAME" "$REPORT_MODIFIED_DIR_NAME"; do
-    _rows="$_artifacts/$HEADER_ROWS_NAME.$_name.txt"
+    _report_artifacts="$_artifacts/$_name"
+    if [ ! -d "$_report_artifacts" ]; then
+      regenerate_refuse "$_name has no recordings at $_report_artifacts"
+    fi
+    _rows="$_report_artifacts/$HEADER_ROWS_NAME.$_name.txt"
     if [ ! -f "$_rows" ]; then
       regenerate_refuse "$_name has no recordings, $_rows is missing"
     fi
 
     # the row carries a human date after the unix time, and an artifact is
     # named by the unix time alone, so the tail must not reach a find glob
-    _stamp="$(header_row_of "$_rows" stamp)"
-    _stamp="${_stamp%% *}"
-    if [ -z "$_stamp" ]; then
-      regenerate_refuse "$_name records no stamp= row in $_rows"
+    _recorded="$(header_row_of "$_rows" recorded)"
+    _recorded="${_recorded%% *}"
+    if [ -z "$_recorded" ]; then
+      regenerate_refuse "$_name records no recorded= row in $_rows"
     fi
 
     # one timing recording dates the pass: perf2html.sh checks for every
     # file it wants, per test, before it reuses any of them
-    mapfile -t _recorded < <(find "$_artifacts" -maxdepth 1 -type f \
-      -name "$PROFILE_TIMING_FILE_PREFIX.*.$_stamp.csv" | sort)
-    if [ "${#_recorded[@]}" = 0 ]; then
-      regenerate_refuse "$_name has no recordings left under stamp $_stamp"
+    mapfile -t _timing_files < <(find "$_report_artifacts" -maxdepth 1 \
+      -type f -name "$PROFILE_TIMING_FILE_PREFIX.*.$_recorded.csv" | sort)
+    if [ "${#_timing_files[@]}" = 0 ]; then
+      regenerate_refuse "$_name has no recordings left from $_recorded"
     fi
-    _stamps+=("$_stamp")
+    _recorded_times+=("$_recorded")
 
     _binary="$(header_row_of "$_rows" executable)"
     if [ -z "$_binary" ]; then
@@ -447,8 +459,8 @@ regenerate_check() {
 
     # a recording written in the link's own second is still that link's, so
     # only a strictly newer binary means perf was re-linked after them
-    _newest="$(find "$_artifacts" -maxdepth 1 -type f \
-      -name "$PROFILE_TIMING_FILE_PREFIX.*.$_stamp.csv" \
+    _newest="$(find "$_report_artifacts" -maxdepth 1 -type f \
+      -name "$PROFILE_TIMING_FILE_PREFIX.*.$_recorded.csv" \
       -printf '%T@ %p\n' | sort -rn | head -1)"
     _newest="${_newest#* }"
     if [ -n "$(find "$_binary" -newer "$_newest" -print -quit)" ]; then
@@ -456,7 +468,8 @@ regenerate_check() {
     fi
   done
 
-  log_verbose "regenerate: reusing stamp ${_stamps[0]} and ${_stamps[1]}"
+  log_verbose "regenerate: reusing the runs recorded at" \
+    "${_recorded_times[0]} and ${_recorded_times[1]}"
 }
 
 # clear_overwritten_folders - delete the three reports before anything runs, so
@@ -514,7 +527,7 @@ args_parse() {
 main() {
   # read the flags: -h prints the usage, an unknown one refuses
   args_parse "$@"
-  # start the printer's clock and take this script's heading depth
+  # start the run's one clock, which the batch inherits, and the header depth
   verbose_begin
   # the run's own heading: this script's path and its arguments
   title_print "$_SCRIPT" "$@"

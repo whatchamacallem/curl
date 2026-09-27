@@ -85,16 +85,16 @@ input {
   color: var(--nav);
   text-decoration: none;
 }
-.strip .test-menu-list a:hover {
+.strip .pulldown-list a:hover {
   background: none;
   color: var(--link);
 }
 .strip a.on,
-.strip .test-menu-list a.on {
+.strip .pulldown-list a.on {
   background: var(--hot);
   color: var(--hot-fg);
 }
-.strip .test-menu-list a.highlighted-entry {
+.strip .pulldown-list a.highlighted-entry {
   background: var(--link);
   color: var(--nav);
 }
@@ -150,32 +150,41 @@ input {
   flex: none;
 }
 
-.strip:has(.test-menu) {
+.strip:has(.pulldown) {
   overflow: visible;
 }
-.strip .test-menu {
+/* label, caret, box: the caret points at the box's text and the list drops
+   below the box. Bare: no part draws a border, ring or box of its own */
+.strip .pulldown {
   position: relative;
   display: inline-grid;
-  grid-template-columns: auto auto;
+  grid-template-columns: auto auto auto;
+  column-gap: 1ch;
   flex: none;
 }
-.strip .test-menu input {
-  text-align: center;
-}
-.strip .test-menu input[readonly] {
+.strip .pulldown-label,
+.strip .pulldown-caret {
+  color: var(--muted);
   cursor: pointer;
 }
-.strip .test-menu button {
+.strip .pulldown-caret {
   font: inherit;
-  color: var(--muted);
-  background: var(--bg);
+  background: none;
   border: 0;
   padding: 0;
+}
+.strip .pulldown-search {
+  background: none;
+}
+.strip .pulldown-search[readonly] {
   cursor: pointer;
 }
-.strip .test-menu-list {
+.strip .pulldown :focus {
+  outline: none;
+}
+.strip .pulldown-list {
   position: absolute;
-  grid-column: 1;
+  grid-column: 3;
   grid-row: 1;
   top: 100%;
   left: 0;
@@ -187,13 +196,12 @@ input {
   overflow-y: auto;
   background: var(--nav);
 }
-.strip .test-menu-list a,
-.strip .test-menu-no-match {
+.strip .pulldown-list a,
+.strip .pulldown-no-match {
   max-width: none;
-  text-align: center;
   white-space: nowrap;
 }
-.strip .test-menu-no-match {
+.strip .pulldown-no-match {
   color: var(--muted);
 }
 
