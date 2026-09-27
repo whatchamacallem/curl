@@ -112,11 +112,8 @@ window.ui_strings = (function () {
     str_sort_by_heat: "by heat",
     str_sort_by_name: "by name",
     str_source_beyond_end:
-      "(line beyond end of file: source changed since the profile was" +
-      " taken)",
-    str_source_unavailable:
-      "Source not available on this machine; showing only the lines that" +
-      " carry cost.",
+      "error: Line beyond end of file, source changed.",
+    str_source_unavailable: "Source not available.",
     str_view_summary: "summary",
   };
   function text_fill(string_id, replacements) {

@@ -16,20 +16,23 @@ with the postmortem directly as well as providing a link to the task doc.
 
 ### 0.1 Top of mind
 
+- Overconstrained goals introduce failure modes that are best resolved by
+  conversations with the user that identify the contradictory requirements.
+- Overconstrained solutions introduce failure modes that are best resolved by
+  conversations with the user that identify missing long term requirements.
 - No fallbacks: broke is broke. Never swallow an error, provide a default, or
   have a "just in case" branch for a case that can't happen - throw so it
-  fails loud with a call stack.
+  fails loud with a call stack or exit with the right Unix error code.
 - Any error is a hard error, reported immediately, first failure only - no
-  script collects failures, tallies of failures. Things are either handled by
-  throwing an exception or exiting non-0 with an error message immediately.
-- There is no data loss in the logs from a hard exit because there is no
-  buffering.
+  script collects failures, tallies of failures.
+- There must be no data loss in the logs from a hard exit because there is no
+  buffering beyond a single external command.
 - `--regenerate` refuses (hard error, exit 2) rather than silently measuring
   when recordings are stale. Any silent downgrade to the more expensive path
   is the same class of bug.
-- An unexpected change in a file is the user's own edit - never revert it,
-  never clobber it; finish it the way it points, or stop and ask if it makes no
-  sense.
+- An unexpected change in a file is probably the user's own edit - never
+  revert it, never clobber it; finish it the way it points if it is in the
+  way, or stop and ask if needed when it makes no sense.
 - `STORAGE_VERSION` is the user's, never a session's - never bump it or reshape
   stored format as a side effect; a format change runs once without
   `--regenerate` and says so.
