@@ -16,7 +16,7 @@ set -euo pipefail
 
 usage_show() {
   cat <<'EOF'
-enforcer.sh [debug-flags] [--check-formatting]
+test_expected_behavior.sh [debug-flags] [--check-formatting]
     Formats, lints and scans the files scripts/enforcer_whitelist.txt lists,
     runs perf2html_batch.sh over the three reports it cleared, then
     validates and screenshots what it wrote. Any fault stops the run where
@@ -68,6 +68,7 @@ _WHITELIST_FILE=enforcer_whitelist.txt
 
 . ./settings.sh
 . ./shared.sh
+. ./test_shared.sh
 
 # The batch this runs, and the shooter it runs after, each beside us.
 _BATCH_SCRIPT_NAME=perf2html_batch.sh
@@ -144,7 +145,7 @@ whitelist_expand() {
   local _glob _match _line=0 _found=() _matches=()
 
   if [ ! -f "$_WHITELIST_FILE" ]; then
-    whitelist_refuse "not found beside enforcer.sh, so nothing is enforced"
+    whitelist_refuse "not found beside this script, so nothing is enforced"
   fi
 
   while IFS= read -r _glob || [ -n "$_glob" ]; do
@@ -318,12 +319,12 @@ report_version() {
   head -n 1 "$1/MANIFEST.txt"
 }
 
-# validate_run - validate each report the batch wrote, in its order. Every
-# one must be there: the batch stops at its first failure, so all three are.
-validate_run() {
+# test_expected_report_check_run - check each report the batch wrote, in
+# its order. Every one must be there: the batch stops at its first failure.
+test_expected_report_check_run() {
   local _path _args
 
-  heading_print validate_report.py
+  heading_print test_report.py
   for _path in "${_DEFAULT_REPORTS[@]}"; do
     # shared.sh's hard-error policy, taking both version strings so either
     # kind of report is accepted and anything else stops the run
@@ -335,7 +336,7 @@ validate_run() {
       _args+=(--diff)
     fi
 
-    python_run validate_report.py "${_args[@]}"
+    python_run test_report.py "${_args[@]}"
   done
 }
 
@@ -556,8 +557,8 @@ main() {
   # [100.35/97.42/12.01s] perf2html_batch.sh: baseline, modified and diff,
   # under dev/
   batch_run
-  # 0.59s validate_report.py over each of the three reports
-  validate_run
+  # 0.59s test_report.py over each of the three reports
+  test_expected_report_check_run
   # 40.40s screenshots.py over the modified and diff reports
   screenshots_run
 }

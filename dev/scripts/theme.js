@@ -154,7 +154,11 @@ window.report_ui = (function () {
   // A framed page never calls this: it inherits its parent's zoom.
   function design_scale_travel_set(travel_fraction) {
     if (!isFinite(travel_fraction)) {
-      throw new Error("str_error_scale_unusable " + travel_fraction);
+      throw new Error(
+        window.ui_strings.text_fill("str_error_scale_unusable", [
+          travel_fraction,
+        ]),
+      );
     }
     design_scale_travel = Math.min(Math.max(travel_fraction, 0), 1);
     design_scale_settle();
@@ -168,7 +172,7 @@ window.report_ui = (function () {
     context.font = wanted_font;
     // a font string the canvas cannot read leaves its default in place
     if (context.font === default_font) {
-      throw new Error("str_error_font_refused");
+      throw new Error(window.ui_strings.text_of("str_error_font_refused"));
     }
     const measured_px = context.measureText(CH_UNIT_GLYPH).width;
     document.documentElement.style.setProperty(
@@ -182,7 +186,9 @@ window.report_ui = (function () {
     // own box is design space already and it scales itself by 1
     const wanted = is_framed ? 1 : design_scale_of(root_element.clientWidth);
     if (!isFinite(wanted) || !(wanted > 0)) {
-      throw new Error("str_error_scale_unusable " + wanted);
+      throw new Error(
+        window.ui_strings.text_fill("str_error_scale_unusable", [wanted]),
+      );
     }
     design_scale = wanted;
     root_element.style.zoom = String(wanted);
@@ -306,13 +312,18 @@ window.report_ui = (function () {
       const key = part.slice(0, equals_index);
       const value = decodeURIComponent(part.slice(equals_index + 1));
       if (equals_index < 0 || (key === "l" && !Number.isInteger(+value))) {
-        throw new Error("str_error_hash_part_unknown " + part);
+        throw new Error(
+          window.ui_strings.text_fill("str_error_hash_part_unknown", [part]),
+        );
       }
       if (key === "f") parsed_state.file = value;
       else if (key === "l") parsed_state.line = +value;
       else if (key === "fn") parsed_state.fn = value;
       else if (key === "e") parsed_state.ev = value;
-      else throw new Error("str_error_hash_part_unknown " + part);
+      else
+        throw new Error(
+          window.ui_strings.text_fill("str_error_hash_part_unknown", [part]),
+        );
     }
     return parsed_state;
   }
@@ -406,8 +417,9 @@ window.report_ui = (function () {
       search_box.focus();
       if (document.activeElement !== search_box)
         throw new Error(
-          "str_error_pulldown_focus_refused " +
+          window.ui_strings.text_fill("str_error_pulldown_focus_refused", [
             document.activeElement.tagName.toLowerCase(),
+          ]),
         );
     }
     function pulldown_open(search_text) {

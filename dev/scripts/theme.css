@@ -113,11 +113,11 @@ input {
   flex: none;
   width: var(--title-w);
 }
-.strip .title:has(.wordmark-letter) {
+.strip .title:has(.logo-letter) {
   background: var(--nav);
   cursor: pointer;
 }
-.strip .title .wordmark-letter {
+.strip .title .logo-letter {
   flex: none;
   padding: 0;
   margin: 0;
@@ -369,4 +369,16 @@ pre.logbox {
 pre.logbox::-webkit-scrollbar-track,
 pre.logbox::-webkit-scrollbar-corner {
   background: var(--panel);
+}
+
+.screenshot-label {
+  position: fixed;
+  left: 0;
+  bottom: 0;
+  z-index: 3;
+  padding: 0 1ch;
+  background: #000;
+  color: var(--fg);
+  font-size: 2em;
+  border: 1ch solid var(--fg);
 }

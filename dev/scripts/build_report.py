@@ -11,6 +11,7 @@ import callgrind, callgrind_to_heatmap, settings, theme
 # All constants needed from settings.py have to be loaded here before anything
 # else.
 _ASSET_FRAME_SCRIPT_NAME: str = ""
+_ASSET_MENU_SCRIPT_NAME: str = ""
 _DIFF_CALLER_COUNTS_FILE_SUFFIX: str = ""
 _FLAME_GRAPH_VIEW_ENTRY: tuple[str, str, str] = ("", "", "")
 _HEAT_MAP_VIEW_ENTRY: tuple[str, str, str] = ("", "", "")
@@ -432,10 +433,10 @@ class BuildReport:
             )
             sys.exit(_EXIT_INPUT_UNREADABLE)
 
-    # The scripts a framed page runs after the theme: the frame runtime,
-    # whose strings theme.page_preamble_scripts() has already loaded.
-    def framed_page_script_names(self) -> tuple[str]:
-        return (_ASSET_FRAME_SCRIPT_NAME,)
+    # The scripts a framed page runs after the theme: the frame, then the
+    # menu, which activates the frame once both have loaded.
+    def framed_page_script_names(self) -> tuple[str, str]:
+        return (_ASSET_FRAME_SCRIPT_NAME, _ASSET_MENU_SCRIPT_NAME)
 
     # The columns of a summary's top table. A core report and a diff rank
     # differently but say the same thing, so both are laid out the same.
@@ -721,7 +722,7 @@ class BuildReport:
             "overview.tests", columns, rows
         )
         body += self.page_main_close()
-        # each test's names script goes first: frame.js lists its files and
+        # each test's names script goes first: menu.js lists its files and
         # functions pulldowns from them
         names_scripts = tuple(
             callgrind_to_heatmap.CallgrindToHeatmap.pulldown_names_script_name(
@@ -862,7 +863,7 @@ class BuildReport:
         )
 
     # The overview's pulldowns: its tests, each linking that test's summary,
-    # then the files and functions frame.js lists for the active test.
+    # then the files and functions menu.js lists for the active test.
     def strip_pulldowns_render(
         self, test_entries: Sequence[BuildReport.StripLink]
     ) -> list[str]:
@@ -1055,6 +1056,12 @@ def main() -> None:
         required=True,
         help="the directory to write the shared stylesheets and scripts to",
     )
+    assets_parser.add_argument(
+        "manifest_line",
+        nargs="+",
+        help="line 1 of MANIFEST.txt, then its LABEL=VALUE rows, checksum"
+        " left out",
+    )
 
     overview_parser = subparsers.add_parser(
         "overview", help="the page over several tests"
@@ -1115,7 +1122,7 @@ def main() -> None:
     namespace = parser.parse_args()
     report = BuildReport()
     if namespace.cmd == "assets":
-        theme.theme_assets_write(namespace.output)
+        theme.theme_assets_write(namespace.output, namespace.manifest_line)
     elif namespace.cmd == "test":
         test_args = BuildReport.TestArgs(
             callgrind_file=namespace.callgrind_file,

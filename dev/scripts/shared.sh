@@ -235,6 +235,8 @@ json_quote() {
   local text="$1"
   text="${text//\\/\\\\}"
   text="${text//\"/\\\"}"
+  text="${text//$'\r'/\\r}"
+  text="${text//$'\n'/\\n}"
   printf '"%s"' "$text"
 }
 
@@ -311,23 +313,12 @@ manifest_recorded_row() {
   echo "recorded=$TIMESTAMP $(date -d "@$TIMESTAMP" +'%F %I:%M:%S %p')"
 }
 
-# manifest_script_write - the assets/ script holding the manifest text, for
-# an error page on a file:// URL where nothing can be fetched.
-manifest_script_write() {
-  # every row but the checksum: this is written before checksum_compute
-  # runs and counted by it, so a checksum here is the previous run's
-  local dir="$1" version="$2"
-  shift 2
-  local assets="$dir/$REPORT_ASSETS_DIR_NAME" row
-  local out="$assets/$ASSET_REPORT_MANIFEST_SCRIPT_NAME"
-  mkdir -p "$assets"
-  {
-    printf 'window.report_manifest = [\n'
-    for row in "$version" "$@"; do
-      printf '  %s,\n' "$(json_quote "$row")"
-    done
-    printf '].join("\\n");\n'
-  } >"$out"
+# manifest_table_of - settings.manifest_table's formatting of a version and
+# its LABEL=VALUE rows, the one door onto that Python function from shell.
+manifest_table_of() {
+  PYTHONPATH="$PERF2HTML_DIR_/scripts${PYTHONPATH:+:$PYTHONPATH}" \
+    python3 -c 'import sys, settings
+print(settings.manifest_table(sys.argv[1:]), end="")' "$@"
 }
 
 # manifest_value - one LABEL= row of a report's MANIFEST.txt.
@@ -357,15 +348,16 @@ manifest_wanted_phrase() {
   echo "$phrase"
 }
 
-# manifest_write - write MANIFEST.txt, checksum row last, and the assets/
-# script an error page reads it back from. Args: version, dir, LABEL=VALUE.
+# manifest_write - write the shared assets, report_complete.js, the
+# checksum, then MANIFEST.txt, in that order. Args: version, dir, rows.
 manifest_write() {
   local version="$1" dir="$2"
   shift 2
-  local manifest="$dir/MANIFEST.txt" checksum
-  # the script first, as the checksum counts it; report_delete deleted the
-  # directory, so MANIFEST.txt appears only here, last
-  manifest_script_write "$dir" "$version" "$@"
+  local manifest="$dir/MANIFEST.txt" table checksum
+  command_run python3 "$PERF2HTML_DIR_/scripts/build_report.py" assets \
+    -o "$dir/$REPORT_ASSETS_DIR_NAME" "$version" "$@"
+  table="$(manifest_table_of "$version" "$@")"
+  report_complete_write "$dir" "$table"
   checksum="$(checksum_compute "$dir")"
   {
     printf '%s\n' "$version"
@@ -394,15 +386,38 @@ path_display() {
 print(os.path.relpath(sys.argv[1], sys.argv[2]))' "$1" "${2:-$INVOKED_FROM}"
 }
 
-# path_overlap_check - refuse two paths where one is, holds or sits inside
-# the other, as deleting or writing either would damage the other.
+# path_overlap_check - refuse two given paths, or one and dev/scripts,
+# nested either way; refuse $INVOKED_FROM only nested inside a given path.
 path_overlap_check() {
-  # args: a path and its role, then another path and its role
-  local first="${1%/}/" first_role="$2" second="${3%/}/" second_role="$4"
-  local reason="error: the $first_role $first and the $second_role $second"
-  [ "${first#"$second"}" != "$first" ] \
-    || [ "${second#"$first"}" != "$second" ] || return 0
-  error_exit 2 "$reason overlap: deleting or writing one damages the other"
+  # args: a path then its role, repeated; every pair is checked once, plus
+  # each against dev/scripts and $INVOKED_FROM (each is a separate check)
+  local -a paths=() roles=()
+  while [ "$#" -gt 0 ]; do
+    paths+=("${1%/}/")
+    roles+=("$2")
+    shift 2
+  done
+  local scripts_dir="${PERF2HTML_DIR_%/}/scripts/"
+  local invoked_from="${INVOKED_FROM%/}/"
+  local i j first first_role second second_role reason
+  for ((i = 0; i < ${#paths[@]}; i++)); do
+    first="${paths[i]}" first_role="${roles[i]}"
+    for ((j = i + 1; j < ${#paths[@]}; j++)); do
+      second="${paths[j]}" second_role="${roles[j]}"
+      reason="error: the $first_role $first and the $second_role $second"
+      [ "${first#"$second"}" != "$first" ] \
+        || [ "${second#"$first"}" != "$second" ] || continue
+      error_exit 2 "$reason overlap: deleting or writing one damages the other"
+    done
+    reason="error: the $first_role $first and the scripts dir $scripts_dir"
+    reason="$reason overlap: deleting or writing one damages the other"
+    { [ "${first#"$scripts_dir"}" != "$first" ] \
+      || [ "${scripts_dir#"$first"}" != "$scripts_dir" ]; } \
+      && error_exit 2 "$reason"
+    [ "${invoked_from#"$first"}" != "$invoked_from" ] || continue
+    reason="error: the $first_role $first holds the invocation dir"
+    error_exit 2 "$reason $invoked_from: deleting or writing damages it"
+  done
 }
 
 # quiet_switch_set - an outside tool's own quiet switch, left empty under
@@ -416,18 +431,27 @@ quiet_switch_set() {
   esac
 }
 
-# report_begin - the head of every run writing a report, once report_delete
-# took the last one: create it, open $RUN_LOG, lay down README.md and assets.
+# report_begin - the head of every run writing a report: create it, open
+# $RUN_LOG, lay down README.md and the empty assets/ dir.
 report_begin() {
   # SETS RUN_LOG, its canonical setter: every command_run after this logs
   # into it. Args: dir, log name, opening line
   local dir="$1" log_name="$2" opening_line="$3"
-  mkdir -p "$dir" "$ARTIFACTS_DIR"
+  mkdir -p "$dir" "$dir/$REPORT_ASSETS_DIR_NAME" "$ARTIFACTS_DIR"
   RUN_LOG="$ARTIFACTS_DIR/$log_name"
   echo "$opening_line" >"$RUN_LOG"
   cp README.md "$dir/README.md"
-  command_run python3 "$PERF2HTML_DIR_/scripts/build_report.py" assets \
-    -o "$dir/$REPORT_ASSETS_DIR_NAME"
+}
+
+# report_complete_write - the assets/ script written last, holding the
+# manifest table text, proving to an error page that the run finished.
+report_complete_write() {
+  local dir="$1" table="$2"
+  local out="$dir/$REPORT_ASSETS_DIR_NAME/$ASSET_REPORT_COMPLETE_SCRIPT_NAME"
+  {
+    printf 'window.report_manifest_table = %s;\n' "$(json_quote "$table")"
+    screenshot_label_script_print
+  } >"$out"
 }
 
 # report_delete - delete a report: it is output only. A path that is no
@@ -478,6 +502,21 @@ revision_describe() {
   echo "$revision"
 }
 
+# screenshot_label_script_print - the one-off call showing a "screenshot"
+# URL param as a fixed bottom-left label, a capture's identification aid.
+screenshot_label_script_print() {
+  cat <<'EOF'
+(function () {
+  var value = new URLSearchParams(location.search).get("screenshot");
+  if (value === null) return;
+  var label = document.createElement("div");
+  label.className = "screenshot-label";
+  label.textContent = value;
+  document.body.appendChild(label);
+})();
+EOF
+}
+
 # table_print - one table under --verbose, padded as prettier pads one. Args:
 # the column count, then every cell, our header words first, row by row.
 table_print() {
@@ -522,19 +561,6 @@ title_print() {
   # the first line printed: verbose_begin's VERBOSE_BLOCK_PRINTED is why a
   # blank line leads it only below a parent's lines
   heading_write "$PERF2HTML_HEADER_DEPTH" "$*"
-}
-
-# tool_find - echo a tool's path, searching the pip and npm user bins too.
-tool_find() {
-  local name="$1" found
-  for found in "$name" "$HOME/.local/bin/$name" \
-    "$HOME/.npm-global/bin/$name"; do
-    if command -v "$found" >/dev/null 2>&1; then
-      echo "$found"
-      return 0
-    fi
-  done
-  return 1
 }
 
 # toolchain_check - the scripts' only toolchain check, collecting every

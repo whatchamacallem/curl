@@ -7,12 +7,18 @@ maintainer. Mention discrepancies when observed. The maintainer is the final
 authority and decides correctness and requirements, however discrepancies are
 worth fixing.
 
+Do not use the AskUserQuestion tool and use numbered sub-lists to
+as all questions in one go.
+
 Maintain a task list for each session in `dev/tmp` following this format:
-`dev/tmp/tasks.sat_0959am.md`. Use ISO 2145 for tasks and do not restart
+`dev/tmp/tasks_sat_0959am.md`. Use ISO 2145 for tasks and do not restart
 numbering tasks within a single document or discussion. Add a separate
 postmortem section after the tasks section and only modify the postmortem
-instead of the initial tasks when providing results. Provide the user
-with the postmortem directly as well as providing a link to the task doc.
+instead of the initial tasks when providing results. Do not write the
+postmortem or provide the user with a postmortem until all subagents and tasks
+are done. Anything like a postmortem at the end of a run must include all
+unfinished tasks and lost subagents. Provide the user with the postmortem
+directly as well as providing a link to the task doc.
 
 ## 0 Design Principles
 
@@ -27,6 +33,11 @@ with the postmortem directly as well as providing a link to the task doc.
   fails loud with a call stack or exit with the right Unix error code.
 - Any error is a hard error, reported immediately, first failure only - no
   script collects failures, tallies of failures.
+- Breaking this architecture into the classic Model-View-Controller state
+  diagram for web apps would have the frame hold the "model" (specifically the
+  parameters encoded in the hash), the menu would be the "controller" and the
+  window below it, the "view." Communication goes "view <- model <->
+  controller". Where those are "iframe, frame, and menu" respectively.
 - There must be no data loss in the logs from a hard exit because there is no
   buffering beyond a single external command.
 - `--regenerate` refuses (hard error, exit 2) rather than silently measuring
@@ -54,6 +65,9 @@ with the postmortem directly as well as providing a link to the task doc.
   Report inconsistencies with this document only when encountered through
   knowledge gained when it was injected in your context. That is the self
   healing mechanism.
+- Do not commit, uncommit, stage, unstage changes in git. If changes become
+  staged during a rename then unstage them. git is the permission system for
+  permanent changes and therefore must be reviewed by a user.
 
 ### 0.2 One-door glossary
 
@@ -315,8 +329,9 @@ taskset -c 3 ./build-relwithdebinfo/22_DCMAKECFLAGSO2g/tests/perf/perf \
 - `screenshots.py`: modified + diff reports, `_VIEWS` × `_SCREENSHOT_VIEWPORTS`
   → `dev/screenshots/<size>_<report>_<view>.png`, then 4k 3x3
   `thumbnail_<size>_<report>.png`; imports no settings; error view
-  `bad_function`; `report_incomplete` shoots a copy lacking under
-  `dev/build/screenshots_scratch/`; `--incognito`; under `--verbose` it prints
+  `bad_function`; `report_incomplete` shoots a copy lacking
+  `assets/report_complete.js` under `dev/build/screenshots_scratch/`;
+  `--incognito`; under `--verbose` it prints
   `<report> -> <dir>` and `N screenshot(s)`.
 - Debug modes, run in order: 1 `enforcer.sh` cold; 2 `--keep-artifacts`; 3
   `--regenerate`. `test_all.sh` = mode 2 `--verbose` with stderr `2>` into
@@ -406,8 +421,10 @@ taskset -c 3 ./build-relwithdebinfo/22_DCMAKECFLAGSO2g/tests/perf/perf \
 - A writer runs `report_delete`, then flushes its artifacts subdir, so a
   refused delete keeps the last run's recordings; the batch runs it on its
   three reports before step 1. `report_begin` (creates dirs, opens
-  `$RUN_LOG`, lays `README.md`/`assets/`) and `report_finish` (writes the
-  manifest last, `log_verbose`s the entry page) bracket every writer. A target
+  `$RUN_LOG`, lays `README.md`/empty `assets/`) and `report_finish` (writes
+  `assets/settings.js`, then `report_complete.js`, then the checksum, then
+  MANIFEST.txt last, `log_verbose`s the entry page) bracket every writer. A
+  target
   is deleted unprompted only if its own `MANIFEST.txt` proves we wrote it; a
   non-directory, or a dir without one, goes only on a typed y (prompt on
   stderr, a no is `error_exit 1`). `path_overlap_check` refuses two paths
@@ -444,8 +461,9 @@ raw/}  all/  assets/  flame-graph-app/  sources/  README.md  MANIFEST.txt
   `file://`. `sources/<source_name()>` (display path, non-alphanumerics → `_`,
   plus `.js`); `FileModel.source` read via `source_text(file_path)`;
   `flame_app_install` needs each glob to match one file.
-  `manifest_script_write` ships `assets/report_manifest.js`
-  (`window.report_manifest`, no `checksum=`).
+  `report_complete_write` ships `assets/report_complete.js`
+  (`window.report_manifest_table`, the preformatted manifest table
+  string, its only content, no `checksum=`).
 
 ## 7 Python
 
@@ -462,8 +480,10 @@ raw/}  all/  assets/  flame-graph-app/  sources/  README.md  MANIFEST.txt
   `I001`/`E501` off. Names `SCREAMING_SNAKE`, broad→narrow, 2+ words, unit
   suffix (`_PX`, `_MS`, `_PERCENT`, `_SHARE`, `_CHARS`, `_BYTES`).
   `settings_script_write()` ships the module as frozen JSON (all
-  JSON-serializable); `settings_handler.js` is read with a local `open()` (not
-  `theme.asset_text_read()`: cycle). `RANKING_COUNTER_NAME` ranks, colours and
+  JSON-serializable; the manifest table is not among it, see `manifest_table`
+  and `report_complete_write` in section 6); `settings_handler.js` is read
+  with a local `open()` (not `theme.asset_text_read()`: cycle).
+  `RANKING_COUNTER_NAME` ranks, colours and
   divides every table.
 - `callgrind.py`: `profile_load(paths)` exits unless the self-check ratio is
   1.0000; `path_norm() -> PathInfo(display, local, group)`; functions keyed by
@@ -509,10 +529,15 @@ raw/}  all/  assets/  flame-graph-app/  sources/  README.md  MANIFEST.txt
 - `ui_strings.js`: `str_*`; `text_of(id)` throws on unknown; no boundary names
   or number notation; `(no recorded caller)` stays in Python matching
   `str_no_caller`; empty pulldown = `str_no_match`.
-- `error_overlay.js`: replaces the document on `error`/ `unhandledrejection`;
-  message = `str_` key + `{N}` args (`format_or_raw`, raw on any failure);
-  `file://` paths truncated to the report root; posts `report_ui:
-  "report_error"`; touches neither `history` nor the URL.
+- `error_overlay.js`: replaces the document on `error`/`unhandledrejection`
+  through `document.open()` one task later; `<pre>` holds message, address,
+  stack and, when `window.report_manifest_table` exists, that string raw,
+  else "Report has no manifest."; font size is `DESIGN_FONT_SIZE_PX` (13)
+  scaled once at `page_write` by `window.innerWidth /
+  DESIGN_COORDINATES_WIDTH_PX`, no resize listener; two links, `copy`
+  (`navigator.clipboard.writeText` of the same text) and `back`
+  (`history.back()`); posts `report_ui: "report_error"` up from a frame;
+  touches the URL only via `back`, reads no other script.
 - JS settings: each `.js` resolves each `settings("NAME")` once into a
   same-named `const` at the top of its IIFE, never in a render path; every
   number/colour/key/bound is a setting (`STRIP_PULLDOWN_KEY_NAMES`).

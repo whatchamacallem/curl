@@ -20,7 +20,9 @@
       (FLAME_GRAPH_STARTUP_POLL_MAX_ATTEMPTS *
         FLAME_GRAPH_STARTUP_POLL_DELAY_MS) /
       1000;
-    return new Error(STARTUP_FAILED_STRING_ID + " " + waited_seconds);
+    return new Error(
+      window.ui_strings.text_fill(STARTUP_FAILED_STRING_ID, [waited_seconds]),
+    );
   }
   if (!load_attempt()) {
     var retry_count = 0,

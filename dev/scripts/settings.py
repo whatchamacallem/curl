@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json, os, re, sys
+from collections.abc import Sequence
 from typing import NoReturn, get_origin, get_type_hints
 
 # Every setting the tools have, then the reader that checks and assigns
@@ -12,6 +13,7 @@ ASSET_ERROR_OVERLAY_SCRIPT_NAME = "error_overlay.js"
 ASSET_FRAME_SCRIPT_NAME = "frame.js"
 ASSET_HEAT_MAP_SCRIPT_NAME = "heatmap.js"
 ASSET_HEAT_MAP_STYLESHEET_NAME = "heatmap.css"
+ASSET_MENU_SCRIPT_NAME = "menu.js"
 
 # What each test's script in assets/ ends in, after the test's name: every
 # file and function its heat map opens, which the overview's pulldowns offer.
@@ -117,7 +119,7 @@ HEAT_COLOR_FULL_SCALE_PERCENT = 100
 HEAT_COLOR_LIGHT_TEXT_ABOVE_SHARE = 0.45
 
 # The 12-stop heat ramp, cold to hot, exempt from the light/dark pair rule.
-# Carried opaque by a cell, stepped across by the wordmark: a retune hits both.
+# Carried opaque by a cell, stepped across by the logo: a retune hits both.
 HEAT_COLOR_LOGO_STOPS: list[str] = [
     "#3E4A89",
     "#31688E",
@@ -274,9 +276,9 @@ STRIP_PULLDOWN_SKIPPED_KEY_NAMES: tuple[str, ...] = (" ",)
 # <label>" is 26 today, plus margin. Too small clips mid-word.
 STRIP_STATUS_ROW_WIDTH_CHARS = 33
 
-# Where on the heat ramp the wordmark starts, its last letter always on the
+# Where on the heat ramp the logo starts, its last letter always on the
 # hot end. Half way up reads as the ramp's warm half, not the whole of it.
-STRIP_WORDMARK_LOGO_START_FRACTION = 0.5
+LOGO_START_FRACTION = 0.5
 
 # Valgrind's own preamble, dropped from the log a page shows.
 SUMMARY_PERF_LOG_SKIPPED_HEAD_LINES = 9
@@ -386,6 +388,10 @@ def _is_setting_name(name: str) -> bool:
     return bool(bare) and bare[0].isupper() and bare.isupper()
 
 
+# manifest_table's line width: the dev/ 79-column source limit, unrelated to
+# any page's own width settings.
+_MANIFEST_TABLE_LINE_CHARS = 79
+
 # The scalar types the type check tests exactly. bool sits before int, being
 # an int subclass, so an int annotation must not accept True.
 _SCALAR_TYPES = (bool, int, float, str)
@@ -485,6 +491,38 @@ class SettingsReader:
             "of them, correct the spelling here, or -- if this is the "
             "file's own constant -- move it below the load_into() call."
         )
+
+    # The manifest as an untitled markdown table: header ["", version], each
+    # row split at its first "=", right column wrapped at the 79-col limit.
+    def manifest_table(self, lines: Sequence[str]) -> str:
+        version, rows = lines[0], [line.partition("=") for line in lines[1:]]
+        left_width = max([len(version)] + [len(label) for label, _, _ in rows])
+        right_width = _MANIFEST_TABLE_LINE_CHARS - 7 - left_width
+        out = [
+            self.manifest_table_row("", version, left_width),
+            self.manifest_table_rule(left_width, right_width),
+        ]
+        for label, _, value in rows:
+            first = True
+            while value or first:
+                out.append(
+                    self.manifest_table_row(
+                        label if first else "",
+                        value[:right_width],
+                        left_width,
+                    )
+                )
+                value = value[right_width:]
+                first = False
+        return "\n".join(out)
+
+    # One manifest_table row, its label and value cells padded to width.
+    def manifest_table_row(self, label: str, value: str, width: int) -> str:
+        return f"| {label.ljust(width)} | {value} |"
+
+    # One manifest_table rule row, dashes the width of each column.
+    def manifest_table_rule(self, left_width: int, right_width: int) -> str:
+        return f"|{'-' * (left_width + 2)}|{'-' * (right_width + 2)}|"
 
     # Build assets/settings.js: every setting as one frozen JSON literal in
     # settings_handler.js, wholesale, with no list of what a page may see.
@@ -701,7 +739,13 @@ def load_into(module_name: str) -> None:
     _reader.load_into(module_name)
 
 
+# The manifest as an untitled markdown table, for report_complete.js.
+def manifest_table(lines: Sequence[str]) -> str:
+    return _reader.manifest_table(lines)
+
+
 # Build assets/settings.js: every setting this module holds, shipped to the
-# browser as one frozen object, with no list of which a page may see.
-def settings_script_write() -> str:
+# browser as one frozen object; manifest_lines is unused, kept for symmetry.
+def settings_script_write(manifest_lines: Sequence[str]) -> str:
+    del manifest_lines
     return _reader.script_write()

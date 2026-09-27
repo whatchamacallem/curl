@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-# enforcer.sh uses this to enforce comment length and ascii-only.
+# test_expected_behavior.sh uses this to enforce comment length and
+# ascii-only.
 from __future__ import annotations
 
 import argparse, os, re, sys
@@ -123,8 +124,8 @@ class SourceScan:
         self.unicode_check(path, lines, non_ascii)
         self.comment_check(path, lines, syntax)
 
-    # Scan each file named, and only those: enforcer.sh expands the list
-    # from its whitelist, so no directory is walked here.
+    # Scan each file named, and only those: test_expected_behavior.sh
+    # expands the list from its whitelist, so no directory is walked here.
     def files_scan(self, paths: list[str]) -> None:
         non_ascii = self.non_ascii_re()
         for path in paths:
@@ -213,14 +214,14 @@ _SOURCE_SCAN_ALLOWED_NON_ASCII_CHARS = (
 )
 
 
-# main - Scan exactly the files named. enforcer.sh names every whitelisted
-# one, so nothing here decides which files are source.
+# main - Scan exactly the files named. test_expected_behavior.sh names
+# every whitelisted one, so nothing here decides which files are source.
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "paths",
         nargs="+",
-        help="the files to scan, as enforcer.sh expands its whitelist",
+        help="the files to scan, as the caller expands its whitelist",
     )
     parser.add_argument(
         "--verbose",

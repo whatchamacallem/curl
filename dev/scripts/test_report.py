@@ -25,9 +25,9 @@ _REPORT_SOURCES_DIR_NAME: str = ""
 settings.load_into(__name__)
 
 
-# ValidateReport - A structural smoke test over a finished report directory:
+# TestReport - A structural smoke test over a finished report directory:
 # every page present, closed, titled, and free of leftover markers.
-class ValidateReport:
+class TestReport:
     # ReportLayout - What one kind of report is expected to contain -- this is
     # the whole difference between checking a full report and a diff.
     class ReportLayout(NamedTuple):
@@ -50,8 +50,8 @@ class ValidateReport:
         # where its pages are built from data no other test's archive holds
         all_has_archive: bool
 
-    # ValidateArgs - Which report to check, and which layout to check it as.
-    class ValidateArgs(NamedTuple):
+    # TestArgs - Which report to check, and which layout to check it as.
+    class TestArgs(NamedTuple):
         # the report directory
         out_dir: str
         # check it as a diff report rather than a full one
@@ -110,7 +110,7 @@ class ValidateReport:
         flame_dir = os.path.join(out_dir, _FLAME_GRAPH_VIEW_KEY)
         index_text = self.size_check(
             os.path.join(out_dir, "index.html"),
-            _VALIDATE_OVERVIEW_PAGE_LEAST_BYTES,
+            _TEST_OVERVIEW_PAGE_LEAST_BYTES,
             "index.html",
         )
         if not has_trace:
@@ -131,7 +131,7 @@ class ValidateReport:
         page = self.page_check(
             os.path.join(flame_dir, "index.html"),
             f"{_FLAME_GRAPH_VIEW_KEY}/index.html",
-            _VALIDATE_FLAME_GRAPH_PAGE_LEAST_BYTES,
+            _TEST_FLAME_GRAPH_PAGE_LEAST_BYTES,
         )
         # the engine is not here, so the page is only a page if it reaches
         # the shared bundle
@@ -142,7 +142,7 @@ class ValidateReport:
             )
         script = self.size_check(
             os.path.join(flame_dir, "profile.js"),
-            _VALIDATE_FLAME_GRAPH_SCRIPT_LEAST_BYTES,
+            _TEST_FLAME_GRAPH_SCRIPT_LEAST_BYTES,
             f"{_FLAME_GRAPH_VIEW_KEY}/profile.js",
         )
         if not script:
@@ -194,7 +194,7 @@ class ValidateReport:
         text = self.page_check(
             path,
             f"{_HEAT_MAP_VIEW_KEY}/index.html",
-            _VALIDATE_HEAT_MAP_PAGE_LEAST_BYTES,
+            _TEST_HEAT_MAP_PAGE_LEAST_BYTES,
             f"{test_name} / {_HEAT_MAP_VIEW_LABEL}",
         )
         if text and "report_ui.layout_activate" not in text:
@@ -228,13 +228,13 @@ class ValidateReport:
         self,
         out_dir: str,
         test_name: str,
-        layout: ValidateReport.ReportLayout,
+        layout: TestReport.ReportLayout,
         has_rawdata: bool,
         has_archive: bool,
     ) -> None:
         path = os.path.join(out_dir, "index.html")
         text = self.page_check(
-            path, "index.html", _VALIDATE_OVERVIEW_PAGE_LEAST_BYTES, test_name
+            path, "index.html", _TEST_OVERVIEW_PAGE_LEAST_BYTES, test_name
         )
         if not text:
             return
@@ -259,11 +259,11 @@ class ValidateReport:
     # MANIFEST.txt line 1 must be exact and its checksum row must still
     # match the files beside it. Both failures name found and expected.
     def manifest_check(
-        self, out_dir: str, layout: ValidateReport.ReportLayout
+        self, out_dir: str, layout: TestReport.ReportLayout
     ) -> None:
         path = os.path.join(out_dir, "MANIFEST.txt")
         text = self.size_check(
-            path, _VALIDATE_MANIFEST_LEAST_BYTES, "MANIFEST.txt"
+            path, _TEST_MANIFEST_LEAST_BYTES, "MANIFEST.txt"
         )
         if not text:
             self.fail(
@@ -334,11 +334,11 @@ class ValidateReport:
         self,
         out_dir: str,
         tests: Sequence[str],
-        layout: ValidateReport.ReportLayout,
+        layout: TestReport.ReportLayout,
     ) -> None:
         path = os.path.join(out_dir, "index.html")
         text = self.page_check(
-            path, "index.html", _VALIDATE_OVERVIEW_PAGE_LEAST_BYTES, "overview"
+            path, "index.html", _TEST_OVERVIEW_PAGE_LEAST_BYTES, "overview"
         )
         if not text:
             return
@@ -443,7 +443,7 @@ class ValidateReport:
     def perf_tool_check(self, out_dir: str, has_perf_log: bool) -> None:
         index_path = os.path.join(out_dir, "index.html")
         index_text = self.size_check(
-            index_path, _VALIDATE_OVERVIEW_PAGE_LEAST_BYTES, "index.html"
+            index_path, _TEST_OVERVIEW_PAGE_LEAST_BYTES, "index.html"
         )
         if not index_text:
             return
@@ -467,10 +467,10 @@ class ValidateReport:
     def raw_archive_check(self, path: str, name: str) -> None:
         # bytes, never size_check's text: an archive is not utf-8
         size = os.path.getsize(path)
-        if size < _VALIDATE_RAW_ARCHIVE_LEAST_BYTES:
+        if size < _TEST_RAW_ARCHIVE_LEAST_BYTES:
             self.fail(
                 f"raw/{name} suspiciously small ({size} bytes <"
-                f" {_VALIDATE_RAW_ARCHIVE_LEAST_BYTES}): {path}"
+                f" {_TEST_RAW_ARCHIVE_LEAST_BYTES}): {path}"
             )
         try:
             with tarfile.open(path, "r:xz") as archive:
@@ -533,7 +533,7 @@ class ValidateReport:
 
     # Check one whole report, overview or single test, and report every
     # problem at once.
-    def run(self, args: ValidateReport.ValidateArgs) -> int:
+    def run(self, args: TestReport.TestArgs) -> int:
         out_dir = os.path.abspath(args.out_dir)
         index_path = os.path.join(out_dir, "index.html")
         if not os.path.isfile(index_path):
@@ -566,15 +566,14 @@ class ValidateReport:
 
         if self.errors:
             print(
-                f"validate_report: {len(self.errors)} problem(s)"
-                f" in {out_dir}:",
+                f"test_report: {len(self.errors)} problem(s) in {out_dir}:",
                 file=sys.stderr,
             )
             for error in self.errors:
                 print(f"  - {error}", file=sys.stderr)
             return 1
         if args.verbose:
-            print(f"validate_report: ok ({out_dir})")
+            print(f"test_report: ok ({out_dir})")
         return 0
 
     # Read a text file, complaining if it is missing or implausibly small.
@@ -613,7 +612,7 @@ class ValidateReport:
 
     # Everything one test's directory should hold, per the layout.
     def test_report_check(
-        self, out_dir: str, name: str, layout: ValidateReport.ReportLayout
+        self, out_dir: str, name: str, layout: TestReport.ReportLayout
     ) -> None:
         has_rawdata = layout.test_has_rawdata and name != "all"
         # a diff stores one delta per test, "all" included, because it
@@ -639,7 +638,7 @@ _HEAT_MAP_VIEW_LABEL = _HEAT_MAP_VIEW_ENTRY[1]
 
 # What a perf2html_diff.sh report must contain: no flame graph, no timing.
 # The version line comes from settings.py, so this checks what wrote it.
-_LAYOUT_DIFF = ValidateReport.ReportLayout(
+_LAYOUT_DIFF = TestReport.ReportLayout(
     subpages=(_HEAT_MAP_VIEW_KEY,),
     heading=r"<h2>top \d+ functions by change in self</h2>",
     header_blocks=("baseline", "modified"),
@@ -656,7 +655,7 @@ _LAYOUT_DIFF = ValidateReport.ReportLayout(
 )
 
 # What a perf2html.sh report must contain.
-_LAYOUT_FULL = ValidateReport.ReportLayout(
+_LAYOUT_FULL = TestReport.ReportLayout(
     subpages=(_FLAME_GRAPH_VIEW_KEY, _HEAT_MAP_VIEW_KEY),
     heading=r"<h2>top \d+ functions by self</h2>",
     header_blocks=(),
@@ -684,12 +683,12 @@ _REPORT_CHECKSUM_COMMAND = (
 
 # Smallest a file can be before it is plainly a failed generate. The flame
 # graph page is a loader, so it has its own.
-_VALIDATE_FLAME_GRAPH_PAGE_LEAST_BYTES = 300
-_VALIDATE_FLAME_GRAPH_SCRIPT_LEAST_BYTES = 200
-_VALIDATE_HEAT_MAP_PAGE_LEAST_BYTES = 5000
-_VALIDATE_MANIFEST_LEAST_BYTES = 40
-_VALIDATE_OVERVIEW_PAGE_LEAST_BYTES = 2000
-_VALIDATE_RAW_ARCHIVE_LEAST_BYTES = 100
+_TEST_FLAME_GRAPH_PAGE_LEAST_BYTES = 300
+_TEST_FLAME_GRAPH_SCRIPT_LEAST_BYTES = 200
+_TEST_HEAT_MAP_PAGE_LEAST_BYTES = 5000
+_TEST_MANIFEST_LEAST_BYTES = 40
+_TEST_OVERVIEW_PAGE_LEAST_BYTES = 2000
+_TEST_RAW_ARCHIVE_LEAST_BYTES = 100
 
 
 # main - Check one report. Source is source_scan.py's, never this file's.
@@ -707,9 +706,9 @@ def main() -> int:
         help="print the ok line; a quiet run prints nothing on success",
     )
     namespace = parser.parse_args()
-    validator = ValidateReport()
-    return validator.run(
-        ValidateReport.ValidateArgs(
+    checker = TestReport()
+    return checker.run(
+        TestReport.TestArgs(
             out_dir=namespace.out_dir,
             diff=namespace.diff,
             verbose=namespace.verbose,

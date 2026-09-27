@@ -3,8 +3,9 @@
 # the temporary artifacts directory's default name, beside the report
 ARTIFACTS_NAME=perf2html_temporary_artifacts
 
-# the assets/ script an error page reads the manifest rows back from
-ASSET_REPORT_MANIFEST_SCRIPT_NAME=report_manifest.js
+# the assets/ script written last and counted by the checksum, whose one
+# line names the manifest version, proving the run finished
+ASSET_REPORT_COMPLETE_SCRIPT_NAME=report_complete.js
 
 # the ccache namespace tree_build tags every compile with, so clean.sh
 # evicts our entries and nobody else's
@@ -64,7 +65,7 @@ REPORT_BASELINE_DIR_NAME=perf2html_baseline_report
 REPORT_DIFF_DIR_NAME=perf2html_diff_report
 
 # the LABEL= row a report's MANIFEST.txt records its checksum on. The shell
-# writes and reads it; validate_report.py and enforcer.sh check it
+# writes and reads it; test_report.py and test_expected_behavior.sh read
 REPORT_MANIFEST_CHECKSUM_LABEL=checksum
 
 # the exact first line of a MANIFEST.txt, one per kind of report, and the only

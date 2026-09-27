@@ -95,7 +95,12 @@ args_parse() {
     printf -v "$_dir" '%s' "$(absolute_path "${!_dir}")"
   done
   if [ -z "$ARTIFACTS_DIR" ]; then
-    ARTIFACTS_DIR="$(dirname "$_OUT_DIR")/$ARTIFACTS_NAME"
+    if [ "$_KEEP_ARTIFACTS" = 0 ] && [ "$_REGENERATE" = 0 ]; then
+      ARTIFACTS_DIR="$(mktemp -d)"
+      log_verbose "using --artifacts=\"$ARTIFACTS_DIR\""
+    else
+      ARTIFACTS_DIR="$_TARGET_DIR/$ARTIFACTS_NAME"
+    fi
   fi
   ARTIFACTS_DIR="$(absolute_path "$ARTIFACTS_DIR")"
   # each report owns one subdirectory of the artifacts dir, so no run can
@@ -249,12 +254,10 @@ main() {
   _base_recorded="$(manifest_check "$_BASE_DIR" baseline)"
   _mod_recorded="$(manifest_check "$_MOD_DIR" modified)"
 
-  path_overlap_check "$_OUT_DIR" "diff report" "$_BASE_DIR" "baseline report"
-  path_overlap_check "$_OUT_DIR" "diff report" "$_MOD_DIR" "modified report"
-  path_overlap_check "$ARTIFACTS_DIR" "artifacts dir" "$_BASE_DIR" \
-    "baseline report"
-  path_overlap_check "$ARTIFACTS_DIR" "artifacts dir" "$_MOD_DIR" \
-    "modified report"
+  path_overlap_check "$_OUT_DIR" "diff report" \
+    "$_BASE_DIR" "baseline report" \
+    "$_MOD_DIR" "modified report" \
+    "$ARTIFACTS_DIR" "artifacts dir"
 
   if [ "$_REGENERATE" = 1 ] && [ ! -d "$ARTIFACTS_DIR" ]; then
     error_exit 2 "error: --regenerate: no recordings at $ARTIFACTS_DIR"

@@ -128,7 +128,12 @@ args_parse() {
   [ "${#_CMAKE_FLAGS[@]}" -gt 0 ] || _CMAKE_FLAGS=("${DEFAULT_FLAGS[@]}")
   _TARGET_DIR="$(absolute_path "$_TARGET_DIR")"
   if [ -z "$ARTIFACTS_DIR" ]; then
-    ARTIFACTS_DIR="$_TARGET_DIR/$ARTIFACTS_NAME"
+    if [ "$_KEEP_ARTIFACTS" = 0 ] && [ "$_REGENERATE" = 0 ]; then
+      ARTIFACTS_DIR="$(mktemp -d)"
+      log_verbose "using --artifacts=\"$ARTIFACTS_DIR\""
+    else
+      ARTIFACTS_DIR="$_TARGET_DIR/$ARTIFACTS_NAME"
+    fi
   fi
   ARTIFACTS_DIR="$(absolute_path "$ARTIFACTS_DIR")"
   _BASE_DIR="$_TARGET_DIR/$REPORT_BASELINE_DIR_NAME"
@@ -145,9 +150,10 @@ main() {
   header_table_print
 
   local _dir _cache
-  for _dir in "$_BASE_DIR" "$_MOD_DIR" "$_DIFF_DIR"; do
-    path_overlap_check "$ARTIFACTS_DIR" "artifacts dir" "$_dir" report
-  done
+  path_overlap_check "$ARTIFACTS_DIR" "artifacts dir" \
+    "$_BASE_DIR" "baseline report" \
+    "$_MOD_DIR" "modified report" \
+    "$_DIFF_DIR" "diff report"
   if [ "$_REGENERATE" = 1 ]; then
     for _dir in "$_BASE_DIR" "$_MOD_DIR" "$_DIFF_DIR"; do
       _cache="$ARTIFACTS_DIR/$(basename "$_dir")"

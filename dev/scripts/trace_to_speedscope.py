@@ -52,7 +52,7 @@ class Event(TypedDict):
 
 # EventedProfile - One timeline of enters and exits, and what it covers.
 class EventedProfile(TypedDict):
-    # always "evented" -- what validate_report.py insists on
+    # always "evented" -- what test_report.py insists on
     type: str
     # what the timeline is called in the page
     name: str

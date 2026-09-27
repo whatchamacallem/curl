@@ -54,11 +54,6 @@ window.ui_strings = (function () {
     str_detail_close: "close",
     str_detail_close_symbol: "[X]",
     str_detail_copy: "copy",
-    str_error_callstack_unavailable: "(no callstack recorded)",
-    str_error_column_frame: "frame",
-    str_error_column_location: "location",
-    str_error_control_back: "back",
-    str_error_control_copy: "copy",
     str_error_flame_graph_never_started:
       "flame graph viewer did not start within {0}s",
     str_error_font_refused: "the browser refused the page font",
@@ -71,12 +66,7 @@ window.ui_strings = (function () {
     str_error_hash_part_unknown: "url part unrecognized: {0}",
     str_error_hash_view_unknown:
       "url encodes a view this report does not have: {0}",
-    str_error_heading_address: "address",
-    str_error_heading_callstack: "callstack",
-    str_error_heading_manifest: "manifest",
     str_error_message_tag_unknown: "cross-frame message tag unrecognized: {0}",
-    str_error_page_heading: "perf2html error",
-    str_error_page_title: "perf2html error page",
     str_error_pulldown_focus_refused:
       "the browser kept focus on {0}, so keys cannot reach the pulldown",
     str_error_pulldown_names_missing:
@@ -111,8 +101,7 @@ window.ui_strings = (function () {
     str_share_zero: "0%",
     str_sort_by_heat: "by heat",
     str_sort_by_name: "by name",
-    str_source_beyond_end:
-      "error: Line beyond end of file, source changed.",
+    str_source_beyond_end: "error: Line beyond end of file, source changed.",
     str_source_unavailable: "Source not available.",
     str_view_summary: "summary",
   };
@@ -130,18 +119,5 @@ window.ui_strings = (function () {
     }
     return STRINGS[string_id];
   }
-  function text_over_args(string_id, args) {
-    const template = text_of(string_id);
-    let every_marker_filled = true;
-    const filled = template.replace(/\{(\d+)\}/g, (marker, index_text) => {
-      const index = Number(index_text);
-      if (index >= args.length) {
-        every_marker_filled = false;
-        return marker;
-      }
-      return String(args[index]);
-    });
-    return every_marker_filled ? filled : null;
-  }
-  return { text_fill, text_of, text_over_args };
+  return { text_fill, text_of };
 })();

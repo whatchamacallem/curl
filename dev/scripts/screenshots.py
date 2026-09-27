@@ -16,13 +16,113 @@
 # copy of the report under dev/build/, removed once shot: verification
 # never changes the report it checks.
 #
-# Nothing here is a setting: enforcer.sh is the only caller, no report
-# carries a shot, and a browser a page never sees is not the pages' to read.
+# Nothing here is a setting: test_expected_behavior.sh is the only caller,
+# no report carries a shot, and a browser a page never sees is not the
+# pages' to read.
 from __future__ import annotations
 
-import argparse, os, shutil, subprocess, sys
+import argparse, os, shutil, subprocess, sys, urllib.parse
 
 import PIL.Image
+
+# Anchors from the timer framework, in every profile whatever TESTS_C
+# holds. A hash naming what is timed would rot the day a test is renamed.
+_ANCHOR_FILE = "lib/curlx/timeval.c"
+_ANCHOR_FUNCTION = "curlx_now"
+
+# The page every view's hash is appended to, the report's own entry point:
+# shooting through it is what exercises the frame controller.
+_ENTRY_PAGE = "index.html"
+
+# trailing characters of a failed browser's stderr that get reprinted
+_FAULT_TAIL_CHARS = 400
+
+_IMAGE_SUFFIX = ".png"
+
+# The synthetic test merging every real one. It is a view of the report
+# rather than a test name, so it survives any change to TESTS_C.
+_MERGED_TEST = "all"
+
+# What a run writes last, so what a run that stopped short lacks.
+_REPORT_COMPLETE_ASSET_PATH: tuple[str, ...] = ("assets/report_complete.js",)
+
+# Every browser this will drive, in the order it tries them. A WSL box has
+# no linux browser of its own, so the Windows ones close the list.
+_SCREENSHOT_BROWSER_CANDIDATES: tuple[str, ...] = (
+    "chromium",
+    "chromium-browser",
+    "google-chrome",
+    "google-chrome-stable",
+    "/mnt/c/Program Files/Google/Chrome/Application/chrome.exe",
+    "/mnt/c/Program Files (x86)/Microsoft/Edge/Application/msedge.exe",
+)
+
+# Where the PNGs land, beside the scripts rather than in a report: a shot
+# is of a report, not part of one, and no checksum covers it.
+_SCREENSHOT_DIR_NAME = "screenshots"
+
+# How long a page gets to render before the shot is taken. Virtual time,
+# so it costs nothing when the page settles sooner.
+_SCREENSHOT_RENDER_BUDGET_MS = 8000
+
+# Where a copy of a report lacking files is shot from, relative to dev/:
+# gitignored and on disk rather than tmpfs, like test_error_handling.sh's.
+_SCREENSHOT_SCRATCH_DIR_PATH = "build/screenshots_scratch"
+
+# The query param report_complete.js reads to show the bottom-left label
+# identifying, in a shot, the URL/state a headless browser was sent to.
+_SCREENSHOT_URL_PARAM = "screenshot"
+
+# Every viewport each view is shot at, as (name, width, height). The name
+# leads the file name, so one view's three shots sort together for comparing.
+_SCREENSHOT_VIEWPORTS: tuple[tuple[str, int, int], ...] = (
+    ("720p", 1280, 720),
+    ("4k", 3840, 2160),
+)
+
+# What a sheet's empty cells are left as, the pages' own near-black so a
+# part-filled sheet does not glare.
+_THUMBNAIL_SHEET_BACKGROUND = (18, 20, 24)
+
+# The grid one sheet lays its shots out in, and how many that holds. Nine
+# cells is every view one viewport has, so a sheet is the whole set at once.
+_THUMBNAIL_SHEET_COLUMNS = 3
+_THUMBNAIL_SHEET_ROWS = 3
+_THUMBNAIL_SHEET_CELLS = _THUMBNAIL_SHEET_COLUMNS * _THUMBNAIL_SHEET_ROWS
+
+# A sheet is 4k whatever the shots on it are: it is read by a person on a
+# screen, not compared against a report, and is temporary either way.
+_THUMBNAIL_SHEET_HEIGHT_PX = 2160
+_THUMBNAIL_SHEET_WIDTH_PX = 3840
+
+# Every view worth a shot, as (file name, hash, files its report lacks).
+# Each takes a code path no earlier entry takes; other data is no new view.
+_VIEWS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
+    ("overview", "", ()),
+    ("summary", f"#{_MERGED_TEST}", ()),
+    ("heat_map_home", f"#{_MERGED_TEST}/heat-map/", ()),
+    ("heat_map_file", f"#{_MERGED_TEST}/heat-map/f={_ANCHOR_FILE}", ()),
+    (
+        "heat_map_line",
+        f"#{_MERGED_TEST}/heat-map/f={_ANCHOR_FILE}&l=1",
+        (),
+    ),
+    (
+        "heat_map_function",
+        f"#{_MERGED_TEST}/heat-map/fn={_ANCHOR_FUNCTION}",
+        (),
+    ),
+    (
+        "bad_function",
+        f"#{_MERGED_TEST}/heat-map/fn=no_such_function",
+        (),
+    ),
+    ("report_incomplete", "", _REPORT_COMPLETE_ASSET_PATH),
+)
+
+# How a Windows browser binary is told apart from a linux one, so only it
+# pays for a wslpath translation.
+_WINDOWS_BROWSER_SUFFIX = ".exe"
 
 
 # Screenshots - drives one headless browser over a report's views.
@@ -70,13 +170,16 @@ class Screenshots:
         finally:
             shutil.rmtree(self.scratch_dir)
 
-    # The file:// URL of an entry page at one view's hash. A UNC path keeps
-    # every slash wslpath gave it: two fewer names a disk Windows cannot read.
-    def page_url_of(self, page_dir: str, view_hash: str) -> str:
+    # The file:// URL of an entry page at one view's hash, carrying the
+    # screenshot param a shot's own bottom-left label reads.
+    def page_url_of(self, name: str, page_dir: str, view_hash: str) -> str:
         page = self.browser_path_of(os.path.join(page_dir, _ENTRY_PAGE))
+        query = "?" + urllib.parse.urlencode(
+            {_SCREENSHOT_URL_PARAM: name + view_hash}
+        )
         if self.windows_browser_is():
-            return "file://" + page.replace("\\", "/") + view_hash
-        return "file://" + page + view_hash
+            return "file://" + page.replace("\\", "/") + query + view_hash
+        return "file://" + page + query + view_hash
 
     # Shoot every view at every viewport, returning the count written.
     def shoot_all(self, prefix: str) -> int:
@@ -119,7 +222,7 @@ class Screenshots:
                 f"--window-size={window}",
                 f"--screenshot={self.browser_path_of(out_path)}",
                 f"--virtual-time-budget={_SCREENSHOT_RENDER_BUDGET_MS}",
-                self.page_url_of(page_dir, view_hash),
+                self.page_url_of(name, page_dir, view_hash),
             ],
             capture_output=True,
             text=True,
@@ -257,103 +360,6 @@ def main() -> int:
         print(f"{written} screenshot(s)")
     return 0
 
-
-# The page every view's hash is appended to, the report's own entry point:
-# shooting through it is what exercises the frame controller.
-_ENTRY_PAGE = "index.html"
-
-# trailing characters of a failed browser's stderr that get reprinted
-_FAULT_TAIL_CHARS = 400
-
-_IMAGE_SUFFIX = ".png"
-
-# How a Windows browser binary is told apart from a linux one, so only it
-# pays for a wslpath translation.
-_WINDOWS_BROWSER_SUFFIX = ".exe"
-
-# Anchors from the timer framework, in every profile whatever TESTS_C
-# holds. A hash naming what is timed would rot the day a test is renamed.
-_ANCHOR_FILE = "lib/curlx/timeval.c"
-_ANCHOR_FUNCTION = "curlx_now"
-
-# The synthetic test merging every real one. It is a view of the report
-# rather than a test name, so it survives any change to TESTS_C.
-_MERGED_TEST = "all"
-
-# What a run writes last, so what a run that stopped short lacks.
-_LAST_WRITTEN_FILE: tuple[str, ...] = (
-    "assets/report_manifest.js",
-)
-
-# Every browser this will drive, in the order it tries them. A WSL box has
-# no linux browser of its own, so the Windows ones close the list.
-_SCREENSHOT_BROWSER_CANDIDATES: tuple[str, ...] = (
-    "chromium",
-    "chromium-browser",
-    "google-chrome",
-    "google-chrome-stable",
-    "/mnt/c/Program Files/Google/Chrome/Application/chrome.exe",
-    "/mnt/c/Program Files (x86)/Microsoft/Edge/Application/msedge.exe",
-)
-
-# Where the PNGs land, beside the scripts rather than in a report: a shot
-# is of a report, not part of one, and no checksum covers it.
-_SCREENSHOT_DIR_NAME = "screenshots"
-
-# How long a page gets to render before the shot is taken. Virtual time,
-# so it costs nothing when the page settles sooner.
-_SCREENSHOT_RENDER_BUDGET_MS = 8000
-
-# Where a copy of a report lacking files is shot from, relative to dev/:
-# gitignored and on disk rather than tmpfs, like test_all.sh's scratch.
-_SCREENSHOT_SCRATCH_DIR_PATH = "build/screenshots_scratch"
-
-# Every viewport each view is shot at, as (name, width, height). The name
-# leads the file name, so one view's three shots sort together for comparing.
-_SCREENSHOT_VIEWPORTS: tuple[tuple[str, int, int], ...] = (
-    ("480p", 640, 480),
-    ("4k", 3840, 2160),
-)
-
-# What a sheet's empty cells are left as, the pages' own near-black so a
-# part-filled sheet does not glare.
-_THUMBNAIL_SHEET_BACKGROUND = (18, 20, 24)
-
-# The grid one sheet lays its shots out in, and how many that holds. Nine
-# cells is every view one viewport has, so a sheet is the whole set at once.
-_THUMBNAIL_SHEET_COLUMNS = 3
-_THUMBNAIL_SHEET_ROWS = 3
-_THUMBNAIL_SHEET_CELLS = _THUMBNAIL_SHEET_COLUMNS * _THUMBNAIL_SHEET_ROWS
-
-# A sheet is 4k whatever the shots on it are: it is read by a person on a
-# screen, not compared against a report, and is temporary either way.
-_THUMBNAIL_SHEET_HEIGHT_PX = 2160
-_THUMBNAIL_SHEET_WIDTH_PX = 3840
-
-# Every view worth a shot, as (file name, hash, files its report lacks).
-# Each takes a code path no earlier entry takes; other data is no new view.
-_VIEWS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
-    ("overview", "", ()),
-    ("summary", f"#{_MERGED_TEST}", ()),
-    ("heat_map_home", f"#{_MERGED_TEST}/heat-map/", ()),
-    ("heat_map_file", f"#{_MERGED_TEST}/heat-map/f={_ANCHOR_FILE}", ()),
-    (
-        "heat_map_line",
-        f"#{_MERGED_TEST}/heat-map/f={_ANCHOR_FILE}&l=1",
-        (),
-    ),
-    (
-        "heat_map_function",
-        f"#{_MERGED_TEST}/heat-map/fn={_ANCHOR_FUNCTION}",
-        (),
-    ),
-    (
-        "bad_function",
-        f"#{_MERGED_TEST}/heat-map/fn=no_such_function",
-        (),
-    ),
-    ("report_incomplete", "", _LAST_WRITTEN_FILE),
-)
 
 if __name__ == "__main__":
     sys.exit(main())

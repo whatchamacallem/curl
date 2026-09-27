@@ -12,7 +12,8 @@ _ASSET_ERROR_OVERLAY_SCRIPT_NAME: str = ""
 _ASSET_FRAME_SCRIPT_NAME: str = ""
 _ASSET_HEAT_MAP_SCRIPT_NAME: str = ""
 _ASSET_HEAT_MAP_STYLESHEET_NAME: str = ""
-_ASSET_REPORT_MANIFEST_SCRIPT_NAME: str = ""
+_ASSET_MENU_SCRIPT_NAME: str = ""
+_ASSET_REPORT_COMPLETE_SCRIPT_NAME: str = ""
 _ASSET_SETTINGS_SCRIPT_NAME: str = ""
 _ASSET_THEME_SCRIPT_NAME: str = ""
 _ASSET_THEME_STYLESHEET_NAME: str = ""
@@ -225,7 +226,9 @@ class Theme:
 
     # Write the report's one shared copy of the theme. The stylesheet and
     # settings.js are generated here, not copied -- copies lose their data.
-    def assets_write(self, out_dir: str) -> None:
+    def assets_write(
+        self, out_dir: str, manifest_lines: Sequence[str]
+    ) -> None:
         os.makedirs(out_dir, exist_ok=True)
         heat_map_script = _ASSET_HEAT_MAP_SCRIPT_NAME
         heat_map_stylesheet = _ASSET_HEAT_MAP_STYLESHEET_NAME
@@ -240,7 +243,14 @@ class Theme:
             ),
             (heat_map_stylesheet, self.asset_read(heat_map_stylesheet)),
             (heat_map_script, self.asset_read(heat_map_script)),
-            (_ASSET_SETTINGS_SCRIPT_NAME, settings.settings_script_write()),
+            (
+                _ASSET_MENU_SCRIPT_NAME,
+                self.asset_read(_ASSET_MENU_SCRIPT_NAME),
+            ),
+            (
+                _ASSET_SETTINGS_SCRIPT_NAME,
+                settings.settings_script_write(manifest_lines),
+            ),
             (_ASSET_THEME_STYLESHEET_NAME, self.css()),
             (_ASSET_THEME_SCRIPT_NAME, self.js()),
             (
@@ -673,7 +683,7 @@ def page_preamble_scripts() -> tuple[str, ...]:
     return (
         _ASSET_ERROR_OVERLAY_SCRIPT_NAME,
         _ASSET_UI_STRINGS_SCRIPT_NAME,
-        _ASSET_REPORT_MANIFEST_SCRIPT_NAME,
+        _ASSET_REPORT_COMPLETE_SCRIPT_NAME,
     )
 
 
@@ -701,8 +711,8 @@ def table_render(
 
 
 # theme_assets_write - Write the report's one shared copy of the theme.
-def theme_assets_write(out_dir: str) -> None:
-    _RENDERER.assets_write(out_dir)
+def theme_assets_write(out_dir: str, manifest_lines: Sequence[str]) -> None:
+    _RENDERER.assets_write(out_dir, manifest_lines)
 
 
 # theme_runtime - The theme values a page's own JavaScript needs.

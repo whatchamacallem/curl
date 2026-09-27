@@ -1,7 +1,7 @@
 build/
 __pycache__/
 tmp/
-enforcer.md
+test_expected_behavior.md
 perf2html_baseline_report/
 perf2html_diff_report/
 perf2html_modified_report/

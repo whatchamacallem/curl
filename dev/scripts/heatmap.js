@@ -1037,7 +1037,12 @@
 
   function file_render(file_path, line) {
     const file = file_table[file_path];
-    if (!file) throw new Error("str_error_hash_file_unknown " + file_path);
+    if (!file)
+      throw new Error(
+        window.ui_strings.text_fill("str_error_hash_file_unknown", [
+          file_path,
+        ]),
+      );
     const is_first_view = current_file_path !== file_path,
       kept_scroll_top = is_first_view ? -1 : main_panel.scrollTop;
     current_file_path = file_path;
@@ -1773,14 +1778,18 @@
   // A bad address is shown, not thrown: a file:// page is its own opaque
   // origin, so an exception reaches a parent frame stripped to "Script error."
   function hash_fault_show(message) {
-    window.report_error_overlay.overlay_show(new Error(message));
+    window.report_error_overlay.overlay_show(message);
   }
   function route_render() {
     const parsed_state = state_of_hash(location.hash);
     // a hash naming a counter, file or function this report does not hold is
     // a bad address: it surfaces rather than rendering something else
     if (parsed_state.ev && !counter_find(parsed_state.ev)) {
-      hash_fault_show("str_error_hash_counter_unknown " + parsed_state.ev);
+      hash_fault_show(
+        window.ui_strings.text_fill("str_error_hash_counter_unknown", [
+          parsed_state.ev,
+        ]),
+      );
       return;
     }
     const counter = counter_find(
@@ -1802,12 +1811,16 @@
         file = function_entry.file;
         line = function_entry.line;
       } else {
-        hash_fault_show("str_error_hash_function_unknown " + fn);
+        hash_fault_show(
+          window.ui_strings.text_fill("str_error_hash_function_unknown", [fn]),
+        );
         return;
       }
     }
     if (file && !file_table[file]) {
-      hash_fault_show("str_error_hash_file_unknown " + file);
+      hash_fault_show(
+        window.ui_strings.text_fill("str_error_hash_file_unknown", [file]),
+      );
       return;
     }
 
@@ -1842,7 +1855,11 @@
       typeof message_data === "string" &&
       message_data.startsWith("report_ui:")
     )
-      throw new Error("str_error_message_tag_unknown " + message_data);
+      throw new Error(
+        window.ui_strings.text_fill("str_error_message_tag_unknown", [
+          message_data,
+        ]),
+      );
   });
 
   let resize_debounce_timer = null;

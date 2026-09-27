@@ -87,7 +87,12 @@ args_parse() {
   fi
   _OUT_DIR="$(absolute_path "$_OUT_DIR")"
   if [ -z "$ARTIFACTS_DIR" ]; then
-    ARTIFACTS_DIR="$(dirname "$_OUT_DIR")/$ARTIFACTS_NAME"
+    if [ "$_KEEP_ARTIFACTS" = 0 ] && [ "$_REGENERATE" = 0 ]; then
+      ARTIFACTS_DIR="$(mktemp -d)"
+      log_verbose "using --artifacts=\"$ARTIFACTS_DIR\""
+    else
+      ARTIFACTS_DIR="$_TARGET_DIR/$ARTIFACTS_NAME"
+    fi
   fi
   ARTIFACTS_DIR="$(absolute_path "$ARTIFACTS_DIR")"
   # each report owns one subdirectory of the artifacts dir, so no run can
