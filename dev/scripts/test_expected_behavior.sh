@@ -1,23 +1,11 @@
 #!/usr/bin/env bash
 
-#   source          format        lint           79 cols ascii
-#   --------------- ------------- -------------- ------- ------
-#   *.sh            shfmt         --             yes     yes
-#   README.md       prettier      prettier       yes     yes
-#   src/*.c *.h     clang-format  --             yes     yes
-#   scripts/*.py    ruff          pyright, ruff  yes     yes
-#   scripts/*.js    prettier      prettier       yes     yes
-#   scripts/*.css   prettier      prettier       yes     yes
-#   scripts/*.html  prettier      prettier       yes     yes
-#
 # The rest of this comment is intentionally blank. No documentation goes here.
-
-set -euo pipefail
 
 usage_show() {
   cat <<'EOF'
 test_expected_behavior.sh [debug-flags] [--check-formatting]
-    Formats, lints and scans the files scripts/enforcer_whitelist.txt lists,
+    Formats, lints and scans the files scripts/test_whitelist.txt lists,
     runs perf2html_batch.sh over the three reports it cleared, then
     validates and screenshots what it wrote. Any fault stops the run where
     it happened.
@@ -37,11 +25,13 @@ test_expected_behavior.sh [debug-flags] [--check-formatting]
 EOF
 }
 
+set -euo pipefail
+
 _SCRIPT="$(readlink -f "$0")"
 _SCRIPTS="$(dirname "$_SCRIPT")"
 
 # Where the caller stood. This takes no path argument of its own, but
-# shared.sh's absolute_path reads it, so it is set before the cd below.
+# utility.sh's absolute_path reads it, so it is set before the cd below.
 INVOKED_FROM="$PWD"
 cd "$_SCRIPTS"
 
@@ -64,15 +54,15 @@ _SHELL_INDENT=2
 _RUFF_CONFIG=ruff.toml
 
 # the one list of what the source stages touch, beside this script
-_WHITELIST_FILE=enforcer_whitelist.txt
+_WHITELIST_FILE=test_whitelist.txt
 
 . ./settings.sh
-. ./shared.sh
-. ./test_shared.sh
+. ./utility.sh
+. ./test_utility.sh
 
 # The batch this runs, and the shooter it runs after, each beside us.
 _BATCH_SCRIPT_NAME=perf2html_batch.sh
-_SCREENSHOTS_SCRIPT_NAME=screenshots.py
+_SCREENSHOT_SCRIPT_NAME=test_screenshot.py
 
 # The reports the batch writes, in the order it writes them. The names are
 # the batch's own settings, so this agrees with it by construction.
@@ -326,7 +316,7 @@ test_expected_report_check_run() {
 
   heading_print test_report.py
   for _path in "${_DEFAULT_REPORTS[@]}"; do
-    # shared.sh's hard-error policy, taking both version strings so either
+    # utility.sh's hard-error policy, taking both version strings so either
     # kind of report is accepted and anything else stops the run
     manifest_verify "$_path" "$(basename "$_path")" \
       "$REPORT_MANIFEST_VERSION_FULL" "$REPORT_MANIFEST_VERSION_DIFF"
@@ -340,13 +330,13 @@ test_expected_report_check_run() {
   done
 }
 
-# source_scan_run - source_scan.py's comment block and ASCII checks, over
+# test_source_scan_run - test_source_scan.py's comment block and ASCII checks, over
 # every whitelisted file and in one read of each.
-source_scan_run() {
+test_source_scan_run() {
   # the limit and the allowed set are the scanner's own and never spelled
   # here: every fault it prints, and its --verbose ok line, carry them
-  heading_print source_scan.py
-  python_run source_scan.py "${_WHITELISTED_FILES[@]}"
+  heading_print test_source_scan.py
+  python_run test_source_scan.py "${_WHITELISTED_FILES[@]}"
 }
 
 # batch_run - write the three reports this run verifies. Its own steps stop
@@ -378,11 +368,11 @@ batch_run() {
 }
 
 # screenshots_run - shoot the modified and diff reports at every viewport
-# screenshots.py names. Both exist: the batch wrote them or exited.
+# test_screenshot.py names. Both exist: the batch wrote them or exited.
 screenshots_run() {
   local _name _path _prefix
 
-  heading_print "$_SCREENSHOTS_SCRIPT_NAME"
+  heading_print "$_SCREENSHOT_SCRIPT_NAME"
   for _name in "$REPORT_MODIFIED_DIR_NAME" "$REPORT_DIFF_DIR_NAME"; do
     _path="$_DIR_DEV/$_name"
 
@@ -391,7 +381,7 @@ screenshots_run() {
     _prefix="${_name#perf2html_}"
     _prefix="${_prefix%_report}_"
 
-    python_run "$_SCREENSHOTS_SCRIPT_NAME" "$_path" "$_prefix"
+    python_run "$_SCREENSHOT_SCRIPT_NAME" "$_path" "$_prefix"
   done
 }
 
@@ -407,7 +397,7 @@ header_row_of() {
 }
 
 # regenerate_check - reuse the last run's recordings only while they still
-# describe the executable on disk, else refuse. See declawed.md 3.
+# describe the executable on disk, else refuse. See test_expected_behavior.md 3.
 regenerate_check() {
   [ "$_REGENERATE" = 1 ] || return 0
 
@@ -523,8 +513,7 @@ args_parse() {
   done
 }
 
-# main - the stages in ascending cost, each one stopping the run where it
-# fails, so the first fault a reader sees is the one that happened first.
+# main - Timing data is temporary.
 main() {
   # read the flags: -h prints the usage, an unknown one refuses
   args_parse "$@"
@@ -532,7 +521,7 @@ main() {
   verbose_begin
   # the run's own heading: this script's path and its arguments
   title_print "$_SCRIPT" "$@"
-  # expand enforcer_whitelist.txt once into _WHITELISTED_FILES
+  # expand test_whitelist.txt once into _WHITELISTED_FILES
   whitelist_expand
   # 0.07s under --regenerate only.
   regenerate_check
@@ -550,8 +539,8 @@ main() {
   format_prettier
   # 0.01s 79 column check
   long_lines_report
-  # 0.04s source_scan.py check comment sizes and ASCII.
-  source_scan_run
+  # 0.04s test_source_scan.py check comment sizes and ASCII.
+  test_source_scan_run
   # 2.61s Pyright over the Python
   lint_run
   # [100.35/97.42/12.01s] perf2html_batch.sh: baseline, modified and diff,
@@ -559,7 +548,7 @@ main() {
   batch_run
   # 0.59s test_report.py over each of the three reports
   test_expected_report_check_run
-  # 40.40s screenshots.py over the modified and diff reports
+  # 40.40s test_screenshot.py over the modified and diff reports
   screenshots_run
 }
 

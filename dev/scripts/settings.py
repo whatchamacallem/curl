@@ -5,7 +5,7 @@ from collections.abc import Sequence
 from typing import NoReturn, get_origin, get_type_hints
 
 # Every setting the tools have, then the reader that checks and assigns
-# them. _SETTING_NAMES is the line between the two. See declawed.md 6.1.
+# them. _SETTING_NAMES is the line between the two. See test_expected_behavior.md 6.1.
 
 # What the report's one shared copy of the theme is written as: written once
 # at the report root and linked, never inlined. Each page links what it uses.
@@ -33,7 +33,7 @@ ASSET_THEME_STYLESHEET_NAME = "theme.css"
 ASSET_UI_STRINGS_SCRIPT_NAME = "ui_strings.js"
 
 # Every counter callgrind never records, as the recorded ones it sums from
-# and each one's coefficient. Nothing stores one. See declawed.md 6.2.
+# and each one's coefficient. Nothing stores one. See test_expected_behavior.md 6.2.
 DERIVED_COUNTER_TERMS: dict[str, dict[str, int]] = {
     "D1m": {"D1mr": 1, "D1mw": 1},
     "DLm": {"DLmr": 1, "DLmw": 1},
@@ -63,6 +63,10 @@ DESIGN_FONT_SIZE_PX = 12
 # The CSS variable carrying the font fit, a multiplier on every font size
 # the theme sets: 1 is the design font itself. Boundary.
 DESIGN_FONT_FIT_PROPERTY = "--font-fit"
+
+# Below this window width design_scale_apply() stops shrinking the zoom
+# further, so the browser's own horizontal scrollbar appears instead.
+DESIGN_MINIMUM_WINDOW_WIDTH_PX = 1280
 
 # What the scale slider multiplies the window's own fit by: on an untouched
 # page (mid-travel whatever the ends, each half geometric), then at each end.
@@ -412,7 +416,7 @@ _SENTINEL_EMPTY_TYPES = (
 )
 
 # How the accepted sentinels are spelled in every message naming them, so
-# the errors and declawed.md say one list. None and Ellipsis are not on it.
+# the errors and test_expected_behavior.md say one list. None and Ellipsis are not on it.
 _SENTINEL_TEXT = 'False, 0, 0.0, "", (), [], {}'
 
 # The scripts/ directory, which is where this file, settings.sh and the
@@ -499,7 +503,7 @@ class SettingsReader:
         left_width = max([len(version)] + [len(label) for label, _, _ in rows])
         right_width = _MANIFEST_TABLE_LINE_CHARS - 7 - left_width
         out = [
-            self.manifest_table_row("", version, left_width),
+            self.manifest_table_row("", version, left_width, right_width),
             self.manifest_table_rule(left_width, right_width),
         ]
         for label, _, value in rows:
@@ -510,6 +514,7 @@ class SettingsReader:
                         label if first else "",
                         value[:right_width],
                         left_width,
+                        right_width,
                     )
                 )
                 value = value[right_width:]
@@ -517,8 +522,10 @@ class SettingsReader:
         return "\n".join(out)
 
     # One manifest_table row, its label and value cells padded to width.
-    def manifest_table_row(self, label: str, value: str, width: int) -> str:
-        return f"| {label.ljust(width)} | {value} |"
+    def manifest_table_row(
+        self, label: str, value: str, left_width: int, right_width: int
+    ) -> str:
+        return f"| {label.ljust(left_width)} | {value.ljust(right_width)} |"
 
     # One manifest_table rule row, dashes the width of each column.
     def manifest_table_rule(self, left_width: int, right_width: int) -> str:
@@ -723,7 +730,7 @@ class SettingsReader:
 
 
 # The reader, then the cut: the shell's settings bind first, so every one
-# is bound before the list is taken. See declawed.md 6.1 for the spelling.
+# is bound before the list is taken. See test_expected_behavior.md 6.1 for the spelling.
 _reader = SettingsReader()
 globals().update(_reader.shell_settings_read())
 _SETTING_NAMES = frozenset(

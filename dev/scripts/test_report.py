@@ -64,7 +64,7 @@ class TestReport:
         self.errors: list[str] = []
 
     # The POSIX cksum of every file except MANIFEST.txt, run through the
-    # very pipeline scripts/shared.sh wrote the row with, never our own.
+    # very pipeline scripts/utility.sh wrote the row with, never our own.
     def checksum_compute(self, out_dir: str) -> str:
         try:
             done = subprocess.run(
@@ -673,7 +673,7 @@ _LAYOUT_FULL = TestReport.ReportLayout(
 )
 
 # The POSIX pipeline this file re-derives the checksum row with, spelled
-# out separately from shared.sh's on purpose. See declawed.md: not a twin.
+# out separately from utility.sh's on purpose. See test_expected_behavior.md: not a twin.
 _REPORT_CHECKSUM_COMMAND = (
     "find . -type f ! -name MANIFEST.txt -print"
     " | LC_ALL=C sort | LC_ALL=C tr '\\n' '\\0'"
@@ -691,7 +691,7 @@ _TEST_OVERVIEW_PAGE_LEAST_BYTES = 2000
 _TEST_RAW_ARCHIVE_LEAST_BYTES = 100
 
 
-# main - Check one report. Source is source_scan.py's, never this file's.
+# main - Check one report. Source is test_source_scan.py's, never this file's.
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("out_dir", help="a report directory")

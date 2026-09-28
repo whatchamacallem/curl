@@ -2,18 +2,6 @@
 
 # This comment intentionally blank. No documentation goes here.
 
-set -euo pipefail
-
-TIMESTAMP="$(date +%s)"
-INVOKED_FROM="$PWD"
-_SCRIPT="$(readlink -f "$0")"
-PERF2HTML_DIR_="$(dirname "$_SCRIPT")"
-cd "$PERF2HTML_DIR_"
-
-. ./scripts/settings.sh
-. ./scripts/shared.sh
-
-# usage_show - the one usage text, printed by -h and on a bad argument
 usage_show() {
   cat <<'EOF'
 perf2html_diff.sh [debug-flags] [baseline] [modified] [diff]
@@ -35,6 +23,17 @@ perf2html_diff.sh [debug-flags] [baseline] [modified] [diff]
                       (--verbose --verbose) increments the verbosity level.
 EOF
 }
+
+set -euo pipefail
+
+TIMESTAMP="$(date +%s)"
+INVOKED_FROM="$PWD"
+_SCRIPT="$(readlink -f "$0")"
+PERF2HTML_DIR_="$(dirname "$_SCRIPT")"
+cd "$PERF2HTML_DIR_"
+
+. ./scripts/settings.sh
+. ./scripts/utility.sh
 
 # args_parse - reads the flags and the three directories, all absolute
 args_parse() {

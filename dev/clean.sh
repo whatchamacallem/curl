@@ -2,16 +2,15 @@
 
 # This comment intentionally blank. No documentation goes here.
 
-set -euo pipefail
-
-# usage_show - the one usage text, printed by -h and on a bad argument
 usage_show() {
   cat <<'EOF'
 clean.sh [--help]
-    Clears .gitignore except tmp/. Clears profiling from ccache . --help is
+    Clears ./.gitignore except tmp/. Clears profiling from ccache. --help is
     the only argument.
 EOF
 }
+
+set -euo pipefail
 
 [ $# = 0 ] || { [[ $* =~ ^(-h|--help)$ ]] && usage_show && exit 0; } \
   || { echo "error: unknown option: $*" && usage_show && exit 2; } >&2

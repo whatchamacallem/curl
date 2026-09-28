@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# dev/scripts/screenshots.py REPORT PREFIX [--out=DIR] -- shoot a report.
+# dev/scripts/test_screenshot.py REPORT PREFIX [--out=DIR] -- shoot a report.
 #
 # One PNG per entry in _VIEWS per viewport in _SCREENSHOT_VIEWPORTS, each
 # hash naming a view the report renders a different way. The list is of

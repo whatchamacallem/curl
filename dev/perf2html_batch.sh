@@ -2,20 +2,6 @@
 
 # This comment intentionally blank. No documentation goes here.
 
-set -euo pipefail
-
-TIMESTAMP="$(date +%s)"
-INVOKED_FROM="$PWD"
-_SCRIPT="$(readlink -f "$0")"
-PERF2HTML_DIR_="$(dirname "$_SCRIPT")"
-cd "$PERF2HTML_DIR_"
-
-. ./scripts/settings.sh
-. ./scripts/shared.sh
-
-_REPO="$(dirname "$PERF2HTML_DIR_")"
-
-# usage_show - the one usage text, printed by -h and on a bad argument
 usage_show() {
   cat <<'EOF'
 perf2html_batch.sh [debug-flags] [--target-dir=DIR] [cmake-flags...]
@@ -38,6 +24,19 @@ perf2html_batch.sh [debug-flags] [--target-dir=DIR] [cmake-flags...]
                       (--verbose --verbose) increments the verbosity level.
 EOF
 }
+
+set -euo pipefail
+
+TIMESTAMP="$(date +%s)"
+INVOKED_FROM="$PWD"
+_SCRIPT="$(readlink -f "$0")"
+PERF2HTML_DIR_="$(dirname "$_SCRIPT")"
+cd "$PERF2HTML_DIR_"
+
+. ./scripts/settings.sh
+. ./scripts/utility.sh
+
+_REPO="$(dirname "$PERF2HTML_DIR_")"
 
 # step_run - run one numbered step, its output reaching the terminal as it
 # is. A failed step is a hard error: one line here, then the child's code.

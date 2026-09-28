@@ -121,12 +121,8 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.node.dir .name {
-  font-weight: 600;
-}
 .node.cold .name {
   color: var(--muted);
-  font-weight: 400;
 }
 .node .pct {
   flex: none;
@@ -159,9 +155,6 @@ body {
   align-items: baseline;
   flex-wrap: wrap;
 }
-.fhead .path {
-  font-weight: 600;
-}
 .fhead .stat {
   color: var(--muted);
 }
@@ -192,6 +185,7 @@ body {
   color: var(--muted);
 }
 table.src th {
+  font-weight: normal;
   background: var(--sel);
 }
 table.src td.ln {
@@ -214,10 +208,6 @@ table.src td.incl,
 table.src td.x {
   color: var(--muted);
 }
-table.src td.hot {
-  font-weight: 600;
-}
-
 table.src td.code {
   text-overflow: clip;
   white-space: pre;
@@ -240,7 +230,7 @@ table.src tr.detail > td {
 .dbox h4 {
   margin: 0;
   color: var(--muted);
-  font-weight: 600;
+  font-weight: normal;
 }
 .dbox .dclose {
   position: absolute;

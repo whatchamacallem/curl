@@ -30,7 +30,6 @@ a:hover {
   outline-offset: 1px;
 }
 h2 {
-  font-weight: 600;
   color: var(--fg-dim);
   margin: 0;
 }
@@ -41,7 +40,7 @@ p {
 }
 b {
   color: var(--fg);
-  font-weight: 600;
+  font-weight: normal;
 }
 pre {
   font: inherit;
@@ -100,7 +99,7 @@ input {
 }
 
 .strip .title {
-  font-weight: 600;
+  font-weight: normal;
   color: var(--title-fg);
   background: var(--title-bg);
   white-space: nowrap;
@@ -158,7 +157,7 @@ input {
 .strip .pulldown {
   position: relative;
   display: inline-grid;
-  grid-template-columns: auto auto auto;
+  grid-template-columns: auto 2ch auto;
   column-gap: 1ch;
   flex: none;
 }
@@ -172,6 +171,7 @@ input {
   background: none;
   border: 0;
   padding: 0;
+  text-align: center;
 }
 .strip .pulldown-search {
   background: none;
@@ -207,7 +207,8 @@ input {
 
 html:has(body.frame),
 body.frame {
-  overflow: hidden;
+  overflow-x: auto;
+  overflow-y: hidden;
 }
 body.frame {
   display: flex;
@@ -268,7 +269,7 @@ table.cols th {
   top: 0;
   z-index: 1;
   text-align: left;
-  font-weight: 600;
+  font-weight: normal;
   color: var(--fg-dim);
   background: var(--panel);
 }
@@ -319,6 +320,7 @@ ul.rawdata {
 details.sec summary {
   cursor: pointer;
   color: var(--fg-dim);
+  font-weight: normal;
 }
 details.sec summary::marker {
   color: var(--fg-dim);
@@ -376,9 +378,8 @@ pre.logbox::-webkit-scrollbar-corner {
   left: 0;
   bottom: 0;
   z-index: 3;
-  padding: 0 1ch;
   background: #000;
   color: var(--fg);
   font-size: 2em;
-  border: 1ch solid var(--fg);
+  border: 1ch solid #000;
 }

@@ -141,14 +141,14 @@ The single function/check owning each concern - never bypass or duplicate:
 - Verification never reads from the code under test for a calculation it's
   checking - local expected constants or a different-route recomputation only.
 - `--verbose` is additive/counted, tested only via `[ "$VERBOSE" -ge N ]` in
-  `shared.sh` and in the enforcer's `lint_run` for `pyright_filtered_run` - no
+  `utility.sh` and in the enforcer's `lint_run` for `pyright_filtered_run` - no
   bare `printf` wrappers elsewhere.
 - `dev/` is bespoke tooling - one parser, one theme, no dead code or duplicate
   systems.
 - Pages are deterministic - same input, byte-identical output.
 - New identifiers need 2+ unabbreviated English words.
 - Naming split: `_SCREAMING_SNAKE` for a script's own global, `_lowercase` for
-  locals, bare names crossing into `shared.sh`.
+  locals, bare names crossing into `utility.sh`.
 - 79-column hard max for all `dev/` source.
 - Comment blocks max 2 lines (3 is an error via `source_scan.py`); longer
   reasoning goes in `declawed.md` instead.
@@ -187,6 +187,11 @@ The single function/check owning each concern - never bypass or duplicate:
   general.
 - Things that are the same should have the same name. The thesaurus was not
   meant to be a naming guide.
+- The pronouns for software are `the` and `that`. Not `it` or `they`. Do not
+  address the user and their preferences in documentation as if the maintainer
+  was feeling chatty. Maximize signal to noise by documenting the purpose
+  of a function in a single simple clear english sentence using only commas
+  and periods for punctuation. Add a second line for warnings if needed.
 
 ## 1 Project Structure
 
@@ -199,7 +204,7 @@ Under `dev/`:
   `scripts/test_all.sh` runs enforcer mode 2, the cache checks, the
   failure-mode tests, `prettier --check`; `clean.sh` = `git clean -Xdf -e
   '!tmp/'` + ccache eviction; `scripts/settings.sh` every shell setting;
-  `scripts/shared.sh` every shared function, sourcing inert.
+  `scripts/utility.sh` every shared function, sourcing inert.
 - Python (`scripts/`): `settings.py` every Python/JS setting; `callgrind.py`
   the one parser; `callgrind_diff.py` delta + callers JSON;
   `callgrind_to_heatmap.py`, `build_report.py` (overview, summary),
@@ -317,7 +322,7 @@ taskset -c 3 ./build-relwithdebinfo/22_DCMAKECFLAGSO2g/tests/perf/perf \
   (`whitelist`, `regenerate`, `cleared`, `columns`) = `log_verbose`;
   `batch_run` = plain child, failure `error_exit` with its code; no `RUN_LOG`;
   own spellings `header_row_of`, `_REPORT_CHECKSUM_COMMAND`, `_SCREENSHOT_*`.
-  `tool_find` (`shared.sh`, the pip and npm user bins too) answers through
+  `tool_find` (`utility.sh`, the pip and npm user bins too) answers through
   `$( )`, for `tools_resolve` and `test_all.sh`'s prettier. `lint_run` runs
   `pyright_filtered_run` under `--verbose`. Only caller of
   `validate_report.py`, `source_scan.py`, `screenshots.py`, `pyright`, `ruff`,
@@ -343,7 +348,7 @@ taskset -c 3 ./build-relwithdebinfo/22_DCMAKECFLAGSO2g/tests/perf/perf \
   → `FAILED: <test>: exit N, expected M, from: <command>`, exit 1; last,
   `prettier --check` with the enforcer's `.prettierrc.json` over
   `dev/enforcer.md`: the markdown must be what prettier prints. It sources
-  `shared.sh` for `tool_find` only.
+  `utility.sh` for `tool_find` only.
 
 ## 5 Shell library
 
@@ -358,7 +363,7 @@ taskset -c 3 ./build-relwithdebinfo/22_DCMAKECFLAGSO2g/tests/perf/perf \
   `_SCRIPT="$(readlink -f "$0")"`; enforcer declares none. Env vars, two:
   `PERF2HTML_HEADER_DEPTH`, `PERF2HTML_CLOCK_START_US`.
 - Naming: script global `_SCREAMING_SNAKE`, local `_lowercase`, names crossing
-  into `shared.sh` bare. `shared.sh` reads `ARTIFACTS_DIR`, `PERF2HTML_DIR_`,
+  into `utility.sh` bare. `utility.sh` reads `ARTIFACTS_DIR`, `PERF2HTML_DIR_`,
   `INVOKED_FROM`, `RUN_LOG` (batch has none), `TIMESTAMP`, `VERBOSE`; sets
   `SPEEDSCOPE_RELEASE`, `RUN_LOG` (`report_begin`),
   `CHILD_EXIT_CODE`/`LOG_LINE_FROM` (`child_capture`), `QUIET_SWITCH`
@@ -401,7 +406,7 @@ taskset -c 3 ./build-relwithdebinfo/22_DCMAKECFLAGSO2g/tests/perf/perf \
   `VERBOSE_BLOCK_PRINTED=loose` puts the blank line before the next block,
   which `lastpipe` lets the filter, a pipeline's last stage, set; `error_exit`
   and `failure_print_log_tail` use it at indent 0, `item_output_print` for our
-  own lines. `$VERBOSE` is tested only in `shared.sh`: `log_verbose`,
+  own lines. `$VERBOSE` is tested only in `utility.sh`: `log_verbose`,
   `heading_write`, `command_item_print`, `item_output_print`, `table_print`,
   `quiet_switch_set`, `verbose_begin`, `child_capture` at 1,
   `child_capture_noisy` at 2; and in the enforcer's `lint_run`, the pyright
@@ -410,7 +415,7 @@ taskset -c 3 ./build-relwithdebinfo/22_DCMAKECFLAGSO2g/tests/perf/perf \
   switches `ruff --quiet` and prettier `--log-level warn`, recorded once in
   `quiet_switch_set` (`QUIET_SWITCH`, empty under `--verbose`); pyright has
   none. `enforcer.sh --verbose 2> x.md` is the whole run.
-- Manifest contract (`shared.sh`): `manifest_fault_of` (reader: why a dir is
+- Manifest contract (`utility.sh`): `manifest_fault_of` (reader: why a dir is
   not a report, or nothing; takes each acceptable version string),
   `manifest_verify` (hard-error policy), `manifest_recorded_of` (first token,
   refuses empty), `manifest_value` (general), `manifest_write`,

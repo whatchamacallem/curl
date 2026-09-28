@@ -1,4 +1,4 @@
-# dev/scripts/shared.sh
+# dev/scripts/utility.sh
 
 # absolute_path - one path, relative to $INVOKED_FROM, made canonical by
 # readlink -m: no ., .., // or symlinks; nothing along it need exist yet.

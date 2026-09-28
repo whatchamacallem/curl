@@ -6,19 +6,17 @@ window.report_error_overlay = (function () {
   const OVERLAY_BACKGROUND_COLOR = "#14171c";
   const OVERLAY_TEXT_COLOR = "#f2f4f6";
   const OVERLAY_LINK_COLOR = "#ff4427";
-  const OVERLAY_PAGE_TITLE_TEXT = "perf2html error";
   const OVERLAY_COPY_LINK_TEXT = "copy";
   const OVERLAY_BACK_LINK_TEXT = "back";
-  const OVERLAY_NO_MANIFEST_TEXT = "Report has no manifest.";
-  // the design font size at DESIGN_COORDINATES_WIDTH_PX, scaled once in
-  // page_write to the window it draws on: no resize listener, no restyle
+  const OVERLAY_NO_MANIFEST_TEXT = "Report has no manifest";
   const DESIGN_COORDINATES_WIDTH_PX = 1920;
   const DESIGN_FONT_SIZE_PX = 16;
+  const CALLSTACK_TABLE_LINE_CHARS = 79;
+  const CALLSTACK_TABLE_FRAME_CHARS = 7;
+  const CALLSTACK_LOCATION_COLUMN_SHARE = 1 / 3;
 
   let shown = false;
 
-  // Make text safe inside the page's <pre> and its one quoted attribute:
-  // the three characters markup or a quoted attribute reads specially.
   function html_escape(text) {
     return text
       .replace(/&/g, "&amp;")
@@ -26,8 +24,77 @@ window.report_error_overlay = (function () {
       .replace(/"/g, "&quot;");
   }
 
-  // {address, message, stack} from an Error, a DOM event's message, or
-  // anything else a listener handed us, so report_render always gets one.
+  function line_wrap(text, width) {
+    const lines = [];
+    for (let start = 0; start < text.length || !lines.length; ) {
+      lines.push(text.slice(start, start + width));
+      start += width;
+    }
+    return lines.join("\n");
+  }
+
+  function callstack_row(line) {
+    const bare = line.trim().replace(/^at\s+/, "");
+    const braced = /^(.*?)\s*\((.*)\)$/.exec(bare);
+    return braced ? [braced[2], braced[1]] : [bare, ""];
+  }
+
+  function callstack_table_row(location, function_name, widths) {
+    const cells = [location, function_name].map(function (text, column) {
+      const width = widths[column];
+      const lines = [];
+      for (let start = 0; start < text.length || !lines.length;) {
+        lines.push(text.slice(start, start + width).padEnd(width));
+        start += width;
+      }
+      return lines;
+    });
+    const row_lines = [];
+    const line_count = Math.max(cells[0].length, cells[1].length);
+    for (let index = 0; index < line_count; index += 1) {
+      row_lines.push(
+        `| ${cells[0][index] || " ".repeat(widths[0])} | ` +
+          `${cells[1][index] || " ".repeat(widths[1])} |`,
+      );
+    }
+    return row_lines.join("\n");
+  }
+
+  function callstack_table(stack_text) {
+    const rows = String(stack_text || "")
+      .split("\n")
+      .filter((line) => line.trim())
+      .map(callstack_row);
+    if (!rows.length) return "";
+    const budget = CALLSTACK_TABLE_LINE_CHARS - CALLSTACK_TABLE_FRAME_CHARS;
+    const headings = ["Location", "Function"];
+    const natural = [0, 1].map((column) =>
+      Math.max(
+        headings[column].length,
+        ...rows.map((row) => row[column].length),
+      ),
+    );
+    let widths = natural;
+    if (natural[0] + natural[1] > budget) {
+      const location_width = Math.min(
+        natural[0],
+        Math.floor(budget * CALLSTACK_LOCATION_COLUMN_SHARE),
+      );
+      widths = [location_width, budget - location_width];
+    }
+    const header = [
+      callstack_table_row("Location", "Function", widths),
+      callstack_table_row("-".repeat(widths[0]), "-".repeat(widths[1]), [
+        widths[0],
+        widths[1],
+      ]),
+    ];
+    const body = rows.map((row) =>
+      callstack_table_row(row[0], row[1], widths),
+    );
+    return header.concat(body).join("\n");
+  }
+
   function overlay_show(reason) {
     report_render({
       address: location.href,
@@ -36,8 +103,6 @@ window.report_error_overlay = (function () {
     });
   }
 
-  // Replace the document with the error page, once. A file:// iframe is an
-  // opaque origin, so posting the detail up is how it reaches the top.
   function report_render(report) {
     if (shown) return;
     shown = true;
@@ -48,25 +113,28 @@ window.report_error_overlay = (function () {
       );
       return;
     }
-    // document.open() mid-parse is a no-op per spec, so the write waits one
-    // task: by then the parser has nothing left to detach
     setTimeout(page_write, 0, report);
   }
 
   function page_write(report) {
+    const callstack_text = callstack_table(report.stack);
     const manifest_text =
       typeof window[REPORT_MANIFEST_TABLE_GLOBAL_NAME] === "undefined"
         ? OVERLAY_NO_MANIFEST_TEXT
         : window[REPORT_MANIFEST_TABLE_GLOBAL_NAME];
-    const copy_text = [
-      report.message,
-      "",
-      report.address,
-      "",
-      report.stack,
-      "",
-      manifest_text,
-    ].join("\n");
+    const copy_text = `# perf2html error
+
+${report.message}
+
+${line_wrap(report.address, CALLSTACK_TABLE_LINE_CHARS)}
+
+## Callstack
+
+${callstack_text}
+
+## Manifest
+
+${manifest_text}`;
     const font_size =
       Math.round(
         (DESIGN_FONT_SIZE_PX * window.innerWidth) /
@@ -74,7 +142,9 @@ window.report_error_overlay = (function () {
       ) + "px";
     const page_style =
       `margin:0;background:${OVERLAY_BACKGROUND_COLOR};` +
-      `color:${OVERLAY_TEXT_COLOR};font:${font_size}/1.5 Monaco, monospace`;
+      `color:${OVERLAY_TEXT_COLOR};font:${font_size}/1.5 Monaco, monospace;` +
+      `min-height:100vh;display:flex;align-items:center;` +
+      `justify-content:center`;
     const block_style =
       "font:inherit;white-space:pre-wrap;overflow-wrap:anywhere";
     const link_style = "color:" + OVERLAY_LINK_COLOR;
@@ -82,22 +152,16 @@ window.report_error_overlay = (function () {
       `navigator.clipboard.writeText(` + `${JSON.stringify(copy_text)})`;
     const link = (href, text) =>
       `<a style="${link_style}" href="javascript:${href}">${text}</a>`;
-    const body = [
-      html_escape(report.message),
-      "",
-      html_escape(report.address),
-      "",
-      html_escape(report.stack),
-      "",
-      html_escape(manifest_text),
-      "",
-      link(html_escape(copy_call), OVERLAY_COPY_LINK_TEXT) +
-        " | " +
-        link("history.back()", OVERLAY_BACK_LINK_TEXT),
-    ].join("\n");
+    const links_line =
+      `${link(html_escape(copy_call), OVERLAY_COPY_LINK_TEXT)} | ` +
+      `${link("history.back()", OVERLAY_BACK_LINK_TEXT)}`;
+    const body = `${copy_text}
+
+${links_line}`;
     document.open();
+    // APPROVED USAGE. Error handlers are what this is for.
     document.write(`<!doctype html>
-<title>${OVERLAY_PAGE_TITLE_TEXT}</title>
+<title>perf2html error</title>
 <body style="${page_style}"><pre style="${block_style}">${body}</pre>`);
     document.close();
   }

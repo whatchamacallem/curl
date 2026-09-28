@@ -2,20 +2,6 @@
 
 # This comment intentionally blank. No documentation goes here.
 
-set -euo pipefail
-
-TIMESTAMP="$(date +%s)"
-INVOKED_FROM="$PWD"
-_SCRIPT="$(readlink -f "$0")"
-PERF2HTML_DIR_="$(dirname "$_SCRIPT")"
-cd "$PERF2HTML_DIR_"
-
-. ./scripts/settings.sh
-. ./scripts/shared.sh
-
-_REPO="$(dirname "$PERF2HTML_DIR_")"
-
-# usage_show - the one usage text, printed by -h and on a bad argument
 usage_show() {
   cat <<'EOF'
 perf2html.sh [debug-flags] [--report=DIR] [cmake-flags...]
@@ -40,6 +26,19 @@ perf2html.sh [debug-flags] [--report=DIR] [cmake-flags...]
                       (--verbose --verbose) increments the verbosity level.
 EOF
 }
+
+set -euo pipefail
+
+TIMESTAMP="$(date +%s)"
+INVOKED_FROM="$PWD"
+_SCRIPT="$(readlink -f "$0")"
+PERF2HTML_DIR_="$(dirname "$_SCRIPT")"
+cd "$PERF2HTML_DIR_"
+
+. ./scripts/settings.sh
+. ./scripts/utility.sh
+
+_REPO="$(dirname "$PERF2HTML_DIR_")"
 
 # args_parse - reads the command line into the run's settings and $_TESTS.
 args_parse() {

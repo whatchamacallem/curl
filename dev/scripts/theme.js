@@ -7,6 +7,9 @@ window.report_ui = (function () {
   );
   const DESIGN_FONT_FIT_PROPERTY = settings("DESIGN_FONT_FIT_PROPERTY");
   const DESIGN_FONT_SIZE_PX = settings("DESIGN_FONT_SIZE_PX");
+  const DESIGN_MINIMUM_WINDOW_WIDTH_PX = settings(
+    "DESIGN_MINIMUM_WINDOW_WIDTH_PX",
+  );
   const DESIGN_SCALE_DEFAULT_MULTIPLE = settings(
     "DESIGN_SCALE_DEFAULT_MULTIPLE",
   );
@@ -183,8 +186,12 @@ window.report_ui = (function () {
   function design_scale_apply() {
     const root_element = document.documentElement;
     // a framed document is laid out inside an already-zoomed parent, so its
-    // own box is design space already and it scales itself by 1
-    const wanted = is_framed ? 1 : design_scale_of(root_element.clientWidth);
+    // own box is design space already and it scales itself by 1.
+    const wanted = is_framed
+      ? 1
+      : design_scale_of(
+          Math.max(root_element.clientWidth, DESIGN_MINIMUM_WINDOW_WIDTH_PX),
+        );
     if (!isFinite(wanted) || !(wanted > 0)) {
       throw new Error(
         window.ui_strings.text_fill("str_error_scale_unusable", [wanted]),
