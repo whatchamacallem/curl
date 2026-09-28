@@ -303,7 +303,7 @@ class Theme:
         return max((len(row[index].text) for row in rows), default=0)
 
     # One column's <col> width: CSS automatic table layout on its container's
-    # 100cqw, between its narrowest and widest. See test_expected_behavior.md 8.
+    # 100cqw, between its narrowest and widest.
     def column_width_text(
         self, limits: Sequence[tuple[int, int]], index: int, grow_index: int
     ) -> str:

@@ -26,7 +26,7 @@ window.report_error_overlay = (function () {
 
   function line_wrap(text, width) {
     const lines = [];
-    for (let start = 0; start < text.length || !lines.length; ) {
+    for (let start = 0; start < text.length || !lines.length;) {
       lines.push(text.slice(start, start + width));
       start += width;
     }

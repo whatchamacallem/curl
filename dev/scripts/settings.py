@@ -5,7 +5,7 @@ from collections.abc import Sequence
 from typing import NoReturn, get_origin, get_type_hints
 
 # Every setting the tools have, then the reader that checks and assigns
-# them. _SETTING_NAMES is the line between the two. See test_expected_behavior.md 6.1.
+# them. _SETTING_NAMES is the line between the two.
 
 # What the report's one shared copy of the theme is written as: written once
 # at the report root and linked, never inlined. Each page links what it uses.
@@ -33,7 +33,7 @@ ASSET_THEME_STYLESHEET_NAME = "theme.css"
 ASSET_UI_STRINGS_SCRIPT_NAME = "ui_strings.js"
 
 # Every counter callgrind never records, as the recorded ones it sums from
-# and each one's coefficient. Nothing stores one. See test_expected_behavior.md 6.2.
+# and each one's coefficient. Nothing stores one.
 DERIVED_COUNTER_TERMS: dict[str, dict[str, int]] = {
     "D1m": {"D1mr": 1, "D1mw": 1},
     "DLm": {"DLmr": 1, "DLmw": 1},
@@ -415,8 +415,8 @@ _SENTINEL_EMPTY_TYPES = (
     tuple,
 )
 
-# How the accepted sentinels are spelled in every message naming them, so
-# the errors and test_expected_behavior.md say one list. None and Ellipsis are not on it.
+# How the accepted sentinels are spelled, so every message naming them says
+# one list. None and Ellipsis are not on it.
 _SENTINEL_TEXT = 'False, 0, 0.0, "", (), [], {}'
 
 # The scripts/ directory, which is where this file, settings.sh and the
@@ -730,7 +730,7 @@ class SettingsReader:
 
 
 # The reader, then the cut: the shell's settings bind first, so every one
-# is bound before the list is taken. See test_expected_behavior.md 6.1 for the spelling.
+# is bound before the list is taken.
 _reader = SettingsReader()
 globals().update(_reader.shell_settings_read())
 _SETTING_NAMES = frozenset(

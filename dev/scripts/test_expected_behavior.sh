@@ -330,8 +330,8 @@ test_expected_report_check_run() {
   done
 }
 
-# test_source_scan_run - test_source_scan.py's comment block and ASCII checks, over
-# every whitelisted file and in one read of each.
+# test_source_scan_run - test_source_scan.py's comment block and ASCII
+# checks, over every whitelisted file and in one read of each.
 test_source_scan_run() {
   # the limit and the allowed set are the scanner's own and never spelled
   # here: every fault it prints, and its --verbose ok line, carry them
@@ -397,7 +397,7 @@ header_row_of() {
 }
 
 # regenerate_check - reuse the last run's recordings only while they still
-# describe the executable on disk, else refuse. See test_expected_behavior.md 3.
+# describe the executable on disk, else refuse.
 regenerate_check() {
   [ "$_REGENERATE" = 1 ] || return 0
 

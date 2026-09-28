@@ -673,7 +673,7 @@ _LAYOUT_FULL = TestReport.ReportLayout(
 )
 
 # The POSIX pipeline this file re-derives the checksum row with, spelled
-# out separately from utility.sh's on purpose. See test_expected_behavior.md: not a twin.
+# out separately from utility.sh's on purpose: not a twin.
 _REPORT_CHECKSUM_COMMAND = (
     "find . -type f ! -name MANIFEST.txt -print"
     " | LC_ALL=C sort | LC_ALL=C tr '\\n' '\\0'"

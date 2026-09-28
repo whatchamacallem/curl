@@ -68,6 +68,10 @@ directly as well as providing a link to the task doc.
 - Do not commit, uncommit, stage, unstage changes in git. If changes become
   staged during a rename then unstage them. git is the permission system for
   permanent changes and therefore must be reviewed by a user.
+- Do not reference `CLAUDE.md` or `declawed.md` outside this doc. No not
+  explicitly mention the tests being tested themselves in other source.
+- The source formatters may need to run twice to be stable. Alert the user
+  if they are not.
 
 ### 0.2 One-door glossary
 
