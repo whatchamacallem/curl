@@ -1,270 +1,252 @@
 body {
   display: flex;
   flex-direction: column;
-  height: var(--design-vh, 100vh);
+  height: var(--design-viewport-height-);
 }
-#control_strip {
-  gap: 0 1ch;
+#heat-map-menu- {
+  gap: 0 var(--heat-map-menu-column-gap-);
 }
-#control_strip label {
-  color: var(--muted);
+#heat-map-menu- label {
+  color: var(--heat-map-menu-label-fg-dim-);
   white-space: nowrap;
 }
 /* the heat map's own second menu bar: its fields sit flat on the bar */
-#control_strip select,
-#control_strip input {
-  background: var(--nav);
+#heat-map-menu- select,
+#heat-map-menu- input {
+  background: var(--heat-map-menu-field-bg-dim-);
 }
-#control_strip input {
-  width: 36ch;
+#heat-map-menu- input {
+  width: var(--heat-map-menu-search-box-width-);
 }
-#control_strip input::placeholder {
-  color: var(--muted);
+#heat-map-menu- input::placeholder {
+  color: var(--heat-map-menu-search-box-placeholder-fg-dim-);
 }
-#layout {
+#layout_ {
   display: flex;
   flex: 1;
   min-height: 0;
 }
-#tree {
-  width: 280px;
+#heat-map-tree- {
+  width: var(--heat-map-tree-width-);
   flex: none;
   overflow: auto;
 }
 /* Chrome sizes an auto-scrollbar container before its scrollbar exists, so
    100cqw would include it; a stable gutter makes it the visible width */
-#main {
+#heat-map-main- {
   flex: 1;
   min-width: 0;
   overflow: auto;
   scrollbar-gutter: stable;
-  background: var(--bg);
+  background: var(--heat-map-main-bg-dim-);
 }
 /* each box a table sits in is a container, so 100cqw in a <col> is exactly
-   the room its own table has: .home and .detail-box sit inside #main */
-#main,
-.home,
-.detail-box {
+   the room its own table has; the home and clicked line detail sit in main */
+#heat-map-main-,
+.heat-map-home-,
+.heat-map-source-clicked-line-detail- {
   container-type: inline-size;
 }
 
-.source-pane {
+.heat-map-source- {
   width: max-content;
   min-width: 100%;
 }
 
-.source-tail {
-  height: calc(0.5 * var(--design-vh, 100vh));
+.heat-map-source-tail- {
+  height: calc(0.5 * var(--design-viewport-height-));
 }
 
-.source-pane > :not(.table-columns) {
+.heat-map-source- > :not(.table-columns-) {
   contain: inline-size;
 }
 
-#minimap {
-  width: 110px;
+#heat-map-minimap- {
+  width: var(--heat-map-minimap-width-);
   flex: none;
   overflow: hidden;
   position: relative;
-  background: var(--bg);
+  background: var(--heat-map-minimap-bg-dim-);
   cursor: pointer;
 }
-#minimap.empty {
+#heat-map-minimap-.empty_ {
   display: none;
 }
-#minimap_box {
+#heat-map-minimap-box- {
   position: absolute;
   top: 0;
   left: 0;
 }
 
-#minimap_box table.source-table {
+#heat-map-minimap-box- table.heat-map-source-table- {
   border-collapse: collapse;
   table-layout: fixed;
   width: 100%;
 }
-#minimap_box table.source-table td {
+#heat-map-minimap-box- table.heat-map-source-table- td {
   padding: 0;
-  border: 0;
   white-space: pre;
   overflow: visible;
 }
-#minimap_viewport {
+#heat-map-minimap-viewport- {
   position: absolute;
   left: 0;
   right: 0;
-  background: rgba(245, 246, 250, 0.36);
-  border: 1px solid rgba(245, 246, 250, 0.55);
   cursor: grab;
 }
-#minimap_viewport.drag {
+#heat-map-minimap-viewport-.drag_ {
   cursor: grabbing;
 }
-.node {
+.heat-map-tree-node- {
   display: flex;
   align-items: center;
-  gap: 1ch;
+  gap: var(--heat-map-tree-node-gap-);
   cursor: pointer;
   white-space: nowrap;
 }
-.node:hover {
-  outline: 1px solid var(--link);
-  outline-offset: -1px;
+.heat-map-tree-node-.selected_ {
+  background: var(--heat-map-tree-node-selected-bg-);
 }
-.node.selected {
-  background: var(--sel);
-}
-.node .caret {
-  width: 2ch;
+.heat-map-tree-node- .heat-map-tree-node-caret- {
+  width: var(--heat-map-tree-node-caret-width-);
   flex: none;
   text-align: center;
-  color: var(--muted);
+  color: var(--heat-map-tree-node-caret-fg-dim-);
 }
-.node.file .caret {
+.heat-map-tree-node-.file_ .heat-map-tree-node-caret- {
   visibility: hidden;
 }
-.node .name {
+.heat-map-tree-node- .heat-map-tree-node-name- {
   flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.node.cold .name {
-  color: var(--muted);
+.heat-map-tree-node-.cold_ .heat-map-tree-node-name- {
+  color: var(--heat-map-tree-node-name-cold-fg-dim-);
 }
-.node .share-percent {
+.heat-map-tree-node- .heat-map-tree-node-share-percent- {
   flex: none;
-  width: 7ch;
+  width: var(--heat-map-tree-node-share-percent-width-);
   text-align: right;
-  font-variant-numeric: tabular-nums;
-  color: var(--muted);
+  color: var(--heat-map-tree-node-share-percent-fg-dim-);
 }
-.node.heat .share-percent,
-.node.heat .caret {
+.heat-map-tree-node-.heat_ .heat-map-tree-node-share-percent-,
+.heat-map-tree-node-.heat_ .heat-map-tree-node-caret- {
   color: inherit;
 }
-.node.cold .share-percent {
+.heat-map-tree-node-.cold_ .heat-map-tree-node-share-percent- {
   visibility: hidden;
 }
-.node.more .name {
-  color: var(--muted);
-  font-style: italic;
+.heat-map-tree-node-.more_ .heat-map-tree-node-name- {
+  color: var(--heat-map-tree-node-name-more-fg-dim-);
 }
-.child-nodes {
+.heat-map-tree-node-child-group- {
   display: none;
 }
-.child-nodes.open {
+.heat-map-tree-node-child-group-.open_ {
   display: block;
 }
-.file-header {
-  background: var(--sel);
+.heat-map-source-file-header- {
+  background: var(--heat-map-source-file-header-bg-);
   display: flex;
-  gap: 0 2ch;
+  gap: 0 var(--heat-map-source-file-header-column-gap-);
   align-items: baseline;
   flex-wrap: wrap;
 }
-.file-header .statistic {
-  color: var(--muted);
+.heat-map-source-file-header- .heat-map-source-file-header-statistic- {
+  color: var(--heat-map-source-file-header-statistic-fg-dim-);
+}
+.heat-map-source-file-header-statistic-share- {
+  color: var(--heat-map-source-file-header-statistic-share-fg-);
 }
 
-.chips {
+.heat-map-source-ticker-tape- {
   display: flex;
-  gap: 1ch;
+  gap: var(--heat-map-source-ticker-tape-gap-);
   flex-wrap: nowrap;
-  background: var(--sel);
+  background: var(--heat-map-source-ticker-tape-bg-);
   overflow: hidden;
 }
-.chips .chips-label {
-  color: var(--muted);
+.heat-map-source-ticker-tape- .heat-map-source-ticker-tape-label- {
+  color: var(--heat-map-source-ticker-tape-label-fg-dim-);
   align-self: center;
   flex: none;
 }
-.chip {
-  background: var(--bg-alt);
+.heat-map-source-ticker-tape-entry- {
+  background: var(--heat-map-source-ticker-tape-entry-bg-);
   cursor: pointer;
   flex: none;
   white-space: nowrap;
-  padding: 0 1ch;
+  padding: 0 var(--heat-map-source-ticker-tape-entry-padding-inline-);
 }
-.chip:hover {
-  outline: 1px solid var(--link);
-  outline-offset: -1px;
+.heat-map-source-unavailable-note- {
+  color: var(--heat-map-source-unavailable-note-fg-dim-);
 }
-.source-missing {
-  color: var(--muted);
+table.heat-map-source-table- th {
+  background: var(--heat-map-source-table-column-title-bg-);
 }
-table.source-table th {
-  font-weight: normal;
-  background: var(--sel);
-}
-table.source-table td.line-number {
-  color: var(--muted);
+table.heat-map-source-table- td.heat-map-source-table-line-number-cell- {
+  color: var(--heat-map-source-table-line-number-cell-fg-dim-);
   user-select: none;
 }
-tr.row-link {
+tr.row-link- {
   cursor: pointer;
 }
-table.source-table tr.clickable {
+table.heat-map-source-table- tr.clickable_ {
   cursor: pointer;
 }
 
-table.source-table tr.clickable:hover td.line-number {
-  text-decoration: underline;
+table.heat-map-source-table- td.heat-map-source-table-self-cell-,
+table.heat-map-source-table- td.heat-map-source-table-calls-cell-,
+table.heat-map-source-table- td.heat-map-home-source-table-secondary-counter-cell- {
+  color: var(--heat-map-source-table-counter-cell-fg-dim-);
 }
-
-table.source-table td.self,
-table.source-table td.inclusive,
-table.source-table td.secondary-counter {
-  color: var(--muted);
-}
-table.source-table td.code {
+table.heat-map-source-table- td.heat-map-source-table-code-cell- {
   text-overflow: clip;
   white-space: pre;
-  tab-size: 4;
+  tab-size: var(--heat-map-source-table-code-cell-tab-size-);
 }
-table.source-table tr.has-callee td.line-number::before {
-  content: "\25B8 ";
-  color: var(--link);
+table.heat-map-source-table- tr.has-callee- td.heat-map-source-table-line-number-cell-::before {
+  content: var(--heat-map-source-table-line-number-cell-callee-marker-text-);
+  color: var(--heat-map-source-table-line-number-cell-callee-marker-fg-);
 }
 
-table.source-table tr.detail > td {
+table.heat-map-source-table- tr.heat-map-source-clicked-line-detail-row- > td {
   white-space: normal;
   overflow: visible;
   padding: 0;
 }
-.detail-box {
+.heat-map-source-clicked-line-detail- {
   position: relative;
-  background: var(--panel);
+  background: var(--heat-map-source-clicked-line-detail-bg-dim-);
 }
-.detail-box h4 {
-  margin: 0;
-  color: var(--muted);
-  font-weight: normal;
+.heat-map-source-clicked-line-detail-heading- {
+  color: var(--heat-map-source-clicked-line-detail-heading-fg-dim-);
 }
-.detail-box .detail-close {
+.heat-map-source-clicked-line-detail-function-name- {
+  color: var(--heat-map-source-clicked-line-detail-function-name-fg-);
+}
+.heat-map-source-clicked-line-detail- .heat-map-source-clicked-line-detail-close-symbol- {
   position: absolute;
   top: 0;
   right: 0;
-  color: var(--muted);
+  color: var(--heat-map-source-clicked-line-detail-close-symbol-fg-dim-);
 }
-.detail-box .detail-close:hover {
-  color: var(--link);
-  text-decoration: none;
+.heat-map-source-clicked-line-detail- .table-box- {
+  background: var(--heat-map-source-clicked-line-detail-table-bg-dim-);
 }
-.detail-box .table-box {
-  background: var(--bg);
+/* a derived counter's row and each recorded contributor below it have a
+   colour role of their own; a heated cell still paints its stop */
+.heat-map-source-clicked-line-detail- tr.heat-map-source-clicked-line-detail-derived-counter-row- > td {
+  background: var(--heat-map-source-clicked-line-detail-derived-counter-row-bg-);
 }
-/* a derived counter's row takes the slate pair's light member, each recorded
-   contributor below it the dark one; a heated cell still paints its stop */
-.detail-box tr.derived-counter > td {
-  background: var(--slate-l);
+.heat-map-source-clicked-line-detail- tr.heat-map-source-clicked-line-detail-contributing-counter-row- > td {
+  background: var(--heat-map-source-clicked-line-detail-contributing-counter-row-bg-dim-);
 }
-.detail-box tr.contributing-counter > td {
-  background: var(--slate);
+.heat-map-source-clicked-line-detail-action-bar- a {
+  color: var(--heat-map-source-clicked-line-detail-action-bar-link-fg-);
 }
-.detail-actions a {
-  color: var(--link);
-}
-.detail-actions .separator {
-  color: var(--muted);
+.heat-map-source-clicked-line-detail-action-bar- .heat-map-source-clicked-line-detail-action-bar-separator- {
+  color: var(--heat-map-source-clicked-line-detail-action-bar-separator-fg-dim-);
 }

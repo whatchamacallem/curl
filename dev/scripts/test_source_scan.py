@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-# test_expected_behavior.sh uses this to enforce comment length and
-# ascii-only.
+# test_expected_behavior.sh uses this to enforce comment length, ascii-only
+# and no tag that styles text beyond colour.
 from __future__ import annotations
 
 import argparse, os, re, sys
@@ -10,8 +10,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import callgrind
 
 
-# SourceScan - Every comment block over the limit and every non-ASCII
-# character outside the allowed set, in the files named.
+# SourceScan - Every comment block over the limit, every non-ASCII character
+# outside the allowed set and every banned tag, in the files named.
 class SourceScan:
     # CommentSyntax - How one kind of file writes a comment.
     class CommentSyntax(NamedTuple):
@@ -32,6 +32,12 @@ class SourceScan:
     def __init__(self) -> None:
         # every fault found, printed together once every file is read
         self.faults: list[SourceScan.SourceFault] = []
+
+    # Any banned tag, opening or closing, in any letter case; a formatter
+    # may leave a tag's name alone at the end of a line.
+    def banned_tag_re(self) -> re.Pattern[str]:
+        names = "|".join(_SOURCE_SCAN_BANNED_TAG_NAMES)
+        return re.compile(r"</?(" + names + r")(?=[\s/>]|$)", re.IGNORECASE)
 
     # Record every comment block below a file's header that runs past the
     # limit. A blank line outside a block comment splits one block into two.
@@ -95,7 +101,8 @@ class SourceScan:
             if verbose:
                 print(
                     f"{file_count} file(s): no comment block over"
-                    f" {_COMMENT_BLOCK_MAX_LINES} lines, no stray non-ASCII"
+                    f" {_COMMENT_BLOCK_MAX_LINES} lines, no stray non-ASCII,"
+                    " no banned tag"
                 )
             return 0
         for fault in sorted(self.faults):
@@ -106,9 +113,14 @@ class SourceScan:
             )
         return 1
 
-    # Read one file once and run both checks over it. A file this cannot
+    # Read one file once and run every check over it. A file this cannot
     # read or decode was never checked, so that stops the scan.
-    def file_scan(self, path: str, non_ascii: re.Pattern[str]) -> None:
+    def file_scan(
+        self,
+        path: str,
+        non_ascii: re.Pattern[str],
+        banned_tag: re.Pattern[str],
+    ) -> None:
         syntax = self.comment_syntax_of(path)
         try:
             with open(path, "rb") as handle:
@@ -122,14 +134,16 @@ class SourceScan:
             sys.exit(f"error: {path}:{line_number}: not UTF-8, {error.reason}")
         lines = text.split("\n")
         self.unicode_check(path, lines, non_ascii)
+        self.tag_check(path, lines, banned_tag)
         self.comment_check(path, lines, syntax)
 
     # Scan each file named, and only those: test_expected_behavior.sh
     # expands the list from its whitelist, so no directory is walked here.
     def files_scan(self, paths: list[str]) -> None:
         non_ascii = self.non_ascii_re()
+        banned_tag = self.banned_tag_re()
         for path in paths:
-            self.file_scan(path, non_ascii)
+            self.file_scan(path, non_ascii, banned_tag)
 
     # Where a file's header ends: the first line that is neither a comment
     # nor blank. Everything above it, a "#!" line included, is exempt.
@@ -161,6 +175,24 @@ class SourceScan:
                     " into README.md or test_expected_behavior.md",
                 )
             )
+
+    # Record every line writing a banned tag, opening or closing.
+    def tag_check(
+        self, path: str, lines: list[str], banned_tag: re.Pattern[str]
+    ) -> None:
+        for line_number, line in enumerate(lines, start=1):
+            match = banned_tag.search(line)
+            if match:
+                self.faults.append(
+                    SourceScan.SourceFault(
+                        path,
+                        line_number,
+                        f"writes the banned tag {match.group(1)!r}, which"
+                        " styles text beyond colour; use a span or div"
+                        " with a colour class: "
+                        f"{line.strip()}",
+                    )
+                )
 
     # Record every line holding a character the allow list does not permit.
     def unicode_check(
@@ -211,6 +243,46 @@ _SOURCE_SCAN_ALLOWED_NON_ASCII_CHARS = (
     "▼",
     # horizontal ellipsis
     "…",
+)
+
+# Tags a browser draws with a weight, slant, size, line, font or margin of
+# its own. A page is a terminal: one font, and colour the only difference.
+_SOURCE_SCAN_BANNED_TAG_NAMES = (
+    "abbr",
+    "address",
+    "b",
+    "big",
+    "blockquote",
+    "center",
+    "cite",
+    "code",
+    "del",
+    "dfn",
+    "em",
+    "font",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
+    "hr",
+    "i",
+    "ins",
+    "kbd",
+    "mark",
+    "p",
+    "q",
+    "s",
+    "samp",
+    "small",
+    "strike",
+    "strong",
+    "sub",
+    "sup",
+    "tt",
+    "u",
+    "var",
 )
 
 

@@ -350,8 +350,8 @@ test_expected_archive_check_run() {
     "error: could not remove the archive check directory: $_root"
 }
 
-# test_source_scan_run - test_source_scan.py's comment block and ASCII
-# checks, over every whitelisted file and in one read of each.
+# test_source_scan_run - test_source_scan.py's comment block, ASCII and
+# tag checks, over every whitelisted file and in one read of each.
 test_source_scan_run() {
   # the limit and the allowed set are the scanner's own and never spelled
   # here: every fault it prints, and its --verbose ok line, carry them
@@ -569,7 +569,7 @@ main() {
   format_prettier
   # 0.01s 79 column check
   long_lines_report
-  # 0.04s test_source_scan.py check comment sizes and ASCII.
+  # 0.04s test_source_scan.py check comment sizes, ASCII and tags.
   test_source_scan_run
   # 2.61s Pyright over the Python
   lint_run

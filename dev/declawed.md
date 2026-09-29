@@ -10,15 +10,17 @@ worth fixing.
 Do not use the AskUserQuestion tool and use numbered sub-lists to
 as all questions in one go.
 
-Maintain a task list for each session in `dev/tmp` following this format:
-`dev/tmp/tasks_sat_0959am.md`. Use ISO 2145 for tasks and do not restart
-numbering tasks within a single document or discussion. Add a separate
-postmortem section after the tasks section and only modify the postmortem
-instead of the initial tasks when providing results. Do not write the
-postmortem or provide the user with a postmortem until all subagents and tasks
-are done. Anything like a postmortem at the end of a run must include all
-unfinished tasks and lost subagents. Provide the user with the postmortem
-directly as well as providing a link to the task doc.
+Maintain an engineering log for each session in `dev/tmp` following this
+format: `dev/tmp/tasks_sat_0959am.md`. This is formal paperwork with no chit
+chat required. Text is only added and not modified. Use ISO 2145 for tasks and
+do not restart numbering tasks within a single conversation. Preserve the
+users literal text in the task list first, and concatenate additional feature
+requests to that section. In a second section, list your intended order of
+operations to execute the users requests before starting. Then add a separate
+postmortem section only when all subagents are complete and all tasks are
+ready for review. Anything like a postmortem at the end of a run must include
+all unfinished tasks and lost subagents. Provide the user with the postmortem
+text directly in the conversation as well as providing a link to the task doc.
 
 ## 0 Design Principles
 
@@ -58,14 +60,13 @@ directly as well as providing a link to the task doc.
 - A value written twice and "kept in step" is banned - one setting in
   `settings.sh`/`settings.py`, read everywhere.
 - Any urge to add decorative comments, "helpful" extra logging, or stylistic
-  polish not asked for anywhere above - the file is explicit that
-  embellishment (borders, tooltips, adding alpha or adjusting shade,
-  redesigning on your own initiative) is actively unwanted, not merely
-  optional.
+  polish not asked for anywhere above is banned. Adding borders, tooltips,
+  using alpha, adjusting shade, using gradients, adding requested style or
+  redesigning on your own initiative is actively unwanted.
 - When asked to review a commit or unstaged change do not read this document.
   Report inconsistencies with this document only when encountered through
-  knowledge gained when it was injected in your context. That is the self
-  healing mechanism.
+  knowledge gained when it was injected in your context. That is the only self
+  healing documentation mechanism needed.
 - Do not commit, uncommit, stage, unstage changes in git. If changes become
   staged during a rename then unstage them. `git` is the permission system for
   permanent changes and therefore must be reviewed by a user. The one exception
@@ -82,6 +83,10 @@ directly as well as providing a link to the task doc.
   you to reformat this document then it has to be disabled, inform the user.
 - Never add un-requested documentation because you saw some was missing. Only
   document new code and prefer 1 line comments.
+- `error_overlay.js` needs to function when the other modules didn't load
+  making it an exception to a lot of rules. Try not to mention it.
+- Consider `speedscope` externally maintained and ignore it when applying the
+  `pertf2html` maintainers guidelines.
 
 ### 0.2 One-door glossary
 
@@ -167,14 +172,15 @@ The single function/check owning each concern - never bypass or duplicate:
 - New identifiers need 2+ unabbreviated English words.
 - Naming split: `_SCREAMING_SNAKE` for a script's own global, `_lowercase` for
   locals, bare names crossing into `utility.sh`.
-- 79-column hard max for all `dev/` source.
+- 79-column hard max for all `dev/` source; `.css` is exempt for now, its
+  prettier override wrapping it wider.
 - Comment blocks max 2 lines (3 is an error via `test_source_scan.py`); longer
   reasoning goes in `declawed.md` instead.
 - ASCII plus the specific whitelisted glyphs (`≈ ∞ ▲ ▶ ▼ …`), written
   literally, never as HTML entities.
 - Never say "meta" - say "header" or "manifest".
 - Timer artifacts contain `counter` data. Never "events"/"metrics"/"stats".
-- Follow style. Alphabetization matters.
+- Follow source code style. Alphabetization of source sections matters.
 - Settings declared as annotation + empty sentinel + `load_into` - don't add
   accessors or conversions, don't turn off `F821`/`reportUnboundVariable`.
 - Terminal-editor geometry: no vertical padding/margin/gap on text boxes;
@@ -232,7 +238,7 @@ Under `dev/`:
   `theme.css`/`theme.js` the one theme (`theme.js` = utility library);
   test-only: `test_report.py`, `test_source_scan.py`, `test_screenshot.py`.
 - Page assets (`scripts/`): `frame.js` thin top-level controller;
-  `menu.js` the strip menu; `heatmap.{js,css,html}`; `flame_graph.js`
+  `menu.{js,css}` the menu; `heatmap.{js,css,html}`; `flame_graph.js`
   polls `window.speedscope`; `ui_strings.js` (`str_*`); `error_overlay.js`
   first script on every page; `settings.js` (`settings("NAME")`
   throws on unknown).
@@ -242,7 +248,7 @@ Under `dev/`:
 
 `_TESTS` comes from `tests/perf/Makefile.inc`. Words: "header"/"manifest"
 (never meta); "counters" except callgrind's `events:` and the `e=` URL key;
-"raw" = only `<test>/raw/` and `raw-data` links, temporary recordings are
+"raw" = only `<test>/raw/` and "raw data" links, temporary recordings are
 "artifacts"; "settings", never "constants"; rows are `ManifestRow`/
 `ManifestBlock`.
 
@@ -491,7 +497,7 @@ raw/}  all/  assets/  flame-graph-app/  sources/  README.md  MANIFEST.txt
   test; a test in one report only → `tests_pair` error.
 - Pages: shared assets linked, never inlined; hrefs from
   `theme.shared_href(depth, name)` (overview 0, summary 1, heat map/flame 2;
-  strip via `strip_render`'s `depth`); stylesheet from `Theme.css()`; classic
+  menu via `menu_render`'s `depth`); stylesheet from `Theme.css()`; classic
   `<script src>`/`<link>` only, no `fetch()`, no ES modules; opens from
   `file://`. `sources/<source_name()>` (display path, non-alphanumerics → `_`,
   plus `.js`); `FileModel.source` read via `source_text(file_path)`;
@@ -513,7 +519,11 @@ raw/}  all/  assets/  flame-graph-app/  sources/  README.md  MANIFEST.txt
   `settings.load_into(__name__)` first (`match_check`, `sentinel_check`,
   `type_check`); own constants below; `bool` sentinel `False`; `E401`/
   `I001`/`E501` off. Names `SCREAMING_SNAKE`, broad→narrow, 2+ words, unit
-  suffix (`_PX`, `_MS`, `_PERCENT`, `_SHARE`, `_CHARS`, `_BYTES`).
+  suffix (`_PX`, `_MS`, `_PERCENT`, `_SHARE`, `_CHARS`, `_BYTES`). Every
+  constant that changes a pixel is a setting; `STYLE_*` = every setting
+  that changes a pixel or picks a colour, written into a style as is or
+  computed with first. A stylesheet keeps only zero, none, hidden and
+  values with no visible effect.
   `settings_script_write()` ships the module as frozen JSON (all
   JSON-serializable; the manifest table is not among it, see `manifest_table`
   and `report_complete_write` in section 6); `settings.js` is read
@@ -556,7 +566,7 @@ raw/}  all/  assets/  flame-graph-app/  sources/  README.md  MANIFEST.txt
   `_COMMENT_SYNTAX_BY_EXTENSION` (`.html` adds `//`, `/* */`); faults
   `path:line: message` sorted. The 79-column limit is unrelated to
   `HEAT_MAP_SOURCE_VIEW_WIDTH_CHARS` (80).
-- Reformatting `heatmap.*`, `frame.js`, `flame_graph.js`,
+- Reformatting `heatmap.*`, `menu.*`, `frame.js`, `flame_graph.js`,
   `error_overlay.js`, `ui_strings.js`, `theme.css`, `theme.js` changes reports;
   text echoed into a perf/trace recording is page content.
 
@@ -565,7 +575,8 @@ raw/}  all/  assets/  flame-graph-app/  sources/  README.md  MANIFEST.txt
 - `ui_strings.js`: `str_*`; `text_of(id)` throws on unknown; no boundary names
   or number notation; `(no recorded caller)` stays in Python matching
   `str_no_caller`; empty pulldown = `str_no_match`.
-- `error_overlay.js`: replaces the document on `error`/`unhandledrejection`
+- `error_overlay.js`, exempt from every rule: replaces the document on
+  `error`/`unhandledrejection`
   through `document.open()` one task later; `<pre>` holds message, address,
   stack and, when `window.report_manifest_table` exists, that string raw,
   else "Report has no manifest."; font size is `DESIGN_FONT_SIZE_PX` (13)
@@ -576,9 +587,20 @@ raw/}  all/  assets/  flame-graph-app/  sources/  README.md  MANIFEST.txt
   touches the URL only via `back`, reads no other script.
 - JS settings: each `.js` resolves each `settings("NAME")` once into a
   same-named `const` at the top of its IIFE, never in a render path; every
-  number/colour/key/bound is a setting (`STRIP_PULLDOWN_KEY_NAMES`).
-- Names: `snake_case` ours; camelCase owned by browser/Python (DOM, CSS class,
-  `data-*`, storage/URL key, TypedDict key). `window.report_sources` keyed by
+  number/colour/key/bound is a setting (`MENU_PULLDOWN_KEY_NAMES`).
+- Names: `snake_case` ours; camelCase owned by browser/Python (DOM,
+  storage/URL key, TypedDict key). A CSS class, id, colour role or value
+  entry is its object path, `-` between words, singular words: the views
+  it shows on (`heat-map`, `menu`, `overview`, `summary`, alphabetized),
+  component, part; no word its parent already gives. State classes
+  (`current_`, `selected_`, `open_`, `active_`) and layout helpers
+  (`.band_`, `.table-box-`, `.page_`) stay plain. Every class, id, CSS
+  custom property and `data-*` attribute perf2html writes ends in a
+  marker, `-` when the name holds a `-`, else `_` (`#heat-map-tree-`,
+  `.current_`, `--menu-title-width-`, `data-view-`), setting it apart from
+  DOM and native widget names. JS reads a `data-*` attribute through
+  `getAttribute()` by its written name, never `dataset`.
+  `window.report_sources` keyed by
   display path, read by `source_text()`. Markers `__NAME__`, `__DATA__`,
   `__SCRIPTS__`, `__APP_CSS__`, `__APP_JS__`, `__PROFILE_JS__`.
 - Frames: overview → summary → heat map/flame graph; both outer levels run
@@ -599,15 +621,16 @@ raw/}  all/  assets/  flame-graph-app/  sources/  README.md  MANIFEST.txt
   `hash_changed` (heat map and framed `frame.js`, via
   `report_ui.hash_publish()`), `tests_pulldown_key_pressed`, `report_error`.
   Down (strings): `report_ui:title_request`, `report_ui:layout_reset`,
-  `report_ui:tests_pulldown_closed`. `#layout-reset` runs `reset_broadcast()`.
-- Strip: logo → `location.assign(data-root-href)`. Pulldowns `tests`, `files`,
+  `report_ui:tests_pulldown_closed`. `#menu-utility-reset-link-` runs
+  `reset_broadcast()`.
+- Menu: logo → `location.assign(data-root-href-)`. Pulldowns `tests`, `files`,
   `functions` only on the overview, `report_ui.pulldown.attach()` (`theme.js`)
-  each: tests entries are `strip_link_render()` links (`tabindex=-1`), box
-  reads the framed test or `STRIP_PULLDOWN_MERGED_TEST_NAME`; files/functions
+  each: tests entries are `menu_link_render()` links (`tabindex=-1`), box
+  reads the framed test or `MENU_PULLDOWN_MERGED_TEST_NAME`; files/functions
   entries are that test's `window.report_pulldown_names` names
   (`pulldown_names_write`), heat map links on the counter shown; open, it is a
-  `new RegExp(text, "i")` search steered by `STRIP_PULLDOWN_KEY_NAMES`; blur
-  closes; list `z-index: 3` over `.band`. A framed summary forwards keys
+  `new RegExp(text, "i")` search steered by `MENU_PULLDOWN_KEY_NAMES`; blur
+  closes; list `z-index: 3` over `.band_`. A framed summary forwards keys
   (typed characters always; command keys only while the tests pulldown is
   open, until `tests_pulldown_closed`); the pulldown's `key_take` is the one
   key handler and `search_box_focus()` takes focus, else
@@ -615,41 +638,54 @@ raw/}  all/  assets/  flame-graph-app/  sources/  README.md  MANIFEST.txt
 
 ## 9 Look and feel numbers
 
-- Design: `DESIGN_COORDINATES_WIDTH_PX` 1920, fitted by `design_scale_apply()`
-  (one `zoom` on `:root`, every resize); Monaco `DESIGN_FONT_SIZE_PX` 12,
-  `DESIGN_FONT_CHARACTER_WIDTH_PX` 7.2 → 266 ch; `font_fit_apply()` measures
-  `0` via canvas `measureText`, sets `--font-fit` (`DESIGN_FONT_FIT_PROPERTY`)
-  on `:root`; the one font size is `body`'s `calc(var(--font-px) *
-  var(--font-fit))`, inherited everywhere. Unzoomed: `window.inner*`,
+- Design: `STYLE_DESIGN_COORDINATES_WIDTH_PX` 1920, fitted by
+  `design_scale_apply()` (one `zoom` on `:root`, every resize); Monaco
+  `STYLE_DESIGN_FONT_SIZE_PX` 12, `STYLE_DESIGN_FONT_CHARACTER_WIDTH_PX` 7.2
+  → 266 ch; `font_fit_apply()` measures `0` via canvas `measureText`, sets
+  `--design-font-fit-` (`STYLE_DESIGN_FONT_FIT_PROPERTY`) on `:root`; the
+  one font size is `body`'s
+  `calc(var(--design-font-size-px-) * var(--design-font-fit-))`, inherited
+  everywhere. Unzoomed: `window.inner*`,
   `documentElement.client*` (convert with `design_px()`), `vh` (use
-  `--design-vh`). Width media queries can't fire.
-- Scale slider: `DESIGN_SCALE_*`, 0.5..2, default mid-travel
-  (`DESIGN_SCALE_DEFAULT_TRAVEL_SHARE`), each half geometric
+  `--design-viewport-height-`, `STYLE_DESIGN_VIEWPORT_HEIGHT_PROPERTY`).
+  Width media queries can't fire.
+- Scale slider: `STYLE_DESIGN_SCALE_*`, 0.5..2, default mid-travel
+  (`STYLE_DESIGN_SCALE_DEFAULT_TRAVEL_SHARE`), each half geometric
   (`design_scale_multiple_of()`/`design_scale_travel_of()`);
   `design_scale_travel_set()` is the door and resets column widths.
-- Geometry: cells `0 1ch`, `.file-header` 2ch, `ul.raw-data` marker 2ch,
-  `--title-w` = `STRIP_STATUS_ROW_WIDTH_CHARS` ch, tree indent
-  `HEAT_MAP_TREE_INDENT_*_PX`.
+- Geometry: cells `0 1ch`, `.heat-map-source-file-header-` 2ch,
+  `ul.summary-collapsed-section-raw-data-list-` marker 2ch,
+  `--menu-title-width-` in `STYLE_VALUE_ENTRIES`, tree indent depth ×
+  `STYLE_HEAT_MAP_TREE_INDENT_PER_LEVEL_CHARS` in ch.
   The only `title=` attributes: `<iframe title="report page">` and `<th>`. Only
-  `th` and `.band` are sticky.
-- Colour: `--bg` = slate dark via `Theme.shade()`
-  `THEME_COLOR_PAIR_ENTRIES` two per `THEME_COLOR_PAIR_NAMES` entry.
-  `HEAT_COLOR_STOPS` palette; `ramp_channels_at()` the one interpolation
-  (`cell_style()`, `logo_color_at()`); cells paint the stop opaque.
-  `heat_of_share()`: clamp to `HEAT_COLOR_FULL_SCALE_PERCENT`, divide, curve;
+  `th` and `.band_` are sticky.
+- Colour: `STYLE_COLOR_PAIR_ENTRIES` maps each palette colour, lighter then
+  dimmer per pair, to its roles. A role is its object path, then any state,
+  then `fg`, `bg`, `outline` or `border`, `-dim` on a dimmer colour, then
+  the marker `-`. Each thing a page colours has its own role, so the
+  palette is the one control surface. `Theme.css()` writes a role only
+  when a stylesheet names it. Every other value a stylesheet draws with is
+  a `STYLE_VALUE_ENTRIES` variable.
+  `STYLE_HEAT_COLOR_STOPS` palette; `ramp_channels_at()` the one interpolation
+  (`cell_style()`, `logo_color_at()`); cells paint the stop opaque, their
+  text on-bright above `STYLE_HEAT_CELL_ON_BRIGHT_ABOVE_LUMINANCE_SHARE`.
+  `heat_of_share()`: clamp to `STYLE_HEAT_COLOR_FULL_SCALE_PERCENT`, divide,
+  curve;
   nothing measured off the data; a diff maps [-100..100%], 0% at the 5.5
   midpoint. Dropdown = curve × scope; `scale` is an entry. Scope = denominator
   only (`global`, `per file`, `per function`; `share_in_scope()`); a diff uses
   `share_of_baseline`, one scope `per line`.
 - Columns: `column_extents()` → `column_limits()` (lo, hi +
-  `TABLE_COLUMN_EXTRA_WIDTH_CHARS`) → `column_width_text()`, twins in
-  `theme.py`/`theme.js`; lo = `data-min`. L/H = Σlo/Σhi of non-grow, S = H - L,
+  `STYLE_TABLE_COLUMN_EXTRA_WIDTH_CHARS`) → `column_width_text()`, twins in
+  `theme.py`/`theme.js`; lo = `data-min-`. L/H = Σlo/Σhi of non-grow,
+  S = H - L,
   G = grow lo: `{lo}ch` if hi = lo, else `clamp(lo, lo + (100cqw - (L+G)) *
   (hi-lo) / S, hi)`; grow `max(G, 100cqw - clamp(L, 100cqw - G, H))`; G = grow
-  `width` or `TABLE_GROW_COLUMN_NARROWEST_CHARS` + extra. `.page`, `#main`,
-  `.home`, `.detail-box` are inline-size containers; a scrolling one needs
-  `scrollbar-gutter: stable`. Drags use `design_px()` rects and `clientX`,
-  floored at `data-min`.
+  `width` or `STYLE_TABLE_GROW_COLUMN_NARROWEST_CHARS` + extra. `.page_`,
+  `#heat-map-main-`, `.heat-map-home-`,
+  `.heat-map-source-clicked-line-detail-` are inline-size containers; a
+  scrolling one needs `scrollbar-gutter: stable`. Drags use `design_px()`
+  rects and `clientX`, floored at `data-min-`.
 - Notation: `2.1K`/`2.0G`, `63.2%`, `<0.01%`, exact zero empty; floor
   `NUMBER_SMALLEST_PRINTED_PERCENT` (0.01). Diff: no `+`; `▲11.1%`, `▼-100.0%`;
   ASCII hyphen for amounts; `▲≈0.00%` under 0.01%; `▲∞%` on zero baseline; past

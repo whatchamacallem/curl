@@ -114,14 +114,17 @@ class TestReport:
             "index.html",
         )
         if not has_trace:
-            if os.path.exists(flame_dir) or "<h2>trace log</h2>" in index_text:
+            if (
+                os.path.exists(flame_dir)
+                or ">trace log</summary>" in index_text
+            ):
                 self.fail(
                     "a flame graph where no trace was recorded"
                     f" ({_FLAME_GRAPH_VIEW_KEY}/ or a 'trace log'"
                     f" section): {out_dir}"
                 )
             return
-        if index_text and "<h2>trace log</h2>" not in index_text:
+        if index_text and ">trace log</summary>" not in index_text:
             self.fail(
                 "index.html has no 'trace log' section: "
                 f"{os.path.join(out_dir, 'index.html')}"
@@ -247,7 +250,7 @@ class TestReport:
             wanted = key != _FLAME_GRAPH_VIEW_KEY or has_rawdata
             if wanted != (f'href="{key}/index.html"' in text):
                 lack = "is missing its" if wanted else "should not have a"
-                self.fail(f"index.html {lack} {key} strip link: {path}")
+                self.fail(f"index.html {lack} {key} menu link: {path}")
         if has_archive and "raw data" not in text:
             self.fail(f"index.html has no 'raw data' section: {path}")
         elif not has_archive and "raw data" in text:
@@ -342,16 +345,16 @@ class TestReport:
         )
         if not text:
             return
-        if "<h2>tests</h2>" not in text:
+        if ">tests</div>" not in text:
             self.fail(f"overview index.html has no 'tests' section: {path}")
         for test_name in tests:
             if f'href="{test_name}/index.html"' not in text:
                 self.fail(
                     "overview index.html is missing its"
-                    f" {test_name} strip link: {path}"
+                    f" {test_name} menu link: {path}"
                 )
         for heading in layout.header_blocks:
-            if f"<h2>{heading}</h2>" not in text:
+            if f">{heading}</div>" not in text:
                 self.fail(
                     f"overview index.html has no '{heading}'"
                     f" header block: {path}"
@@ -448,13 +451,13 @@ class TestReport:
         if not index_text:
             return
         if not has_perf_log:
-            if "<h2>perf log</h2>" in index_text:
+            if ">perf log</summary>" in index_text:
                 self.fail(
                     "index.html has a 'perf log' section, but it should"
                     f" not: {index_path}"
                 )
             return
-        if "<h2>perf log</h2>" not in index_text:
+        if ">perf log</summary>" not in index_text:
             self.fail(f"index.html has no 'perf log' section: {index_path}")
         elif not re.search(r"^Time(/\w+)?:\s+\d", index_text, re.M):
             self.fail(
@@ -640,7 +643,7 @@ _HEAT_MAP_VIEW_LABEL = _HEAT_MAP_VIEW_ENTRY[1]
 # The version line comes from settings.py, so this checks what wrote it.
 _LAYOUT_DIFF = TestReport.ReportLayout(
     subpages=(_HEAT_MAP_VIEW_KEY,),
-    heading=r"<h2>top \d+ functions by change in self</h2>",
+    heading=r">top \d+ functions by change in self</div>",
     header_blocks=("baseline", "modified"),
     manifest_version=_REPORT_MANIFEST_VERSION_DIFF,
     manifest_labels=(
@@ -657,7 +660,7 @@ _LAYOUT_DIFF = TestReport.ReportLayout(
 # What a perf2html.sh report must contain.
 _LAYOUT_FULL = TestReport.ReportLayout(
     subpages=(_FLAME_GRAPH_VIEW_KEY, _HEAT_MAP_VIEW_KEY),
-    heading=r"<h2>top \d+ functions by self</h2>",
+    heading=r">top \d+ functions by self</div>",
     header_blocks=(),
     manifest_version=_REPORT_MANIFEST_VERSION_FULL,
     manifest_labels=(

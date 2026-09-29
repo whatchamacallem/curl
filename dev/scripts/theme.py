@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import html, math, os
+import html, math, os, re
 from collections.abc import Sequence
 from typing import NamedTuple, TypeAlias, TypedDict
 
@@ -13,41 +13,42 @@ _ASSET_FRAME_SCRIPT_NAME: str = ""
 _ASSET_HEAT_MAP_SCRIPT_NAME: str = ""
 _ASSET_HEAT_MAP_STYLESHEET_NAME: str = ""
 _ASSET_MENU_SCRIPT_NAME: str = ""
+_ASSET_MENU_STYLESHEET_NAME: str = ""
 _ASSET_REPORT_COMPLETE_SCRIPT_NAME: str = ""
 _ASSET_SETTINGS_SCRIPT_NAME: str = ""
 _ASSET_THEME_SCRIPT_NAME: str = ""
 _ASSET_THEME_STYLESHEET_NAME: str = ""
 _ASSET_UI_STRINGS_SCRIPT_NAME: str = ""
-_DESIGN_FONT_FIT_PROPERTY: str = ""
-_DESIGN_FONT_SIZE_PX: int = 0
-_DESIGN_SCALE_DEFAULT_MULTIPLE: int = 0
-_DESIGN_SCALE_LARGEST_MULTIPLE: int = 0
-_DESIGN_SCALE_SMALLEST_MULTIPLE: float = 0.0
-_HEAT_COLOR_FULL_SCALE_PERCENT: int = 0
-_HEAT_COLOR_LOGO_STOPS: list[str] = []
 _NUMBER_LARGEST_PRINTED_MULTIPLE_TIMES: float = 0.0
 _NUMBER_SMALLEST_PRINTED_PERCENT: float = 0.0
-_PAGE_FONT_FAMILY: str = ""
 _REPORT_ASSETS_DIR_NAME: str = ""
-_STRIP_STATUS_ROW_WIDTH_CHARS: int = 0
-_TABLE_COLUMN_EXTRA_WIDTH_CHARS: int = 0
-_TABLE_GROW_COLUMN_NARROWEST_CHARS: int = 0
-_THEME_COLOR_PAIR_ENTRIES: list[str] = []
-_THEME_COLOR_PAIR_NAMES: tuple[str, ...] = ()
-_THEME_COLOR_ROLE_SOURCES: dict[str, tuple[str, str]] = {}
+_STYLE_COLOR_PAIR_ENTRIES: dict[str, list[str]] = {}
+_STYLE_DESIGN_FONT_FIT_PROPERTY: str = ""
+_STYLE_DESIGN_FONT_SIZE_PX: int = 0
+_STYLE_DESIGN_SCALE_DEFAULT_MULTIPLE: int = 0
+_STYLE_DESIGN_SCALE_LARGEST_MULTIPLE: int = 0
+_STYLE_DESIGN_SCALE_SMALLEST_MULTIPLE: float = 0.0
+_STYLE_DESIGN_VIEWPORT_HEIGHT_PROPERTY: str = ""
+_STYLE_HEAT_CELL_ON_BRIGHT_ABOVE_LUMINANCE_SHARE: float = 0.0
+_STYLE_HEAT_COLOR_FULL_SCALE_PERCENT: int = 0
+_STYLE_HEAT_COLOR_STOPS: list[str] = []
+_STYLE_PAGE_FONT_FAMILY: str = ""
+_STYLE_TABLE_COLUMN_EXTRA_WIDTH_CHARS: int = 0
+_STYLE_TABLE_GROW_COLUMN_NARROWEST_CHARS: int = 0
+_STYLE_VALUE_ENTRIES: dict[str, str] = {}
 _THEME_TIME_UNIT_ENTRIES: tuple[tuple[str, float], ...] = ()
 settings.load_into(__name__)
 
 if not (
-    _DESIGN_SCALE_SMALLEST_MULTIPLE
-    < _DESIGN_SCALE_DEFAULT_MULTIPLE
-    < _DESIGN_SCALE_LARGEST_MULTIPLE
+    _STYLE_DESIGN_SCALE_SMALLEST_MULTIPLE
+    < _STYLE_DESIGN_SCALE_DEFAULT_MULTIPLE
+    < _STYLE_DESIGN_SCALE_LARGEST_MULTIPLE
 ):
     raise ValueError(
-        "DESIGN_SCALE_* out of order: smallest"
-        f" {_DESIGN_SCALE_SMALLEST_MULTIPLE}, default"
-        f" {_DESIGN_SCALE_DEFAULT_MULTIPLE}, largest"
-        f" {_DESIGN_SCALE_LARGEST_MULTIPLE}"
+        "STYLE_DESIGN_SCALE_* out of order: smallest"
+        f" {_STYLE_DESIGN_SCALE_SMALLEST_MULTIPLE}, default"
+        f" {_STYLE_DESIGN_SCALE_DEFAULT_MULTIPLE}, largest"
+        f" {_STYLE_DESIGN_SCALE_LARGEST_MULTIPLE}"
     )
 
 
@@ -92,9 +93,9 @@ class ColumnExtent(NamedTuple):
 class ThemeRuntime(TypedDict):
     # the same 12 heat stops, for heat the JS computes itself
     heat: list[str]
-    # text colour to use on a light (hot) cell
-    fgLight: str
     # text colour to use on a dark (cold) cell
+    fgLight: str
+    # text colour to use on a light (hot) cell
     fgDark: str
 
 
@@ -118,7 +119,7 @@ class TableRenderer:
             if column.width is not None:
                 content_chars = column.width
             elif index == grow_index:
-                content_chars = _TABLE_GROW_COLUMN_NARROWEST_CHARS
+                content_chars = _STYLE_TABLE_GROW_COLUMN_NARROWEST_CHARS
             else:
                 content_chars = self.column_longest(rows, index)
             extents.append(ColumnExtent(len(column.label), content_chars))
@@ -129,8 +130,8 @@ class TableRenderer:
     def column_limits(self, extent: ColumnExtent) -> tuple[int, int]:
         widest = max(extent.heading_chars, extent.content_chars)
         return (
-            extent.content_chars + _TABLE_COLUMN_EXTRA_WIDTH_CHARS,
-            widest + _TABLE_COLUMN_EXTRA_WIDTH_CHARS,
+            extent.content_chars + _STYLE_TABLE_COLUMN_EXTRA_WIDTH_CHARS,
+            widest + _STYLE_TABLE_COLUMN_EXTRA_WIDTH_CHARS,
         )
 
     # The longest text any row holds in one column, 0 when there are no rows.
@@ -192,31 +193,31 @@ class TableRenderer:
                 raise ValueError(f"table {key!r}: fill but no grow column")
         extents = self.column_extents(columns, cells, grow_index)
         limits = [self.column_limits(extent) for extent in extents]
-        out = [f'<div class="table-box{" fill" if fill else ""}">']
-        table_classes = "columns" + (" fill" if fill else "")
+        out = [f'<div class="table-box-{" fill_" if fill else ""}">']
+        table_classes = "columns_" + (" fill_" if fill else "")
         out.append(
-            f'<div class="table-columns"><table class="{table_classes}" '
-            f'data-key="{html_escape(key)}"><colgroup>'
+            f'<div class="table-columns-"><table class="{table_classes}" '
+            f'data-key-="{html_escape(key)}"><colgroup>'
         )
         for index, limit in enumerate(limits):
             col_classes = " ".join(
                 class_name
                 for class_name in (
-                    "alternate" if index % 2 else "",
-                    "grow" if index == grow_index else "",
+                    "alternate_" if index % 2 else "",
+                    "grow_" if index == grow_index else "",
                 )
                 if class_name
             )
             attr = f' class="{col_classes}"' if col_classes else ""
             width = self.column_width_text(limits, index, grow_index)
             out.append(
-                f'<col{attr} data-min="{limit[0]}ch" style="width:{width}">'
+                f'<col{attr} data-min-="{limit[0]}ch" style="width:{width}">'
             )
         out.append("</colgroup>")
         if column_titles:
             out.append("<thead><tr>")
             for column in columns:
-                attrs = ' class="numeric"' if column.numeric else ""
+                attrs = ' class="numeric_"' if column.numeric else ""
                 label = html_escape(column.label)
                 out.append(f'<th{attrs} title="{label}">{label}</th>')
             out.append("</tr></thead>")
@@ -227,7 +228,7 @@ class TableRenderer:
                 cell_classes = " ".join(
                     class_name
                     for class_name in (
-                        "numeric" if column.numeric else "",
+                        "numeric_" if column.numeric else "",
                         cell.cls,
                     )
                     if class_name
@@ -252,13 +253,6 @@ class TableRenderer:
 class Theme:
     # Where theme.css and theme.js live.
     DIRECTORY = os.path.dirname(os.path.abspath(__file__))
-
-    # ColorPair - One "User settings" colour in both its light and dark form.
-    class ColorPair(NamedTuple):
-        # the light member, exposed to CSS as --<name>-l
-        light: str
-        # the dark member, exposed to CSS as --<name>
-        dark: str
 
     # NumberFormat - Every number a page prints, in its page-ready form.
     class NumberFormat:
@@ -373,9 +367,10 @@ class Theme:
     # Resolve the palette and the number formats once: every later lookup
     # is a plain field read, never a re-parse per cell.
     def __init__(self) -> None:
-        self.color_pairs = self.pairs()
-        self.color_roles = self.roles(self.color_pairs)
-        self.heat_stops = [self.rgb(color) for color in _HEAT_COLOR_LOGO_STOPS]
+        self.color_roles = self.roles()
+        self.heat_stops = [
+            self.rgb(color) for color in _STYLE_HEAT_COLOR_STOPS
+        ]
         self.number_format = Theme.NumberFormat(self.time_units())
 
     # Read one scripts/ file off disk, to inline into a page.
@@ -407,6 +402,10 @@ class Theme:
                 self.asset_read(_ASSET_MENU_SCRIPT_NAME),
             ),
             (
+                _ASSET_MENU_STYLESHEET_NAME,
+                self.asset_read(_ASSET_MENU_STYLESHEET_NAME),
+            ),
+            (
                 _ASSET_SETTINGS_SCRIPT_NAME,
                 settings.settings_script_write(),
             ),
@@ -423,29 +422,59 @@ class Theme:
             ) as handle:
                 handle.write(text)
 
-    # Dark or light text, whichever the background can actually be read on.
-    def contrast_foreground(self, color: Theme.Rgb) -> str:
-        if self.luminance(color) > 0.5:
-            return self.color_roles["bg"]
-        return self.color_roles["fg"]
+    # The on-dark or on-bright role's colour, whichever reads on the colour.
+    def contrast_foreground(
+        self, color: Theme.Rgb, on_dark_role: str, on_bright_role: str
+    ) -> str:
+        if (
+            self.luminance(color)
+            > _STYLE_HEAT_CELL_ON_BRIGHT_ABOVE_LUMINANCE_SHARE
+        ):
+            return self.color_roles[on_bright_role]
+        return self.color_roles[on_dark_role]
 
-    # The whole stylesheet: the colour variables, then theme.css itself.
+    # The whole stylesheet: the colour and value variables, then theme.css.
+    # A role no stylesheet names, such as a contrast role, is left out.
     def css(self) -> str:
-        lines = [":root {"]
-        for name, pair in self.color_pairs.items():
-            lines.append(f"  --{name}: {pair.dark}; --{name}-l: {pair.light};")
-        for role, color in self.color_roles.items():
-            lines.append(f"  --{role}: {color};")
-        stops = _HEAT_COLOR_LOGO_STOPS
-        lines.append(f"  --title-bg: {stops[2]};")
-        lines.append(
-            f"  --title-fg: {self.contrast_foreground(self.heat_stops[2])};"
+        stylesheets_text = "".join(
+            self.asset_read(name)
+            for name in (
+                _ASSET_HEAT_MAP_STYLESHEET_NAME,
+                _ASSET_MENU_STYLESHEET_NAME,
+                _ASSET_THEME_STYLESHEET_NAME,
+            )
         )
-        lines.append(f"  --title-w: {_STRIP_STATUS_ROW_WIDTH_CHARS}ch;")
-        lines.append(f"  --font: {_PAGE_FONT_FAMILY};")
-        # the design font fits by 1; theme.js replaces it with the box's own
-        lines.append(f"  --font-px: {_DESIGN_FONT_SIZE_PX}px;")
-        lines.append(f"  {_DESIGN_FONT_FIT_PROPERTY}: 1;")
+        root_values = {
+            f"--{role}": color
+            for role, color in self.color_roles.items()
+            if f"var(--{role})" in stylesheets_text
+        }
+        for name, value in _STYLE_VALUE_ENTRIES.items():
+            if name in self.color_roles:
+                raise ValueError(
+                    f"STYLE_VALUE_ENTRIES names --{name}, a colour role too"
+                )
+            if f"var(--{name})" not in stylesheets_text:
+                raise ValueError(
+                    f"STYLE_VALUE_ENTRIES names --{name}, which no "
+                    "stylesheet reads"
+                )
+            root_values[f"--{name}"] = value
+        # theme.js replaces the fit of 1 and the window's full height with
+        # the ones it measures
+        root_values[_STYLE_DESIGN_FONT_FIT_PROPERTY] = "1"
+        root_values["--design-font-size-px-"] = (
+            f"{_STYLE_DESIGN_FONT_SIZE_PX}px"
+        )
+        root_values[_STYLE_DESIGN_VIEWPORT_HEIGHT_PROPERTY] = "100vh"
+        root_values["--page-font-family-"] = _STYLE_PAGE_FONT_FAMILY
+        for name in re.findall(r"var\((--[\w-]+)", stylesheets_text):
+            if name not in root_values:
+                raise ValueError(f"a stylesheet reads {name}, unset in :root")
+        lines = [":root {"]
+        lines.extend(
+            f"  {name}: {value};" for name, value in root_values.items()
+        )
         lines.append("}")
         return (
             "\n".join(lines)
@@ -503,7 +532,7 @@ class Theme:
         # nothing is measured off the data, so a cell's colour depends only
         # on the number printed beside it. The sign rides along for a diff
         sign = -1.0 if percent < 0 else 1.0
-        full_scale = float(_HEAT_COLOR_FULL_SCALE_PERCENT)
+        full_scale = float(_STYLE_HEAT_COLOR_FULL_SCALE_PERCENT)
         magnitude = min(abs(percent), full_scale)
         if magnitude <= 0:
             return 0.0
@@ -534,7 +563,12 @@ class Theme:
         )
         return (
             f"background:rgb({mixed.red},{mixed.green},{mixed.blue});"
-            f"color:{self.contrast_foreground(mixed)}"
+            "color:"
+            + self.contrast_foreground(
+                mixed,
+                "summary-heat-cell-on-dark-fg-",
+                "summary-heat-cell-on-bright-fg-dim-",
+            )
         )
 
     # The shared page script, read straight off disk.
@@ -547,21 +581,6 @@ class Theme:
             0.2126 * color.red + 0.7152 * color.green + 0.0722 * color.blue
         ) / 255
 
-    # Cut _THEME_COLOR_PAIR_ENTRIES into its named light/dark pairs.
-    def pairs(self) -> dict[str, Theme.ColorPair]:
-        entries = _THEME_COLOR_PAIR_ENTRIES
-        names = _THEME_COLOR_PAIR_NAMES
-        if len(entries) != 2 * len(names):
-            raise ValueError(
-                f"THEME_COLOR_PAIR_ENTRIES holds {len(entries)} colours, "
-                f"which is not two for each of the {len(names)} "
-                "THEME_COLOR_PAIR_NAMES"
-            )
-        return {
-            name: Theme.ColorPair(entries[2 * index], entries[2 * index + 1])
-            for index, name in enumerate(names)
-        }
-
     # Split "#RRGGBB" into channels.
     def rgb(self, hex_color: str) -> Theme.Rgb:
         return Theme.Rgb(
@@ -570,19 +589,25 @@ class Theme:
             int(hex_color[5:7], 16),
         )
 
-    # Resolve _THEME_COLOR_ROLE_SOURCES into each role's colour.
-    def roles(self, pairs: dict[str, Theme.ColorPair]) -> dict[str, str]:
+    # Invert _STYLE_COLOR_PAIR_ENTRIES into each role's one colour.
+    def roles(self) -> dict[str, str]:
         resolved: dict[str, str] = {}
-        for role, (pair_name, member) in _THEME_COLOR_ROLE_SOURCES.items():
-            resolved[role] = getattr(pairs[pair_name], member)
+        for color, roles in _STYLE_COLOR_PAIR_ENTRIES.items():
+            for role in roles:
+                if role in resolved:
+                    raise ValueError(
+                        f"STYLE_COLOR_PAIR_ENTRIES lists role {role} under "
+                        f"both {resolved[role]} and {color}"
+                    )
+                resolved[role] = color
         return resolved
 
     # The handful of theme values the page's own JavaScript needs.
     def runtime(self) -> ThemeRuntime:
         return {
-            "heat": _HEAT_COLOR_LOGO_STOPS,
-            "fgLight": self.color_roles["fg"],
-            "fgDark": self.color_roles["bg"],
+            "heat": _STYLE_HEAT_COLOR_STOPS,
+            "fgLight": self.color_roles["heat-map-heat-cell-on-dark-fg-"],
+            "fgDark": self.color_roles["heat-map-heat-cell-on-bright-fg-dim-"],
         }
 
     # Build _THEME_TIME_UNIT_ENTRIES into the ladder NumberFormat.time()

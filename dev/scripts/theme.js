@@ -1,33 +1,12 @@
 window.report_ui = (function () {
   "use strict";
 
-  const DESIGN_COORDINATES_WIDTH_PX = settings("DESIGN_COORDINATES_WIDTH_PX");
-  const DESIGN_FONT_CHARACTER_WIDTH_PX = settings(
-    "DESIGN_FONT_CHARACTER_WIDTH_PX",
-  );
-  const DESIGN_FONT_FIT_PROPERTY = settings("DESIGN_FONT_FIT_PROPERTY");
-  const DESIGN_FONT_SIZE_PX = settings("DESIGN_FONT_SIZE_PX");
-  const DESIGN_MINIMUM_WINDOW_WIDTH_PX = settings(
-    "DESIGN_MINIMUM_WINDOW_WIDTH_PX",
-  );
-  const DESIGN_SCALE_DEFAULT_MULTIPLE = settings(
-    "DESIGN_SCALE_DEFAULT_MULTIPLE",
-  );
-  const DESIGN_SCALE_DEFAULT_TRAVEL_SHARE = settings(
-    "DESIGN_SCALE_DEFAULT_TRAVEL_SHARE",
-  );
-  const DESIGN_SCALE_LARGEST_MULTIPLE = settings(
-    "DESIGN_SCALE_LARGEST_MULTIPLE",
-  );
-  const DESIGN_SCALE_SMALLEST_MULTIPLE = settings(
-    "DESIGN_SCALE_SMALLEST_MULTIPLE",
-  );
-  const DESIGN_VIEWPORT_HEIGHT_PROPERTY = settings(
-    "DESIGN_VIEWPORT_HEIGHT_PROPERTY",
-  );
-  const HEAT_COLOR_STOPS = settings("HEAT_COLOR_STOPS");
   const LAYOUT_RESIZE_SETTLE_DELAY_MS = settings(
     "LAYOUT_RESIZE_SETTLE_DELAY_MS",
+  );
+  const MENU_PULLDOWN_KEY_NAMES = settings("MENU_PULLDOWN_KEY_NAMES");
+  const MENU_PULLDOWN_SKIPPED_KEY_NAMES = settings(
+    "MENU_PULLDOWN_SKIPPED_KEY_NAMES",
   );
   const NUMBER_LARGEST_PRINTED_MULTIPLE_TIMES = settings(
     "NUMBER_LARGEST_PRINTED_MULTIPLE_TIMES",
@@ -35,7 +14,6 @@ window.report_ui = (function () {
   const NUMBER_SMALLEST_PRINTED_PERCENT = settings(
     "NUMBER_SMALLEST_PRINTED_PERCENT",
   );
-  const PAGE_FONT_FAMILY = settings("PAGE_FONT_FAMILY");
   const PANE_SPLITTER_WIDEST_WINDOW_SHARE = settings(
     "PANE_SPLITTER_WIDEST_WINDOW_SHARE",
   );
@@ -43,22 +21,48 @@ window.report_ui = (function () {
   const STORAGE_OWNED_PREFIXES = settings("STORAGE_OWNED_PREFIXES");
   const STORAGE_VERSION = settings("STORAGE_VERSION");
   const STORAGE_VERSION_KEY = settings("STORAGE_VERSION_KEY");
-  const STRIP_PULLDOWN_KEY_NAMES = settings("STRIP_PULLDOWN_KEY_NAMES");
-  const STRIP_PULLDOWN_SKIPPED_KEY_NAMES = settings(
-    "STRIP_PULLDOWN_SKIPPED_KEY_NAMES",
+  const STYLE_DESIGN_COORDINATES_WIDTH_PX = settings(
+    "STYLE_DESIGN_COORDINATES_WIDTH_PX",
   );
-  const TABLE_COLUMN_EXTRA_WIDTH_CHARS = settings(
-    "TABLE_COLUMN_EXTRA_WIDTH_CHARS",
+  const STYLE_DESIGN_FONT_CHARACTER_WIDTH_PX = settings(
+    "STYLE_DESIGN_FONT_CHARACTER_WIDTH_PX",
   );
-  const TABLE_GROW_COLUMN_NARROWEST_CHARS = settings(
-    "TABLE_GROW_COLUMN_NARROWEST_CHARS",
+  const STYLE_DESIGN_FONT_FIT_PROPERTY = settings(
+    "STYLE_DESIGN_FONT_FIT_PROPERTY",
+  );
+  const STYLE_DESIGN_FONT_SIZE_PX = settings("STYLE_DESIGN_FONT_SIZE_PX");
+  const STYLE_DESIGN_MINIMUM_WINDOW_WIDTH_PX = settings(
+    "STYLE_DESIGN_MINIMUM_WINDOW_WIDTH_PX",
+  );
+  const STYLE_DESIGN_SCALE_DEFAULT_MULTIPLE = settings(
+    "STYLE_DESIGN_SCALE_DEFAULT_MULTIPLE",
+  );
+  const STYLE_DESIGN_SCALE_DEFAULT_TRAVEL_SHARE = settings(
+    "STYLE_DESIGN_SCALE_DEFAULT_TRAVEL_SHARE",
+  );
+  const STYLE_DESIGN_SCALE_LARGEST_MULTIPLE = settings(
+    "STYLE_DESIGN_SCALE_LARGEST_MULTIPLE",
+  );
+  const STYLE_DESIGN_SCALE_SMALLEST_MULTIPLE = settings(
+    "STYLE_DESIGN_SCALE_SMALLEST_MULTIPLE",
+  );
+  const STYLE_DESIGN_VIEWPORT_HEIGHT_PROPERTY = settings(
+    "STYLE_DESIGN_VIEWPORT_HEIGHT_PROPERTY",
+  );
+  const STYLE_HEAT_COLOR_STOPS = settings("STYLE_HEAT_COLOR_STOPS");
+  const STYLE_PAGE_FONT_FAMILY = settings("STYLE_PAGE_FONT_FAMILY");
+  const STYLE_TABLE_COLUMN_EXTRA_WIDTH_CHARS = settings(
+    "STYLE_TABLE_COLUMN_EXTRA_WIDTH_CHARS",
+  );
+  const STYLE_TABLE_GROW_COLUMN_NARROWEST_CHARS = settings(
+    "STYLE_TABLE_GROW_COLUMN_NARROWEST_CHARS",
   );
 
   // what CSS measures a ch as: the advance width of this glyph
   const CH_UNIT_GLYPH = "0";
-  const PULLDOWN_COMMAND_KEY_NAMES = Object.values(STRIP_PULLDOWN_KEY_NAMES);
-  const PULLDOWN_HIGHLIGHTED_ENTRY_CLASS = "highlighted-entry";
-  const RAMP_CHANNEL_STOPS = HEAT_COLOR_STOPS.map((hex) =>
+  const PULLDOWN_COMMAND_KEY_NAMES = Object.values(MENU_PULLDOWN_KEY_NAMES);
+  const PULLDOWN_HIGHLIGHTED_ENTRY_CLASS = "highlighted-entry-";
+  const RAMP_CHANNEL_STOPS = STYLE_HEAT_COLOR_STOPS.map((hex) =>
     [1, 3, 5].map((index) => parseInt(hex.slice(index, index + 2), 16)),
   );
 
@@ -68,7 +72,7 @@ window.report_ui = (function () {
   let storage_is_checked = false;
   let design_scale = 1;
   let design_scale_travel = design_scale_travel_of(
-    DESIGN_SCALE_DEFAULT_MULTIPLE,
+    STYLE_DESIGN_SCALE_DEFAULT_MULTIPLE,
   );
 
   function ramp_channels_at(fraction) {
@@ -110,23 +114,23 @@ window.report_ui = (function () {
   function design_scale_half_of(is_lower_half) {
     return is_lower_half
       ? {
-          from_multiple: DESIGN_SCALE_SMALLEST_MULTIPLE,
-          to_multiple: DESIGN_SCALE_DEFAULT_MULTIPLE,
+          from_multiple: STYLE_DESIGN_SCALE_SMALLEST_MULTIPLE,
+          to_multiple: STYLE_DESIGN_SCALE_DEFAULT_MULTIPLE,
           travel_start: 0,
-          travel_width: DESIGN_SCALE_DEFAULT_TRAVEL_SHARE,
+          travel_width: STYLE_DESIGN_SCALE_DEFAULT_TRAVEL_SHARE,
         }
       : {
-          from_multiple: DESIGN_SCALE_DEFAULT_MULTIPLE,
-          to_multiple: DESIGN_SCALE_LARGEST_MULTIPLE,
-          travel_start: DESIGN_SCALE_DEFAULT_TRAVEL_SHARE,
-          travel_width: 1 - DESIGN_SCALE_DEFAULT_TRAVEL_SHARE,
+          from_multiple: STYLE_DESIGN_SCALE_DEFAULT_MULTIPLE,
+          to_multiple: STYLE_DESIGN_SCALE_LARGEST_MULTIPLE,
+          travel_start: STYLE_DESIGN_SCALE_DEFAULT_TRAVEL_SHARE,
+          travel_width: 1 - STYLE_DESIGN_SCALE_DEFAULT_TRAVEL_SHARE,
         };
   }
   // The multiple of the window's own fit the slider is asking for: each
   // half climbs geometrically, so a step feels the same at either end.
   function design_scale_multiple_of(travel_fraction) {
     const half = design_scale_half_of(
-      travel_fraction < DESIGN_SCALE_DEFAULT_TRAVEL_SHARE,
+      travel_fraction < STYLE_DESIGN_SCALE_DEFAULT_TRAVEL_SHARE,
     );
     const half_fraction =
       (travel_fraction - half.travel_start) / half.travel_width;
@@ -139,7 +143,7 @@ window.report_ui = (function () {
   // default is ever asked, and theme.py refused ends it is not between.
   function design_scale_travel_of(multiple) {
     const half = design_scale_half_of(
-      multiple < DESIGN_SCALE_DEFAULT_MULTIPLE,
+      multiple < STYLE_DESIGN_SCALE_DEFAULT_MULTIPLE,
     );
     const half_fraction =
       Math.log(multiple / half.from_multiple) /
@@ -147,7 +151,7 @@ window.report_ui = (function () {
     return half.travel_start + half_fraction * half.travel_width;
   }
   function design_scale_of(viewport_width_px) {
-    const fitted = viewport_width_px / DESIGN_COORDINATES_WIDTH_PX;
+    const fitted = viewport_width_px / STYLE_DESIGN_COORDINATES_WIDTH_PX;
     return fitted * design_scale_multiple_of(design_scale_travel);
   }
   function design_scale_travel_now() {
@@ -170,7 +174,8 @@ window.report_ui = (function () {
   // as at the design size, and scale every font size so a ch is the design ch.
   function font_fit_apply() {
     const context = document.createElement("canvas").getContext("2d");
-    const wanted_font = `${DESIGN_FONT_SIZE_PX}px ${PAGE_FONT_FAMILY}`;
+    const wanted_font =
+      STYLE_DESIGN_FONT_SIZE_PX + "px " + STYLE_PAGE_FONT_FAMILY;
     const default_font = context.font;
     context.font = wanted_font;
     // a font string the canvas cannot read leaves its default in place
@@ -179,8 +184,8 @@ window.report_ui = (function () {
     }
     const measured_px = context.measureText(CH_UNIT_GLYPH).width;
     document.documentElement.style.setProperty(
-      DESIGN_FONT_FIT_PROPERTY,
-      String(DESIGN_FONT_CHARACTER_WIDTH_PX / measured_px),
+      STYLE_DESIGN_FONT_FIT_PROPERTY,
+      String(STYLE_DESIGN_FONT_CHARACTER_WIDTH_PX / measured_px),
     );
   }
   function design_scale_apply() {
@@ -190,7 +195,10 @@ window.report_ui = (function () {
     const wanted = is_framed
       ? 1
       : design_scale_of(
-          Math.max(root_element.clientWidth, DESIGN_MINIMUM_WINDOW_WIDTH_PX),
+          Math.max(
+            root_element.clientWidth,
+            STYLE_DESIGN_MINIMUM_WINDOW_WIDTH_PX,
+          ),
         );
     if (!isFinite(wanted) || !(wanted > 0)) {
       throw new Error(
@@ -202,7 +210,7 @@ window.report_ui = (function () {
     // a vh resolves against the unzoomed window and is then zoomed with
     // everything else, so a full-height rule reads this design-space height
     root_element.style.setProperty(
-      DESIGN_VIEWPORT_HEIGHT_PROPERTY,
+      STYLE_DESIGN_VIEWPORT_HEIGHT_PROPERTY,
       root_element.clientHeight / wanted + "px",
     );
   }
@@ -339,7 +347,7 @@ window.report_ui = (function () {
     return PULLDOWN_COMMAND_KEY_NAMES.includes(key_name);
   }
   // What this keydown gives a pulldown: a typed character or one of
-  // STRIP_PULLDOWN_KEY_NAMES, or "" for a key that stays the page's.
+  // MENU_PULLDOWN_KEY_NAMES, or "" for a key that stays the page's.
   function pulldown_key_of(key_event) {
     const key_name = key_event.key;
     const is_plain =
@@ -350,7 +358,7 @@ window.report_ui = (function () {
       !key_event.metaKey;
     const is_typed =
       key_name.length === 1 &&
-      !STRIP_PULLDOWN_SKIPPED_KEY_NAMES.includes(key_name);
+      !MENU_PULLDOWN_SKIPPED_KEY_NAMES.includes(key_name);
     return is_plain && (is_typed || pulldown_key_is_command(key_name))
       ? key_name
       : "";
@@ -365,13 +373,19 @@ window.report_ui = (function () {
       return null;
     }
   }
-  // A strip pulldown over root_element's parts. entries_of() gives the links
+  // A menu pulldown over root_element's parts. entries_of() gives the links
   // it offers each time it opens; on_close() runs each time it closes.
   function pulldown_attach(root_element, label_text, entries_of, on_close) {
-    const entry_list = root_element.querySelector(".pulldown-list");
-    const menu_button = root_element.querySelector(".pulldown-button");
-    const no_match_note = root_element.querySelector(".pulldown-no-match");
-    const search_box = root_element.querySelector(".pulldown-search");
+    const entry_list = root_element.querySelector(
+      ".menu-pulldown-entry-list-",
+    );
+    const menu_button = root_element.querySelector(".menu-pulldown-button-");
+    const no_match_note = root_element.querySelector(
+      ".menu-pulldown-no-match-note-",
+    );
+    const search_box = root_element.querySelector(
+      ".menu-pulldown-search-box-",
+    );
     let entries = [],
       highlight_index = 0,
       is_open = false,
@@ -455,16 +469,16 @@ window.report_ui = (function () {
         return true;
       }
       switch (key_name) {
-        case STRIP_PULLDOWN_KEY_NAMES.close:
+        case MENU_PULLDOWN_KEY_NAMES.close:
           pulldown_close();
           return true;
-        case STRIP_PULLDOWN_KEY_NAMES.next:
+        case MENU_PULLDOWN_KEY_NAMES.next:
           highlight_step(1);
           return true;
-        case STRIP_PULLDOWN_KEY_NAMES.previous:
+        case MENU_PULLDOWN_KEY_NAMES.previous:
           highlight_step(-1);
           return true;
-        case STRIP_PULLDOWN_KEY_NAMES.select:
+        case MENU_PULLDOWN_KEY_NAMES.select:
           if (matches.length) matches[highlight_index].click();
           return true;
       }
@@ -495,11 +509,6 @@ window.report_ui = (function () {
       const key_name = pulldown_key_of(key_event);
       if (key_name && key_take(key_name, true)) key_event.preventDefault();
     });
-    entry_list.addEventListener("pointermove", (pointer_event) => {
-      const entry_index = matches.indexOf(pointer_event.target.closest("a"));
-      if (entry_index >= 0 && entry_index !== highlight_index)
-        highlight_set(entry_index);
-    });
     entry_list.addEventListener("click", (click_event) => {
       if (!click_event.target.closest("a")) return;
       pulldown_close();
@@ -526,7 +535,7 @@ window.report_ui = (function () {
       let content_chars;
       if (column.width != null) content_chars = column.width;
       else if (column_index === grow_index) {
-        content_chars = TABLE_GROW_COLUMN_NARROWEST_CHARS;
+        content_chars = STYLE_TABLE_GROW_COLUMN_NARROWEST_CHARS;
       } else {
         content_chars = column_longest(cell_rows, column_index);
         if (column.clip != null) {
@@ -539,8 +548,8 @@ window.report_ui = (function () {
   function column_limits(extent) {
     const widest = Math.max(extent.heading_chars, extent.content_chars);
     return [
-      extent.content_chars + TABLE_COLUMN_EXTRA_WIDTH_CHARS,
-      widest + TABLE_COLUMN_EXTRA_WIDTH_CHARS,
+      extent.content_chars + STYLE_TABLE_COLUMN_EXTRA_WIDTH_CHARS,
+      widest + STYLE_TABLE_COLUMN_EXTRA_WIDTH_CHARS,
     ];
   }
   // Automatic table layout on the container's 100cqw: all widest if they
@@ -587,9 +596,9 @@ window.report_ui = (function () {
     handle_bar[listener_method]("pointercancel", on_pointer_release);
   }
   // A drag is in pixels; its floor stays the <col>'s own characters, the
-  // data-min both table emitters write, which CSS max() compares
+  // data-min- both table emitters write, which CSS max() compares
   function drag_width_formatter(column_element) {
-    const floor_text = column_element.dataset.min;
+    const floor_text = column_element.getAttribute("data-min-");
     return (width_px) => `max(${floor_text}, ${width_px}px)`;
   }
   function column_elements_of(table_element) {
@@ -621,7 +630,7 @@ window.report_ui = (function () {
     const start_width_px = design_px(
       header_cell.getBoundingClientRect().width,
     );
-    handle_bar.classList.add("active");
+    handle_bar.classList.add("active_");
     if (handle_bar.setPointerCapture) {
       handle_bar.setPointerCapture(pointer_event.pointerId);
     }
@@ -632,7 +641,7 @@ window.report_ui = (function () {
       handles_position(table_element);
     };
     const on_pointer_release = () => {
-      handle_bar.classList.remove("active");
+      handle_bar.classList.remove("active_");
       listeners_bind(handle_bar, on_pointer_move, on_pointer_release, false);
     };
     listeners_bind(handle_bar, on_pointer_move, on_pointer_release, true);
@@ -641,10 +650,13 @@ window.report_ui = (function () {
   function handles_create(table_element) {
     if (table_element.resize_handles) return;
     const column_wrapper = table_element.parentElement;
-    if (!column_wrapper.classList.contains("table-columns")) return;
+    if (!column_wrapper.classList.contains("table-columns-")) return;
     const column_elements = column_elements_of(table_element);
     for (const column_element of column_elements) {
-      column_element.dataset.startWidth = column_element.style.width;
+      column_element.setAttribute(
+        "data-start-width-",
+        column_element.style.width,
+      );
     }
     table_element.resize_handles = [];
     for (
@@ -653,7 +665,7 @@ window.report_ui = (function () {
       column_index++
     ) {
       const handle_bar = document.createElement("div");
-      handle_bar.className = "resize-handle";
+      handle_bar.className = "heat-map-overview-summary-column-resize-handle-";
       handle_bar.addEventListener("pointerdown", (pointer_event) =>
         handle_drag_begin(
           pointer_event,
@@ -669,14 +681,14 @@ window.report_ui = (function () {
   function offsets_align(scroll_container) {
     let stacked_top_px = 0;
     for (const band_element of scroll_container.querySelectorAll(
-      ":scope > .band",
+      ":scope > .band_",
     )) {
       band_element.style.top = stacked_top_px + "px";
       stacked_top_px += design_px(band_element.getBoundingClientRect().height);
     }
     for (const header_cell of scroll_container.querySelectorAll("th")) {
       const owning_table =
-        header_cell.closest(".table-box") || scroll_container;
+        header_cell.closest(".table-box-") || scroll_container;
       if (owning_table === scroll_container) {
         header_cell.style.top = stacked_top_px + "px";
       }
@@ -684,19 +696,19 @@ window.report_ui = (function () {
   }
   function layout_refresh(root_element) {
     root_element = root_element || document.body;
-    const table_elements = root_element.querySelectorAll("table.columns");
+    const table_elements = root_element.querySelectorAll("table.columns_");
     for (const table_element of table_elements) {
       if (!table_element.resize_handles) continue;
       handles_position(table_element);
     }
-    const band_elements = [...root_element.querySelectorAll(".band")];
+    const band_elements = [...root_element.querySelectorAll(".band_")];
     new Set(
       band_elements.map((band_element) => band_element.parentElement),
     ).forEach(offsets_align);
   }
   function layout_activate(root_element) {
     root_element = root_element || document.body;
-    const table_elements = root_element.querySelectorAll("table.columns");
+    const table_elements = root_element.querySelectorAll("table.columns_");
     for (const table_element of table_elements) {
       handles_create(table_element);
     }
@@ -704,11 +716,12 @@ window.report_ui = (function () {
   }
   function layout_reset(root_element) {
     root_element = root_element || document.body;
-    const table_elements = root_element.querySelectorAll("table.columns");
+    const table_elements = root_element.querySelectorAll("table.columns_");
     for (const table_element of table_elements) {
       if (!table_element.resize_handles) continue;
       for (const column_element of column_elements_of(table_element)) {
-        column_element.style.width = column_element.dataset.startWidth;
+        column_element.style.width =
+          column_element.getAttribute("data-start-width-");
       }
       handles_position(table_element);
     }
@@ -782,7 +795,6 @@ window.report_ui = (function () {
       const start_width_px = design_px(
         pane_element.getBoundingClientRect().width,
       );
-      handle_bar.classList.add("active");
       if (handle_bar.setPointerCapture) {
         handle_bar.setPointerCapture(pointer_event.pointerId);
       }
@@ -804,7 +816,6 @@ window.report_ui = (function () {
         });
       };
       const on_pointer_release = () => {
-        handle_bar.classList.remove("active");
         listeners_bind(handle_bar, on_pointer_move, on_pointer_release, false);
         view_storage.value_write(
           storage_key,

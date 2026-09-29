@@ -12,17 +12,18 @@ import callgrind, callgrind_diff, callgrind_to_heatmap, settings, theme
 # else.
 _ASSET_FRAME_SCRIPT_NAME: str = ""
 _ASSET_MENU_SCRIPT_NAME: str = ""
+_ASSET_MENU_STYLESHEET_NAME: str = ""
 _DIFF_CALLER_COUNTS_FILE_SUFFIX: str = ""
 _FLAME_GRAPH_VIEW_ENTRY: tuple[str, str, str] = ("", "", "")
 _HEAT_MAP_VIEW_ENTRY: tuple[str, str, str] = ("", "", "")
+_MENU_CURL_PERF_SITE_HREF: str = ""
+_MENU_PULLDOWN_MERGED_TEST_NAME: str = ""
 _RANKING_COUNTER_NAME: str = ""
-_STRIP_CURL_PERF_SITE_HREF: str = ""
-_STRIP_PULLDOWN_EXTRA_WIDTH_CHARS: int = 0
-_STRIP_PULLDOWN_MERGED_TEST_NAME: str = ""
+_STYLE_MENU_PULLDOWN_EXTRA_WIDTH_CHARS: int = 0
+_STYLE_TABLE_FUNCTION_NAME_WIDTH_CHARS: int = 0
 _SUMMARY_PERF_LOG_SKIPPED_HEAD_LINES: int = 0
 _SUMMARY_TIME_SUFFIX_SECONDS: dict[str, float] = {}
 _SUMMARY_TOP_FUNCTION_ROWS: int = 0
-_TABLE_FUNCTION_NAME_WIDTH_CHARS: int = 0
 settings.load_into(__name__)
 
 # What this exits with when a file a page is built from will not open.
@@ -34,7 +35,7 @@ _PID_PREFIX = re.compile(r"^==\d+==\s?")
 
 # How fine the scale slider's travel is, as an HTML range step over 0..1.
 # Fine enough to feel continuous, coarse enough not to redraw per pixel.
-_STRIP_SCALE_SLIDER_STEP = 0.01
+_MENU_SCALE_SLIDER_STEP = 0.01
 
 # The overview page sits at the report root: its links need no "../".
 _OVERVIEW_PAGE_ASSETS_DEPTH = 0
@@ -54,7 +55,7 @@ _TIME_LINE = re.compile(
 
 
 # BuildReport - Writes the overview page and every test's summary page, and
-# the strip of links that frames the views.
+# the menu of links that frames the views.
 class BuildReport:
     # CallersData - the call graph a delta file cannot carry, plus the
     # baseline every share divides by.
@@ -89,6 +90,19 @@ class BuildReport:
         # the right column
         value: str
 
+    # MenuLink - One link in a page's menu.
+    class MenuLink(NamedTuple):
+        # what the URL hash calls it
+        key: str
+        # what the link says
+        label: str
+        # where it points
+        href: str
+        # what the status row and the tab title read while it is shown
+        title: str
+        # load it into the frame rather than navigating
+        frame: bool = False
+
     # OverviewArgs - What the overview page is built from.
     class OverviewArgs(NamedTuple):
         # where the page goes
@@ -106,19 +120,6 @@ class BuildReport:
         diff_profile: list[str]
         # each test's perf log as "name=path", for a full overview
         perf_log: list[str]
-
-    # StripLink - One link in a page's top strip.
-    class StripLink(NamedTuple):
-        # what the URL hash calls it
-        key: str
-        # what the link says
-        label: str
-        # where it points
-        href: str
-        # what the status row and the tab title read while it is shown
-        title: str
-        # load it into the frame rather than navigating
-        frame: bool = False
 
     # TestArgs - Everything one test's summary page is built from. Each
     # optional log renders a section only when it is given.
@@ -155,7 +156,7 @@ class BuildReport:
     class View(NamedTuple):
         # what the URL hash calls it
         key: str
-        # what the strip link says
+        # what the menu link says
         label: str
         # where the page sits
         path: str
@@ -177,7 +178,7 @@ class BuildReport:
         deltas: Sequence[callgrind_diff.CallerDelta],
     ) -> theme.Cell:
         if not deltas:
-            return theme.Cell("(no recorded caller change)", cls="dimmed")
+            return theme.Cell("(no recorded caller change)", cls="dimmed_")
         parts: list[str] = []
         html_parts: list[str] = []
         for delta in deltas:
@@ -241,8 +242,9 @@ class BuildReport:
     # Every section, core and diff alike, is this same shape.
     def details_section(self, title: str, body: str) -> str:
         return (
-            f'<details class="log-section"><summary><h2>'
-            f"{theme.html_escape(title)}</h2></summary>{body}</details>"
+            '<details class="summary-collapsed-section-">'
+            '<summary class="summary-collapsed-section-title-">'
+            f"{theme.html_escape(title)}</summary>{body}</details>"
         )
 
     # The diff summary's top table, ranked by |change| in self cost.
@@ -415,7 +417,9 @@ class BuildReport:
         return [
             theme.Column("#", numeric=True),
             theme.Column("% self", numeric=True),
-            theme.Column("symbol", width=_TABLE_FUNCTION_NAME_WIDTH_CHARS),
+            theme.Column(
+                "symbol", width=_STYLE_TABLE_FUNCTION_NAME_WIDTH_CHARS
+            ),
             theme.Column(_RANKING_COUNTER_NAME, numeric=True),
             theme.Column("calls", numeric=True),
             theme.Column("callers", grow=True),
@@ -496,10 +500,17 @@ class BuildReport:
                     else "",
                     theme.Cell(who, html=who_html)
                     if who
-                    else theme.Cell("(no recorded caller)", cls="dimmed"),
+                    else theme.Cell("(no recorded caller)", cls="dimmed_"),
                 ]
             )
         return theme.table_render("report.functions", columns, rows, fill=True)
+
+    # One heading line of an overview or summary page, told apart by colour.
+    def heading_render(self, text: str) -> str:
+        return (
+            '<div class="heat-map-overview-summary-heading-">'
+            f"{theme.html_escape(text)}</div>"
+        )
 
     # One log file as a preformatted block, with valgrind's pid prefix gone.
     def log_block(self, path: str) -> str:
@@ -518,14 +529,18 @@ class BuildReport:
         body = ""
         for path in paths:
             if len(paths) > 1:
-                body += f"<p>{theme.html_escape(os.path.basename(path))}</p>"
+                body += (
+                    '<div class="summary-collapsed-section-file-name-">'
+                    f"{theme.html_escape(os.path.basename(path))}</div>"
+                )
             body += self.log_block(path)
         return self.details_section("valgrind log", body)
 
     # Captured output as one preformatted block, escaped for the page.
     def log_box_render(self, text: str) -> str:
         return (
-            f'<div class="table-box"><pre class="log-box">'
+            '<div class="table-box-">'
+            '<pre class="summary-collapsed-section-log-box-">'
             f"{theme.html_escape(text)}"
             "</pre></div>"
         )
@@ -540,9 +555,9 @@ class BuildReport:
         for index, block in enumerate(blocks):
             if not block.pairs:
                 continue
-            body += (
-                f"<h2>{theme.html_escape(block.label)}</h2>"
-            ) + self.manifest_table(f"{key}.{index}", block.pairs)
+            body += self.heading_render(block.label) + self.manifest_table(
+                f"{key}.{index}", block.pairs
+            )
         return body
 
     # Parse --header-block LABEL=FILE arguments into blocks of rows.
@@ -593,7 +608,7 @@ class BuildReport:
         if not pairs:
             return ""
         rows: list[list[theme.CellOrText]] = [
-            [theme.Cell(pair.label, cls="dimmed"), pair.value]
+            [theme.Cell(pair.label, cls="dimmed_"), pair.value]
             for pair in pairs
         ]
         return theme.table_render(
@@ -603,6 +618,88 @@ class BuildReport:
             fill=True,
             column_titles=False,
         )
+
+    # One link of a menu. A tests pulldown entry is the same link, kept out
+    # of the tab order: the pulldown's search box moves between its entries.
+    def menu_link_render(
+        self, link: BuildReport.MenuLink, in_tab_order: bool = True
+    ) -> str:
+        return (
+            f'<a href="{theme.html_escape(link.href)}"'
+            f' data-view-="{theme.html_escape(link.key)}"'
+            f' data-title-="{theme.html_escape(link.title)}"'
+            f"{' data-frame-=1' if link.frame else ''}"
+            f"{'' if in_tab_order else ' tabindex=-1'}>"
+            f"{theme.html_escape(link.label)}</a>"
+        )
+
+    # The overview's pulldowns: its tests, each linking that test's summary,
+    # then the files and functions menu.js lists for the active test.
+    def menu_pulldowns_render(
+        self, test_entries: Sequence[BuildReport.MenuLink]
+    ) -> list[str]:
+        names = [entry.label for entry in test_entries]
+        if _MENU_PULLDOWN_MERGED_TEST_NAME not in names:
+            sys.exit(
+                "error: the overview's pulldowns start in"
+                f" {_MENU_PULLDOWN_MERGED_TEST_NAME!r}, the merged test,"
+                f" which is not one of its tests: {' '.join(names)}"
+            )
+        width = (
+            max(len(name) for name in names)
+            + _STYLE_MENU_PULLDOWN_EXTRA_WIDTH_CHARS
+        )
+        test_links = "".join(
+            self.menu_link_render(entry, in_tab_order=False)
+            for entry in test_entries
+        )
+        return [
+            self.pulldown_render("test", width, test_links),
+            self.pulldown_render("file", width, ""),
+            self.pulldown_render("function", width, ""),
+        ]
+
+    # The menu: the title cell, which as the logo leads to the report
+    # root, the view links, the pulldowns, and the utility links on the right.
+    def menu_render(
+        self,
+        title: str,
+        links: Sequence[BuildReport.MenuLink],
+        depth: int,
+        pulldowns: Sequence[str] = (),
+    ) -> str:
+        root_href = theme.shared_href(depth, "index.html")
+        help_href = theme.shared_href(depth, "README.md")
+        parts = [
+            '<div class="menu-title-" id="menu-title-"'
+            f' data-root-href-="{theme.html_escape(root_href)}">'
+            f"{theme.html_escape(title)}</div>"
+        ]
+        for link in links:
+            parts.append(self.menu_link_render(link))
+        parts.extend(pulldowns)
+        parts.append('<span class="spacer_"></span>')
+        parts.append(
+            '<label class="menu-scale-" id="menu-scale-"'
+            ' for="menu-scale-slider-">'
+            '<span id="menu-scale-text-"></span>'
+            '<input type="range" id="menu-scale-slider-" min="0" max="1"'
+            f' step="{_MENU_SCALE_SLIDER_STEP}">'
+            "</label>"
+        )
+        parts.append('<span class="menu-utility-" id="menu-utility-">')
+        parts.append('<a href="#" id="menu-utility-reset-link-">reset</a>')
+        parts.append(
+            f'<a href="{theme.html_escape(help_href)}"'
+            ' target="_blank">help</a>'
+        )
+        parts.append(
+            f'<a href="{_MENU_CURL_PERF_SITE_HREF}" target="_blank"'
+            ' rel="noopener">'
+            "curl.se/perf</a>"
+        )
+        parts.append("</span>")
+        return f'<nav id="menu_" class="menu-strip-">{"".join(parts)}</nav>'
 
     # The NAME=FILE arguments of one repeatable flag as a name to path map;
     # an entry without the "=" is a broken command line, stopped here.
@@ -661,9 +758,9 @@ class BuildReport:
         columns: Sequence[theme.Column],
         rows: Sequence[Sequence[theme.CellOrText]],
     ) -> None:
-        links = [BuildReport.StripLink("", "overview", "#", "overview")]
+        links = [BuildReport.MenuLink("", "overview", "#", "overview")]
         test_entries = [
-            BuildReport.StripLink(
+            BuildReport.MenuLink(
                 test.name,
                 test.name,
                 f"{test.name}/index.html",
@@ -672,11 +769,11 @@ class BuildReport:
             )
             for test in tests
         ]
-        body = self.strip_render(
+        body = self.menu_render(
             "overview",
             links,
             depth=_OVERVIEW_PAGE_ASSETS_DEPTH,
-            pulldowns=self.strip_pulldowns_render(test_entries),
+            pulldowns=self.menu_pulldowns_render(test_entries),
         )
         pairs = self.manifest_parse_rows(args.header) + (
             self.manifest_read_file(args.header_file)
@@ -691,7 +788,7 @@ class BuildReport:
         body += self.manifest_blocks_render(
             "overview.block", self.manifest_parse_blocks(args.header_block)
         )
-        body += "<h2>tests</h2>" + theme.table_render(
+        body += self.heading_render("tests") + theme.table_render(
             "overview.tests", columns, rows
         )
         body += self.page_main_close()
@@ -709,8 +806,9 @@ class BuildReport:
                 "overview",
                 body,
                 extra_js=names_scripts + self.framed_page_script_names(),
-                body_class="frame",
+                body_class="frame_",
                 depth=_OVERVIEW_PAGE_ASSETS_DEPTH,
+                extra_css=(_ASSET_MENU_STYLESHEET_NAME,),
             ),
         )
 
@@ -727,17 +825,17 @@ class BuildReport:
         return tests
 
     # What closes the content of a framed page: the frame every view loads
-    # into follows it, empty until a strip link fills it.
+    # into follows it, empty until a menu link fills it.
     def page_main_close(self) -> str:
         return (
-            '</div></main><iframe id="view" hidden'
+            '</div></main><iframe id="overview-summary-view-frame-" hidden'
             ' title="report page"></iframe>'
         )
 
     # What opens the content of a framed page. Both the overview and a test
     # summary are a page inside the one frame host, so both start here.
     def page_main_open(self) -> str:
-        return '<main id="home"><div class="page">'
+        return '<main id="overview-summary-home-"><div class="page_">'
 
     # Write a page, making its directory, and report its size.
     def page_write(self, path: str, page: str) -> None:
@@ -749,17 +847,18 @@ class BuildReport:
             file=sys.stderr,
         )
 
-    # One strip pulldown: its menu button, the search box taking the
+    # One menu pulldown: its menu button, the search box taking the
     # button's place while open, and the list dropping below the button.
     def pulldown_render(self, key: str, width: int, entries: str) -> str:
         return (
-            f'<span class="pulldown" id="{key}-pulldown">'
-            '<button class="pulldown-button" type="button"></button>'
-            '<input class="pulldown-search" type="text"'
+            f'<span class="menu-pulldown-" id="menu-{key}-pulldown_">'
+            '<button class="menu-pulldown-button-" type="button"></button>'
+            '<input class="menu-pulldown-search-box-" type="text"'
             f' style="width:{width}ch"'
             ' hidden autocomplete="off" spellcheck="false">'
-            f'<span class="pulldown-list" hidden>{entries}'
-            '<span class="pulldown-no-match" hidden></span></span></span>'
+            f'<span class="menu-pulldown-entry-list-" hidden>{entries}'
+            '<span class="menu-pulldown-no-match-note-" hidden></span>'
+            "</span></span>"
         )
 
     # The collapsed "raw data" section linking this test's archives.
@@ -774,7 +873,9 @@ class BuildReport:
             for path in paths
         )
         return self.details_section(
-            "raw data", f'<ul class="raw-data">{items}</ul>'
+            "raw data",
+            '<ul class="summary-collapsed-section-raw-data-list-">'
+            f"{items}</ul>",
         )
 
     # Assemble and write one test's summary page around its top table.
@@ -785,13 +886,13 @@ class BuildReport:
         heading: str,
         table: str,
     ) -> None:
-        links = [BuildReport.StripLink("", "summary", "#", args.test)] + [
-            BuildReport.StripLink(
+        links = [BuildReport.MenuLink("", "summary", "#", args.test)] + [
+            BuildReport.MenuLink(
                 view.key, view.label, view.path, f"{args.test} / {view.label}"
             )
             for view in views
         ]
-        body = self.strip_render(
+        body = self.menu_render(
             args.test, links, depth=_SUMMARY_PAGE_ASSETS_DEPTH
         )
         out_dir = os.path.dirname(os.path.abspath(args.output))
@@ -803,7 +904,7 @@ class BuildReport:
         if not args.no_log:
             body += self.log_section(args.log)
         body += self.raw_data_section(args.raw_data, out_dir)
-        body += f"<h2>{heading}</h2>" + table
+        body += self.heading_render(heading) + table
         body += self.page_main_close()
         self.page_write(
             args.output,
@@ -811,91 +912,11 @@ class BuildReport:
                 args.test,
                 body,
                 extra_js=self.framed_page_script_names(),
-                body_class="frame",
+                body_class="frame_",
                 depth=_SUMMARY_PAGE_ASSETS_DEPTH,
+                extra_css=(_ASSET_MENU_STYLESHEET_NAME,),
             ),
         )
-
-    # One link of a strip. A tests pulldown entry is the same link, kept out
-    # of the tab order: the pulldown's search box moves between its entries.
-    def strip_link_render(
-        self, link: BuildReport.StripLink, in_tab_order: bool = True
-    ) -> str:
-        return (
-            f'<a href="{theme.html_escape(link.href)}"'
-            f' data-view="{theme.html_escape(link.key)}"'
-            f' data-title="{theme.html_escape(link.title)}"'
-            f"{' data-frame=1' if link.frame else ''}"
-            f"{'' if in_tab_order else ' tabindex=-1'}>"
-            f"{theme.html_escape(link.label)}</a>"
-        )
-
-    # The overview's pulldowns: its tests, each linking that test's summary,
-    # then the files and functions menu.js lists for the active test.
-    def strip_pulldowns_render(
-        self, test_entries: Sequence[BuildReport.StripLink]
-    ) -> list[str]:
-        names = [entry.label for entry in test_entries]
-        if _STRIP_PULLDOWN_MERGED_TEST_NAME not in names:
-            sys.exit(
-                "error: the overview's pulldowns start in"
-                f" {_STRIP_PULLDOWN_MERGED_TEST_NAME!r}, the merged test,"
-                f" which is not one of its tests: {' '.join(names)}"
-            )
-        width = (
-            max(len(name) for name in names)
-            + _STRIP_PULLDOWN_EXTRA_WIDTH_CHARS
-        )
-        test_links = "".join(
-            self.strip_link_render(entry, in_tab_order=False)
-            for entry in test_entries
-        )
-        return [
-            self.pulldown_render("tests", width, test_links),
-            self.pulldown_render("files", width, ""),
-            self.pulldown_render("functions", width, ""),
-        ]
-
-    # The top strip: the title cell, which as the logo leads to the report
-    # root, the view links, the pulldowns, and the utility links on the right.
-    def strip_render(
-        self,
-        title: str,
-        links: Sequence[BuildReport.StripLink],
-        depth: int,
-        pulldowns: Sequence[str] = (),
-    ) -> str:
-        root_href = theme.shared_href(depth, "index.html")
-        help_href = theme.shared_href(depth, "README.md")
-        parts = [
-            '<b class="title" id="title"'
-            f' data-root-href="{theme.html_escape(root_href)}">'
-            f"{theme.html_escape(title)}</b>"
-        ]
-        for link in links:
-            parts.append(self.strip_link_render(link))
-        parts.extend(pulldowns)
-        parts.append('<span class="spacer"></span>')
-        parts.append(
-            '<label class="scale" id="scale-label" for="scale-slider">'
-            '<span id="scale-text"></span>'
-            '<input type="range" id="scale-slider" min="0" max="1"'
-            f' step="{_STRIP_SCALE_SLIDER_STEP}">'
-            "</label>"
-        )
-        parts.append('<span class="utility" id="utility_links">')
-        parts.append('<a href="#" id="layout-reset">reset</a>')
-        parts.append(
-            f'<a href="{theme.html_escape(help_href)}"'
-            ' target="_blank">help</a>'
-        )
-        parts.append(
-            f'<a href="{_STRIP_CURL_PERF_SITE_HREF}" target="_blank"'
-            ' rel="noopener">'
-            "curl.se/perf</a>"
-        )
-        parts.append("</span>")
-        return f'<nav id="strip_bar" class="strip">{"".join(parts)}</nav>'
 
     # Write one test's summary page.
     def test(self, args: BuildReport.TestArgs) -> None:

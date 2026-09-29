@@ -14,6 +14,7 @@ ASSET_FRAME_SCRIPT_NAME = "frame.js"
 ASSET_HEAT_MAP_SCRIPT_NAME = "heatmap.js"
 ASSET_HEAT_MAP_STYLESHEET_NAME = "heatmap.css"
 ASSET_MENU_SCRIPT_NAME = "menu.js"
+ASSET_MENU_STYLESHEET_NAME = "menu.css"
 
 # What each test's script in assets/ ends in, after the test's name: every
 # file and function its heat map opens, which the overview's pulldowns offer.
@@ -51,37 +52,6 @@ DERIVED_COUNTER_TERMS: dict[str, dict[str, int]] = {
     },
 }
 
-# The width of the coordinate space every page is designed in: every length
-# is written for this box, which report_ui.design_scale_apply() then fits.
-DESIGN_COORDINATES_WIDTH_PX = 1920
-
-# The design font, Monaco at this size, is this many px per ch. theme.js's
-# font_fit_apply() scales the box's own font to it: a ch is the design ch.
-DESIGN_FONT_CHARACTER_WIDTH_PX = 7.2
-DESIGN_FONT_SIZE_PX = 12
-
-# The CSS variable carrying the font fit, a multiplier on every font size
-# the theme sets: 1 is the design font itself.
-DESIGN_FONT_FIT_PROPERTY = "--font-fit"
-
-# Below this window width design_scale_apply() stops shrinking the zoom
-# further, so the browser's own horizontal scrollbar appears instead.
-DESIGN_MINIMUM_WINDOW_WIDTH_PX = 1280
-
-# What the scale slider multiplies the window's own fit by: on an untouched
-# page (mid-travel whatever the ends, each half geometric), then at each end.
-DESIGN_SCALE_DEFAULT_MULTIPLE = 1
-DESIGN_SCALE_LARGEST_MULTIPLE = 2
-DESIGN_SCALE_SMALLEST_MULTIPLE = 0.5
-
-# Where along the slider's 0..1 travel the default multiple sits: the
-# middle, so the knob starts centred whatever the two ends are.
-DESIGN_SCALE_DEFAULT_TRAVEL_SHARE = 0.5
-
-# The CSS variable carrying the window's height in design pixels. A vh is
-# zoomed like any length, so a full-height rule reads this instead.
-DESIGN_VIEWPORT_HEIGHT_PROPERTY = "--design-vh"
-
 # What callgrind_diff.py's synthesized callers diff is named, beside the
 # delta. Written by perf2html_diff.sh, read back by build_report.py.
 DIFF_CALLER_COUNTS_FILE_SUFFIX = ".callers.json"
@@ -114,35 +84,6 @@ FLAME_GRAPH_VIEW_ENTRY: tuple[str, str, str] = (
     "flame-graph/index.html",
 )
 
-# A share at or past this is already fully lit, so the handful of diff lines
-# reading millions of percent cannot flatten the scale.
-HEAT_COLOR_FULL_SCALE_PERCENT = 100
-
-# Heat above which a cell's text switches to the light-on-dark class, so the
-# text stays readable once the cell behind it is bright.
-HEAT_COLOR_LIGHT_TEXT_ABOVE_SHARE = 0.45
-
-# The 12-stop heat ramp, cold to hot, exempt from the light/dark pair rule.
-# Carried opaque by a cell, stepped across by the logo: a retune hits both.
-HEAT_COLOR_STOPS: list[str] = [
-    "#3E4A89",
-    "#31688E",
-    "#26828E",
-    "#1F9E89",
-    "#35B779",
-    "#6DCD59",
-    "#B4DE2C",
-    "#FDE725",
-    "#FFC83B",
-    "#FFA22C",
-    "#FF7F21",
-    "#F06142",
-]
-
-# Width a <select> adds beyond its longest option text, so the chosen option
-# is not clipped by the dropdown arrow.
-HEAT_MAP_CONTROL_DROPDOWN_EXTRA_WIDTH_CHARS = 4
-
 # How the page finds a counter's description: this prefix then the name
 # lowercased, so "CEst" reads str_counter_cest out of ui_strings.js.
 HEAT_MAP_COUNTER_DESCRIPTION_STRING_ID_PREFIX = "str_counter_"
@@ -172,10 +113,10 @@ HEAT_MAP_MINIMAP_VIEWPORT_BOX_SMALLEST_PX = 8
 # One the run cannot supply is left out, so naming an unrecorded one is free.
 HEAT_MAP_SECONDARY_COUNTER_NAMES: tuple[str, ...] = ("D1m", "DLm", "Bcm")
 
-# The share of the file a line must carry to earn a jump button above the
-# source, and how many of those buttons a file view shows at most.
-HEAT_MAP_SOURCE_HOT_LINE_BUTTON_LEAST_SHARE = 0.01
-HEAT_MAP_SOURCE_HOT_LINE_BUTTON_MAX_COUNT = 10
+# The share of the file a line must carry to earn a ticker tape entry above
+# the source, and how many entries a file view's ticker tape shows at most.
+HEAT_MAP_SOURCE_TICKER_TAPE_ENTRY_LEAST_SHARE = 0.01
+HEAT_MAP_SOURCE_TICKER_TAPE_ENTRY_MAX_COUNT = 10
 
 # The standard width C source is rendered at. Not dev/'s own 79-column
 # source limit -- this is the width of the profiled file's view.
@@ -189,14 +130,6 @@ HEAT_MAP_TREE_ALWAYS_LISTED_DIRS = ("lib", "include", "src", "tests/perf")
 # render, so a reader opens on the code that matters.
 HEAT_MAP_TREE_AUTO_EXPAND_ABOVE_SHARE = 0.05
 
-# How far the tree's first level is indented, and how much each level below
-# it adds, in pixels.
-HEAT_MAP_TREE_INDENT_FIRST_LEVEL_PX = 6
-HEAT_MAP_TREE_INDENT_PER_LEVEL_PX = 14
-
-# Narrowest the tree pane may be dragged, in pixels.
-HEAT_MAP_TREE_PANE_NARROWEST_PX = 120
-
 # The heat map view a summary page links, as key, link label, page path.
 # Every test has one. Spelled the same way as FLAME_GRAPH_VIEW_ENTRY.
 HEAT_MAP_VIEW_ENTRY: tuple[str, str, str] = (
@@ -209,6 +142,26 @@ HEAT_MAP_VIEW_ENTRY: tuple[str, str, str] = (
 # drag fires resize continuously, and every frame is what this avoids.
 LAYOUT_RESIZE_SETTLE_DELAY_MS = 120
 
+# The "curl.se/perf" link in every page's util block.
+MENU_CURL_PERF_SITE_HREF = "https://curl.se/perf/index.html"
+
+# The keys an open pulldown answers, and a framed summary forwards up to the
+# tests one, as KeyboardEvent.key names. "next" also opens a focused one.
+MENU_PULLDOWN_KEY_NAMES: dict[str, str] = {
+    "close": "Escape",
+    "next": "ArrowDown",
+    "previous": "ArrowUp",
+    "select": "Enter",
+}
+
+# The test merging every other, named as perf2html.sh names its directory.
+# The pulldowns work in it at the overview's home: data, not a UI word.
+MENU_PULLDOWN_MERGED_TEST_NAME = "all"
+
+# Printable keys no pulldown takes as typed: outside a field they stay with
+# the page (space scrolls it), in an open box they type themselves.
+MENU_PULLDOWN_SKIPPED_KEY_NAMES: tuple[str, ...] = (" ",)
+
 # The multiple a rise stops printing at, becoming the ">1000x" bound. A drop
 # cannot pass -100%, so only a rise reaches it. theme.py and theme.js read it.
 NUMBER_LARGEST_PRINTED_MULTIPLE_TIMES = 999.99
@@ -216,11 +169,6 @@ NUMBER_LARGEST_PRINTED_MULTIPLE_TIMES = 999.99
 # The smallest percentage a table prints as a number, under which it states
 # a bound. A notation floor only: no colour, no filter, never a denominator.
 NUMBER_SMALLEST_PRINTED_PERCENT = 0.01
-
-# The page font: Monaco first, then whatever else the box has.
-PAGE_FONT_FAMILY = (
-    'Monaco, Menlo, "DejaVu Sans Mono", "Liberation Mono", Consolas, monospace'
-)
 
 # The global the generated settings file assigns to, linked before every
 # script reading it. settings_script_write() fills the template's marker.
@@ -252,37 +200,259 @@ STORAGE_OWNED_PREFIXES: tuple[str, ...] = ("split.",)
 STORAGE_VERSION = "perf2html v2"
 STORAGE_VERSION_KEY = "perf2html.version"
 
-# The "curl.se/perf" link in every page's util block.
-STRIP_CURL_PERF_SITE_HREF = "https://curl.se/perf/index.html"
+# Each palette colour and the roles it paints, one role under one colour.
+# Each role becomes the CSS variable --<role>, so roles are boundary names.
+STYLE_COLOR_PAIR_ENTRIES: dict[str, list[str]] = {
+    "#1AB6FF": [
+        "heat-map-menu-overview-summary-link-fg-",
+        "heat-map-source-clicked-line-detail-action-bar-link-fg-",
+        "heat-map-source-table-line-number-cell-callee-marker-fg-",
+        "menu-pulldown-entry-current-fg-",
+        "menu-pulldown-entry-highlighted-bg-",
+        "menu-scale-slider-fg-",
+    ],
+    "#0097E6": [
+        "heat-map-menu-overview-summary-scrollbar-thumb-bg-dim-",
+    ],
+    "#F5F6FA": [
+        "heat-map-heat-cell-on-dark-fg-",
+        "heat-map-menu-field-fg-",
+        "heat-map-overview-summary-body-fg-",
+        "screenshot-label-fg-",
+        "heat-map-source-clicked-line-detail-function-name-fg-",
+        "heat-map-source-file-header-statistic-share-fg-",
+        "menu-link-current-bg-",
+        "menu-pulldown-button-fg-",
+        "menu-title-fg-",
+        "summary-heat-cell-on-dark-fg-",
+    ],
+    "#DCDDE1": [
+        "heat-map-menu-label-fg-dim-",
+        "heat-map-menu-search-box-placeholder-fg-dim-",
+        "heat-map-overview-summary-heading-fg-dim-",
+        "heat-map-overview-summary-table-column-title-fg-dim-",
+        "heat-map-overview-summary-table-dimmed-text-fg-dim-",
+        "heat-map-source-clicked-line-detail-action-bar-separator-fg-dim-",
+        "heat-map-source-clicked-line-detail-close-symbol-fg-dim-",
+        "heat-map-source-clicked-line-detail-heading-fg-dim-",
+        "heat-map-source-file-header-statistic-fg-dim-",
+        "heat-map-source-table-counter-cell-fg-dim-",
+        "heat-map-source-table-line-number-cell-fg-dim-",
+        "heat-map-source-ticker-tape-label-fg-dim-",
+        "heat-map-source-unavailable-note-fg-dim-",
+        "heat-map-tree-node-caret-fg-dim-",
+        "heat-map-tree-node-name-cold-fg-dim-",
+        "heat-map-tree-node-name-more-fg-dim-",
+        "heat-map-tree-node-share-percent-fg-dim-",
+        "menu-pulldown-no-match-note-fg-dim-",
+        "menu-pulldown-search-box-placeholder-fg-dim-",
+        "menu-scale-fg-dim-",
+        "summary-collapsed-section-file-name-fg-dim-",
+        "summary-collapsed-section-title-fg-dim-",
+        "summary-collapsed-section-title-marker-fg-dim-",
+    ],
+    "#FBC531": [],
+    "#E1B12C": [],
+    "#7F8FA6": [],
+    "#718093": [],
+    "#273C75": [
+        "heat-map-source-file-header-bg-",
+        "heat-map-source-table-column-title-bg-",
+        "heat-map-source-ticker-tape-bg-",
+        "heat-map-tree-node-selected-bg-",
+        "menu-pulldown-entry-current-bg-",
+    ],
+    "#192A56": [
+        "heat-map-menu-field-bg-dim-",
+        "heat-map-menu-strip-bg-dim-",
+        "heat-map-overview-summary-table-column-title-bg-dim-",
+        "heat-map-source-clicked-line-detail-bg-dim-",
+        "menu-link-current-fg-dim-",
+        "menu-pulldown-entry-highlighted-fg-dim-",
+        "menu-pulldown-entry-list-bg-dim-",
+        "menu-title-logo-bg-dim-",
+        "summary-collapsed-section-log-box-bg-dim-",
+        "summary-collapsed-section-log-box-scrollbar-corner-track-bg-dim-",
+    ],
+    "#487EB0": [],
+    "#40739E": [
+        "heat-map-overview-summary-column-resize-handle-active-bg-dim-",
+        "menu-title-bg-dim-",
+    ],
+    "#353B48": [
+        "heat-map-overview-summary-table-alternate-column-bg-",
+        "heat-map-source-clicked-line-detail-derived-counter-row-bg-",
+        "heat-map-source-ticker-tape-entry-bg-",
+        "menu-pulldown-button-bg-",
+    ],
+    "#2F3640": [
+        "heat-map-heat-cell-on-bright-fg-dim-",
+        "heat-map-main-bg-dim-",
+        "heat-map-menu-overview-summary-scrollbar-track-bg-dim-",
+        "heat-map-minimap-bg-dim-",
+        "heat-map-overview-summary-body-bg-dim-",
+        "heat-map-overview-summary-scrollbar-corner-bg-dim-",
+        "heat-map-source-clicked-line-detail-contributing-counter-row-bg-dim-",
+        "heat-map-source-clicked-line-detail-table-bg-dim-",
+        "menu-field-bg-dim-",
+        "overview-summary-view-frame-bg-dim-",
+        "summary-heat-cell-on-bright-fg-dim-",
+    ],
+    "#000000": [
+        "screenshot-label-bg-",
+        "screenshot-label-border-",
+    ],
+}
+
+# The width of the coordinate space every page is designed in: every length
+# is written for this box, which report_ui.design_scale_apply() then fits.
+STYLE_DESIGN_COORDINATES_WIDTH_PX = 1920
+
+# The design font, Monaco at STYLE_DESIGN_FONT_SIZE_PX, is this many px per
+# ch. theme.js's font_fit_apply() scales the box's font to it: ch is design ch.
+STYLE_DESIGN_FONT_CHARACTER_WIDTH_PX = 7.2
+
+# The CSS variable carrying the font fit, a multiplier on every font size
+# the theme sets: 1 is the design font itself.
+STYLE_DESIGN_FONT_FIT_PROPERTY = "--design-font-fit-"
+
+# The design font size, written as --design-font-size-px-, which the font fit
+# multiplies.
+STYLE_DESIGN_FONT_SIZE_PX = 12
+
+# Below this window width design_scale_apply() stops shrinking the zoom
+# further, so the browser's own horizontal scrollbar appears instead.
+STYLE_DESIGN_MINIMUM_WINDOW_WIDTH_PX = 1280
+
+# What the scale slider multiplies the window's own fit by on an untouched
+# page, mid-travel whatever the ends, each half geometric.
+STYLE_DESIGN_SCALE_DEFAULT_MULTIPLE = 1
+
+# Where along the slider's 0..1 travel the default multiple sits: the
+# middle, so the knob starts centred whatever the two ends are.
+STYLE_DESIGN_SCALE_DEFAULT_TRAVEL_SHARE = 0.5
+
+# What the scale slider multiplies the window's own fit by at each end.
+STYLE_DESIGN_SCALE_LARGEST_MULTIPLE = 2
+STYLE_DESIGN_SCALE_SMALLEST_MULTIPLE = 0.5
+
+# The CSS variable carrying the window's height in design pixels. A vh is
+# zoomed like any length, so a full-height rule reads this instead.
+STYLE_DESIGN_VIEWPORT_HEIGHT_PROPERTY = "--design-viewport-height-"
+
+# The luminance above which a heat cell counts as bright, its text taking
+# the cell's on-bright role instead of its on-dark one.
+STYLE_HEAT_CELL_ON_BRIGHT_ABOVE_LUMINANCE_SHARE = 0.5
+
+# A share at or past this is already fully lit, so the handful of diff lines
+# reading millions of percent cannot flatten the scale.
+STYLE_HEAT_COLOR_FULL_SCALE_PERCENT = 100
+
+# The 12-stop heat ramp, cold to hot, kept apart from the theme palette.
+# Carried opaque by a cell, stepped across by the logo: a retune hits both.
+STYLE_HEAT_COLOR_STOPS: list[str] = [
+    "#3E4A89",
+    "#31688E",
+    "#26828E",
+    "#1F9E89",
+    "#35B779",
+    "#6DCD59",
+    "#B4DE2C",
+    "#FDE725",
+    "#FFC83B",
+    "#FFA22C",
+    "#FF7F21",
+    "#F06142",
+]
+
+# Width a <select> adds beyond its longest option text, so the chosen option
+# is not clipped by the dropdown arrow.
+STYLE_HEAT_MAP_MENU_DROPDOWN_EXTRA_WIDTH_CHARS = 4
+
+# Room a source line number keeps for the callee marker drawn before it.
+STYLE_HEAT_MAP_SOURCE_LINE_NUMBER_MARKER_WIDTH_CHARS = 2
+
+# How many characters each level of the heat map's tree is indented by.
+STYLE_HEAT_MAP_TREE_INDENT_PER_LEVEL_CHARS = 2
+
+# Narrowest the heat map's tree pane is drawn or may be dragged, in pixels.
+STYLE_HEAT_MAP_TREE_PANE_NARROWEST_PX = 120
 
 # Spaces each overview pulldown's open search box adds beyond the longest
 # test name. All three boxes are this one width.
-STRIP_PULLDOWN_EXTRA_WIDTH_CHARS = 2
+STYLE_MENU_PULLDOWN_EXTRA_WIDTH_CHARS = 2
 
-# The keys an open pulldown answers, and a framed summary forwards up to the
-# tests one, as KeyboardEvent.key names. "next" also opens a focused one.
-STRIP_PULLDOWN_KEY_NAMES: dict[str, str] = {
-    "close": "Escape",
-    "next": "ArrowDown",
-    "previous": "ArrowUp",
-    "select": "Enter",
+# Where on the heat ramp the menu title's logo starts, its last letter on
+# the hot end. Half way up reads as the ramp's warm half, not all of it.
+STYLE_MENU_TITLE_LOGO_START_FRACTION = 0.5
+
+# The page font, written as --page-font-family-: Monaco first, then whatever
+# else the box has.
+STYLE_PAGE_FONT_FAMILY = (
+    'Monaco, Menlo, "DejaVu Sans Mono", "Liberation Mono", Consolas, monospace'
+)
+
+# Spaces added to every table column beyond its widest cell.
+STYLE_TABLE_COLUMN_EXTRA_WIDTH_CHARS = 3
+
+# Width of a table's function-name column, in characters.
+STYLE_TABLE_FUNCTION_NAME_WIDTH_CHARS = 20
+
+# The fewest characters a fill table's grow column without a fixed width
+# keeps, so it never looks gone: one function name's worth.
+STYLE_TABLE_GROW_COLUMN_NARROWEST_CHARS = 20
+
+# Where a table cuts a long "defined at" path.
+STYLE_TABLE_LOCATION_COLUMN_MAX_CHARS = 48
+
+# Every other value a stylesheet draws with, written as the CSS variable
+# --<name>: <value>. Zero, none and hidden stay in the stylesheet itself.
+STYLE_VALUE_ENTRIES: dict[str, str] = {
+    "heat-map-band-z-index-": "2",
+    "heat-map-menu-column-gap-": "1ch",
+    "heat-map-menu-overview-summary-scrollbar-thickness-": "14px",
+    "heat-map-menu-search-box-width-": "36ch",
+    "heat-map-minimap-width-": "110px",
+    "heat-map-overview-summary-body-line-height-": "1.1",
+    "heat-map-overview-summary-column-resize-handle-bar-left-": "2.5px",
+    "heat-map-overview-summary-column-resize-handle-bar-width-": "4px",
+    "heat-map-overview-summary-column-resize-handle-last-bar-left-": "5px",
+    "heat-map-overview-summary-column-resize-handle-last-margin-left-": "-9px",
+    "heat-map-overview-summary-column-resize-handle-margin-left-": "-5px",
+    "heat-map-overview-summary-column-resize-handle-width-": "9px",
+    "heat-map-overview-summary-column-resize-handle-z-index-": "1",
+    "screenshot-label-border-width-": "1ch",
+    "screenshot-label-font-size-": "2em",
+    "screenshot-label-z-index-": "3",
+    "heat-map-overview-summary-table-cell-padding-inline-": "1ch",
+    "heat-map-overview-summary-table-column-title-z-index-": "1",
+    "heat-map-source-file-header-column-gap-": "2ch",
+    "heat-map-source-table-code-cell-tab-size-": "4",
+    "heat-map-source-table-line-number-cell-callee-marker-text-": '"\\25B8 "',
+    "heat-map-source-ticker-tape-entry-padding-inline-": "1ch",
+    "heat-map-source-ticker-tape-gap-": "1ch",
+    "heat-map-tree-node-caret-width-": "2ch",
+    "heat-map-tree-node-gap-": "1ch",
+    "heat-map-tree-node-share-percent-width-": "7ch",
+    "heat-map-tree-resize-handle-margin-left-": "-3px",
+    "heat-map-tree-resize-handle-margin-right-": "-4px",
+    "heat-map-tree-resize-handle-width-": "7px",
+    "heat-map-tree-resize-handle-z-index-": "1",
+    "heat-map-tree-width-": "280px",
+    "menu-link-max-width-": "40ch",
+    "menu-link-padding-inline-": "1ch",
+    "menu-pulldown-button-padding-inline-": "1ch",
+    "menu-pulldown-entry-list-max-height-share-": "0.6",
+    "menu-pulldown-entry-list-z-index-": "3",
+    "menu-pulldown-margin-left-": "1ch",
+    "menu-pulldown-search-box-min-width-": "13ch",
+    "menu-scale-gap-": "1ch",
+    "menu-scale-slider-width-": "80px",
+    "menu-title-width-": "33ch",
+    "summary-collapsed-section-file-name-max-width-": "96ch",
+    "summary-collapsed-section-log-box-max-height-share-": "0.6",
+    "summary-collapsed-section-raw-data-list-padding-left-": "2ch",
 }
-
-# The test merging every other, named as perf2html.sh names its directory.
-# The pulldowns work in it at the overview's home: data, not a UI word.
-STRIP_PULLDOWN_MERGED_TEST_NAME = "all"
-
-# Printable keys no pulldown takes as typed: outside a field they stay with
-# the page (space scrolls it), in an open box they type themselves.
-STRIP_PULLDOWN_SKIPPED_KEY_NAMES: tuple[str, ...] = (" ",)
-
-# Width of a strip's status row, its first cell: the longest "<test> /
-# <label>" is 26 today, plus margin. Too small clips mid-word.
-STRIP_STATUS_ROW_WIDTH_CHARS = 33
-
-# Where on the heat ramp the logo starts, its last letter always on the
-# hot end. Half way up reads as the ramp's warm half, not the whole of it.
-LOGO_START_FRACTION = 0.5
 
 # Valgrind's own preamble, dropped from the log a page shows.
 SUMMARY_PERF_LOG_SKIPPED_HEAD_LINES = 9
@@ -305,65 +475,6 @@ SUMMARY_TIME_SUFFIX_SECONDS: dict[str, float] = {
 
 # How many functions the summary's top table lists.
 SUMMARY_TOP_FUNCTION_ROWS = 50
-
-# Spaces added to every table column beyond its widest cell.
-TABLE_COLUMN_EXTRA_WIDTH_CHARS = 3
-
-# Width of a table's function-name column, in characters.
-TABLE_FUNCTION_NAME_WIDTH_CHARS = 20
-
-# The fewest characters a fill table's grow column without a fixed width
-# keeps, so it never looks gone: one function name's worth.
-TABLE_GROW_COLUMN_NARROWEST_CHARS = 20
-
-# Where a table cuts a long "defined at" path.
-TABLE_LOCATION_COLUMN_MAX_CHARS = 48
-
-# Raw "User settings" THEME entries: odd index = dark member.
-THEME_COLOR_PAIR_ENTRIES: list[str] = [
-    "#1AB6FF",
-    "#0097E6",
-    "#F5F6FA",
-    "#DCDDE1",
-    "#FBC531",
-    "#E1B12C",
-    "#7F8FA6",
-    "#718093",
-    "#273C75",
-    "#192A56",
-    "#487EB0",
-    "#40739E",
-    "#353B48",
-    "#2F3640",
-]
-
-# What the seven THEME_COLOR_PAIR_ENTRIES pairs are called, in their order.
-# Each becomes --<name> and --<name>-l, so these are boundary names.
-THEME_COLOR_PAIR_NAMES: tuple[str, ...] = (
-    "blue",
-    "white",
-    "yellow",
-    "gray",
-    "navy",
-    "steel",
-    "slate",
-)
-
-# What each colour is for, as its CSS variable, then the pair and member
-# ("light"/"dark") it comes from. "bg" alone is shaded. Boundary names.
-THEME_COLOR_ROLE_SOURCES: dict[str, tuple[str, str]] = {
-    "bg": ("slate", "dark"),
-    "bg-alt": ("slate", "light"),
-    "panel": ("navy", "dark"),
-    "nav": ("navy", "dark"),
-    "sel": ("navy", "light"),
-    "fg": ("white", "light"),
-    "fg-dim": ("white", "dark"),
-    "muted": ("white", "dark"),
-    "link": ("blue", "light"),
-    "accent": ("yellow", "light"),
-    "bar": ("steel", "dark"),
-}
 
 # The units a printed duration uses, largest first, as suffix and seconds.
 # The printing ladder, not SUMMARY_TIME_SUFFIX_SECONDS, which reads a log.

@@ -5,8 +5,8 @@
   const HEAT_MAP_VIEW_KEY = HEAT_MAP_VIEW_ENTRY[0];
 
   const is_framed = window.report_ui.is_framed;
-  const tests_pulldown_root = document.getElementById("tests-pulldown");
-  const view_frame = document.getElementById("view");
+  const tests_pulldown_root = document.getElementById("menu-test-pulldown-");
+  const view_frame = document.getElementById("overview-summary-view-frame-");
 
   let current_inner_hash = "",
     current_page_href = "";
@@ -18,10 +18,13 @@
   function hash_for_href(link_href) {
     for (const link_element of window.report_menu.view_links) {
       const link_base = link_element.getAttribute("href");
-      if (link_element.dataset.view && link_href.startsWith(link_base)) {
+      if (
+        link_element.getAttribute("data-view-") &&
+        link_href.startsWith(link_base)
+      ) {
         const remaining_hash = link_href.slice(link_base.length);
         return hash_build(
-          link_element.dataset.view,
+          link_element.getAttribute("data-view-"),
           remaining_hash.startsWith("#") ? remaining_hash : "",
         );
       }
@@ -43,7 +46,8 @@
     const matched_link =
       parsed_hash &&
       view_links.find(
-        (link_element) => link_element.dataset.view === parsed_hash[0],
+        (link_element) =>
+          link_element.getAttribute("data-view-") === parsed_hash[0],
       );
     // an empty key is the home view and canonical. A hash this cannot read,
     // or naming a view this report does not have, is a bad address
@@ -58,10 +62,15 @@
     const [view_key, inner_hash] = parsed_hash;
     const active_link = matched_link || view_links[0];
     window.report_menu.view_links_activate(active_link);
-    window.report_menu.title_publish(active_link.dataset.title);
+    window.report_menu.title_publish(active_link.getAttribute("data-title-"));
     window.report_menu.active_test_show(matched_link);
     window.report_menu.utility_visibility_set(
-      !is_framed && !!(matched_link && view_key && matched_link.dataset.frame),
+      !is_framed &&
+        !!(
+          matched_link &&
+          view_key &&
+          matched_link.getAttribute("data-frame-")
+        ),
     );
     if (!matched_link || !view_key) {
       view_frame.hidden = true;
@@ -164,7 +173,7 @@
         return;
       if (click_event.button) return;
       const link_href = link_element.getAttribute("href");
-      const view_key = link_element.dataset.view;
+      const view_key = link_element.getAttribute("data-view-");
       const target_hash =
         view_key != null
           ? hash_build(view_key, view_home_hash(view_key))

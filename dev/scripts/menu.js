@@ -1,44 +1,50 @@
 (function () {
   "use strict";
 
-  const STRIP_PULLDOWN_MERGED_TEST_NAME = settings(
-    "STRIP_PULLDOWN_MERGED_TEST_NAME",
-  );
   const HOME_VIEW_LABEL = window.ui_strings.text_of("str_view_summary");
-  const LOGO_LETTER_CLASS = "logo-letter";
-  const LOGO_START_FRACTION = settings("LOGO_START_FRACTION");
+  const MENU_PULLDOWN_MERGED_TEST_NAME = settings(
+    "MENU_PULLDOWN_MERGED_TEST_NAME",
+  );
+  const MENU_TITLE_LOGO_LETTER_CLASS = "menu-title-logo-letter-";
   const OUTER_STATUS_TEXT = window.ui_strings.text_of("str_report_name");
-  const SCALE_LABEL_TEXT = window.ui_strings.text_of("str_control_view_scale");
+  const SCALE_LABEL_TEXT = window.ui_strings.text_of("str_menu_scale");
   const SELECTION_SEPARATOR = " / ";
-
-  const FILES_LABEL_TEXT = window.ui_strings.text_of("str_control_files");
-  const FUNCTIONS_LABEL_TEXT = window.ui_strings.text_of(
-    "str_control_functions",
+  const STYLE_MENU_TITLE_LOGO_START_FRACTION = settings(
+    "STYLE_MENU_TITLE_LOGO_START_FRACTION",
   );
-  const TESTS_LABEL_TEXT = window.ui_strings.text_of("str_control_tests");
 
-  const files_pulldown_root = document.getElementById("files-pulldown");
+  const FILES_LABEL_TEXT = window.ui_strings.text_of("str_menu_file");
+  const FUNCTIONS_LABEL_TEXT = window.ui_strings.text_of("str_menu_function");
+  const TESTS_LABEL_TEXT = window.ui_strings.text_of("str_menu_test");
+
+  const files_pulldown_root = document.getElementById("menu-file-pulldown-");
   const functions_pulldown_root = document.getElementById(
-    "functions-pulldown",
+    "menu-function-pulldown-",
   );
-  const home_panel = document.getElementById("home");
+  const home_panel = document.getElementById("overview-summary-home-");
   const is_framed = window.report_frame.is_framed;
-  const layout_reset_link = document.getElementById("layout-reset");
+  const layout_reset_link = document.getElementById(
+    "menu-utility-reset-link-",
+  );
   const logo_letters = window.report_ui.logo_letters_build(
     OUTER_STATUS_TEXT,
-    LOGO_LETTER_CLASS,
-    LOGO_START_FRACTION,
+    MENU_TITLE_LOGO_LETTER_CLASS,
+    STYLE_MENU_TITLE_LOGO_START_FRACTION,
   );
-  const scale_label = document.getElementById("scale-label");
-  const scale_slider = document.getElementById("scale-slider");
-  const scale_text = document.getElementById("scale-text");
-  const strip_bar = document.getElementById("strip_bar");
+  const scale_label = document.getElementById("menu-scale-");
+  const scale_slider = document.getElementById("menu-scale-slider-");
+  const scale_text = document.getElementById("menu-scale-text-");
+  const menu_bar = document.getElementById("menu_");
   const tests_pulldown_root = window.report_frame.tests_pulldown_root;
-  const title_badge = document.getElementById("title");
-  const utility_block = document.getElementById("utility_links");
-  const view_links = [...strip_bar.querySelectorAll("a[data-view]")];
+  const title_badge = document.getElementById("menu-title-");
+  const utility_block = document.getElementById("menu-utility-");
+  const view_links = [...menu_bar.querySelectorAll("a[data-view-]")];
   const tests_pulldown_entries = tests_pulldown_root
-    ? [...tests_pulldown_root.querySelectorAll(".pulldown-list a[data-view]")]
+    ? [
+        ...tests_pulldown_root.querySelectorAll(
+          ".menu-pulldown-entry-list- a[data-view-]",
+        ),
+      ]
     : [];
 
   let current_title = title_badge.textContent;
@@ -53,7 +59,7 @@
     );
     return;
   }
-  let active_test_name = STRIP_PULLDOWN_MERGED_TEST_NAME,
+  let active_test_name = MENU_PULLDOWN_MERGED_TEST_NAME,
     tests_pulldown = null;
   // On a framed summary, the top page's tests pulldown: open from the first
   // character forwarded up until report_ui:tests_pulldown_closed comes down.
@@ -63,8 +69,8 @@
   // The open tests list shows it as the one differently coloured entry.
   function active_test_show(matched_link) {
     active_test_name = tests_pulldown_entries.includes(matched_link)
-      ? matched_link.dataset.view
-      : STRIP_PULLDOWN_MERGED_TEST_NAME;
+      ? matched_link.getAttribute("data-view-")
+      : MENU_PULLDOWN_MERGED_TEST_NAME;
   }
   // The links the files or functions pulldown offers: each name of its kind
   // the active test's heat map opens, there, on the counter on show.
@@ -160,7 +166,7 @@
   }
   function view_links_activate(active_link) {
     for (const link_element of view_links) {
-      link_element.classList.toggle("on", link_element === active_link);
+      link_element.classList.toggle("current_", link_element === active_link);
     }
   }
   function utility_visibility_set(utility_shown) {
@@ -200,7 +206,7 @@
     });
     if (!is_framed) {
       title_badge.addEventListener("click", () =>
-        location.assign(title_badge.dataset.rootHref),
+        location.assign(title_badge.getAttribute("data-root-href-")),
       );
     }
     if (tests_pulldown_root) pulldowns_activate();

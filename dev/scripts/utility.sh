@@ -576,7 +576,7 @@ screenshot_label_script_print() {
   var value = new URLSearchParams(location.search).get("screenshot");
   if (value === null) return;
   var label = document.createElement("div");
-  label.className = "screenshot-label";
+  label.className = "screenshot-label-";
   label.textContent = value;
   document.body.appendChild(label);
 })();
