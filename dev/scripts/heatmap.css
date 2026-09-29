@@ -3,15 +3,23 @@ body {
   flex-direction: column;
   height: var(--design-vh, 100vh);
 }
-#hdr {
+#control_strip {
   gap: 0 1ch;
 }
-#hdr label {
+#control_strip label {
   color: var(--muted);
   white-space: nowrap;
 }
-#hdr input {
+/* the heat map's own second menu bar: its fields sit flat on the bar */
+#control_strip select,
+#control_strip input {
+  background: var(--nav);
+}
+#control_strip input {
   width: 36ch;
+}
+#control_strip input::placeholder {
+  color: var(--muted);
 }
 #layout {
   display: flex;
@@ -33,23 +41,23 @@ body {
   background: var(--bg);
 }
 /* each box a table sits in is a container, so 100cqw in a <col> is exactly
-   the room its own table has: .home and .dbox sit inside #main */
+   the room its own table has: .home and .detail-box sit inside #main */
 #main,
 .home,
-.dbox {
+.detail-box {
   container-type: inline-size;
 }
 
-.srcwrap {
+.source-pane {
   width: max-content;
   min-width: 100%;
 }
 
-.srctail {
+.source-tail {
   height: calc(0.5 * var(--design-vh, 100vh));
 }
 
-.srcwrap > :not(.tbl-cols) {
+.source-pane > :not(.table-columns) {
   contain: inline-size;
 }
 
@@ -64,24 +72,24 @@ body {
 #minimap.empty {
   display: none;
 }
-#mmBox {
+#minimap_box {
   position: absolute;
   top: 0;
   left: 0;
 }
 
-#mmBox table.src {
+#minimap_box table.source-table {
   border-collapse: collapse;
   table-layout: fixed;
   width: 100%;
 }
-#mmBox table.src td {
+#minimap_box table.source-table td {
   padding: 0;
   border: 0;
   white-space: pre;
   overflow: visible;
 }
-#mmViewport {
+#minimap_viewport {
   position: absolute;
   left: 0;
   right: 0;
@@ -89,7 +97,7 @@ body {
   border: 1px solid rgba(245, 246, 250, 0.55);
   cursor: grab;
 }
-#mmViewport.drag {
+#minimap_viewport.drag {
   cursor: grabbing;
 }
 .node {
@@ -103,7 +111,7 @@ body {
   outline: 1px solid var(--link);
   outline-offset: -1px;
 }
-.node.sel {
+.node.selected {
   background: var(--sel);
 }
 .node .caret {
@@ -124,38 +132,38 @@ body {
 .node.cold .name {
   color: var(--muted);
 }
-.node .pct {
+.node .share-percent {
   flex: none;
   width: 7ch;
   text-align: right;
   font-variant-numeric: tabular-nums;
   color: var(--muted);
 }
-.node.heat .pct,
+.node.heat .share-percent,
 .node.heat .caret {
   color: inherit;
 }
-.node.cold .pct {
+.node.cold .share-percent {
   visibility: hidden;
 }
 .node.more .name {
   color: var(--muted);
   font-style: italic;
 }
-.kids {
+.child-nodes {
   display: none;
 }
-.kids.open {
+.child-nodes.open {
   display: block;
 }
-.fhead {
+.file-header {
   background: var(--sel);
   display: flex;
   gap: 0 2ch;
   align-items: baseline;
   flex-wrap: wrap;
 }
-.fhead .stat {
+.file-header .statistic {
   color: var(--muted);
 }
 
@@ -166,7 +174,7 @@ body {
   background: var(--sel);
   overflow: hidden;
 }
-.chips .lbl {
+.chips .chips-label {
   color: var(--muted);
   align-self: center;
   flex: none;
@@ -176,86 +184,87 @@ body {
   cursor: pointer;
   flex: none;
   white-space: nowrap;
+  padding: 0 1ch;
 }
 .chip:hover {
   outline: 1px solid var(--link);
   outline-offset: -1px;
 }
-.nosrc {
+.source-missing {
   color: var(--muted);
 }
-table.src th {
+table.source-table th {
   font-weight: normal;
   background: var(--sel);
 }
-table.src td.ln {
+table.source-table td.line-number {
   color: var(--muted);
   user-select: none;
 }
-tr.rowlink {
+tr.row-link {
   cursor: pointer;
 }
-table.src tr.clickable {
+table.source-table tr.clickable {
   cursor: pointer;
 }
 
-table.src tr.clickable:hover td.ln {
+table.source-table tr.clickable:hover td.line-number {
   text-decoration: underline;
 }
 
-table.src td.self,
-table.src td.incl,
-table.src td.x {
+table.source-table td.self,
+table.source-table td.inclusive,
+table.source-table td.secondary-counter {
   color: var(--muted);
 }
-table.src td.code {
+table.source-table td.code {
   text-overflow: clip;
   white-space: pre;
   tab-size: 4;
 }
-table.src tr.hasc td.ln::before {
+table.source-table tr.has-callee td.line-number::before {
   content: "\25B8 ";
   color: var(--link);
 }
 
-table.src tr.detail > td {
+table.source-table tr.detail > td {
   white-space: normal;
   overflow: visible;
   padding: 0;
 }
-.dbox {
+.detail-box {
   position: relative;
   background: var(--panel);
 }
-.dbox h4 {
+.detail-box h4 {
   margin: 0;
   color: var(--muted);
   font-weight: normal;
 }
-.dbox .dclose {
+.detail-box .detail-close {
   position: absolute;
   top: 0;
   right: 0;
   color: var(--muted);
 }
-.dbox .dclose:hover {
+.detail-box .detail-close:hover {
   color: var(--link);
   text-decoration: none;
 }
-.dbox .tbl {
+.detail-box .table-box {
   background: var(--bg);
 }
 /* a derived counter's row takes the slate pair's light member, each recorded
    contributor below it the dark one; a heated cell still paints its stop */
-.dbox tr.derived-counter > td {
+.detail-box tr.derived-counter > td {
   background: var(--slate-l);
 }
-.dbox tr.contributing-counter > td {
+.detail-box tr.contributing-counter > td {
   background: var(--slate);
 }
-.dactions a {
+.detail-actions a {
   color: var(--link);
 }
-.dactions .sep {
+.detail-actions .separator {
   color: var(--muted);
 }

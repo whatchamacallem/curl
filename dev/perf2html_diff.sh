@@ -9,8 +9,10 @@ perf2html_diff.sh [debug-flags] [baseline] [modified] [diff]
     generates a diff. Directories default to
     ./perf2html_{baseline,modified,diff}_report. Both baseline and modified
     must be a perf2html.sh report. A diff can't be diffed.
+    --txz             Create .txz archives of all reports generated.
+                      .txz files may also be used as inputs.
 
-    These are the same debug-flags as the README.md documents:
+    The debug-flags are the same as the README.md documents.
     --artifacts=TMP   The profiler artifacts directory. Defaults to
                       perf2html_temporary_artifacts/ beside the report
                       directory (inside the target dir for a batch).
@@ -35,11 +37,44 @@ cd "$PERF2HTML_DIR_"
 . ./scripts/settings.sh
 . ./scripts/utility.sh
 
+# input_archives_extract - unpacks an archive named as an input under one
+# mktemp -d this run owns, a role to a subdirectory. SETS _EXTRACTED_ROOT.
+input_archives_extract() {
+  _EXTRACTED_ROOT=""
+  case "$_BASE_DIR$_MOD_DIR" in
+    *"$REPORT_RAW_ARCHIVE_SUFFIX"*)
+      _EXTRACTED_ROOT="$(mktemp -d)" || error_exit 1 \
+        "error: mktemp could not make the extraction directory"
+      ;;
+    *) return 0 ;;
+  esac
+  case "$_BASE_DIR" in
+    *"$REPORT_RAW_ARCHIVE_SUFFIX")
+      _BASE_DIR="$(archive_extract "$_BASE_DIR" baseline "$_EXTRACTED_ROOT")"
+      log_verbose "baseline archive -> $_BASE_DIR"
+      ;;
+  esac
+  case "$_MOD_DIR" in
+    *"$REPORT_RAW_ARCHIVE_SUFFIX")
+      _MOD_DIR="$(archive_extract "$_MOD_DIR" modified "$_EXTRACTED_ROOT")"
+      log_verbose "modified archive -> $_MOD_DIR"
+      ;;
+  esac
+}
+
+# input_archives_clean - removes the extraction root, if this run made one
+input_archives_clean() {
+  [ -n "$_EXTRACTED_ROOT" ] || return 0
+  rm -rf "$_EXTRACTED_ROOT" || error_exit 1 \
+    "error: could not remove the extracted input at $_EXTRACTED_ROOT"
+}
+
 # args_parse - reads the flags and the three directories, all absolute
 args_parse() {
   _KEEP_ARTIFACTS=0
   _REGENERATE=0
   ARTIFACTS_DIR=""
+  WRITE_REPORT_ARCHIVE=0
   while [ $# -gt 0 ]; do
     case "$1" in
       -h | --help)
@@ -55,10 +90,12 @@ args_parse() {
         shift
         ;;
       --regenerate)
-        # a diff measures nothing and re-derives every page from its two
-        # inputs on every run, so here the flag keeps without the flush
         _REGENERATE=1
         _KEEP_ARTIFACTS=1
+        shift
+        ;;
+      --txz)
+        WRITE_REPORT_ARCHIVE=1
         shift
         ;;
       --artifacts=*)
@@ -69,6 +106,7 @@ args_parse() {
       *) break ;;
     esac
   done
+  [ "$VERBOSE" -lt "$VERBOSE_TRACE_LEVEL" ] || set -o xtrace
   _BASE_DIR=perf2html_baseline_report
   _MOD_DIR=perf2html_modified_report
   _OUT_DIR=perf2html_diff_report
@@ -93,6 +131,7 @@ args_parse() {
   for _dir in _BASE_DIR _MOD_DIR _OUT_DIR; do
     printf -v "$_dir" '%s' "$(absolute_path "${!_dir}")"
   done
+  input_archives_extract
   if [ -z "$ARTIFACTS_DIR" ]; then
     if [ "$_KEEP_ARTIFACTS" = 0 ] && [ "$_REGENERATE" = 0 ]; then
       ARTIFACTS_DIR="$(mktemp -d)"
@@ -247,6 +286,10 @@ main() {
   verbose_begin
   title_print "$_SCRIPT" "$@"
 
+  # the external sources the heat map reads are kept in step here, being one
+  # of the two scripts a report is generated from
+  source_cache_sync
+
   # the inputs' recorded= rows are this report's identity: it measures
   # nothing, so this run's TIMESTAMP names artifacts and is recorded nowhere
   local _base_recorded _mod_recorded
@@ -296,6 +339,7 @@ main() {
     "baseline_recorded=$_base_recorded" \
     "modified_recorded=$_mod_recorded"
   if [ "$_KEEP_ARTIFACTS" != 1 ]; then artifacts_clean; fi
+  input_archives_clean
 }
 
 main "$@"

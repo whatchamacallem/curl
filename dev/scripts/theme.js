@@ -25,7 +25,7 @@ window.report_ui = (function () {
   const DESIGN_VIEWPORT_HEIGHT_PROPERTY = settings(
     "DESIGN_VIEWPORT_HEIGHT_PROPERTY",
   );
-  const HEAT_COLOR_LOGO_STOPS = settings("HEAT_COLOR_LOGO_STOPS");
+  const HEAT_COLOR_STOPS = settings("HEAT_COLOR_STOPS");
   const LAYOUT_RESIZE_SETTLE_DELAY_MS = settings(
     "LAYOUT_RESIZE_SETTLE_DELAY_MS",
   );
@@ -58,7 +58,7 @@ window.report_ui = (function () {
   const CH_UNIT_GLYPH = "0";
   const PULLDOWN_COMMAND_KEY_NAMES = Object.values(STRIP_PULLDOWN_KEY_NAMES);
   const PULLDOWN_HIGHLIGHTED_ENTRY_CLASS = "highlighted-entry";
-  const RAMP_CHANNEL_STOPS = HEAT_COLOR_LOGO_STOPS.map((hex) =>
+  const RAMP_CHANNEL_STOPS = HEAT_COLOR_STOPS.map((hex) =>
     [1, 3, 5].map((index) => parseInt(hex.slice(index, index + 2), 16)),
   );
 
@@ -368,19 +368,11 @@ window.report_ui = (function () {
   // A strip pulldown over root_element's parts. entries_of() gives the links
   // it offers each time it opens; on_close() runs each time it closes.
   function pulldown_attach(root_element, label_text, entries_of, on_close) {
-    const caret_button = root_element.querySelector(".pulldown-caret");
     const entry_list = root_element.querySelector(".pulldown-list");
-    const label_element = root_element.querySelector(".pulldown-label");
+    const menu_button = root_element.querySelector(".pulldown-button");
     const no_match_note = root_element.querySelector(".pulldown-no-match");
     const search_box = root_element.querySelector(".pulldown-search");
-    const collapsed_caret_text = window.ui_strings.text_of(
-      "str_caret_collapsed",
-    );
-    const expanded_caret_text = window.ui_strings.text_of(
-      "str_caret_expanded",
-    );
-    let closed_text = search_box.value,
-      entries = [],
+    let entries = [],
       highlight_index = 0,
       is_open = false,
       matches = [];
@@ -429,47 +421,37 @@ window.report_ui = (function () {
           ]),
         );
     }
+    // The search box takes the button's place while open, the list
+    // dropping below it, so the list sits aligned under the button.
     function pulldown_open(search_text) {
       is_open = true;
       entries = entries_of();
       entry_list.replaceChildren(...entries, no_match_note);
-      search_box.readOnly = false;
+      menu_button.hidden = true;
+      search_box.hidden = false;
       search_box.value = search_text;
-      caret_button.textContent = expanded_caret_text;
       entry_list.hidden = false;
       entries_filter();
       search_box_focus();
     }
     function closed_show() {
       is_open = false;
-      search_box.readOnly = true;
-      search_box.value = closed_text;
-      caret_button.textContent = collapsed_caret_text;
+      search_box.hidden = true;
+      search_box.value = "";
+      menu_button.hidden = false;
       entry_list.hidden = true;
     }
     function pulldown_close() {
       closed_show();
       on_close();
     }
-    function pulldown_toggle() {
-      if (is_open) pulldown_close();
-      else pulldown_open("");
-    }
-    // The text the closed box reads, now and each time it closes again.
-    function closed_text_set(new_text) {
-      closed_text = new_text;
-      if (!is_open) search_box.value = closed_text;
-    }
     // The one key handler, for a key typed in the box or handed over from
     // elsewhere on the page. True when the key is taken.
     function key_take(key_name, is_in_search_box) {
       const is_command_key = pulldown_key_is_command(key_name);
       if (!is_open) {
-        const is_opening_key =
-          !is_command_key ||
-          (is_in_search_box && key_name === STRIP_PULLDOWN_KEY_NAMES.next);
-        if (!is_opening_key) return false;
-        pulldown_open(is_command_key ? "" : key_name);
+        if (is_command_key) return false;
+        pulldown_open(key_name);
         return true;
       }
       switch (key_name) {
@@ -494,18 +476,17 @@ window.report_ui = (function () {
       return true;
     }
 
-    label_element.textContent = label_text;
+    menu_button.textContent = label_text;
+    search_box.placeholder = window.ui_strings.text_of(
+      "str_pulldown_placeholder",
+    );
     no_match_note.textContent = window.ui_strings.text_of("str_no_match");
-    for (const pointer_target of [label_element, caret_button, entry_list]) {
+    for (const pointer_target of [menu_button, entry_list]) {
       pointer_target.addEventListener("mousedown", (pointer_event) =>
         pointer_event.preventDefault(),
       );
     }
-    label_element.addEventListener("click", pulldown_toggle);
-    caret_button.addEventListener("click", pulldown_toggle);
-    search_box.addEventListener("click", () => {
-      if (!is_open) pulldown_open("");
-    });
+    menu_button.addEventListener("click", () => pulldown_open(""));
     search_box.addEventListener("blur", () => {
       if (is_open) pulldown_close();
     });
@@ -525,7 +506,7 @@ window.report_ui = (function () {
       search_box.blur();
     });
     closed_show();
-    return { closed_text_set, key_take };
+    return { key_take };
   }
 
   function width_total(widths) {
@@ -660,10 +641,10 @@ window.report_ui = (function () {
   function handles_create(table_element) {
     if (table_element.resize_handles) return;
     const column_wrapper = table_element.parentElement;
-    if (!column_wrapper.classList.contains("tbl-cols")) return;
+    if (!column_wrapper.classList.contains("table-columns")) return;
     const column_elements = column_elements_of(table_element);
     for (const column_element of column_elements) {
-      column_element.dataset.w = column_element.style.width;
+      column_element.dataset.startWidth = column_element.style.width;
     }
     table_element.resize_handles = [];
     for (
@@ -672,7 +653,7 @@ window.report_ui = (function () {
       column_index++
     ) {
       const handle_bar = document.createElement("div");
-      handle_bar.className = "bar";
+      handle_bar.className = "resize-handle";
       handle_bar.addEventListener("pointerdown", (pointer_event) =>
         handle_drag_begin(
           pointer_event,
@@ -694,7 +675,8 @@ window.report_ui = (function () {
       stacked_top_px += design_px(band_element.getBoundingClientRect().height);
     }
     for (const header_cell of scroll_container.querySelectorAll("th")) {
-      const owning_table = header_cell.closest(".tbl") || scroll_container;
+      const owning_table =
+        header_cell.closest(".table-box") || scroll_container;
       if (owning_table === scroll_container) {
         header_cell.style.top = stacked_top_px + "px";
       }
@@ -702,7 +684,8 @@ window.report_ui = (function () {
   }
   function layout_refresh(root_element) {
     root_element = root_element || document.body;
-    for (const table_element of root_element.querySelectorAll("table.cols")) {
+    const table_elements = root_element.querySelectorAll("table.columns");
+    for (const table_element of table_elements) {
       if (!table_element.resize_handles) continue;
       handles_position(table_element);
     }
@@ -713,17 +696,19 @@ window.report_ui = (function () {
   }
   function layout_activate(root_element) {
     root_element = root_element || document.body;
-    for (const table_element of root_element.querySelectorAll("table.cols")) {
+    const table_elements = root_element.querySelectorAll("table.columns");
+    for (const table_element of table_elements) {
       handles_create(table_element);
     }
     layout_refresh(root_element);
   }
   function layout_reset(root_element) {
     root_element = root_element || document.body;
-    for (const table_element of root_element.querySelectorAll("table.cols")) {
+    const table_elements = root_element.querySelectorAll("table.columns");
+    for (const table_element of table_elements) {
       if (!table_element.resize_handles) continue;
       for (const column_element of column_elements_of(table_element)) {
-        column_element.style.width = column_element.dataset.w;
+        column_element.style.width = column_element.dataset.startWidth;
       }
       handles_position(table_element);
     }

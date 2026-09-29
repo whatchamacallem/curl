@@ -15,6 +15,18 @@ BUILD_CCACHE_NAMESPACE=perf2html
 # cmake flags, named by build_paths
 BUILD_DIR=build-relwithdebinfo
 
+# where the archive serves source packages, joined with the source package
+# name's pool letter, its name, and the orig tarball, by source_cache_sync
+CACHE_ARCHIVE_BASE_URL=http://archive.ubuntu.com/ubuntu/pool/main
+
+# the installed package whose source the heat map reads, and the one dpkg
+# names its source package and version through
+CACHE_EXTERNAL_PACKAGE=libc6
+
+# the root every downloaded external source tree sits under, one directory
+# per source package, one below that per version
+CACHE_ROOT_DIR=~/.cache/perf2html
+
 # loops one callgrind run of a test does
 CALLGRIND_LOOPS=200
 
@@ -28,6 +40,10 @@ declare -A CONTAINING_PACKAGES=(
   [taskset]=util-linux
   [python3]=python3
   [cksum]=coreutils
+  [curl]=curl
+  [tar]=tar
+  [xz]=xz-utils
+  ["dpkg-query"]=dpkg
 )
 
 # cmake flags the batch builds the modified tree with when given none
@@ -76,7 +92,8 @@ REPORT_MANIFEST_VERSION_FULL='curl/perf2html.sh v1'
 # the batch's report directory name for the build carrying the flags
 REPORT_MODIFIED_DIR_NAME=perf2html_modified_report
 
-# the extension of a report's raw-data archive, one per test, page-visible
+# the extension of a report's raw-data archive, one per test, page-visible,
+# and of the whole-report archive --txz writes and every script reads back
 REPORT_RAW_ARCHIVE_SUFFIX=.txz
 
 # loops one native timing run of a test does
@@ -90,5 +107,13 @@ TRACE_BUILD_DIR=build-instr
 TRACE_SKIP_ALL=18446744073709551615
 
 # the diagnostic level, one per --verbose given: 0 prints no diagnostics, 1
-# the steps and their output, 2 cmake's configure output too
+# the steps and their output as markdown, 2 raw text and cmake too, 3 xtrace
 VERBOSE=0
+
+# the level from which every line is plain text: no markdown, no filtering,
+# and a child's output, cmake's configure included, reaches the terminal raw
+VERBOSE_RAW_LEVEL=2
+
+# the level from which a script turns on set -o xtrace, right after it has
+# parsed its arguments
+VERBOSE_TRACE_LEVEL=3

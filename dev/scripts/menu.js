@@ -32,10 +32,10 @@
   const scale_label = document.getElementById("scale-label");
   const scale_slider = document.getElementById("scale-slider");
   const scale_text = document.getElementById("scale-text");
-  const strip_bar = document.getElementById("bar");
+  const strip_bar = document.getElementById("strip_bar");
   const tests_pulldown_root = window.report_frame.tests_pulldown_root;
   const title_badge = document.getElementById("title");
-  const utility_block = document.getElementById("util");
+  const utility_block = document.getElementById("utility_links");
   const view_links = [...strip_bar.querySelectorAll("a[data-view]")];
   const tests_pulldown_entries = tests_pulldown_root
     ? [...tests_pulldown_root.querySelectorAll(".pulldown-list a[data-view]")]
@@ -60,12 +60,11 @@
   let tests_pulldown_is_open = false;
 
   // The test every pulldown works in: the framed one, else the merged one.
-  // The tests pulldown reads it while closed.
+  // The open tests list shows it as the one differently coloured entry.
   function active_test_show(matched_link) {
     active_test_name = tests_pulldown_entries.includes(matched_link)
       ? matched_link.dataset.view
       : STRIP_PULLDOWN_MERGED_TEST_NAME;
-    if (tests_pulldown) tests_pulldown.closed_text_set(active_test_name);
   }
   // The links the files or functions pulldown offers: each name of its kind
   // the active test's heat map opens, there, on the counter on show.

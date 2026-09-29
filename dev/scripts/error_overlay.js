@@ -10,7 +10,7 @@ window.report_error_overlay = (function () {
   const OVERLAY_BACK_LINK_TEXT = "back";
   const OVERLAY_NO_MANIFEST_TEXT = "Report has no manifest";
   const DESIGN_COORDINATES_WIDTH_PX = 1920;
-  const DESIGN_FONT_SIZE_PX = 16;
+  const DESIGN_FONT_SIZE_PX = 24;
   const CALLSTACK_TABLE_LINE_CHARS = 79;
   const CALLSTACK_TABLE_FRAME_CHARS = 7;
   const CALLSTACK_LOCATION_COLUMN_SHARE = 1 / 3;
@@ -142,7 +142,7 @@ ${manifest_text}`;
       ) + "px";
     const page_style =
       `margin:0;background:${OVERLAY_BACKGROUND_COLOR};` +
-      `color:${OVERLAY_TEXT_COLOR};font:${font_size}/1.5 Monaco, monospace;` +
+      `color:${OVERLAY_TEXT_COLOR};font:${font_size}/1.1 Monaco, monospace;` +
       `min-height:100vh;display:flex;align-items:center;` +
       `justify-content:center`;
     const block_style =

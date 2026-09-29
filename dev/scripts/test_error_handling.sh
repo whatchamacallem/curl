@@ -50,7 +50,10 @@ _TEST_ERROR_ARTIFACTS="$_DEV/perf2html_temporary_artifacts"
 
 # the recordings' fixed name parts, spelled here on purpose: verification
 # never reads the settings the code under test reads
+_TEST_ERROR_ARCHIVE_SUFFIX=.txz
 _TEST_ERROR_CALLGRIND_LOOPS=200
+# enough of an archive for its xz header to read and no more
+_TEST_ERROR_TRUNCATED_BYTES=1024
 _TEST_ERROR_TIMING_FILE_PREFIX=perf-stat
 
 # the row a report's MANIFEST.txt records its checksum on, re-recorded on a
@@ -323,6 +326,75 @@ test_error_diff_tests() {
     "$_baseline" "$_copy" "$_scratch/out_one_sided"
 }
 
+# test_error_txz_tests - perf2html_diff.sh refusing every .txz input that is
+# no readable archive. Args: the clean copy of baseline.
+test_error_txz_tests() {
+  local _baseline="$1" _wrong _kept _whole _truncated
+  local _tool="$_DEV/perf2html_diff.sh"
+  local _scratch="$_TEST_ERROR_SCRATCH"
+
+  # a .txz input naming nothing: never taken for a directory, never made
+  test_failure_expect txz_input_missing 2 -- \
+    "$_tool" "--artifacts=$_scratch/artifacts_txz_missing" \
+    "$_baseline" "$_scratch/never_made$_TEST_ERROR_ARCHIVE_SUFFIX" \
+    "$_scratch/out_txz_missing"
+
+  # a .txz name on a file tar cannot read: tar's failure is the refusal
+  echo 'not a tar, written by test_error_handling.sh' \
+    >"$_scratch/not_a_tar$_TEST_ERROR_ARCHIVE_SUFFIX"
+  test_failure_expect txz_input_not_a_tar 2 -- \
+    "$_tool" "--artifacts=$_scratch/artifacts_txz_not_a_tar" \
+    "$_baseline" "$_scratch/not_a_tar$_TEST_ERROR_ARCHIVE_SUFFIX" \
+    "$_scratch/out_txz_not_a_tar"
+
+  # a .txz name on an empty file: no xz stream begins there, so tar refuses
+  : >"$_scratch/empty$_TEST_ERROR_ARCHIVE_SUFFIX"
+  test_failure_expect txz_input_empty 2 -- \
+    "$_tool" "--artifacts=$_scratch/artifacts_txz_empty" \
+    "$_baseline" "$_scratch/empty$_TEST_ERROR_ARCHIVE_SUFFIX" \
+    "$_scratch/out_txz_empty"
+
+  # a whole archive of a real report, cut mid stream: the xz header reads
+  # and the data behind it is gone, so the decompression is what refuses
+  _whole="$_scratch/whole$_TEST_ERROR_ARCHIVE_SUFFIX"
+  tar -cJf "$_whole" -C "$(dirname "$_baseline")" "$(basename "$_baseline")"
+  _truncated="$_scratch/truncated$_TEST_ERROR_ARCHIVE_SUFFIX"
+  head -c "$_TEST_ERROR_TRUNCATED_BYTES" "$_whole" >"$_truncated"
+  test_failure_expect txz_input_truncated 2 -- \
+    "$_tool" "--artifacts=$_scratch/artifacts_txz_truncated" \
+    "$_baseline" "$_truncated" "$_scratch/out_txz_truncated"
+
+  # a .txz name on a directory: a suffix alone never makes an archive
+  mkdir "$_scratch/a_directory$_TEST_ERROR_ARCHIVE_SUFFIX"
+  test_failure_expect txz_input_is_a_directory 2 -- \
+    "$_tool" "--artifacts=$_scratch/artifacts_txz_directory" \
+    "$_baseline" "$_scratch/a_directory$_TEST_ERROR_ARCHIVE_SUFFIX" \
+    "$_scratch/out_txz_directory"
+
+  # a real archive holding a directory of another name: tar succeeds and
+  # the report the archive's own name promised is still not in there
+  mkdir -p "$_scratch/other_name"
+  echo 'packed by test_error_handling.sh' >"$_scratch/other_name/a_file.txt"
+  _wrong="$_scratch/wrong_name$_TEST_ERROR_ARCHIVE_SUFFIX"
+  tar -cJf "$_wrong" -C "$_scratch" other_name
+  test_failure_expect txz_input_wrong_report_name 2 -- \
+    "$_tool" "--artifacts=$_scratch/artifacts_txz_wrong_name" \
+    "$_baseline" "$_wrong" "$_scratch/out_txz_wrong_name"
+
+  # --txz writes its archive only once the report is whole, so a refused
+  # run leaves the archive of the run before it as a recovery copy
+  _kept="$_scratch/out_txz_kept"
+  echo 'the previous archive' >"$_kept$_TEST_ERROR_ARCHIVE_SUFFIX"
+  test_failure_expect txz_output_refused 2 -- \
+    "$_tool" --txz "--artifacts=$_scratch/artifacts_txz_kept" \
+    "$_baseline" "$_scratch/never_made" "$_kept"
+  grep -q 'the previous archive' "$_kept$_TEST_ERROR_ARCHIVE_SUFFIX" \
+    || test_fail txz_previous_archive_kept \
+      "$(path_shown "$_kept$_TEST_ERROR_ARCHIVE_SUFFIX") is gone or" \
+      "overwritten after a refused run"
+  echo "ok txz_previous_archive_kept"
+}
+
 # test_error_batch_tests - perf2html_batch.sh --regenerate refusing before
 # it deletes or writes, when the recordings are gone. Args: the target dir.
 test_error_batch_tests() {
@@ -440,6 +512,7 @@ test_error_failure_tests_run() {
     "$_TEST_ERROR_DIFF_REPORT")"
 
   test_error_diff_tests "$_baseline" "$_modified" "$_diff"
+  test_error_txz_tests "$_baseline"
   test_error_batch_tests "$_target"
   test_error_report_dir_tests "$_baseline"
   test_error_toolchain_tests

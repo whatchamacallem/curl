@@ -11,17 +11,7 @@ test_expected_behavior.sh [debug-flags] [--check-formatting]
     it happened.
     --check-formatting  Report what would change rather than writing it.
 
-    These are the same debug-flags as the README.md documents:
-    --keep-artifacts    Measure as usual, but keep the recordings afterwards,
-                        which is what a later --regenerate reuses. Flagless
-                        runs delete them.
-    --regenerate        Rebuild the three reports' pages from the last run's
-                        recordings, re-measuring nothing. Pass it after every
-                        dev/ edit; leave it off once perf has been re-linked.
-                        Recordings that no longer describe the executable are
-                        a hard error: re-run without the flag to measure.
-    --verbose           Enables diagnostic information. Repeating it (--verbose
-                        --verbose) increments the verbosity level.
+    The debug-flags are the same as the README.md documents.
 EOF
 }
 
@@ -330,6 +320,36 @@ test_expected_report_check_run() {
   done
 }
 
+# test_expected_archive_check_run - read back every archive --txz wrote,
+# through the one extraction door that every reader of one goes through.
+test_expected_archive_check_run() {
+  local _path _archive _root _name _extracted
+
+  heading_print "$REPORT_RAW_ARCHIVE_SUFFIX archives"
+
+  # one mktemp -d for this check, authorized for archive extraction, holding
+  # every report read back and removed whole below
+  _root="$(mktemp -d)" || error_exit 1 \
+    "error: mktemp could not make the archive check directory"
+
+  for _path in "${_DEFAULT_REPORTS[@]}"; do
+    _name="$(basename "$_path")"
+    _archive="$_path$REPORT_RAW_ARCHIVE_SUFFIX"
+    [ -f "$_archive" ] || error_exit 1 \
+      "error: --txz wrote no archive for $_name: $_archive"
+
+    # the extracted copy is a report or nothing: manifest_verify is the one
+    # door, so a truncated or mis-rooted archive stops the run here
+    _extracted="$(archive_extract "$_archive" "$_name" "$_root")"
+    manifest_verify "$_extracted" "$_name" \
+      "$REPORT_MANIFEST_VERSION_FULL" "$REPORT_MANIFEST_VERSION_DIFF"
+    log_verbose "$_archive -> $_extracted"
+  done
+
+  rm -rf "$_root" || error_exit 1 \
+    "error: could not remove the archive check directory: $_root"
+}
+
 # test_source_scan_run - test_source_scan.py's comment block and ASCII
 # checks, over every whitelisted file and in one read of each.
 test_source_scan_run() {
@@ -353,6 +373,10 @@ batch_run() {
   # a measuring run that keeps its recordings is what a later --regenerate
   # reuses, and the batch owns every deletion of them
   if [ "$_KEEP_ARTIFACTS" = 1 ]; then _flags+=(--keep-artifacts); fi
+
+  # every run writes the archives too, so the suite verifies the writer and
+  # test_expected_archive_check_run has an archive of each report to read
+  _flags+=(--txz)
   _shown="$_BATCH_SCRIPT_NAME ${_flags[*]} --target-dir=$_target"
 
   # a paragraph of its own: the batch's first line is its title, which a
@@ -468,11 +492,17 @@ regenerate_check() {
 clear_overwritten_folders() {
   # the artifacts directory is not ours to delete: the batch owns every
   # deletion of it, and being flagless below is what makes it do one
-  local _path
+  local _path _archive
 
   for _path in "${_DEFAULT_REPORTS[@]}"; do
     rm -rf "$_path" \
       || error_exit 1 "error: could not remove the previous report: $_path"
+
+    # --txz names the archive after the report, so that archive is this
+    # run's output too and never a previous run's left beside a new report
+    _archive="$_path$REPORT_RAW_ARCHIVE_SUFFIX"
+    rm -f "$_archive" || error_exit 1 \
+      "error: could not remove the previous archive: $_archive"
   done
   log_verbose "cleared ${#_DEFAULT_REPORTS[@]} report(s)"
 }
@@ -548,6 +578,8 @@ main() {
   batch_run
   # 0.59s test_report.py over each of the three reports
   test_expected_report_check_run
+  # 0.80s read back every --txz archive the batch wrote
+  test_expected_archive_check_run
   # 40.40s test_screenshot.py over the modified and diff reports
   screenshots_run
 }

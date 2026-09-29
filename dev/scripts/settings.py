@@ -23,10 +23,10 @@ ASSET_SETTINGS_SCRIPT_NAME = "settings.js"
 
 # The four scripts/ files a generator reads as a template, each holding the
 # markers it substitutes into. Read but never shared into a report.
-ASSET_TEMPLATE_FLAME_GRAPH_BOOTSTRAP_NAME = "flame_bootstrap.js"
+ASSET_TEMPLATE_FLAME_GRAPH_BOOTSTRAP_NAME = "flame_graph.js"
 ASSET_TEMPLATE_FLAME_GRAPH_PAGE_NAME = "flame_graph.html"
 ASSET_TEMPLATE_HEAT_MAP_PAGE_NAME = "heatmap.html"
-ASSET_TEMPLATE_SETTINGS_HANDLER_NAME = "settings_handler.js"
+ASSET_TEMPLATE_SETTINGS_HANDLER_NAME = "settings.js"
 
 ASSET_THEME_SCRIPT_NAME = "theme.js"
 ASSET_THEME_STYLESHEET_NAME = "theme.css"
@@ -61,7 +61,7 @@ DESIGN_FONT_CHARACTER_WIDTH_PX = 7.2
 DESIGN_FONT_SIZE_PX = 12
 
 # The CSS variable carrying the font fit, a multiplier on every font size
-# the theme sets: 1 is the design font itself. Boundary.
+# the theme sets: 1 is the design font itself.
 DESIGN_FONT_FIT_PROPERTY = "--font-fit"
 
 # Below this window width design_scale_apply() stops shrinking the zoom
@@ -79,7 +79,7 @@ DESIGN_SCALE_SMALLEST_MULTIPLE = 0.5
 DESIGN_SCALE_DEFAULT_TRAVEL_SHARE = 0.5
 
 # The CSS variable carrying the window's height in design pixels. A vh is
-# zoomed like any length, so a full-height rule reads this instead. Boundary.
+# zoomed like any length, so a full-height rule reads this instead.
 DESIGN_VIEWPORT_HEIGHT_PROPERTY = "--design-vh"
 
 # What callgrind_diff.py's synthesized callers diff is named, beside the
@@ -124,7 +124,7 @@ HEAT_COLOR_LIGHT_TEXT_ABOVE_SHARE = 0.45
 
 # The 12-stop heat ramp, cold to hot, exempt from the light/dark pair rule.
 # Carried opaque by a cell, stepped across by the logo: a retune hits both.
-HEAT_COLOR_LOGO_STOPS: list[str] = [
+HEAT_COLOR_STOPS: list[str] = [
     "#3E4A89",
     "#31688E",
     "#26828E",
@@ -255,8 +255,8 @@ STORAGE_VERSION_KEY = "perf2html.version"
 # The "curl.se/perf" link in every page's util block.
 STRIP_CURL_PERF_SITE_HREF = "https://curl.se/perf/index.html"
 
-# Spaces each overview pulldown's box adds beyond the longest test name, the
-# longest text a closed box reads. All three boxes are this one width.
+# Spaces each overview pulldown's open search box adds beyond the longest
+# test name. All three boxes are this one width.
 STRIP_PULLDOWN_EXTRA_WIDTH_CHARS = 2
 
 # The keys an open pulldown answers, and a framed summary forwards up to the
@@ -349,10 +349,6 @@ THEME_COLOR_PAIR_NAMES: tuple[str, ...] = (
     "slate",
 )
 
-# How much darker than its named colour the page background is drawn. The
-# one number moving --bg, scrollbar and minimap; a heated cell follows none.
-THEME_COLOR_ROLE_BACKGROUND_SHADE_FACTOR = 0.90
-
 # What each colour is for, as its CSS variable, then the pair and member
 # ("light"/"dark") it comes from. "bg" alone is shaded. Boundary names.
 THEME_COLOR_ROLE_SOURCES: dict[str, tuple[str, str]] = {
@@ -431,8 +427,9 @@ _SETTINGS_PAGE_NAME_MARKER = "__NAME__"
 # The one scalar spelling settings.sh turns into an int rather than a str.
 _SHELL_INTEGER_PATTERN = re.compile(r"-?[0-9]+")
 
-# The [key]= in front of each element of a declare -A map.
-_SHELL_MAP_KEY_PATTERN = re.compile(r"\[([A-Za-z0-9_.+-]+)\]=")
+# The [key]= in front of each element of a declare -A map. A key holding a
+# "-" is written quoted, which is what shfmt leaves alone.
+_SHELL_MAP_KEY_PATTERN = re.compile(r"\[\"?([A-Za-z0-9_.+-]+)\"?\]=")
 
 # The shell's settings file, beside this one.
 _SHELL_SETTINGS_FILE_NAME = "settings.sh"
@@ -450,11 +447,6 @@ _SHELL_WORD_PATTERN = re.compile(r"'([^']*)'|\"([^\"]*)\"|([^\s)]+)")
 
 # SettingsReader - the reader for the annotated settings a module declares.
 class SettingsReader:
-    # Every setting this module exports, by name.
-    def all_named(self) -> dict[str, object]:
-        scope = globals()
-        return {name: scope[name] for name in sorted(_SETTING_NAMES)}
-
     # Whether one initializer is an empty sentinel of a type the annotation
     # could name. A fixed-length tuple counts when every element is one.
     def is_sentinel(self, written: object) -> bool:
@@ -495,57 +487,6 @@ class SettingsReader:
             "of them, correct the spelling here, or -- if this is the "
             "file's own constant -- move it below the load_into() call."
         )
-
-    # The manifest as an untitled markdown table: header ["", version], each
-    # row split at its first "=", right column wrapped at the 79-col limit.
-    def manifest_table(self, lines: Sequence[str]) -> str:
-        version, rows = lines[0], [line.partition("=") for line in lines[1:]]
-        left_width = max([len(version)] + [len(label) for label, _, _ in rows])
-        right_width = _MANIFEST_TABLE_LINE_CHARS - 7 - left_width
-        out = [
-            self.manifest_table_row("", version, left_width, right_width),
-            self.manifest_table_rule(left_width, right_width),
-        ]
-        for label, _, value in rows:
-            first = True
-            while value or first:
-                out.append(
-                    self.manifest_table_row(
-                        label if first else "",
-                        value[:right_width],
-                        left_width,
-                        right_width,
-                    )
-                )
-                value = value[right_width:]
-                first = False
-        return "\n".join(out)
-
-    # One manifest_table row, its label and value cells padded to width.
-    def manifest_table_row(
-        self, label: str, value: str, left_width: int, right_width: int
-    ) -> str:
-        return f"| {label.ljust(left_width)} | {value.ljust(right_width)} |"
-
-    # One manifest_table rule row, dashes the width of each column.
-    def manifest_table_rule(self, left_width: int, right_width: int) -> str:
-        return f"|{'-' * (left_width + 2)}|{'-' * (right_width + 2)}|"
-
-    # Build assets/settings.js: every setting as one frozen JSON literal in
-    # settings_handler.js, wholesale, with no list of what a page may see.
-    def script_write(self) -> str:
-        # Plain open(), never theme.asset_text_read(): theme.py imports this
-        # module, so reaching for theme here would cycle.
-        values = self.all_named()
-        data = json.dumps(values, indent=2, sort_keys=True, ensure_ascii=False)
-        path = os.path.join(
-            _SETTINGS_DIRECTORY, ASSET_TEMPLATE_SETTINGS_HANDLER_NAME
-        )
-        with open(path, encoding="utf-8") as handle:
-            runtime = handle.read()
-        return runtime.replace(
-            _SETTINGS_PAGE_NAME_MARKER, PAGE_SETTINGS_GLOBAL_NAME
-        ).replace(_SETTINGS_PAGE_DATA_MARKER, data)
 
     # The second check: a declaration is written with an empty sentinel of
     # its own type. Anything else is a value meant to be read, and is lost.
@@ -729,8 +670,68 @@ class SettingsReader:
         return globals()[name.lstrip("_")]
 
 
+# SettingsWriter - the page text this module emits: the frozen settings
+# script, and the manifest table string report_complete.js carries.
+class SettingsWriter:
+    # Every setting this module exports, by name.
+    def all_named(self) -> dict[str, object]:
+        scope = globals()
+        return {name: scope[name] for name in sorted(_SETTING_NAMES)}
+
+    # The manifest as an untitled markdown table: header ["", version], each
+    # row split at its first "=", right column wrapped at the 79-col limit.
+    def manifest_table(self, lines: Sequence[str]) -> str:
+        version, rows = lines[0], [line.partition("=") for line in lines[1:]]
+        left_width = max([len(version)] + [len(label) for label, _, _ in rows])
+        right_width = _MANIFEST_TABLE_LINE_CHARS - 7 - left_width
+        out = [
+            self.manifest_table_row("", version, left_width, right_width),
+            self.manifest_table_rule(left_width, right_width),
+        ]
+        for label, _, value in rows:
+            first = True
+            while value or first:
+                out.append(
+                    self.manifest_table_row(
+                        label if first else "",
+                        value[:right_width],
+                        left_width,
+                        right_width,
+                    )
+                )
+                value = value[right_width:]
+                first = False
+        return "\n".join(out)
+
+    # One manifest_table row, its label and value cells padded to width.
+    def manifest_table_row(
+        self, label: str, value: str, left_width: int, right_width: int
+    ) -> str:
+        return f"| {label.ljust(left_width)} | {value.ljust(right_width)} |"
+
+    # One manifest_table rule row, dashes the width of each column.
+    def manifest_table_rule(self, left_width: int, right_width: int) -> str:
+        return f"|{'-' * (left_width + 2)}|{'-' * (right_width + 2)}|"
+
+    # Build assets/settings.js: every setting as one frozen JSON literal,
+    # wholesale, with no list of what a page may see.
+    def script_write(self) -> str:
+        # Plain open(), never theme.asset_text_read(): theme.py imports this
+        # module, so reaching for theme here would cycle.
+        values = self.all_named()
+        data = json.dumps(values, indent=2, sort_keys=True, ensure_ascii=False)
+        path = os.path.join(
+            _SETTINGS_DIRECTORY, ASSET_TEMPLATE_SETTINGS_HANDLER_NAME
+        )
+        with open(path, encoding="utf-8") as handle:
+            runtime = handle.read()
+        return runtime.replace(
+            _SETTINGS_PAGE_NAME_MARKER, PAGE_SETTINGS_GLOBAL_NAME
+        ).replace(_SETTINGS_PAGE_DATA_MARKER, data)
+
+
 # The reader, then the cut: the shell's settings bind first, so every one
-# is bound before the list is taken.
+# is bound before the list is taken. The writer reads the finished list.
 _reader = SettingsReader()
 globals().update(_reader.shell_settings_read())
 _SETTING_NAMES = frozenset(
@@ -738,6 +739,7 @@ _SETTING_NAMES = frozenset(
     for name in globals()
     if not name.startswith("_") and _is_setting_name(name)
 )
+_writer = SettingsWriter()
 
 
 # Assign a module's declared settings into it, checking each one's type
@@ -748,11 +750,10 @@ def load_into(module_name: str) -> None:
 
 # The manifest as an untitled markdown table, for report_complete.js.
 def manifest_table(lines: Sequence[str]) -> str:
-    return _reader.manifest_table(lines)
+    return _writer.manifest_table(lines)
 
 
-# Build assets/settings.js: every setting this module holds, shipped to the
-# browser as one frozen object; manifest_lines is unused, kept for symmetry.
-def settings_script_write(manifest_lines: Sequence[str]) -> str:
-    del manifest_lines
-    return _reader.script_write()
+# Build assets/settings.js: every setting this module holds, shipped to
+# the browser as one frozen object.
+def settings_script_write() -> str:
+    return _writer.script_write()

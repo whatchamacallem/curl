@@ -9,8 +9,9 @@ The HTML will open straight from disk, with no server. Start by opening the top
 level `index.html` in the report and then bookmarks will work.
 
 The html app is stateless following REST style. This means the navigation URLs
-are immutable (so bookmarks work) and the file URLs used by JavaScript are also
-immutable (so no server is needed and perfect caching is possible).
+are immutable (so bookmarks work) and the module URLs used by JavaScript on the
+back end are also immutable (so no server is needed and perfect caching is
+possible).
 
 ## Running the Generator Scripts
 
@@ -36,6 +37,8 @@ perf2html.sh [debug-flags] [--report=DIR] [cmake-flags...]
     --report=DIR      Defaults to perf2html_baseline_report, or
                       perf2html_modified_report when a cmake flag is given.
                       Pass it yourself after a source-only change.
+    --txz             Create .txz archives of all reports generated.
+                      .txz files may also be used as inputs.
     cmake-flags       Everything else, e.g. -D CMAKE_C_FLAGS=-Os.
 ```
 
@@ -45,6 +48,8 @@ perf2html_diff.sh [debug-flags] [baseline] [modified] [diff]
     generates a diff. Directories default to
     ./perf2html_{baseline,modified,diff}_report. Both baseline and modified
     must be a perf2html.sh report. A diff can't be diffed.
+    --txz             Create .txz archives of all reports generated.
+                      .txz files may also be used as inputs.
 ```
 
 ```txt
@@ -52,6 +57,8 @@ perf2html_batch.sh [debug-flags] [--target-dir=DIR] [cmake-flags...]
     Profiles baseline, modified and then does a diff of them.
     --target-dir=DIR  Holds the three default-named reports (default CWD). The
                       batch cannot rename them.
+    --txz             Create .txz archives of all reports generated.
+                      .txz files may also be used as inputs.
     cmake-flags:      Every argument not one of its own options, applied to the
                       modified build (default -D CMAKE_C_FLAGS=-Os).
 ```
@@ -60,7 +67,6 @@ These are shared developer flags for the iterative development of `perf2html`
 itself.
 
 ```txt
-    These are the same debug-flags as the README.md documents:
     --artifacts=TMP   The profiler artifacts directory. Defaults to
                       perf2html_temporary_artifacts/ beside the report
                       directory (inside the target dir for a batch).

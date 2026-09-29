@@ -16,7 +16,7 @@ body {
   color: var(--fg);
   font-family: var(--font);
   font-size: calc(var(--font-px) * var(--font-fit));
-  line-height: 1.5;
+  line-height: 1.1;
 }
 a {
   color: var(--link);
@@ -31,6 +31,7 @@ a:hover {
 }
 h2 {
   color: var(--fg-dim);
+  font: inherit;
   margin: 0;
 }
 p {
@@ -73,11 +74,7 @@ input {
   text-overflow: ellipsis;
   max-width: 40ch;
   flex: none;
-}
-.strip .sep {
-  flex: none;
-  margin: 0 1ch;
-  color: var(--muted);
+  padding: 0 1ch;
 }
 .strip a:hover {
   background: var(--link);
@@ -88,10 +85,15 @@ input {
   background: none;
   color: var(--link);
 }
-.strip a.on,
+/* the current view holds the menu bar's inverse video block; the already
+   selected test in the open list is set off by a small colour variation */
+.strip a.on {
+  background: var(--fg);
+  color: var(--nav);
+}
 .strip .pulldown-list a.on {
-  background: var(--hot);
-  color: var(--hot-fg);
+  background: var(--sel);
+  color: var(--link);
 }
 .strip .pulldown-list a.highlighted-entry {
   background: var(--link);
@@ -123,7 +125,7 @@ input {
   white-space: pre;
 }
 
-.strip .sp {
+.strip .spacer {
   flex: 1 0 0;
   min-width: 0;
 }
@@ -143,7 +145,7 @@ input {
   cursor: pointer;
 }
 
-.strip .util {
+.strip .utility {
   display: flex;
   align-items: center;
   flex: none;
@@ -152,40 +154,39 @@ input {
 .strip:has(.pulldown) {
   overflow: visible;
 }
-/* label, caret, box: the caret points at the box's text and the list drops
-   below the box. Bare: no part draws a border, ring or box of its own */
+/* the menu button, or the search box in its place while open, the list
+   dropping below either. No part draws a border, ring or box of its own */
 .strip .pulldown {
   position: relative;
-  display: inline-grid;
-  grid-template-columns: auto 2ch auto;
-  column-gap: 1ch;
+  display: flex;
   flex: none;
+  margin-left: 1ch;
 }
-.strip .pulldown-label,
-.strip .pulldown-caret {
-  color: var(--muted);
+.strip .pulldown-button {
+  font: inherit;
+  color: var(--fg);
+  background: var(--bg-alt);
+  border: 0;
+  padding: 0 1ch;
   cursor: pointer;
 }
-.strip .pulldown-caret {
-  font: inherit;
-  background: none;
-  border: 0;
-  padding: 0;
-  text-align: center;
+.strip .pulldown-button:hover {
+  background: var(--link);
+  color: var(--nav);
 }
 .strip .pulldown-search {
   background: none;
+  /* wide enough for its placeholder when every test name is shorter */
+  min-width: 13ch;
 }
-.strip .pulldown-search[readonly] {
-  cursor: pointer;
+.strip .pulldown-search::placeholder {
+  color: var(--muted);
 }
 .strip .pulldown :focus {
   outline: none;
 }
 .strip .pulldown-list {
   position: absolute;
-  grid-column: 3;
-  grid-row: 1;
   top: 100%;
   left: 0;
   z-index: 3;
@@ -233,7 +234,7 @@ body.frame > iframe {
   container-type: inline-size;
 }
 
-.tbl {
+.table-box {
   position: relative;
   width: fit-content;
 }
@@ -242,21 +243,21 @@ body.frame > iframe {
   top: 0;
   z-index: 2;
 }
-.tbl-cols {
+.table-columns {
   position: relative;
   width: fit-content;
 }
-table.cols {
+table.columns {
   table-layout: fixed;
   border-collapse: separate;
   border-spacing: 0;
   width: 0;
 }
-table.cols col.alt {
+table.columns col.alternate {
   background: var(--bg-alt);
 }
-table.cols th,
-table.cols td {
+table.columns th,
+table.columns td {
   padding: 0 1ch;
   white-space: nowrap;
   overflow: hidden;
@@ -264,7 +265,7 @@ table.cols td {
   vertical-align: top;
   border: 0;
 }
-table.cols th {
+table.columns th {
   position: sticky;
   top: 0;
   z-index: 1;
@@ -273,15 +274,15 @@ table.cols th {
   color: var(--fg-dim);
   background: var(--panel);
 }
-table.cols .n {
+table.columns .numeric {
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
-table.cols .dim {
+table.columns .dimmed {
   color: var(--muted);
 }
 
-.bar {
+.resize-handle {
   position: absolute;
   top: 0;
   bottom: 0;
@@ -291,7 +292,7 @@ table.cols .dim {
   cursor: col-resize;
   touch-action: none;
 }
-.bar::before {
+.resize-handle::before {
   content: "";
   position: absolute;
   top: 0;
@@ -299,37 +300,37 @@ table.cols .dim {
   left: 2.5px;
   width: 4px;
 }
-.bar:hover::before,
-.bar.active::before {
+.resize-handle:hover::before,
+.resize-handle.active::before {
   background: var(--bar);
 }
 
-.bar:last-child {
+.resize-handle:last-child {
   margin-left: -9px;
 }
-.bar:last-child::before {
+.resize-handle:last-child::before {
   left: 5px;
 }
 
 /* the list marker is drawn in the padding: one glyph and one blank */
-ul.rawdata {
+ul.raw-data {
   margin: 0;
   padding-left: 2ch;
 }
 
-details.sec summary {
+details.log-section summary {
   cursor: pointer;
   color: var(--fg-dim);
   font-weight: normal;
 }
-details.sec summary::marker {
+details.log-section summary::marker {
   color: var(--fg-dim);
 }
-details.sec summary h2 {
+details.log-section summary h2 {
   display: inline;
   color: inherit;
 }
-pre.logbox {
+pre.log-box {
   background: var(--panel);
   max-height: calc(0.6 * var(--design-vh, 100vh));
   overflow: auto;
@@ -368,8 +369,8 @@ pre.logbox {
   background: var(--bg);
 }
 
-pre.logbox::-webkit-scrollbar-track,
-pre.logbox::-webkit-scrollbar-corner {
+pre.log-box::-webkit-scrollbar-track,
+pre.log-box::-webkit-scrollbar-corner {
   background: var(--panel);
 }
 

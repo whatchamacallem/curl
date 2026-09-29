@@ -1,30 +1,32 @@
-<div id="hdr" class="strip">
+<div id="control_strip" class="strip">
   <label
-    ><span id="counterLabel"></span>
+    ><span id="counter_label"></span>
     <select id="counter"></select
   ></label>
   <label
-    ><span id="scaleLabel"></span>
+    ><span id="scale_label"></span>
     <select id="scale"></select
   ></label>
   <label
-    ><span id="sortLabel"></span>
+    ><span id="sort_label"></span>
     <select id="sort">
       <option value="heat"></option>
       <option value="name"></option></select
   ></label>
-  <label><span id="searchLabel"></span> <input id="q" type="search" /></label>
+  <label
+    ><span id="search_label"></span> <input id="search_box" type="search"
+  /></label>
 </div>
 <div id="layout">
   <nav id="tree"></nav>
   <div id="split" class="split"></div>
   <section id="main"></section>
   <div id="minimap" class="empty">
-    <div id="mmBox"></div>
-    <div id="mmViewport" hidden></div>
+    <div id="minimap_box"></div>
+    <div id="minimap_viewport" hidden></div>
   </div>
 </div>
-<script id="heatdata" type="application/json">
+<script id="heat_map_data" type="application/json">
   __DATA__
 </script>
 __SCRIPTS__

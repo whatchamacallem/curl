@@ -59,19 +59,29 @@ directly as well as providing a link to the task doc.
   `settings.sh`/`settings.py`, read everywhere.
 - Any urge to add decorative comments, "helpful" extra logging, or stylistic
   polish not asked for anywhere above - the file is explicit that
-  embellishment (borders, tooltips, alpha/fade on the heat map, redesigning on
-  your own initiative) is actively unwanted, not merely optional.
+  embellishment (borders, tooltips, adding alpha or adjusting shade,
+  redesigning on your own initiative) is actively unwanted, not merely
+  optional.
 - When asked to review a commit or unstaged change do not read this document.
   Report inconsistencies with this document only when encountered through
   knowledge gained when it was injected in your context. That is the self
   healing mechanism.
 - Do not commit, uncommit, stage, unstage changes in git. If changes become
-  staged during a rename then unstage them. git is the permission system for
-  permanent changes and therefore must be reviewed by a user.
+  staged during a rename then unstage them. `git` is the permission system for
+  permanent changes and therefore must be reviewed by a user. The one exception
+  is for staging files before running reformatting tools below.
 - Do not reference `CLAUDE.md` or `declawed.md` outside this doc. No not
   explicitly mention the tests being tested themselves in other source.
 - The source formatters may need to run twice to be stable. Alert the user
   if they are not.
+- If a source reformating tool can be used to fix an error then stage the
+  file to be modified in git and run the tool. Then check the diff and if
+  you believe there was an error the change can be reverted and applied
+  manually.
+- Do not iterate on formatting `.md` documents. If there is a setting forcing
+  you to reformat this document then it has to be disabled, inform the user.
+- Never add un-requested documentation because you saw some was missing. Only
+  document new code and prefer 1 line comments.
 
 ### 0.2 One-door glossary
 
@@ -101,6 +111,10 @@ The single function/check owning each concern - never bypass or duplicate:
 - More than one goal in a response ends with a done/not-done checklist.
 - Numbering of multi-item communication in summaries follows ISO 2145.
 - Don't update usage text, tell the user to do that.
+- The default directories for temp and output files for perf2html.sh and
+  perf2html_diff.sh are intentionally "pinned" to the invocation directory.
+  `perf2html_batch.sh` is just a convenience wrapper and will likely evolve.
+  This is a closed discussion.
 
 ### 0.4 Invariants
 
@@ -113,12 +127,14 @@ The single function/check owning each concern - never bypass or duplicate:
 - Every `dev/*.sh` makes paths absolute at startup; `$PWD` is never read again
   below `args_parse`. Getting this wrong breaks every relative invocation
   silently.
-- buffering command stdout and stderr with `mktemp` is banned. The single door
-  policy on `mktemp` is that it is to be used when `--artifacts=TMP`,
-  `--keep-artifacts` and `--regenerate` have not been used. In this case TMP
-  is to be a directory created with mktmp. The design goal is that perf2html
-  users get /tmp used as normal and cleaned up after too. And development work
-  on perf2html uses a local artifact dir that can be debugged.
+- buffering command stdout and stderr with `mktemp` is banned. Use of `mktemp`
+  is to be by request only. The two door policy as follows. Door one is that
+  `--keep-artifacts` and `--regenerate` have not been used.  In this case the
+  "TMP" directory is to be a directory created with `mktmp`. Door two is that
+  it can be used for `.txz` archive extraction. The design goal is that
+  perf2html users get /tmp used as normal and cleaned up after too. And
+  development work on perf2html uses a local artifact dir that can be
+  debugged.
 - No news is good news: nothing prints a success line unless `--verbose`, and
   when it does print, a success line goes to stdout and failures go to stderr -
   not the other way round.
@@ -129,9 +145,9 @@ The single function/check owning each concern - never bypass or duplicate:
   `--verbose` `pyright_filtered_run` drops it, the maintainer's one exception.
 - `--regenerate` clears the report dir too - a report is output only, never
   read back as an input to itself.
-- `enforcer.sh` captures, redirects or reformats no output of its own or a
-  child's - every child runs through `child_run` and its lines reach the
-  terminal verbatim; a non-zero exit is `error_exit`. The one exception is
+- `test_expected_behavior.sh` captures, redirects or reformats no output of its
+  own or a child's - every child runs through `child_run` and its lines reach
+  the terminal verbatim; a non-zero exit is `error_exit`. The one exception is
   `pyright_filtered_run` under `--verbose`.
 - `tools_resolve` (or equivalent) must find every formatter/linter before
   anything is deleted, naming every missing tool with its install command -
@@ -140,13 +156,11 @@ The single function/check owning each concern - never bypass or duplicate:
   to the terminal; failure checks the exit code only.
 - Plumbing (`perf2html.sh`, `perf2html_diff.sh`) holds no working-directory
   opinion; only the batch (porcelain) has one. Don't blur this line.
-- `dev/scripts/enforcer_whitelist.txt` is the one list of what source stages
+- `dev/scripts/test_whitelist.txt` is the one list of what source stages
   touch - no directory walk, no skip list, nothing unlisted touched.
 - Verification never reads from the code under test for a calculation it's
   checking - local expected constants or a different-route recomputation only.
-- `--verbose` is additive/counted, tested only via `[ "$VERBOSE" -ge N ]` in
-  `utility.sh` and in the enforcer's `lint_run` for `pyright_filtered_run` - no
-  bare `printf` wrappers elsewhere.
+- `--verbose` is additive/counted - no bare `printf` wrappers.
 - `dev/` is bespoke tooling - one parser, one theme, no dead code or duplicate
   systems.
 - Pages are deterministic - same input, byte-identical output.
@@ -154,7 +168,7 @@ The single function/check owning each concern - never bypass or duplicate:
 - Naming split: `_SCREAMING_SNAKE` for a script's own global, `_lowercase` for
   locals, bare names crossing into `utility.sh`.
 - 79-column hard max for all `dev/` source.
-- Comment blocks max 2 lines (3 is an error via `source_scan.py`); longer
+- Comment blocks max 2 lines (3 is an error via `test_source_scan.py`); longer
   reasoning goes in `declawed.md` instead.
 - ASCII plus the specific whitelisted glyphs (`≈ ∞ ▲ ▶ ▼ …`), written
   literally, never as HTML entities.
@@ -172,14 +186,15 @@ The single function/check owning each concern - never bypass or duplicate:
   line per class/function/field, no trailing comments.
 - One dark theme, Monaco/monospace, no restyling the heat map's palette or
   curves without proposing first.
-- `enforcer.sh` is expected to have its own constants distinct from the
-  shipping scripts to compare against - not a bug to flag on sight.
+- `test_expected_behavior.sh` is expected to have its own constants distinct
+  from the shipping scripts to compare against - not a bug to flag on sight.
 - One line helper functions in `.sh` are discouraged and require approval.
 - `error_exit` calls and other error messages must be only one line while
   printing relevant variables too.
 - `test_all.sh` should print significant run times, it is not "no news is good
   news".
-- When `test_all.sh` has run links to screenshots, reports and `enforcer.md`.
+- When `test_all.sh` has run links to screenshots, reports and
+  `test_expected_behavior.md`.
 - Don't change code when unable to implement a request as specified. Do not
   adjust requirements to be more reasonable and then determine they are
   satisfied. Disagreements about design indicate further refinement is
@@ -204,9 +219,10 @@ Under `dev/`:
 - Shell: `perf2html.sh` builds, profiles, writes one report;
   `perf2html_diff.sh` measures nothing, subtracts two reports;
   `perf2html_batch.sh` runs baseline, modified (`-D CMAKE_C_FLAGS=-Os`), diff;
-  `scripts/enforcer.sh` formats, lints, scans, runs the batch, validates;
-  `scripts/test_all.sh` runs enforcer mode 2, the cache checks, the
-  failure-mode tests, `prettier --check`; `clean.sh` = `git clean -Xdf -e
+  `scripts/test_expected_behavior.sh` formats, lints, scans, runs the batch,
+  validates; `scripts/test_all.sh` runs that with `--keep-artifacts`, then
+  `scripts/test_error_handling.sh`, the failure-mode tests ending in
+  `prettier --check`; `clean.sh` = `git clean -Xdf -e
   '!tmp/'` + ccache eviction; `scripts/settings.sh` every shell setting;
   `scripts/utility.sh` every shared function, sourcing inert.
 - Python (`scripts/`): `settings.py` every Python/JS setting; `callgrind.py`
@@ -214,12 +230,13 @@ Under `dev/`:
   `callgrind_to_heatmap.py`, `build_report.py` (overview, summary),
   `build_flame_graph.py`, `trace_to_speedscope.py`; `theme.py` with
   `theme.css`/`theme.js` the one theme (`theme.js` = utility library);
-  enforcer-only: `validate_report.py`, `source_scan.py`, `screenshots.py`.
+  test-only: `test_report.py`, `test_source_scan.py`, `test_screenshot.py`.
 - Page assets (`scripts/`): `frame.js` thin top-level controller;
-  `heatmap.{js,css,html}`; `flame_bootstrap.js` polls `window.speedscope`;
-  `ui_strings.js` (`str_*`); `error_overlay.js` first script on every page;
-  `settings_handler.js` (`settings("NAME")` throws on unknown).
-- `src/cyg_callback.c` trace hooks; `scripts/enforcer_whitelist.txt`;
+  `menu.js` the strip menu; `heatmap.{js,css,html}`; `flame_graph.js`
+  polls `window.speedscope`; `ui_strings.js` (`str_*`); `error_overlay.js`
+  first script on every page; `settings.js` (`settings("NAME")`
+  throws on unknown).
+- `src/cyg_callback.c` trace hooks; `scripts/test_whitelist.txt`;
   `README.md` user contract, copied into every report; `tmp/` notes, `.md`
   only, gitignored, spared by `clean.sh`.
 
@@ -232,14 +249,15 @@ Under `dev/`:
 ## 2 Commands
 
 ```sh
-dev/perf2html.sh [--verbose] [--keep-artifacts] [--regenerate]
+dev/perf2html.sh [--verbose] [--keep-artifacts] [--regenerate] [--txz]
     [--report=DIR] [--artifacts=TMP] [cmake_flags...]
-dev/perf2html_diff.sh [--verbose] [--keep-artifacts] [--regenerate]
+dev/perf2html_diff.sh [--verbose] [--keep-artifacts] [--regenerate] [--txz]
     [--artifacts=TMP] [baseline-dir] [modified-dir] [report-dir]
-dev/perf2html_batch.sh [--verbose] [--keep-artifacts] [--regenerate]
+dev/perf2html_batch.sh [--verbose] [--keep-artifacts] [--regenerate] [--txz]
     [--artifacts=TMP] [--target-dir=DIR] [cmake_flags...]
-dev/scripts/enforcer.sh [--check-formatting] [--keep-artifacts] [--regenerate]
-    [--verbose]
+dev/scripts/test_expected_behavior.sh [--check-formatting] [--keep-artifacts]
+    [--regenerate] [--verbose]
+dev/scripts/test_error_handling.sh
 dev/scripts/test_all.sh [--help]   # no arguments to prove reproducibility.
 dev/clean.sh [--help]              # no arguments to prove sobriety.
 cmake -S . -B build -G Ninja -DCURL_USE_LIBPSL=OFF
@@ -255,13 +273,14 @@ taskset -c 3 ./build-relwithdebinfo/22_DCMAKECFLAGSO2g/tests/perf/perf \
   report's parent dir (all three).
 - Batch: `--target-dir` (default CWD) holds the three default-named reports;
   every other argument is a cmake flag.
-- Enforcer takes only flags and runs the batch; `MANIFEST.txt` line 1 decides
-  each report's `--diff`. Pass `--regenerate` every time except after `perf`
-  was re-linked (wrongly passed, it refuses in <1s).
+- `test_expected_behavior.sh` takes only flags and runs the batch;
+  `MANIFEST.txt` line 1 decides each report's `--diff`. Pass `--regenerate`
+  every time except after `perf` was re-linked (wrongly passed, it refuses in
+  <1s).
 - `usage_show`'s heredoc is the only usage text. `toolchain_check` lists every
   missing tool with its install command, exit 1.
-- After any `dev/` edit: `dev/scripts/enforcer.sh --regenerate`. Before final:
-  `tests/runtests.pl`.
+- After any `dev/` edit: `dev/scripts/test_expected_behavior.sh --regenerate`.
+  Before final: `tests/runtests.pl`.
 
 ## 3 Build trees and measuring
 
@@ -287,7 +306,7 @@ taskset -c 3 ./build-relwithdebinfo/22_DCMAKECFLAGSO2g/tests/perf/perf \
   never feed `--separate-callers=N` output to the summary/heat map.
 - Quick read: `perf <test>`, median of 3-5.
 
-## 4 Artifacts, regenerate, enforcer stages
+## 4 Artifacts, regenerate, test stages
 
 - Artifacts dir holds, per report subdir, `perf-stat.<test>.<recorded>.txt`,
   `perf-stat.*.csv` (`PROFILE_TIMING_FILE_PREFIX`),
@@ -297,8 +316,9 @@ taskset -c 3 ./build-relwithdebinfo/22_DCMAKECFLAGSO2g/tests/perf/perf \
   ships: the summary embeds perf/trace logs (`perf_page_of`/`_TRACE_LOG`); the
   overview reads one `--perf-log NAME=FILE` per test, `all` included.
 - `--regenerate` rebuilds pages from recordings, opening no report. First step
-  of `recorded_reuse` (perf2html.sh) and `regenerate_check` (enforcer): prove
-  rows file and recordings exist. `recorded_reuse` restores `TIMESTAMP` from
+  of `recorded_reuse` (perf2html.sh) and `regenerate_check`
+  (`test_expected_behavior.sh`): prove rows file and recordings exist.
+  `recorded_reuse` restores `TIMESTAMP` from
   `recorded=`; `build_manifest` reads the rest; both before `report_delete`.
   The diff's `--regenerate` keeps the artifacts without the flush, refusing a
   missing cache dir before its report is deleted. `executable=` is recomputed
@@ -317,11 +337,13 @@ taskset -c 3 ./build-relwithdebinfo/22_DCMAKECFLAGSO2g/tests/perf/perf \
 - Stage order (cost-ascending): `whitelist_expand` → `regenerate_check` →
   `tools_resolve` (`_SHFMT`, `_RUFF`, `_CLANG_FORMAT`, `_PRETTIER`, `_PYRIGHT`)
   → `clear_overwritten_folders` (three reports, never artifacts) → shfmt, ruff,
-  clang-format, prettier → `long_lines_report` → `source_scan_run` → `lint_run`
-  (pyright) → `batch_run` → `validate_run` → `screenshots_run`. No stage
-  reaches inside a report; the batch itself runs no checks.
-- Enforcer internals: `child_run` = `command_item_print` + plain `"$@"`,
-  non-zero → `error_exit` `error: exit N from: <command>`; `python_run` =
+  clang-format, prettier → `long_lines_report` → `test_source_scan_run` →
+  `lint_run` (pyright) → `batch_run` → `test_expected_report_check_run` →
+  `screenshots_run`. No stage reaches inside a report; the batch itself runs
+  no checks.
+- `test_expected_behavior.sh` internals: `child_run` = `command_item_print`
+  plus plain `"$@"`, non-zero → `error_exit`
+  `error: exit N from: <command>`; `python_run` =
   `child_run` + `verbose_flags_of`; a stage = `heading_print`; status lines
   (`whitelist`, `regenerate`, `cleared`, `columns`) = `log_verbose`;
   `batch_run` = plain child, failure `error_exit` with its code; no `RUN_LOG`;
@@ -329,30 +351,35 @@ taskset -c 3 ./build-relwithdebinfo/22_DCMAKECFLAGSO2g/tests/perf/perf \
   `tool_find` (`utility.sh`, the pip and npm user bins too) answers through
   `$( )`, for `tools_resolve` and `test_all.sh`'s prettier. `lint_run` runs
   `pyright_filtered_run` under `--verbose`. Only caller of
-  `validate_report.py`, `source_scan.py`, `screenshots.py`, `pyright`, `ruff`,
-  and of `prettier` but for `test_all.sh`'s last check.
+  `test_report.py`, `test_source_scan.py`, `test_screenshot.py`, `pyright`,
+  `ruff`, and of `prettier` but for `test_error_handling.sh`'s last check.
 - Whitelist: `whitelist_expand` → `_WHITELISTED_FILES`; `files_of()` picks by
   extension; blank/`#`/whitespace lines refused; a glob matching nothing is
   allowed (`src/*.h`), a non-regular match or empty list is an error.
   `--config`/`--project` always passed; `pyrightconfig.json` names no file.
-- `screenshots.py`: modified + diff reports, `_VIEWS` × `_SCREENSHOT_VIEWPORTS`
+- `test_screenshot.py`: modified + diff reports, `_VIEWS` ×
+  `_SCREENSHOT_VIEWPORTS`
   → `dev/screenshots/<size>_<report>_<view>.png`, then 4k 3x3
   `thumbnail_<size>_<report>.png`; imports no settings; error view
   `bad_function`; `report_incomplete` shoots a copy lacking
   `assets/report_complete.js` under `dev/build/screenshots_scratch/`;
   `--incognito`; under `--verbose` it prints
   `<report> -> <dir>` and `N screenshot(s)`.
-- Debug modes, run in order: 1 `enforcer.sh` cold; 2 `--keep-artifacts`; 3
-  `--regenerate`. `test_all.sh` = mode 2 `--verbose` with stderr `2>` into
-  `dev/enforcer.md` (gitignored), then the kept recordings checked
-  (`cache_populated_check`) and a batch `--regenerate` proved to measure
-  nothing (`regenerate_cache_check`), then failure-mode tests on report copies
-  in `dev/build/test_all_scratch/` (`_TEST_ALL_SCRATCH`; kept by a failed
-  run). `failure_expect` checks the exit code, prints `ok <test>`; wrong code
-  → `FAILED: <test>: exit N, expected M, from: <command>`, exit 1; last,
-  `prettier --check` with the enforcer's `.prettierrc.json` over
-  `dev/enforcer.md`: the markdown must be what prettier prints. It sources
-  `utility.sh` for `tool_find` only.
+- Debug modes, run in order: 1 `test_expected_behavior.sh` cold; 2
+  `--keep-artifacts`; 3 `--regenerate`. `test_all.sh` runs mode 2, then
+  `test_error_handling.sh`, and prints `perf2html all_tests_pass` last.
+  `test_error_handling.sh` re-runs mode 2 `--verbose` with stderr `2>` into
+  `dev/test_expected_behavior.md` (gitignored), then checks the kept recordings
+  (`test_error_cache_populated_check`) and proves a batch `--regenerate`
+  measures nothing (`test_error_regenerate_cache_check`), then failure-mode
+  tests on report copies in `dev/build/test_error_handling_scratch/`
+  (`_TEST_ERROR_SCRATCH`; kept by a failed run). `test_failure_expect NAME CODE
+  --` checks the exit code and prints `ok <test>`; wrong code →
+  `<test>: exit N, expected M, from: <command>` through `test_fail`, exit 1;
+  last, `prettier --check` with `.prettierrc.json` over
+  `dev/test_expected_behavior.md`: the markdown must be what prettier prints.
+  Both source `test_utility.sh`, which holds `test_fail`,
+  `test_failure_expect` and `test_report_copy`.
 
 ## 5 Shell library
 
@@ -360,15 +387,17 @@ taskset -c 3 ./build-relwithdebinfo/22_DCMAKECFLAGSO2g/tests/perf/perf \
   `absolute_path` = `readlink -m` on `$INVOKED_FROM/<path>` (`~/` expanded);
   `$PWD` is `dev/` after the `cd`; display via `path_display` only. `$_SCRIPT`
   finds the tool's own code only. A leaf script derives nothing from a
-  collection (batch/enforcer own "three reports").
+  collection (batch/test_expected_behavior own "three reports").
 - `settings.sh`: alphabetical, no `$` words, parsed by
   `SettingsReader.shell_settings_read` (`-?[0-9]+` → int); one name in all
   three languages. `TIMESTAMP` per script (`$(date +%s)`) just above
-  `_SCRIPT="$(readlink -f "$0")"`; enforcer declares none. Env vars, two:
+  `_SCRIPT="$(readlink -f "$0")"`; the test scripts declare none. Env vars,
+  two:
   `PERF2HTML_HEADER_DEPTH`, `PERF2HTML_CLOCK_START_US`.
 - Naming: script global `_SCREAMING_SNAKE`, local `_lowercase`, names crossing
   into `utility.sh` bare. `utility.sh` reads `ARTIFACTS_DIR`, `PERF2HTML_DIR_`,
-  `INVOKED_FROM`, `RUN_LOG` (batch has none), `TIMESTAMP`, `VERBOSE`; sets
+  `INVOKED_FROM`, `RUN_LOG` (batch has none), `TIMESTAMP`, `VERBOSE`,
+  `WRITE_REPORT_ARCHIVE`; sets
   `SPEEDSCOPE_RELEASE`, `RUN_LOG` (`report_begin`),
   `CHILD_EXIT_CODE`/`LOG_LINE_FROM` (`child_capture`), `QUIET_SWITCH`
   (`quiet_switch_set`), `VERBOSE_{COMMAND_NUMBER,ITEM_INDENT,BLOCK_PRINTED}`
@@ -382,12 +411,13 @@ taskset -c 3 ./build-relwithdebinfo/22_DCMAKECFLAGSO2g/tests/perf/perf \
   (`CHILD_EXIT_CODE`). `$( )` around `printf`/`date`/`basename`, or
   `verbose_filter`'s awk answer, is a value, fine.
 - Failure: `error_exit CODE LINE...` = one ```txt fence on stderr, exit. Tool
-  child: `failure_print_log_tail` = same fence holding `error: exit ...`. cmake
-  configure output goes to `/dev/null` below level 2; `tree_build` →
+  child: `failure_print_log_tail` = same fence holding `error: exit ...`.
+  `cmake` configure output goes to `/dev/null` below level 2; `tree_build` →
   `child_capture_noisy` (= `child_capture` at 2); failure prints only error:
   cmake failed to build $command...
 - Verbose: `verbose_begin` (after `args_parse`) exports its own
-  `PERF2HTML_HEADER_DEPTH`, one past the depth it inherits (enforcer 1, batch
+  `PERF2HTML_HEADER_DEPTH`, one past the depth it inherits
+  (`test_expected_behavior.sh` 1, batch
   2, perf2html/diff 3, work 4), and `PERF2HTML_CLOCK_START_US`, the outermost
   script's clock, so a child's `[elapsed]` continues its parent's, and sets
   `lastpipe`. Every line printed is a code span, a table cell or sits in a
@@ -410,15 +440,11 @@ taskset -c 3 ./build-relwithdebinfo/22_DCMAKECFLAGSO2g/tests/perf/perf \
   `VERBOSE_BLOCK_PRINTED=loose` puts the blank line before the next block,
   which `lastpipe` lets the filter, a pipeline's last stage, set; `error_exit`
   and `failure_print_log_tail` use it at indent 0, `item_output_print` for our
-  own lines. `$VERBOSE` is tested only in `utility.sh`: `log_verbose`,
-  `heading_write`, `command_item_print`, `item_output_print`, `table_print`,
-  `quiet_switch_set`, `verbose_begin`, `child_capture` at 1,
-  `child_capture_noisy` at 2; and in the enforcer's `lint_run`, the pyright
-  exception. `verbose_flags_of` = one `--verbose` per level, one per line
+  own lines. `verbose_flags_of` = one `--verbose` per level, one per line
   (`mapfile -t`). Python tools' ok lines: stdout, `--verbose` only. Quiet
   switches `ruff --quiet` and prettier `--log-level warn`, recorded once in
   `quiet_switch_set` (`QUIET_SWITCH`, empty under `--verbose`); pyright has
-  none. `enforcer.sh --verbose 2> x.md` is the whole run.
+  none. `test_expected_behavior.sh --verbose 2> x.md` is the whole run.
 - Manifest contract (`utility.sh`): `manifest_fault_of` (reader: why a dir is
   not a report, or nothing; takes each acceptable version string),
   `manifest_verify` (hard-error policy), `manifest_recorded_of` (first token,
@@ -478,9 +504,9 @@ raw/}  all/  assets/  flame-graph-app/  sources/  README.md  MANIFEST.txt
 
 - Style: one enclosing class per script for non-exported functions; `import X`
   only, alphabetical; `from` only for `__future__` `annotations`,
-  `collections.abc`, `typing`. pyright 0 errors. Costs are `callgrind.Costs`,
-  summed by `costs_add`. No multi-line HTML/CSS/JS literal: real files via
-  `theme.asset_text_read()`.
+  `collections.abc`, `typing`. `pyright` 0 errors. Costs are
+  `callgrind.Costs`, summed by `costs_add`. No multi-line HTML/CSS/JS
+  literal: real files via `theme.asset_text_read()`.
 - `settings.py`: settings first, then `SettingsReader` (constants carry `_`);
   cut at `_SETTING_NAMES`; `_is_setting_name()` strips a leading `_`. A
   consumer declares annotation + empty sentinel, then
@@ -490,7 +516,7 @@ raw/}  all/  assets/  flame-graph-app/  sources/  README.md  MANIFEST.txt
   suffix (`_PX`, `_MS`, `_PERCENT`, `_SHARE`, `_CHARS`, `_BYTES`).
   `settings_script_write()` ships the module as frozen JSON (all
   JSON-serializable; the manifest table is not among it, see `manifest_table`
-  and `report_complete_write` in section 6); `settings_handler.js` is read
+  and `report_complete_write` in section 6); `settings.js` is read
   with a local `open()` (not `theme.asset_text_read()`: cycle).
   `RANKING_COUNTER_NAME` ranks, colours and
   divides every table.
@@ -518,18 +544,19 @@ raw/}  all/  assets/  flame-graph-app/  sources/  README.md  MANIFEST.txt
   frames; `_HEADER_MAGIC` = `cyg_callback.c`'s `CYG_CALLBACKS_MAGIC`.
 - `cyg_callback.c`: `next` a pointer, `end` a variable (11/12-instruction hot
   path); `buildid` path is `realpath`; single-threaded.
-- `validate_report.py`: greps `loadFileFromBase64`, `var document_base64 =
+- `test_report.py`: greps `loadFileFromBase64`, `var document_base64 =
   "..."`, `report_ui.layout_activate`; report dir required;
   `manifest_recorded_labels` get the unix-time check; `perf_tool_check` reads
   the summary's `perf log` section.
-- `source_scan.py`: file paths (`nargs="+"`), read once; a block = consecutive
-  whole-line comments plus a `/* */` or `<!-- -->` opened first on a line, file
+- `test_source_scan.py`: file paths (`nargs="+"`), read once; a block =
+  consecutive whole-line comments plus a `/* */` or `<!-- -->` opened first on
+  a line, file
   header exempt (`_COMMENT_BLOCK_MAX_LINES`); glyphs
   `_SOURCE_SCAN_ALLOWED_NON_ASCII_CHARS` (`≈ ∞ ▲ ▶ ▼ …`, literal);
   `_COMMENT_SYNTAX_BY_EXTENSION` (`.html` adds `//`, `/* */`); faults
   `path:line: message` sorted. The 79-column limit is unrelated to
   `HEAT_MAP_SOURCE_VIEW_WIDTH_CHARS` (80).
-- Reformatting `heatmap.*`, `frame.js`, `flame_bootstrap.js`,
+- Reformatting `heatmap.*`, `frame.js`, `flame_graph.js`,
   `error_overlay.js`, `ui_strings.js`, `theme.css`, `theme.js` changes reports;
   text echoed into a perf/trace recording is page content.
 
@@ -600,14 +627,14 @@ raw/}  all/  assets/  flame-graph-app/  sources/  README.md  MANIFEST.txt
   (`DESIGN_SCALE_DEFAULT_TRAVEL_SHARE`), each half geometric
   (`design_scale_multiple_of()`/`design_scale_travel_of()`);
   `design_scale_travel_set()` is the door and resets column widths.
-- Geometry: cells `0 1ch`, `.fhead` 2ch, `ul.rawdata` marker 2ch, `--title-w` =
-  `STRIP_STATUS_ROW_WIDTH_CHARS` ch, tree indent `HEAT_MAP_TREE_INDENT_*_PX`.
+- Geometry: cells `0 1ch`, `.file-header` 2ch, `ul.raw-data` marker 2ch,
+  `--title-w` = `STRIP_STATUS_ROW_WIDTH_CHARS` ch, tree indent
+  `HEAT_MAP_TREE_INDENT_*_PX`.
   The only `title=` attributes: `<iframe title="report page">` and `<th>`. Only
   `th` and `.band` are sticky.
 - Colour: `--bg` = slate dark via `Theme.shade()`
-  (`THEME_COLOR_ROLE_BACKGROUND_SHADE_FACTOR`, 0.90);
   `THEME_COLOR_PAIR_ENTRIES` two per `THEME_COLOR_PAIR_NAMES` entry.
-  `HEAT_COLOR_LOGO_STOPS` palette; `ramp_channels_at()` the one interpolation
+  `HEAT_COLOR_STOPS` palette; `ramp_channels_at()` the one interpolation
   (`cell_style()`, `logo_color_at()`); cells paint the stop opaque.
   `heat_of_share()`: clamp to `HEAT_COLOR_FULL_SCALE_PERCENT`, divide, curve;
   nothing measured off the data; a diff maps [-100..100%], 0% at the 5.5
@@ -620,7 +647,7 @@ raw/}  all/  assets/  flame-graph-app/  sources/  README.md  MANIFEST.txt
   G = grow lo: `{lo}ch` if hi = lo, else `clamp(lo, lo + (100cqw - (L+G)) *
   (hi-lo) / S, hi)`; grow `max(G, 100cqw - clamp(L, 100cqw - G, H))`; G = grow
   `width` or `TABLE_GROW_COLUMN_NARROWEST_CHARS` + extra. `.page`, `#main`,
-  `.home`, `.dbox` are inline-size containers; a scrolling one needs
+  `.home`, `.detail-box` are inline-size containers; a scrolling one needs
   `scrollbar-gutter: stable`. Drags use `design_px()` rects and `clientX`,
   floored at `data-min`.
 - Notation: `2.1K`/`2.0G`, `63.2%`, `<0.01%`, exact zero empty; floor

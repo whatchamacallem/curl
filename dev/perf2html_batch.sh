@@ -8,10 +8,12 @@ perf2html_batch.sh [debug-flags] [--target-dir=DIR] [cmake-flags...]
     Profiles baseline, modified and then does a diff of them.
     --target-dir=DIR  Holds the three default-named reports (default CWD). The
                       batch cannot rename them.
+    --txz             Create .txz archives of all reports generated.
+                      .txz files may also be used as inputs.
     cmake-flags:      Every argument not one of its own options, applied to the
                       modified build (default -D CMAKE_C_FLAGS=-Os).
 
-    These are the same debug-flags as the README.md documents:
+    The debug-flags are the same as the README.md documents.
     --artifacts=TMP   The profiler artifacts directory. Defaults to
                       perf2html_temporary_artifacts/ beside the report
                       directory (inside the target dir for a batch).
@@ -110,6 +112,10 @@ args_parse() {
         _PASS_ARGS+=(--regenerate)
         shift
         ;;
+      --txz)
+        _PASS_ARGS+=(--txz)
+        shift
+        ;;
       --artifacts=*)
         ARTIFACTS_DIR="${1#--artifacts=}"
         shift
@@ -124,6 +130,7 @@ args_parse() {
         ;;
     esac
   done
+  [ "$VERBOSE" -lt "$VERBOSE_TRACE_LEVEL" ] || set -o xtrace
   [ "${#_CMAKE_FLAGS[@]}" -gt 0 ] || _CMAKE_FLAGS=("${DEFAULT_FLAGS[@]}")
   _TARGET_DIR="$(absolute_path "$_TARGET_DIR")"
   if [ -z "$ARTIFACTS_DIR" ]; then

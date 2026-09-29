@@ -12,6 +12,44 @@ absolute_path() {
   readlink -m -- "$path"
 }
 
+# archive_extract - unpack one report archive into the named role's
+# subdirectory of an extraction root, echoing the report directory inside.
+archive_extract() {
+  local archive="$1" role="$2" root="$3" into report_name
+  case "$archive" in
+    *"$REPORT_RAW_ARCHIVE_SUFFIX") ;;
+    *) error_exit 2 \
+      "error: $role is no $REPORT_RAW_ARCHIVE_SUFFIX archive: $archive" ;;
+  esac
+  [ -f "$archive" ] || error_exit 2 "error: no such $role archive: $archive"
+  report_name="$(basename "$archive" "$REPORT_RAW_ARCHIVE_SUFFIX")"
+  into="$root/$role"
+  mkdir -p "$into" || error_exit 1 \
+    "error: could not make the $role extraction directory at $into"
+  # the archive holds the one report directory archive_report_write named
+  # it after, so the report is at that name and no listing decides it
+  tar xJf "$archive" -C "$into" || error_exit 2 \
+    "error: tar could not extract the $role archive: $archive"
+  [ -d "$into/$report_name" ] || error_exit 2 \
+    "error: the $role archive holds no $report_name directory: $archive"
+  echo "$into/$report_name"
+}
+
+# archive_report_write - one reproducible tar.xz of a finished report,
+# beside it, named <report>.txz. Written whole, then moved into place.
+archive_report_write() {
+  local dir="$1"
+  local archive="$dir$REPORT_RAW_ARCHIVE_SUFFIX" staged
+  # the previous archive is a recovery copy until this one is whole: tar
+  # writes a sibling temporary name, and only a finished one is moved over
+  staged="$archive.$TIMESTAMP.part"
+  command_run tar --sort=name --mtime=@0 --owner=0 --group=0 \
+    --numeric-owner -cJf "$staged" -C "$(dirname "$dir")" "$(basename "$dir")"
+  mv -f "$staged" "$archive" || error_exit 1 \
+    "error: could not move $staged onto $archive"
+  log_verbose "$archive"
+}
+
 # archive_write - one reproducible tar.xz of a test's recordings, under
 # $out/raw/.
 archive_write() {
@@ -47,11 +85,14 @@ block_lead() {
   # kinds: item, or other for a heading, paragraph or table. Unset, before
   # verbose_begin, the state is a parent's: something is printed above
   local kind="$1" printed="${VERBOSE_BLOCK_PRINTED-other}"
+  # plain text has no blocks to keep apart: the raw levels print the lines
+  # and nothing between them
+  VERBOSE_BLOCK_PRINTED="$kind"
+  [ "$VERBOSE" -lt "$VERBOSE_RAW_LEVEL" ] || return 0
   # only an item right after a tight one goes without: loose, the state
   # verbose_filter leaves after a table, wants the blank line whatever comes
   [ "$printed" = none ] || { [ "$kind" = item ] && [ "$printed" = item ]; } \
     || echo >&2
-  VERBOSE_BLOCK_PRINTED="$kind"
 }
 
 # checksum_compute - POSIX cksum of every report file but MANIFEST.txt.
@@ -73,7 +114,7 @@ checksum_compute() {
 # named, teeing under --verbose. SETS CHILD_EXIT_CODE and LOG_LINE_FROM.
 child_capture() {
   # args: page file or "", then the command: a tool, never one of our own
-  # scripts; under --verbose its lines nest in a fence under the last item
+  # scripts; at level 1 its lines nest in a fence, above that they are raw
   local page_file="$1"
   shift
   local logs=("$RUN_LOG") statuses=() status
@@ -83,7 +124,11 @@ child_capture() {
   LOG_LINE_FROM="$(wc -l <"$RUN_LOG")"
   # the `if !` is what keeps pipefail's failure from reaching PIPESTATUS's
   # reader; the tee and the filter are chosen before the child starts
-  if [ "$VERBOSE" -ge 1 ]; then
+  if [ "$VERBOSE" -ge "$VERBOSE_RAW_LEVEL" ]; then
+    if ! { "$@" 2>&1 | tee -a "${logs[@]}" >&2; }; then
+      statuses=("${PIPESTATUS[@]}")
+    fi
+  elif [ "$VERBOSE" -ge 1 ]; then
     if ! { "$@" 2>&1 | tee -a "${logs[@]}" \
       | verbose_filter "$VERBOSE_ITEM_INDENT"; }; then
       statuses=("${PIPESTATUS[@]}")
@@ -102,11 +147,11 @@ child_capture() {
 }
 
 # child_capture_noisy - a child whose output is noise, like cmake's configure:
-# at --verbose --verbose one ```txt fence, discarded below. Returns its code.
+# raw on the terminal from the raw level up, discarded below. Returns its code.
 child_capture_noisy() {
   # a return code, not CHILD_EXIT_CODE: child_capture is that global's one
-  # setter, and below level 2 nothing reaches $RUN_LOG or the terminal
-  if [ "$VERBOSE" -ge 2 ]; then
+  # setter, and below the raw level nothing reaches $RUN_LOG or the terminal
+  if [ "$VERBOSE" -ge "$VERBOSE_RAW_LEVEL" ]; then
     child_capture "" "$@"
     return "$CHILD_EXIT_CODE"
   fi
@@ -123,6 +168,11 @@ clock_microseconds() {
 # code_span - text as --verbose shows it, $HOME/ written ~/, in one code span
 # as prettier prints one: the shortest backtick run the text lacks around it.
 code_span() {
+  # the raw levels are plain text: the line as it stands, $HOME and all
+  if [ "$VERBOSE" -ge "$VERBOSE_RAW_LEVEL" ]; then
+    printf '%s\n' "$1"
+    return 0
+  fi
   local text="${1//"${HOME:?}"\//\~/}" run='`' gap='' edge='[^`]'
   while [[ "$text" =~ (^|$edge)"$run"($edge|$) ]]; do run+='`'; done
   # a space inside where the markdown would else eat one: a backtick at an
@@ -134,8 +184,8 @@ code_span() {
   printf '%s%s%s%s%s\n' "$run" "$gap" "$text" "$gap" "$run"
 }
 
-# command_item_print - the numbered item a command's output nests under:
-# `$ command`, one code span. SETS VERBOSE_ITEM_INDENT, VERBOSE_COMMAND_NUMBER.
+# command_item_print - the numbered item a command's output nests under,
+# `$ command`. SETS VERBOSE_ITEM_INDENT, VERBOSE_COMMAND_NUMBER.
 command_item_print() {
   local marker="$VERBOSE_COMMAND_NUMBER. "
   VERBOSE_ITEM_INDENT="${#marker}"
@@ -169,8 +219,8 @@ elapsed_format() {
   printf '%d.%02d' "$((delta / 1000000))" "$((delta % 1000000 / 10000))"
 }
 
-# error_exit - the one way a script refuses: its lines in one ```txt fence
-# on stderr, then exit with the code given first. Nothing collects a failure.
+# error_exit - the one way a script refuses: its lines through verbose_filter
+# onto stderr, then exit with the code given first. Nothing collects a failure.
 error_exit() {
   local exit_code="$1"
   shift
@@ -178,7 +228,7 @@ error_exit() {
   exit "$exit_code"
 }
 
-# failure_print_log_tail - on stderr, in one ```txt fence, a failed child's
+# failure_print_log_tail - on stderr, through verbose_filter, a failed child's
 # exit code, command and output tail from $LOG_LINE_FROM on.
 failure_print_log_tail() {
   local exit_code="$1" shown="$2"
@@ -196,15 +246,18 @@ heading_print() {
   heading_write "$((PERF2HTML_HEADER_DEPTH + 1))" "$*"
 }
 
-# heading_write - a heading at the depth given, printed under --verbose as
-# one code span. SETS VERBOSE_COMMAND_NUMBER back to 1.
+# heading_write - a heading at the depth given, its marks dropped from the
+# raw level up. SETS VERBOSE_COMMAND_NUMBER back to 1.
 heading_write() {
-  local depth="$1" text="$2" marks
+  local depth="$1" text="$2" marks=''
   VERBOSE_COMMAND_NUMBER=1
   [ "$VERBOSE" -ge 1 ] || return 0
-  printf -v marks '%*s' "$depth" ''
+  if [ "$VERBOSE" -lt "$VERBOSE_RAW_LEVEL" ]; then
+    printf -v marks '%*s' "$depth" ''
+    marks="${marks// /#} "
+  fi
   block_lead other
-  printf '%s %s\n' "${marks// /#}" \
+  printf '%s%s\n' "$marks" \
     "$(code_span "[$(elapsed_format)s] $text")" >&2
 }
 
@@ -212,7 +265,8 @@ heading_write() {
 # hand-rolled and no PPA belongs here.
 install_command_of() {
   case "$1" in
-    cmake | ninja | ccache | valgrind | taskset | python3 | cksum)
+    cmake | ninja | ccache | valgrind | taskset | python3 | cksum | curl | \
+      tar | xz | dpkg-query)
       echo "sudo apt-get install -y ${CONTAINING_PACKAGES[$1]}"
       ;;
     cc) echo "sudo apt-get install -y build-essential" ;;
@@ -355,7 +409,7 @@ manifest_write() {
   shift 2
   local manifest="$dir/MANIFEST.txt" table checksum
   command_run python3 "$PERF2HTML_DIR_/scripts/build_report.py" assets \
-    -o "$dir/$REPORT_ASSETS_DIR_NAME" "$version" "$@"
+    -o "$dir/$REPORT_ASSETS_DIR_NAME"
   table="$(manifest_table_of "$version" "$@")"
   report_complete_write "$dir" "$table"
   checksum="$(checksum_compute "$dir")"
@@ -454,12 +508,14 @@ report_complete_write() {
   } >"$out"
 }
 
-# report_delete - delete a report: it is output only. A path that is no
-# directory, or a directory with no MANIFEST.txt, goes only on a typed y.
+# report_delete - delete a report and the archive beside it, both output
+# only. No directory, or one with no MANIFEST.txt, goes only on a typed y.
 report_delete() {
-  local dir="$1" answer
+  local dir="$1" answer present=0
+  local archive="$dir$REPORT_RAW_ARCHIVE_SUFFIX"
   path_overlap_check "$dir" report "$ARTIFACTS_DIR" "artifacts dir"
-  if [ -e "$dir" ] \
+  [ ! -e "$dir" ] || present=1
+  if [ "$present" = 1 ] \
     && { [ ! -d "$dir" ] || [ ! -e "$dir/MANIFEST.txt" ]; }; then
     # the file's existence alone, never its contents; no answer at all, as
     # from /dev/null, ends the prompt's line and is a no
@@ -472,6 +528,11 @@ report_delete() {
       "error: the report is not deleted without a typed y: $dir"
   fi
   rm -rf "$dir" || error_exit 1 "error: could not delete the report: $dir"
+  # the archive follows its directory's one decision and is never prompted
+  # for on its own; with no directory to answer for, it is left standing
+  [ "$present" = 1 ] && [ -e "$archive" ] || return 0
+  rm -f "$archive" || error_exit 1 \
+    "error: could not delete the report archive: $archive"
 }
 
 # report_finish - the tail of every run writing a report: the manifest last,
@@ -484,6 +545,11 @@ report_finish() {
   log_verbose "manifest $(manifest_value "$dir" \
     "$REPORT_MANIFEST_CHECKSUM_LABEL")"
   log_verbose "$dir/index.html"
+  # the archive holds the finished report, MANIFEST.txt and all, so it
+  # extracts to a directory every reader verifies the way it verifies one
+  [ "$WRITE_REPORT_ARCHIVE" = 1 ] || return 0
+  heading_print "tar $(basename "$dir")$REPORT_RAW_ARCHIVE_SUFFIX"
+  archive_report_write "$dir"
 }
 
 # revision_describe - the checkout's short revision, -dirty appended while
@@ -517,8 +583,55 @@ screenshot_label_script_print() {
 EOF
 }
 
-# table_print - one table under --verbose, padded as prettier pads one. Args:
-# the column count, then every cell, our header words first, row by row.
+# source_cache_fetch - download and unpack one source version under the
+# package directory, staged so an interrupted fetch leaves nothing behind.
+source_cache_fetch() {
+  local package="$1" version="$2" directory="$3"
+  # the orig tarball carries the upstream version only, the archive revision
+  # after the last - being the packaging's and no part of the tarball's name
+  local upstream="${version%-*}" pool staged tarball root
+  pool="$CACHE_ARCHIVE_BASE_URL/${package:0:1}/$package"
+  local url="$pool/${package}_$upstream.orig.tar.xz"
+  # the package directory is replaced whole: a version that moved on leaves
+  # no older tree behind, which is the invalidation the cache is given
+  local package_dir
+  package_dir="$(dirname "$directory")"
+  rm -rf "$package_dir"
+  staged="$directory.$TIMESTAMP.part"
+  mkdir -p "$staged"
+  tarball="$staged/source.tar.xz"
+  command_run curl --fail --location --silent --show-error \
+    --output "$tarball" "$url"
+  command_run tar xJf "$tarball" -C "$staged"
+  rm -f "$tarball"
+  # the tarball holds its one <package>-<upstream> directory, which becomes
+  # the version directory itself, so no page path carries that name twice
+  root="$staged/$package-$upstream"
+  [ -d "$root" ] || error_exit 1 \
+    "error: $url holds no $package-$upstream directory"
+  mv -f "$root" "$directory" || error_exit 1 \
+    "error: could not move $root onto $directory"
+  rm -rf "$staged"
+  log_verbose "cached $package $version sources in $directory"
+}
+
+# source_cache_sync - make the installed external package's sources readable,
+# downloading them once per version. SETS nothing; the heat map reads the dir.
+source_cache_sync() {
+  local installed package version directory
+  installed="$(dpkg-query -W -f='${source:Package} ${source:Version}' \
+    "$CACHE_EXTERNAL_PACKAGE")" || error_exit 1 \
+    "error: dpkg-query knows no package $CACHE_EXTERNAL_PACKAGE"
+  package="${installed%% *}"
+  version="${installed##* }"
+  [ -n "$package" ] && [ -n "$version" ] || error_exit 1 \
+    "error: dpkg-query named no source package and version: $installed"
+  directory="$(absolute_path "$CACHE_ROOT_DIR")/$package/$version"
+  [ -d "$directory" ] || source_cache_fetch "$package" "$version" "$directory"
+}
+
+# table_print - one table under --verbose, padded as prettier pads one, or
+# header: value lines from the raw level up. Args: columns, then every cell.
 table_print() {
   [ "$VERBOSE" -ge 1 ] || return 0
   local columns="$1" cells=() widths=() rule=() cell line row column
@@ -526,6 +639,16 @@ table_print() {
   if [ "$#" -le "$columns" ] || [ "$(($# % columns))" != 0 ]; then
     error_exit 1 \
       "error: table_print: $# cell(s) are no header and whole rows of $columns"
+  fi
+  # the raw levels are plain text: one header: value line per cell, which
+  # needs no padding, no rule row and no pipe to escape
+  if [ "$VERBOSE" -ge "$VERBOSE_RAW_LEVEL" ]; then
+    block_lead other
+    for ((row = columns; row < "$#"; row++)); do
+      column=$((row % columns))
+      printf '%s: %s\n' "${@:column+1:1}" "${@:row+1:1}" >&2
+    done
+    return 0
   fi
   # a value is one code span, its pipes escaped as a table wants
   cells=("${@:1:columns}")
@@ -568,7 +691,7 @@ title_print() {
 toolchain_check() {
   local tool missing=() lines=()
   for tool in cmake ninja ccache cc valgrind perf taskset python3 \
-    addr2line readelf speedscope cksum; do
+    addr2line readelf speedscope cksum curl tar xz dpkg-query; do
     command -v "$tool" >/dev/null 2>&1 || missing+=("$tool")
   done
   if [ "${#missing[@]}" != 0 ]; then
@@ -612,7 +735,15 @@ verbose_begin() {
 verbose_filter() {
   # two or more `words: number [unit]` lines in a row are one single-row
   # table under the item; any other line sits in a ```txt fence, $HOME/ as ~/
-  local separate=0 lead=0 loose status=0
+  local separate=0 lead=0 loose status=0 raw_line
+  # the raw levels format nothing: each line onto stderr as it arrives, the
+  # read loop so no external command holds one back in a block buffer
+  if [ "$VERBOSE" -ge "$VERBOSE_RAW_LEVEL" ]; then
+    while IFS= read -r raw_line || [ -n "$raw_line" ]; do
+      printf '%s\n' "$raw_line" >&2
+    done
+    return 0
+  fi
   # at indent 0 blocks are apart, the first led by a blank line unless it is
   # the script's first; indented, they nest in the item above, tight
   if [ "$1" = 0 ]; then

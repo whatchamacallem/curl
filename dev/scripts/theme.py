@@ -34,7 +34,6 @@ _TABLE_COLUMN_EXTRA_WIDTH_CHARS: int = 0
 _TABLE_GROW_COLUMN_NARROWEST_CHARS: int = 0
 _THEME_COLOR_PAIR_ENTRIES: list[str] = []
 _THEME_COLOR_PAIR_NAMES: tuple[str, ...] = ()
-_THEME_COLOR_ROLE_BACKGROUND_SHADE_FACTOR: float = 0.0
 _THEME_COLOR_ROLE_SOURCES: dict[str, tuple[str, str]] = {}
 _THEME_TIME_UNIT_ENTRIES: tuple[tuple[str, float], ...] = ()
 settings.load_into(__name__)
@@ -99,7 +98,157 @@ class ThemeRuntime(TypedDict):
     fgDark: str
 
 
-# Theme - Everything that turns numbers and rows into one styled page.
+# TableRenderer - Turns columns and rows into one table, every column
+# width in exact characters. theme.js's report_ui is the page-side twin.
+class TableRenderer:
+    # Take bare text as a plain Cell, and leave a real Cell alone.
+    def cell(self, value: CellOrText) -> Cell:
+        return value if isinstance(value, Cell) else Cell(text=value)
+
+    # What each column's heading and cells ask for, in characters. A grow
+    # column is cut at its container, so it asks only its floor.
+    def column_extents(
+        self,
+        columns: Sequence[Column],
+        rows: Sequence[Sequence[Cell]],
+        grow_index: int,
+    ) -> list[ColumnExtent]:
+        extents: list[ColumnExtent] = []
+        for index, column in enumerate(columns):
+            if column.width is not None:
+                content_chars = column.width
+            elif index == grow_index:
+                content_chars = _TABLE_GROW_COLUMN_NARROWEST_CHARS
+            else:
+                content_chars = self.column_longest(rows, index)
+            extents.append(ColumnExtent(len(column.label), content_chars))
+        return extents
+
+    # The narrowest and widest one column may be, in characters: the cells
+    # alone (only a heading is ever cut), then heading and cells both.
+    def column_limits(self, extent: ColumnExtent) -> tuple[int, int]:
+        widest = max(extent.heading_chars, extent.content_chars)
+        return (
+            extent.content_chars + _TABLE_COLUMN_EXTRA_WIDTH_CHARS,
+            widest + _TABLE_COLUMN_EXTRA_WIDTH_CHARS,
+        )
+
+    # The longest text any row holds in one column, 0 when there are no rows.
+    def column_longest(
+        self, rows: Sequence[Sequence[Cell]], index: int
+    ) -> int:
+        return max((len(row[index].text) for row in rows), default=0)
+
+    # One column's <col> width: CSS automatic table layout on its container's
+    # 100cqw, between its narrowest and widest.
+    def column_width_text(
+        self, limits: Sequence[tuple[int, int]], index: int, grow_index: int
+    ) -> str:
+        narrowest, widest = limits[index]
+        shared = [
+            limit for other, limit in enumerate(limits) if other != grow_index
+        ]
+        low_total = sum(limit[0] for limit in shared)
+        high_total = sum(limit[1] for limit in shared)
+        # the non-grow columns sum to clamp(low, 100cqw - grow, high); the
+        # grow column takes the rest and never goes under its own narrowest
+        if index == grow_index:
+            return (
+                f"max({narrowest}ch, 100cqw - clamp({low_total}ch, "
+                f"100cqw - {narrowest}ch, {high_total}ch))"
+            )
+        if narrowest == widest:
+            return f"{narrowest}ch"
+        grow_narrowest = limits[grow_index][0] if grow_index >= 0 else 0
+        return (
+            f"clamp({narrowest}ch, {narrowest}ch + (100cqw - "
+            f"{low_total + grow_narrowest}ch) * {widest - narrowest} / "
+            f"{high_total - low_total}, {widest}ch)"
+        )
+
+    # One whole table: a colgroup of character widths, then the rows.
+    def table(
+        self,
+        key: str,
+        columns: Sequence[Column],
+        rows: Sequence[Sequence[CellOrText]],
+        fill: bool = False,
+        column_titles: bool = True,
+    ) -> str:
+        cells = [[self.cell(value) for value in row] for row in rows]
+        for row in cells:
+            if len(row) != len(columns):
+                raise ValueError(
+                    f"table {key!r}: a row has {len(row)} cells "
+                    f"for {len(columns)} columns"
+                )
+        grow_index = -1
+        if fill:
+            grow_index = next(
+                (index for index, column in enumerate(columns) if column.grow),
+                -1,
+            )
+            if grow_index < 0:
+                raise ValueError(f"table {key!r}: fill but no grow column")
+        extents = self.column_extents(columns, cells, grow_index)
+        limits = [self.column_limits(extent) for extent in extents]
+        out = [f'<div class="table-box{" fill" if fill else ""}">']
+        table_classes = "columns" + (" fill" if fill else "")
+        out.append(
+            f'<div class="table-columns"><table class="{table_classes}" '
+            f'data-key="{html_escape(key)}"><colgroup>'
+        )
+        for index, limit in enumerate(limits):
+            col_classes = " ".join(
+                class_name
+                for class_name in (
+                    "alternate" if index % 2 else "",
+                    "grow" if index == grow_index else "",
+                )
+                if class_name
+            )
+            attr = f' class="{col_classes}"' if col_classes else ""
+            width = self.column_width_text(limits, index, grow_index)
+            out.append(
+                f'<col{attr} data-min="{limit[0]}ch" style="width:{width}">'
+            )
+        out.append("</colgroup>")
+        if column_titles:
+            out.append("<thead><tr>")
+            for column in columns:
+                attrs = ' class="numeric"' if column.numeric else ""
+                label = html_escape(column.label)
+                out.append(f'<th{attrs} title="{label}">{label}</th>')
+            out.append("</tr></thead>")
+        out.append("<tbody>")
+        for row in cells:
+            out.append("<tr>")
+            for column, cell in zip(columns, row, strict=True):
+                cell_classes = " ".join(
+                    class_name
+                    for class_name in (
+                        "numeric" if column.numeric else "",
+                        cell.cls,
+                    )
+                    if class_name
+                )
+                attrs = (
+                    f' class="{cell_classes}"' if cell_classes else ""
+                ) + (f' style="{cell.style}"' if cell.style else "")
+                inner = (
+                    cell.html
+                    if cell.html is not None
+                    else html_escape(cell.text)
+                )
+                out.append(f"<td{attrs}>{inner}</td>")
+            out.append("</tr>")
+        out.append("</tbody></table></div>")
+        out.append("</div>")
+        return "".join(out)
+
+
+# Theme - Everything that turns numbers into one styled page: the palette,
+# the stylesheet, the page document and the report's shared asset copy.
 class Theme:
     # Where theme.css and theme.js live.
     DIRECTORY = os.path.dirname(os.path.abspath(__file__))
@@ -113,6 +262,10 @@ class Theme:
 
     # NumberFormat - Every number a page prints, in its page-ready form.
     class NumberFormat:
+        # Take the time ladder once: the one state a formatter carries.
+        def __init__(self, time_units: tuple[Theme.TimeUnit, ...]) -> None:
+            self.time_units = time_units
+
         # A number at fixed decimal places, rounding a half away from zero,
         # not to even as round() and f-strings do.
         def fixed_text(self, value: float, digit_count: int) -> str:
@@ -194,10 +347,10 @@ class Theme:
             unit = next(
                 (
                     candidate
-                    for candidate in _TIME_UNITS
+                    for candidate in self.time_units
                     if magnitude >= candidate.seconds
                 ),
-                _TIME_UNITS[-1],
+                self.time_units[-1],
             )
             return f"{sign}{magnitude / unit.seconds:.2f}{unit.suffix}"
 
@@ -217,6 +370,14 @@ class Theme:
         # how long one of them lasts
         seconds: float
 
+    # Resolve the palette and the number formats once: every later lookup
+    # is a plain field read, never a re-parse per cell.
+    def __init__(self) -> None:
+        self.color_pairs = self.pairs()
+        self.color_roles = self.roles(self.color_pairs)
+        self.heat_stops = [self.rgb(color) for color in _HEAT_COLOR_LOGO_STOPS]
+        self.number_format = Theme.NumberFormat(self.time_units())
+
     # Read one scripts/ file off disk, to inline into a page.
     def asset_read(self, name: str) -> str:
         with open(
@@ -226,9 +387,7 @@ class Theme:
 
     # Write the report's one shared copy of the theme. The stylesheet and
     # settings.js are generated here, not copied -- copies lose their data.
-    def assets_write(
-        self, out_dir: str, manifest_lines: Sequence[str]
-    ) -> None:
+    def assets_write(self, out_dir: str) -> None:
         os.makedirs(out_dir, exist_ok=True)
         heat_map_script = _ASSET_HEAT_MAP_SCRIPT_NAME
         heat_map_stylesheet = _ASSET_HEAT_MAP_STYLESHEET_NAME
@@ -249,7 +408,7 @@ class Theme:
             ),
             (
                 _ASSET_SETTINGS_SCRIPT_NAME,
-                settings.settings_script_write(manifest_lines),
+                settings.settings_script_write(),
             ),
             (_ASSET_THEME_STYLESHEET_NAME, self.css()),
             (_ASSET_THEME_SCRIPT_NAME, self.js()),
@@ -264,90 +423,23 @@ class Theme:
             ) as handle:
                 handle.write(text)
 
-    # Take bare text as a plain Cell, and leave a real Cell alone.
-    def cell(self, value: CellOrText) -> Cell:
-        return value if isinstance(value, Cell) else Cell(text=value)
-
-    # What each column's heading and cells ask for, in characters. A grow
-    # column is cut at its container, so it asks only its floor.
-    def column_extents(
-        self,
-        columns: Sequence[Column],
-        rows: Sequence[Sequence[Cell]],
-        grow_index: int,
-    ) -> list[ColumnExtent]:
-        extents: list[ColumnExtent] = []
-        for index, column in enumerate(columns):
-            if column.width is not None:
-                content_chars = column.width
-            elif index == grow_index:
-                content_chars = _TABLE_GROW_COLUMN_NARROWEST_CHARS
-            else:
-                content_chars = self.column_longest(rows, index)
-            extents.append(ColumnExtent(len(column.label), content_chars))
-        return extents
-
-    # The narrowest and widest one column may be, in characters: the cells
-    # alone (only a heading is ever cut), then heading and cells both.
-    def column_limits(self, extent: ColumnExtent) -> tuple[int, int]:
-        widest = max(extent.heading_chars, extent.content_chars)
-        return (
-            extent.content_chars + _TABLE_COLUMN_EXTRA_WIDTH_CHARS,
-            widest + _TABLE_COLUMN_EXTRA_WIDTH_CHARS,
-        )
-
-    # The longest text any row holds in one column, 0 when there are no rows.
-    def column_longest(
-        self, rows: Sequence[Sequence[Cell]], index: int
-    ) -> int:
-        return max((len(row[index].text) for row in rows), default=0)
-
-    # One column's <col> width: CSS automatic table layout on its container's
-    # 100cqw, between its narrowest and widest.
-    def column_width_text(
-        self, limits: Sequence[tuple[int, int]], index: int, grow_index: int
-    ) -> str:
-        narrowest, widest = limits[index]
-        shared = [
-            limit for other, limit in enumerate(limits) if other != grow_index
-        ]
-        low_total = sum(limit[0] for limit in shared)
-        high_total = sum(limit[1] for limit in shared)
-        # the non-grow columns sum to clamp(low, 100cqw - grow, high); the
-        # grow column takes the rest and never goes under its own narrowest
-        if index == grow_index:
-            return (
-                f"max({narrowest}ch, 100cqw - clamp({low_total}ch, "
-                f"100cqw - {narrowest}ch, {high_total}ch))"
-            )
-        if narrowest == widest:
-            return f"{narrowest}ch"
-        grow_narrowest = limits[grow_index][0] if grow_index >= 0 else 0
-        return (
-            f"clamp({narrowest}ch, {narrowest}ch + (100cqw - "
-            f"{low_total + grow_narrowest}ch) * {widest - narrowest} / "
-            f"{high_total - low_total}, {widest}ch)"
-        )
-
     # Dark or light text, whichever the background can actually be read on.
     def contrast_foreground(self, color: Theme.Rgb) -> str:
-        return _ROLE["bg"] if self.luminance(color) > 0.5 else _ROLE["fg"]
+        if self.luminance(color) > 0.5:
+            return self.color_roles["bg"]
+        return self.color_roles["fg"]
 
     # The whole stylesheet: the colour variables, then theme.css itself.
     def css(self) -> str:
         lines = [":root {"]
-        for name, pair in _COLOR_PAIR.items():
+        for name, pair in self.color_pairs.items():
             lines.append(f"  --{name}: {pair.dark}; --{name}-l: {pair.light};")
-        for role, color in _ROLE.items():
+        for role, color in self.color_roles.items():
             lines.append(f"  --{role}: {color};")
         stops = _HEAT_COLOR_LOGO_STOPS
-        lines.append(f"  --hot: {stops[-1]};")
-        lines.append(
-            f"  --hot-fg: {self.contrast_foreground(self.rgb(stops[-1]))};"
-        )
         lines.append(f"  --title-bg: {stops[2]};")
         lines.append(
-            f"  --title-fg: {self.contrast_foreground(self.rgb(stops[2]))};"
+            f"  --title-fg: {self.contrast_foreground(self.heat_stops[2])};"
         )
         lines.append(f"  --title-w: {_STRIP_STATUS_ROW_WIDTH_CHARS}ch;")
         lines.append(f"  --font: {_PAGE_FONT_FAMILY};")
@@ -423,7 +515,7 @@ class Theme:
     def heat_style(self, heat: float, signed: bool = False) -> str:
         if abs(heat) <= 0:
             return ""
-        stops = [self.rgb(color) for color in _HEAT_COLOR_LOGO_STOPS]
+        stops = self.heat_stops
         if signed:
             position = (heat + 1) * 0.5 * (len(stops) - 1)
         else:
@@ -478,110 +570,20 @@ class Theme:
             int(hex_color[5:7], 16),
         )
 
-    # Resolve _THEME_COLOR_ROLE_SOURCES into each role's colour. "bg" alone
-    # is not its pair's member, but that member shaded darker.
+    # Resolve _THEME_COLOR_ROLE_SOURCES into each role's colour.
     def roles(self, pairs: dict[str, Theme.ColorPair]) -> dict[str, str]:
         resolved: dict[str, str] = {}
         for role, (pair_name, member) in _THEME_COLOR_ROLE_SOURCES.items():
-            color = getattr(pairs[pair_name], member)
-            if role == "bg":
-                color = self.shade(
-                    color, _THEME_COLOR_ROLE_BACKGROUND_SHADE_FACTOR
-                )
-            resolved[role] = color
+            resolved[role] = getattr(pairs[pair_name], member)
         return resolved
 
     # The handful of theme values the page's own JavaScript needs.
     def runtime(self) -> ThemeRuntime:
         return {
             "heat": _HEAT_COLOR_LOGO_STOPS,
-            "fgLight": _ROLE["fg"],
-            "fgDark": _ROLE["bg"],
+            "fgLight": self.color_roles["fg"],
+            "fgDark": self.color_roles["bg"],
         }
-
-    # Darken or lighten a colour by a flat factor -- how --bg is derived.
-    def shade(self, hex_color: str, factor: float) -> str:
-        return "#" + "".join(
-            f"{round(component * factor):02X}"
-            for component in self.rgb(hex_color)
-        )
-
-    # One whole table: a colgroup of character widths, then the rows.
-    def table(
-        self,
-        key: str,
-        columns: Sequence[Column],
-        rows: Sequence[Sequence[CellOrText]],
-        fill: bool = False,
-        column_titles: bool = True,
-    ) -> str:
-        cells = [[self.cell(value) for value in row] for row in rows]
-        for row in cells:
-            if len(row) != len(columns):
-                raise ValueError(
-                    f"table {key!r}: a row has {len(row)} cells "
-                    f"for {len(columns)} columns"
-                )
-        grow_index = -1
-        if fill:
-            grow_index = next(
-                (index for index, column in enumerate(columns) if column.grow),
-                -1,
-            )
-            if grow_index < 0:
-                raise ValueError(f"table {key!r}: fill but no grow column")
-        extents = self.column_extents(columns, cells, grow_index)
-        limits = [self.column_limits(extent) for extent in extents]
-        out = [f'<div class="tbl{" fill" if fill else ""}">']
-        table_classes = "cols" + (" fill" if fill else "")
-        out.append(
-            f'<div class="tbl-cols"><table class="{table_classes}" '
-            f'data-key="{html_escape(key)}"><colgroup>'
-        )
-        for index, limit in enumerate(limits):
-            col_classes = " ".join(
-                class_name
-                for class_name in (
-                    "alt" if index % 2 else "",
-                    "grow" if index == grow_index else "",
-                )
-                if class_name
-            )
-            attr = f' class="{col_classes}"' if col_classes else ""
-            width = self.column_width_text(limits, index, grow_index)
-            out.append(
-                f'<col{attr} data-min="{limit[0]}ch" style="width:{width}">'
-            )
-        out.append("</colgroup>")
-        if column_titles:
-            out.append("<thead><tr>")
-            for column in columns:
-                attrs = ' class="n"' if column.numeric else ""
-                label = html_escape(column.label)
-                out.append(f'<th{attrs} title="{label}">{label}</th>')
-            out.append("</tr></thead>")
-        out.append("<tbody>")
-        for row in cells:
-            out.append("<tr>")
-            for column, cell in zip(columns, row, strict=True):
-                cell_classes = " ".join(
-                    class_name
-                    for class_name in ("n" if column.numeric else "", cell.cls)
-                    if class_name
-                )
-                attrs = (
-                    f' class="{cell_classes}"' if cell_classes else ""
-                ) + (f' style="{cell.style}"' if cell.style else "")
-                inner = (
-                    cell.html
-                    if cell.html is not None
-                    else html_escape(cell.text)
-                )
-                out.append(f"<td{attrs}>{inner}</td>")
-            out.append("</tr>")
-        out.append("</tbody></table></div>")
-        out.append("</div>")
-        return "".join(out)
 
     # Build _THEME_TIME_UNIT_ENTRIES into the ladder NumberFormat.time()
     # walks, largest unit first.
@@ -592,21 +594,11 @@ class Theme:
         )
 
 
-# The one renderer every page goes through. Named first because the four
-# below are built from it.
+# The one renderer every page goes through, its palette resolved once.
 _RENDERER = Theme()
 
-# Every named colour, in both its light and dark form.
-_COLOR_PAIR: dict[str, Theme.ColorPair] = _RENDERER.pairs()
-
-# The one number formatter every printed number goes through.
-_NUMBERS = Theme.NumberFormat()
-
-# What each colour is actually for -- the names CSS and the pages use.
-_ROLE: dict[str, str] = _RENDERER.roles(_COLOR_PAIR)
-
-# Time units, largest first -- num_time() picks the first one a value reaches.
-_TIME_UNITS: tuple[Theme.TimeUnit, ...] = _RENDERER.time_units()
+# The one table builder every table goes through.
+_TABLE_RENDERER = TableRenderer()
 
 
 # asset_text_read - One file from scripts/, to inline into a page.
@@ -631,27 +623,27 @@ def html_escape(value: object) -> str:
 
 # num_human - A big number shortened to fit a column, e.g. 2.1K.
 def num_human(number: float) -> str:
-    return _NUMBERS.human(number)
+    return _RENDERER.number_format.human(number)
 
 
 # num_pct - A share as a percentage, e.g. 63.2%.
 def num_pct(percent: float) -> str:
-    return _NUMBERS.percent(percent)
+    return _RENDERER.number_format.percent(percent)
 
 
 # num_signed - A diff number with its sign, empty when it is exactly zero.
 def num_signed(number: float) -> str:
-    return _NUMBERS.signed(number)
+    return _RENDERER.number_format.signed(number)
 
 
 # num_signed_pct - A diff share with its sign, empty when it is exactly zero.
 def num_signed_pct(percent: float) -> str:
-    return _NUMBERS.signed_percent(percent)
+    return _RENDERER.number_format.signed_percent(percent)
 
 
 # num_time - A duration in the largest unit it reaches, e.g. 1.25ms.
 def num_time(seconds: float) -> str:
-    return _NUMBERS.time(seconds)
+    return _RENDERER.number_format.time(seconds)
 
 
 # page_document - One whole page, linking the report's shared theme.
@@ -707,12 +699,12 @@ def table_render(
     fill: bool = False,
     column_titles: bool = True,
 ) -> str:
-    return _RENDERER.table(key, columns, rows, fill, column_titles)
+    return _TABLE_RENDERER.table(key, columns, rows, fill, column_titles)
 
 
 # theme_assets_write - Write the report's one shared copy of the theme.
-def theme_assets_write(out_dir: str, manifest_lines: Sequence[str]) -> None:
-    _RENDERER.assets_write(out_dir, manifest_lines)
+def theme_assets_write(out_dir: str) -> None:
+    _RENDERER.assets_write(out_dir)
 
 
 # theme_runtime - The theme values a page's own JavaScript needs.

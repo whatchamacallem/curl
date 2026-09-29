@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-import argparse, json, math, os, re, sys, urllib.parse
+import argparse, math, os, re, sys, urllib.parse
 from collections.abc import Sequence
 from typing import NamedTuple
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import callgrind, callgrind_to_heatmap, settings, theme
+import callgrind, callgrind_diff, callgrind_to_heatmap, settings, theme
 
 # All constants needed from settings.py have to be loaded here before anything
 # else.
@@ -56,21 +56,11 @@ _TIME_LINE = re.compile(
 # BuildReport - Writes the overview page and every test's summary page, and
 # the strip of links that frames the views.
 class BuildReport:
-    # CallerDelta - How one caller's calls into one function changed, read back
-    # from callgrind_diff.py's synthesized callers diff.
-    class CallerDelta(NamedTuple):
-        # who does the calling
-        function: str
-        # how many more (or fewer) times it called
-        count_: int
-        # how much more (or less) those calls cost
-        cost: int
-
     # CallersData - the call graph a delta file cannot carry, plus the
     # baseline every share divides by.
     class CallersData(NamedTuple):
         # per function, who called it and how that changed
-        callers: dict[str, list[BuildReport.CallerDelta]]
+        callers: dict[str, list[callgrind_diff.CallerDelta]]
         # per function, its baseline cost in the synthesized callers
         # diff's counter
         baseline: dict[str, int]
@@ -173,21 +163,21 @@ class BuildReport:
     # The baseline run's total in this page's counter, from the synthesized
     # callers diff beside the delta.
     def baseline_total_load(self, path: str) -> int:
-        with open(path, encoding="utf-8") as handle:
-            doc = json.load(handle)
-        counters: list[str] = doc["counters"]
-        costs: list[int] = doc["baselineTotal"]
-        self.counters_check(counters, path)
-        return callgrind.counter_value(counters, costs, _RANKING_COUNTER_NAME)
+        doc = callgrind_diff.callers_doc_load(path)
+        counters = doc["counters"]
+        callgrind.ranking_counter_check(counters, path)
+        return callgrind.counter_value(
+            counters, doc["baselineTotal"], _RANKING_COUNTER_NAME
+        )
 
     # The "callers" cell of a diff row: each caller and how its calls moved.
     def caller_delta_cell(
         self,
-        profile: callgrind.Profile,
-        deltas: Sequence[BuildReport.CallerDelta],
+        profile: callgrind.LineProfile,
+        deltas: Sequence[callgrind_diff.CallerDelta],
     ) -> theme.Cell:
         if not deltas:
-            return theme.Cell("(no recorded caller change)", cls="dim")
+            return theme.Cell("(no recorded caller change)", cls="dimmed")
         parts: list[str] = []
         html_parts: list[str] = []
         for delta in deltas:
@@ -215,7 +205,7 @@ class BuildReport:
     # One caller of a non-diff row, with its share of that function's calls.
     def caller_link(
         self,
-        profile: callgrind.Profile,
+        profile: callgrind.LineProfile,
         caller_name: str,
         count: int,
         call_count: int,
@@ -232,21 +222,11 @@ class BuildReport:
             sys.exit(
                 "error: --diff needs --callers-data, the callgrind_diff.py"
             )
-        try:
-            with open(path, encoding="utf-8") as handle:
-                doc = json.load(handle)
-        except OSError as error:
-            sys.exit(f"error: {path}: {error}: the callgrind_diff.py")
-        counters: list[str] = doc["counters"]
-        self.counters_check(counters, path)
+        doc = callgrind_diff.callers_doc_load(path)
+        counters = doc["counters"]
+        callgrind.ranking_counter_check(counters, path)
         return BuildReport.CallersData(
-            callers={
-                callee: [
-                    BuildReport.CallerDelta(function, count, cost)
-                    for function, count, cost in deltas
-                ]
-                for callee, deltas in doc["callers"].items()
-            },
+            callers=doc["callers"],
             baseline={
                 name: callgrind.counter_value(
                     counters, costs, _RANKING_COUNTER_NAME
@@ -257,29 +237,18 @@ class BuildReport:
             baseline_calls=doc["baselineCalls"],
         )
 
-    # Refuse a profile whose counters cannot add up to the ranking counter,
-    # rather than a bare KeyError from Profile.value further in.
-    def counters_check(self, counters: Sequence[str], path: str) -> None:
-        if _RANKING_COUNTER_NAME in callgrind.counter_names(counters):
-            return
-        sys.exit(
-            f"error: {path} cannot supply {_RANKING_COUNTER_NAME}, the"
-            f" counter every diff share is counted in: it records"
-            f" {' '.join(counters)}"
-        )
-
     # One collapsed section of a summary page: a heading and its markup.
     # Every section, core and diff alike, is this same shape.
     def details_section(self, title: str, body: str) -> str:
         return (
-            f'<details class="sec"><summary><h2>'
+            f'<details class="log-section"><summary><h2>'
             f"{theme.html_escape(title)}</h2></summary>{body}</details>"
         )
 
     # The diff summary's top table, ranked by |change| in self cost.
     def diff_functions_table(
         self,
-        profile: callgrind.Profile,
+        profile: callgrind.LineProfile,
         callers_data: BuildReport.CallersData,
     ) -> str:
         ranked = sorted(
@@ -373,7 +342,7 @@ class BuildReport:
             callers = profile_path + _DIFF_CALLER_COUNTS_FILE_SUFFIX
             link = self.test_link_cell(test.name)
             profile = callgrind.profile_load([profile_path])
-            self.counters_check(profile.counters, profile_path)
+            callgrind.ranking_counter_check(profile.counters, profile_path)
             delta = profile.value(profile.totals(), _RANKING_COUNTER_NAME)
             changed = sum(
                 1
@@ -401,7 +370,9 @@ class BuildReport:
     # Write one test's diff summary page.
     def diff_test(self, args: BuildReport.TestArgs) -> None:
         profile = callgrind.profile_load(args.callgrind_file)
-        self.counters_check(profile.counters, " ".join(args.callgrind_file))
+        callgrind.ranking_counter_check(
+            profile.counters, " ".join(args.callgrind_file)
+        )
         callers_data = self.callers_data_load(args.callers_data)
         self.report_page(
             args,
@@ -411,7 +382,7 @@ class BuildReport:
         )
 
     # The heat map href for a function, or "" when it has no entry line.
-    def entry_link(self, profile: callgrind.Profile, function: str) -> str:
+    def entry_link(self, profile: callgrind.LineProfile, function: str) -> str:
         entry = profile.function_entry.get(function)
         if entry is None or not entry.line:
             return ""
@@ -453,7 +424,7 @@ class BuildReport:
     # The "symbol" cell: the function's name, linked into the heat map when
     # it has an entry line to open there and bare text when it has not.
     def function_link_cell(
-        self, profile: callgrind.Profile, function: str
+        self, profile: callgrind.LineProfile, function: str
     ) -> theme.Cell:
         href = self.entry_link(profile, function)
         return theme.Cell(
@@ -525,7 +496,7 @@ class BuildReport:
                     else "",
                     theme.Cell(who, html=who_html)
                     if who
-                    else theme.Cell("(no recorded caller)", cls="dim"),
+                    else theme.Cell("(no recorded caller)", cls="dimmed"),
                 ]
             )
         return theme.table_render("report.functions", columns, rows, fill=True)
@@ -538,7 +509,7 @@ class BuildReport:
             .split("\n")[_SUMMARY_PERF_LOG_SKIPPED_HEAD_LINES:]
         )
         text = "\n".join(_PID_PREFIX.sub("", line) for line in lines)
-        return self.logbox_render(text)
+        return self.log_box_render(text)
 
     # The collapsed "valgrind log" section, empty when no log was given.
     def log_section(self, paths: Sequence[str]) -> str:
@@ -552,9 +523,10 @@ class BuildReport:
         return self.details_section("valgrind log", body)
 
     # Captured output as one preformatted block, escaped for the page.
-    def logbox_render(self, text: str) -> str:
+    def log_box_render(self, text: str) -> str:
         return (
-            f'<div class="tbl"><pre class="logbox">{theme.html_escape(text)}'
+            f'<div class="table-box"><pre class="log-box">'
+            f"{theme.html_escape(text)}"
             "</pre></div>"
         )
 
@@ -621,7 +593,8 @@ class BuildReport:
         if not pairs:
             return ""
         rows: list[list[theme.CellOrText]] = [
-            [theme.Cell(pair.label, cls="dim"), pair.value] for pair in pairs
+            [theme.Cell(pair.label, cls="dimmed"), pair.value]
+            for pair in pairs
         ]
         return theme.table_render(
             key,
@@ -649,7 +622,7 @@ class BuildReport:
         if not path:
             return ""
         output = self.time_humanize(self.file_read(path).rstrip())
-        return self.details_section(title, self.logbox_render(output))
+        return self.details_section(title, self.log_box_render(output))
 
     # Write the full report's overview page, from each test's perf log.
     def overview(self, args: BuildReport.OverviewArgs) -> None:
@@ -776,26 +749,21 @@ class BuildReport:
             file=sys.stderr,
         )
 
-    # One strip pulldown: its label, the caret pointing at its box, the box
-    # reading closed_text, and the list of entries dropping below the box.
-    def pulldown_render(
-        self, key: str, width: int, closed_text: str, entries: str
-    ) -> str:
+    # One strip pulldown: its menu button, the search box taking the
+    # button's place while open, and the list dropping below the button.
+    def pulldown_render(self, key: str, width: int, entries: str) -> str:
         return (
             f'<span class="pulldown" id="{key}-pulldown">'
-            '<span class="pulldown-label"></span>'
-            '<button class="pulldown-caret" type="button" tabindex=-1>'
-            "</button>"
+            '<button class="pulldown-button" type="button"></button>'
             '<input class="pulldown-search" type="text"'
             f' style="width:{width}ch"'
-            f' value="{theme.html_escape(closed_text)}"'
-            ' readonly autocomplete="off" spellcheck="false">'
+            ' hidden autocomplete="off" spellcheck="false">'
             f'<span class="pulldown-list" hidden>{entries}'
             '<span class="pulldown-no-match" hidden></span></span></span>'
         )
 
     # The collapsed "raw data" section linking this test's archives.
-    def rawdata_section(self, paths: Sequence[str], out_dir: str) -> str:
+    def raw_data_section(self, paths: Sequence[str], out_dir: str) -> str:
         if not paths:
             return ""
         items = "".join(
@@ -806,7 +774,7 @@ class BuildReport:
             for path in paths
         )
         return self.details_section(
-            "raw data", f'<ul class="rawdata">{items}</ul>'
+            "raw data", f'<ul class="raw-data">{items}</ul>'
         )
 
     # Assemble and write one test's summary page around its top table.
@@ -834,7 +802,7 @@ class BuildReport:
         body += self.output_section("trace log", args.trace_log)
         if not args.no_log:
             body += self.log_section(args.log)
-        body += self.rawdata_section(args.raw_data, out_dir)
+        body += self.raw_data_section(args.raw_data, out_dir)
         body += f"<h2>{heading}</h2>" + table
         body += self.page_main_close()
         self.page_write(
@@ -883,11 +851,9 @@ class BuildReport:
             for entry in test_entries
         )
         return [
-            self.pulldown_render(
-                "tests", width, _STRIP_PULLDOWN_MERGED_TEST_NAME, test_links
-            ),
-            self.pulldown_render("files", width, "", ""),
-            self.pulldown_render("functions", width, "", ""),
+            self.pulldown_render("tests", width, test_links),
+            self.pulldown_render("files", width, ""),
+            self.pulldown_render("functions", width, ""),
         ]
 
     # The top strip: the title cell, which as the logo leads to the report
@@ -899,7 +865,6 @@ class BuildReport:
         depth: int,
         pulldowns: Sequence[str] = (),
     ) -> str:
-        separator = '<span class="sep">|</span>'
         root_href = theme.shared_href(depth, "index.html")
         help_href = theme.shared_href(depth, "README.md")
         parts = [
@@ -907,14 +872,10 @@ class BuildReport:
             f' data-root-href="{theme.html_escape(root_href)}">'
             f"{theme.html_escape(title)}</b>"
         ]
-        for index, link in enumerate(links):
-            if index:
-                parts.append(separator)
+        for link in links:
             parts.append(self.strip_link_render(link))
-        for pulldown in pulldowns:
-            parts.append(separator)
-            parts.append(pulldown)
-        parts.append('<span class="sp"></span>')
+        parts.extend(pulldowns)
+        parts.append('<span class="spacer"></span>')
         parts.append(
             '<label class="scale" id="scale-label" for="scale-slider">'
             '<span id="scale-text"></span>'
@@ -922,27 +883,26 @@ class BuildReport:
             f' step="{_STRIP_SCALE_SLIDER_STEP}">'
             "</label>"
         )
-        parts.append('<span class="util" id="util">')
-        parts.append(separator)
+        parts.append('<span class="utility" id="utility_links">')
         parts.append('<a href="#" id="layout-reset">reset</a>')
-        parts.append(separator)
         parts.append(
             f'<a href="{theme.html_escape(help_href)}"'
             ' target="_blank">help</a>'
         )
-        parts.append(separator)
         parts.append(
             f'<a href="{_STRIP_CURL_PERF_SITE_HREF}" target="_blank"'
             ' rel="noopener">'
             "curl.se/perf</a>"
         )
         parts.append("</span>")
-        return f'<nav id="bar" class="strip">{"".join(parts)}</nav>'
+        return f'<nav id="strip_bar" class="strip">{"".join(parts)}</nav>'
 
     # Write one test's summary page.
     def test(self, args: BuildReport.TestArgs) -> None:
         profile = callgrind.profile_load(args.callgrind_file)
-        self.counters_check(profile.counters, " ".join(args.callgrind_file))
+        callgrind.ranking_counter_check(
+            profile.counters, " ".join(args.callgrind_file)
+        )
         views = [_FLAME_VIEW, _HEAT_VIEW] if args.trace_log else [_HEAT_VIEW]
         self.report_page(
             args,
@@ -1056,12 +1016,6 @@ def main() -> None:
         required=True,
         help="the directory to write the shared stylesheets and scripts to",
     )
-    assets_parser.add_argument(
-        "manifest_line",
-        nargs="+",
-        help="line 1 of MANIFEST.txt, then its LABEL=VALUE rows, checksum"
-        " left out",
-    )
 
     overview_parser = subparsers.add_parser(
         "overview", help="the page over several tests"
@@ -1122,7 +1076,7 @@ def main() -> None:
     namespace = parser.parse_args()
     report = BuildReport()
     if namespace.cmd == "assets":
-        theme.theme_assets_write(namespace.output, namespace.manifest_line)
+        theme.theme_assets_write(namespace.output)
     elif namespace.cmd == "test":
         test_args = BuildReport.TestArgs(
             callgrind_file=namespace.callgrind_file,

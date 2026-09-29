@@ -71,35 +71,34 @@
     "TABLE_LOCATION_COLUMN_MAX_CHARS",
   );
   const profile_model = JSON.parse(
-    document.getElementById("heatdata").textContent,
+    document.getElementById("heat_map_data").textContent,
   );
   const file_table = profile_model.files,
     function_table = profile_model.functions;
   const tree_panel = document.getElementById("tree");
   const main_panel = document.getElementById("main");
   const minimap_panel = document.getElementById("minimap");
-  const minimap_box = document.getElementById("mmBox");
-  const minimap_viewport = document.getElementById("mmViewport");
+  const minimap_box = document.getElementById("minimap_box");
+  const minimap_viewport = document.getElementById("minimap_viewport");
   const view_storage = report_ui.view_storage;
   let sort_mode = view_storage.value_read("heat.sort") || "heat";
   let current_file_path = null,
     search_query = "";
   const sort_select = document.getElementById("sort");
-  document.getElementById("counterLabel").textContent =
+  document.getElementById("counter_label").textContent =
     window.ui_strings.text_of("str_control_counter");
-  document.getElementById("scaleLabel").textContent =
+  document.getElementById("scale_label").textContent =
     window.ui_strings.text_of("str_control_scale");
-  document.getElementById("sortLabel").textContent =
+  document.getElementById("sort_label").textContent =
     window.ui_strings.text_of("str_control_tree");
-  document.getElementById("searchLabel").textContent =
+  document.getElementById("search_label").textContent =
     window.ui_strings.text_of("str_control_search");
   sort_select.options[0].textContent =
     window.ui_strings.text_of("str_sort_by_heat");
   sort_select.options[1].textContent =
     window.ui_strings.text_of("str_sort_by_name");
-  document.getElementById("q").placeholder = window.ui_strings.text_of(
-    "str_search_placeholder",
-  );
+  document.getElementById("search_box").placeholder =
+    window.ui_strings.text_of("str_search_placeholder");
   sort_select.value = sort_mode;
   tree_panel.style.minWidth = HEAT_MAP_TREE_PANE_NARROWEST_PX + "px";
   report_ui.pane_splitter.attach(
@@ -503,7 +502,7 @@
       .column_extents(columns, cell_rows, grow_index)
       .map(report_ui.column_limits);
     const table_classes = [
-      "cols",
+      "columns",
       options.fill ? "fill" : "",
       options.cls || "",
     ]
@@ -511,13 +510,13 @@
       .join(" ");
     let markup = options.bare
       ? ""
-      : `<div class="tbl${options.fill ? " fill" : ""}">`;
+      : `<div class="table-box${options.fill ? " fill" : ""}">`;
     markup +=
-      `<div class="tbl-cols"><table class="${table_classes}"` +
+      `<div class="table-columns"><table class="${table_classes}"` +
       ` data-key="${html_escape(key)}"><colgroup>`;
     column_limit_list.forEach((limit, column_index) => {
       const column_classes = [
-        column_index % 2 ? "alt" : "",
+        column_index % 2 ? "alternate" : "",
         column_index === grow_index ? "grow" : "",
       ]
         .filter(Boolean)
@@ -535,7 +534,8 @@
     for (const column of columns) {
       const heading = html_escape(column.label);
       markup +=
-        `<th${column.numeric ? ' class="n"' : ""} title="${heading}">` +
+        `<th${column.numeric ? ' class="numeric"' : ""}` +
+        ` title="${heading}">` +
         `${heading}</th>`;
     }
     markup += `</tr></thead><tbody>`;
@@ -544,14 +544,14 @@
       const row_attribute_text =
         options.row_attributes && options.row_attributes[row_index];
       markup += href
-        ? `<tr class="rowlink" data-href="${html_escape(href)}">`
+        ? `<tr class="row-link" data-href="${html_escape(href)}">`
         : row_attribute_text
           ? `<tr ${row_attribute_text}>`
           : "<tr>";
       row.forEach((cell, column_index) => {
         const column = columns[column_index];
         const class_names = [
-          column.numeric ? "n" : "",
+          column.numeric ? "numeric" : "",
           column.cls || "",
           cell.cls || "",
         ]
@@ -616,7 +616,7 @@
     secondary_counters.map((secondary) =>
       counter_column(secondary, {
         label: counter_label(secondary),
-        cls: "x",
+        cls: "secondary-counter",
       }),
     );
   function secondary_cells(cost_vector, line_number, baseline_lookup) {
@@ -744,14 +744,16 @@
             `${caret_of(is_expanded)}</span>` +
             `<span class="name">` +
             `${html_escape(directory_node.name)}/</span>` +
-            `<span class="pct">` +
+            `<span class="share-percent">` +
             `${share_of_baseline_text(
               directory_node.self,
               directory_node.base,
             )}` +
             `</span></div>`,
         );
-        output_parts.push(`<div class="kids${is_expanded ? " open" : ""}">`);
+        output_parts.push(
+          `<div class="child-nodes${is_expanded ? " open" : ""}">`,
+        );
         nodes_emit(directory_node, depth + 1);
         output_parts.push(`</div>`);
       }
@@ -759,7 +761,8 @@
         .filter((file) => path_matches(file.path))
         .sort(node_compare);
       const file_row_emit = (file) => {
-        const selected_class = file.path === current_file_path ? " sel" : "";
+        const selected_class =
+          file.path === current_file_path ? " selected" : "";
         const heat_style_attribute = file.cold
           ? ""
           : cell_style(heat_of_delta(file.self, file.base));
@@ -773,7 +776,7 @@
             `${caret_of(false)}</span>` +
             `<span class="name">` +
             `${html_escape(file.name)}</span>` +
-            `<span class="pct">` +
+            `<span class="share-percent">` +
             `${share_of_baseline_text(file.self, file.base)}` +
             `</span></div>`,
         );
@@ -792,7 +795,7 @@
             `${caret_of(is_expanded)}</span>` +
             `<span class="name">` +
             `${text_of("str_no_samples")}</span>` +
-            `<span class="pct"></span></div>`,
+            `<span class="share-percent"></span></div>`,
         );
         if (is_expanded) {
           for (const file of zero_cost_files) file_row_emit(file);
@@ -1050,13 +1053,13 @@
     const lines = file.lines;
     scope_totals = scope_totals_build(file_path);
     let markup =
-      `<div class="srcwrap"><div class="fhead band">` +
+      `<div class="source-pane"><div class="file-header band">` +
       `<span class="path">${html_escape(file_path)}</span>`;
     const file_self_cost = current_value(file.self);
     const file_baseline_cost = file_baseline_of(file_path) || 0;
     const file_amount_text = human_text(file_self_cost);
     markup +=
-      `<span class="stat">` +
+      `<span class="statistic">` +
       `${html_escape(text_of("str_column_self"))} <b>` +
       `${
         share_of_baseline_text(file_self_cost, file_baseline_cost) ||
@@ -1077,20 +1080,20 @@
         secondary,
       );
       markup +=
-        `<span class="stat">` +
+        `<span class="statistic">` +
         `${html_escape(counter_label(secondary))}` +
         ` <b>${share_text(secondary_percent)}</b>` +
         ` (${human_text(self_cost)})</span>`;
     }
     if (file.group === "external") {
       const note = text_fill("str_not_in_repo", { path: file.raw });
-      markup += `<span class="stat">${html_escape(note)}</span>`;
+      markup += `<span class="statistic">${html_escape(note)}</span>`;
     }
     markup += `</div>`;
     const file_source = source_text(file_path);
     if (file_source == null) {
       const note = html_escape(text_of("str_source_unavailable"));
-      markup += `<div class="nosrc">${note}</div>`;
+      markup += `<div class="source-missing">${note}</div>`;
     }
 
     const hot_lines = Object.keys(lines)
@@ -1108,7 +1111,7 @@
     if (chip_lines.length) {
       markup +=
         `<div class="chips">` +
-        `<span class="lbl">${html_escape(CHIP_HEADING)}</span>`;
+        `<span class="chips-label">${html_escape(CHIP_HEADING)}</span>`;
       for (const [line_number, cost] of chip_lines) {
         const baseline_cost = line_baseline(file_path, line_number);
         markup +=
@@ -1134,14 +1137,14 @@
       // no address names line 0, so its row opens no panel
       const class_names = [
         line_costs && line_number ? "clickable" : "",
-        file.callees[line_number] ? "hasc" : "",
+        file.callees[line_number] ? "has-callee" : "",
       ]
         .filter(Boolean)
         .join(" ");
       attrs.push(
         `id="L${line_number}"` +
           `${class_names ? ` class="${class_names}"` : ""}` +
-          ` data-ln="${line_number}"`,
+          ` data-line-number="${line_number}"`,
       );
       const call_cell = HAS_CALL_GRAPH
         ? [
@@ -1192,7 +1195,7 @@
           {
             label: text_of("str_column_calls"),
             numeric: true,
-            cls: "incl",
+            cls: "inclusive",
           },
         ]
       : [];
@@ -1204,7 +1207,7 @@
         label: text_of("str_column_line"),
         numeric: true,
         width: String(line_count).length + 2,
-        cls: "ln",
+        cls: "line-number",
       },
       {
         label: text_of("str_column_source"),
@@ -1218,10 +1221,10 @@
     markup += table_render("heat.src", columns, rows, {
       row_attributes: attrs,
       fill: 1,
-      cls: "src",
+      cls: "source-table",
       bare: true,
     });
-    markup += `<div class="srctail"></div></div>`;
+    markup += `<div class="source-tail"></div></div>`;
     main_panel.innerHTML = markup;
     tree_render();
 
@@ -1274,8 +1277,8 @@
   }
 
   function tail_fit() {
-    const tail = main_panel.querySelector(".srctail");
-    const table_element = main_panel.querySelector("table.src");
+    const tail = main_panel.querySelector(".source-tail");
+    const table_element = main_panel.querySelector("table.source-table");
     if (!tail || !table_element) return;
     const rows = table_element.tBodies[0].rows,
       last = rows[rows.length - 1];
@@ -1295,7 +1298,7 @@
     minimap_viewport.hidden = true;
   }
   function minimap_build() {
-    const table_element = main_panel.querySelector("table.src");
+    const table_element = main_panel.querySelector("table.source-table");
     const table_body = table_element && table_element.tBodies[0];
     if (
       !table_body ||
@@ -1306,7 +1309,7 @@
     }
 
     const clone_table = document.createElement("table");
-    clone_table.className = "src";
+    clone_table.className = "source-table";
     const clone_body = document.createElement("tbody");
     for (const row of table_body.rows) {
       if (row.classList.contains("detail")) continue;
@@ -1345,7 +1348,7 @@
   }
 
   function geometry_measure() {
-    const table_element = main_panel.querySelector("table.src"),
+    const table_element = main_panel.querySelector("table.source-table"),
       table_body = table_element.tBodies[0];
     const main = main_panel.getBoundingClientRect();
     const clone_body = table_body.getBoundingClientRect();
@@ -1413,7 +1416,7 @@
   }
   main_panel.addEventListener("scroll", minimap_sync);
   minimap_panel.addEventListener("click", (click_event) => {
-    if (click_event.target.closest("#mmViewport")) return;
+    if (click_event.target.closest("#minimap_viewport")) return;
     const geometry = geometry_measure(),
       scaled_height_px = clone_height_px * scale_factor;
     const offsetY =
@@ -1452,7 +1455,8 @@
 
   function detail_line() {
     const detail_row = main_panel.querySelector("tr.detail");
-    return detail_row ? +detail_row.previousElementSibling.dataset.ln : 0;
+    if (!detail_row) return 0;
+    return +detail_row.previousElementSibling.dataset.lineNumber;
   }
 
   function detail_set(line) {
@@ -1584,9 +1588,9 @@
               "<b>" + html_escape(function_name(line_function_index)) + "</b>",
           })
         : "";
-    let markup = `<div class="dbox">`;
+    let markup = `<div class="detail-box">`;
     markup +=
-      `<a href="#" class="dclose">` +
+      `<a href="#" class="detail-close">` +
       `${html_escape(text_of("str_detail_close_symbol"))}</a>`;
     markup +=
       `<div>${html_escape(file_path)}:` +
@@ -1699,16 +1703,17 @@
         text_parts.push(heading + "\n" + table_markdown(columns, rows));
       } else if (HAS_CALL_GRAPH) {
         const none = text_of("str_no_caller");
-        markup += `<div class="dim">${html_escape(none)}</div>`;
+        markup += `<div class="dimmed">${html_escape(none)}</div>`;
         text_parts.push(heading + "\n" + none);
       } else {
         text_parts.push(heading);
       }
     }
     markup +=
-      `<div class="dactions"><a href="#" class="dcopy">` +
+      `<div class="detail-actions"><a href="#" class="detail-copy">` +
       `${html_escape(text_of("str_detail_copy"))}</a>` +
-      `<span class="sep"> | </span><a href="#" class="dclose2">` +
+      `<span class="separator"> | </span>` +
+      `<a href="#" class="detail-close-link">` +
       `${html_escape(text_of("str_detail_close"))}</a></div>`;
     markup += `</div>`;
     const detail_row = document.createElement("tr");
@@ -1726,7 +1731,7 @@
       location.hash = hash_for_line(current_file_path, +chip.dataset.goto);
       return;
     }
-    const copy = click_event.target.closest(".dcopy");
+    const copy = click_event.target.closest(".detail-copy");
     if (copy) {
       click_event.preventDefault();
       navigator.clipboard.writeText(
@@ -1734,21 +1739,23 @@
       );
       return;
     }
-    const close = click_event.target.closest(".dclose, .dclose2");
+    const close = click_event.target.closest(
+      ".detail-close, .detail-close-link",
+    );
     if (close) {
       click_event.preventDefault();
       location.hash = hash_for_line(current_file_path);
       return;
     }
     if (click_event.target.closest("a")) return;
-    const link_row = click_event.target.closest("tr.rowlink");
+    const link_row = click_event.target.closest("tr.row-link");
     if (link_row) {
       location.hash = link_row.dataset.href;
       return;
     }
     const row = click_event.target.closest("tr.clickable");
     if (row && current_file_path) {
-      const line_number = +row.dataset.ln;
+      const line_number = +row.dataset.lineNumber;
       location.hash =
         line_number === detail_line()
           ? hash_for_line(current_file_path)
@@ -1888,10 +1895,12 @@
     view_storage.value_write("heat.sort", sort_mode);
     tree_render();
   });
-  document.getElementById("q").addEventListener("input", (input_event) => {
-    search_query = input_event.target.value.trim().toLowerCase();
-    tree_render();
-  });
+  document
+    .getElementById("search_box")
+    .addEventListener("input", (input_event) => {
+      search_query = input_event.target.value.trim().toLowerCase();
+      tree_render();
+    });
   counter_apply(current_counter.key);
   route_render();
 })();

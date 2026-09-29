@@ -96,7 +96,7 @@ class CallgrindToHeatmap:
 
         # Freeze the tally into the page's own shape, trailing zeros dropped.
         def emit(self) -> CallgrindToHeatmap.FileModel:
-            trim = CallgrindToHeatmap.costs_trim
+            trim = callgrind.costs_trim
             key = CallgrindToHeatmap.call_row_cost_key
             return {
                 "self": trim(self.self_cost),
@@ -216,40 +216,23 @@ class CallgrindToHeatmap:
         # how many calls it makes, so far
         count: int = 0
 
-    # SynthesizedCallers - What every share on a diff page divides by. Its
-    # vectors carry recorded slots only. The page derives the rest itself.
-    class SynthesizedCallers(TypedDict):
-        # keyed by function, and by "<function>\n<file>\n<line>"
-        baseline: dict[str, callgrind.Costs]
-        # the baseline run's summed cost vector
-        baselineTotal: callgrind.Costs
-        # per display path, that whole file's baseline cost vector
-        fileBaseline: dict[str, callgrind.Costs]
-
     # Rank one call row dearest first, by the ranking counter's slot. Both
     # the callee rows a line holds and a function's caller rows sort on it.
     @staticmethod
     def call_row_cost_key(row: CallgrindToHeatmap.CallRow) -> int:
         return -(row.cost[0] if row.cost else 0)
 
-    # Drop trailing zeros: every cost vector is the full counter width, and
-    # the page would only render those slots blank.
-    @staticmethod
-    def costs_trim(costs: callgrind.Costs) -> callgrind.Costs:
-        length = len(costs)
-        while length and costs[length - 1] == 0:
-            length -= 1
-        return costs[:length]
-
     # Turn a finished model into a diff one: shares go against the summed
     # magnitude of every change, since the signed total is near zero.
     def diff_model(
         self,
         model: CallgrindToHeatmap.HeatModel,
-        profile: callgrind.Profile,
+        profile: callgrind.LineProfile,
         baseline_data: str,
     ) -> None:
-        synthesized = self.synthesized_callers_load(baseline_data)
+        if not baseline_data:
+            sys.exit("error: --diff needs --baseline-data FILE")
+        synthesized = callgrind_diff.callers_doc_load(baseline_data)
         totals = model["heatMapTotals"]
         totals["totals"] = callgrind_diff.profile_magnitudes(profile)
         totals["diff"] = True
@@ -348,7 +331,7 @@ class CallgrindToHeatmap:
                     function_index[site.callee],
                     display.get(entry_line.file, entry_line.file),
                     entry_line.line,
-                    self.costs_trim(tally.costs),
+                    callgrind.costs_trim(tally.costs),
                     tally.count,
                 )
             )
@@ -383,7 +366,7 @@ class CallgrindToHeatmap:
                         function_index[caller.function],
                         display.get(caller.file, caller.file),
                         caller.line,
-                        self.costs_trim(tally.costs),
+                        callgrind.costs_trim(tally.costs),
                         tally.count,
                     )
                     for caller, tally in profile.callers.get(name, {}).items()
@@ -395,10 +378,10 @@ class CallgrindToHeatmap:
                     "name": name,
                     "file": display.get(entry.file, entry.file),
                     "line": entry.line,
-                    "self": self.costs_trim(
+                    "self": callgrind.costs_trim(
                         profile.function_self.get(name, [])
                     ),
-                    "calls": self.costs_trim(
+                    "calls": callgrind.costs_trim(
                         profile.function_calls.get(name, [])
                     ),
                     "callers": callers,
@@ -428,12 +411,8 @@ class CallgrindToHeatmap:
             if relative not in files
         )
         # the page opens on this counter, so it must be one of the columns
-        # it is handed below: counter_names() is exactly those two lists
-        if _RANKING_COUNTER_NAME not in profile.counter_names():
-            sys.exit(
-                f"error: this profile cannot supply {_RANKING_COUNTER_NAME}"
-                f" {' '.join(profile.counters)}"
-            )
+        # it is handed below: the one door checks exactly those two lists
+        callgrind.ranking_counter_check(profile.counters, "this profile")
         default_counter = _RANKING_COUNTER_NAME
         return {
             "heatMapTotals": {
@@ -657,18 +636,27 @@ class CallgrindToHeatmap:
                     f" {body};\n"
                 )
 
-    # Read callgrind_diff.py's synthesized callers diff. Missing, every share
-    # would divide by nothing and read a flat 100%, so it is a named error.
-    def synthesized_callers_load(
-        self, path: str
-    ) -> CallgrindToHeatmap.SynthesizedCallers:
-        if not path:
-            sys.exit("error: --diff needs --baseline-data FILE")
-        if not os.path.isfile(path):
-            sys.exit(f"error: no such --baseline-data file: {path}\n")
-        with open(path, encoding="utf-8") as handle:
-            doc: CallgrindToHeatmap.SynthesizedCallers = json.load(handle)
-        return doc
+
+# heatmap.js reads these records off the page JSON by position, so each
+# field order below is wire contract: a reorder must fail here, not there.
+_WIRE_FIELD_ORDERS: tuple[tuple[tuple[str, ...], tuple[str, ...]], ...] = (
+    (
+        CallgrindToHeatmap.CallRow._fields,
+        ("function", "file", "line", "cost", "count_"),
+    ),
+    (
+        CallgrindToHeatmap.LineCost._fields,
+        ("self_cost", "calls_cost", "count_"),
+    ),
+    (callgrind.ResolvedDerivedCounter._fields, ("name", "terms")),
+    (callgrind.ResolvedTerm._fields, ("coefficient", "counter_index")),
+)
+for _record_fields, _wire_fields in _WIRE_FIELD_ORDERS:
+    if _record_fields != _wire_fields:
+        raise ValueError(
+            "a page record's fields moved off the wire order heatmap.js"
+            f" reads: {_record_fields} vs {_wire_fields}"
+        )
 
 
 # main - Build one heat map page from the given callgrind file(s).

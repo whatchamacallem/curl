@@ -11,9 +11,11 @@ perf2html.sh [debug-flags] [--report=DIR] [cmake-flags...]
     --report=DIR      Defaults to perf2html_baseline_report, or
                       perf2html_modified_report when a cmake flag is given.
                       Pass it yourself after a source-only change.
+    --txz             Create .txz archives of all reports generated.
+                      .txz files may also be used as inputs.
     cmake-flags       Everything else, e.g. -D CMAKE_C_FLAGS=-Os.
 
-    These are the same debug-flags as the README.md documents:
+    The debug-flags are the same as the README.md documents.
     --artifacts=TMP   The profiler artifacts directory. Defaults to
                       perf2html_temporary_artifacts/ beside the report
                       directory (inside the target dir for a batch).
@@ -46,6 +48,7 @@ args_parse() {
   _REGENERATE=0
   _OUT_DIR=""
   ARTIFACTS_DIR=""
+  WRITE_REPORT_ARCHIVE=0
   while [ $# -gt 0 ]; do
     case "$1" in
       -h | --help)
@@ -65,6 +68,10 @@ args_parse() {
         _KEEP_ARTIFACTS=1
         shift
         ;;
+      --txz)
+        WRITE_REPORT_ARCHIVE=1
+        shift
+        ;;
       --report=*)
         _OUT_DIR="${1#--report=}"
         shift
@@ -76,6 +83,7 @@ args_parse() {
       *) break ;;
     esac
   done
+  [ "$VERBOSE" -lt "$VERBOSE_TRACE_LEVEL" ] || set -o xtrace
   _CMAKE_FLAGS=("$@")
   if [ -z "$_OUT_DIR" ]; then
     if [ $# -gt 0 ]; then
@@ -534,6 +542,9 @@ main() {
   # deleted before a missing one stops the run
   if [ "$_REGENERATE" = 1 ]; then recorded_reuse; fi
   toolchain_check
+  # the external sources the heat map reads are kept in step here, being one
+  # of the two scripts a report is generated from
+  source_cache_sync
   build_manifest
   # the report is output only, deleted whatever the mode, and before the
   # flush below: a refused delete leaves the last run's recordings standing
