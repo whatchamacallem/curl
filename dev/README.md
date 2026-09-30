@@ -34,20 +34,21 @@ perf2html.sh [debug-flags] [--report=DIR] [cmake-flags...]
     Builds RelWithDebInfo, profiles every TESTS_C test under callgrind plus a
     native perf stat timing run and a traced run for the flame graph,
     generates one report.
-    --report=DIR      Defaults to perf2html_baseline_report, or
+    --report=NAME     Defaults to perf2html_baseline_report, or
                       perf2html_modified_report when a cmake flag is given.
-                      Pass it yourself after a source-only change.
+    --target-dir=DIR  Default directory for reports (default $PWD).
     --txz             Create .txz archives of all reports generated.
                       .txz files may also be used as inputs.
     cmake-flags       Everything else, e.g. -D CMAKE_C_FLAGS=-Os.
 ```
 
 ```txt
-perf2html_diff.sh [debug-flags] [baseline] [modified] [diff]
+perf2html_diff.sh [debug-flags] [--target-dir=DIR] [baseline] [modified] [diff]
     Measures nothing: Compares the counters in two profiling reports and
-    generates a diff. Directories default to
+    generates a diff. Report names default to
     ./perf2html_{baseline,modified,diff}_report. Both baseline and modified
-    must be a perf2html.sh report. A diff can't be diffed.
+    must be a perf2html.sh report. And a diff can't be re-diffed.
+    --target-dir=DIR  Default directory for reports (default $PWD).
     --txz             Create .txz archives of all reports generated.
                       .txz files may also be used as inputs.
 ```
@@ -55,7 +56,7 @@ perf2html_diff.sh [debug-flags] [baseline] [modified] [diff]
 ```txt
 perf2html_batch.sh [debug-flags] [--target-dir=DIR] [cmake-flags...]
     Profiles baseline, modified and then does a diff of them.
-    --target-dir=DIR  Holds the three default-named reports (default CWD). The
+    --target-dir=DIR  Holds the three default-named reports (default $PWD). The
                       batch cannot rename them.
     --txz             Create .txz archives of all reports generated.
                       .txz files may also be used as inputs.
