@@ -580,7 +580,7 @@ class Callgrind:
 
 
 # The one parser every profile is read through.
-_PROFILE_PARSER = Callgrind()
+_profile_parser = Callgrind()
 
 
 # How one line's baseline slot is spelled, everywhere it is written and
@@ -708,7 +708,7 @@ def path_norm(path: str) -> PathInfo:
 
 # Read callgrind files into one profile, refusing any that do not add up.
 def profile_load(paths: Sequence[str]) -> Profile:
-    return _PROFILE_PARSER.load(paths)
+    return _profile_parser.load(paths)
 
 
 # Refuse a counter list that cannot supply the ranking counter, rather

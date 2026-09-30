@@ -237,12 +237,18 @@ _SOURCE_SCAN_ALLOWED_NON_ASCII_CHARS = (
     "∞",
     # up-pointing triangle
     "▲",
-    # right-pointing triangle, the heat map's collapsed caret
-    "▶",
+    # left-pointing triangle
+    "⯇",
+    # right-pointing triangle
+    "⯈",
     # down-pointing triangle
     "▼",
     # horizontal ellipsis
     "…",
+    # full block, a filled cell of the menu's scale bar
+    "█",
+    # light shade, an empty cell of the menu's scale bar
+    "░",
 )
 
 # Tags a browser draws with a weight, slant, size, line, font or margin of

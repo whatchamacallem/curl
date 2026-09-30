@@ -16,9 +16,9 @@ ASSET_HEAT_MAP_STYLESHEET_NAME = "heatmap.css"
 ASSET_MENU_SCRIPT_NAME = "menu.js"
 ASSET_MENU_STYLESHEET_NAME = "menu.css"
 
-# What each test's script in assets/ ends in, after the test's name: every
-# file and function its heat map opens, which the overview's pulldowns offer.
-ASSET_PULLDOWN_NAMES_SCRIPT_SUFFIX = ".pulldown_names.js"
+# The one script in assets/ naming every file and function the merged test's
+# heat map opens, which the pulldowns offer whichever test is active.
+ASSET_PULLDOWN_TEXT_SCRIPT_NAME = "pulldown_text.js"
 
 ASSET_SETTINGS_SCRIPT_NAME = "settings.js"
 
@@ -32,6 +32,28 @@ ASSET_TEMPLATE_SETTINGS_HANDLER_NAME = "settings.js"
 ASSET_THEME_SCRIPT_NAME = "theme.js"
 ASSET_THEME_STYLESHEET_NAME = "theme.css"
 ASSET_UI_STRINGS_SCRIPT_NAME = "ui_strings.js"
+
+# Valgrind's own preamble, dropped from the log a page shows.
+CALLERS_PERF_LOG_SKIPPED_HEAD_LINES = 9
+
+# What each time suffix a perf log can print is worth in seconds.
+CALLERS_TIME_SUFFIX_SECONDS: dict[str, float] = {
+    "msec": 1e-3,
+    "msecs": 1e-3,
+    "ms": 1e-3,
+    "nsec": 1e-9,
+    "nsecs": 1e-9,
+    "ns": 1e-9,
+    "sec": 1.0,
+    "secs": 1.0,
+    "s": 1.0,
+    "usec": 1e-6,
+    "usecs": 1e-6,
+    "us": 1e-6,
+}
+
+# How many functions the callers page's top table lists.
+CALLERS_TOP_FUNCTION_ROWS = 50
 
 # Every counter callgrind never records, as the recorded ones it sums from
 # and each one's coefficient. Nothing stores one.
@@ -76,7 +98,7 @@ FLAME_GRAPH_PROFILE_SCRIPT_NAME = "profile.js"
 FLAME_GRAPH_STARTUP_POLL_DELAY_MS = 50
 FLAME_GRAPH_STARTUP_POLL_MAX_ATTEMPTS = 200
 
-# The flame graph view a summary page links, as key, link label, page path.
+# The flame graph view a callers page links, as key, link label, page path.
 # Linked only where a trace was recorded. The key is a boundary name.
 FLAME_GRAPH_VIEW_ENTRY: tuple[str, str, str] = (
     "flame-graph",
@@ -130,11 +152,11 @@ HEAT_MAP_TREE_ALWAYS_LISTED_DIRS = ("lib", "include", "src", "tests/perf")
 # render, so a reader opens on the code that matters.
 HEAT_MAP_TREE_AUTO_EXPAND_ABOVE_SHARE = 0.05
 
-# The heat map view a summary page links, as key, link label, page path.
-# Every test has one. Spelled the same way as FLAME_GRAPH_VIEW_ENTRY.
+# The heat map view a callers page links, as key, label, page path. The
+# label is its menu button's and its title's. Every test has one.
 HEAT_MAP_VIEW_ENTRY: tuple[str, str, str] = (
     "heat-map",
-    "heat map",
+    "heatmap",
     "heat-map/index.html",
 )
 
@@ -142,11 +164,22 @@ HEAT_MAP_VIEW_ENTRY: tuple[str, str, str] = (
 # drag fires resize continuously, and every frame is what this avoids.
 LAYOUT_RESIZE_SETTLE_DELAY_MS = 120
 
-# The "curl.se/perf" link in every page's util block.
-MENU_CURL_PERF_SITE_HREF = "https://curl.se/perf/index.html"
+# Each numbered menu button's number, its text's first word and its key, by
+# the name in its id, menu-<name>-button-. menu_render orders the row.
+MENU_BUTTON_NUMBERS: dict[str, int] = {
+    "overview": 1,
+    "test": 2,
+    "file": 3,
+    "function": 4,
+    "heat-map": 5,
+    "callers": 6,
+    "reset": 7,
+    "help": 8,
+    "scale": 9,
+}
 
-# The keys an open pulldown answers, and a framed summary forwards up to the
-# tests one, as KeyboardEvent.key names. "next" also opens a focused one.
+# The keys an open pulldown answers, which a framed page sends up while the
+# tests one is open, as KeyboardEvent.key names.
 MENU_PULLDOWN_KEY_NAMES: dict[str, str] = {
     "close": "Escape",
     "next": "ArrowDown",
@@ -154,13 +187,28 @@ MENU_PULLDOWN_KEY_NAMES: dict[str, str] = {
     "select": "Enter",
 }
 
+# The file pulldown's search text naming a line, as a JavaScript pattern:
+# group 1 is the text it filters by, group 2 the line its entries open at.
+MENU_PULLDOWN_LINE_NUMBER_PATTERN = "^(.*):([0-9]+)$"
+
 # The test merging every other, named as perf2html.sh names its directory.
 # The pulldowns work in it at the overview's home: data, not a UI word.
 MENU_PULLDOWN_MERGED_TEST_NAME = "all"
 
+# A KeyboardEvent.key typed outside a field that opens the tests pulldown
+# with itself in the search box, as a JavaScript pattern.
+MENU_PULLDOWN_OPENING_KEY_PATTERN = "^[a-zA-Z]$"
+
 # Printable keys no pulldown takes as typed: outside a field they stay with
 # the page (space scrolls it), in an open box they type themselves.
 MENU_PULLDOWN_SKIPPED_KEY_NAMES: tuple[str, ...] = (" ",)
+
+# The keys the focused scale button moves its bar by, one stop each, as
+# KeyboardEvent.key names.
+MENU_SCALE_KEY_NAMES: dict[str, str] = {
+    "larger": "ArrowRight",
+    "smaller": "ArrowLeft",
+}
 
 # The multiple a rise stops printing at, becoming the ">1000x" bound. A drop
 # cannot pass -100%, so only a rise reaches it. theme.py and theme.js read it.
@@ -197,45 +245,45 @@ STORAGE_OWNED_PREFIXES: tuple[str, ...] = ("split.",)
 
 # What a report writes under STORAGE_VERSION_KEY, a bare string, not JSON.
 # Anything but exactly it sweeps every owned key: that is how a bump rolls out.
-STORAGE_VERSION = "perf2html v2"
+STORAGE_VERSION = "perf2html v3"
 STORAGE_VERSION_KEY = "perf2html.version"
 
 # Each palette colour and the roles it paints, one role under one colour.
 # Each role becomes the CSS variable --<role>, so roles are boundary names.
 STYLE_COLOR_PAIR_ENTRIES: dict[str, list[str]] = {
     "#1AB6FF": [
-        "heat-map-menu-overview-summary-link-fg-",
-        "heat-map-source-clicked-line-detail-action-bar-link-fg-",
+        "heat-map-source-line-detail-action-bar-link-fg-",
         "heat-map-source-table-line-number-cell-callee-marker-fg-",
+        "menu-button-fg-",
         "menu-pulldown-entry-current-fg-",
         "menu-pulldown-entry-highlighted-bg-",
-        "menu-scale-slider-fg-",
+        "page-link-fg-",
     ],
     "#0097E6": [
-        "heat-map-menu-overview-summary-scrollbar-thumb-bg-dim-",
+        "page-scrollbar-thumb-bg-dim-",
     ],
     "#F5F6FA": [
+        "callers-heat-cell-on-dark-fg-",
         "heat-map-heat-cell-on-dark-fg-",
         "heat-map-menu-field-fg-",
-        "heat-map-overview-summary-body-fg-",
-        "screenshot-label-fg-",
-        "heat-map-source-clicked-line-detail-function-name-fg-",
         "heat-map-source-file-header-statistic-share-fg-",
-        "menu-link-current-bg-",
-        "menu-pulldown-button-fg-",
+        "heat-map-source-line-detail-function-name-fg-",
+        "menu-button-current-bg-",
+        "menu-strip-fg-",
         "menu-title-fg-",
-        "summary-heat-cell-on-dark-fg-",
+        "page-body-fg-",
+        "screenshot-label-fg-",
     ],
     "#DCDDE1": [
+        "callers-collapsed-section-file-name-fg-dim-",
+        "callers-collapsed-section-title-fg-dim-",
+        "callers-collapsed-section-title-marker-fg-dim-",
         "heat-map-menu-label-fg-dim-",
         "heat-map-menu-search-box-placeholder-fg-dim-",
-        "heat-map-overview-summary-heading-fg-dim-",
-        "heat-map-overview-summary-table-column-title-fg-dim-",
-        "heat-map-overview-summary-table-dimmed-text-fg-dim-",
-        "heat-map-source-clicked-line-detail-action-bar-separator-fg-dim-",
-        "heat-map-source-clicked-line-detail-close-symbol-fg-dim-",
-        "heat-map-source-clicked-line-detail-heading-fg-dim-",
         "heat-map-source-file-header-statistic-fg-dim-",
+        "heat-map-source-line-detail-action-bar-separator-fg-dim-",
+        "heat-map-source-line-detail-close-symbol-fg-dim-",
+        "heat-map-source-line-detail-heading-fg-dim-",
         "heat-map-source-table-counter-cell-fg-dim-",
         "heat-map-source-table-line-number-cell-fg-dim-",
         "heat-map-source-ticker-tape-label-fg-dim-",
@@ -246,57 +294,56 @@ STYLE_COLOR_PAIR_ENTRIES: dict[str, list[str]] = {
         "heat-map-tree-node-share-percent-fg-dim-",
         "menu-pulldown-no-match-note-fg-dim-",
         "menu-pulldown-search-box-placeholder-fg-dim-",
-        "menu-scale-fg-dim-",
-        "summary-collapsed-section-file-name-fg-dim-",
-        "summary-collapsed-section-title-fg-dim-",
-        "summary-collapsed-section-title-marker-fg-dim-",
+        "page-heading-fg-dim-",
+        "page-table-column-title-fg-dim-",
+        "page-table-dimmed-text-fg-dim-",
     ],
     "#FBC531": [],
     "#E1B12C": [],
     "#7F8FA6": [],
-    "#718093": [],
+    "#718093": [
+        "menu-strip-bg-dim-",
+    ],
     "#273C75": [
         "heat-map-source-file-header-bg-",
         "heat-map-source-table-column-title-bg-",
         "heat-map-source-ticker-tape-bg-",
         "heat-map-tree-node-selected-bg-",
+        "menu-button-bg-",
         "menu-pulldown-entry-current-bg-",
     ],
     "#192A56": [
+        "callers-collapsed-section-log-box-bg-dim-",
+        "callers-collapsed-section-log-box-scrollbar-bg-dim-",
         "heat-map-menu-field-bg-dim-",
         "heat-map-menu-strip-bg-dim-",
-        "heat-map-overview-summary-table-column-title-bg-dim-",
-        "heat-map-source-clicked-line-detail-bg-dim-",
-        "menu-link-current-fg-dim-",
+        "heat-map-source-line-detail-bg-dim-",
+        "menu-button-current-fg-dim-",
         "menu-pulldown-entry-highlighted-fg-dim-",
         "menu-pulldown-entry-list-bg-dim-",
-        "menu-title-logo-bg-dim-",
-        "summary-collapsed-section-log-box-bg-dim-",
-        "summary-collapsed-section-log-box-scrollbar-corner-track-bg-dim-",
+        "page-table-column-title-bg-dim-",
     ],
     "#487EB0": [],
     "#40739E": [
-        "heat-map-overview-summary-column-resize-handle-active-bg-dim-",
         "menu-title-bg-dim-",
     ],
     "#353B48": [
-        "heat-map-overview-summary-table-alternate-column-bg-",
-        "heat-map-source-clicked-line-detail-derived-counter-row-bg-",
+        "heat-map-source-line-detail-derived-counter-row-bg-",
         "heat-map-source-ticker-tape-entry-bg-",
-        "menu-pulldown-button-bg-",
+        "page-table-alternate-column-bg-",
     ],
     "#2F3640": [
+        "callers-heat-cell-on-bright-fg-dim-",
+        "callers-overview-view-frame-bg-dim-",
         "heat-map-heat-cell-on-bright-fg-dim-",
         "heat-map-main-bg-dim-",
-        "heat-map-menu-overview-summary-scrollbar-track-bg-dim-",
         "heat-map-minimap-bg-dim-",
-        "heat-map-overview-summary-body-bg-dim-",
-        "heat-map-overview-summary-scrollbar-corner-bg-dim-",
-        "heat-map-source-clicked-line-detail-contributing-counter-row-bg-dim-",
-        "heat-map-source-clicked-line-detail-table-bg-dim-",
+        "heat-map-source-line-detail-recorded-counter-row-bg-dim-",
+        "heat-map-source-line-detail-table-bg-dim-",
         "menu-field-bg-dim-",
-        "overview-summary-view-frame-bg-dim-",
-        "summary-heat-cell-on-bright-fg-dim-",
+        "page-body-bg-dim-",
+        "page-scrollbar-corner-bg-dim-",
+        "page-scrollbar-track-bg-dim-",
     ],
     "#000000": [
         "screenshot-label-bg-",
@@ -305,7 +352,7 @@ STYLE_COLOR_PAIR_ENTRIES: dict[str, list[str]] = {
 }
 
 # The width of the coordinate space every page is designed in: every length
-# is written for this box, which report_ui.design_scale_apply() then fits.
+# is written for this box, which theme.js's design_scale_apply() then fits.
 STYLE_DESIGN_COORDINATES_WIDTH_PX = 1920
 
 # The design font, Monaco at STYLE_DESIGN_FONT_SIZE_PX, is this many px per
@@ -324,17 +371,25 @@ STYLE_DESIGN_FONT_SIZE_PX = 12
 # further, so the browser's own horizontal scrollbar appears instead.
 STYLE_DESIGN_MINIMUM_WINDOW_WIDTH_PX = 1280
 
-# What the scale slider multiplies the window's own fit by on an untouched
-# page, mid-travel whatever the ends, each half geometric.
+# What the scale bar zooms the main page contents by on an untouched page,
+# mid-travel whatever the ends, each half geometric. The menu never scales.
 STYLE_DESIGN_SCALE_DEFAULT_MULTIPLE = 1
 
-# Where along the slider's 0..1 travel the default multiple sits: the
-# middle, so the knob starts centred whatever the two ends are.
+# Where along the scale bar the default multiple sits, as a share of its
+# last stop: the middle, so the bar starts half full whatever the ends are.
 STYLE_DESIGN_SCALE_DEFAULT_TRAVEL_SHARE = 0.5
 
-# What the scale slider multiplies the window's own fit by at each end.
+# What the scale bar zooms the main page contents by at each end.
 STYLE_DESIGN_SCALE_LARGEST_MULTIPLE = 2
 STYLE_DESIGN_SCALE_SMALLEST_MULTIPLE = 0.5
+
+# The scale bar's stops, the first with no cell filled and each one after
+# filling one more. at 21 all bars are filled.
+STYLE_DESIGN_SCALE_STOP_COUNT = 21
+
+# How many decimals a stop's multiple keeps. The zoom is rounded to the
+# number the scale button prints, so printing cuts no fraction off.
+STYLE_DESIGN_SCALE_STOP_MULTIPLE_FRACTION_DIGITS = 2
 
 # The CSS variable carrying the window's height in design pixels. A vh is
 # zoomed like any length, so a full-height rule reads this instead.
@@ -378,13 +433,13 @@ STYLE_HEAT_MAP_TREE_INDENT_PER_LEVEL_CHARS = 2
 # Narrowest the heat map's tree pane is drawn or may be dragged, in pixels.
 STYLE_HEAT_MAP_TREE_PANE_NARROWEST_PX = 120
 
+# Where on the heat ramp the menu's logo starts, its last letter on the hot
+# end. Half way up reads as the ramp's warm half, not all of it.
+STYLE_MENU_LOGO_START_FRACTION = 0.5
+
 # Spaces each overview pulldown's open search box adds beyond the longest
 # test name. All three boxes are this one width.
 STYLE_MENU_PULLDOWN_EXTRA_WIDTH_CHARS = 2
-
-# Where on the heat ramp the menu title's logo starts, its last letter on
-# the hot end. Half way up reads as the ramp's warm half, not all of it.
-STYLE_MENU_TITLE_LOGO_START_FRACTION = 0.5
 
 # The page font, written as --page-font-family-: Monaco first, then whatever
 # else the box has.
@@ -408,24 +463,13 @@ STYLE_TABLE_LOCATION_COLUMN_MAX_CHARS = 48
 # Every other value a stylesheet draws with, written as the CSS variable
 # --<name>: <value>. Zero, none and hidden stay in the stylesheet itself.
 STYLE_VALUE_ENTRIES: dict[str, str] = {
+    "callers-collapsed-section-file-name-max-width-": "96ch",
+    "callers-collapsed-section-log-box-max-height-share-": "0.6",
+    "callers-collapsed-section-raw-data-list-padding-left-": "2ch",
     "heat-map-band-z-index-": "2",
     "heat-map-menu-column-gap-": "1ch",
-    "heat-map-menu-overview-summary-scrollbar-thickness-": "14px",
     "heat-map-menu-search-box-width-": "36ch",
     "heat-map-minimap-width-": "110px",
-    "heat-map-overview-summary-body-line-height-": "1.1",
-    "heat-map-overview-summary-column-resize-handle-bar-left-": "2.5px",
-    "heat-map-overview-summary-column-resize-handle-bar-width-": "4px",
-    "heat-map-overview-summary-column-resize-handle-last-bar-left-": "5px",
-    "heat-map-overview-summary-column-resize-handle-last-margin-left-": "-9px",
-    "heat-map-overview-summary-column-resize-handle-margin-left-": "-5px",
-    "heat-map-overview-summary-column-resize-handle-width-": "9px",
-    "heat-map-overview-summary-column-resize-handle-z-index-": "1",
-    "screenshot-label-border-width-": "1ch",
-    "screenshot-label-font-size-": "2em",
-    "screenshot-label-z-index-": "3",
-    "heat-map-overview-summary-table-cell-padding-inline-": "1ch",
-    "heat-map-overview-summary-table-column-title-z-index-": "1",
     "heat-map-source-file-header-column-gap-": "2ch",
     "heat-map-source-table-code-cell-tab-size-": "4",
     "heat-map-source-table-line-number-cell-callee-marker-text-": '"\\25B8 "',
@@ -439,45 +483,29 @@ STYLE_VALUE_ENTRIES: dict[str, str] = {
     "heat-map-tree-resize-handle-width-": "7px",
     "heat-map-tree-resize-handle-z-index-": "1",
     "heat-map-tree-width-": "280px",
-    "menu-link-max-width-": "40ch",
-    "menu-link-padding-inline-": "1ch",
-    "menu-pulldown-button-padding-inline-": "1ch",
+    "menu-button-margin-left-": "1ch",
+    "menu-button-padding-inline-": "1ch",
+    "menu-logo-padding-inline-": "1ch",
     "menu-pulldown-entry-list-max-height-share-": "0.6",
     "menu-pulldown-entry-list-z-index-": "3",
-    "menu-pulldown-margin-left-": "1ch",
+    "menu-pulldown-entry-padding-inline-": "1ch",
     "menu-pulldown-search-box-min-width-": "13ch",
-    "menu-scale-gap-": "1ch",
-    "menu-scale-slider-width-": "80px",
-    "menu-title-width-": "33ch",
-    "summary-collapsed-section-file-name-max-width-": "96ch",
-    "summary-collapsed-section-log-box-max-height-share-": "0.6",
-    "summary-collapsed-section-raw-data-list-padding-left-": "2ch",
+    "menu-title-width-": "66ch",
+    "page-body-line-height-": "1.1",
+    "page-scrollbar-thickness-": "14px",
+    "page-table-cell-padding-inline-": "1ch",
+    "page-table-column-title-z-index-": "1",
+    "screenshot-label-border-width-": "1ch",
+    "screenshot-label-font-size-": "2em",
+    "screenshot-label-z-index-": "3",
 }
 
-# Valgrind's own preamble, dropped from the log a page shows.
-SUMMARY_PERF_LOG_SKIPPED_HEAD_LINES = 9
-
-# What each time suffix a perf log can print is worth in seconds.
-SUMMARY_TIME_SUFFIX_SECONDS: dict[str, float] = {
-    "msec": 1e-3,
-    "msecs": 1e-3,
-    "ms": 1e-3,
-    "nsec": 1e-9,
-    "nsecs": 1e-9,
-    "ns": 1e-9,
-    "sec": 1.0,
-    "secs": 1.0,
-    "s": 1.0,
-    "usec": 1e-6,
-    "usecs": 1e-6,
-    "us": 1e-6,
-}
-
-# How many functions the summary's top table lists.
-SUMMARY_TOP_FUNCTION_ROWS = 50
+# Design pixels a press on a table cell travels before it slides that column
+# and every one right of it. A press that stays within is a plain click.
+TABLE_COLUMN_SLIDE_THRESHOLD_PX = 5
 
 # The units a printed duration uses, largest first, as suffix and seconds.
-# The printing ladder, not SUMMARY_TIME_SUFFIX_SECONDS, which reads a log.
+# The printing ladder, not CALLERS_TIME_SUFFIX_SECONDS, which reads a log.
 THEME_TIME_UNIT_ENTRIES: tuple[tuple[str, float], ...] = (
     ("s", 1.0),
     ("ms", 1e-3),

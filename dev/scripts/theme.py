@@ -566,8 +566,8 @@ class Theme:
             "color:"
             + self.contrast_foreground(
                 mixed,
-                "summary-heat-cell-on-dark-fg-",
-                "summary-heat-cell-on-bright-fg-dim-",
+                "callers-heat-cell-on-dark-fg-",
+                "callers-heat-cell-on-bright-fg-dim-",
             )
         )
 
@@ -620,25 +620,25 @@ class Theme:
 
 
 # The one renderer every page goes through, its palette resolved once.
-_RENDERER = Theme()
+_renderer = Theme()
 
 # The one table builder every table goes through.
-_TABLE_RENDERER = TableRenderer()
+_table_renderer = TableRenderer()
 
 
 # asset_text_read - One file from scripts/, to inline into a page.
 def asset_text_read(name: str) -> str:
-    return _RENDERER.asset_read(name)
+    return _renderer.asset_read(name)
 
 
 # heat_of_share - Turn a share into a position on the heat ramp.
 def heat_of_share(percent: float) -> float:
-    return _RENDERER.heat_of_share(percent)
+    return _renderer.heat_of_share(percent)
 
 
 # heat_style - The inline style one heat position paints a cell with.
 def heat_style(heat: float, signed: bool = False) -> str:
-    return _RENDERER.heat_style(heat, signed)
+    return _renderer.heat_style(heat, signed)
 
 
 # html_escape - Make any value safe to drop into markup.
@@ -648,27 +648,27 @@ def html_escape(value: object) -> str:
 
 # num_human - A big number shortened to fit a column, e.g. 2.1K.
 def num_human(number: float) -> str:
-    return _RENDERER.number_format.human(number)
+    return _renderer.number_format.human(number)
 
 
 # num_pct - A share as a percentage, e.g. 63.2%.
 def num_pct(percent: float) -> str:
-    return _RENDERER.number_format.percent(percent)
+    return _renderer.number_format.percent(percent)
 
 
 # num_signed - A diff number with its sign, empty when it is exactly zero.
 def num_signed(number: float) -> str:
-    return _RENDERER.number_format.signed(number)
+    return _renderer.number_format.signed(number)
 
 
 # num_signed_pct - A diff share with its sign, empty when it is exactly zero.
 def num_signed_pct(percent: float) -> str:
-    return _RENDERER.number_format.signed_percent(percent)
+    return _renderer.number_format.signed_percent(percent)
 
 
 # num_time - A duration in the largest unit it reaches, e.g. 1.25ms.
 def num_time(seconds: float) -> str:
-    return _RENDERER.number_format.time(seconds)
+    return _renderer.number_format.time(seconds)
 
 
 # page_document - One whole page, linking the report's shared theme.
@@ -681,7 +681,7 @@ def page_document(
     extra_css: Sequence[str] = (),
     body_holds_scripts: bool = False,
 ) -> str:
-    return _RENDERER.document(
+    return _renderer.document(
         title,
         body,
         extra_js,
@@ -724,14 +724,14 @@ def table_render(
     fill: bool = False,
     column_titles: bool = True,
 ) -> str:
-    return _TABLE_RENDERER.table(key, columns, rows, fill, column_titles)
+    return _table_renderer.table(key, columns, rows, fill, column_titles)
 
 
 # theme_assets_write - Write the report's one shared copy of the theme.
 def theme_assets_write(out_dir: str) -> None:
-    _RENDERER.assets_write(out_dir)
+    _renderer.assets_write(out_dir)
 
 
 # theme_runtime - The theme values a page's own JavaScript needs.
 def theme_runtime() -> ThemeRuntime:
-    return _RENDERER.runtime()
+    return _renderer.runtime()

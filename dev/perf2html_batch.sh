@@ -47,16 +47,15 @@ step_run() {
   shift 2
   local _exit_code=0 _start
   _start="$(clock_microseconds)"
-  log_verbose "== $_number $_name =="
+  log_verbose "Starting: $_number $_name..."
   # the child prints its own title, every line under it and its own
   # refusal; nothing here captures, buffers or reprints any of it
   "$@" || _exit_code=$?
   _STEP_NAMES+=("$_name")
   _STEP_SECONDS+=("$((($(clock_microseconds) - _start) / 1000000))s")
-  log_verbose "== $_number $_name: end =="
   if [ "$_exit_code" = 0 ]; then
-    log_verbose "[$(elapsed_format)s] done: step $_number $_name in" \
-      "$(duration_format "$_start")"
+    log_verbose "[$(elapsed_format)s] Done: step $_number $_name in" \
+      "$(duration_format "$_start")."
     return 0
   fi
   printf '\n[%ss] FAILED: step %s %s, exit %s, after %s\n\n' \
@@ -195,14 +194,12 @@ main() {
   heading_print "$_SCRIPT, after the three steps"
   table_print "${#_STEP_NAMES[@]}" "${_STEP_NAMES[@]}" "${_STEP_SECONDS[@]}"
 
-  # only a run reaching here succeeded, so a failed one leaves its
-  # recordings behind for diagnosis without being told to
   if [ "$_KEEP_ARTIFACTS" = 0 ]; then
     log_verbose "[$(elapsed_format)s] removing $ARTIFACTS_DIR/"
     rm -rf "$ARTIFACTS_DIR" \
       || error_exit 1 "error: could not remove $ARTIFACTS_DIR/"
   else
-    log_verbose "[$(elapsed_format)s] artifacts kept"
+    log_verbose "[$(elapsed_format)s] keeping $ARTIFACTS_DIR/"
   fi
   log_verbose "[$(elapsed_format)s] $_DIFF_DIR/index.html"
 }

@@ -12,11 +12,12 @@ import callgrind, callgrind_diff, settings, theme
 # else.
 _ASSET_HEAT_MAP_SCRIPT_NAME: str = ""
 _ASSET_HEAT_MAP_STYLESHEET_NAME: str = ""
-_ASSET_PULLDOWN_NAMES_SCRIPT_SUFFIX: str = ""
+_ASSET_PULLDOWN_TEXT_SCRIPT_NAME: str = ""
 _ASSET_SETTINGS_SCRIPT_NAME: str = ""
 _ASSET_TEMPLATE_HEAT_MAP_PAGE_NAME: str = ""
 _ASSET_THEME_SCRIPT_NAME: str = ""
 _HEAT_MAP_TREE_ALWAYS_LISTED_DIRS: tuple[str, ...] = ()
+_MENU_PULLDOWN_MERGED_TEST_NAME: str = ""
 _RANKING_COUNTER_NAME: str = ""
 _REPORT_ASSETS_DIR_NAME: str = ""
 _REPORT_SOURCES_DIR_NAME: str = ""
@@ -428,15 +429,10 @@ class CallgrindToHeatmap:
             "cold": cold,
         }, info
 
-    # What one test's names script in assets/ is called.
-    @staticmethod
-    def pulldown_names_script_name(test: str) -> str:
-        return test + _ASSET_PULLDOWN_NAMES_SCRIPT_SUFFIX
-
-    # Write one test's names script into the report's assets/: every file and
-    # function its heat map opens, from the model that page is built from.
-    def pulldown_names_write(
-        self, report_root: str, test: str, model: CallgrindToHeatmap.HeatModel
+    # Write the one pulldown text script into assets/, naming every file and
+    # function the merged test's heat map opens, which is every test's.
+    def pulldown_text_write(
+        self, report_root: str, model: CallgrindToHeatmap.HeatModel
     ) -> None:
         files = model["files"]
         names = {
@@ -450,15 +446,11 @@ class CallgrindToHeatmap:
         path = os.path.join(
             report_root,
             _REPORT_ASSETS_DIR_NAME,
-            self.pulldown_names_script_name(test),
+            _ASSET_PULLDOWN_TEXT_SCRIPT_NAME,
         )
         data = json.dumps(names, separators=(",", ":"), ensure_ascii=False)
         with open(path, "w", encoding="utf-8") as handle:
-            handle.write(
-                "window.report_pulldown_names ="
-                " window.report_pulldown_names || {};\n"
-                f"window.report_pulldown_names[{json.dumps(test)}] = {data};\n"
-            )
+            handle.write(f"window.report_pulldown_text = {data};\n")
 
     # Bake the model into the page: scripts before data, and the result is
     # never scanned again -- a source file's text can hold any marker.
@@ -487,6 +479,7 @@ class CallgrindToHeatmap:
         scripts += theme.script_tags(
             assets_href,
             (
+                _ASSET_PULLDOWN_TEXT_SCRIPT_NAME,
                 _ASSET_SETTINGS_SCRIPT_NAME,
                 _ASSET_THEME_SCRIPT_NAME,
                 _ASSET_HEAT_MAP_SCRIPT_NAME,
@@ -539,11 +532,11 @@ class CallgrindToHeatmap:
         self.sources_write(
             os.path.join(report_root, _REPORT_SOURCES_DIR_NAME), info, model
         )
-        # the test is named by its directory, the one holding heat-map/, as
-        # the overview's <test>/index.html links have it
-        self.pulldown_names_write(
-            report_root, os.path.basename(os.path.dirname(page_dir)), model
-        )
+        # the test is named by its directory, the one holding heat-map/, and
+        # the merged test's model holds every test's names, the one list
+        test_name = os.path.basename(os.path.dirname(page_dir))
+        if test_name == _MENU_PULLDOWN_MERGED_TEST_NAME:
+            self.pulldown_text_write(report_root, model)
         html = self.render(model, args.title)
         os.makedirs(page_dir, exist_ok=True)
         with open(args.output, "w", encoding="utf-8") as handle:

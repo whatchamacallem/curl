@@ -621,7 +621,7 @@
     secondary_counters.map((secondary) =>
       counter_column(secondary, {
         label: counter_label(secondary),
-        cls: "heat-map-home-source-table-secondary-counter-cell-",
+        cls: "heat-map-source-table-secondary-counter-cell-",
       }),
     );
   function secondary_cells(cost_vector, line_number, baseline_lookup) {
@@ -721,7 +721,7 @@
     return false;
   }
   const caret_of = (is_expanded) =>
-    text_of(is_expanded ? "str_caret_expanded" : "str_caret_collapsed");
+    text_of(is_expanded ? "str_caret_down" : "str_caret_right");
   function tree_render() {
     const output_parts = [];
     function nodes_emit(tree_node, depth) {
@@ -887,7 +887,7 @@
     let markup = `<div class="heat-map-home-">`;
     const line_rows = top_lines(HEAT_MAP_HOME_TABLE_MAX_ROWS);
     markup +=
-      `<div class="heat-map-overview-summary-heading-">${html_escape(
+      `<div class="page-heading-">${html_escape(
         text_fill("str_heading_lines_by_counter", {
           prefix: HEADING_PREFIX,
           counter: counter_label(current_counter),
@@ -971,7 +971,7 @@
         ]
       : [];
     markup +=
-      `<div class="heat-map-overview-summary-heading-">${html_escape(
+      `<div class="page-heading-">${html_escape(
         text_fill("str_heading_functions_by_self", {
           prefix: HEADING_PREFIX,
           counter: counter_label(current_counter),
@@ -1254,9 +1254,20 @@
     minimap_sync();
   }
 
+  // An element's box in design px, the space scrollTop and clientHeight
+  // count in. On a zoomed page a rect is in screen px.
+  function design_rect_of(element) {
+    const rect = element.getBoundingClientRect();
+    return {
+      bottom: report_ui.design_px(rect.bottom),
+      height: report_ui.design_px(rect.height),
+      top: report_ui.design_px(rect.top),
+    };
+  }
+
   function row_is_visible(row_element) {
-    const row_rect = row_element.getBoundingClientRect();
-    const main_rect = main_panel.getBoundingClientRect();
+    const row_rect = design_rect_of(row_element);
+    const main_rect = design_rect_of(main_panel);
     return (
       row_rect.top >=
         main_rect.top + covered_height(row_element.closest("table")) &&
@@ -1265,25 +1276,22 @@
   }
 
   function covered_height(table_element) {
-    let height =
-      table_element.tHead.rows[0].cells[0].getBoundingClientRect().height;
+    let height = design_rect_of(table_element.tHead.rows[0].cells[0]).height;
     for (const band of main_panel.querySelectorAll(".band_")) {
-      height += band.getBoundingClientRect().height;
+      height += design_rect_of(band).height;
     }
     return height;
   }
 
   function row_center(row_element) {
     const cover = covered_height(row_element.closest("table"));
-    const row_rect = row_element.getBoundingClientRect();
-    const main_rect = main_panel.getBoundingClientRect();
+    const row_rect = design_rect_of(row_element);
+    const main_rect = design_rect_of(main_panel);
     const detail_element = row_element.nextElementSibling;
     const block_bottom_px =
       detail_element &&
-      detail_element.classList.contains(
-        "heat-map-source-clicked-line-detail-row-",
-      )
-        ? detail_element.getBoundingClientRect().bottom
+      detail_element.classList.contains("heat-map-source-line-detail-row-")
+        ? design_rect_of(detail_element).bottom
         : row_rect.bottom;
     const block_height_px = block_bottom_px - row_rect.top;
     const slack = (main_panel.clientHeight - cover - block_height_px) / 2;
@@ -1299,9 +1307,8 @@
     const rows = table_element.tBodies[0].rows,
       last = rows[rows.length - 1];
     if (!last) return;
-    const covered_px = report_ui.design_px(
-      covered_height(table_element) + last.getBoundingClientRect().height,
-    );
+    const covered_px =
+      covered_height(table_element) + design_rect_of(last).height;
     tail.style.height =
       Math.max(0, (main_panel.clientHeight - covered_px) / 2) + "px";
   }
@@ -1330,8 +1337,7 @@
     clone_table.className = "heat-map-source-table-";
     const clone_body = document.createElement("tbody");
     for (const row of table_body.rows) {
-      if (row.classList.contains("heat-map-source-clicked-line-detail-row-"))
-        continue;
+      if (row.classList.contains("heat-map-source-line-detail-row-")) continue;
       const code = row.querySelector("td.heat-map-source-table-code-cell-");
       if (!code) continue;
       const clone_row = document.createElement("tr");
@@ -1372,12 +1378,12 @@
         "table.heat-map-source-table-",
       ),
       table_body = table_element.tBodies[0];
-    const main = main_panel.getBoundingClientRect();
-    const clone_body = table_body.getBoundingClientRect();
+    const main = design_rect_of(main_panel);
+    const clone_body = design_rect_of(table_body);
     const detail_element = table_body.querySelector(
-      "tr.heat-map-source-clicked-line-detail-row-",
+      "tr.heat-map-source-line-detail-row-",
     );
-    const detail = detail_element && detail_element.getBoundingClientRect();
+    const detail = detail_element && design_rect_of(detail_element);
     const rows = clone_body.height - (detail ? detail.height : 0);
     const rows_above = (y_position_px) => {
       let pixels = y_position_px - clone_body.top;
@@ -1396,9 +1402,8 @@
       body: clone_body,
       detail,
       top: main.top,
-      bottom: main.top + report_ui.screen_px(main_panel.clientHeight),
-      head: table_element.tHead.rows[0].cells[0].getBoundingClientRect()
-        .bottom,
+      bottom: main.top + main_panel.clientHeight,
+      head: design_rect_of(table_element.tHead.rows[0].cells[0]).bottom,
     };
   }
   function minimap_sync() {
@@ -1444,7 +1449,8 @@
     const geometry = geometry_measure(),
       scaled_height_px = clone_height_px * scale_factor;
     const offsetY =
-      click_event.clientY - minimap_panel.getBoundingClientRect().top;
+      report_ui.design_px(click_event.clientY) -
+      design_rect_of(minimap_panel).top;
     const row = (offsetY / scaled_height_px) * geometry.rows;
     scroll_to_row(row - (main_panel.clientHeight - geometry.cover) / 2);
   });
@@ -1458,7 +1464,8 @@
     }
     const move = (move_event) =>
       scroll_to_row(
-        ((start_top_px + move_event.clientY - start_client_y) /
+        ((start_top_px +
+          report_ui.design_px(move_event.clientY - start_client_y)) /
           scaled_height_px) *
           geometry_measure().rows,
       );
@@ -1479,7 +1486,7 @@
 
   function detail_line() {
     const detail_row = main_panel.querySelector(
-      "tr.heat-map-source-clicked-line-detail-row-",
+      "tr.heat-map-source-line-detail-row-",
     );
     if (!detail_row) return 0;
     return +detail_row.previousElementSibling.getAttribute(
@@ -1490,7 +1497,7 @@
   function detail_set(line) {
     if (line === detail_line()) return;
     for (const detail_row of main_panel.querySelectorAll(
-      "tr.heat-map-source-clicked-line-detail-row-",
+      "tr.heat-map-source-line-detail-row-",
     )) {
       detail_row.remove();
     }
@@ -1541,7 +1548,7 @@
     };
     const counter_row_class = (counter) =>
       counter.derived
-        ? "heat-map-source-clicked-line-detail-derived-counter-row-"
+        ? "heat-map-source-line-detail-derived-counter-row-"
         : "";
     // an estimate never hides what it was summed from: a derived counter's
     // recorded contributors follow its row, each with its own line cost
@@ -1559,7 +1566,7 @@
             ),
             contributor_self ? cell_number(contributor_self) : "",
           ],
-          "heat-map-source-clicked-line-detail-contributing-counter-row-",
+          "heat-map-source-line-detail-recorded-counter-row-",
         );
       }
     };
@@ -1620,14 +1627,14 @@
         ? text_fill("str_in_function", {
             function:
               `<span` +
-              ` class="heat-map-source-clicked-line-detail-function-name-">` +
+              ` class="heat-map-source-line-detail-function-name-">` +
               `${html_escape(function_name(line_function_index))}</span>`,
           })
         : "";
-    let markup = `<div class="heat-map-source-clicked-line-detail-">`;
+    let markup = `<div class="heat-map-source-line-detail-">`;
     markup +=
       `<a href="#"` +
-      ` class="heat-map-source-clicked-line-detail-close-symbol-">` +
+      ` class="heat-map-source-line-detail-close-symbol-">` +
       `${html_escape(text_of("str_detail_close_symbol"))}</a>`;
     markup +=
       `<div>${html_escape(file_path)}:` +
@@ -1674,7 +1681,7 @@
         counter: counter_label(current_counter),
       });
       markup +=
-        `<div class="heat-map-source-clicked-line-detail-heading-">` +
+        `<div class="heat-map-source-line-detail-heading-">` +
         `${html_escape(heading)}</div>` +
         table_render("heat.detail.callees", columns, rows);
       text_parts.push(heading + "\n" + table_markdown(columns, rows));
@@ -1707,7 +1714,7 @@
             self: function_self_text,
           });
       markup +=
-        `<div class="heat-map-source-clicked-line-detail-heading-">` +
+        `<div class="heat-map-source-line-detail-heading-">` +
         `${html_escape(heading)}</div>`;
       if (callers.length) {
         const columns = [
@@ -1750,19 +1757,19 @@
       }
     }
     markup +=
-      `<div class="heat-map-source-clicked-line-detail-action-bar-">` +
+      `<div class="heat-map-source-line-detail-action-bar-">` +
       `<a href="#"` +
-      ` class="heat-map-source-clicked-line-detail-action-bar-copy-link-">` +
+      ` class="heat-map-source-line-detail-action-bar-copy-link-">` +
       `${html_escape(text_of("str_detail_copy"))}</a>` +
       `<span` +
-      ` class="heat-map-source-clicked-line-detail-action-bar-separator-">` +
+      ` class="heat-map-source-line-detail-action-bar-separator-">` +
       ` | </span>` +
       `<a href="#"` +
-      ` class="heat-map-source-clicked-line-detail-action-bar-close-link-">` +
+      ` class="heat-map-source-line-detail-action-bar-close-link-">` +
       `${html_escape(text_of("str_detail_close"))}</a></div>`;
     markup += `</div>`;
     const detail_row = document.createElement("tr");
-    detail_row.className = "heat-map-source-clicked-line-detail-row-";
+    detail_row.className = "heat-map-source-line-detail-row-";
     detail_row.innerHTML =
       `<td colspan="${row.cells.length}">` + `${markup}</td>`;
     detail_row.detail_copy_text = text_parts.join("\n\n");
@@ -1782,19 +1789,18 @@
       return;
     }
     const copy = click_event.target.closest(
-      ".heat-map-source-clicked-line-detail-action-bar-copy-link-",
+      ".heat-map-source-line-detail-action-bar-copy-link-",
     );
     if (copy) {
       click_event.preventDefault();
       navigator.clipboard.writeText(
-        copy.closest("tr.heat-map-source-clicked-line-detail-row-")
-          .detail_copy_text,
+        copy.closest("tr.heat-map-source-line-detail-row-").detail_copy_text,
       );
       return;
     }
     const close = click_event.target.closest(
-      ".heat-map-source-clicked-line-detail-close-symbol-," +
-        " .heat-map-source-clicked-line-detail-action-bar-close-link-",
+      ".heat-map-source-line-detail-close-symbol-," +
+        " .heat-map-source-line-detail-action-bar-close-link-",
     );
     if (close) {
       click_event.preventDefault();
@@ -1841,6 +1847,38 @@
   function hash_fault_show(message) {
     window.report_error_overlay.overlay_show(message);
   }
+  // Whether the pulldowns list this file or function, so that an address
+  // this test never sampled is a note rather than a bad address.
+  function pulldown_text_lists(names_key, entry_name) {
+    if (!window.report_pulldown_text)
+      throw new Error(text_of("str_error_pulldown_text_missing"));
+    return window.report_pulldown_text[names_key].includes(entry_name);
+  }
+  // Show in the main panel that this test recorded no samples for a name the
+  // pulldowns list, with the tree still beside the note.
+  function no_samples_note_render(unsampled_name) {
+    current_file_path = null;
+    scope_totals = null;
+    const note = text_fill("str_no_samples_in_test", { name: unsampled_name });
+    main_panel.innerHTML =
+      `<div class="heat-map-source-unavailable-note-">` +
+      `${html_escape(note)}</div>`;
+    main_panel.scrollTop = 0;
+    tree_render();
+    minimap_clear();
+  }
+  // The line an address names, held to the rows of the file on show, which
+  // run in line order, past line 0: the last at or before it, else the first.
+  function line_clamp(addressed_line) {
+    const source_rows = main_panel.querySelectorAll("tr[data-line-number-]");
+    let clamped_line = 0;
+    for (const source_row of source_rows) {
+      const row_line = +source_row.getAttribute("data-line-number-");
+      if (row_line > 0 && (row_line <= addressed_line || !clamped_line))
+        clamped_line = row_line;
+    }
+    return clamped_line;
+  }
   function route_render() {
     const parsed_state = state_of_hash(location.hash);
     // a hash naming a counter, file or function this report does not hold is
@@ -1860,6 +1898,9 @@
     let file = parsed_state.file,
       line = parsed_state.line,
       fn = parsed_state.fn;
+    // a file or function the pulldowns list but this test never sampled is
+    // a designed condition, a note under the address as written
+    let unsampled_name = null;
     if (fn) {
       const function_entry = function_table.find(
         (candidate) => candidate.name === fn,
@@ -1871,17 +1912,33 @@
       ) {
         file = function_entry.file;
         line = function_entry.line;
+      } else if (pulldown_text_lists("functions", fn)) {
+        unsampled_name = fn;
       } else {
         hash_fault_show(
           window.ui_strings.text_fill("str_error_hash_function_unknown", [fn]),
         );
         return;
       }
+    } else if (file && !file_table[file]) {
+      if (!pulldown_text_lists("files", file)) {
+        hash_fault_show(
+          window.ui_strings.text_fill("str_error_hash_file_unknown", [file]),
+        );
+        return;
+      }
+      unsampled_name = file;
     }
-    if (file && !file_table[file]) {
-      hash_fault_show(
-        window.ui_strings.text_fill("str_error_hash_file_unknown", [file]),
-      );
+    if (unsampled_name) {
+      rendered_key = "";
+      no_samples_note_render(unsampled_name);
+      current_state = {
+        file: file,
+        line: line,
+        fn: fn,
+        ev: addressed_counter_key(),
+      };
+      hash_canonicalize();
       return;
     }
 
@@ -1897,7 +1954,7 @@
       else home_render();
     }
     if (file) {
-      if (line && !document.getElementById("L" + line + "_")) line = 0;
+      if (line) line = line_clamp(line);
       detail_set(line);
     }
     current_state = {
@@ -1908,10 +1965,28 @@
     };
     hash_canonicalize();
   }
+  // Put the address back where it first opened: its line, or the function's,
+  // in the middle, and a file without a line at its first view again.
+  function address_recenter() {
+    const addressed_row = current_state.line
+      ? document.getElementById("L" + current_state.line + "_")
+      : null;
+    if (addressed_row) {
+      row_center(addressed_row);
+      return;
+    }
+    current_file_path = null;
+    rendered_key = "";
+    route_render();
+  }
   window.addEventListener("hashchange", route_render);
   report_ui.parent_listen((message_data) => {
     if (message_data === "report_ui:layout_reset") {
       report_ui.layout_reset();
+    } else if (message_data === "report_ui:recenter") {
+      address_recenter();
+    } else if (message_data === "report_ui:tests_pulldown_closed") {
+      report_ui.menu_key.tests_pulldown_closed();
     } else if (
       typeof message_data === "string" &&
       message_data.startsWith("report_ui:")
@@ -1921,6 +1996,13 @@
           message_data,
         ]),
       );
+  });
+  // a key typed here goes up to the top page's menu, as one typed on a
+  // framed callers page does
+  document.addEventListener("keydown", (key_event) => {
+    const key_name = report_ui.menu_key.of(key_event);
+    if (key_name && report_ui.menu_key.forward(key_name))
+      key_event.preventDefault();
   });
 
   let resize_debounce_timer = null;

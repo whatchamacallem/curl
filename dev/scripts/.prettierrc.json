@@ -1,6 +1,5 @@
 {
   "printWidth": 79,
   "proseWrap": "always",
-  "endOfLine": "lf",
-  "overrides": [{ "files": "*.css", "options": { "printWidth": 120 } }]
+  "endOfLine": "lf"
 }

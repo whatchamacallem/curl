@@ -6,25 +6,29 @@ from collections.abc import Sequence
 from typing import NamedTuple
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import callgrind, callgrind_diff, callgrind_to_heatmap, settings, theme
+import callgrind, callgrind_diff, settings, theme
 
 # All constants needed from settings.py have to be loaded here before anything
 # else.
 _ASSET_FRAME_SCRIPT_NAME: str = ""
 _ASSET_MENU_SCRIPT_NAME: str = ""
 _ASSET_MENU_STYLESHEET_NAME: str = ""
+_ASSET_PULLDOWN_TEXT_SCRIPT_NAME: str = ""
+_CALLERS_PERF_LOG_SKIPPED_HEAD_LINES: int = 0
+_CALLERS_TIME_SUFFIX_SECONDS: dict[str, float] = {}
+_CALLERS_TOP_FUNCTION_ROWS: int = 0
 _DIFF_CALLER_COUNTS_FILE_SUFFIX: str = ""
 _FLAME_GRAPH_VIEW_ENTRY: tuple[str, str, str] = ("", "", "")
 _HEAT_MAP_VIEW_ENTRY: tuple[str, str, str] = ("", "", "")
-_MENU_CURL_PERF_SITE_HREF: str = ""
 _MENU_PULLDOWN_MERGED_TEST_NAME: str = ""
 _RANKING_COUNTER_NAME: str = ""
 _STYLE_MENU_PULLDOWN_EXTRA_WIDTH_CHARS: int = 0
 _STYLE_TABLE_FUNCTION_NAME_WIDTH_CHARS: int = 0
-_SUMMARY_PERF_LOG_SKIPPED_HEAD_LINES: int = 0
-_SUMMARY_TIME_SUFFIX_SECONDS: dict[str, float] = {}
-_SUMMARY_TOP_FUNCTION_ROWS: int = 0
 settings.load_into(__name__)
+
+# How far a test's callers page sits below the report root: how many "../"
+# its shared-asset, logo and help links need. The layout fixes it.
+_CALLERS_PAGE_ASSETS_DEPTH = 1
 
 # What this exits with when a file a page is built from will not open.
 # ENOTDIR: the closest errno has to "the tree is not what we were told".
@@ -33,16 +37,8 @@ _EXIT_INPUT_UNREADABLE = 20
 # Valgrind's "==1234== " line prefix, stripped so the log reads as output.
 _PID_PREFIX = re.compile(r"^==\d+==\s?")
 
-# How fine the scale slider's travel is, as an HTML range step over 0..1.
-# Fine enough to feel continuous, coarse enough not to redraw per pixel.
-_MENU_SCALE_SLIDER_STEP = 0.01
-
 # The overview page sits at the report root: its links need no "../".
 _OVERVIEW_PAGE_ASSETS_DEPTH = 0
-
-# How far a test's summary page sits below the report root: how many "../"
-# its shared-asset, logo and help links need. The layout fixes it.
-_SUMMARY_PAGE_ASSETS_DEPTH = 1
 
 # A "Something: 1.23 ms" perf log line, the only valid speed number. Blank
 # space is [ \t]*, never \s*, which under re.M merges two paragraphs.
@@ -54,7 +50,7 @@ _TIME_LINE = re.compile(
 )
 
 
-# BuildReport - Writes the overview page and every test's summary page, and
+# BuildReport - Writes the overview page and every test's callers page, and
 # the menu of links that frames the views.
 class BuildReport:
     # CallersData - the call graph a delta file cannot carry, plus the
@@ -90,7 +86,7 @@ class BuildReport:
         # the right column
         value: str
 
-    # MenuLink - One link in a page's menu.
+    # MenuLink - One entry of a menu pulldown's list.
     class MenuLink(NamedTuple):
         # what the URL hash calls it
         key: str
@@ -98,10 +94,6 @@ class BuildReport:
         label: str
         # where it points
         href: str
-        # what the status row and the tab title read while it is shown
-        title: str
-        # load it into the frame rather than navigating
-        frame: bool = False
 
     # OverviewArgs - What the overview page is built from.
     class OverviewArgs(NamedTuple):
@@ -121,7 +113,7 @@ class BuildReport:
         # each test's perf log as "name=path", for a full overview
         perf_log: list[str]
 
-    # TestArgs - Everything one test's summary page is built from. Each
+    # TestArgs - Everything one test's callers page is built from. Each
     # optional log renders a section only when it is given.
     class TestArgs(NamedTuple):
         # the callgrind file(s), merged into one profile
@@ -152,11 +144,11 @@ class BuildReport:
         # its directory, relative to the overview
         directory: str
 
-    # View - One of the pages a test summary can frame.
+    # View - One of the pages a test's callers page can frame.
     class View(NamedTuple):
         # what the URL hash calls it
         key: str
-        # what the menu link says
+        # what its button, link and title say
         label: str
         # where the page sits
         path: str
@@ -238,16 +230,16 @@ class BuildReport:
             baseline_calls=doc["baselineCalls"],
         )
 
-    # One collapsed section of a summary page: a heading and its markup.
+    # One collapsed section of a callers page: a heading and its markup.
     # Every section, core and diff alike, is this same shape.
     def details_section(self, title: str, body: str) -> str:
         return (
-            '<details class="summary-collapsed-section-">'
-            '<summary class="summary-collapsed-section-title-">'
+            '<details class="callers-collapsed-section-">'
+            '<summary class="callers-collapsed-section-title-">'
             f"{theme.html_escape(title)}</summary>{body}</details>"
         )
 
-    # The diff summary's top table, ranked by |change| in self cost.
+    # The diff callers page's top table, ranked by |change| in self cost.
     def diff_functions_table(
         self,
         profile: callgrind.LineProfile,
@@ -262,7 +254,7 @@ class BuildReport:
                 if profile.value(costs, _RANKING_COUNTER_NAME) != 0
             ),
             key=lambda t: (-abs(t.cost), t.function),
-        )[:_SUMMARY_TOP_FUNCTION_ROWS]
+        )[:_CALLERS_TOP_FUNCTION_ROWS]
         shares = [
             self.diff_share(
                 cost.cost, callers_data.baseline.get(cost.function)
@@ -369,7 +361,7 @@ class BuildReport:
             return math.copysign(math.inf, delta) if delta else None
         return 100.0 * delta / abs(baseline)
 
-    # Write one test's diff summary page.
+    # Write one test's diff callers page.
     def diff_test(self, args: BuildReport.TestArgs) -> None:
         profile = callgrind.profile_load(args.callgrind_file)
         callgrind.ranking_counter_check(
@@ -378,8 +370,7 @@ class BuildReport:
         callers_data = self.callers_data_load(args.callers_data)
         self.report_page(
             args,
-            [_HEAT_VIEW],
-            f"top {_SUMMARY_TOP_FUNCTION_ROWS} functions by change in self",
+            f"top {_CALLERS_TOP_FUNCTION_ROWS} functions by change in self",
             self.diff_functions_table(profile, callers_data),
         )
 
@@ -406,12 +397,21 @@ class BuildReport:
             )
             sys.exit(_EXIT_INPUT_UNREADABLE)
 
+    # The callers page's link to its flame graph, which has no menu button. It
+    # carries the view's key, so frame.js opens it as a view in the frame.
+    def flame_graph_link_render(self) -> str:
+        return (
+            f'<div><a href="{theme.html_escape(_FLAME_VIEW.path)}"'
+            f' data-view-="{theme.html_escape(_FLAME_VIEW.key)}">'
+            f"{theme.html_escape(_FLAME_VIEW.label)}</a></div>"
+        )
+
     # The scripts a framed page runs after the theme: the frame, then the
     # menu, which activates the frame once both have loaded.
     def framed_page_script_names(self) -> tuple[str, str]:
         return (_ASSET_FRAME_SCRIPT_NAME, _ASSET_MENU_SCRIPT_NAME)
 
-    # The columns of a summary's top table. A core report and a diff rank
+    # The columns of a callers page's top table. A core report and a diff rank
     # differently but say the same thing, so both are laid out the same.
     def function_columns(self) -> list[theme.Column]:
         return [
@@ -438,7 +438,7 @@ class BuildReport:
             else None,
         )
 
-    # The summary's top table, ranked by self cost in the ranking counter.
+    # The callers page's top table, ranked by self cost in the ranking counter.
     def functions_table(self, profile: callgrind.Profile) -> str:
         total = profile.value(profile.totals(), _RANKING_COUNTER_NAME) or 1
         ranked = sorted(
@@ -450,7 +450,7 @@ class BuildReport:
                 if profile.value(costs, _RANKING_COUNTER_NAME) > 0
             ),
             key=lambda t: (-t.cost, t.function),
-        )[:_SUMMARY_TOP_FUNCTION_ROWS]
+        )[:_CALLERS_TOP_FUNCTION_ROWS]
         function_calls = {
             function: sum(tally.count for tally in callers.values())
             for function, callers in profile.callers.items()
@@ -505,19 +505,16 @@ class BuildReport:
             )
         return theme.table_render("report.functions", columns, rows, fill=True)
 
-    # One heading line of an overview or summary page, told apart by colour.
+    # One heading line of an overview or callers page, told apart by colour.
     def heading_render(self, text: str) -> str:
-        return (
-            '<div class="heat-map-overview-summary-heading-">'
-            f"{theme.html_escape(text)}</div>"
-        )
+        return f'<div class="page-heading-">{theme.html_escape(text)}</div>'
 
     # One log file as a preformatted block, with valgrind's pid prefix gone.
     def log_block(self, path: str) -> str:
         lines = (
             self.file_read(path)
             .rstrip()
-            .split("\n")[_SUMMARY_PERF_LOG_SKIPPED_HEAD_LINES:]
+            .split("\n")[_CALLERS_PERF_LOG_SKIPPED_HEAD_LINES:]
         )
         text = "\n".join(_PID_PREFIX.sub("", line) for line in lines)
         return self.log_box_render(text)
@@ -530,7 +527,7 @@ class BuildReport:
         for path in paths:
             if len(paths) > 1:
                 body += (
-                    '<div class="summary-collapsed-section-file-name-">'
+                    '<div class="callers-collapsed-section-file-name-">'
                     f"{theme.html_escape(os.path.basename(path))}</div>"
                 )
             body += self.log_block(path)
@@ -540,7 +537,7 @@ class BuildReport:
     def log_box_render(self, text: str) -> str:
         return (
             '<div class="table-box-">'
-            '<pre class="summary-collapsed-section-log-box-">'
+            '<pre class="callers-collapsed-section-log-box-">'
             f"{theme.html_escape(text)}"
             "</pre></div>"
         )
@@ -619,21 +616,45 @@ class BuildReport:
             column_titles=False,
         )
 
-    # One link of a menu. A tests pulldown entry is the same link, kept out
-    # of the tab order: the pulldown's search box moves between its entries.
-    def menu_link_render(
-        self, link: BuildReport.MenuLink, in_tab_order: bool = True
+    # A numbered menu button that opens a page or a view. menu.js writes
+    # its text; a view link also carries the key its view's address names.
+    def menu_button_link_render(
+        self,
+        name: str,
+        href: str,
+        view_key: str | None = None,
+        new_tab: bool = False,
     ) -> str:
+        view_attribute = (
+            ""
+            if view_key is None
+            else f' data-view-="{theme.html_escape(view_key)}"'
+        )
+        target_attribute = ' target="_blank"' if new_tab else ""
+        return (
+            f'<a class="menu-button-" id="menu-{name}-button-"'
+            f' href="{theme.html_escape(href)}"'
+            f"{view_attribute}{target_attribute}></a>"
+        )
+
+    # A numbered menu button that acts on the page rather than opening one.
+    # menu.js writes its text, as it does every numbered button's.
+    def menu_button_render(self, name: str) -> str:
+        return (
+            f'<button class="menu-button-" id="menu-{name}-button-"'
+            ' type="button"></button>'
+        )
+
+    # One entry of the tests pulldown, kept out of the tab order: the
+    # pulldown's search box moves between its entries.
+    def menu_link_render(self, link: BuildReport.MenuLink) -> str:
         return (
             f'<a href="{theme.html_escape(link.href)}"'
-            f' data-view-="{theme.html_escape(link.key)}"'
-            f' data-title-="{theme.html_escape(link.title)}"'
-            f"{' data-frame-=1' if link.frame else ''}"
-            f"{'' if in_tab_order else ' tabindex=-1'}>"
+            f' data-view-="{theme.html_escape(link.key)}" tabindex=-1>'
             f"{theme.html_escape(link.label)}</a>"
         )
 
-    # The overview's pulldowns: its tests, each linking that test's summary,
+    # The overview's pulldowns: its tests, each linking that test's page,
     # then the files and functions menu.js lists for the active test.
     def menu_pulldowns_render(
         self, test_entries: Sequence[BuildReport.MenuLink]
@@ -650,8 +671,7 @@ class BuildReport:
             + _STYLE_MENU_PULLDOWN_EXTRA_WIDTH_CHARS
         )
         test_links = "".join(
-            self.menu_link_render(entry, in_tab_order=False)
-            for entry in test_entries
+            self.menu_link_render(entry) for entry in test_entries
         )
         return [
             self.pulldown_render("test", width, test_links),
@@ -659,47 +679,52 @@ class BuildReport:
             self.pulldown_render("function", width, ""),
         ]
 
-    # The menu: the title cell, which as the logo leads to the report
-    # root, the view links, the pulldowns, and the utility links on the right.
+    # The one menu row: the logo leading to the report root, the title cell
+    # menu.js writes the address into, then the buttons in number order.
     def menu_render(
         self,
-        title: str,
-        links: Sequence[BuildReport.MenuLink],
         depth: int,
-        pulldowns: Sequence[str] = (),
+        test_name: str = "",
+        test_entries: Sequence[BuildReport.MenuLink] = (),
     ) -> str:
         root_href = theme.shared_href(depth, "index.html")
         help_href = theme.shared_href(depth, "README.md")
+        heat_map_key = _HEAT_VIEW.key
+        if test_entries:
+            # the overview's keys are tests: menu.js points the heat map and
+            # callers buttons at the test on show
+            view_buttons = [
+                self.menu_button_link_render("overview", "#", view_key=""),
+                *self.menu_pulldowns_render(test_entries),
+                self.menu_button_link_render(heat_map_key, "#"),
+                self.menu_button_link_render("callers", "#"),
+            ]
+        else:
+            view_buttons = [
+                self.menu_button_link_render("overview", root_href),
+                self.menu_button_link_render(
+                    heat_map_key, _HEAT_VIEW.path, view_key=heat_map_key
+                ),
+                self.menu_button_link_render("callers", "#", view_key=""),
+            ]
+        test_attribute = (
+            f' data-test-name-="{theme.html_escape(test_name)}"'
+            if test_name
+            else ""
+        )
         parts = [
-            '<div class="menu-title-" id="menu-title-"'
-            f' data-root-href-="{theme.html_escape(root_href)}">'
-            f"{theme.html_escape(title)}</div>"
+            '<div class="menu-logo-" id="menu-logo-"'
+            f' data-root-href-="{theme.html_escape(root_href)}"></div>',
+            '<div class="menu-title-" id="menu-title-"></div>',
+            *view_buttons,
+            self.menu_button_render("reset"),
+            self.menu_button_link_render("help", help_href, new_tab=True),
+            self.menu_button_render("scale"),
         ]
-        for link in links:
-            parts.append(self.menu_link_render(link))
-        parts.extend(pulldowns)
-        parts.append('<span class="spacer_"></span>')
-        parts.append(
-            '<label class="menu-scale-" id="menu-scale-"'
-            ' for="menu-scale-slider-">'
-            '<span id="menu-scale-text-"></span>'
-            '<input type="range" id="menu-scale-slider-" min="0" max="1"'
-            f' step="{_MENU_SCALE_SLIDER_STEP}">'
-            "</label>"
+        return (
+            f'<nav id="menu_" class="menu-strip-"{test_attribute}>'
+            f"{''.join(parts)}</nav>"
         )
-        parts.append('<span class="menu-utility-" id="menu-utility-">')
-        parts.append('<a href="#" id="menu-utility-reset-link-">reset</a>')
-        parts.append(
-            f'<a href="{theme.html_escape(help_href)}"'
-            ' target="_blank">help</a>'
-        )
-        parts.append(
-            f'<a href="{_MENU_CURL_PERF_SITE_HREF}" target="_blank"'
-            ' rel="noopener">'
-            "curl.se/perf</a>"
-        )
-        parts.append("</span>")
-        return f'<nav id="menu_" class="menu-strip-">{"".join(parts)}</nav>'
 
     # The NAME=FILE arguments of one repeatable flag as a name to path map;
     # an entry without the "=" is a broken command line, stopped here.
@@ -758,22 +783,14 @@ class BuildReport:
         columns: Sequence[theme.Column],
         rows: Sequence[Sequence[theme.CellOrText]],
     ) -> None:
-        links = [BuildReport.MenuLink("", "overview", "#", "overview")]
         test_entries = [
             BuildReport.MenuLink(
-                test.name,
-                test.name,
-                f"{test.name}/index.html",
-                test.name,
-                frame=True,
+                test.name, test.name, f"{test.name}/index.html"
             )
             for test in tests
         ]
         body = self.menu_render(
-            "overview",
-            links,
-            depth=_OVERVIEW_PAGE_ASSETS_DEPTH,
-            pulldowns=self.menu_pulldowns_render(test_entries),
+            _OVERVIEW_PAGE_ASSETS_DEPTH, test_entries=test_entries
         )
         pairs = self.manifest_parse_rows(args.header) + (
             self.manifest_read_file(args.header_file)
@@ -792,20 +809,15 @@ class BuildReport:
             "overview.tests", columns, rows
         )
         body += self.page_main_close()
-        # each test's names script goes first: menu.js lists its files and
-        # functions pulldowns from them
-        names_scripts = tuple(
-            callgrind_to_heatmap.CallgrindToHeatmap.pulldown_names_script_name(
-                test.name
-            )
-            for test in tests
-        )
+        # the one pulldown text script goes before menu.js, which lists the
+        # files and functions pulldowns from it whichever test is active
+        pulldown_scripts = (_ASSET_PULLDOWN_TEXT_SCRIPT_NAME,)
         self.page_write(
             args.output,
             theme.page_document(
                 "overview",
                 body,
-                extra_js=names_scripts + self.framed_page_script_names(),
+                extra_js=pulldown_scripts + self.framed_page_script_names(),
                 body_class="frame_",
                 depth=_OVERVIEW_PAGE_ASSETS_DEPTH,
                 extra_css=(_ASSET_MENU_STYLESHEET_NAME,),
@@ -828,14 +840,14 @@ class BuildReport:
     # into follows it, empty until a menu link fills it.
     def page_main_close(self) -> str:
         return (
-            '</div></main><iframe id="overview-summary-view-frame-" hidden'
+            '</div></main><iframe id="callers-overview-view-frame-" hidden'
             ' title="report page"></iframe>'
         )
 
-    # What opens the content of a framed page. Both the overview and a test
-    # summary are a page inside the one frame host, so both start here.
+    # What opens the content of a framed page. Both the overview and a test's
+    # callers page are a page inside the one frame host, so both start here.
     def page_main_open(self) -> str:
-        return '<main id="overview-summary-home-"><div class="page_">'
+        return '<main id="callers-overview-home-"><div class="page_">'
 
     # Write a page, making its directory, and report its size.
     def page_write(self, path: str, page: str) -> None:
@@ -847,12 +859,13 @@ class BuildReport:
             file=sys.stderr,
         )
 
-    # One menu pulldown: its menu button, the search box taking the
+    # One menu pulldown: its numbered button, the search box taking the
     # button's place while open, and the list dropping below the button.
     def pulldown_render(self, key: str, width: int, entries: str) -> str:
         return (
-            f'<span class="menu-pulldown-" id="menu-{key}-pulldown_">'
-            '<button class="menu-pulldown-button-" type="button"></button>'
+            f'<span class="menu-pulldown-" id="menu-{key}-pulldown-">'
+            '<button class="menu-button- menu-pulldown-button-"'
+            f' id="menu-{key}-button-" type="button"></button>'
             '<input class="menu-pulldown-search-box-" type="text"'
             f' style="width:{width}ch"'
             ' hidden autocomplete="off" spellcheck="false">'
@@ -874,31 +887,26 @@ class BuildReport:
         )
         return self.details_section(
             "raw data",
-            '<ul class="summary-collapsed-section-raw-data-list-">'
+            '<ul class="callers-collapsed-section-raw-data-list-">'
             f"{items}</ul>",
         )
 
-    # Assemble and write one test's summary page around its top table.
+    # Assemble and write one test's callers page around its top table.
     def report_page(
         self,
         args: BuildReport.TestArgs,
-        views: Sequence[BuildReport.View],
         heading: str,
         table: str,
     ) -> None:
-        links = [BuildReport.MenuLink("", "summary", "#", args.test)] + [
-            BuildReport.MenuLink(
-                view.key, view.label, view.path, f"{args.test} / {view.label}"
-            )
-            for view in views
-        ]
         body = self.menu_render(
-            args.test, links, depth=_SUMMARY_PAGE_ASSETS_DEPTH
+            _CALLERS_PAGE_ASSETS_DEPTH, test_name=args.test
         )
         out_dir = os.path.dirname(os.path.abspath(args.output))
         body += self.page_main_open() + self.manifest_table(
             "report.header", self.manifest_parse_rows(args.header)
         )
+        if args.trace_log:
+            body += self.flame_graph_link_render()
         body += self.output_section("perf log", args.perf_log)
         body += self.output_section("trace log", args.trace_log)
         if not args.no_log:
@@ -913,27 +921,25 @@ class BuildReport:
                 body,
                 extra_js=self.framed_page_script_names(),
                 body_class="frame_",
-                depth=_SUMMARY_PAGE_ASSETS_DEPTH,
+                depth=_CALLERS_PAGE_ASSETS_DEPTH,
                 extra_css=(_ASSET_MENU_STYLESHEET_NAME,),
             ),
         )
 
-    # Write one test's summary page.
+    # Write one test's callers page.
     def test(self, args: BuildReport.TestArgs) -> None:
         profile = callgrind.profile_load(args.callgrind_file)
         callgrind.ranking_counter_check(
             profile.counters, " ".join(args.callgrind_file)
         )
-        views = [_FLAME_VIEW, _HEAT_VIEW] if args.trace_log else [_HEAT_VIEW]
         self.report_page(
             args,
-            views,
-            f"top {_SUMMARY_TOP_FUNCTION_ROWS} functions by self",
+            f"top {_CALLERS_TOP_FUNCTION_ROWS} functions by self",
             self.functions_table(profile),
         )
 
-    # An overview row's first cell: the test's name, linking the summary
-    # page in its own directory beside the overview.
+    # An overview row's first cell: the test's name, linking its page in its
+    # own directory beside the overview, which frame.js opens on its heat map.
     def test_link_cell(self, name: str) -> theme.Cell:
         escaped = theme.html_escape(name)
         return theme.Cell(
@@ -947,7 +953,7 @@ class BuildReport:
     # One matched "Something: 1.23 ms" line, rewritten in the theme's time
     # notation. _TIME_LINE matches exactly the suffixes the setting scales.
     def time_line_rewrite(self, match: re.Match[str]) -> str:
-        scale = _SUMMARY_TIME_SUFFIX_SECONDS[match.group(3).lower()]
+        scale = _CALLERS_TIME_SUFFIX_SECONDS[match.group(3).lower()]
         return match.group(1) + theme.num_time(float(match.group(2)) * scale)
 
     # The same rewrite for one already split label and value.

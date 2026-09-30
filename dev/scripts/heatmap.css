@@ -44,7 +44,7 @@ body {
    the room its own table has; the home and clicked line detail sit in main */
 #heat-map-main-,
 .heat-map-home-,
-.heat-map-source-clicked-line-detail- {
+.heat-map-source-line-detail- {
   container-type: inline-size;
 }
 
@@ -197,9 +197,9 @@ table.heat-map-source-table- tr.clickable_ {
   cursor: pointer;
 }
 
-table.heat-map-source-table- td.heat-map-source-table-self-cell-,
-table.heat-map-source-table- td.heat-map-source-table-calls-cell-,
-table.heat-map-source-table- td.heat-map-home-source-table-secondary-counter-cell- {
+td.heat-map-source-table-self-cell-,
+td.heat-map-source-table-calls-cell-,
+td.heat-map-source-table-secondary-counter-cell- {
   color: var(--heat-map-source-table-counter-cell-fg-dim-);
 }
 table.heat-map-source-table- td.heat-map-source-table-code-cell- {
@@ -207,46 +207,46 @@ table.heat-map-source-table- td.heat-map-source-table-code-cell- {
   white-space: pre;
   tab-size: var(--heat-map-source-table-code-cell-tab-size-);
 }
-table.heat-map-source-table- tr.has-callee- td.heat-map-source-table-line-number-cell-::before {
+tr.has-callee- td.heat-map-source-table-line-number-cell-::before {
   content: var(--heat-map-source-table-line-number-cell-callee-marker-text-);
   color: var(--heat-map-source-table-line-number-cell-callee-marker-fg-);
 }
 
-table.heat-map-source-table- tr.heat-map-source-clicked-line-detail-row- > td {
+table.heat-map-source-table- tr.heat-map-source-line-detail-row- > td {
   white-space: normal;
   overflow: visible;
   padding: 0;
 }
-.heat-map-source-clicked-line-detail- {
+.heat-map-source-line-detail- {
   position: relative;
-  background: var(--heat-map-source-clicked-line-detail-bg-dim-);
+  background: var(--heat-map-source-line-detail-bg-dim-);
 }
-.heat-map-source-clicked-line-detail-heading- {
-  color: var(--heat-map-source-clicked-line-detail-heading-fg-dim-);
+.heat-map-source-line-detail-heading- {
+  color: var(--heat-map-source-line-detail-heading-fg-dim-);
 }
-.heat-map-source-clicked-line-detail-function-name- {
-  color: var(--heat-map-source-clicked-line-detail-function-name-fg-);
+.heat-map-source-line-detail-function-name- {
+  color: var(--heat-map-source-line-detail-function-name-fg-);
 }
-.heat-map-source-clicked-line-detail- .heat-map-source-clicked-line-detail-close-symbol- {
+.heat-map-source-line-detail-close-symbol- {
   position: absolute;
   top: 0;
   right: 0;
-  color: var(--heat-map-source-clicked-line-detail-close-symbol-fg-dim-);
+  color: var(--heat-map-source-line-detail-close-symbol-fg-dim-);
 }
-.heat-map-source-clicked-line-detail- .table-box- {
-  background: var(--heat-map-source-clicked-line-detail-table-bg-dim-);
+.heat-map-source-line-detail- .table-box- {
+  background: var(--heat-map-source-line-detail-table-bg-dim-);
 }
 /* a derived counter's row and each recorded contributor below it have a
    colour role of their own; a heated cell still paints its stop */
-.heat-map-source-clicked-line-detail- tr.heat-map-source-clicked-line-detail-derived-counter-row- > td {
-  background: var(--heat-map-source-clicked-line-detail-derived-counter-row-bg-);
+tr.heat-map-source-line-detail-derived-counter-row- > td {
+  background: var(--heat-map-source-line-detail-derived-counter-row-bg-);
 }
-.heat-map-source-clicked-line-detail- tr.heat-map-source-clicked-line-detail-contributing-counter-row- > td {
-  background: var(--heat-map-source-clicked-line-detail-contributing-counter-row-bg-dim-);
+tr.heat-map-source-line-detail-recorded-counter-row- > td {
+  background: var(--heat-map-source-line-detail-recorded-counter-row-bg-dim-);
 }
-.heat-map-source-clicked-line-detail-action-bar- a {
-  color: var(--heat-map-source-clicked-line-detail-action-bar-link-fg-);
+.heat-map-source-line-detail-action-bar- a {
+  color: var(--heat-map-source-line-detail-action-bar-link-fg-);
 }
-.heat-map-source-clicked-line-detail-action-bar- .heat-map-source-clicked-line-detail-action-bar-separator- {
-  color: var(--heat-map-source-clicked-line-detail-action-bar-separator-fg-dim-);
+.heat-map-source-line-detail-action-bar-separator- {
+  color: var(--heat-map-source-line-detail-action-bar-separator-fg-dim-);
 }

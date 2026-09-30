@@ -1,8 +1,10 @@
 window.ui_strings = (function () {
   "use strict";
   const STRINGS = {
-    str_caret_collapsed: "▶",
-    str_caret_expanded: "▼",
+    str_caret_right: "⯈",
+    str_caret_down: "▼",
+    str_caret_left: "⯇",
+    str_caret_up: "▲",
     str_column_baseline_share: "vs baseline",
     str_column_call_count: "call count",
     str_column_called_at: "called at",
@@ -43,7 +45,7 @@ window.ui_strings = (function () {
     str_counter_llm: "last level cache misses, all",
     str_detail_callees: "calls from this line (total {counter})",
     str_detail_close: "close",
-    str_detail_close_symbol: "[X]",
+    str_detail_close_symbol: "[x]",
     str_detail_copy: "copy",
     str_detail_function_self: "{function}: self {self}.",
     str_detail_function_totals:
@@ -63,10 +65,12 @@ window.ui_strings = (function () {
     str_error_message_tag_unknown: "cross-frame message tag unrecognized: {0}",
     str_error_pulldown_focus_refused:
       "the browser kept focus on {0}, so keys cannot reach the pulldown",
-    str_error_pulldown_names_missing:
-      "no file and function names were shipped for test {0}",
+    str_error_pulldown_text_missing:
+      "no file and function names were shipped for the pulldowns",
     str_error_report_incomplete:
-      "report incomplete, MANIFEST.txt not written.",
+      "report incomplete, assets/report_complete.js not written.",
+    str_error_scale_stop_unusable:
+      "the scale bar stop came out as {0}, not a whole number from 0 to {1}",
     str_error_scale_unusable: "the page scale came out as {0}",
     str_function_name_unknown: "?",
     str_heading_functions_by_self: "{prefix} functions by self {counter}",
@@ -79,13 +83,23 @@ window.ui_strings = (function () {
     str_heat_map_menu_tree: "tree:",
     str_in_function: " in {function}",
     str_line_self: "line self",
+    str_menu_button: "{number} {label}",
     str_menu_file: "file",
     str_menu_function: "function",
-    str_menu_scale: "scale:",
+    str_menu_help: "help",
+    str_menu_overview: "overview",
+    str_menu_reset: "reset",
+    str_menu_scale: "scale",
+    str_menu_scale_bar_empty: "░",
+    str_menu_scale_bar_end: "] {multiple}",
+    str_menu_scale_bar_filled: "█",
+    str_menu_scale_bar_lead: "{button}: ",
+    str_menu_scale_bar_start: "[",
     str_menu_test: "test",
     str_no_caller: "(no recorded caller)",
     str_no_match: "(no match)",
     str_no_samples: "no samples",
+    str_no_samples_in_test: "This test recorded no samples for {name}.",
     str_not_in_repo: "not in this repo ({path})",
     str_pulldown_placeholder: "<type here>",
     str_report_name: "perf2html",
@@ -104,7 +118,7 @@ window.ui_strings = (function () {
     str_source_unavailable: "Source not available.",
     str_ticker_tape_heading_diff: "most changed lines",
     str_ticker_tape_heading_self: "hottest lines",
-    str_view_summary: "summary",
+    str_view_callers: "callers",
   };
   function text_fill(string_id, replacements) {
     const template = text_of(string_id);

@@ -128,7 +128,10 @@ The single function/check owning each concern - never bypass or duplicate:
 - Never buffer a child's output in a shipping script (`$( )` capture) - breaks
   `--verbose` streaming and hides live failures.
 - Nothing test-specific, ever - no test names/file lists baked into `dev/`;
-  every view must work for every test in `TESTS_C`.
+  every view must work for every test in `TESTS_C`. The one exception is
+  `test_screenshot.py`: screenshots are to be made from string literal golden
+  bookmarks, and changing the url format must require changing those string
+  literals.
 - Every `dev/*.sh` makes paths absolute at startup; `$PWD` is never read again
   below `args_parse`. Getting this wrong breaks every relative invocation
   silently.
@@ -172,11 +175,10 @@ The single function/check owning each concern - never bypass or duplicate:
 - New identifiers need 2+ unabbreviated English words.
 - Naming split: `_SCREAMING_SNAKE` for a script's own global, `_lowercase` for
   locals, bare names crossing into `utility.sh`.
-- 79-column hard max for all `dev/` source; `.css` is exempt for now, its
-  prettier override wrapping it wider.
+- 79-column hard max for all `dev/` source.
 - Comment blocks max 2 lines (3 is an error via `test_source_scan.py`); longer
   reasoning goes in `declawed.md` instead.
-- ASCII plus the specific whitelisted glyphs (`≈ ∞ ▲ ▶ ▼ …`), written
+- ASCII plus the specific whitelisted glyphs (`≈ ∞ ▲⯈⯇▼ …`), written
   literally, never as HTML entities.
 - Never say "meta" - say "header" or "manifest".
 - Timer artifacts contain `counter` data. Never "events"/"metrics"/"stats".
@@ -233,7 +235,7 @@ Under `dev/`:
   `scripts/utility.sh` every shared function, sourcing inert.
 - Python (`scripts/`): `settings.py` every Python/JS setting; `callgrind.py`
   the one parser; `callgrind_diff.py` delta + callers JSON;
-  `callgrind_to_heatmap.py`, `build_report.py` (overview, summary),
+  `callgrind_to_heatmap.py`, `build_report.py` (overview, callers),
   `build_flame_graph.py`, `trace_to_speedscope.py`; `theme.py` with
   `theme.css`/`theme.js` the one theme (`theme.js` = utility library);
   test-only: `test_report.py`, `test_source_scan.py`, `test_screenshot.py`.
@@ -277,7 +279,7 @@ taskset -c 3 ./build-relwithdebinfo/22_DCMAKECFLAGSO2g/tests/perf/perf \
   `--report=perf2html_modified_report` yourself. `--report=DIR` is the report
   dir itself. `--artifacts` defaults to `perf2html_temporary_artifacts/` in the
   report's parent dir (all three).
-- Batch: `--target-dir` (default CWD) holds the three default-named reports;
+- Batch: `--target-dir` (default $PWD) holds the three default-named reports;
   every other argument is a cmake flag.
 - `test_expected_behavior.sh` takes only flags and runs the batch;
   `MANIFEST.txt` line 1 decides each report's `--diff`. Pass `--regenerate`
@@ -309,7 +311,7 @@ taskset -c 3 ./build-relwithdebinfo/22_DCMAKECFLAGSO2g/tests/perf/perf \
   separate pinned `perf stat -x, -e cycles:u,instructions:u`; its `Time*` lines
   are the only valid speed number. Flame graph for shape, perf log for speed;
   native speed moves ~1.9x with host state. Callgrind `calls=` are aggregated;
-  never feed `--separate-callers=N` output to the summary/heat map.
+  never feed `--separate-callers=N` output to the callers page/heat map.
 - Quick read: `perf <test>`, median of 3-5.
 
 ## 4 Artifacts, regenerate, test stages
@@ -319,7 +321,8 @@ taskset -c 3 ./build-relwithdebinfo/22_DCMAKECFLAGSO2g/tests/perf/perf \
   `trace.<test>.<loops>.<recorded>.log` and the
   rows file `header.overview.<report basename>.txt` (`HEADER_ROWS_NAME`;
   `run_all` writes it, `_HEADER_FILE` set in `args_parse`). No `output.txt`
-  ships: the summary embeds perf/trace logs (`perf_page_of`/`_TRACE_LOG`); the
+  ships: the callers page embeds perf/trace logs (`perf_page_of`/`_TRACE_LOG`);
+  the
   overview reads one `--perf-log NAME=FILE` per test, `all` included.
 - `--regenerate` rebuilds pages from recordings, opening no report. First step
   of `recorded_reuse` (perf2html.sh) and `regenerate_check`
@@ -366,7 +369,9 @@ taskset -c 3 ./build-relwithdebinfo/22_DCMAKECFLAGSO2g/tests/perf/perf \
 - `test_screenshot.py`: modified + diff reports, `_VIEWS` ×
   `_SCREENSHOT_VIEWPORTS`
   → `dev/screenshots/<size>_<report>_<view>.png`, then 4k 3x3
-  `thumbnail_<size>_<report>.png`; imports no settings; error view
+  `thumbnail_<size>_<report>.png`; imports no settings; each `_VIEWS` hash
+  is a golden bookmark written out whole as one string literal, never
+  formulated from a constant; error view
   `bad_function`; `report_incomplete` shoots a copy lacking
   `assets/report_complete.js` under `dev/build/screenshots_scratch/`;
   `--incognito`; under `--verbose` it prints
@@ -496,7 +501,7 @@ raw/}  all/  assets/  flame-graph-app/  sources/  README.md  MANIFEST.txt
   raw-data link only. Overview reads `--diff-profile NAME=FILE` per paired
   test; a test in one report only → `tests_pair` error.
 - Pages: shared assets linked, never inlined; hrefs from
-  `theme.shared_href(depth, name)` (overview 0, summary 1, heat map/flame 2;
+  `theme.shared_href(depth, name)` (overview 0, callers 1, heat map/flame 2;
   menu via `menu_render`'s `depth`); stylesheet from `Theme.css()`; classic
   `<script src>`/`<link>` only, no `fetch()`, no ES modules; opens from
   `file://`. `sources/<source_name()>` (display path, non-alphanumerics → `_`,
@@ -557,12 +562,12 @@ raw/}  all/  assets/  flame-graph-app/  sources/  README.md  MANIFEST.txt
 - `test_report.py`: greps `loadFileFromBase64`, `var document_base64 =
   "..."`, `report_ui.layout_activate`; report dir required;
   `manifest_recorded_labels` get the unix-time check; `perf_tool_check` reads
-  the summary's `perf log` section.
+  the callers page's `perf log` section.
 - `test_source_scan.py`: file paths (`nargs="+"`), read once; a block =
   consecutive whole-line comments plus a `/* */` or `<!-- -->` opened first on
   a line, file
   header exempt (`_COMMENT_BLOCK_MAX_LINES`); glyphs
-  `_SOURCE_SCAN_ALLOWED_NON_ASCII_CHARS` (`≈ ∞ ▲ ▶ ▼ …`, literal);
+  `_SOURCE_SCAN_ALLOWED_NON_ASCII_CHARS` (`≈ ∞ ▲ ⯈ ▼ …`, literal);
   `_COMMENT_SYNTAX_BY_EXTENSION` (`.html` adds `//`, `/* */`); faults
   `path:line: message` sorted. The 79-column limit is unrelated to
   `HEAT_MAP_SOURCE_VIEW_WIDTH_CHARS` (80).
@@ -591,8 +596,9 @@ raw/}  all/  assets/  flame-graph-app/  sources/  README.md  MANIFEST.txt
 - Names: `snake_case` ours; camelCase owned by browser/Python (DOM,
   storage/URL key, TypedDict key). A CSS class, id, colour role or value
   entry is its object path, `-` between words, singular words: the views
-  it shows on (`heat-map`, `menu`, `overview`, `summary`, alphabetized),
-  component, part; no word its parent already gives. State classes
+  it shows on (`callers`, `heat-map`, `menu`, `overview`, alphabetized, or
+  `page` when the views are all of them), component, part; no word its
+  parent already gives. State classes
   (`current_`, `selected_`, `open_`, `active_`) and layout helpers
   (`.band_`, `.table-box-`, `.page_`) stay plain. Every class, id, CSS
   custom property and `data-*` attribute perf2html writes ends in a
@@ -603,7 +609,7 @@ raw/}  all/  assets/  flame-graph-app/  sources/  README.md  MANIFEST.txt
   `window.report_sources` keyed by
   display path, read by `source_text()`. Markers `__NAME__`, `__DATA__`,
   `__SCRIPTS__`, `__APP_CSS__`, `__APP_JS__`, `__PROFILE_JS__`.
-- Frames: overview → summary → heat map/flame graph; both outer levels run
+- Frames: overview → callers → heat map/flame graph; both outer levels run
   `frame.js`, deciding by `report_ui.is_framed`; cross-frame helpers
   (`is_framed`, `parent_post`, `parent_listen`, `hash_publish`) in `theme.js`.
   Load via `location.replace(link_href + (inner_hash || "#"))`, never
@@ -630,7 +636,7 @@ raw/}  all/  assets/  flame-graph-app/  sources/  README.md  MANIFEST.txt
   entries are that test's `window.report_pulldown_names` names
   (`pulldown_names_write`), heat map links on the counter shown; open, it is a
   `new RegExp(text, "i")` search steered by `MENU_PULLDOWN_KEY_NAMES`; blur
-  closes; list `z-index: 3` over `.band_`. A framed summary forwards keys
+  closes; list `z-index: 3` over `.band_`. A framed callers page forwards keys
   (typed characters always; command keys only while the tests pulldown is
   open, until `tests_pulldown_closed`); the pulldown's `key_take` is the one
   key handler and `search_box_focus()` takes focus, else
@@ -654,7 +660,7 @@ raw/}  all/  assets/  flame-graph-app/  sources/  README.md  MANIFEST.txt
   (`design_scale_multiple_of()`/`design_scale_travel_of()`);
   `design_scale_travel_set()` is the door and resets column widths.
 - Geometry: cells `0 1ch`, `.heat-map-source-file-header-` 2ch,
-  `ul.summary-collapsed-section-raw-data-list-` marker 2ch,
+  `ul.callers-collapsed-section-raw-data-list-` marker 2ch,
   `--menu-title-width-` in `STYLE_VALUE_ENTRIES`, tree indent depth ×
   `STYLE_HEAT_MAP_TREE_INDENT_PER_LEVEL_CHARS` in ch.
   The only `title=` attributes: `<iframe title="report page">` and `<th>`. Only
@@ -683,7 +689,7 @@ raw/}  all/  assets/  flame-graph-app/  sources/  README.md  MANIFEST.txt
   (hi-lo) / S, hi)`; grow `max(G, 100cqw - clamp(L, 100cqw - G, H))`; G = grow
   `width` or `STYLE_TABLE_GROW_COLUMN_NARROWEST_CHARS` + extra. `.page_`,
   `#heat-map-main-`, `.heat-map-home-`,
-  `.heat-map-source-clicked-line-detail-` are inline-size containers; a
+  `.heat-map-source-line-detail-` are inline-size containers; a
   scrolling one needs `scrollbar-gutter: stable`. Drags use `design_px()`
   rects and `clientX`, floored at `data-min-`.
 - Notation: `2.1K`/`2.0G`, `63.2%`, `<0.01%`, exact zero empty; floor

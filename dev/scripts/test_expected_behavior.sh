@@ -81,42 +81,14 @@ tools_resolve() {
     "  npm install -g prettier pyright"
 }
 
-# child_run - one plain child, printed as an item: its lines reach the
+# subprocess_run - one child printed as an item. Its lines reach the
 # terminal as they are, and a non-zero exit is a hard error naming it.
-child_run() {
+subprocess_run() {
   local _exit_code=0
   command_item_print "$*"
   "$@" || _exit_code=$?
   [ "$_exit_code" = 0 ] \
     || error_exit "$_exit_code" "error: exit $_exit_code from: $*"
-}
-
-# tool_run - one tool with _TOOL_ARGS over the files given. A kind the
-# whitelist holds none of leaves it nothing to run.
-tool_run() {
-  local _binary="$1" _name="$2"
-  shift 2
-
-  if [ "$#" = 0 ]; then
-    log_verbose "$_name: no files"
-    return 0
-  fi
-
-  child_run "$_binary" "${_TOOL_ARGS[@]}" "$@"
-}
-
-# python_run - one of our python tools as a child, handed this run's
-# --verbose level after its name: its good news prints only then, on stdout.
-python_run() {
-  local _script="$1" _flags=()
-  shift
-  mapfile -t _flags < <(verbose_flags_of)
-  child_run python3 "$_script" "${_flags[@]}" "$@"
-}
-
-# whitelist_refuse - say why the whitelist cannot be enforced and stop.
-whitelist_refuse() {
-  error_exit 1 "error: $_WHITELIST_FILE: $1"
 }
 
 # whitelist_expand - expand _WHITELIST_FILE's globs against dev/, once. SETS
@@ -125,27 +97,29 @@ whitelist_expand() {
   local _glob _match _line=0 _found=() _matches=()
 
   if [ ! -f "$_WHITELIST_FILE" ]; then
-    whitelist_refuse "not found beside this script, so nothing is enforced"
+    error_exit 1 "error: $_WHITELIST_FILE: not found, so nothing is enforced"
   fi
 
   while IFS= read -r _glob || [ -n "$_glob" ]; do
     _line=$((_line + 1))
     if [[ -z "$_glob" || "$_glob" == '#'* || "$_glob" == *[[:space:]]* ]]; then
-      whitelist_refuse "line $_line is not one glob: '$_glob'"
+      error_exit 1 "error: $_WHITELIST_FILE:$_line: not one glob: '$_glob'"
     fi
 
     # a tool handed a directory walks it, which is what this list replaces
     mapfile -t _matches < <(compgen -G "$_DIR_DEV/$_glob")
     for _match in "${_matches[@]}"; do
       if [ ! -f "$_match" ]; then
-        whitelist_refuse "line $_line, $_glob, matches $_match, not a file"
+        error_exit 1 \
+          "error: $_WHITELIST_FILE:$_line: $_glob matches $_match, not a file"
       fi
     done
     _found+=("${_matches[@]}")
   done <"$_WHITELIST_FILE"
 
   if [ "${#_found[@]}" = 0 ]; then
-    whitelist_refuse "matches no file, so nothing would be enforced"
+    error_exit 1 \
+      "error: $_WHITELIST_FILE: matches no file, so nothing is enforced"
   fi
 
   mapfile -t _WHITELISTED_FILES < <(printf '%s\n' "${_found[@]}" \
@@ -175,14 +149,18 @@ format_shell() {
   mapfile -t _files < <(files_of .sh)
 
   heading_print shfmt
-  _TOOL_ARGS=(-i "$_SHELL_INDENT" -bn -ci -ln bash)
-  if [ "$_CHECK" = 1 ]; then
-    _TOOL_ARGS+=(-d)
-  else
-    _TOOL_ARGS+=(-w)
+  if [ "${#_files[@]}" = 0 ]; then
+    log_verbose "shfmt: no files"
+    return 0
   fi
 
-  tool_run "$_SHFMT" shfmt "${_files[@]}"
+  if [ "$_CHECK" = 1 ]; then
+    subprocess_run "$_SHFMT" -i "$_SHELL_INDENT" -bn -ci -ln bash -d \
+      "${_files[@]}"
+  else
+    subprocess_run "$_SHFMT" -i "$_SHELL_INDENT" -bn -ci -ln bash -w \
+      "${_files[@]}"
+  fi
 }
 
 # format_python - ruff format, then ruff check, over the whitelisted python.
@@ -191,18 +169,31 @@ format_python() {
   mapfile -t _files < <(files_of .py)
 
   heading_print ruff
+  if [ "${#_files[@]}" = 0 ]; then
+    log_verbose "ruff: no files"
+    return 0
+  fi
+
   # --quiet prints diagnostics and nothing else: no good news unless
   # --verbose, when ruff's own summary line streams like any child's
   quiet_switch_set ruff
-  _TOOL_ARGS=(format --config "$_RUFF_CONFIG" "${QUIET_SWITCH[@]}")
-  if [ "$_CHECK" = 1 ]; then _TOOL_ARGS+=(--diff); fi
-  tool_run "$_RUFF" ruff "${_files[@]}"
+  if [ "$_CHECK" = 1 ]; then
+    subprocess_run "$_RUFF" format --config "$_RUFF_CONFIG" \
+      "${QUIET_SWITCH[@]}" --diff "${_files[@]}"
+  else
+    subprocess_run "$_RUFF" format --config "$_RUFF_CONFIG" \
+      "${QUIET_SWITCH[@]}" "${_files[@]}"
+  fi
 
   # check mode is plain "ruff check": --diff implies --fix-only, which
   # passes lints that have no fix (F821) and then fails the write run
-  _TOOL_ARGS=(check --config "$_RUFF_CONFIG" "${QUIET_SWITCH[@]}")
-  if [ "$_CHECK" != 1 ]; then _TOOL_ARGS+=(--fix); fi
-  tool_run "$_RUFF" ruff "${_files[@]}"
+  if [ "$_CHECK" = 1 ]; then
+    subprocess_run "$_RUFF" check --config "$_RUFF_CONFIG" \
+      "${QUIET_SWITCH[@]}" "${_files[@]}"
+  else
+    subprocess_run "$_RUFF" check --config "$_RUFF_CONFIG" \
+      "${QUIET_SWITCH[@]}" --fix "${_files[@]}"
+  fi
 }
 
 # format_c - clang-format over the whitelisted C, with src/'s own style.
@@ -211,14 +202,18 @@ format_c() {
   mapfile -t _files < <(files_of .c .h)
 
   heading_print clang-format
-  _TOOL_ARGS=(--style=file:"$_CLANG_FORMAT_CONFIG")
-  if [ "$_CHECK" = 1 ]; then
-    _TOOL_ARGS+=(--dry-run --Werror)
-  else
-    _TOOL_ARGS+=(-i)
+  if [ "${#_files[@]}" = 0 ]; then
+    log_verbose "clang-format: no files"
+    return 0
   fi
 
-  tool_run "$_CLANG_FORMAT" clang-format "${_files[@]}"
+  if [ "$_CHECK" = 1 ]; then
+    subprocess_run "$_CLANG_FORMAT" --style=file:"$_CLANG_FORMAT_CONFIG" \
+      --dry-run --Werror "${_files[@]}"
+  else
+    subprocess_run "$_CLANG_FORMAT" --style=file:"$_CLANG_FORMAT_CONFIG" \
+      -i "${_files[@]}"
+  fi
 }
 
 # format_prettier - every whitelisted markdown file and page asset. prettier
@@ -228,17 +223,21 @@ format_prettier() {
   mapfile -t _files < <(files_of .md .js .css .html)
 
   heading_print prettier
+  if [ "${#_files[@]}" = 0 ]; then
+    log_verbose "prettier: no files"
+    return 0
+  fi
+
   # at log level warn prettier names no file it formatted: no good news
   # unless --verbose, when its per-file lines stream like any child's
   quiet_switch_set prettier
-  _TOOL_ARGS=(--config "$_PRETTIER_CONFIG" "${QUIET_SWITCH[@]}")
   if [ "$_CHECK" = 1 ]; then
-    _TOOL_ARGS+=(--check)
+    subprocess_run "$_PRETTIER" --config "$_PRETTIER_CONFIG" \
+      "${QUIET_SWITCH[@]}" --check "${_files[@]}"
   else
-    _TOOL_ARGS+=(--write)
+    subprocess_run "$_PRETTIER" --config "$_PRETTIER_CONFIG" \
+      "${QUIET_SWITCH[@]}" --write "${_files[@]}"
   fi
-
-  tool_run "$_PRETTIER" prettier "${_files[@]}"
 }
 
 # lint_run - pyright over the whitelisted python. pyrightconfig.json names
@@ -247,31 +246,35 @@ lint_run() {
   local _files
   mapfile -t _files < <(files_of .py)
 
-  # named no file, pyright would check its whole project directory instead,
-  # which tool_run's empty case keeps from happening
   heading_print pyright
-  _TOOL_ARGS=(--project "$_PYRIGHT_CONFIG")
+  # named no file, pyright would check its whole project directory instead
+  if [ "${#_files[@]}" = 0 ]; then
+    log_verbose "pyright: no files"
+    return 0
+  fi
+
   # pyright has no quiet switch: a quiet run prints its all-clear summary on
   # stdout, the one success line left; --verbose pipes it out
-  if [ "$VERBOSE" -ge 1 ] && [ "${#_files[@]}" != 0 ]; then
-    pyright_filtered_run "${_files[@]}"
+  if [ "$VERBOSE" -ge 1 ]; then
+    pyright_filtered_run "$_PYRIGHT" --project "$_PYRIGHT_CONFIG" \
+      "${_files[@]}"
   else
-    tool_run "$_PYRIGHT" pyright "${_files[@]}"
+    subprocess_run "$_PYRIGHT" --project "$_PYRIGHT_CONFIG" "${_files[@]}"
   fi
 }
 
-# pyright_filtered_run - pyright over the files given, its stdout through
+# pyright_filtered_run - the pyright command given, its stdout through
 # grep -v, the user's one exception to this script reformatting no output.
 pyright_filtered_run() {
-  local _command=("$_PYRIGHT" "${_TOOL_ARGS[@]}" "$@") _statuses=(0 0)
+  local _statuses=(0 0)
   local _filter=(grep --line-buffered -v -x)
   local _filter_shown="${_filter[*]} '$_PYRIGHT_ALL_CLEAR_LINE'"
-  command_item_print "${_command[*]} | $_filter_shown"
-  "${_command[@]}" | "${_filter[@]}" "$_PYRIGHT_ALL_CLEAR_LINE" \
+  command_item_print "$* | $_filter_shown"
+  "$@" | "${_filter[@]}" "$_PYRIGHT_ALL_CLEAR_LINE" \
     || _statuses=("${PIPESTATUS[@]}")
   # pyright's code is the verdict; grep's 1 only says it printed nothing
   [ "${_statuses[0]}" = 0 ] || error_exit "${_statuses[0]}" \
-    "error: exit ${_statuses[0]} from: ${_command[*]}"
+    "error: exit ${_statuses[0]} from: $*"
   [ "${_statuses[1]}" -le 1 ] || error_exit "${_statuses[1]}" \
     "error: exit ${_statuses[1]} from: $_filter_shown"
 }
@@ -302,7 +305,8 @@ report_version() {
 # test_expected_report_check_run - check each report the batch wrote, in
 # its order. Every one must be there: the batch stops at its first failure.
 test_expected_report_check_run() {
-  local _path _args
+  local _path _args _flags=()
+  mapfile -t _flags < <(verbose_flags_of)
 
   heading_print test_report.py
   for _path in "${_DEFAULT_REPORTS[@]}"; do
@@ -316,7 +320,7 @@ test_expected_report_check_run() {
       _args+=(--diff)
     fi
 
-    python_run test_report.py "${_args[@]}"
+    subprocess_run python3 test_report.py "${_flags[@]}" "${_args[@]}"
   done
 }
 
@@ -353,10 +357,14 @@ test_expected_archive_check_run() {
 # test_source_scan_run - test_source_scan.py's comment block, ASCII and
 # tag checks, over every whitelisted file and in one read of each.
 test_source_scan_run() {
+  local _flags=()
+  mapfile -t _flags < <(verbose_flags_of)
+
   # the limit and the allowed set are the scanner's own and never spelled
   # here: every fault it prints, and its --verbose ok line, carry them
   heading_print test_source_scan.py
-  python_run test_source_scan.py "${_WHITELISTED_FILES[@]}"
+  subprocess_run python3 test_source_scan.py "${_flags[@]}" \
+    "${_WHITELISTED_FILES[@]}"
 }
 
 # batch_run - write the three reports this run verifies. Its own steps stop
@@ -394,7 +402,8 @@ batch_run() {
 # screenshots_run - shoot the modified and diff reports at every viewport
 # test_screenshot.py names. Both exist: the batch wrote them or exited.
 screenshots_run() {
-  local _name _path _prefix
+  local _name _path _prefix _flags=()
+  mapfile -t _flags < <(verbose_flags_of)
 
   heading_print "$_SCREENSHOT_SCRIPT_NAME"
   for _name in "$REPORT_MODIFIED_DIR_NAME" "$REPORT_DIFF_DIR_NAME"; do
@@ -405,7 +414,8 @@ screenshots_run() {
     _prefix="${_name#perf2html_}"
     _prefix="${_prefix%_report}_"
 
-    python_run "$_SCREENSHOT_SCRIPT_NAME" "$_path" "$_prefix"
+    subprocess_run python3 "$_SCREENSHOT_SCRIPT_NAME" "${_flags[@]}" \
+      "$_path" "$_prefix"
   done
 }
 

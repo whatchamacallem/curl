@@ -8,9 +8,11 @@
 # compared: a page is designed once and fitted to the window, so one view's
 # three shots differ in size and in nothing else.
 #
-# Every anchor a hash names is from the timer framework rather than from
-# what is timed -- tests/perf/first.c and lib/curlx/timeval.c are in every
-# profile whatever TESTS_C holds, so no entry here names a test.
+# Each hash is a golden bookmark, a string literal written out whole and
+# formulated from nothing: changing the url format must require changing
+# those string literals. A diff report has no flame graph, so that view is
+# shot for a full report only, the kind of report read from its MANIFEST.txt
+# line 1.
 #
 # A view lacking files (a report whose run stopped short) is shot from a
 # copy of the report under dev/build/, removed once shot: verification
@@ -25,11 +27,6 @@ import argparse, os, shutil, subprocess, sys, urllib.parse
 
 import PIL.Image
 
-# Anchors from the timer framework, in every profile whatever TESTS_C
-# holds. A hash naming what is timed would rot the day a test is renamed.
-_ANCHOR_FILE = "lib/curlx/timeval.c"
-_ANCHOR_FUNCTION = "curlx_now"
-
 # The page every view's hash is appended to, the report's own entry point:
 # shooting through it is what exercises the frame controller.
 _ENTRY_PAGE = "index.html"
@@ -39,12 +36,19 @@ _FAULT_TAIL_CHARS = 400
 
 _IMAGE_SUFFIX = ".png"
 
-# The synthetic test merging every real one. It is a view of the report
-# rather than a test name, so it survives any change to TESTS_C.
-_MERGED_TEST = "all"
-
 # What a run writes last, so what a run that stopped short lacks.
 _REPORT_COMPLETE_ASSET_PATH: tuple[str, ...] = ("assets/report_complete.js",)
+
+# A report's manifest and the line 1 each kind of report writes there, then
+# the kinds of report a view is shot for: only a full one has a flame graph.
+_REPORT_MANIFEST_NAME = "MANIFEST.txt"
+_REPORT_MANIFEST_VERSION_DIFF = "curl/perf2html_diff.sh v1"
+_REPORT_MANIFEST_VERSION_FULL = "curl/perf2html.sh v1"
+_REPORT_VERSIONS_BOTH: tuple[str, ...] = (
+    _REPORT_MANIFEST_VERSION_DIFF,
+    _REPORT_MANIFEST_VERSION_FULL,
+)
+_REPORT_VERSIONS_FULL_ONLY: tuple[str, ...] = (_REPORT_MANIFEST_VERSION_FULL,)
 
 # Every browser this will drive, in the order it tries them. A WSL box has
 # no linux browser of its own, so the Windows ones close the list.
@@ -85,7 +89,7 @@ _SCREENSHOT_VIEWPORTS: tuple[tuple[str, int, int], ...] = (
 _THUMBNAIL_SHEET_BACKGROUND = (18, 20, 24)
 
 # The grid one sheet lays its shots out in, and how many that holds. Nine
-# cells is every view one viewport has, so a sheet is the whole set at once.
+# cells is every view a full report has, so a sheet is the whole set at once.
 _THUMBNAIL_SHEET_COLUMNS = 3
 _THUMBNAIL_SHEET_ROWS = 3
 _THUMBNAIL_SHEET_CELLS = _THUMBNAIL_SHEET_COLUMNS * _THUMBNAIL_SHEET_ROWS
@@ -95,29 +99,48 @@ _THUMBNAIL_SHEET_CELLS = _THUMBNAIL_SHEET_COLUMNS * _THUMBNAIL_SHEET_ROWS
 _THUMBNAIL_SHEET_HEIGHT_PX = 2160
 _THUMBNAIL_SHEET_WIDTH_PX = 3840
 
-# Every view worth a shot, as (file name, hash, files its report lacks).
-# Each takes a code path no earlier entry takes; other data is no new view.
-_VIEWS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
-    ("overview", "", ()),
-    ("summary", f"#{_MERGED_TEST}", ()),
-    ("heat_map_home", f"#{_MERGED_TEST}/heat-map/", ()),
-    ("heat_map_file", f"#{_MERGED_TEST}/heat-map/f={_ANCHOR_FILE}", ()),
+# Every view worth a shot, as (file name, bookmark, files its report lacks,
+# report kinds it is shot for). Each takes a code path no earlier one takes.
+_VIEWS: tuple[tuple[str, str, tuple[str, ...], tuple[str, ...]], ...] = (
+    ("overview", "", (), _REPORT_VERSIONS_BOTH),
+    ("callers", "#all", (), _REPORT_VERSIONS_BOTH),
+    ("heat_map_home", "#urlparser/heat-map/", (), _REPORT_VERSIONS_BOTH),
+    (
+        "heat_map_file",
+        "#urlparser/heat-map/f=sysdeps/x86_64/multiarch/memchr-avx2.S",
+        (),
+        _REPORT_VERSIONS_BOTH,
+    ),
     (
         "heat_map_line",
-        f"#{_MERGED_TEST}/heat-map/f={_ANCHOR_FILE}&l=1",
+        "#urlparser/heat-map/f=sysdeps/x86_64/multiarch/memchr-avx2.S&l=82",
         (),
+        _REPORT_VERSIONS_BOTH,
     ),
     (
         "heat_map_function",
-        f"#{_MERGED_TEST}/heat-map/fn={_ANCHOR_FUNCTION}",
+        "#urlparser/heat-map/fn=parseurl_and_replace",
         (),
+        _REPORT_VERSIONS_BOTH,
+    ),
+    (
+        "flame_graph",
+        "#urlparser/flame-graph",
+        (),
+        _REPORT_VERSIONS_FULL_ONLY,
     ),
     (
         "bad_function",
-        f"#{_MERGED_TEST}/heat-map/fn=no_such_function",
+        "#urlparser/heat-map/fn=no_such_function",
         (),
+        _REPORT_VERSIONS_BOTH,
     ),
-    ("report_incomplete", "", _REPORT_COMPLETE_ASSET_PATH),
+    (
+        "report_incomplete",
+        "",
+        _REPORT_COMPLETE_ASSET_PATH,
+        _REPORT_VERSIONS_BOTH,
+    ),
 )
 
 # How a Windows browser binary is told apart from a linux one, so only it
@@ -138,6 +161,8 @@ class Screenshots:
         self.out_dir = out_dir
         # where a copy of the report lacking files is shot from, absolute
         self.scratch_dir = scratch_dir
+        # the _VIEWS entries this kind of report is shot for
+        self.report_views = self.report_views_select()
 
     # A path the browser will open, translating for a Windows browser that
     # cannot read a linux path. wslpath is the translator, never a guess.
@@ -181,10 +206,25 @@ class Screenshots:
             return "file://" + page.replace("\\", "/") + query + view_hash
         return "file://" + page + query + view_hash
 
+    # The _VIEWS entries shot for the report's kind, its MANIFEST.txt line 1.
+    # A line naming neither kind of report is a hard error.
+    def report_views_select(
+        self,
+    ) -> list[tuple[str, str, tuple[str, ...], tuple[str, ...]]]:
+        manifest_path = os.path.join(self.report, _REPORT_MANIFEST_NAME)
+        with open(manifest_path, encoding="utf-8") as manifest_file:
+            manifest_version = manifest_file.readline().rstrip("\n")
+        if manifest_version not in _REPORT_VERSIONS_BOTH:
+            raise RuntimeError(
+                f"{manifest_path}: line 1 found {manifest_version!r},"
+                f" expected one of {_REPORT_VERSIONS_BOTH!r}"
+            )
+        return [view for view in _VIEWS if manifest_version in view[3]]
+
     # Shoot every view at every viewport, returning the count written.
     def shoot_all(self, prefix: str) -> int:
         written = 0
-        for name, view_hash, absent_files in _VIEWS:
+        for name, view_hash, absent_files, _versions in self.report_views:
             if absent_files:
                 written += self.copy_shoot(
                     prefix, name, view_hash, absent_files
@@ -238,13 +278,14 @@ class Screenshots:
     # right. A sheet is temporary output for a person, covered by no checksum.
     def sheets_write(self, prefix: str) -> int:
         written = 0
+        sheet_views = self.report_views[:_THUMBNAIL_SHEET_CELLS]
         for size_name, _width_px, _height_px in _SCREENSHOT_VIEWPORTS:
             shots = [
                 os.path.join(
                     self.out_dir,
                     f"{size_name}_{prefix}{name}{_IMAGE_SUFFIX}",
                 )
-                for name, _hash, _absent in _VIEWS[:_THUMBNAIL_SHEET_CELLS]
+                for name, _hash, _absent, _versions in sheet_views
             ]
             for path in shots:
                 assert os.path.isfile(path), f"missing shot: {path}"

@@ -368,7 +368,7 @@ trace_render() {
   flame_graph_build "$_out"
 }
 
-# report_render - one test's heat map, summary page and raw archive. Args:
+# report_render - one test's heat map, callers page and raw archive. Args:
 # name, dir, speedscope JSON, perf log, trace log; "all" has only the two.
 report_render() {
   local _name="$1" _out="$2" _json="$3" _perf_log="$4" _trace_log="$5"
@@ -378,7 +378,7 @@ report_render() {
   command_run python3 "$PERF2HTML_DIR_/scripts/callgrind_to_heatmap.py" \
     "${_CALLGRIND_FILES[@]}" \
     -o "$_out/heat-map/index.html" \
-    --title "$_name / heat map"
+    --title "$_name / heatmap"
 
   heading_print "python3 build_report.py test $_name"
   for _log_file in "${_LOG_FILES[@]}"; do _log_args+=(--log "$_log_file"); done
@@ -406,7 +406,7 @@ timing_record() {
 }
 
 # perf_page_of - the timing run's page text of one test, or of "all", a
-# recording in the artifacts dir: what the summary and the overview read.
+# recording in the artifacts dir: what the callers page and the overview read.
 perf_page_of() {
   echo "$ARTIFACTS_DIR/$PROFILE_TIMING_FILE_PREFIX.$1.$TIMESTAMP.txt"
 }
@@ -529,7 +529,7 @@ run_all() {
   for _test_name in "${_TESTS[@]}" all; do _args+=(--test "$_test_name"); done
   command_run python3 "$PERF2HTML_DIR_/scripts/build_report.py" overview \
     "${_args[@]}"
-  log_verbose "$(printf '%-13s%d profiles merged -> %s' all \
+  log_verbose "$(printf '%-13s%d profiles merged:  %s' all \
     "${#_TESTS[@]}" "$_OUT_DIR/index.html")"
 }
 
@@ -557,7 +557,7 @@ main() {
     _log_name="regenerate.$TIMESTAMP.$(date +%s).log"
   fi
   report_begin "$_OUT_DIR" "$_log_name" \
-    "dev/perf2html.sh $TIMESTAMP: ${_CMAKE_FLAGS[*]} -> $_OUT_DIR"
+    "dev/perf2html.sh $TIMESTAMP: ${_CMAKE_FLAGS[*]}: $_OUT_DIR"
   build_compile
   flame_app_install "$_OUT_DIR"
 

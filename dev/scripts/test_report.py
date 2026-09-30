@@ -226,7 +226,7 @@ class TestReport:
                         f" them: {path}"
                     )
 
-    # One test's summary page: its top-N table, its view links, its raw data.
+    # One test's callers page: its top-N table, its view links, its raw data.
     def index_check(
         self,
         out_dir: str,
@@ -250,7 +250,7 @@ class TestReport:
             wanted = key != _FLAME_GRAPH_VIEW_KEY or has_rawdata
             if wanted != (f'href="{key}/index.html"' in text):
                 lack = "is missing its" if wanted else "should not have a"
-                self.fail(f"index.html {lack} {key} menu link: {path}")
+                self.fail(f"index.html {lack} {key} view link: {path}")
         if has_archive and "raw data" not in text:
             self.fail(f"index.html has no 'raw data' section: {path}")
         elif not has_archive and "raw data" in text:

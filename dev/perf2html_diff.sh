@@ -51,13 +51,13 @@ input_archives_extract() {
   case "$_BASE_DIR" in
     *"$REPORT_RAW_ARCHIVE_SUFFIX")
       _BASE_DIR="$(archive_extract "$_BASE_DIR" baseline "$_EXTRACTED_ROOT")"
-      log_verbose "baseline archive -> $_BASE_DIR"
+      log_verbose "baseline archive: $_BASE_DIR"
       ;;
   esac
   case "$_MOD_DIR" in
     *"$REPORT_RAW_ARCHIVE_SUFFIX")
       _MOD_DIR="$(archive_extract "$_MOD_DIR" modified "$_EXTRACTED_ROOT")"
-      log_verbose "modified archive -> $_MOD_DIR"
+      log_verbose "modified archive: $_MOD_DIR"
       ;;
   esac
 }
@@ -246,7 +246,7 @@ profiles_of() {
      taking { print }' "$1"
 }
 
-# diff_one - subtracts one test and generates its summary and heat map
+# diff_one - subtracts one test and generates its callers page and heat map
 diff_one() {
   local _test="$1" _out="$2" _name="$3"
   local _diff_file _callers_file _file
@@ -267,7 +267,7 @@ diff_one() {
   heading_print "python3 callgrind_to_heatmap.py $_name --diff"
   command_run python3 "$PERF2HTML_DIR_/scripts/callgrind_to_heatmap.py" \
     "$_diff_file" -o "$_out/heat-map/index.html" \
-    --title "$_name / heat map" --diff \
+    --title "$_name / heatmap" --diff \
     --baseline-data "$_callers_file"
 
   heading_print "python3 build_report.py test $_name"
@@ -277,7 +277,7 @@ diff_one() {
   command_run python3 "$PERF2HTML_DIR_/scripts/build_report.py" test \
     "$_diff_file" -o "$_out/index.html" --test "$_name" --diff \
     --callers-data "$_callers_file" --raw-data "$_archive"
-  log_verbose "$(printf '%-13sdiff -> %s' "$_name" "$_out/index.html")"
+  log_verbose "$(printf '%-13sdiff:  %s' "$_name" "$_out/index.html")"
 }
 
 # main - checks both inputs, diffs every shared test, copies their recorded=
@@ -309,7 +309,7 @@ main() {
   # --keep-artifacts flushes stale recordings first; only --regenerate reuses
   [ "$_REGENERATE" = 1 ] || artifacts_clean
   report_begin "$_OUT_DIR" "diff.$TIMESTAMP.log" \
-    "dev/perf2html_diff.sh $TIMESTAMP: $_BASE_DIR -> $_MOD_DIR -> $_OUT_DIR"
+    "dev/perf2html_diff.sh $TIMESTAMP: $_BASE_DIR: $_MOD_DIR: $_OUT_DIR"
 
   local _tests _test_name
   local -a _args
@@ -318,7 +318,7 @@ main() {
   profiles_extract "$_BASE_DIR" baseline "$_BASE_LISTING"
   profiles_extract "$_MOD_DIR" modified "$_MODIFIED_LISTING"
   _tests="$(tests_pair)"
-  log_verbose "$_SCRIPT $TIMESTAMP: $(basename "$_BASE_DIR") ->" \
+  log_verbose "$_SCRIPT $TIMESTAMP: $(basename "$_BASE_DIR"): " \
     "$(basename "$_MOD_DIR")"
   _args=(-o "$_OUT_DIR/index.html" --diff
     --header-block "baseline=$(header_file_of "$_BASE_DIR" baseline)"

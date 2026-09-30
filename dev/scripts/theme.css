@@ -21,21 +21,21 @@ body {
 /* every font size is the design size times the fit theme.js measured, so a
    ch is the design ch under whatever monospace this box has */
 body {
-  background: var(--heat-map-overview-summary-body-bg-dim-);
-  color: var(--heat-map-overview-summary-body-fg-);
+  background: var(--page-body-bg-dim-);
+  color: var(--page-body-fg-);
   font-family: var(--page-font-family-);
   font-size: calc(var(--design-font-size-px-) * var(--design-font-fit-));
-  line-height: var(--heat-map-overview-summary-body-line-height-);
+  line-height: var(--page-body-line-height-);
 }
 a {
-  color: var(--heat-map-menu-overview-summary-link-fg-);
+  color: var(--page-link-fg-);
 }
-.heat-map-overview-summary-heading- {
-  color: var(--heat-map-overview-summary-heading-fg-dim-);
+.page-heading- {
+  color: var(--page-heading-fg-dim-);
 }
-.summary-collapsed-section-file-name- {
-  color: var(--summary-collapsed-section-file-name-fg-dim-);
-  max-width: var(--summary-collapsed-section-file-name-max-width-);
+.callers-collapsed-section-file-name- {
+  color: var(--callers-collapsed-section-file-name-fg-dim-);
+  max-width: var(--callers-collapsed-section-file-name-max-width-);
 }
 pre {
   margin: 0;
@@ -79,7 +79,7 @@ body.frame_ > iframe {
   flex: 1;
   min-height: 0;
   width: 100%;
-  background: var(--overview-summary-view-frame-bg-dim-);
+  background: var(--callers-overview-view-frame-bg-dim-);
 }
 /* the box a page's tables sit in is a container, so 100cqw in a <col> is
    exactly the room its own table has */
@@ -97,7 +97,6 @@ body.frame_ > iframe {
   z-index: var(--heat-map-band-z-index-);
 }
 .table-columns- {
-  position: relative;
   width: fit-content;
 }
 table.columns_ {
@@ -107,11 +106,11 @@ table.columns_ {
   width: 0;
 }
 table.columns_ col.alternate_ {
-  background: var(--heat-map-overview-summary-table-alternate-column-bg-);
+  background: var(--page-table-alternate-column-bg-);
 }
 table.columns_ th,
 table.columns_ td {
-  padding: 0 var(--heat-map-overview-summary-table-cell-padding-inline-);
+  padding: 0 var(--page-table-cell-padding-inline-);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -120,63 +119,37 @@ table.columns_ td {
 table.columns_ th {
   position: sticky;
   top: 0;
-  z-index: var(--heat-map-overview-summary-table-column-title-z-index-);
+  z-index: var(--page-table-column-title-z-index-);
   text-align: left;
-  color: var(--heat-map-overview-summary-table-column-title-fg-dim-);
-  background: var(--heat-map-overview-summary-table-column-title-bg-dim-);
+  color: var(--page-table-column-title-fg-dim-);
+  background: var(--page-table-column-title-bg-dim-);
 }
 table.columns_ .numeric_ {
   text-align: right;
 }
 table.columns_ .dimmed_ {
-  color: var(--heat-map-overview-summary-table-dimmed-text-fg-dim-);
-}
-
-.heat-map-overview-summary-column-resize-handle- {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  width: var(--heat-map-overview-summary-column-resize-handle-width-);
-  margin-left: var(--heat-map-overview-summary-column-resize-handle-margin-left-);
-  z-index: var(--heat-map-overview-summary-column-resize-handle-z-index-);
-  cursor: col-resize;
-  touch-action: none;
-}
-.heat-map-overview-summary-column-resize-handle-::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: var(--heat-map-overview-summary-column-resize-handle-bar-left-);
-  width: var(--heat-map-overview-summary-column-resize-handle-bar-width-);
-}
-.heat-map-overview-summary-column-resize-handle-.active_::before {
-  background: var(--heat-map-overview-summary-column-resize-handle-active-bg-dim-);
-}
-
-.heat-map-overview-summary-column-resize-handle-:last-child {
-  margin-left: var(--heat-map-overview-summary-column-resize-handle-last-margin-left-);
-}
-.heat-map-overview-summary-column-resize-handle-:last-child::before {
-  left: var(--heat-map-overview-summary-column-resize-handle-last-bar-left-);
+  color: var(--page-table-dimmed-text-fg-dim-);
 }
 
 /* the list marker is drawn in the padding: one glyph and one blank */
-ul.summary-collapsed-section-raw-data-list- {
+ul.callers-collapsed-section-raw-data-list- {
   margin: 0;
-  padding-left: var(--summary-collapsed-section-raw-data-list-padding-left-);
+  padding-left: var(--callers-collapsed-section-raw-data-list-padding-left-);
 }
 
-.summary-collapsed-section-title- {
+.callers-collapsed-section-title- {
   cursor: pointer;
-  color: var(--summary-collapsed-section-title-fg-dim-);
+  color: var(--callers-collapsed-section-title-fg-dim-);
 }
-.summary-collapsed-section-title-::marker {
-  color: var(--summary-collapsed-section-title-marker-fg-dim-);
+.callers-collapsed-section-title-::marker {
+  color: var(--callers-collapsed-section-title-marker-fg-dim-);
 }
-pre.summary-collapsed-section-log-box- {
-  background: var(--summary-collapsed-section-log-box-bg-dim-);
-  max-height: calc(var(--summary-collapsed-section-log-box-max-height-share-) * var(--design-viewport-height-));
+pre.callers-collapsed-section-log-box- {
+  background: var(--callers-collapsed-section-log-box-bg-dim-);
+  max-height: calc(
+    var(--callers-collapsed-section-log-box-max-height-share-) *
+      var(--design-viewport-height-)
+  );
   overflow: auto;
 }
 
@@ -193,23 +166,23 @@ pre.summary-collapsed-section-log-box- {
 }
 
 ::-webkit-scrollbar {
-  width: var(--heat-map-menu-overview-summary-scrollbar-thickness-);
-  height: var(--heat-map-menu-overview-summary-scrollbar-thickness-);
+  width: var(--page-scrollbar-thickness-);
+  height: var(--page-scrollbar-thickness-);
 }
 ::-webkit-scrollbar-track {
-  background: var(--heat-map-menu-overview-summary-scrollbar-track-bg-dim-);
+  background: var(--page-scrollbar-track-bg-dim-);
 }
 ::-webkit-scrollbar-thumb {
-  background: var(--heat-map-menu-overview-summary-scrollbar-thumb-bg-dim-);
+  background: var(--page-scrollbar-thumb-bg-dim-);
   border-radius: 0;
 }
 ::-webkit-scrollbar-corner {
-  background: var(--heat-map-overview-summary-scrollbar-corner-bg-dim-);
+  background: var(--page-scrollbar-corner-bg-dim-);
 }
 
-pre.summary-collapsed-section-log-box-::-webkit-scrollbar-track,
-pre.summary-collapsed-section-log-box-::-webkit-scrollbar-corner {
-  background: var(--summary-collapsed-section-log-box-scrollbar-corner-track-bg-dim-);
+pre.callers-collapsed-section-log-box-::-webkit-scrollbar-track,
+pre.callers-collapsed-section-log-box-::-webkit-scrollbar-corner {
+  background: var(--callers-collapsed-section-log-box-scrollbar-bg-dim-);
 }
 
 .screenshot-label- {
