@@ -37,18 +37,13 @@ _FAULT_TAIL_CHARS = 400
 _IMAGE_SUFFIX = ".png"
 
 # What a run writes last, so what a run that stopped short lacks.
-_REPORT_COMPLETE_ASSET_PATH: tuple[str, ...] = ("assets/report_complete.js",)
+_REPORT_COMPLETE_ASSET: tuple[str, ...] = ("assets/report_complete.js",)
 
 # A report's manifest and the line 1 each kind of report writes there, then
 # the kinds of report a view is shot for: only a full one has a flame graph.
 _REPORT_MANIFEST_NAME = "MANIFEST.txt"
 _REPORT_MANIFEST_VERSION_DIFF = "curl/perf2html_diff.sh v1"
 _REPORT_MANIFEST_VERSION_FULL = "curl/perf2html.sh v1"
-_REPORT_VERSIONS_BOTH: tuple[str, ...] = (
-    _REPORT_MANIFEST_VERSION_DIFF,
-    _REPORT_MANIFEST_VERSION_FULL,
-)
-_REPORT_VERSIONS_FULL_ONLY: tuple[str, ...] = (_REPORT_MANIFEST_VERSION_FULL,)
 
 # Every browser this will drive, in the order it tries them. A WSL box has
 # no linux browser of its own, so the Windows ones close the list.
@@ -84,6 +79,12 @@ _SCREENSHOT_VIEWPORTS: tuple[tuple[str, int, int], ...] = (
     ("4k", 3840, 2160),
 )
 
+_SHOOT_BOTH_REPORTS: tuple[str, ...] = (
+    _REPORT_MANIFEST_VERSION_DIFF,
+    _REPORT_MANIFEST_VERSION_FULL,
+)
+_SHOOT_REGULAR_REPORT_ONLY: tuple[str, ...] = (_REPORT_MANIFEST_VERSION_FULL,)
+
 # What a sheet's empty cells are left as, the pages' own near-black so a
 # part-filled sheet does not glare.
 _THUMBNAIL_SHEET_BACKGROUND = (18, 20, 24)
@@ -102,51 +103,51 @@ _THUMBNAIL_SHEET_WIDTH_PX = 3840
 # Every view worth a shot, as (file name, bookmark, files its report lacks,
 # report kinds it is shot for). Each takes a code path no earlier one takes.
 _VIEWS: tuple[tuple[str, str, tuple[str, ...], tuple[str, ...]], ...] = (
-    ("overview", "", (), _REPORT_VERSIONS_BOTH),
-    ("callers", "#test=all&view=callers", (), _REPORT_VERSIONS_BOTH),
+    ("overview", "", (), _SHOOT_BOTH_REPORTS),
+    ("callers", "#test=all&view=callers", (), _SHOOT_BOTH_REPORTS),
     (
         "heat_map_home",
         "#test=urlparser&view=heat-map",
         (),
-        _REPORT_VERSIONS_BOTH,
+        _SHOOT_BOTH_REPORTS,
     ),
     (
         "heat_map_file",
         "#test=urlparser&view=heat-map"
         "&file=sysdeps/x86_64/multiarch/memchr-avx2.S",
         (),
-        _REPORT_VERSIONS_BOTH,
+        _SHOOT_BOTH_REPORTS,
     ),
     (
         "heat_map_line",
         "#test=urlparser&view=heat-map"
         "&file=sysdeps/x86_64/multiarch/memchr-avx2.S&line=82",
         (),
-        _REPORT_VERSIONS_BOTH,
+        _SHOOT_BOTH_REPORTS,
     ),
     (
         "heat_map_function",
         "#test=urlparser&view=heat-map&function=parseurl_and_replace",
         (),
-        _REPORT_VERSIONS_BOTH,
+        _SHOOT_BOTH_REPORTS,
     ),
     (
         "flame_graph",
         "#test=urlparser&view=flame-graph&localProfilePath=profile",
         (),
-        _REPORT_VERSIONS_FULL_ONLY,
+        _SHOOT_REGULAR_REPORT_ONLY,
     ),
     (
         "bad_function",
         "#test=urlparser&view=heat-map&function=no_such_function",
         (),
-        _REPORT_VERSIONS_BOTH,
+        _SHOOT_BOTH_REPORTS,
     ),
     (
         "report_incomplete",
         "",
-        _REPORT_COMPLETE_ASSET_PATH,
-        _REPORT_VERSIONS_BOTH,
+        _REPORT_COMPLETE_ASSET,
+        _SHOOT_BOTH_REPORTS,
     ),
 )
 
@@ -221,10 +222,10 @@ class Screenshots:
         manifest_path = os.path.join(self.report, _REPORT_MANIFEST_NAME)
         with open(manifest_path, encoding="utf-8") as manifest_file:
             manifest_version = manifest_file.readline().rstrip("\n")
-        if manifest_version not in _REPORT_VERSIONS_BOTH:
+        if manifest_version not in _SHOOT_BOTH_REPORTS:
             raise RuntimeError(
                 f"{manifest_path}: line 1 found {manifest_version!r},"
-                f" expected one of {_REPORT_VERSIONS_BOTH!r}"
+                f" expected one of {_SHOOT_BOTH_REPORTS!r}"
             )
         return [view for view in _VIEWS if manifest_version in view[3]]
 
