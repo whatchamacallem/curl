@@ -8,7 +8,9 @@ import settings
 
 # All constants needed from settings.py have to be loaded here before anything
 # else.
+_ASSET_CALLERS_SCRIPT_NAME: str = ""
 _ASSET_ERROR_OVERLAY_SCRIPT_NAME: str = ""
+_ASSET_FLAME_GRAPH_SCRIPT_NAME: str = ""
 _ASSET_FRAME_SCRIPT_NAME: str = ""
 _ASSET_HEAT_MAP_SCRIPT_NAME: str = ""
 _ASSET_HEAT_MAP_STYLESHEET_NAME: str = ""
@@ -260,6 +262,21 @@ class Theme:
         def __init__(self, time_units: tuple[Theme.TimeUnit, ...]) -> None:
             self.time_units = time_units
 
+        # A diff share: a change against that thing's own baseline count,
+        # None when the baseline never had it. A fall past it is refused.
+        def diff_share_of(self, delta: int, baseline: int | None) -> float:
+            baseline_count = 0 if baseline is None else baseline
+            if delta < -baseline_count:
+                raise ValueError(
+                    f"a change of {delta} falls past its baseline of "
+                    f"{baseline_count}"
+                )
+            if delta == 0:
+                return 0.0
+            if baseline_count == 0:
+                return math.inf
+            return 100.0 * delta / baseline_count
+
         # A number at fixed decimal places, rounding a half away from zero,
         # not to even as round() and f-strings do.
         def fixed_text(self, value: float, digit_count: int) -> str:
@@ -317,16 +334,16 @@ class Theme:
             return ("-" if number < 0 else "") + self.human(abs(number))
 
         # A diff share: empty at zero, arrow-led, a drop keeping its "-", a
-        # zero baseline "∞%", and the two bounds unsigned.
+        # rise from zero "▲∞%", and the two bounds unsigned.
         def signed_percent(self, percent: float) -> str:
             # README.md's "Reading a Diff Report" is the specification, and
             # theme.js's signed_percent_text is kept in step with this
             if percent == 0:
                 return ""
+            if percent == math.inf:
+                return "▲∞%"
             arrow = "▼" if percent < 0 else "▲"
             sign = "-" if percent < 0 else ""
-            if math.isinf(percent):
-                return arrow + sign + "∞%"
             if abs(percent) < _NUMBER_SMALLEST_PRINTED_PERCENT:
                 return arrow + "≈0.00%"
             body = self.multiple(abs(percent))
@@ -388,8 +405,16 @@ class Theme:
         heat_map_stylesheet = _ASSET_HEAT_MAP_STYLESHEET_NAME
         shared = (
             (
+                _ASSET_CALLERS_SCRIPT_NAME,
+                self.asset_read(_ASSET_CALLERS_SCRIPT_NAME),
+            ),
+            (
                 _ASSET_ERROR_OVERLAY_SCRIPT_NAME,
                 self.asset_read(_ASSET_ERROR_OVERLAY_SCRIPT_NAME),
+            ),
+            (
+                _ASSET_FLAME_GRAPH_SCRIPT_NAME,
+                self.asset_read(_ASSET_FLAME_GRAPH_SCRIPT_NAME),
             ),
             (
                 _ASSET_FRAME_SCRIPT_NAME,
@@ -629,6 +654,11 @@ _table_renderer = TableRenderer()
 # asset_text_read - One file from scripts/, to inline into a page.
 def asset_text_read(name: str) -> str:
     return _renderer.asset_read(name)
+
+
+# diff_share_of - A diff share, a change against its own baseline count.
+def diff_share_of(delta: int, baseline: int | None) -> float:
+    return _renderer.number_format.diff_share_of(delta, baseline)
 
 
 # heat_of_share - Turn a share into a position on the heat ramp.

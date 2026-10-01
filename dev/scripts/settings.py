@@ -9,7 +9,9 @@ from typing import NoReturn, get_origin, get_type_hints
 
 # What the report's one shared copy of the theme is written as: written once
 # at the report root and linked, never inlined. Each page links what it uses.
+ASSET_CALLERS_SCRIPT_NAME = "callers.js"
 ASSET_ERROR_OVERLAY_SCRIPT_NAME = "error_overlay.js"
+ASSET_FLAME_GRAPH_SCRIPT_NAME = "flame_graph.js"
 ASSET_FRAME_SCRIPT_NAME = "frame.js"
 ASSET_HEAT_MAP_SCRIPT_NAME = "heatmap.js"
 ASSET_HEAT_MAP_STYLESHEET_NAME = "heatmap.css"
@@ -24,9 +26,9 @@ ASSET_SETTINGS_SCRIPT_NAME = "settings.js"
 
 # The four scripts/ files a generator reads as a template, each holding the
 # markers it substitutes into. Read but never shared into a report.
-ASSET_TEMPLATE_FLAME_GRAPH_BOOTSTRAP_NAME = "flame_graph.js"
 ASSET_TEMPLATE_FLAME_GRAPH_PAGE_NAME = "flame_graph.html"
 ASSET_TEMPLATE_HEAT_MAP_PAGE_NAME = "heatmap.html"
+ASSET_TEMPLATE_OVERVIEW_PAGE_NAME = "overview.html"
 ASSET_TEMPLATE_SETTINGS_HANDLER_NAME = "settings.js"
 
 ASSET_THEME_SCRIPT_NAME = "theme.js"
@@ -55,6 +57,10 @@ CALLERS_TIME_SUFFIX_SECONDS: dict[str, float] = {
 # How many functions the callers page's top table lists.
 CALLERS_TOP_FUNCTION_ROWS = 50
 
+# The callers view's key, an address's view for a test's own page at
+# <test>/index.html. Its label is ui_strings.js's str_view_callers.
+CALLERS_VIEW_KEY = "callers"
+
 # Every counter callgrind never records, as the recorded ones it sums from
 # and each one's coefficient. Nothing stores one.
 DERIVED_COUNTER_TERMS: dict[str, dict[str, int]] = {
@@ -82,24 +88,26 @@ DIFF_CALLER_COUNTS_FILE_SUFFIX = ".callers.json"
 # one must fail.
 FLAME_GRAPH_EXPORTER_NAME = "dev/scripts/trace_to_speedscope.py"
 
+# The localProfilePath a flame graph address names: speedscope defines its
+# loader only when the address holds one, and finds nothing at the name.
+FLAME_GRAPH_LOCAL_PROFILE_PATH = "profile"
+
 # The most complete calls one trace keeps, cut at the top of the current
 # TESTS_C's 79-202 range. Retune if a test's shape changes.
 FLAME_GRAPH_MAX_RECORDED_CALLS = 200
 
-# All a per-test flame graph directory may hold: its page and its profile.
-# Everything else is the shared bundle at the report root.
-FLAME_GRAPH_PAGE_FILE_NAMES = ("index.html", "profile.js")
-
-# What the bootstrap plus its embedded profile gets written as.
-FLAME_GRAPH_PROFILE_SCRIPT_NAME = "profile.js"
+# The flame graph page's directory of profile scripts, one <test>.js per
+# traced test, each adding its {name, base64} to the global under its test.
+FLAME_GRAPH_PROFILE_DIR_NAME = "profiles"
+FLAME_GRAPH_PROFILE_GLOBAL_NAME = "report_flame_graph_profiles"
 
 # How the flame graph page polls for speedscope, which defines its global
 # only once its script ran. The two multiply into the failure's seconds.
 FLAME_GRAPH_STARTUP_POLL_DELAY_MS = 50
 FLAME_GRAPH_STARTUP_POLL_MAX_ATTEMPTS = 200
 
-# The flame graph view a callers page links, as key, link label, page path.
-# Linked only where a trace was recorded. The key is a boundary name.
+# The flame graph view as key, label, and its one page's path from the report
+# root. A full report has that view, a test only where a trace was recorded.
 FLAME_GRAPH_VIEW_ENTRY: tuple[str, str, str] = (
     "flame-graph",
     "flame graph",
@@ -119,10 +127,6 @@ HEAT_MAP_HOME_LINES_SOURCE_SNIPPET_MAX_CHARS = 110
 # Rows in each of the two home tables.
 HEAT_MAP_HOME_TABLE_MAX_ROWS = 60
 
-# The shortest file that gets a minimap at all. A file under this many lines
-# fits on screen, so a scaled-down copy of it beside the source adds nothing.
-HEAT_MAP_MINIMAP_SHOWN_ABOVE_FILE_LINES = 40
-
 # The minimap's fixed column scale, the same 80 the source view uses. It is
 # never widened to the file's longest line.
 HEAT_MAP_MINIMAP_SOURCE_WIDTH_CHARS = 80
@@ -130,6 +134,11 @@ HEAT_MAP_MINIMAP_SOURCE_WIDTH_CHARS = 80
 # Smallest the minimap's viewport box may be drawn, in pixels, so the box
 # marking what is on screen stays visible in a very long file.
 HEAT_MAP_MINIMAP_VIEWPORT_BOX_SMALLEST_PX = 8
+
+# The heat map page's directory of model scripts, one <test>.js per test,
+# the merged one too, each adding its model to the global under its test.
+HEAT_MAP_MODEL_DIR_NAME = "data"
+HEAT_MAP_MODEL_GLOBAL_NAME = "report_heat_map_models"
 
 # The counters the heat map shows beside the selected one, in column order.
 # One the run cannot supply is left out, so naming an unrecorded one is free.
@@ -152,8 +161,8 @@ HEAT_MAP_TREE_ALWAYS_LISTED_DIRS = ("lib", "include", "src", "tests/perf")
 # render, so a reader opens on the code that matters.
 HEAT_MAP_TREE_AUTO_EXPAND_ABOVE_SHARE = 0.05
 
-# The heat map view a callers page links, as key, label, page path. The
-# label is its menu button's and its title's. Every test has one.
+# The heat map view as key, label, and its one page's path from the report
+# root. The label is its menu button's and its title's. Every test has one.
 HEAT_MAP_VIEW_ENTRY: tuple[str, str, str] = (
     "heat-map",
     "heatmap",
@@ -164,19 +173,20 @@ HEAT_MAP_VIEW_ENTRY: tuple[str, str, str] = (
 # drag fires resize continuously, and every frame is what this avoids.
 LAYOUT_RESIZE_SETTLE_DELAY_MS = 120
 
-# Each numbered menu button's number, its text's first word and its key, by
-# the name in its id, menu-<name>-button-. menu_render orders the row.
-MENU_BUTTON_NUMBERS: dict[str, int] = {
-    "overview": 1,
-    "test": 2,
-    "file": 3,
-    "function": 4,
-    "heat-map": 5,
-    "callers": 6,
-    "reset": 7,
-    "help": 8,
-    "scale": 9,
-}
+# Each numbered menu button by the name in its id, menu-<name>-button-, in
+# bar order. Its place is its number and key, 1 to 9 then 0, shown or not.
+MENU_BUTTON_ORDER: tuple[str, ...] = (
+    "overview",
+    "test",
+    "file",
+    "function",
+    "heat-map",
+    "callers",
+    "flame-graph",
+    "reset",
+    "help",
+    "scale",
+)
 
 # The keys an open pulldown answers, which a framed page sends up while the
 # tests one is open, as KeyboardEvent.key names.
@@ -237,6 +247,7 @@ REPORT_SOURCES_DIR_NAME = "sources"
 # Every localStorage key a report owns, exact keys and shared prefixes. One
 # missing from both outlives every bump. Browser keys, so boundary names.
 STORAGE_OWNED_KEYS: tuple[str, ...] = (
+    "heat.counter",
     "heat.scale",
     "heat.sort",
     "view.scale",
@@ -245,7 +256,7 @@ STORAGE_OWNED_PREFIXES: tuple[str, ...] = ("split.",)
 
 # What a report writes under STORAGE_VERSION_KEY, a bare string, not JSON.
 # Anything but exactly it sweeps every owned key: that is how a bump rolls out.
-STORAGE_VERSION = "perf2html v3"
+STORAGE_VERSION = "perf2html v4"
 STORAGE_VERSION_KEY = "perf2html.version"
 
 # Each palette colour and the roles it paints, one role under one colour.
@@ -263,15 +274,22 @@ STYLE_COLOR_PAIR_ENTRIES: dict[str, list[str]] = {
         "page-scrollbar-thumb-bg-dim-",
     ],
     "#F5F6FA": [
+        "callers-collapsed-section-title-focus-fg-",
         "callers-heat-cell-on-dark-fg-",
         "heat-map-heat-cell-on-dark-fg-",
         "heat-map-menu-field-fg-",
         "heat-map-source-file-header-statistic-share-fg-",
         "heat-map-source-line-detail-function-name-fg-",
+        "heat-map-source-table-row-focus-fg-",
+        "heat-map-source-ticker-tape-entry-focus-fg-",
+        "heat-map-tree-node-focus-fg-",
         "menu-button-current-bg-",
+        "menu-button-focus-bg-",
         "menu-strip-fg-",
         "menu-title-fg-",
         "page-body-fg-",
+        "page-link-focus-fg-",
+        "page-table-row-focus-fg-",
         "screenshot-label-fg-",
     ],
     "#DCDDE1": [
@@ -301,16 +319,24 @@ STYLE_COLOR_PAIR_ENTRIES: dict[str, list[str]] = {
     "#FBC531": [],
     "#E1B12C": [],
     "#7F8FA6": [],
-    "#718093": [
-        "menu-strip-bg-dim-",
-    ],
+    "#718093": [],
     "#273C75": [
+        "callers-collapsed-section-log-box-focus-bg-",
+        "callers-collapsed-section-title-focus-bg-",
+        "heat-map-main-focus-bg-",
+        "heat-map-menu-field-focus-bg-",
         "heat-map-source-file-header-bg-",
         "heat-map-source-table-column-title-bg-",
+        "heat-map-source-table-row-focus-bg-",
         "heat-map-source-ticker-tape-bg-",
+        "heat-map-source-ticker-tape-entry-focus-bg-",
+        "heat-map-tree-node-focus-bg-",
         "heat-map-tree-node-selected-bg-",
+        "heat-map-tree-resize-handle-focus-bg-",
         "menu-button-bg-",
         "menu-pulldown-entry-current-bg-",
+        "page-link-focus-bg-",
+        "page-table-row-focus-bg-",
     ],
     "#192A56": [
         "callers-collapsed-section-log-box-bg-dim-",
@@ -319,28 +345,26 @@ STYLE_COLOR_PAIR_ENTRIES: dict[str, list[str]] = {
         "heat-map-menu-strip-bg-dim-",
         "heat-map-source-line-detail-bg-dim-",
         "menu-button-current-fg-dim-",
+        "menu-button-focus-fg-dim-",
         "menu-pulldown-entry-highlighted-fg-dim-",
         "menu-pulldown-entry-list-bg-dim-",
         "page-table-column-title-bg-dim-",
     ],
     "#487EB0": [],
-    "#40739E": [
-        "menu-title-bg-dim-",
-    ],
+    "#40739E": [],
     "#353B48": [
-        "heat-map-source-line-detail-derived-counter-row-bg-",
         "heat-map-source-ticker-tape-entry-bg-",
         "page-table-alternate-column-bg-",
     ],
     "#2F3640": [
         "callers-heat-cell-on-bright-fg-dim-",
-        "callers-overview-view-frame-bg-dim-",
         "heat-map-heat-cell-on-bright-fg-dim-",
         "heat-map-main-bg-dim-",
         "heat-map-minimap-bg-dim-",
-        "heat-map-source-line-detail-recorded-counter-row-bg-dim-",
         "heat-map-source-line-detail-table-bg-dim-",
-        "menu-field-bg-dim-",
+        "menu-strip-bg-dim-",
+        "menu-title-bg-dim-",
+        "overview-view-frame-bg-dim-",
         "page-body-bg-dim-",
         "page-scrollbar-corner-bg-dim-",
         "page-scrollbar-track-bg-dim-",
@@ -367,8 +391,8 @@ STYLE_DESIGN_FONT_FIT_PROPERTY = "--design-font-fit-"
 # multiplies.
 STYLE_DESIGN_FONT_SIZE_PX = 12
 
-# Below this window width design_scale_apply() stops shrinking the zoom
-# further, so the browser's own horizontal scrollbar appears instead.
+# Below this window width design_scale_apply() stops shrinking the zoom, and
+# an unframed page's root keeps the design width: the window scrolls sideways.
 STYLE_DESIGN_MINIMUM_WINDOW_WIDTH_PX = 1280
 
 # What the scale bar zooms the main page contents by on an untouched page,
@@ -447,6 +471,10 @@ STYLE_PAGE_FONT_FAMILY = (
     'Monaco, Menlo, "DejaVu Sans Mono", "Liberation Mono", Consolas, monospace'
 )
 
+# Design pixels one arrow key moves a focused pane splitter's pane edge by,
+# five design ch.
+STYLE_PANE_SPLITTER_KEY_STEP_PX = 36
+
 # Spaces added to every table column beyond its widest cell.
 STYLE_TABLE_COLUMN_EXTRA_WIDTH_CHARS = 3
 
@@ -465,7 +493,6 @@ STYLE_TABLE_LOCATION_COLUMN_MAX_CHARS = 48
 STYLE_VALUE_ENTRIES: dict[str, str] = {
     "callers-collapsed-section-file-name-max-width-": "96ch",
     "callers-collapsed-section-log-box-max-height-share-": "0.6",
-    "callers-collapsed-section-raw-data-list-padding-left-": "2ch",
     "heat-map-band-z-index-": "2",
     "heat-map-menu-column-gap-": "1ch",
     "heat-map-menu-search-box-width-": "36ch",
@@ -514,6 +541,20 @@ THEME_TIME_UNIT_ENTRIES: tuple[tuple[str, float], ...] = (
     ("ps", 1e-12),
 )
 
+# The keys a focused tree, table row, pane splitter, ticker tape, line detail
+# or link answers, as KeyboardEvent.key names, click the key a link lacks.
+WIDGET_KEY_NAMES: dict[str, str] = {
+    "activate": "Enter",
+    "click": " ",
+    "close": "Escape",
+    "down": "ArrowDown",
+    "first": "Home",
+    "last": "End",
+    "left": "ArrowLeft",
+    "right": "ArrowRight",
+    "up": "ArrowUp",
+}
+
 
 # The whole list of settings, taken at the line between them and the
 # reader's own constants, after the shell's are bound and before any of those.
@@ -527,9 +568,8 @@ def _is_setting_name(name: str) -> bool:
     return bool(bare) and bare[0].isupper() and bare.isupper()
 
 
-# manifest_table's line width: the dev/ 79-column source limit, unrelated to
-# any page's own width settings.
-_MANIFEST_TABLE_LINE_CHARS = 79
+# manifest_table's spaces between the label column and the value.
+_MANIFEST_TABLE_COLUMN_GAP_CHARS = 2
 
 # The scalar types the type check tests exactly. bool sits before int, being
 # an int subclass, so an int annotation must not accept True.
@@ -817,40 +857,17 @@ class SettingsWriter:
         scope = globals()
         return {name: scope[name] for name in sorted(_SETTING_NAMES)}
 
-    # The manifest as an untitled markdown table: header ["", version], each
-    # row split at its first "=", right column wrapped at the 79-col limit.
+    # The manifest as plain lines, the version under an empty label, then
+    # each row split at its first "=", labels padded to one column. No wrap.
     def manifest_table(self, lines: Sequence[str]) -> str:
-        version, rows = lines[0], [line.partition("=") for line in lines[1:]]
-        left_width = max([len(version)] + [len(label) for label, _, _ in rows])
-        right_width = _MANIFEST_TABLE_LINE_CHARS - 7 - left_width
-        out = [
-            self.manifest_table_row("", version, left_width, right_width),
-            self.manifest_table_rule(left_width, right_width),
-        ]
-        for label, _, value in rows:
-            first = True
-            while value or first:
-                out.append(
-                    self.manifest_table_row(
-                        label if first else "",
-                        value[:right_width],
-                        left_width,
-                        right_width,
-                    )
-                )
-                value = value[right_width:]
-                first = False
-        return "\n".join(out)
-
-    # One manifest_table row, its label and value cells padded to width.
-    def manifest_table_row(
-        self, label: str, value: str, left_width: int, right_width: int
-    ) -> str:
-        return f"| {label.ljust(left_width)} | {value.ljust(right_width)} |"
-
-    # One manifest_table rule row, dashes the width of each column.
-    def manifest_table_rule(self, left_width: int, right_width: int) -> str:
-        return f"|{'-' * (left_width + 2)}|{'-' * (right_width + 2)}|"
+        rows = [("", "", lines[0])]
+        rows += [line.partition("=") for line in lines[1:]]
+        label_width = max(len(label) for label, _, _ in rows)
+        column_gap = " " * _MANIFEST_TABLE_COLUMN_GAP_CHARS
+        return "\n".join(
+            f"{label.ljust(label_width)}{column_gap}{value}"
+            for label, _, value in rows
+        )
 
     # Build assets/settings.js: every setting as one frozen JSON literal,
     # wholesale, with no list of what a page may see.
@@ -887,7 +904,7 @@ def load_into(module_name: str) -> None:
     _reader.load_into(module_name)
 
 
-# The manifest as an untitled markdown table, for report_complete.js.
+# The manifest as plain label and value lines, for report_complete.js.
 def manifest_table(lines: Sequence[str]) -> str:
     return _writer.manifest_table(lines)
 

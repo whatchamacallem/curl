@@ -50,18 +50,43 @@ window.ui_strings = (function () {
     str_detail_function_self: "{function}: self {self}.",
     str_detail_function_totals:
       "{function} by call count: self {self}, total {total}.",
+    str_error_diff_fall_past_baseline:
+      "a change of {0} falls past its baseline of {1}",
     str_error_flame_graph_never_started:
       "flame graph viewer did not start within {0}s",
+    str_error_flame_graph_unfiled:
+      "the flame graph script for test {0} filed no profile",
     str_error_font_refused: "the browser refused the page font",
-    str_error_hash_counter_unknown:
-      "url encodes counter this report has no column for: {0}",
+    str_error_hash_file_missing: "url names line {0} but no file",
     str_error_hash_file_unknown:
       "url encodes a file this report never profiled: {0}",
+    str_error_hash_flame_graph_missing:
+      "url encodes a test this report has no flame graph for: {0}",
+    str_error_hash_function_conflicting:
+      "url names function {0} together with a file or line",
     str_error_hash_function_unknown:
       "url encodes a function address this report never recorded: {0}",
+    str_error_hash_line_unusable:
+      "url encodes a line that is not a line number: {0}",
+    str_error_hash_part_misplaced: "url part {0} is not one view {1} reads",
+    str_error_hash_part_repeated: "url names {0} more than once",
     str_error_hash_part_unknown: "url part unrecognized: {0}",
+    str_error_hash_profile_path_missing:
+      "url names no local profile path, which the flame graph needs to start",
+    str_error_hash_test_missing: "url names no test",
+    str_error_hash_test_unknown:
+      "url encodes a test this report does not have: {0}",
+    str_error_hash_value_empty: "url part {0} holds no value",
+    str_error_hash_view_mismatch:
+      "url does not name view {0}, the one this page shows",
+    str_error_hash_view_missing: "url names test {0} but no view",
     str_error_hash_view_unknown:
       "url encodes a view this report does not have: {0}",
+    str_error_heat_map_unfiled:
+      "the heat map script for test {0} filed no model",
+    str_error_menu_button_order_long:
+      "the menu orders {0} numbered buttons, more than the {1} digit keys",
+    str_error_menu_button_unlabelled: "menu button {0} has no label",
     str_error_message_tag_unknown: "cross-frame message tag unrecognized: {0}",
     str_error_pulldown_focus_refused:
       "the browser kept focus on {0}, so keys cannot reach the pulldown",
@@ -77,10 +102,12 @@ window.ui_strings = (function () {
     str_heading_lines_by_counter: "{prefix} lines by {counter}",
     str_heading_prefix_diff: "Most changed",
     str_heading_prefix_self: "Hottest",
+    str_heat_map_main_label: "heat map view",
     str_heat_map_menu_counter: "counter:",
     str_heat_map_menu_scale: "scale:",
     str_heat_map_menu_search: "search:",
     str_heat_map_menu_tree: "tree:",
+    str_heat_map_tree_label: "files",
     str_in_function: " in {function}",
     str_line_self: "line self",
     str_menu_button: "{number} {label}",

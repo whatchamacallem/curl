@@ -4,11 +4,12 @@
 
 usage_show() {
   cat <<'EOF'
-perf2html_diff.sh [debug-flags] [baseline] [modified] [diff]
+perf2html_diff.sh [debug-flags] [--target-dir=DIR] [baseline] [modified] [diff]
     Measures nothing: Compares the counters in two profiling reports and
-    generates a diff. Directories default to
+    generates a diff. Report names default to
     ./perf2html_{baseline,modified,diff}_report. Both baseline and modified
-    must be a perf2html.sh report. A diff can't be diffed.
+    must be a perf2html.sh report. And a diff can't be re-diffed.
+    --target-dir=DIR  Default directory for reports (default $PWD).
     --txz             Create .txz archives of all reports generated.
                       .txz files may also be used as inputs.
 
@@ -71,45 +72,20 @@ input_archives_clean() {
 
 # args_parse - reads the flags and the three directories, all absolute
 args_parse() {
-  _KEEP_ARTIFACTS=0
-  _REGENERATE=0
-  ARTIFACTS_DIR=""
-  WRITE_REPORT_ARCHIVE=0
-  while [ $# -gt 0 ]; do
-    case "$1" in
-      -h | --help)
-        usage_show
-        exit 0
-        ;;
-      --verbose)
-        VERBOSE=$((VERBOSE + 1))
-        shift
-        ;;
-      --keep-artifacts)
-        _KEEP_ARTIFACTS=1
-        shift
-        ;;
-      --regenerate)
-        _REGENERATE=1
-        _KEEP_ARTIFACTS=1
-        shift
-        ;;
-      --txz)
-        WRITE_REPORT_ARCHIVE=1
-        shift
-        ;;
-      --artifacts=*)
-        ARTIFACTS_DIR="${1#--artifacts=}"
-        shift
-        ;;
-      -*) error_exit 2 "error: unknown option: $1" ;;
-      *) break ;;
+  shared_options_parse "$@"
+  # its own arguments are the three directories alone, so any other one
+  # starting with - is an option this script does not know
+  local _remaining_argument _report_names=()
+  for _remaining_argument in "${REMAINING_ARGUMENTS[@]}"; do
+    case "$_remaining_argument" in
+      -*) error_exit 2 "error: unknown option: $_remaining_argument" ;;
+      *) _report_names+=("$_remaining_argument") ;;
     esac
   done
-  [ "$VERBOSE" -lt "$VERBOSE_TRACE_LEVEL" ] || set -o xtrace
-  _BASE_DIR=perf2html_baseline_report
-  _MOD_DIR=perf2html_modified_report
-  _OUT_DIR=perf2html_diff_report
+  set -- "${_report_names[@]}"
+  _BASE_DIR="$REPORT_BASELINE_DIR_NAME"
+  _MOD_DIR="$REPORT_MODIFIED_DIR_NAME"
+  _OUT_DIR="$REPORT_DIFF_DIR_NAME"
   case $# in
     0) ;;
     1) _BASE_DIR="$1" ;;
@@ -129,18 +105,10 @@ args_parse() {
   esac
   local _dir
   for _dir in _BASE_DIR _MOD_DIR _OUT_DIR; do
-    printf -v "$_dir" '%s' "$(absolute_path "${!_dir}")"
+    printf -v "$_dir" '%s' "$(report_path_of "${!_dir}")"
   done
   input_archives_extract
-  if [ -z "$ARTIFACTS_DIR" ]; then
-    if [ "$_KEEP_ARTIFACTS" = 0 ] && [ "$_REGENERATE" = 0 ]; then
-      ARTIFACTS_DIR="$(mktemp -d)"
-      log_verbose "using --artifacts=\"$ARTIFACTS_DIR\""
-    else
-      ARTIFACTS_DIR="$_TARGET_DIR/$ARTIFACTS_NAME"
-    fi
-  fi
-  ARTIFACTS_DIR="$(absolute_path "$ARTIFACTS_DIR")"
+  artifacts_dir_resolve "$(dirname "$_OUT_DIR")"
   # each report owns one subdirectory of the artifacts dir, so no run can
   # flush or keep a sibling report's recordings
   ARTIFACTS_DIR="$ARTIFACTS_DIR/$(basename "$_OUT_DIR")"
@@ -174,31 +142,51 @@ header_file_of() {
   echo "$_out"
 }
 
-# profiles_extract - unpack one report's archives once into the named
-# listing, synthesizing "all". Never $(...): command_run's tee lands in it.
+# timer_artifacts_find - refuses a report without exactly one timer artifacts
+# archive at its top. SETS the global its third argument names, to its path.
+timer_artifacts_find() {
+  local _dir="$1" _role="$2" _archive_pattern _found_names _reason
+  local -a _found_archives
+  _archive_pattern="$TIMER_ARTIFACTS_NAME_PREFIX*$REPORT_RAW_ARCHIVE_SUFFIX"
+  mapfile -t _found_archives < <(find "$_dir" -mindepth 1 -maxdepth 1 -type f \
+    -name "$_archive_pattern" | sort)
+  _found_names="${_found_archives[*]##*/}"
+  _reason="error: the $_role report holds ${#_found_archives[@]}"
+  _reason+=" $_archive_pattern at its top, expected 1: $_dir"
+  [ "${#_found_archives[@]}" = 1 ] || error_exit 2 \
+    "$_reason${_found_names:+: $_found_names}"
+  printf -v "$3" '%s' "${_found_archives[0]}"
+}
+
+# profiles_extract - unpack one report's timer artifacts archive into its own
+# folder and list its profiles. Never in $(...), where command_run's tee lands.
 profiles_extract() {
   # a row is "<test>", then one profile path per line, blank-line
   # terminated, so a path holding a space survives
-  local _dir="$1" _role="$2" _listing="$3"
-  local _archive _test _into _every=()
+  local _archive="$1" _role="$2" _listing="$3"
+  local _into="$ARTIFACTS_DIR/$_role.$TIMESTAMP" _root_directory _file _test
   local -a _files
+  _root_directory="$(basename "$_archive" "$REPORT_RAW_ARCHIVE_SUFFIX")"
+  _root_directory="$_into/$_root_directory"
+  rm -rf "$_into"
+  mkdir -p "$_into"
+  command_run tar xJf "$_archive" -C "$_into"
+  # the archive holds the one directory it is named after, so its profiles
+  # are there and no listing decides it
+  [ -d "$_root_directory" ] || error_exit 2 \
+    "error: $_archive holds no $(basename "$_root_directory") directory"
+  mapfile -t _files < <(find "$_root_directory" -maxdepth 1 -type f \
+    -name 'callgrind.out.*' | sort)
+  [ "${#_files[@]}" != 0 ] \
+    || error_exit 2 "error: no callgrind.out.* file in $_archive"
   : >"$_listing"
-  for _archive in "$_dir"/*/raw/*"$REPORT_RAW_ARCHIVE_SUFFIX"; do
-    [ -f "$_archive" ] || continue
-    _test="$(basename "$(dirname "$(dirname "$_archive")")")"
-    _into="$ARTIFACTS_DIR/$_role.$_test.$TIMESTAMP"
-    rm -rf "$_into"
-    mkdir -p "$_into"
-    command_run tar xJf "$_archive" -C "$_into"
-    mapfile -t _files < <(find "$_into" -maxdepth 1 -type f \
-      -name 'callgrind.out.*' | sort)
-    [ "${#_files[@]}" != 0 ] \
-      || error_exit 2 "error: no callgrind.out.* file in $_archive"
-    listing_row_write "$_listing" "$_test" "${_files[@]}"
-    _every+=("${_files[@]}")
+  # callgrind.out.<test>.<loops>: the test is the name between the two
+  for _file in "${_files[@]}"; do
+    _test="$(basename "$_file")"
+    _test="${_test#callgrind.out.}"
+    listing_row_write "$_listing" "${_test%.*}" "$_file"
   done
-  [ "${#_every[@]}" -eq 0 ] \
-    || listing_row_write "$_listing" all "${_every[@]}"
+  listing_row_write "$_listing" all "${_files[@]}"
 }
 
 # listing_row_write - appends one "<test>" row and its profile paths, one
@@ -225,11 +213,6 @@ tests_pair() {
   local _base_tests _cur_tests _name
   _base_tests="$(tests_names_of "$_BASE_LISTING")"
   _cur_tests="$(tests_names_of "$_MODIFIED_LISTING")"
-  local _holding="error: no */raw/*$REPORT_RAW_ARCHIVE_SUFFIX archive holding"
-  [ -n "$_base_tests" ] || error_exit 2 \
-    "$_holding callgrind.out.* in the baseline report: $_BASE_DIR"
-  [ -n "$_cur_tests" ] || error_exit 2 \
-    "$_holding callgrind.out.* in the modified report: $_MOD_DIR"
   local _one_sided="is in only one of the two reports, so it has no delta:"
   for _name in $(comm -3 <(echo "$_base_tests") <(echo "$_cur_tests")); do
     error_exit 2 "error: '$_name' $_one_sided $_BASE_DIR vs $_MOD_DIR"
@@ -246,11 +229,11 @@ profiles_of() {
      taking { print }' "$1"
 }
 
-# diff_one - subtracts one test and generates its callers page and heat map
+# diff_one - subtracts one test and generates its heat map model script and
+# callers page
 diff_one() {
   local _test="$1" _out="$2" _name="$3"
   local _diff_file _callers_file _file
-  local _archive
   local -a _base_files _cur_files _args
   _diff_file="$ARTIFACTS_DIR/callgrind.diff.$_name.$TIMESTAMP"
   _callers_file="$_diff_file.callers.json"
@@ -264,19 +247,15 @@ diff_one() {
   for _file in "${_cur_files[@]}"; do _args+=(--current "$_file"); done
   command_run "${_args[@]}"
 
-  heading_print "python3 callgrind_to_heatmap.py $_name --diff"
-  command_run python3 "$PERF2HTML_DIR_/scripts/callgrind_to_heatmap.py" \
-    "$_diff_file" -o "$_out/heat-map/index.html" \
-    --title "$_name / heatmap" --diff \
+  heading_print "python3 callgrind_to_heatmap.py data $_name --diff"
+  command_run python3 "$PERF2HTML_DIR_/scripts/callgrind_to_heatmap.py" data \
+    "$_diff_file" --report-dir "$_OUT_DIR" --test "$_name" --diff \
     --baseline-data "$_callers_file"
 
   heading_print "python3 build_report.py test $_name"
-  _archive="$_out/raw/$(basename "$_out")$REPORT_RAW_ARCHIVE_SUFFIX"
-  archive_write "$(basename "$_out")" "$_out" "" \
-    "$_diff_file" "$_callers_file"
   command_run python3 "$PERF2HTML_DIR_/scripts/build_report.py" test \
     "$_diff_file" -o "$_out/index.html" --test "$_name" --diff \
-    --callers-data "$_callers_file" --raw-data "$_archive"
+    --callers-data "$_callers_file"
   log_verbose "$(printf '%-13sdiff:  %s' "$_name" "$_out/index.html")"
 }
 
@@ -295,19 +274,23 @@ main() {
   local _base_recorded _mod_recorded
   _base_recorded="$(manifest_check "$_BASE_DIR" baseline)"
   _mod_recorded="$(manifest_check "$_MOD_DIR" modified)"
+  # each input's one archive is found before report_delete, so an input
+  # without one is refused with the last diff report still whole
+  timer_artifacts_find "$_BASE_DIR" baseline _BASELINE_TIMER_ARTIFACTS_ARCHIVE
+  timer_artifacts_find "$_MOD_DIR" modified _MODIFIED_TIMER_ARTIFACTS_ARCHIVE
 
   path_overlap_check "$_OUT_DIR" "diff report" \
     "$_BASE_DIR" "baseline report" \
     "$_MOD_DIR" "modified report" \
     "$ARTIFACTS_DIR" "artifacts dir"
 
-  if [ "$_REGENERATE" = 1 ] && [ ! -d "$ARTIFACTS_DIR" ]; then
+  if [ "$REGENERATE" = 1 ] && [ ! -d "$ARTIFACTS_DIR" ]; then
     error_exit 2 "error: --regenerate: no recordings at $ARTIFACTS_DIR"
   fi
 
   report_delete "$_OUT_DIR"
   # --keep-artifacts flushes stale recordings first; only --regenerate reuses
-  [ "$_REGENERATE" = 1 ] || artifacts_clean
+  [ "$REGENERATE" = 1 ] || artifacts_clean
   report_begin "$_OUT_DIR" "diff.$TIMESTAMP.log" \
     "dev/perf2html_diff.sh $TIMESTAMP: $_BASE_DIR: $_MOD_DIR: $_OUT_DIR"
 
@@ -315,8 +298,10 @@ main() {
   local -a _args
   _BASE_LISTING="$ARTIFACTS_DIR/profiles.baseline.$TIMESTAMP.txt"
   _MODIFIED_LISTING="$ARTIFACTS_DIR/profiles.modified.$TIMESTAMP.txt"
-  profiles_extract "$_BASE_DIR" baseline "$_BASE_LISTING"
-  profiles_extract "$_MOD_DIR" modified "$_MODIFIED_LISTING"
+  profiles_extract "$_BASELINE_TIMER_ARTIFACTS_ARCHIVE" baseline \
+    "$_BASE_LISTING"
+  profiles_extract "$_MODIFIED_TIMER_ARTIFACTS_ARCHIVE" modified \
+    "$_MODIFIED_LISTING"
   _tests="$(tests_pair)"
   log_verbose "$_SCRIPT $TIMESTAMP: $(basename "$_BASE_DIR"): " \
     "$(basename "$_MOD_DIR")"
@@ -328,6 +313,11 @@ main() {
     _args+=(--test "$_test_name" --diff-profile
       "$_test_name=$ARTIFACTS_DIR/callgrind.diff.$_test_name.$TIMESTAMP")
   done
+  # every test's model script has written the sources that test shows, and
+  # the one heat map page links each of them
+  heading_print "python3 callgrind_to_heatmap.py page"
+  command_run python3 "$PERF2HTML_DIR_/scripts/callgrind_to_heatmap.py" page \
+    --report-dir "$_OUT_DIR"
   heading_print "python3 build_report.py overview --diff"
   command_run python3 "$PERF2HTML_DIR_/scripts/build_report.py" overview \
     "${_args[@]}"
@@ -338,7 +328,7 @@ main() {
     "modified=$(path_display "$_MOD_DIR")" \
     "baseline_recorded=$_base_recorded" \
     "modified_recorded=$_mod_recorded"
-  if [ "$_KEEP_ARTIFACTS" != 1 ]; then artifacts_clean; fi
+  if [ "$KEEP_ARTIFACTS" != 1 ]; then artifacts_clean; fi
   input_archives_clean
 }
 

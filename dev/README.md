@@ -5,6 +5,13 @@ reports about the results.
 
 ## Using A Report
 
+The main menu can be operated with the keyboard using the numbers each button
+is labelled with. Tab also moves focus forward through interactive elements
+(links, buttons, inputs), and Shift+Tab moves backward. This is the primary
+navigation system for keyboard-only users, including screen reader users and
+switch device users. Enter or Space activates the focused element, and arrow
+keys control widgets
+
 The HTML will open straight from disk, with no server. Start by opening the top
 level `index.html` in the report and then bookmarks will work.
 
@@ -166,7 +173,8 @@ instructions looks slower than it is, and the traced run is slower than the
 perf log's native one. Use the perf log for speed and the flame graph for
 shape: what calls what, in which order, and which call was the slow one. The
 callers page's "trace log" has the commands and the traced run's own output,
-and "raw data" links the same profile as a speedscope JSON file.
+and the overview's "raw data" archive holds the same profile as a speedscope
+JSON file.
 
 The merged "all" report and a diff have no flame graph: a trace neither adds up
 nor subtracts.

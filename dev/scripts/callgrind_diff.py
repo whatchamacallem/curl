@@ -34,7 +34,7 @@ class CallersDoc(TypedDict):
     # per callee, its changed callers, biggest cost change first
     callers: dict[str, list[CallerDelta]]
     # what every share divides by: the baseline cost vector per
-    # "<function>" and per "<function>\n<file>\n<line>"
+    # "<function>" and per "<file>\n<line>"
     baseline: dict[str, callgrind.Costs]
     # the baseline's summed cost vector, the overview's denominator
     baselineTotal: callgrind.Costs
@@ -59,8 +59,8 @@ class CallgrindDiff:
         # where the synthesized callers diff goes
         callers_output: str
 
-    # Baseline cost per function and per line -- what each share divides by,
-    # keyed as the subtraction is so an inlined body stays off its neighbour.
+    # Baseline cost per function and per line -- what each share divides by.
+    # A line's is every function's on it, as the page's line row adds up.
     def baseline_costs(
         self, baseline: callgrind.LineProfile
     ) -> dict[str, callgrind.Costs]:
@@ -69,12 +69,14 @@ class CallgrindDiff:
         for function, costs in baseline.function_self.items():
             if any(costs):
                 out[function] = callgrind.costs_fit(costs, width)
-        for function, lines in baseline.function_lines.items():
-            for key, costs in lines.items():
-                if any(costs):
-                    out[self.baseline_key(baseline, function, key)] = (
-                        callgrind.costs_fit(costs, width)
-                    )
+        lines: dict[str, callgrind.Costs] = {}
+        for key, costs in baseline.line_self.items():
+            callgrind.costs_accumulate(
+                lines, self.baseline_key(baseline, key), costs
+            )
+        for line_key, costs in lines.items():
+            if any(costs):
+                out[line_key] = callgrind.costs_fit(costs, width)
         return out
 
     # Baseline cost per display path -- the whole file's, not the changed
@@ -102,11 +104,10 @@ class CallgrindDiff:
     def baseline_key(
         self,
         baseline: callgrind.LineProfile,
-        function: str,
         key: callgrind.SourceLine,
     ) -> str:
         return callgrind.baseline_line_key(
-            function, self.display_path_of(baseline, key.file), key.line
+            self.display_path_of(baseline, key.file), key.line
         )
 
     # Read both sides, write the delta, then the synthesized callers diff.

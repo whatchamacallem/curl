@@ -1,3 +1,37 @@
+.callers-collapsed-section-file-name- {
+  color: var(--callers-collapsed-section-file-name-fg-dim-);
+  max-width: var(--callers-collapsed-section-file-name-max-width-);
+}
+
+pre.callers-collapsed-section-log-box- {
+  background: var(--callers-collapsed-section-log-box-bg-dim-);
+  max-height: calc(
+    var(--callers-collapsed-section-log-box-max-height-share-) *
+      var(--design-viewport-height-)
+  );
+  overflow: auto;
+}
+/* the browser makes a log box that scrolls a tab stop of its own */
+pre.callers-collapsed-section-log-box-:focus-visible {
+  background: var(--callers-collapsed-section-log-box-focus-bg-);
+}
+pre.callers-collapsed-section-log-box-::-webkit-scrollbar-track,
+pre.callers-collapsed-section-log-box-::-webkit-scrollbar-corner {
+  background: var(--callers-collapsed-section-log-box-scrollbar-bg-dim-);
+}
+
+.callers-collapsed-section-title- {
+  cursor: pointer;
+  color: var(--callers-collapsed-section-title-fg-dim-);
+}
+.callers-collapsed-section-title-:focus-visible {
+  background: var(--callers-collapsed-section-title-focus-bg-);
+  color: var(--callers-collapsed-section-title-focus-fg-);
+}
+.callers-collapsed-section-title-::marker {
+  color: var(--callers-collapsed-section-title-marker-fg-dim-);
+}
+
 /* one font on every box, colour the only difference: no weight, slant,
    line, ring or border */
 *,
@@ -13,6 +47,18 @@
 [hidden] {
   display: none !important;
 }
+pre {
+  margin: 0;
+  white-space: pre;
+  overflow-x: auto;
+}
+select,
+input {
+  color: var(--heat-map-menu-field-fg-);
+  padding: 0;
+  border-radius: 0;
+}
+
 html,
 body {
   height: 100%;
@@ -27,41 +73,8 @@ body {
   font-size: calc(var(--design-font-size-px-) * var(--design-font-fit-));
   line-height: var(--page-body-line-height-);
 }
-a {
-  color: var(--page-link-fg-);
-}
-.page-heading- {
-  color: var(--page-heading-fg-dim-);
-}
-.callers-collapsed-section-file-name- {
-  color: var(--callers-collapsed-section-file-name-fg-dim-);
-  max-width: var(--callers-collapsed-section-file-name-max-width-);
-}
-pre {
-  margin: 0;
-  white-space: pre;
-  overflow-x: auto;
-}
-
-select,
-input {
-  color: var(--heat-map-menu-field-fg-);
-  background: var(--menu-field-bg-dim-);
-  padding: 0;
-  border-radius: 0;
-}
-
-.menu-strip- {
-  display: flex;
-  flex-wrap: nowrap;
-  align-items: center;
-  flex: none;
-  background: var(--heat-map-menu-strip-bg-dim-);
-  overflow: hidden;
-}
-
-html:has(body.frame_),
-body.frame_ {
+/* the root alone scrolls sideways; a table too wide goes off the edge */
+html:has(body.frame_) {
   overflow-x: auto;
   overflow-y: hidden;
 }
@@ -73,20 +86,48 @@ body.frame_ {
 body.frame_ > main {
   flex: 1;
   min-height: 0;
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 body.frame_ > iframe {
   flex: 1;
   min-height: 0;
   width: 100%;
-  background: var(--callers-overview-view-frame-bg-dim-);
+  background: var(--overview-view-frame-bg-dim-);
 }
+
+.page-heading- {
+  color: var(--page-heading-fg-dim-);
+}
+
+a {
+  color: var(--page-link-fg-);
+}
+a:focus-visible {
+  background: var(--page-link-focus-bg-);
+  color: var(--page-link-focus-fg-);
+}
+
+::-webkit-scrollbar {
+  width: var(--page-scrollbar-thickness-);
+  height: var(--page-scrollbar-thickness-);
+}
+::-webkit-scrollbar-track {
+  background: var(--page-scrollbar-track-bg-dim-);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--page-scrollbar-thumb-bg-dim-);
+  border-radius: 0;
+}
+::-webkit-scrollbar-corner {
+  background: var(--page-scrollbar-corner-bg-dim-);
+}
+
 /* the box a page's tables sit in is a container, so 100cqw in a <col> is
    exactly the room its own table has */
 .page_ {
   container-type: inline-size;
 }
-
 .table-box- {
   position: relative;
   width: fit-content;
@@ -130,59 +171,10 @@ table.columns_ .numeric_ {
 table.columns_ .dimmed_ {
   color: var(--page-table-dimmed-text-fg-dim-);
 }
-
-/* the list marker is drawn in the padding: one glyph and one blank */
-ul.callers-collapsed-section-raw-data-list- {
-  margin: 0;
-  padding-left: var(--callers-collapsed-section-raw-data-list-padding-left-);
-}
-
-.callers-collapsed-section-title- {
-  cursor: pointer;
-  color: var(--callers-collapsed-section-title-fg-dim-);
-}
-.callers-collapsed-section-title-::marker {
-  color: var(--callers-collapsed-section-title-marker-fg-dim-);
-}
-pre.callers-collapsed-section-log-box- {
-  background: var(--callers-collapsed-section-log-box-bg-dim-);
-  max-height: calc(
-    var(--callers-collapsed-section-log-box-max-height-share-) *
-      var(--design-viewport-height-)
-  );
-  overflow: auto;
-}
-
-/* no room of its own: its hit area's negative margins overlap both panes */
-.heat-map-tree-resize-handle- {
-  position: relative;
-  z-index: var(--heat-map-tree-resize-handle-z-index-);
-  flex: none;
-  width: var(--heat-map-tree-resize-handle-width-);
-  margin-left: var(--heat-map-tree-resize-handle-margin-left-);
-  margin-right: var(--heat-map-tree-resize-handle-margin-right-);
-  cursor: col-resize;
-  touch-action: none;
-}
-
-::-webkit-scrollbar {
-  width: var(--page-scrollbar-thickness-);
-  height: var(--page-scrollbar-thickness-);
-}
-::-webkit-scrollbar-track {
-  background: var(--page-scrollbar-track-bg-dim-);
-}
-::-webkit-scrollbar-thumb {
-  background: var(--page-scrollbar-thumb-bg-dim-);
-  border-radius: 0;
-}
-::-webkit-scrollbar-corner {
-  background: var(--page-scrollbar-corner-bg-dim-);
-}
-
-pre.callers-collapsed-section-log-box-::-webkit-scrollbar-track,
-pre.callers-collapsed-section-log-box-::-webkit-scrollbar-corner {
-  background: var(--callers-collapsed-section-log-box-scrollbar-bg-dim-);
+/* a row the keyboard focused: its cells' inline heat colours give way */
+table.columns_ > tbody > tr:focus-visible > td {
+  background: var(--page-table-row-focus-bg-) !important;
+  color: var(--page-table-row-focus-fg-) !important;
 }
 
 .screenshot-label- {

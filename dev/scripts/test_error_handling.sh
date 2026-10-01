@@ -54,11 +54,16 @@ _TEST_ERROR_ARCHIVE_SUFFIX=.txz
 _TEST_ERROR_CALLGRIND_LOOPS=200
 # enough of an archive for its xz header to read and no more
 _TEST_ERROR_TRUNCATED_BYTES=1024
+_TEST_ERROR_TIMER_ARTIFACTS_PREFIX=timer-artifacts-
 _TEST_ERROR_TIMING_FILE_PREFIX=perf-stat
 
 # the row a report's MANIFEST.txt records its checksum on, re-recorded on a
 # copy whose files a testcase changed on purpose
 _TEST_ERROR_MANIFEST_CHECKSUM_LABEL=checksum
+
+# the first line of a diff report's MANIFEST.txt, which the uncached diff's
+# output is verified against
+_TEST_ERROR_MANIFEST_VERSION_DIFF='curl/perf2html_diff.sh v1'
 
 # every copy and fixture, under build/ as it is no output (dev/.gitignore):
 # replaced by each run, deleted once every testcase passed, kept by a fail
@@ -91,6 +96,34 @@ test_error_manifest_checksum_rewrite() {
   _checksum="$(checksum_compute "$_dir")"
   _row="$_TEST_ERROR_MANIFEST_CHECKSUM_LABEL=$_checksum"
   sed -i "s/^$_TEST_ERROR_MANIFEST_CHECKSUM_LABEL=.*/$_row/" "$_manifest"
+}
+
+# test_error_timer_artifacts_of - the one timer artifacts archive at the top
+# of a report, echoed as the one a testcase edits, so no name is spelled here.
+test_error_timer_artifacts_of() {
+  local _found_archives=()
+  local _archive_pattern="$_TEST_ERROR_TIMER_ARTIFACTS_PREFIX*"
+  _archive_pattern+="$_TEST_ERROR_ARCHIVE_SUFFIX"
+  mapfile -t _found_archives < <(find "$1" -mindepth 1 -maxdepth 1 -type f \
+    -name "$_archive_pattern" | LC_ALL=C sort)
+  [ "${#_found_archives[@]}" = 1 ] || test_fail test_error_timer_artifacts_of \
+    "${#_found_archives[@]} $_archive_pattern at the top of $1, expected 1"
+  echo "${_found_archives[0]}"
+}
+
+# test_error_first_profile_drop - repack a timer artifacts archive without
+# its first callgrind file, sorted, so no test name is spelled here.
+test_error_first_profile_drop() {
+  local _archive="$1" _extracted_directory="$2" _root_name _first_profile
+  _root_name="$(basename "$_archive" "$_TEST_ERROR_ARCHIVE_SUFFIX")"
+  mkdir "$_extracted_directory"
+  tar -xJf "$_archive" -C "$_extracted_directory"
+  _first_profile="$(find "$_extracted_directory/$_root_name" -maxdepth 1 \
+    -type f -name 'callgrind.out.*' | LC_ALL=C sort | head -n 1)"
+  [ -n "$_first_profile" ] || test_fail test_error_first_profile_drop \
+    "no callgrind.out.* in $(path_shown "$_archive")"
+  rm "$_first_profile"
+  tar -cJf "$_archive" -C "$_extracted_directory" "$_root_name"
 }
 
 # test_error_relink_regenerate_run - touch the baseline's perf binary, run
@@ -251,17 +284,42 @@ test_error_unknown_option_tests() {
   test_failure_expect clean_unknown_option 2 -- \
     "$_DEV/clean.sh" --bogus-option
 
-  # perf2html.sh and the batch take every unknown argument as a cmake flag,
-  # by design, so only the diff among the three is asked
+  # perf2html.sh and the batch take every other argument as a cmake flag,
+  # the batch refusing --report=, so only the diff among the three is asked
   test_failure_expect diff_unknown_option 2 -- \
     "$_DEV/perf2html_diff.sh" \
     "--artifacts=$_TEST_ERROR_SCRATCH/artifacts_unknown" --bogus-option
+}
+
+# test_error_diff_uncached_test - perf2html_diff.sh on two report copies and
+# an artifacts dir not made yet, the reports alone making a whole diff.
+test_error_diff_uncached_test() {
+  local _baseline="$1" _modified="$2" _manifest_fault _raw_data
+  local _diff_report="$_TEST_ERROR_SCRATCH/out_uncached"
+  local _checksum_label="$_TEST_ERROR_MANIFEST_CHECKSUM_LABEL"
+  test_failure_expect diff_uncached 0 -- \
+    "$_DEV/perf2html_diff.sh" \
+    "--artifacts=$_TEST_ERROR_SCRATCH/artifacts_uncached" \
+    "$_baseline" "$_modified" "$_diff_report"
+  # the one door deciding a dir is a report, given this file's own spelling
+  # of the checksum row that door reads
+  _manifest_fault="$(REPORT_MANIFEST_CHECKSUM_LABEL="$_checksum_label" \
+    manifest_fault_of "$_diff_report" "$_TEST_ERROR_MANIFEST_VERSION_DIFF")"
+  [ -z "$_manifest_fault" ] \
+    || test_fail diff_uncached_manifest "$_manifest_fault"
+  echo "ok diff_uncached_manifest"
+  _raw_data="$(find "$_diff_report" \( -name raw \
+    -o -name "*$_TEST_ERROR_ARCHIVE_SUFFIX" \) -print -quit)"
+  [ -z "$_raw_data" ] || test_fail diff_uncached_no_raw_data \
+    "a diff report holds raw data: $(path_shown "$_raw_data")"
+  echo "ok diff_uncached_no_raw_data"
 }
 
 # test_error_diff_tests - perf2html_diff.sh refusing an input, every one
 # before it writes a page. Args: the clean copies of baseline, modified, diff.
 test_error_diff_tests() {
   local _baseline="$1" _modified="$2" _diff="$3" _copy _archive
+  local _second_archive
   local _tool="$_DEV/perf2html_diff.sh"
   local _scratch="$_TEST_ERROR_SCRATCH"
 
@@ -314,16 +372,39 @@ test_error_diff_tests() {
     "$_tool" "--artifacts=$_scratch/artifacts_edited_page" \
     "$_baseline" "$_copy" "$_scratch/out_edited_page"
 
-  # one testcase's archive gone and the checksum re-recorded over what is
-  # left, so the pairing, not the checksum, is what refuses
+  # one testcase's profile gone from the archive and the checksum re-recorded
+  # over what is left, so the pairing, not the checksum, is what refuses
   _copy="$(test_report_copy "$_scratch/modified_one_sided" \
     "$_modified")"
-  _archive="$(test_archive_first_of "$_copy")"
-  rm "$_archive"
+  _archive="$(test_error_timer_artifacts_of "$_copy")"
+  test_error_first_profile_drop "$_archive" "$_scratch/one_sided_unpacked"
   test_error_manifest_checksum_rewrite "$_copy"
   test_failure_expect diff_one_sided_test 2 -- \
     "$_tool" "--artifacts=$_scratch/artifacts_one_sided" \
     "$_baseline" "$_copy" "$_scratch/out_one_sided"
+
+  # the timer artifacts archive gone and the checksum re-recorded, so the
+  # missing archive, not the checksum, is what refuses
+  _copy="$(test_report_copy "$_scratch/modified_no_timer_artifacts" \
+    "$_modified")"
+  _archive="$(test_error_timer_artifacts_of "$_copy")"
+  rm "$_archive"
+  test_error_manifest_checksum_rewrite "$_copy"
+  test_failure_expect diff_no_timer_artifacts 2 -- \
+    "$_tool" "--artifacts=$_scratch/artifacts_no_timer_artifacts" \
+    "$_baseline" "$_copy" "$_scratch/out_no_timer_artifacts"
+
+  # a second archive beside the first, the checksum re-recorded: which one
+  # holds the recordings is nothing a diff guesses at
+  _copy="$(test_report_copy "$_scratch/modified_two_timer_artifacts" \
+    "$_modified")"
+  _archive="$(test_error_timer_artifacts_of "$_copy")"
+  _second_archive="${_archive%"$_TEST_ERROR_ARCHIVE_SUFFIX"}.second"
+  cp "$_archive" "$_second_archive$_TEST_ERROR_ARCHIVE_SUFFIX"
+  test_error_manifest_checksum_rewrite "$_copy"
+  test_failure_expect diff_two_timer_artifacts 2 -- \
+    "$_tool" "--artifacts=$_scratch/artifacts_two_timer_artifacts" \
+    "$_baseline" "$_copy" "$_scratch/out_two_timer_artifacts"
 }
 
 # test_error_txz_tests - perf2html_diff.sh refusing every .txz input that is
@@ -488,8 +569,8 @@ test_error_relink_test() {
     test_error_relink_regenerate_run "$_binary" "$_reference"
 }
 
-# test_error_failure_tests_run - every failure mode, against copies in the
-# scratch dir, stopping at the first that does not refuse as it must.
+# test_error_failure_tests_run - unknown option, uncached diff, diff, txz,
+# batch, report dir, toolchain and expected behavior tests, on scratch copies.
 test_error_failure_tests_run() {
   local _target _baseline _modified _diff
   # a failed run left its fixtures here for a reader; this run's replace them
@@ -511,6 +592,7 @@ test_error_failure_tests_run() {
     "$_target/$(basename "$_TEST_ERROR_DIFF_REPORT")" \
     "$_TEST_ERROR_DIFF_REPORT")"
 
+  test_error_diff_uncached_test "$_baseline" "$_modified"
   test_error_diff_tests "$_baseline" "$_modified" "$_diff"
   test_error_txz_tests "$_baseline"
   test_error_batch_tests "$_target"

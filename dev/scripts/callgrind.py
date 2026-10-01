@@ -19,14 +19,18 @@ settings.load_into(__name__)
 Costs: TypeAlias = list[int]
 # Where a source file came from, deciding whether the heat map shows it.
 Group = Literal["repo", "system", "external"]
-# The key type of whichever table a shared accumulate helper is given.
-_Key = TypeVar("_Key")
 
 # The curl checkout, three levels up from here -- every path is
 # reported relative to it.
 REPO_ROOT = os.path.dirname(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 )
+
+# The key type of whichever table a shared accumulate helper is given.
+_Key = TypeVar("_Key")
+
+# What callgrind names code without debug info, in every object alike.
+_CALLGRIND_UNKNOWN_FILE_NAME = "???"
 
 
 # Every cached external source tree, <package>/<version> under the cache
@@ -529,7 +533,7 @@ class Callgrind:
                     raw_line[equals_index + 1 :],
                 )
                 if key in ("fl", "fi", "fe"):
-                    cur_file = names.uncompress("fl", val)
+                    cur_file = file_key_of(names.uncompress("fl", val), cur_ob)
                 elif key == "fn":
                     cur_function = names.uncompress("fn", val)
                     profile.function_home.setdefault(cur_function, cur_file)
@@ -539,7 +543,9 @@ class Callgrind:
                 elif key == "cob":
                     cur_callee_ob = names.uncompress("ob", val)
                 elif key in ("cfl", "cfi"):
-                    cur_callee_file = names.uncompress("fl", val)
+                    cur_callee_file = file_key_of(
+                        names.uncompress("fl", val), cur_callee_ob or cur_ob
+                    )
                 elif key == "cfn":
                     cur_callee_function = names.uncompress("fn", val)
                 elif key in ("jfi", "jfn"):
@@ -585,8 +591,8 @@ _profile_parser = Callgrind()
 
 # How one line's baseline slot is spelled, everywhere it is written and
 # everywhere it is read back. Both sides of the diff use it.
-def baseline_line_key(function: str, display: str, line: int | str) -> str:
-    return f"{function}\n{display}\n{line}"
+def baseline_line_key(display: str, line: int | str) -> str:
+    return f"{display}\n{line}"
 
 
 # One normalized external path inside a cached source tree, or None.
@@ -678,10 +684,18 @@ def display_path_of(path: str, object_path: str) -> str:
     return f"{owner}/{info.display}"
 
 
+# A file as a profile keys it. Every object names its code without debug
+# info "???", so that name is kept apart per object, as the page shows it.
+def file_key_of(path: str, object_path: str) -> str:
+    if path != _CALLGRIND_UNKNOWN_FILE_NAME:
+        return path
+    return f"{os.path.basename(object_path)}/{path}"
+
+
 # Work out how to print a path, whether we can still read it, and
 # where it came from.
 def path_norm(path: str) -> PathInfo:
-    if path == "???":
+    if posixpath.basename(path) == _CALLGRIND_UNKNOWN_FILE_NAME:
         return PathInfo("(unknown)", None, "external")
     root = REPO_ROOT + "/"
     if os.path.isabs(path):

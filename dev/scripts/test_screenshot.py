@@ -3,8 +3,8 @@
 #
 # One PNG per entry in _VIEWS per viewport in _SCREENSHOT_VIEWPORTS, each
 # hash naming a view the report renders a different way. The list is of
-# views, not of data: two hashes differing only in which test or counter
-# they name are one view and one shot. The viewports are there to be
+# views, not of data: two hashes differing only in which test they name
+# are one view and one shot. The viewports are there to be
 # compared: a page is designed once and fitted to the window, so one view's
 # three shots differ in size and in nothing else.
 #
@@ -28,7 +28,7 @@ import argparse, os, shutil, subprocess, sys, urllib.parse
 import PIL.Image
 
 # The page every view's hash is appended to, the report's own entry point:
-# shooting through it is what exercises the frame controller.
+# shooting through that exercises the model frame.js and controller menu.js.
 _ENTRY_PAGE = "index.html"
 
 # trailing characters of a failed browser's stderr that get reprinted
@@ -103,35 +103,42 @@ _THUMBNAIL_SHEET_WIDTH_PX = 3840
 # report kinds it is shot for). Each takes a code path no earlier one takes.
 _VIEWS: tuple[tuple[str, str, tuple[str, ...], tuple[str, ...]], ...] = (
     ("overview", "", (), _REPORT_VERSIONS_BOTH),
-    ("callers", "#all", (), _REPORT_VERSIONS_BOTH),
-    ("heat_map_home", "#urlparser/heat-map/", (), _REPORT_VERSIONS_BOTH),
+    ("callers", "#test=all&view=callers", (), _REPORT_VERSIONS_BOTH),
+    (
+        "heat_map_home",
+        "#test=urlparser&view=heat-map",
+        (),
+        _REPORT_VERSIONS_BOTH,
+    ),
     (
         "heat_map_file",
-        "#urlparser/heat-map/f=sysdeps/x86_64/multiarch/memchr-avx2.S",
+        "#test=urlparser&view=heat-map"
+        "&file=sysdeps/x86_64/multiarch/memchr-avx2.S",
         (),
         _REPORT_VERSIONS_BOTH,
     ),
     (
         "heat_map_line",
-        "#urlparser/heat-map/f=sysdeps/x86_64/multiarch/memchr-avx2.S&l=82",
+        "#test=urlparser&view=heat-map"
+        "&file=sysdeps/x86_64/multiarch/memchr-avx2.S&line=82",
         (),
         _REPORT_VERSIONS_BOTH,
     ),
     (
         "heat_map_function",
-        "#urlparser/heat-map/fn=parseurl_and_replace",
+        "#test=urlparser&view=heat-map&function=parseurl_and_replace",
         (),
         _REPORT_VERSIONS_BOTH,
     ),
     (
         "flame_graph",
-        "#urlparser/flame-graph",
+        "#test=urlparser&view=flame-graph&localProfilePath=profile",
         (),
         _REPORT_VERSIONS_FULL_ONLY,
     ),
     (
         "bad_function",
-        "#urlparser/heat-map/fn=no_such_function",
+        "#test=urlparser&view=heat-map&function=no_such_function",
         (),
         _REPORT_VERSIONS_BOTH,
     ),

@@ -1,14 +1,16 @@
-window.report_ui = (function () {
+window.report_ui = window.catch_show_throw(function () {
   "use strict";
 
+  const CALLERS_VIEW_KEY = settings("CALLERS_VIEW_KEY");
+  const FLAME_GRAPH_LOCAL_PROFILE_PATH = settings(
+    "FLAME_GRAPH_LOCAL_PROFILE_PATH",
+  );
+  const FLAME_GRAPH_VIEW_ENTRY = settings("FLAME_GRAPH_VIEW_ENTRY");
+  const HEAT_MAP_VIEW_ENTRY = settings("HEAT_MAP_VIEW_ENTRY");
   const LAYOUT_RESIZE_SETTLE_DELAY_MS = settings(
     "LAYOUT_RESIZE_SETTLE_DELAY_MS",
   );
-  const MENU_BUTTON_NUMBERS = settings("MENU_BUTTON_NUMBERS");
   const MENU_PULLDOWN_KEY_NAMES = settings("MENU_PULLDOWN_KEY_NAMES");
-  const MENU_PULLDOWN_LINE_NUMBER_PATTERN = settings(
-    "MENU_PULLDOWN_LINE_NUMBER_PATTERN",
-  );
   const MENU_PULLDOWN_OPENING_KEY_PATTERN = settings(
     "MENU_PULLDOWN_OPENING_KEY_PATTERN",
   );
@@ -64,6 +66,9 @@ window.report_ui = (function () {
   );
   const STYLE_HEAT_COLOR_STOPS = settings("STYLE_HEAT_COLOR_STOPS");
   const STYLE_PAGE_FONT_FAMILY = settings("STYLE_PAGE_FONT_FAMILY");
+  const STYLE_PANE_SPLITTER_KEY_STEP_PX = settings(
+    "STYLE_PANE_SPLITTER_KEY_STEP_PX",
+  );
   const STYLE_TABLE_COLUMN_EXTRA_WIDTH_CHARS = settings(
     "STYLE_TABLE_COLUMN_EXTRA_WIDTH_CHARS",
   );
@@ -73,22 +78,44 @@ window.report_ui = (function () {
   const TABLE_COLUMN_SLIDE_THRESHOLD_PX = settings(
     "TABLE_COLUMN_SLIDE_THRESHOLD_PX",
   );
+  const WIDGET_KEY_NAMES = settings("WIDGET_KEY_NAMES");
 
+  // an address's keys in the order a hash writes them, spelled here alone on
+  // this side; build_report.py's address_of spells them for Python
+  const ADDRESS_KEY_NAMES = [
+    "test",
+    "view",
+    "file",
+    "line",
+    "function",
+    "localProfilePath",
+  ];
+  // the keys each view reads past test and view
+  const ADDRESS_VIEW_KEY_NAMES = new Map([
+    [CALLERS_VIEW_KEY, []],
+    [FLAME_GRAPH_VIEW_ENTRY[0], ["localProfilePath"]],
+    [HEAT_MAP_VIEW_ENTRY[0], ["file", "line", "function"]],
+  ]);
   // what CSS measures a ch as: the advance width of this glyph
   const CH_UNIT_GLYPH = "0";
   const DESIGN_SCALE_LAST_STOP = STYLE_DESIGN_SCALE_STOP_COUNT - 1;
   const DESIGN_SCALE_STORAGE_KEY = "view.scale";
   const PULLDOWN_COMMAND_KEY_NAMES = Object.values(MENU_PULLDOWN_KEY_NAMES);
-  const PULLDOWN_HIGHLIGHTED_ENTRY_CLASS = "highlighted-entry-";
   const RAMP_CHANNEL_STOPS = STYLE_HEAT_COLOR_STOPS.map((hex) =>
     [1, 3, 5].map((index) => parseInt(hex.slice(index, index + 2), 16)),
   );
+  // the report's top page, found from this script's place in assets/: where
+  // a view opened alone opens every address that view is asked for
+  const REPORT_TOP_PAGE_HREF = new URL(
+    "../index.html",
+    document.currentScript.src,
+  ).href;
 
   const is_framed = window.parent !== window;
-  // a page's home under its menu and the frame beside it, which menu.js and
-  // frame.js read from here. Only an overview or a callers page has them.
-  const home_panel = document.getElementById("callers-overview-home-");
-  const view_frame = document.getElementById("callers-overview-view-frame-");
+  // the overview's home under its menu and the frame beside the home, which
+  // frame.js shows and the scale zooms. Only the overview has them.
+  const home_panel = document.getElementById("overview-home-");
+  const view_frame = document.getElementById("overview-view-frame-");
   // whether the scale bar zooms those two: a framed page inherits their zoom
   const is_scaled = !is_framed && !!home_panel;
   const registered_panes = [];
@@ -114,24 +141,6 @@ window.report_ui = (function () {
       return Math.round(
         low_channel + (high_channel - low_channel) * step_fraction,
       );
-    });
-  }
-  function logo_color_at(fraction) {
-    return `rgb(${ramp_channels_at(fraction).join(",")})`;
-  }
-  function logo_letters_build(text, class_name, start_fraction) {
-    const letters = [...text];
-    return letters.map((letter, index) => {
-      const letter_element = document.createElement("span");
-      letter_element.className = class_name;
-      letter_element.textContent = letter;
-      letter_element.style.color = logo_color_at(
-        letters.length > 1
-          ? start_fraction +
-              ((1 - start_fraction) * index) / (letters.length - 1)
-          : 1,
-      );
-      return letter_element;
     });
   }
 
@@ -257,6 +266,10 @@ window.report_ui = (function () {
     }
     design_scale = wanted;
     root_element.style.zoom = String(root_zoom);
+    // an unframed page holds the design width, the window's own at the zoom
+    // floor's window width and wider; below that the window scrolls sideways
+    if (!is_framed)
+      root_element.style.minWidth = STYLE_DESIGN_COORDINATES_WIDTH_PX + "px";
     // a vh resolves against the unzoomed window and is then zoomed with
     // everything else, so a full-height rule reads this design-space height
     root_element.style.setProperty(
@@ -323,11 +336,26 @@ window.report_ui = (function () {
     if (!number) return "";
     return (number < 0 ? "-" : "") + human_text(Math.abs(number));
   }
+  // A diff share: a change against that thing's own baseline count, null
+  // when the baseline never had it. A fall past the baseline is refused.
+  function diff_share_of(delta, baseline) {
+    const baseline_count = baseline === null ? 0 : baseline;
+    if (delta < -baseline_count) {
+      throw new Error(
+        window.ui_strings.text_fill("str_error_diff_fall_past_baseline", [
+          delta,
+          baseline_count,
+        ]),
+      );
+    }
+    if (!delta) return 0;
+    return baseline_count ? (100 * delta) / baseline_count : Infinity;
+  }
   function signed_percent_text(percent) {
     if (!percent) return "";
+    if (percent === Infinity) return "▲∞%";
     const arrow = percent < 0 ? "▼" : "▲";
     const sign = percent < 0 ? "-" : "";
-    if (!Number.isFinite(percent)) return arrow + sign + "∞%";
     if (Math.abs(percent) < NUMBER_SMALLEST_PRINTED_PERCENT) {
       return arrow + "≈0.00%";
     }
@@ -338,60 +366,168 @@ window.report_ui = (function () {
   function parent_post(payload) {
     if (is_framed) window.parent.postMessage(payload, "*");
   }
-  function hash_publish(canonical_hash) {
-    if (canonical_hash !== location.hash) {
-      history.replaceState(null, "", canonical_hash || "#");
-    }
-    parent_post({ report_ui: "hash_changed", hash: canonical_hash });
-  }
   function parent_listen(on_parent_message) {
-    window.addEventListener("message", (message_event) => {
-      if (is_framed && message_event.source === window.parent) {
-        on_parent_message(message_event.data);
-      }
-    });
+    window.addEventListener(
+      "message",
+      window.catch_show_throw((message_event) => {
+        if (is_framed && message_event.source === window.parent) {
+          on_parent_message(message_event.data);
+        }
+      }),
+    );
   }
-  // One hash part's value as the heat map writes it: escaped, a "/" kept
-  // readable. state_of_hash decodes it back.
+  // One address value as every page writes it, escaped as by
+  // encodeURIComponent, a "/" kept readable. Decoding reads it back.
   function hash_value_encode(value) {
     return encodeURIComponent(value).replace(/%2F/g, "/");
   }
-  // The heat map's address, its whole state: fn=<name>, or f=<file> and any
-  // l=<line>, then e=<counter> when the state names one. The one writer.
-  function hash_of_state(state) {
-    const hash_parts = [];
-    if (state.fn) hash_parts.push("fn=" + hash_value_encode(state.fn));
-    else if (state.file) {
-      hash_parts.push("f=" + hash_value_encode(state.file));
-      if (state.line) hash_parts.push("l=" + state.line);
-    }
-    if (state.ev) hash_parts.push("e=" + hash_value_encode(state.ev));
-    return hash_parts.length ? "#" + hash_parts.join("&") : "";
+
+  // An address fault's Error, its text a ui string filled with the values.
+  function address_error(string_id, fill_values) {
+    return new Error(window.ui_strings.text_fill(string_id, fill_values));
   }
-  // The heat map address's parts. An empty hash is home; a part this cannot
-  // read (no "=", a key it has no field for, a bad escape or line) is bad.
-  function state_of_hash(hash) {
-    const parsed_state = { file: null, line: 0, fn: null, ev: null };
-    for (const part of hash.replace(/^#/, "").split("&")) {
-      if (part === "") continue;
-      const equals_index = part.indexOf("=");
-      const key = part.slice(0, equals_index);
-      const value = decodeURIComponent(part.slice(equals_index + 1));
-      if (equals_index < 0 || (key === "l" && !Number.isInteger(+value))) {
-        throw new Error(
-          window.ui_strings.text_fill("str_error_hash_part_unknown", [part]),
-        );
-      }
-      if (key === "f") parsed_state.file = value;
-      else if (key === "l") parsed_state.line = +value;
-      else if (key === "fn") parsed_state.fn = value;
-      else if (key === "e") parsed_state.ev = value;
-      else
-        throw new Error(
-          window.ui_strings.text_fill("str_error_hash_part_unknown", [part]),
-        );
+  // One value a hash part holds, decoded. A bad escape is that part's fault,
+  // the browser's own error kept as the cause.
+  function address_value_decode(part, encoded_value) {
+    try {
+      return decodeURIComponent(encoded_value);
+    } catch (decode_error) {
+      if (!(decode_error instanceof URIError)) throw decode_error;
+      throw new Error(
+        window.ui_strings.text_fill("str_error_hash_part_unknown", [part]),
+        { cause: decode_error },
+      );
     }
-    return parsed_state;
+  }
+  // Refuse an address no page shows. No empty value, a test with a known
+  // view, keys that view reads, a line in a file, a function on its own.
+  function address_parts_check(parsed_address) {
+    for (const key_name of ADDRESS_KEY_NAMES) {
+      if (parsed_address[key_name] === "")
+        throw address_error("str_error_hash_value_empty", [key_name]);
+    }
+    const is_home = ADDRESS_KEY_NAMES.every(
+      (key_name) => parsed_address[key_name] === null,
+    );
+    if (parsed_address.test === null && !is_home)
+      throw address_error("str_error_hash_test_missing", []);
+    if (parsed_address.test !== null && parsed_address.view === null)
+      throw address_error("str_error_hash_view_missing", [
+        parsed_address.test,
+      ]);
+    if (is_home) return;
+    if (!ADDRESS_VIEW_KEY_NAMES.has(parsed_address.view))
+      throw address_error("str_error_hash_view_unknown", [
+        parsed_address.view,
+      ]);
+    for (const key_name of ADDRESS_KEY_NAMES.slice(2)) {
+      if (
+        parsed_address[key_name] !== null &&
+        !ADDRESS_VIEW_KEY_NAMES.get(parsed_address.view).includes(key_name)
+      )
+        throw address_error("str_error_hash_part_misplaced", [
+          key_name,
+          parsed_address.view,
+        ]);
+    }
+    if (parsed_address.line !== null && parsed_address.file === null)
+      throw address_error("str_error_hash_file_missing", [
+        parsed_address.line,
+      ]);
+    if (
+      parsed_address.function !== null &&
+      (parsed_address.file !== null || parsed_address.line !== null)
+    )
+      throw address_error("str_error_hash_function_conflicting", [
+        parsed_address.function,
+      ]);
+    if (
+      parsed_address.line !== null &&
+      !/^[1-9][0-9]*$/.test(parsed_address.line)
+    )
+      throw address_error("str_error_hash_line_unusable", [
+        parsed_address.line,
+      ]);
+  }
+  // An address's parts from a hash, in any order, each key it leaves out
+  // null, "" and "#" being the overview's home. Each fault throws its own.
+  function address_of_hash(hash) {
+    const parsed_address = Object.fromEntries(
+      ADDRESS_KEY_NAMES.map((key_name) => [key_name, null]),
+    );
+    const address_text = hash.replace(/^#/, "");
+    for (const part of address_text ? address_text.split("&") : []) {
+      const equals_index = part.indexOf("=");
+      const key_name = part.slice(0, equals_index);
+      if (equals_index < 0 || !ADDRESS_KEY_NAMES.includes(key_name))
+        throw address_error("str_error_hash_part_unknown", [part]);
+      if (parsed_address[key_name] !== null)
+        throw address_error("str_error_hash_part_repeated", [key_name]);
+      parsed_address[key_name] = address_value_decode(
+        part,
+        part.slice(equals_index + 1),
+      );
+    }
+    address_parts_check(parsed_address);
+    if (parsed_address.line !== null)
+      parsed_address.line = Number(parsed_address.line);
+    return Object.freeze(parsed_address);
+  }
+  // The hash naming an address, its keys in ADDRESS_KEY_NAMES order, a key
+  // left out or null not written. The home is "#", as "" reloads a page.
+  function address_hash_of(partial_address) {
+    const hash_parts = [];
+    for (const key_name of ADDRESS_KEY_NAMES) {
+      if (partial_address[key_name] == null) continue;
+      hash_parts.push(
+        `${key_name}=${hash_value_encode(String(partial_address[key_name]))}`,
+      );
+    }
+    return "#" + hash_parts.join("&");
+  }
+  // The hash opening a view of a test at its home, the twin of
+  // build_report.py's address_of. A flame graph's names localProfilePath.
+  function address_home_hash_of(test_name, view_key) {
+    return address_hash_of({
+      test: test_name,
+      view: view_key,
+      localProfilePath:
+        view_key === FLAME_GRAPH_VIEW_ENTRY[0]
+          ? FLAME_GRAPH_LOCAL_PROFILE_PATH
+          : null,
+    });
+  }
+  // The address a plain click on an address link asks for, else "" for a click
+  // a page already took, not the main button's, with a key held, to a tab.
+  function address_link_hash_of(click_event) {
+    const link_element = click_event.target.closest('a[href^="#"]');
+    const is_plain_click =
+      !click_event.defaultPrevented &&
+      !click_event.button &&
+      !click_event.altKey &&
+      !click_event.ctrlKey &&
+      !click_event.metaKey &&
+      !click_event.shiftKey;
+    return link_element && !link_element.target && is_plain_click
+      ? link_element.getAttribute("href")
+      : "";
+  }
+  // The page showing an address's view, from the report root, the test's
+  // own callers page, else the one page of the heat map or flame graph.
+  function address_page_href_of(checked_address) {
+    if (checked_address.view === CALLERS_VIEW_KEY)
+      return encodeURIComponent(checked_address.test) + "/index.html";
+    if (checked_address.view === HEAT_MAP_VIEW_ENTRY[0])
+      return HEAT_MAP_VIEW_ENTRY[2];
+    if (checked_address.view === FLAME_GRAPH_VIEW_ENTRY[0])
+      return FLAME_GRAPH_VIEW_ENTRY[2];
+    throw address_error("str_error_hash_view_unknown", [checked_address.view]);
+  }
+  // Ask for an address. A framed view asks the top page's frame.js, and a
+  // view opened alone opens the report's top page at it.
+  function address_request_send(hash) {
+    if (is_framed) parent_post({ report_ui: "address_request", hash });
+    else location.assign(REPORT_TOP_PAGE_HREF + hash);
   }
 
   function pulldown_key_is_command(key_name) {
@@ -414,213 +550,105 @@ window.report_ui = (function () {
       ? key_name
       : "";
   }
-  // What this keydown gives the menu: its pulldown key, unless typed in a
-  // field, which types for itself, as an open pulldown's search box does.
-  function menu_key_of(key_event) {
+  // What a keydown gives the menu, on the top page or on a view, its pulldown
+  // key, unless typed in a field, which types for itself. Never Tab.
+  function view_key_of(key_event) {
     return key_event.target.closest("input, select, textarea")
       ? ""
       : pulldown_key_of(key_event);
   }
-  // The numbered button a key activates, by the name in its id, or "".
-  function menu_key_button_name(key_name) {
-    const button_entry = Object.entries(MENU_BUTTON_NUMBERS).find(
-      (candidate_entry) => String(candidate_entry[1]) === key_name,
-    );
-    return button_entry ? button_entry[0] : "";
-  }
   // Whether a key opens the tests pulldown with itself in the search box.
-  function menu_key_opens_tests_pulldown(key_name) {
+  function view_key_opens_tests_pulldown(key_name) {
     return new RegExp(MENU_PULLDOWN_OPENING_KEY_PATTERN).test(key_name);
   }
-  // Send a key typed on a framed page up to the top page's menu: a button's
-  // digit, a letter, any key while the tests pulldown is open. True if sent.
-  function menu_key_forward(key_name) {
-    const opens_tests_pulldown = menu_key_opens_tests_pulldown(key_name);
-    const is_menu_key =
-      opens_tests_pulldown || !!menu_key_button_name(key_name);
-    if (!is_framed || !(is_menu_key || tests_pulldown_is_open)) return false;
-    if (opens_tests_pulldown) tests_pulldown_is_open = true;
+  // Send a key typed on a framed view up to the top page's menu, a typed
+  // character always, a command key while the tests pulldown is open.
+  function view_key_forward(key_name) {
+    const is_command_key = pulldown_key_is_command(key_name);
+    if (!is_framed || (is_command_key && !tests_pulldown_is_open))
+      return false;
+    if (view_key_opens_tests_pulldown(key_name)) tests_pulldown_is_open = true;
     parent_post({ report_ui: "menu_key_pressed", key: key_name });
     return true;
   }
   // The top page's tests pulldown closed: keys typed here stop going to it.
-  function menu_key_tests_pulldown_closed() {
+  function view_key_tests_pulldown_closed() {
     tests_pulldown_is_open = false;
   }
-  // The search box's text as a pattern. One that does not compile yet (a
-  // lone "(" mid-typing) is null and matches nothing; any other error throws.
-  function pulldown_pattern_of(search_text) {
-    try {
-      return new RegExp(search_text, "i");
-    } catch (pattern_error) {
-      if (!(pattern_error instanceof SyntaxError)) throw pattern_error;
-      return null;
-    }
+  // The key a focused widget may take from this keydown, or "" for one a
+  // page took already, one composing text, or one held with a modifier.
+  function widget_key_of(key_event) {
+    const is_plain =
+      !key_event.defaultPrevented &&
+      !key_event.isComposing &&
+      !key_event.altKey &&
+      !key_event.ctrlKey &&
+      !key_event.metaKey &&
+      !key_event.shiftKey;
+    return is_plain ? key_event.key : "";
   }
-  // A menu pulldown over root_element's parts. entries_of(line_number) gives
-  // the links it offers, opening at that line; on_close() runs on each close.
-  function pulldown_attach(
-    root_element,
-    label_text,
-    entries_of,
-    on_close,
-    reads_line_number,
-  ) {
-    const entry_list = root_element.querySelector(
-      ".menu-pulldown-entry-list-",
+  // Whether a key opens a focused widget's item as a click on that item does.
+  function widget_key_activates(key_name) {
+    return (
+      key_name === WIDGET_KEY_NAMES.activate ||
+      key_name === WIDGET_KEY_NAMES.click
     );
-    const menu_button = root_element.querySelector(".menu-pulldown-button-");
-    const no_match_note = root_element.querySelector(
-      ".menu-pulldown-no-match-note-",
+  }
+  // A focused link answers WIDGET_KEY_NAMES.click as a button does, once a
+  // press, as the browser gives a link Enter alone.
+  function link_click_key_take(key_event) {
+    if (
+      widget_key_of(key_event) !== WIDGET_KEY_NAMES.click ||
+      !key_event.target.matches("a[href]")
+    )
+      return;
+    key_event.preventDefault();
+    if (!key_event.repeat) key_event.target.click();
+  }
+  // Wire a view to the top page. An address link asks for its address, a
+  // focused link takes the click key, other keys go up, strings come down.
+  function view_activate(view_options) {
+    document.addEventListener(
+      "click",
+      window.catch_show_throw((click_event) => {
+        const link_hash = address_link_hash_of(click_event);
+        if (!link_hash) return;
+        click_event.preventDefault();
+        address_request_send(link_hash);
+      }),
     );
-    const search_box = root_element.querySelector(
-      ".menu-pulldown-search-box-",
+    // a widget's own keydown ran first: a key taken there is default-prevented
+    document.addEventListener(
+      "keydown",
+      window.catch_show_throw((key_event) => {
+        link_click_key_take(key_event);
+        const key_name = view_key_of(key_event);
+        if (key_name && view_key_forward(key_name)) key_event.preventDefault();
+      }),
     );
-    let entries = [],
-      entries_line_number = 0,
-      highlight_index = 0,
-      is_open = false,
-      matches = [];
-
-    function highlight_set(entry_index) {
-      highlight_index = entry_index;
-      for (const entry_link of entries) {
-        entry_link.classList.toggle(
-          PULLDOWN_HIGHLIGHTED_ENTRY_CLASS,
-          entry_link === matches[highlight_index],
-        );
-      }
-    }
-    function highlight_step(step_count) {
-      if (!matches.length) return;
-      highlight_set(
-        Math.min(
-          Math.max(highlight_index + step_count, 0),
-          matches.length - 1,
-        ),
-      );
-      matches[highlight_index].scrollIntoView({ block: "nearest" });
-    }
-    // The search box's text as the pattern it filters by and the line its
-    // entries open at, 0 for none. Only a pulldown reading lines splits one.
-    function search_parts_of(search_text) {
-      const line_pattern = new RegExp(MENU_PULLDOWN_LINE_NUMBER_PATTERN);
-      const line_match = reads_line_number && line_pattern.exec(search_text);
-      return line_match ? [line_match[1], +line_match[2]] : [search_text, 0];
-    }
-    // Offer the links opening at a line, 0 for none, in place of any before.
-    function entries_offer(line_number) {
-      entries_line_number = line_number;
-      entries = entries_of(line_number);
-      entry_list.replaceChildren(...entries, no_match_note);
-    }
-    function entries_filter() {
-      const [filter_text, line_number] = search_parts_of(search_box.value);
-      if (line_number !== entries_line_number) entries_offer(line_number);
-      const search_pattern = pulldown_pattern_of(filter_text);
-      matches = entries.filter(
-        (entry_link) =>
-          !!search_pattern && search_pattern.test(entry_link.textContent),
-      );
-      const matched_entries = new Set(matches);
-      for (const entry_link of entries) {
-        entry_link.hidden = !matched_entries.has(entry_link);
-      }
-      no_match_note.hidden = matches.length > 0;
-      entry_list.scrollTop = 0;
-      highlight_set(0);
-    }
-    // Focus the search box, out of a framed page if focus is there: a key's
-    // user activation reaches the top page. A refusal would strand the keys.
-    function search_box_focus() {
-      search_box.focus();
-      if (document.activeElement !== search_box)
+    // recenter is the view's own, null on a view with nothing to recenter,
+    // and preferences_apply, where given, shows its stored choices again
+    parent_listen((message_data) => {
+      if (message_data === "report_ui:layout_reset") {
+        layout_reset();
+        if (view_options.preferences_apply) view_options.preferences_apply();
+      } else if (
+        message_data === "report_ui:recenter" &&
+        view_options.recenter
+      )
+        view_options.recenter();
+      else if (message_data === "report_ui:tests_pulldown_closed")
+        view_key_tests_pulldown_closed();
+      else if (
+        typeof message_data === "string" &&
+        message_data.startsWith("report_ui:")
+      )
         throw new Error(
-          window.ui_strings.text_fill("str_error_pulldown_focus_refused", [
-            document.activeElement.tagName.toLowerCase(),
+          window.ui_strings.text_fill("str_error_message_tag_unknown", [
+            message_data,
           ]),
         );
-    }
-    // The search box takes the button's place while open, the list
-    // dropping below it, so the list sits aligned under the button.
-    function pulldown_open(search_text) {
-      is_open = true;
-      entries_offer(search_parts_of(search_text)[1]);
-      menu_button.hidden = true;
-      search_box.hidden = false;
-      search_box.value = search_text;
-      entry_list.hidden = false;
-      entries_filter();
-      search_box_focus();
-    }
-    function closed_show() {
-      is_open = false;
-      search_box.hidden = true;
-      search_box.value = "";
-      menu_button.hidden = false;
-      entry_list.hidden = true;
-    }
-    function pulldown_close() {
-      closed_show();
-      on_close();
-    }
-    // The one key handler, for a key typed in the box or handed over from
-    // elsewhere on the page. True when the key is taken.
-    function key_take(key_name, is_in_search_box) {
-      const is_command_key = pulldown_key_is_command(key_name);
-      if (!is_open) {
-        if (is_command_key) return false;
-        pulldown_open(key_name);
-        return true;
-      }
-      switch (key_name) {
-        case MENU_PULLDOWN_KEY_NAMES.close:
-          pulldown_close();
-          return true;
-        case MENU_PULLDOWN_KEY_NAMES.next:
-          highlight_step(1);
-          return true;
-        case MENU_PULLDOWN_KEY_NAMES.previous:
-          highlight_step(-1);
-          return true;
-        case MENU_PULLDOWN_KEY_NAMES.select:
-          if (matches.length) matches[highlight_index].click();
-          return true;
-      }
-      // the focused open box types for itself; a key from elsewhere is added
-      if (is_in_search_box) return false;
-      search_box.value += key_name;
-      entries_filter();
-      search_box_focus();
-      return true;
-    }
-
-    menu_button.textContent = label_text;
-    search_box.placeholder = window.ui_strings.text_of(
-      "str_pulldown_placeholder",
-    );
-    no_match_note.textContent = window.ui_strings.text_of("str_no_match");
-    for (const pointer_target of [menu_button, entry_list]) {
-      pointer_target.addEventListener("mousedown", (pointer_event) =>
-        pointer_event.preventDefault(),
-      );
-    }
-    menu_button.addEventListener("click", () => pulldown_open(""));
-    search_box.addEventListener("blur", () => {
-      if (is_open) pulldown_close();
     });
-    search_box.addEventListener("input", entries_filter);
-    search_box.addEventListener("keydown", (key_event) => {
-      const key_name = pulldown_key_of(key_event);
-      if (key_name && key_take(key_name, true)) key_event.preventDefault();
-    });
-    entry_list.addEventListener("click", (click_event) => {
-      if (!click_event.target.closest("a")) return;
-      pulldown_close();
-      search_box.blur();
-    });
-    closed_show();
-    return { is_open: () => is_open, key_take };
   }
 
   function width_total(widths) {
@@ -697,18 +725,18 @@ window.report_ui = (function () {
   function column_elements_of(table_element) {
     return [...table_element.querySelectorAll(":scope > colgroup > col")];
   }
-  function default_prevent(any_event) {
+  const default_prevent = window.catch_show_throw((any_event) => {
     any_event.preventDefault();
-  }
+  });
   // The click a slide's pointerup brings is taken before any handler sees
   // it, so a slide never follows a link or opens a row.
-  function click_swallow(click_event) {
+  const click_swallow = window.catch_show_throw((click_event) => {
     click_event.preventDefault();
     click_event.stopPropagation();
-  }
-  function selection_drop() {
+  });
+  const selection_drop = window.catch_show_throw(() => {
     window.getSelection().removeAllRanges();
-  }
+  });
   // A press on column N, N from 1, slides it and every column right of it
   // once it travels past the threshold more sideways than up or down.
   function table_slide_press(press_event, table_element) {
@@ -731,7 +759,7 @@ window.report_ui = (function () {
     );
     let animation_frame = 0,
       is_sliding = false;
-    const on_pointer_move = (move_event) => {
+    const on_pointer_move = window.catch_show_throw((move_event) => {
       if (move_event.pointerId !== press_event.pointerId) return;
       const sideways_travel_px = design_px(
         move_event.clientX - start_client_x,
@@ -755,12 +783,14 @@ window.report_ui = (function () {
       const wanted_width_px = start_width_px + sideways_travel_px;
       left_column.style.width = `max(${floor_text}, ${wanted_width_px}px)`;
       if (animation_frame) return;
-      animation_frame = requestAnimationFrame(() => {
-        animation_frame = 0;
-        layout_refresh();
-      });
-    };
-    const on_pointer_release = (release_event) => {
+      animation_frame = requestAnimationFrame(
+        window.catch_show_throw(() => {
+          animation_frame = 0;
+          layout_refresh();
+        }),
+      );
+    });
+    const on_pointer_release = window.catch_show_throw((release_event) => {
       if (release_event.pointerId !== press_event.pointerId) return;
       press_end();
       if (!is_sliding) return;
@@ -769,10 +799,12 @@ window.report_ui = (function () {
       // the click is sent in the same task as its pointerup, so this
       // listener is gone again before any later click
       window.addEventListener("click", click_swallow, true);
-      setTimeout(() => {
-        window.removeEventListener("click", click_swallow, true);
-      });
-    };
+      setTimeout(
+        window.catch_show_throw(() => {
+          window.removeEventListener("click", click_swallow, true);
+        }),
+      );
+    });
     function press_end() {
       listeners_bind(window, on_pointer_move, on_pointer_release, false);
       window.removeEventListener("dragstart", default_prevent, true);
@@ -792,8 +824,11 @@ window.report_ui = (function () {
         column_element.style.width,
       );
     }
-    table_element.addEventListener("pointerdown", (press_event) =>
-      table_slide_press(press_event, table_element),
+    table_element.addEventListener(
+      "pointerdown",
+      window.catch_show_throw((press_event) =>
+        table_slide_press(press_event, table_element),
+      ),
     );
   }
   function offsets_align(scroll_container) {
@@ -819,6 +854,8 @@ window.report_ui = (function () {
       band_elements.map((band_element) => band_element.parentElement),
     ).forEach(offsets_align);
   }
+  // Wire every table under a root. Its columns slide, and one whose body
+  // holds links walks its rows from the keyboard as one tab stop.
   function layout_activate(root_element) {
     root_element = root_element || document.body;
     const table_elements = root_element.querySelectorAll(
@@ -826,6 +863,8 @@ window.report_ui = (function () {
     );
     for (const table_element of table_elements) {
       table_slide_attach(table_element);
+      if (table_element.tBodies[0].querySelector("a[href]"))
+        table_rows_attach(table_element, "tr");
     }
     layout_refresh(root_element);
   }
@@ -842,15 +881,181 @@ window.report_ui = (function () {
       if (!root_element.contains(pane_entry.pane_element)) continue;
       pane_entry.pane_element.style.width = "";
       view_storage.value_write(pane_entry.storage_key, null);
+      pane_entry.splitter_values_show();
     }
     layout_refresh(root_element);
   }
 
-  function storage_sweep() {
+  // The nearest box scrolling a focused element up and down.
+  function scroller_of(focused_element) {
+    let scrolling_box = focused_element.parentElement;
+    while (!/^(auto|scroll)$/.test(getComputedStyle(scrolling_box).overflowY))
+      scrolling_box = scrolling_box.parentElement;
+    return scrolling_box;
+  }
+  // Show a focused element whole in its scrolling box, at its nearest
+  // edge, then out from under its table's column titles where those stick.
+  function focus_reveal(focused_element) {
+    focused_element.scrollIntoView({ block: "nearest", inline: "nearest" });
+    const owning_table = focused_element.closest("table");
+    if (!owning_table || !owning_table.tHead) return;
+    const hidden_px =
+      owning_table.tHead.rows[0].cells[0].getBoundingClientRect().bottom -
+      focused_element.getBoundingClientRect().top;
+    if (hidden_px > 0)
+      scroller_of(focused_element).scrollTop -= design_px(hidden_px);
+  }
+  // Make an item its widget's one tab stop in place of the previous one,
+  // null for none, focused and shown when that item takes the focus.
+  function tab_stop_move(previous_stop, next_stop, takes_focus) {
+    if (previous_stop && previous_stop !== next_stop)
+      previous_stop.tabIndex = -1;
+    next_stop.tabIndex = 0;
+    if (!takes_focus) return;
+    next_stop.focus({ preventScroll: true });
+    focus_reveal(next_stop);
+  }
+  // A row's own links, not those of a table nested in one of its cells.
+  function row_links_of(row_element) {
+    return [...row_element.querySelectorAll("a[href]")].filter(
+      (row_link) => row_link.closest("tr") === row_element,
+    );
+  }
+  // The walked row of a table body an element sits in, else null.
+  function walked_row_of(focused_element, table_body, row_selector) {
+    const row_element = focused_element.closest("tr");
+    const is_walked =
+      !!row_element &&
+      row_element.parentElement === table_body &&
+      row_element.matches(row_selector);
+    return is_walked ? row_element : null;
+  }
+  // The walked row a step from a row, 1 the next and -1 the one before, or
+  // null past either end.
+  function walked_row_beside(row_element, row_selector, step_direction) {
+    const sibling_name =
+      step_direction > 0 ? "nextElementSibling" : "previousElementSibling";
+    let sibling_row = row_element[sibling_name];
+    while (sibling_row && !sibling_row.matches(row_selector))
+      sibling_row = sibling_row[sibling_name];
+    return sibling_row;
+  }
+  // Make a walked row its table's one tab stop, focused and shown when that
+  // row takes the focus.
+  function table_row_tab_stop_set(row_element, takes_focus) {
+    tab_stop_move(
+      row_element.parentElement.querySelector(':scope > tr[tabindex="0"]'),
+      row_element,
+      takes_focus,
+    );
+  }
+  // A key on a walked row or one of its links, the treegrid pattern's. Up,
+  // Down, Home and End between rows, Right and Left through a row's links.
+  function table_row_key_take(key_event, table_body, row_selector) {
+    const key_name = widget_key_of(key_event);
+    const focused_element = key_event.target;
+    const row_element = walked_row_of(
+      focused_element,
+      table_body,
+      row_selector,
+    );
+    if (!key_name || !row_element) return;
+    const row_links = row_links_of(row_element);
+    const link_index = row_links.indexOf(focused_element);
+    // a focused link opens itself, Enter natively, the click key as a click
+    if (link_index >= 0 && widget_key_activates(key_name)) {
+      link_click_key_take(key_event);
+      return;
+    }
+    if (focused_element !== row_element && link_index < 0) return;
+    if (widget_key_activates(key_name)) {
+      key_event.preventDefault();
+      // a row opens as a click on its first link does, else as one on the row
+      const clicked_element = row_links.length ? row_links[0] : row_element;
+      if (!key_event.repeat) clicked_element.click();
+      return;
+    }
+    const walked_rows_of = () =>
+      [...table_body.rows].filter((walked_row) =>
+        walked_row.matches(row_selector),
+      );
+    let next_element = null;
+    switch (key_name) {
+      case WIDGET_KEY_NAMES.down:
+        next_element = walked_row_beside(row_element, row_selector, 1);
+        break;
+      case WIDGET_KEY_NAMES.first:
+        next_element = walked_rows_of()[0];
+        break;
+      case WIDGET_KEY_NAMES.last:
+        next_element = walked_rows_of().pop();
+        break;
+      case WIDGET_KEY_NAMES.left:
+        next_element =
+          link_index > 0 ? row_links[link_index - 1] : row_element;
+        break;
+      case WIDGET_KEY_NAMES.right:
+        next_element = row_links[link_index + 1];
+        break;
+      case WIDGET_KEY_NAMES.up:
+        next_element = walked_row_beside(row_element, row_selector, -1);
+        break;
+      default:
+        return;
+    }
+    key_event.preventDefault();
+    if (!next_element) return;
+    if (next_element.matches("tr")) {
+      table_row_tab_stop_set(next_element, true);
+      return;
+    }
+    // a link takes the focus while its row stays the table's tab stop
+    next_element.focus({ preventScroll: true });
+    focus_reveal(next_element);
+  }
+  // Make a table whose rows open something one tab stop. Its walked rows,
+  // those of its body matching row_selector, take table_row_key_take's keys.
+  function table_rows_attach(table_element, row_selector) {
+    if (table_element.is_row_walk_attached) return;
+    table_element.is_row_walk_attached = true;
+    const table_body = table_element.tBodies[0];
+    const walked_rows = [...table_body.rows].filter((walked_row) =>
+      walked_row.matches(row_selector),
+    );
+    if (!walked_rows.length) return;
+    table_element.setAttribute("role", "treegrid");
+    for (const walked_row of walked_rows) {
+      walked_row.tabIndex = -1;
+      for (const row_link of row_links_of(walked_row)) row_link.tabIndex = -1;
+    }
+    walked_rows[0].tabIndex = 0;
+    // focus on a row or its link, by key or pointer, makes the row the stop
+    table_element.addEventListener(
+      "focusin",
+      window.catch_show_throw((focus_event) => {
+        const row_element = walked_row_of(
+          focus_event.target,
+          table_body,
+          row_selector,
+        );
+        if (row_element) table_row_tab_stop_set(row_element, false);
+      }),
+    );
+    table_element.addEventListener(
+      "keydown",
+      window.catch_show_throw((key_event) =>
+        table_row_key_take(key_event, table_body, row_selector),
+      ),
+    );
+  }
+
+  // Remove every key the report owns but kept_key. A version change sweeps
+  // them all, the reset button all but the scale bar's stop.
+  function storage_sweep(kept_key) {
     const doomed_keys = [];
     for (let index = 0; index < localStorage.length; index++) {
       const storage_key = localStorage.key(index);
-      if (storage_key === null) continue;
+      if (storage_key === null || storage_key === kept_key) continue;
       const is_owned =
         STORAGE_OWNED_KEYS.indexOf(storage_key) !== -1 ||
         STORAGE_OWNED_PREFIXES.some((prefix) =>
@@ -869,11 +1074,19 @@ window.report_ui = (function () {
       if (localStorage.getItem(STORAGE_VERSION_KEY) === STORAGE_VERSION) {
         return;
       }
-      storage_sweep();
+      storage_sweep(null);
       localStorage.setItem(STORAGE_VERSION_KEY, STORAGE_VERSION);
     } catch (storage_error) {}
   }
   const view_storage = {
+    // The reset button's door. Every owned key but the scale bar's goes,
+    // heat.* and split.*, so each view shows its defaults again.
+    preferences_clear() {
+      storage_version_check();
+      try {
+        storage_sweep(DESIGN_SCALE_STORAGE_KEY);
+      } catch (storage_error) {}
+    },
     value_read(storage_key) {
       storage_version_check();
       try {
@@ -893,6 +1106,8 @@ window.report_ui = (function () {
     },
   };
 
+  // Make a handle the window splitter of the preceding pane, the pattern's
+  // separator. A pointer's drag, an arrow's step, Home and End to its ends.
   function pane_splitter_attach(
     handle_bar,
     pane_element,
@@ -900,44 +1115,97 @@ window.report_ui = (function () {
     minimum_px,
   ) {
     storage_key = "split." + storage_key;
-    registered_panes.push({ pane_element, storage_key });
+    // the widest the pane may be, the window's share, the narrowest its own
+    const pane_widest_px = () =>
+      design_px(window.innerWidth) * PANE_SPLITTER_WIDEST_WINDOW_SHARE;
+    const pane_width_of = (wanted_width_px) =>
+      Math.min(pane_widest_px(), Math.max(minimum_px, wanted_width_px));
+    const pane_width_now = () =>
+      design_px(pane_element.getBoundingClientRect().width);
+    // where the splitter sits as a screen reader reads it, the pane's width
+    // in design px between its narrowest and widest
+    function splitter_values_show() {
+      handle_bar.setAttribute("aria-valuemin", String(minimum_px));
+      handle_bar.setAttribute(
+        "aria-valuemax",
+        String(Math.round(pane_widest_px())),
+      );
+      handle_bar.setAttribute(
+        "aria-valuenow",
+        String(Math.round(pane_width_now())),
+      );
+    }
+    // the width a drag or a key left, stored as the pane's own
+    function pane_width_store() {
+      view_storage.value_write(storage_key, pane_width_now());
+      splitter_values_show();
+    }
+    registered_panes.push({ pane_element, splitter_values_show, storage_key });
     const saved_width = view_storage.value_read(storage_key);
     if (saved_width) pane_element.style.width = saved_width + "px";
-    handle_bar.addEventListener("pointerdown", (pointer_event) => {
+    handle_bar.tabIndex = 0;
+    handle_bar.setAttribute("role", "separator");
+    handle_bar.setAttribute("aria-orientation", "vertical");
+    handle_bar.setAttribute("aria-controls", pane_element.id);
+    handle_bar.setAttribute("aria-labelledby", pane_element.id);
+    splitter_values_show();
+    const on_pointer_down = window.catch_show_throw((pointer_event) => {
       const start_client_x = pointer_event.clientX;
-      const start_width_px = design_px(
-        pane_element.getBoundingClientRect().width,
-      );
+      const start_width_px = pane_width_now();
       if (handle_bar.setPointerCapture) {
         handle_bar.setPointerCapture(pointer_event.pointerId);
       }
       let animation_frame = 0;
-      const on_pointer_move = (move_event) => {
-        const wanted_width_px = Math.max(
-          minimum_px,
-          start_width_px + design_px(move_event.clientX - start_client_x),
-        );
+      const on_pointer_move = window.catch_show_throw((move_event) => {
         pane_element.style.width =
-          Math.min(
-            design_px(window.innerWidth) * PANE_SPLITTER_WIDEST_WINDOW_SHARE,
-            wanted_width_px,
+          pane_width_of(
+            start_width_px + design_px(move_event.clientX - start_client_x),
           ) + "px";
         if (animation_frame) return;
-        animation_frame = requestAnimationFrame(() => {
-          animation_frame = 0;
-          layout_refresh();
-        });
-      };
-      const on_pointer_release = () => {
-        listeners_bind(handle_bar, on_pointer_move, on_pointer_release, false);
-        view_storage.value_write(
-          storage_key,
-          design_px(pane_element.getBoundingClientRect().width),
+        animation_frame = requestAnimationFrame(
+          window.catch_show_throw(() => {
+            animation_frame = 0;
+            layout_refresh();
+          }),
         );
-      };
+      });
+      const on_pointer_release = window.catch_show_throw(() => {
+        listeners_bind(handle_bar, on_pointer_move, on_pointer_release, false);
+        pane_width_store();
+      });
       listeners_bind(handle_bar, on_pointer_move, on_pointer_release, true);
       pointer_event.preventDefault();
     });
+    const on_key_down = window.catch_show_throw((key_event) => {
+      let wanted_width_px = 0;
+      switch (widget_key_of(key_event)) {
+        case WIDGET_KEY_NAMES.first:
+          wanted_width_px = minimum_px;
+          break;
+        case WIDGET_KEY_NAMES.last:
+          wanted_width_px = pane_widest_px();
+          break;
+        case WIDGET_KEY_NAMES.left:
+          wanted_width_px = pane_width_now() - STYLE_PANE_SPLITTER_KEY_STEP_PX;
+          break;
+        case WIDGET_KEY_NAMES.right:
+          wanted_width_px = pane_width_now() + STYLE_PANE_SPLITTER_KEY_STEP_PX;
+          break;
+        default:
+          return;
+      }
+      key_event.preventDefault();
+      pane_element.style.width = pane_width_of(wanted_width_px) + "px";
+      layout_refresh();
+      pane_width_store();
+    });
+    handle_bar.addEventListener("pointerdown", on_pointer_down);
+    handle_bar.addEventListener("keydown", on_key_down);
+    // a resize moves the pane's widest, so each focus reads the values again
+    handle_bar.addEventListener(
+      "focus",
+      window.catch_show_throw(splitter_values_show),
+    );
   }
 
   // Redraw at the scale in force and settle the layout after it. The one
@@ -946,7 +1214,7 @@ window.report_ui = (function () {
     design_scale_apply();
     clearTimeout(resize_debounce_timer);
     resize_debounce_timer = setTimeout(
-      layout_refresh,
+      window.catch_show_throw(layout_refresh),
       LAYOUT_RESIZE_SETTLE_DELAY_MS,
     );
   }
@@ -954,11 +1222,25 @@ window.report_ui = (function () {
   font_fit_apply();
   if (is_scaled) design_scale_travel_stop = design_scale_stored_stop();
   design_scale_apply();
-  window.addEventListener("resize", design_scale_settle);
+  window.addEventListener(
+    "resize",
+    window.catch_show_throw(design_scale_settle),
+  );
   if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", () => layout_activate());
+    document.addEventListener(
+      "DOMContentLoaded",
+      window.catch_show_throw(() => layout_activate()),
+    );
   } else layout_activate();
   return {
+    address: {
+      hash_of: address_hash_of,
+      home_hash_of: address_home_hash_of,
+      link_hash_of: address_link_hash_of,
+      of_hash: address_of_hash,
+      page_href_of: address_page_href_of,
+      request: address_request_send,
+    },
     column_extents,
     column_limits,
     column_longest,
@@ -968,35 +1250,38 @@ window.report_ui = (function () {
     design_scale_multiple_text,
     design_scale_travel_now,
     design_scale_travel_set,
-    hash_publish,
-    heat_map_address: { hash_of_state, state_of_hash },
+    diff_share_of,
     home_panel,
     human_text,
-    is_framed,
     layout_activate,
     layout_refresh,
     layout_reset,
-    logo_color_at,
-    logo_letters_build,
-    menu_key: {
-      button_name: menu_key_button_name,
-      forward: menu_key_forward,
-      of: menu_key_of,
-      opens_tests_pulldown: menu_key_opens_tests_pulldown,
-      tests_pulldown_closed: menu_key_tests_pulldown_closed,
-    },
     multiple_text,
     pane_splitter: { attach: pane_splitter_attach },
-    parent_listen,
-    parent_post,
     percent_text,
-    pulldown: {
-      attach: pulldown_attach,
+    pulldown_key: {
+      is_command: pulldown_key_is_command,
+      of: pulldown_key_of,
     },
     ramp_channels_at,
     signed_human_text,
     signed_percent_text,
+    tab_stop_move,
+    table_rows: {
+      attach: table_rows_attach,
+      tab_stop_set: table_row_tab_stop_set,
+    },
+    view_activate,
     view_frame,
+    view_key: {
+      of: view_key_of,
+      opens_tests_pulldown: view_key_opens_tests_pulldown,
+    },
     view_storage,
+    widget_key: {
+      activates: widget_key_activates,
+      link_click_take: link_click_key_take,
+      of: widget_key_of,
+    },
   };
 })();

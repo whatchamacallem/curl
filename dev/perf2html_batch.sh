@@ -6,7 +6,7 @@ usage_show() {
   cat <<'EOF'
 perf2html_batch.sh [debug-flags] [--target-dir=DIR] [cmake-flags...]
     Profiles baseline, modified and then does a diff of them.
-    --target-dir=DIR  Holds the three default-named reports (default CWD). The
+    --target-dir=DIR  Holds the three default-named reports (default $PWD). The
                       batch cannot rename them.
     --txz             Create .txz archives of all reports generated.
                       .txz files may also be used as inputs.
@@ -82,68 +82,26 @@ header_table_print() {
 }
 
 # args_parse - read the command line, deriving every absolute *_DIR from
-# the target dir. Every argument it does not name is a cmake flag.
+# the target dir. A --report= is refused, every other argument a cmake flag.
 args_parse() {
-  _KEEP_ARTIFACTS=0
-  _REGENERATE=0
-  _PASS_ARGS=()
-  _CMAKE_FLAGS=()
-  _TARGET_DIR="."
-  ARTIFACTS_DIR=""
-  while [ $# -gt 0 ]; do
-    case "$1" in
-      -h | --help)
-        usage_show
-        exit 0
-        ;;
-      --verbose)
-        VERBOSE=$((VERBOSE + 1))
-        shift
-        ;;
-      --keep-artifacts)
-        _KEEP_ARTIFACTS=1
-        _PASS_ARGS+=(--keep-artifacts)
-        shift
-        ;;
-      --regenerate)
-        _REGENERATE=1
-        _KEEP_ARTIFACTS=1
-        _PASS_ARGS+=(--regenerate)
-        shift
-        ;;
-      --txz)
-        _PASS_ARGS+=(--txz)
-        shift
-        ;;
-      --artifacts=*)
-        ARTIFACTS_DIR="${1#--artifacts=}"
-        shift
-        ;;
-      --target-dir=*)
-        _TARGET_DIR="${1#--target-dir=}"
-        shift
-        ;;
-      *)
-        _CMAKE_FLAGS+=("$1")
-        shift
+  shared_options_parse "$@"
+  # perf2html.sh would take a --report= as its own, moving the modified
+  # report away from the name the diff reads
+  local _remaining_argument
+  for _remaining_argument in "${REMAINING_ARGUMENTS[@]}"; do
+    case "$_remaining_argument" in
+      --report=*)
+        error_exit 2 \
+          "error: the batch takes no --report=: $_remaining_argument"
         ;;
     esac
   done
-  [ "$VERBOSE" -lt "$VERBOSE_TRACE_LEVEL" ] || set -o xtrace
+  _CMAKE_FLAGS=("${REMAINING_ARGUMENTS[@]}")
   [ "${#_CMAKE_FLAGS[@]}" -gt 0 ] || _CMAKE_FLAGS=("${DEFAULT_FLAGS[@]}")
-  _TARGET_DIR="$(absolute_path "$_TARGET_DIR")"
-  if [ -z "$ARTIFACTS_DIR" ]; then
-    if [ "$_KEEP_ARTIFACTS" = 0 ] && [ "$_REGENERATE" = 0 ]; then
-      ARTIFACTS_DIR="$(mktemp -d)"
-      log_verbose "using --artifacts=\"$ARTIFACTS_DIR\""
-    else
-      ARTIFACTS_DIR="$_TARGET_DIR/$ARTIFACTS_NAME"
-    fi
-  fi
-  ARTIFACTS_DIR="$(absolute_path "$ARTIFACTS_DIR")"
-  _BASE_DIR="$_TARGET_DIR/$REPORT_BASELINE_DIR_NAME"
-  _MOD_DIR="$_TARGET_DIR/$REPORT_MODIFIED_DIR_NAME"
-  _DIFF_DIR="$_TARGET_DIR/$REPORT_DIFF_DIR_NAME"
+  artifacts_dir_resolve "$TARGET_DIR"
+  _BASE_DIR="$(report_path_of "$REPORT_BASELINE_DIR_NAME")"
+  _MOD_DIR="$(report_path_of "$REPORT_MODIFIED_DIR_NAME")"
+  _DIFF_DIR="$(report_path_of "$REPORT_DIFF_DIR_NAME")"
 }
 
 # main - runs baseline, modified and diff, stopping at the first failure,
@@ -159,17 +117,22 @@ main() {
     "$_BASE_DIR" "baseline report" \
     "$_MOD_DIR" "modified report" \
     "$_DIFF_DIR" "diff report"
-  if [ "$_REGENERATE" = 1 ]; then
+  if [ "$REGENERATE" = 1 ]; then
     for _dir in "$_BASE_DIR" "$_MOD_DIR" "$_DIFF_DIR"; do
       _cache="$ARTIFACTS_DIR/$(basename "$_dir")"
       [ -d "$_cache" ] || error_exit 2 \
         "error: --regenerate: no recordings at $_cache"
     done
   fi
-  local _child_args=("${_PASS_ARGS[@]}" "--artifacts=$ARTIFACTS_DIR")
-  if [ "$_KEEP_ARTIFACTS" = 0 ]; then
+  # each child takes its report's default name under the target dir, and
+  # keeps its recordings: the batch alone deletes them, at the end
+  local _child_args=("--target-dir=$TARGET_DIR" "--artifacts=$ARTIFACTS_DIR")
+  if [ "$REGENERATE" = 1 ]; then
+    _child_args+=(--regenerate)
+  else
     _child_args+=(--keep-artifacts)
   fi
+  [ "$WRITE_REPORT_ARCHIVE" = 0 ] || _child_args+=(--txz)
   local _verbose_args=()
   mapfile -t _verbose_args < <(verbose_flags_of)
   log_verbose "[$(elapsed_format)s] $_SCRIPT $TIMESTAMP: modified build" \
@@ -184,17 +147,16 @@ main() {
 
   _STEP_NAMES=()
   _STEP_SECONDS=()
-  step_run 1 baseline ./perf2html.sh "${_verbose_args[@]}" \
-    "${_child_args[@]}" "--report=$_BASE_DIR"
+  step_run 1 baseline ./perf2html.sh "${_verbose_args[@]}" "${_child_args[@]}"
   step_run 2 modified ./perf2html.sh "${_verbose_args[@]}" \
-    "${_child_args[@]}" "--report=$_MOD_DIR" "${_CMAKE_FLAGS[@]}"
+    "${_child_args[@]}" "${_CMAKE_FLAGS[@]}"
   step_run 3 diff ./perf2html_diff.sh "${_verbose_args[@]}" \
-    "${_child_args[@]}" "$_BASE_DIR" "$_MOD_DIR" "$_DIFF_DIR"
+    "${_child_args[@]}"
 
   heading_print "$_SCRIPT, after the three steps"
   table_print "${#_STEP_NAMES[@]}" "${_STEP_NAMES[@]}" "${_STEP_SECONDS[@]}"
 
-  if [ "$_KEEP_ARTIFACTS" = 0 ]; then
+  if [ "$KEEP_ARTIFACTS" = 0 ]; then
     log_verbose "[$(elapsed_format)s] removing $ARTIFACTS_DIR/"
     rm -rf "$ARTIFACTS_DIR" \
       || error_exit 1 "error: could not remove $ARTIFACTS_DIR/"

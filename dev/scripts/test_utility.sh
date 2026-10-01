@@ -5,17 +5,6 @@ path_shown() {
   printf '%s' "${1//"$HOME"\//"~/"}"
 }
 
-# test_archive_first_of - the first raw archive under a report, sorted,
-# echoed: the one a testcase removes, so no name is spelled here.
-test_archive_first_of() {
-  local _archive
-  _archive="$(find "$1" -mindepth 3 -maxdepth 3 -type f \
-    -path '*/raw/*.txz' | LC_ALL=C sort | head -n 1)"
-  [ -n "$_archive" ] \
-    || test_fail test_archive_first_of "no */raw/*.txz under $1"
-  echo "$_archive"
-}
-
 # test_fail - the failed testcase and why, on stderr, then stop: the
 # refusal streamed just above, and the scratch dir is kept for a reader.
 test_fail() {
@@ -26,8 +15,8 @@ test_fail() {
   exit 1
 }
 
-# test_failure_expect - run a command that must refuse with the exit
-# code given. Nothing is captured: its refusal streams. Args: NAME CODE --
+# test_failure_expect - run a command that must exit with the code given,
+# a refusal's or 0. Nothing is captured. Its lines stream. Args: NAME CODE --
 test_failure_expect() {
   local _name="$1" _wanted_code="$2" _code=0
   shift 2

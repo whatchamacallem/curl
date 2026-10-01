@@ -3,8 +3,8 @@
 # the temporary artifacts directory's default name, beside the report
 ARTIFACTS_NAME=perf2html_temporary_artifacts
 
-# the assets/ script written last and counted by the checksum, whose one
-# line names the manifest version, proving the run finished
+# the assets/ script written last and counted by the checksum, holding the
+# manifest table, proving the run finished
 ASSET_REPORT_COMPLETE_SCRIPT_NAME=report_complete.js
 
 # the ccache namespace tree_build tags every compile with, so clean.sh
@@ -74,10 +74,10 @@ PROFILE_TIMING_FILE_PREFIX=perf-stat
 # the report-root directory holding the shared copy of our own theme
 REPORT_ASSETS_DIR_NAME=assets
 
-# the batch's report directory name for the unmodified build
+# the default report directory name for the unmodified build
 REPORT_BASELINE_DIR_NAME=perf2html_baseline_report
 
-# the batch's report directory name for the subtraction of the two
+# the default report directory name for the subtraction of the two
 REPORT_DIFF_DIR_NAME=perf2html_diff_report
 
 # the LABEL= row a report's MANIFEST.txt records its checksum on. The shell
@@ -89,12 +89,16 @@ REPORT_MANIFEST_CHECKSUM_LABEL=checksum
 REPORT_MANIFEST_VERSION_DIFF='curl/perf2html_diff.sh v1'
 REPORT_MANIFEST_VERSION_FULL='curl/perf2html.sh v1'
 
-# the batch's report directory name for the build carrying the flags
+# the default report directory name for the build carrying the flags
 REPORT_MODIFIED_DIR_NAME=perf2html_modified_report
 
-# the extension of a report's raw-data archive, one per test, page-visible,
-# and of the whole-report archive --txz writes and every script reads back
+# the extension of a full report's timer artifacts archive, its overview's
+# raw data, and of the whole-report archive --txz writes and scripts read back
 REPORT_RAW_ARCHIVE_SUFFIX=.txz
+
+# a full report's one archive of its recordings, before their recorded unix
+# time: the archive's file name, before the suffix, and its one root entry
+TIMER_ARTIFACTS_NAME_PREFIX=timer-artifacts-
 
 # loops one native timing run of a test does
 TIMING_LOOPS=10000

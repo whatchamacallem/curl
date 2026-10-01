@@ -50,33 +50,28 @@ archive_report_write() {
   log_verbose "$archive"
 }
 
-# archive_write - one reproducible tar.xz of a test's recordings, under
-# $out/raw/.
-archive_write() {
-  local name="$1" out="$2" strip="$3"
-  shift 3
-  local stage file staged
-  stage="$ARTIFACTS_DIR/stage.$name.$TIMESTAMP"
-  rm -rf "$stage"
-  mkdir -p "$stage" "$out/raw"
-  for file in "$@"; do
-    staged="$(basename "$file")"
-    staged="${staged/.$TIMESTAMP/}"
-    cp "$file" "$stage/$staged"
-  done
-  [ -z "$strip" ] || sed -i "s#$strip/##g" "$stage"/*
-  command_run tar --sort=name --mtime=@0 --owner=0 --group=0 \
-    --numeric-owner -cJf "$out/raw/$name$REPORT_RAW_ARCHIVE_SUFFIX" \
-    -C "$stage" .
-  rm -rf "$stage"
-}
-
 # artifacts_clean - deletes this run's artifacts subdir, and its parent once
 # no sibling run keeps files there: the cache is debug only unless kept.
 artifacts_clean() {
   [ -d "$ARTIFACTS_DIR" ] || return 0
   rm -r "$ARTIFACTS_DIR"
   rmdir --ignore-fail-on-non-empty "$(dirname "$ARTIFACTS_DIR")"
+}
+
+# artifacts_dir_resolve - $ARTIFACTS_DIR absolute, as --artifacts= named it,
+# else a mktemp -d unless kept, else $ARTIFACTS_NAME in the dir given.
+artifacts_dir_resolve() {
+  # SETS ARTIFACTS_DIR. Arg: the dir a kept one defaults into, the report's
+  # parent for perf2html.sh and the diff, the target dir for the batch
+  if [ -z "$ARTIFACTS_DIR" ]; then
+    if [ "$KEEP_ARTIFACTS" = 0 ] && [ "$REGENERATE" = 0 ]; then
+      ARTIFACTS_DIR="$(mktemp -d)"
+      log_verbose "using --artifacts=\"$ARTIFACTS_DIR\""
+    else
+      ARTIFACTS_DIR="$1/$ARTIFACTS_NAME"
+    fi
+  fi
+  ARTIFACTS_DIR="$(absolute_path "$ARTIFACTS_DIR")"
 }
 
 # block_lead - the blank line before a block, none before a hand-run script's
@@ -552,6 +547,16 @@ report_finish() {
   archive_report_write "$dir"
 }
 
+# report_path_of - one report's absolute path by the one rule, a name starting
+# with / or ~/ as named, any other under $TARGET_DIR.
+report_path_of() {
+  local report_name="$1"
+  case "$report_name" in
+    /* | "~/"*) absolute_path "$report_name" ;;
+    *) absolute_path "$TARGET_DIR/$report_name" ;;
+  esac
+}
+
 # revision_describe - the checkout's short revision, -dirty appended while
 # it holds uncommitted changes. Args: the repository directory.
 revision_describe() {
@@ -581,6 +586,58 @@ screenshot_label_script_print() {
   document.body.appendChild(label);
 })();
 EOF
+}
+
+# shared_options_parse - the options every perf2html*.sh takes, wherever
+# they stand, --help printing the calling script's usage_show and exiting.
+shared_options_parse() {
+  # SETS ARTIFACTS_DIR, KEEP_ARTIFACTS, REGENERATE, REMAINING_ARGUMENTS (the
+  # rest, in order), TARGET_DIR (absolute), VERBOSE, WRITE_REPORT_ARCHIVE
+  KEEP_ARTIFACTS=0
+  REGENERATE=0
+  REMAINING_ARGUMENTS=()
+  TARGET_DIR="$INVOKED_FROM"
+  ARTIFACTS_DIR=""
+  WRITE_REPORT_ARCHIVE=0
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      -h | --help)
+        usage_show
+        exit 0
+        ;;
+      --verbose)
+        VERBOSE=$((VERBOSE + 1))
+        shift
+        ;;
+      --keep-artifacts)
+        KEEP_ARTIFACTS=1
+        shift
+        ;;
+      --regenerate)
+        REGENERATE=1
+        KEEP_ARTIFACTS=1
+        shift
+        ;;
+      --txz)
+        WRITE_REPORT_ARCHIVE=1
+        shift
+        ;;
+      --artifacts=*)
+        ARTIFACTS_DIR="${1#--artifacts=}"
+        shift
+        ;;
+      --target-dir=*)
+        TARGET_DIR="${1#--target-dir=}"
+        shift
+        ;;
+      *)
+        REMAINING_ARGUMENTS+=("$1")
+        shift
+        ;;
+    esac
+  done
+  [ "$VERBOSE" -lt "$VERBOSE_TRACE_LEVEL" ] || set -o xtrace
+  TARGET_DIR="$(absolute_path "$TARGET_DIR")"
 }
 
 # source_cache_fetch - download and unpack one source version under the

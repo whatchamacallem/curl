@@ -1,4 +1,4 @@
-(function () {
+window.catch_show_throw(function () {
   "use strict";
 
   const HEAT_MAP_COUNTER_DESCRIPTION_STRING_ID_PREFIX = settings(
@@ -16,15 +16,14 @@
   const HEAT_MAP_HOME_TABLE_MAX_ROWS = settings(
     "HEAT_MAP_HOME_TABLE_MAX_ROWS",
   );
-  const HEAT_MAP_MINIMAP_SHOWN_ABOVE_FILE_LINES = settings(
-    "HEAT_MAP_MINIMAP_SHOWN_ABOVE_FILE_LINES",
-  );
   const HEAT_MAP_MINIMAP_SOURCE_WIDTH_CHARS = settings(
     "HEAT_MAP_MINIMAP_SOURCE_WIDTH_CHARS",
   );
   const HEAT_MAP_MINIMAP_VIEWPORT_BOX_SMALLEST_PX = settings(
     "HEAT_MAP_MINIMAP_VIEWPORT_BOX_SMALLEST_PX",
   );
+  const HEAT_MAP_MODEL_DIR_NAME = settings("HEAT_MAP_MODEL_DIR_NAME");
+  const HEAT_MAP_MODEL_GLOBAL_NAME = settings("HEAT_MAP_MODEL_GLOBAL_NAME");
   const HEAT_MAP_SECONDARY_COUNTER_NAMES = settings(
     "HEAT_MAP_SECONDARY_COUNTER_NAMES",
   );
@@ -40,9 +39,11 @@
   const HEAT_MAP_TREE_AUTO_EXPAND_ABOVE_SHARE = settings(
     "HEAT_MAP_TREE_AUTO_EXPAND_ABOVE_SHARE",
   );
+  const HEAT_MAP_VIEW_ENTRY = settings("HEAT_MAP_VIEW_ENTRY");
   const LAYOUT_RESIZE_SETTLE_DELAY_MS = settings(
     "LAYOUT_RESIZE_SETTLE_DELAY_MS",
   );
+  const RANKING_COUNTER_NAME = settings("RANKING_COUNTER_NAME");
   const STYLE_DESIGN_FONT_CHARACTER_WIDTH_PX = settings(
     "STYLE_DESIGN_FONT_CHARACTER_WIDTH_PX",
   );
@@ -70,11 +71,13 @@
   const STYLE_TABLE_LOCATION_COLUMN_MAX_CHARS = settings(
     "STYLE_TABLE_LOCATION_COLUMN_MAX_CHARS",
   );
-  const profile_model = JSON.parse(
-    document.getElementById("heat-map-profile-data-").textContent,
-  );
-  const file_table = profile_model.files,
-    function_table = profile_model.functions;
+  const WIDGET_KEY_NAMES = settings("WIDGET_KEY_NAMES");
+  // the model on show, its two tables and its test, each null until
+  // model_switch puts the first model on show
+  let profile_model = null,
+    file_table = null,
+    function_table = null,
+    shown_test_name = null;
   const tree_panel = document.getElementById("heat-map-tree-");
   const main_panel = document.getElementById("heat-map-main-");
   const minimap_panel = document.getElementById("heat-map-minimap-");
@@ -83,10 +86,13 @@
     "heat-map-minimap-viewport-",
   );
   const view_storage = report_ui.view_storage;
-  let sort_mode = view_storage.value_read("heat.sort") || "heat";
+  let sort_mode = null;
   let current_file_path = null,
     search_query = "";
   const sort_select = document.getElementById("heat-map-menu-tree-select-");
+  // the tree order storage holds, else by heat
+  const sort_mode_stored = () =>
+    stored_choice_of(sort_select, "heat.sort", "heat");
   document.getElementById("heat-map-menu-counter-label-").textContent =
     window.ui_strings.text_of("str_heat_map_menu_counter");
   document.getElementById("heat-map-menu-scale-label-").textContent =
@@ -101,7 +107,15 @@
     window.ui_strings.text_of("str_sort_by_name");
   document.getElementById("heat-map-menu-search-box-").placeholder =
     window.ui_strings.text_of("str_search_placeholder");
-  sort_select.value = sort_mode;
+  tree_panel.setAttribute(
+    "aria-label",
+    window.ui_strings.text_of("str_heat_map_tree_label"),
+  );
+  main_panel.setAttribute(
+    "aria-label",
+    window.ui_strings.text_of("str_heat_map_main_label"),
+  );
+  sort_mode_apply(sort_mode_stored());
   tree_panel.style.minWidth = STYLE_HEAT_MAP_TREE_PANE_NARROWEST_PX + "px";
   report_ui.pane_splitter.attach(
     document.getElementById("heat-map-tree-resize-handle-"),
@@ -112,39 +126,15 @@
 
   const vector_at = (cost_vector, index) =>
     cost_vector && index < cost_vector.length ? cost_vector[index] : 0;
-  const counter_list = [];
-  profile_model.heatMapTotals.counters.forEach((name, index) => {
-    counter_list.push({
-      key: name,
-      get: (cost_vector) => vector_at(cost_vector, index),
-      contributing_counters: [],
-    });
-  });
-  for (const [name, terms] of profile_model.heatMapTotals.derived) {
-    const get = (cost_vector) =>
-      terms.reduce(
-        (running_total, term) =>
-          running_total + term[0] * vector_at(cost_vector, term[1]),
-        0,
-      );
-    // the recorded counters fill counter_list's first slots in cost-vector
-    // order, so a term's slot is the index of the counter it reads
-    counter_list.push({
-      key: name,
-      get,
-      derived: true,
-      contributing_counters: terms.map((term) => counter_list[term[1]]),
-    });
-  }
+  // the model on show's counters, recorded then derived, and those shown
+  // beside the selected one; counters_build makes both
+  let counter_list = null,
+    secondary_counters = null;
   const counter_find = (key) =>
     counter_list.find((counter) => counter.key === key);
-  // the generator proved the default is a column it emitted; a select entry
-  // is one too, and route_render checks the counter an address names
-  let current_counter = counter_find(
-    profile_model.heatMapTotals.defaultCounter,
-  );
-  const secondary_counters =
-    HEAT_MAP_SECONDARY_COUNTER_NAMES.map(counter_find).filter(Boolean);
+  // the generator proved the default is a column that script emitted, and a
+  // stored counter is shown only where the pulldown offers it
+  let current_counter = null;
 
   const text_of = window.ui_strings.text_of;
   const text_fill = window.ui_strings.text_fill;
@@ -158,23 +148,59 @@
   const counter_select = document.getElementById(
     "heat-map-menu-counter-select-",
   );
-  let counter_label_width = 0;
-  for (const counter of counter_list) {
-    const option = document.createElement("option");
-    option.value = counter.key;
-    option.textContent = counter_label(counter);
-    counter_label_width = Math.max(
-      counter_label_width,
-      option.textContent.length,
+  // the counter storage holds, else the one the model opens on
+  const counter_key_stored = () =>
+    stored_choice_of(
+      counter_select,
+      "heat.counter",
+      profile_model.heatMapTotals.defaultCounter,
     );
-    counter_select.appendChild(option);
+  // Build the model on show's counters and offer each in the counter
+  // pulldown, sized to the longest.
+  function counters_build() {
+    counter_list = [];
+    profile_model.heatMapTotals.counters.forEach((name, index) => {
+      counter_list.push({
+        key: name,
+        get: (cost_vector) => vector_at(cost_vector, index),
+        contributing_counters: [],
+      });
+    });
+    for (const [name, terms] of profile_model.heatMapTotals.derived) {
+      const get = (cost_vector) =>
+        terms.reduce(
+          (running_total, term) =>
+            running_total + term[0] * vector_at(cost_vector, term[1]),
+          0,
+        );
+      // the recorded counters fill counter_list's first slots in cost-vector
+      // order, so a term's slot is the index of the counter it reads
+      counter_list.push({
+        key: name,
+        get,
+        derived: true,
+        contributing_counters: terms.map((term) => counter_list[term[1]]),
+      });
+    }
+    secondary_counters =
+      HEAT_MAP_SECONDARY_COUNTER_NAMES.map(counter_find).filter(Boolean);
+    let counter_label_width = 0;
+    counter_select.replaceChildren();
+    for (const counter of counter_list) {
+      const option = document.createElement("option");
+      option.value = counter.key;
+      option.textContent = counter_label(counter);
+      counter_label_width = Math.max(
+        counter_label_width,
+        option.textContent.length,
+      );
+      counter_select.appendChild(option);
+    }
+    counter_select.style.width =
+      counter_label_width +
+      STYLE_HEAT_MAP_MENU_DROPDOWN_EXTRA_WIDTH_CHARS +
+      "ch";
   }
-  counter_select.value = current_counter.key;
-
-  counter_select.style.width =
-    counter_label_width +
-    STYLE_HEAT_MAP_MENU_DROPDOWN_EXTRA_WIDTH_CHARS +
-    "ch";
   let total_cost = 1,
     secondary_totals = {};
   const current_value = (cost_vector) => current_counter.get(cost_vector);
@@ -209,13 +235,14 @@
     label: text_of("str_column_self"),
     numeric: true,
   };
-  const HAS_CALL_GRAPH = function_table.some(
-    (function_entry) => function_entry.callers.length > 0,
-  );
+  // whether the model on show records who called whom, set by model_switch
+  let HAS_CALL_GRAPH = null;
 
-  const IS_DIFF = !!profile_model.heatMapTotals.diff;
-  const function_baselines = profile_model.functionBaseline || [];
-  const file_baselines = profile_model.fileBaseline || {};
+  // whether the report is a diff, set from its first model by
+  // report_kind_set, and the model on show's baseline costs
+  let IS_DIFF = null;
+  let function_baselines = null,
+    file_baselines = null;
   let counter_baseline_of = () => null;
   let heat_position_of = (heat_value) => heat_value;
   let share_of_baseline = (value, baseline_cost) => share_of_total(value);
@@ -242,46 +269,47 @@
     line_number != null
       ? share_in_scope(self_cost, secondary, line_number)
       : (100 * self_cost) / secondary_totals[secondary.key];
-  if (IS_DIFF) {
-    share_text = report_ui.signed_percent_text;
-    human_text = report_ui.signed_human_text;
-    HEADING_PREFIX = text_of("str_heading_prefix_diff");
-    TICKER_TAPE_HEADING = text_of("str_ticker_tape_heading_diff");
-    counter_baseline_of = (cost_vector, counter) => {
-      if (!cost_vector) return null;
-      const baseline_cost = absolute(counter.get(cost_vector));
-      return baseline_cost ? baseline_cost : null;
-    };
-    share_of_baseline = (value, baseline_cost) =>
-      baseline_cost
-        ? (100 * value) / baseline_cost
-        : value
-          ? Math.sign(value) * Infinity
-          : 0;
-    scope_choices_build = () => [["line", text_of("str_scope_line")]];
-    secondary_share = (value, counter, baseline_cost) =>
-      share_of_baseline(value, baseline_cost);
-    line_share = (value, baseline_cost) =>
-      share_of_baseline(value, baseline_cost);
-    line_share_text = (value, baseline_cost) =>
-      share_of_baseline_text(value, baseline_cost);
-    heat_signed = (curved, percent) => (percent < 0 ? -curved : curved);
-    heat_position_of = (heat_value) => (heat_value + 1) * 0.5;
-    secondary_percent_of_file = (self_cost, file_path, secondary) =>
-      share_of_baseline(
+  // Set what a diff changes, then the scale pulldown its scopes decide, from
+  // the first model, as every model one report holds is a diff, or none is.
+  function report_kind_set(first_model) {
+    IS_DIFF = !!first_model.heatMapTotals.diff;
+    if (IS_DIFF) {
+      share_text = report_ui.signed_percent_text;
+      human_text = report_ui.signed_human_text;
+      HEADING_PREFIX = text_of("str_heading_prefix_diff");
+      TICKER_TAPE_HEADING = text_of("str_ticker_tape_heading_diff");
+      counter_baseline_of = (cost_vector, counter) => {
+        if (!cost_vector) return null;
+        const baseline_cost = absolute(counter.get(cost_vector));
+        return baseline_cost ? baseline_cost : null;
+      };
+      share_of_baseline = report_ui.diff_share_of;
+      scope_choices_build = () => [["line", text_of("str_scope_line")]];
+      secondary_share = (value, counter, baseline_cost) =>
+        share_of_baseline(value, baseline_cost);
+      line_share = (value, baseline_cost) =>
+        share_of_baseline(value, baseline_cost);
+      line_share_text = (value, baseline_cost) =>
+        share_of_baseline_text(value, baseline_cost);
+      heat_signed = (curved, percent) => (percent < 0 ? -curved : curved);
+      heat_position_of = (heat_value) => (heat_value + 1) * 0.5;
+      secondary_percent_of_file = (self_cost, file_path, secondary) =>
+        share_of_baseline(
+          self_cost,
+          file_counter_baseline(file_path, secondary),
+        );
+      secondary_percent_of_cell = (
         self_cost,
-        file_counter_baseline(file_path, secondary),
-      );
-    secondary_percent_of_cell = (
-      self_cost,
-      secondary,
-      line_number,
-      baseline_lookup,
-    ) =>
-      share_of_baseline(
-        self_cost,
-        baseline_lookup ? baseline_lookup(secondary) : null,
-      );
+        secondary,
+        line_number,
+        baseline_lookup,
+      ) =>
+        share_of_baseline(
+          self_cost,
+          baseline_lookup ? baseline_lookup(secondary) : null,
+        );
+    }
+    scale_pulldown_fill();
   }
   const baseline_of = (cost_vector) =>
     counter_baseline_of(cost_vector, current_counter);
@@ -306,43 +334,51 @@
     file_counter_baseline(file_path, current_counter);
 
   const scale_select = document.getElementById("heat-map-menu-scale-select-");
-  const SCOPE_CHOICES = scope_choices_build();
   const CURVE_CHOICES = [
     ["log", text_of("str_scale_curve_log")],
     ["linear", text_of("str_scale_curve_linear")],
   ];
+  // every curve with every scope the report's kind has, and the one on
+  // show, from the first model on
   const SCALE_CHOICES = [];
-  CURVE_CHOICES.forEach((curve) => {
-    SCOPE_CHOICES.forEach((scope) =>
-      SCALE_CHOICES.push({
-        value: curve[0] + "/" + scope[0],
-        curve: curve[0],
-        scope: scope[0],
-        label:
-          SCOPE_CHOICES.length > 1
-            ? text_fill("str_scale_entry", {
-                curve: curve[1],
-                scope: scope[1],
-              })
-            : curve[1],
-      }),
-    );
-  });
-  let active_scale =
-    SCALE_CHOICES.find(
-      (entry) => entry.value === view_storage.value_read("heat.scale"),
-    ) || SCALE_CHOICES[0];
-  let scale_label_width = 0;
-  SCALE_CHOICES.forEach((entry) => {
-    const option = document.createElement("option");
-    option.value = entry.value;
-    option.textContent = entry.label;
-    scale_select.appendChild(option);
-    scale_label_width = Math.max(scale_label_width, entry.label.length);
-  });
-  scale_select.value = active_scale.value;
-  scale_select.style.width =
-    scale_label_width + STYLE_HEAT_MAP_MENU_DROPDOWN_EXTRA_WIDTH_CHARS + "ch";
+  let active_scale = null;
+  // the scale storage holds, else the first
+  const scale_value_stored = () =>
+    stored_choice_of(scale_select, "heat.scale", SCALE_CHOICES[0].value);
+  // Offer every curve with every scope in the scale pulldown, sized to the
+  // longest, on the stored one. Run once, by report_kind_set.
+  function scale_pulldown_fill() {
+    const scope_choices = scope_choices_build();
+    CURVE_CHOICES.forEach((curve) => {
+      scope_choices.forEach((scope) =>
+        SCALE_CHOICES.push({
+          value: curve[0] + "/" + scope[0],
+          curve: curve[0],
+          scope: scope[0],
+          label:
+            scope_choices.length > 1
+              ? text_fill("str_scale_entry", {
+                  curve: curve[1],
+                  scope: scope[1],
+                })
+              : curve[1],
+        }),
+      );
+    });
+    let scale_label_width = 0;
+    SCALE_CHOICES.forEach((entry) => {
+      const option = document.createElement("option");
+      option.value = entry.value;
+      option.textContent = entry.label;
+      scale_select.appendChild(option);
+      scale_label_width = Math.max(scale_label_width, entry.label.length);
+    });
+    scale_select.style.width =
+      scale_label_width +
+      STYLE_HEAT_MAP_MENU_DROPDOWN_EXTRA_WIDTH_CHARS +
+      "ch";
+    scale_apply(scale_value_stored());
+  }
 
   let scope_totals = null;
   const SCOPE_SHARE_STRING_IDS = {
@@ -428,17 +464,9 @@
       `color:${foreground_color}`
     );
   }
-  const per_function_calls = function_table.map((function_entry) =>
-    function_entry.callers.reduce(
-      (running_total, caller) => running_total + caller[4],
-      0,
-    ),
-  );
-  const CALLS_TOTAL =
-    per_function_calls.reduce(
-      (running_total, call_count) => running_total + call_count,
-      0,
-    ) || 1;
+  // each function's call count in the model on show, and their sum
+  let per_function_calls = null,
+    CALLS_TOTAL = null;
   const call_count_cell = (call_count) =>
     call_count
       ? {
@@ -447,20 +475,21 @@
         }
       : "";
 
-  const hash_of_state = report_ui.heat_map_address.hash_of_state;
-  const state_of_hash = report_ui.heat_map_address.state_of_hash;
-  // The counter an address on this page names: the one shown, whenever the
-  // report has more than one to choose between.
-  const addressed_counter_key = () =>
-    counter_list.length > 1 ? current_counter.key : null;
+  // The hash of an address in the test on show, a file's line, the whole
+  // file when line is left out or 0, or a function.
   const hash_for_line = (file_path, line) =>
-    hash_of_state({
+    report_ui.address.hash_of({
+      test: shown_test_name,
+      view: HEAT_MAP_VIEW_ENTRY[0],
       file: file_path,
-      line: line,
-      ev: addressed_counter_key(),
+      line: line || null,
     });
   const hash_for_function = (name) =>
-    hash_of_state({ fn: name, ev: addressed_counter_key() });
+    report_ui.address.hash_of({
+      test: shown_test_name,
+      view: HEAT_MAP_VIEW_ENTRY[0],
+      function: name,
+    });
   function function_name(index) {
     return index != null && function_table[index]
       ? function_table[index].name
@@ -722,6 +751,10 @@
   }
   const caret_of = (is_expanded) =>
     text_of(is_expanded ? "str_caret_down" : "str_caret_right");
+  // a node's part in the tree view pattern, a treeitem at its level, a tab
+  // stop only once tree_tab_stop_place or a focus makes that node the one
+  const treeitem_attributes_of = (node_level) =>
+    ` role="treeitem" aria-level="${node_level}" tabindex="-1"`;
   function tree_render() {
     const output_parts = [];
     function nodes_emit(tree_node, depth) {
@@ -739,6 +772,8 @@
         output_parts.push(
           `<div class="heat-map-tree-node- dir_` +
             `${heat_style_attribute ? " heat_" : ""}"` +
+            `${treeitem_attributes_of(depth + 1)}` +
+            ` aria-expanded="${is_expanded}"` +
             ` data-dir-="${html_escape(directory_node.path)}"` +
             ` style="padding-left:${indent_chars}ch;` +
             `${heat_style_attribute}">` +
@@ -755,7 +790,7 @@
         );
         output_parts.push(
           `<div class="heat-map-tree-node-child-group-` +
-            `${is_expanded ? " open_" : ""}">`,
+            `${is_expanded ? " open_" : ""}" role="group">`,
         );
         nodes_emit(directory_node, depth + 1);
         output_parts.push(`</div>`);
@@ -763,15 +798,19 @@
       const file_list = tree_node.files
         .filter((file) => path_matches(file.path))
         .sort(node_compare);
-      const file_row_emit = (file) => {
+      const file_row_emit = (file, node_level) => {
         const selected_class =
           file.path === current_file_path ? " selected_" : "";
+        const selected_attribute = selected_class
+          ? ' aria-selected="true"'
+          : "";
         const heat_style_attribute = file.cold
           ? ""
           : cell_style(heat_of_delta(file.self, file.base));
         output_parts.push(
           `<div class="heat-map-tree-node- file_${file.cold ? " cold_" : ""}` +
             `${heat_style_attribute ? " heat_" : ""}${selected_class}"` +
+            `${treeitem_attributes_of(node_level)}${selected_attribute}` +
             ` data-file-="${html_escape(file.path)}"` +
             ` style="padding-left:${indent_chars}ch;` +
             `${heat_style_attribute}">` +
@@ -785,13 +824,16 @@
         );
       };
       const zero_cost_files = file_list.filter((file) => file.zero);
-      for (const file of file_list) if (!file.zero) file_row_emit(file);
+      for (const file of file_list)
+        if (!file.zero) file_row_emit(file, depth + 1);
       if (zero_cost_files.length) {
         const is_expanded = search_query
           ? true
           : expanded_cold_groups.has(tree_node.path);
         output_parts.push(
           `<div class="heat-map-tree-node- more_"` +
+            `${treeitem_attributes_of(depth + 1)}` +
+            ` aria-expanded="${is_expanded}"` +
             ` data-more-="${html_escape(tree_node.path)}"` +
             ` style="padding-left:${indent_chars}ch">` +
             `<span class="heat-map-tree-node-caret-">` +
@@ -800,34 +842,180 @@
             `${text_of("str_no_samples")}</span>` +
             `<span class="heat-map-tree-node-share-percent-"></span></div>`,
         );
+        // its files a group of its children, drawn at its own indent
         if (is_expanded) {
-          for (const file of zero_cost_files) file_row_emit(file);
+          output_parts.push(
+            `<div class="heat-map-tree-node-child-group- open_"` +
+              ` role="group">`,
+          );
+          for (const file of zero_cost_files) file_row_emit(file, depth + 2);
+          output_parts.push(`</div>`);
         }
       }
     }
+    const tree_had_focus =
+      document.hasFocus() && tree_panel.contains(document.activeElement);
     nodes_emit(tree_root, 0);
     tree_panel.innerHTML = output_parts.join("");
+    tree_tab_stop_place(tree_had_focus);
   }
-  tree_panel.addEventListener("click", (click_event) => {
-    const tree_node = click_event.target.closest(".heat-map-tree-node-");
-    if (!tree_node) return;
-    if (tree_node.getAttribute("data-dir-") != null) {
-      const file_path = tree_node.getAttribute("data-dir-");
-      if (expanded_directories.has(file_path)) {
-        expanded_directories.delete(file_path);
-      } else expanded_directories.add(file_path);
-      tree_render();
-    } else if (tree_node.getAttribute("data-more-") != null) {
-      const file_path = tree_node.getAttribute("data-more-");
-      if (expanded_cold_groups.has(file_path)) {
-        expanded_cold_groups.delete(file_path);
-      } else expanded_cold_groups.add(file_path);
-      tree_render();
-    } else if (tree_node.getAttribute("data-file-") != null) {
-      if (tree_node.classList.contains("cold_")) return;
-      location.hash = hash_for_line(tree_node.getAttribute("data-file-"));
+  // the selector of the node focus was last on, kept across renders
+  let tree_focus_selector = null;
+  // the attribute each kind of node carries its key in, its path
+  const TREE_NODE_KEY_ATTRIBUTE_NAMES = [
+    "data-dir-",
+    "data-file-",
+    "data-more-",
+  ];
+  // The selector finding a node again after a render, by its key attribute.
+  function tree_node_selector_of(tree_node) {
+    const key_attribute_name = TREE_NODE_KEY_ATTRIBUTE_NAMES.find(
+      (attribute_name) => tree_node.hasAttribute(attribute_name),
+    );
+    const key_value = CSS.escape(tree_node.getAttribute(key_attribute_name));
+    return `.heat-map-tree-node-[${key_attribute_name}="${key_value}"]`;
+  }
+  // The tree's nodes on show, in order, none inside a closed group.
+  function tree_visible_nodes() {
+    return [...tree_panel.querySelectorAll(".heat-map-tree-node-")].filter(
+      (tree_node) =>
+        !tree_node.closest(".heat-map-tree-node-child-group-:not(.open_)"),
+    );
+  }
+  // The node a node sits in, null at the tree's top level.
+  function tree_parent_of(tree_node) {
+    const holding_group = tree_node.parentElement.closest(
+      ".heat-map-tree-node-child-group-",
+    );
+    return holding_group ? holding_group.previousElementSibling : null;
+  }
+  // The first node in an open node's group.
+  const tree_first_child_of = (tree_node) =>
+    tree_node.nextElementSibling.querySelector(
+      ":scope > .heat-map-tree-node-",
+    );
+  // Put the tree's one tab stop on the node focus was on while the tree
+  // holds it, else on the file on show, else on the first node on show.
+  function tree_tab_stop_place(takes_focus) {
+    const visible_nodes = tree_visible_nodes();
+    const candidate_nodes = [
+      takes_focus && tree_focus_selector
+        ? tree_panel.querySelector(tree_focus_selector)
+        : null,
+      tree_panel.querySelector(".heat-map-tree-node-.selected_"),
+      visible_nodes[0],
+    ];
+    const tab_stop = candidate_nodes.find((candidate_node) =>
+      visible_nodes.includes(candidate_node),
+    );
+    if (tab_stop) report_ui.tab_stop_move(null, tab_stop, takes_focus);
+  }
+  // A key on a node, the tree view pattern's. Up and Down walk the nodes on
+  // show, Right and Left open, enter, close or leave one, Home and End.
+  function tree_key_take(key_event, key_name, tree_node) {
+    if (report_ui.widget_key.activates(key_name)) {
+      key_event.preventDefault();
+      if (!key_event.repeat) tree_node.click();
+      return;
     }
-  });
+    const visible_nodes = tree_visible_nodes();
+    const node_index = visible_nodes.indexOf(tree_node);
+    const is_open = tree_node.getAttribute("aria-expanded") === "true";
+    const is_closed = tree_node.getAttribute("aria-expanded") === "false";
+    let next_node = null;
+    switch (key_name) {
+      case WIDGET_KEY_NAMES.down:
+        next_node = visible_nodes[node_index + 1];
+        break;
+      case WIDGET_KEY_NAMES.first:
+        next_node = visible_nodes[0];
+        break;
+      case WIDGET_KEY_NAMES.last:
+        next_node = visible_nodes[visible_nodes.length - 1];
+        break;
+      case WIDGET_KEY_NAMES.left:
+        // an open node closes as a click does, unless a search holds every
+        // group open; any other goes to its parent
+        if (is_open && !search_query) tree_node.click();
+        else next_node = tree_parent_of(tree_node);
+        break;
+      case WIDGET_KEY_NAMES.right:
+        // a closed node opens as a click does; an open one enters its group
+        if (is_closed) tree_node.click();
+        else if (is_open) next_node = tree_first_child_of(tree_node);
+        break;
+      case WIDGET_KEY_NAMES.up:
+        next_node = visible_nodes[node_index - 1];
+        break;
+      default:
+        return;
+    }
+    key_event.preventDefault();
+    if (next_node) report_ui.tab_stop_move(tree_node, next_node, true);
+  }
+  // a focused node, by key or pointer, becomes the tree's one tab stop
+  tree_panel.addEventListener(
+    "focusin",
+    window.catch_show_throw((focus_event) => {
+      const tree_node = focus_event.target.closest(".heat-map-tree-node-");
+      if (!tree_node) return;
+      tree_focus_selector = tree_node_selector_of(tree_node);
+      report_ui.tab_stop_move(
+        tree_panel.querySelector('.heat-map-tree-node-[tabindex="0"]'),
+        tree_node,
+        false,
+      );
+    }),
+  );
+  tree_panel.addEventListener(
+    "keydown",
+    window.catch_show_throw((key_event) => {
+      const key_name = report_ui.widget_key.of(key_event);
+      const tree_node = key_event.target.closest(".heat-map-tree-node-");
+      if (key_name && tree_node) tree_key_take(key_event, key_name, tree_node);
+    }),
+  );
+  tree_panel.addEventListener(
+    "click",
+    window.catch_show_throw((click_event) => {
+      const tree_node = click_event.target.closest(".heat-map-tree-node-");
+      if (!tree_node) return;
+      if (tree_node.getAttribute("data-dir-") != null) {
+        const file_path = tree_node.getAttribute("data-dir-");
+        if (expanded_directories.has(file_path)) {
+          expanded_directories.delete(file_path);
+        } else expanded_directories.add(file_path);
+        tree_render();
+        // a search shows every group open, so a click there reveals none
+        if (!search_query && expanded_directories.has(file_path))
+          group_opening_show(tree_node);
+      } else if (tree_node.getAttribute("data-more-") != null) {
+        const file_path = tree_node.getAttribute("data-more-");
+        if (expanded_cold_groups.has(file_path)) {
+          expanded_cold_groups.delete(file_path);
+        } else expanded_cold_groups.add(file_path);
+        tree_render();
+        if (!search_query && expanded_cold_groups.has(file_path))
+          group_opening_show(tree_node);
+      } else if (tree_node.getAttribute("data-file-") != null) {
+        if (tree_node.classList.contains("cold_")) return;
+        report_ui.address.request(
+          hash_for_line(tree_node.getAttribute("data-file-")),
+        );
+      }
+    }),
+  );
+  // Scroll the group a node just opened to the tree's top when that group
+  // runs past the tree's visible bottom, the rows above scrolled off the top.
+  function group_opening_show(clicked_node) {
+    const opened_node = tree_panel.querySelector(
+      tree_node_selector_of(clicked_node),
+    );
+    const tree_rect = design_rect_of(tree_panel);
+    const group_rect = design_rect_of(opened_node.nextElementSibling);
+    if (group_rect.bottom <= tree_rect.top + tree_panel.clientHeight) return;
+    tree_panel.scrollTop += group_rect.top - tree_rect.top;
+  }
   function tree_reveal(file_path) {
     const path_parts = file_path.split("/");
     let accumulated_path = "";
@@ -843,13 +1031,8 @@
     }
   }
 
-  const entry_line_index = {};
-  function_table.forEach((function_entry, index) => {
-    if (!function_entry.line) return;
-    entry_line_index[function_entry.file] =
-      entry_line_index[function_entry.file] || {};
-    entry_line_index[function_entry.file][function_entry.line] = index;
-  });
+  // the model on show's functions by the file and line each starts at
+  let entry_line_index = null;
 
   function top_lines(count) {
     const all = [];
@@ -1115,22 +1298,25 @@
           ) >= HEAT_MAP_SOURCE_TICKER_TAPE_ENTRY_LEAST_SHARE,
       )
       .slice(0, HEAT_MAP_SOURCE_TICKER_TAPE_ENTRY_MAX_COUNT);
+    // the toolbar pattern: the tape is one tab stop, its first entry at first
     if (ticker_tape_lines.length) {
       markup +=
-        `<div class="heat-map-source-ticker-tape-">` +
+        `<div class="heat-map-source-ticker-tape-" role="toolbar"` +
+        ` aria-label="${html_escape(TICKER_TAPE_HEADING)}">` +
         `<span class="heat-map-source-ticker-tape-label-">` +
         `${html_escape(TICKER_TAPE_HEADING)}</span>`;
-      for (const [line_number, cost] of ticker_tape_lines) {
+      ticker_tape_lines.forEach(([line_number, cost], entry_index) => {
         const baseline_cost = line_baseline(file_path, line_number);
         markup +=
-          `<span class="heat-map-source-ticker-tape-entry-"` +
+          `<span class="heat-map-source-ticker-tape-entry-" role="link"` +
+          ` tabindex="${entry_index ? -1 : 0}"` +
           ` data-goto-="${line_number}"` +
           ` style="${cell_style(
             heat_of_line(cost, baseline_cost, line_number),
           )}">` +
           `${line_number} -` +
           ` ${line_share_text(cost, baseline_cost, line_number)}</span>`;
-      }
+      });
       markup += `</div>`;
     }
 
@@ -1240,6 +1426,11 @@
     tree_render();
 
     minimap_build();
+    // the source's lines walk from the keyboard, a line detail's row left out
+    report_ui.table_rows.attach(
+      main_panel.querySelector("table.heat-map-source-table-"),
+      "tr[data-line-number-]",
+    );
     report_ui.layout_activate(main_panel);
     tail_fit();
     if (!is_first_view) main_panel.scrollTop = kept_scroll_top;
@@ -1320,19 +1511,24 @@
     minimap_box.innerHTML = "";
     minimap_viewport.hidden = true;
   }
+  // Build the minimap as the source view's last column, the template's
+  // element moved in after the source, unless the source fits on screen.
   function minimap_build() {
+    main_panel.append(minimap_panel);
+    minimap_clear();
     const table_element = main_panel.querySelector(
       "table.heat-map-source-table-",
     );
-    const table_body = table_element && table_element.tBodies[0];
+    const source_top_px = design_rect_of(
+      main_panel.querySelector(".heat-map-source-"),
+    ).top;
     if (
-      !table_body ||
-      table_body.rows.length < HEAT_MAP_MINIMAP_SHOWN_ABOVE_FILE_LINES
-    ) {
-      minimap_clear();
+      design_rect_of(table_element).bottom - source_top_px <=
+      main_panel.clientHeight
+    )
       return;
-    }
 
+    const table_body = table_element.tBodies[0];
     const clone_table = document.createElement("table");
     clone_table.className = "heat-map-source-table-";
     const clone_body = document.createElement("tbody");
@@ -1346,7 +1542,6 @@
       clone_body.appendChild(clone_row);
     }
     clone_table.appendChild(clone_body);
-    minimap_box.innerHTML = "";
     minimap_box.appendChild(clone_table);
     minimap_panel.classList.remove("empty_");
     minimap_viewport.hidden = false;
@@ -1356,8 +1551,10 @@
 
   function minimap_layout() {
     if (minimap_panel.classList.contains("empty_")) return;
+    // a rigid column as tall as main shows, wherever the source scrolls
     const band_width_px = minimap_panel.clientWidth,
-      band_height_px = minimap_panel.clientHeight;
+      band_height_px = main_panel.clientHeight;
+    minimap_panel.style.height = band_height_px + "px";
 
     // the font fit makes a ch the design ch, so the source's width is known
     scale_factor = Math.min(
@@ -1443,46 +1640,53 @@
       Math.min(maximum_scroll_px, y_position_px),
     );
   }
-  main_panel.addEventListener("scroll", minimap_sync);
-  minimap_panel.addEventListener("click", (click_event) => {
-    if (click_event.target.closest("#heat-map-minimap-viewport-")) return;
-    const geometry = geometry_measure(),
-      scaled_height_px = clone_height_px * scale_factor;
-    const offsetY =
-      report_ui.design_px(click_event.clientY) -
-      design_rect_of(minimap_panel).top;
-    const row = (offsetY / scaled_height_px) * geometry.rows;
-    scroll_to_row(row - (main_panel.clientHeight - geometry.cover) / 2);
-  });
-  minimap_viewport.addEventListener("pointerdown", (down_event) => {
-    const start_client_y = down_event.clientY,
-      start_top_px = minimap_viewport.offsetTop;
-    const scaled_height_px = clone_height_px * scale_factor;
-    minimap_viewport.classList.add("drag_");
-    if (minimap_viewport.setPointerCapture) {
-      minimap_viewport.setPointerCapture(down_event.pointerId);
-    }
-    const move = (move_event) =>
-      scroll_to_row(
-        ((start_top_px +
-          report_ui.design_px(move_event.clientY - start_client_y)) /
-          scaled_height_px) *
-          geometry_measure().rows,
+  main_panel.addEventListener("scroll", window.catch_show_throw(minimap_sync));
+  minimap_panel.addEventListener(
+    "click",
+    window.catch_show_throw((click_event) => {
+      if (click_event.target.closest("#heat-map-minimap-viewport-")) return;
+      const geometry = geometry_measure(),
+        scaled_height_px = clone_height_px * scale_factor;
+      const offsetY =
+        report_ui.design_px(click_event.clientY) -
+        design_rect_of(minimap_panel).top;
+      const row = (offsetY / scaled_height_px) * geometry.rows;
+      scroll_to_row(row - (main_panel.clientHeight - geometry.cover) / 2);
+    }),
+  );
+  minimap_viewport.addEventListener(
+    "pointerdown",
+    window.catch_show_throw((down_event) => {
+      const start_client_y = down_event.clientY,
+        start_top_px = minimap_viewport.offsetTop;
+      const scaled_height_px = clone_height_px * scale_factor;
+      minimap_viewport.classList.add("drag_");
+      if (minimap_viewport.setPointerCapture) {
+        minimap_viewport.setPointerCapture(down_event.pointerId);
+      }
+      const move = window.catch_show_throw((move_event) =>
+        scroll_to_row(
+          ((start_top_px +
+            report_ui.design_px(move_event.clientY - start_client_y)) /
+            scaled_height_px) *
+            geometry_measure().rows,
+        ),
       );
-    const drag = (on) => {
-      const method = on ? "addEventListener" : "removeEventListener";
-      minimap_viewport[method]("pointermove", move);
-      minimap_viewport[method]("pointerup", release);
-      minimap_viewport[method]("pointercancel", release);
-    };
-    const release = () => {
-      minimap_viewport.classList.remove("drag_");
-      drag(false);
-    };
-    drag(true);
-    down_event.preventDefault();
-    down_event.stopPropagation();
-  });
+      const drag = (on) => {
+        const method = on ? "addEventListener" : "removeEventListener";
+        minimap_viewport[method]("pointermove", move);
+        minimap_viewport[method]("pointerup", release);
+        minimap_viewport[method]("pointercancel", release);
+      };
+      const release = window.catch_show_throw(() => {
+        minimap_viewport.classList.remove("drag_");
+        drag(false);
+      });
+      drag(true);
+      down_event.preventDefault();
+      down_event.stopPropagation();
+    }),
+  );
 
   function detail_line() {
     const detail_row = main_panel.querySelector(
@@ -1504,9 +1708,17 @@
     const row = line ? document.getElementById("L" + line + "_") : null;
     if (row) {
       detail_open(current_file_path, line, row);
+      // Tab into the source lands on the line whose detail is open
+      report_ui.table_rows.tab_stop_set(row, false);
       if (!row_is_visible(row)) row_center(row);
     }
     minimap_sync();
+  }
+  // Close the line detail and give the focus back to its line, as Escape
+  // and the detail's two close links do.
+  function detail_close(detail_row) {
+    report_ui.table_rows.tab_stop_set(detail_row.previousElementSibling, true);
+    report_ui.address.request(hash_for_line(current_file_path));
   }
   function detail_open(file_path, line_number, row) {
     const file = file_table[file_path];
@@ -1538,56 +1750,50 @@
       { label: scope_share_label(), numeric: true },
       { label: text_of("str_column_count"), numeric: true },
     ];
-    const detail_counter_rows = [],
-      detail_counter_row_attributes = [];
-    const detail_counter_row_push = (row, row_class) => {
-      detail_counter_rows.push(row);
-      detail_counter_row_attributes.push(
-        row_class ? `class="${row_class}"` : "",
+    // a counter's row, its name, its share in the scale's scope, its count
+    const counter_row_of = (counter) => {
+      const counter_self = counter.get(line_costs[0]);
+      return [
+        { text: counter_label(counter) },
+        secondary_share_text(
+          counter_self,
+          counter,
+          line_counter_baseline(file_path, line_number, counter),
+          line_number,
+        ),
+        counter_self ? cell_number(counter_self) : "",
+      ];
+    };
+    // the selected counter, every other recorded one by name, then the
+    // ranking counter last when another one is selected
+    const ranking_counter = counter_find(RANKING_COUNTER_NAME);
+    const listed_counters = counter_list
+      .filter(
+        (counter) =>
+          !counter.derived &&
+          counter !== current_counter &&
+          counter !== ranking_counter,
+      )
+      .sort((counter_a, counter_b) =>
+        counter_a.key.localeCompare(counter_b.key),
       );
-    };
-    const counter_row_class = (counter) =>
-      counter.derived
-        ? "heat-map-source-line-detail-derived-counter-row-"
-        : "";
-    // an estimate never hides what it was summed from: a derived counter's
-    // recorded contributors follow its row, each with its own line cost
-    const contributing_rows_push = (counter) => {
-      for (const contributor of counter.contributing_counters) {
-        const contributor_self = contributor.get(line_costs[0]);
-        detail_counter_row_push(
-          [
-            { text: counter_label(contributor) },
-            secondary_share_text(
-              contributor_self,
-              contributor,
-              line_counter_baseline(file_path, line_number, contributor),
-              line_number,
-            ),
-            contributor_self ? cell_number(contributor_self) : "",
-          ],
-          "heat-map-source-line-detail-recorded-counter-row-",
-        );
-      }
-    };
-    detail_counter_row_push(
+    if (current_counter !== ranking_counter)
+      listed_counters.push(ranking_counter);
+    const detail_counter_rows = [
       [
-        {
-          text: `${self_label} ${counter_label(current_counter)}`,
-        },
+        { text: `${self_label} ${counter_label(current_counter)}` },
         line_share_text(self_cost, line_baseline_cost, line_number),
         cell_number(self_cost),
       ],
-      counter_row_class(current_counter),
-    );
-    contributing_rows_push(current_counter);
+      ...listed_counters.map(counter_row_of),
+    ];
     if (call_cost) {
-      detail_counter_row_push([
+      detail_counter_rows.push([
         { text: text_of("str_column_calls") },
         line_share_text(call_cost, line_baseline_cost, line_number),
         cell_number(call_cost),
       ]);
-      detail_counter_row_push([
+      detail_counter_rows.push([
         { text: text_of("str_column_call_count") },
         "",
         call_count_cell(line_costs[2]),
@@ -1600,20 +1806,12 @@
         (contributor) => contributor.get(line_costs[0]),
       );
       if (!secondary_self && !contributor_moved) continue;
-      detail_counter_row_push(
-        [
-          { text: counter_label(secondary) },
-          secondary_share_text(
-            secondary_self,
-            secondary,
-            line_counter_baseline(file_path, line_number, secondary),
-            line_number,
-          ),
-          secondary_self ? cell_number(secondary_self) : "",
-        ],
-        counter_row_class(secondary),
+      // an estimate never hides what it was summed from: a derived
+      // counter's recorded contributors follow its row
+      detail_counter_rows.push(
+        counter_row_of(secondary),
+        ...secondary.contributing_counters.map(counter_row_of),
       );
-      contributing_rows_push(secondary);
     }
     const in_function_note =
       line_function_index != null
@@ -1643,7 +1841,6 @@
       "heat.detail.stats",
       detail_counter_columns,
       detail_counter_rows,
-      { row_attributes: detail_counter_row_attributes },
     );
     const text_parts = [
       heading_line +
@@ -1777,53 +1974,143 @@
     report_ui.layout_activate(detail_row);
   }
 
-  main_panel.addEventListener("click", (click_event) => {
-    const ticker_tape_entry = click_event.target.closest(
-      ".heat-map-source-ticker-tape-entry-",
-    );
-    if (ticker_tape_entry) {
-      location.hash = hash_for_line(
-        current_file_path,
-        +ticker_tape_entry.getAttribute("data-goto-"),
+  main_panel.addEventListener(
+    "click",
+    window.catch_show_throw((click_event) => {
+      // the minimap takes its own clicks: its copied rows open no line
+      if (minimap_panel.contains(click_event.target)) return;
+      const ticker_tape_entry = click_event.target.closest(
+        ".heat-map-source-ticker-tape-entry-",
       );
-      return;
-    }
-    const copy = click_event.target.closest(
-      ".heat-map-source-line-detail-action-bar-copy-link-",
-    );
-    if (copy) {
-      click_event.preventDefault();
-      navigator.clipboard.writeText(
-        copy.closest("tr.heat-map-source-line-detail-row-").detail_copy_text,
+      if (ticker_tape_entry) {
+        report_ui.address.request(
+          hash_for_line(
+            current_file_path,
+            +ticker_tape_entry.getAttribute("data-goto-"),
+          ),
+        );
+        return;
+      }
+      const copy = click_event.target.closest(
+        ".heat-map-source-line-detail-action-bar-copy-link-",
       );
+      if (copy) {
+        click_event.preventDefault();
+        const detail_row = copy.closest("tr.heat-map-source-line-detail-row-");
+        // returned, so a refused write reaches the wrapper as a rejection
+        return navigator.clipboard.writeText(detail_row.detail_copy_text);
+      }
+      const close = click_event.target.closest(
+        ".heat-map-source-line-detail-close-symbol-," +
+          " .heat-map-source-line-detail-action-bar-close-link-",
+      );
+      if (close) {
+        click_event.preventDefault();
+        detail_close(close.closest("tr.heat-map-source-line-detail-row-"));
+        return;
+      }
+      if (click_event.target.closest("a")) return;
+      const link_row = click_event.target.closest("tr.row-link-");
+      if (link_row) {
+        report_ui.address.request(link_row.getAttribute("data-href-"));
+        return;
+      }
+      const row = click_event.target.closest("tr.clickable_");
+      if (row && current_file_path) {
+        const line_number = +row.getAttribute("data-line-number-");
+        report_ui.address.request(
+          line_number === detail_line()
+            ? hash_for_line(current_file_path)
+            : hash_for_line(current_file_path, line_number),
+        );
+      }
+    }),
+  );
+  // A key on a ticker tape entry, the toolbar pattern's. The arrows, Home and
+  // End walk the entries, and Enter or the click key opens one as a click.
+  function ticker_tape_key_take(key_event, key_name, ticker_tape_entry) {
+    if (report_ui.widget_key.activates(key_name)) {
+      key_event.preventDefault();
+      if (!key_event.repeat) ticker_tape_entry.click();
       return;
     }
-    const close = click_event.target.closest(
-      ".heat-map-source-line-detail-close-symbol-," +
-        " .heat-map-source-line-detail-action-bar-close-link-",
-    );
-    if (close) {
-      click_event.preventDefault();
-      location.hash = hash_for_line(current_file_path);
-      return;
+    const tape_entries = [
+      ...ticker_tape_entry.parentElement.querySelectorAll(
+        ".heat-map-source-ticker-tape-entry-",
+      ),
+    ];
+    const entry_index = tape_entries.indexOf(ticker_tape_entry);
+    let next_index = 0;
+    switch (key_name) {
+      case WIDGET_KEY_NAMES.down:
+      case WIDGET_KEY_NAMES.right:
+        next_index = entry_index + 1;
+        break;
+      case WIDGET_KEY_NAMES.first:
+        next_index = 0;
+        break;
+      case WIDGET_KEY_NAMES.last:
+        next_index = tape_entries.length - 1;
+        break;
+      case WIDGET_KEY_NAMES.left:
+      case WIDGET_KEY_NAMES.up:
+        next_index = entry_index - 1;
+        break;
+      default:
+        return;
     }
-    if (click_event.target.closest("a")) return;
-    const link_row = click_event.target.closest("tr.row-link-");
-    if (link_row) {
-      location.hash = link_row.getAttribute("data-href-");
-      return;
-    }
-    const row = click_event.target.closest("tr.clickable_");
-    if (row && current_file_path) {
-      const line_number = +row.getAttribute("data-line-number-");
-      location.hash =
-        line_number === detail_line()
-          ? hash_for_line(current_file_path)
-          : hash_for_line(current_file_path, line_number);
-    }
-  });
+    key_event.preventDefault();
+    const next_entry = tape_entries[next_index];
+    if (next_entry)
+      report_ui.tab_stop_move(ticker_tape_entry, next_entry, true);
+  }
+  // a focused ticker tape entry, by key or pointer, becomes the tape's stop
+  main_panel.addEventListener(
+    "focusin",
+    window.catch_show_throw((focus_event) => {
+      const ticker_tape_entry = focus_event.target.closest(
+        ".heat-map-source-ticker-tape-entry-",
+      );
+      if (!ticker_tape_entry) return;
+      report_ui.tab_stop_move(
+        ticker_tape_entry.parentElement.querySelector(
+          ':scope > [tabindex="0"]',
+        ),
+        ticker_tape_entry,
+        false,
+      );
+    }),
+  );
+  // the main panel's keys its tables leave: a ticker tape entry's, and
+  // Escape on a line detail or its line, closing the detail back to the line
+  main_panel.addEventListener(
+    "keydown",
+    window.catch_show_throw((key_event) => {
+      const key_name = report_ui.widget_key.of(key_event);
+      if (!key_name) return;
+      const ticker_tape_entry = key_event.target.closest(
+        ".heat-map-source-ticker-tape-entry-",
+      );
+      if (ticker_tape_entry) {
+        ticker_tape_key_take(key_event, key_name, ticker_tape_entry);
+        return;
+      }
+      const detail_row = main_panel.querySelector(
+        "tr.heat-map-source-line-detail-row-",
+      );
+      if (key_name !== WIDGET_KEY_NAMES.close || !detail_row) return;
+      const is_in_detail =
+        detail_row.contains(key_event.target) ||
+        detail_row.previousElementSibling === key_event.target;
+      if (!is_in_detail) return;
+      key_event.preventDefault();
+      detail_close(detail_row);
+    }),
+  );
 
-  let current_state = { file: null, line: 0, fn: null, ev: null };
+  // the line the address on show names, held to a row of its file, 0 for
+  // none; address_recenter puts it back in the middle
+  let rendered_line = 0;
   let rendered_key = "";
   function counter_apply(key) {
     current_counter = counter_find(key);
@@ -1839,13 +2126,47 @@
       }
     }
   }
-  function hash_canonicalize() {
-    report_ui.hash_publish(hash_of_state(current_state));
+  // Put a scale on show in its pulldown. The caller redraws.
+  function scale_apply(scale_value) {
+    active_scale = SCALE_CHOICES.find((entry) => entry.value === scale_value);
+    scale_select.value = active_scale.value;
   }
-  // A bad address is shown, not thrown: a file:// page is its own opaque
-  // origin, so an exception reaches a parent frame stripped to "Script error."
-  function hash_fault_show(message) {
-    window.report_error_overlay.overlay_show(message);
+  // Put a tree order on show in its pulldown. The caller redraws.
+  function sort_mode_apply(shown_sort_mode) {
+    sort_mode = shown_sort_mode;
+    sort_select.value = sort_mode;
+  }
+  // The value a strip pulldown shows, the stored one where the pulldown
+  // offers it, else its default. Every report on file:// shares storage.
+  function stored_choice_of(select_element, storage_key, default_value) {
+    const stored_value = view_storage.value_read(storage_key);
+    const is_offered = [...select_element.options].some(
+      (offered_option) => offered_option.value === stored_value,
+    );
+    return is_offered ? stored_value : default_value;
+  }
+  // Show the strip's pulldowns as storage now holds them, redrawing what
+  // changed, a reset cleared them, a scale change left them unchanged.
+  function strip_preferences_apply() {
+    // nothing is drawn before the first model, whose load reads them
+    if (shown_test_name === null) return;
+    const stored_sort_mode = sort_mode_stored();
+    if (stored_sort_mode !== sort_mode) {
+      sort_mode_apply(stored_sort_mode);
+      tree_render();
+    }
+    const stored_scale_value = scale_value_stored(),
+      stored_counter_key = counter_key_stored();
+    if (
+      stored_scale_value === active_scale.value &&
+      stored_counter_key === current_counter.key
+    )
+      return;
+    scale_apply(stored_scale_value);
+    if (stored_counter_key !== current_counter.key)
+      counter_apply(stored_counter_key);
+    rendered_key = "";
+    route_render();
   }
   // Whether the pulldowns list this file or function, so that an address
   // this test never sampled is a note rather than a bad address.
@@ -1879,25 +2200,36 @@
     }
     return clamped_line;
   }
+  // Give back the focus a render took from the main panel, to the line the
+  // address names, else to the panel, whose arrows then scroll that panel.
+  function main_focus_restore(main_had_focus) {
+    if (!main_had_focus || main_panel.contains(document.activeElement)) return;
+    const addressed_row = rendered_line
+      ? document.getElementById("L" + rendered_line + "_")
+      : null;
+    if (addressed_row) report_ui.table_rows.tab_stop_set(addressed_row, true);
+    else main_panel.focus({ preventScroll: true });
+  }
+  // Render the address the page's hash names, a test not on show once
+  // model_load has its model. A bad address throws rather than rendering.
   function route_render() {
-    const parsed_state = state_of_hash(location.hash);
-    // a hash naming a counter, file or function this report does not hold is
-    // a bad address: it surfaces rather than rendering something else
-    if (parsed_state.ev && !counter_find(parsed_state.ev)) {
-      hash_fault_show(
-        window.ui_strings.text_fill("str_error_hash_counter_unknown", [
-          parsed_state.ev,
+    const main_had_focus =
+      document.hasFocus() && main_panel.contains(document.activeElement);
+    const page_address = report_ui.address.of_hash(location.hash);
+    if (page_address.view !== HEAT_MAP_VIEW_ENTRY[0])
+      throw new Error(
+        window.ui_strings.text_fill("str_error_hash_view_mismatch", [
+          HEAT_MAP_VIEW_ENTRY[0],
         ]),
       );
+    if (page_address.test !== shown_test_name) {
+      model_load(page_address.test);
       return;
     }
-    const counter = counter_find(
-      parsed_state.ev || profile_model.heatMapTotals.defaultCounter,
-    );
-    if (counter.key !== current_counter.key) counter_apply(counter.key);
-    let file = parsed_state.file,
-      line = parsed_state.line,
-      fn = parsed_state.fn;
+    // an address without a line is line 0, the row no address names
+    let file = page_address.file,
+      line = page_address.line === null ? 0 : page_address.line,
+      fn = page_address.function;
     // a file or function the pulldowns list but this test never sampled is
     // a designed condition, a note under the address as written
     let unsampled_name = null;
@@ -1915,30 +2247,23 @@
       } else if (pulldown_text_lists("functions", fn)) {
         unsampled_name = fn;
       } else {
-        hash_fault_show(
+        throw new Error(
           window.ui_strings.text_fill("str_error_hash_function_unknown", [fn]),
         );
-        return;
       }
     } else if (file && !file_table[file]) {
       if (!pulldown_text_lists("files", file)) {
-        hash_fault_show(
+        throw new Error(
           window.ui_strings.text_fill("str_error_hash_file_unknown", [file]),
         );
-        return;
       }
       unsampled_name = file;
     }
     if (unsampled_name) {
       rendered_key = "";
       no_samples_note_render(unsampled_name);
-      current_state = {
-        file: file,
-        line: line,
-        fn: fn,
-        ev: addressed_counter_key(),
-      };
-      hash_canonicalize();
+      rendered_line = line;
+      main_focus_restore(main_had_focus);
       return;
     }
 
@@ -1957,19 +2282,91 @@
       if (line) line = line_clamp(line);
       detail_set(line);
     }
-    current_state = {
-      file: file,
-      line: line,
-      fn: fn,
-      ev: addressed_counter_key(),
-    };
-    hash_canonicalize();
+    rendered_line = line;
+    main_focus_restore(main_had_focus);
+  }
+  // Put a test's model on show and render the address, at once when its
+  // data script ran before, else once the script inserted here has run.
+  function model_load(test_name) {
+    const held_models = window[HEAT_MAP_MODEL_GLOBAL_NAME];
+    if (held_models && held_models[test_name]) {
+      model_switch(test_name, held_models[test_name]);
+      route_render();
+      return;
+    }
+    const model_script = document.createElement("script");
+    model_script.src =
+      HEAT_MAP_MODEL_DIR_NAME + "/" + encodeURIComponent(test_name) + ".js";
+    model_script.addEventListener(
+      "error",
+      window.catch_show_throw(() => {
+        throw new Error(
+          window.ui_strings.text_fill("str_error_hash_test_unknown", [
+            test_name,
+          ]),
+        );
+      }),
+    );
+    // the address is taken again, as the hash may have moved on meanwhile
+    model_script.addEventListener(
+      "load",
+      window.catch_show_throw(() => {
+        const loaded_models = window[HEAT_MAP_MODEL_GLOBAL_NAME];
+        if (!loaded_models || !loaded_models[test_name])
+          throw new Error(
+            window.ui_strings.text_fill("str_error_heat_map_unfiled", [
+              test_name,
+            ]),
+          );
+        route_render();
+      }),
+    );
+    document.head.append(model_script);
+  }
+  // Rebuild everything drawn from a model, the report's kind from the first
+  // one, and open its tree on the stored counter. The caller renders.
+  function model_switch(test_name, test_model) {
+    if (shown_test_name === null) report_kind_set(test_model);
+    shown_test_name = test_name;
+    profile_model = test_model;
+    file_table = test_model.files;
+    function_table = test_model.functions;
+    function_baselines = test_model.functionBaseline || [];
+    file_baselines = test_model.fileBaseline || {};
+    HAS_CALL_GRAPH = function_table.some(
+      (function_entry) => function_entry.callers.length > 0,
+    );
+    per_function_calls = function_table.map((function_entry) =>
+      function_entry.callers.reduce(
+        (running_total, caller) => running_total + caller[4],
+        0,
+      ),
+    );
+    CALLS_TOTAL =
+      per_function_calls.reduce(
+        (running_total, call_count) => running_total + call_count,
+        0,
+      ) || 1;
+    entry_line_index = {};
+    function_table.forEach((function_entry, index) => {
+      if (!function_entry.line) return;
+      entry_line_index[function_entry.file] =
+        entry_line_index[function_entry.file] || {};
+      entry_line_index[function_entry.file][function_entry.line] = index;
+    });
+    counters_build();
+    expanded_directories.clear();
+    expanded_cold_groups.clear();
+    current_file_path = null;
+    scope_totals = null;
+    rendered_key = "";
+    counter_apply(counter_key_stored());
   }
   // Put the address back where it first opened: its line, or the function's,
   // in the middle, and a file without a line at its first view again.
   function address_recenter() {
-    const addressed_row = current_state.line
-      ? document.getElementById("L" + current_state.line + "_")
+    const addressed_row = rendered_line
+      ? document.getElementById("L" + rendered_line + "_")
       : null;
     if (addressed_row) {
       row_center(addressed_row);
@@ -1979,64 +2376,59 @@
     rendered_key = "";
     route_render();
   }
-  window.addEventListener("hashchange", route_render);
-  report_ui.parent_listen((message_data) => {
-    if (message_data === "report_ui:layout_reset") {
-      report_ui.layout_reset();
-    } else if (message_data === "report_ui:recenter") {
-      address_recenter();
-    } else if (message_data === "report_ui:tests_pulldown_closed") {
-      report_ui.menu_key.tests_pulldown_closed();
-    } else if (
-      typeof message_data === "string" &&
-      message_data.startsWith("report_ui:")
-    )
-      throw new Error(
-        window.ui_strings.text_fill("str_error_message_tag_unknown", [
-          message_data,
-        ]),
-      );
-  });
-  // a key typed here goes up to the top page's menu, as one typed on a
-  // framed callers page does
-  document.addEventListener("keydown", (key_event) => {
-    const key_name = report_ui.menu_key.of(key_event);
-    if (key_name && report_ui.menu_key.forward(key_name))
-      key_event.preventDefault();
+  window.addEventListener("hashchange", window.catch_show_throw(route_render));
+  report_ui.view_activate({
+    preferences_apply: strip_preferences_apply,
+    recenter: address_recenter,
   });
 
   let resize_debounce_timer = null;
-  window.addEventListener("resize", () => {
-    clearTimeout(resize_debounce_timer);
-    resize_debounce_timer = setTimeout(() => {
-      tail_fit();
-      minimap_layout();
-    }, LAYOUT_RESIZE_SETTLE_DELAY_MS);
-  });
-  counter_select.addEventListener("change", (change_event) => {
-    location.hash = hash_of_state(
-      Object.assign({}, current_state, { ev: change_event.target.value }),
-    );
-  });
-  scale_select.addEventListener("change", (change_event) => {
-    active_scale = SCALE_CHOICES.find(
-      (entry) => entry.value === change_event.target.value,
-    );
-    view_storage.value_write("heat.scale", active_scale.value);
-    rendered_key = "";
-    route_render();
-  });
-  sort_select.addEventListener("change", (change_event) => {
-    sort_mode = change_event.target.value;
-    view_storage.value_write("heat.sort", sort_mode);
-    tree_render();
-  });
-  document
-    .getElementById("heat-map-menu-search-box-")
-    .addEventListener("input", (input_event) => {
+  window.addEventListener(
+    "resize",
+    window.catch_show_throw(() => {
+      clearTimeout(resize_debounce_timer);
+      resize_debounce_timer = setTimeout(
+        window.catch_show_throw(() => {
+          tail_fit();
+          minimap_layout();
+        }),
+        LAYOUT_RESIZE_SETTLE_DELAY_MS,
+      );
+    }),
+  );
+  counter_select.addEventListener(
+    "change",
+    window.catch_show_throw((change_event) => {
+      view_storage.value_write("heat.counter", change_event.target.value);
+      counter_apply(change_event.target.value);
+      route_render();
+    }),
+  );
+  scale_select.addEventListener(
+    "change",
+    window.catch_show_throw((change_event) => {
+      view_storage.value_write("heat.scale", change_event.target.value);
+      scale_apply(change_event.target.value);
+      rendered_key = "";
+      route_render();
+    }),
+  );
+  sort_select.addEventListener(
+    "change",
+    window.catch_show_throw((change_event) => {
+      view_storage.value_write("heat.sort", change_event.target.value);
+      sort_mode_apply(change_event.target.value);
+      // no tree is drawn before the first model, whose render sorts by this
+      if (shown_test_name !== null) tree_render();
+    }),
+  );
+  document.getElementById("heat-map-menu-search-box-").addEventListener(
+    "input",
+    window.catch_show_throw((input_event) => {
       search_query = input_event.target.value.trim().toLowerCase();
-      tree_render();
-    });
-  counter_apply(current_counter.key);
+      // no tree is drawn before the first model, whose render filters by this
+      if (shown_test_name !== null) tree_render();
+    }),
+  );
   route_render();
 })();

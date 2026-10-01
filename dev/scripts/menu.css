@@ -1,13 +1,15 @@
-/* one row on the strip's own colours: the logo, the title, then each button
-   with 1ch of the strip before it */
+/* one row on the strip's own colours: the logo, each button, then the
+   title, each after the logo with 1ch of the strip before that item */
 #menu_ {
   color: var(--menu-strip-fg-);
   background: var(--menu-strip-bg-dim-);
 }
 #menu_ > .menu-button-,
-#menu_ > .menu-pulldown- {
+#menu_ > .menu-pulldown-,
+#menu_ > .menu-title- {
   margin-left: var(--menu-button-margin-left-);
 }
+
 .menu-strip- .menu-button- {
   flex: none;
   white-space: nowrap;
@@ -16,63 +18,32 @@
   background: var(--menu-button-bg-);
   cursor: pointer;
 }
-/* the current view's button holds the menu bar's inverse video block; the
-   test on show in the open list is set off by a small colour variation */
+/* the current view's button holds the menu bar's inverse video block */
 .menu-strip- .menu-button-.current_ {
   background: var(--menu-button-current-bg-);
   color: var(--menu-button-current-fg-dim-);
 }
-.menu-strip- .menu-pulldown-entry-list- a.current_ {
-  background: var(--menu-pulldown-entry-current-bg-);
-  color: var(--menu-pulldown-entry-current-fg-);
-}
-.menu-strip- .menu-pulldown-entry-list- a.highlighted-entry- {
-  background: var(--menu-pulldown-entry-highlighted-bg-);
-  color: var(--menu-pulldown-entry-highlighted-fg-dim-);
+/* a button or link the keyboard focused, the logo and the title's parts
+   among them, takes the same inverse video under roles of its own */
+.menu-strip- .menu-button-:focus-visible,
+.menu-strip- .menu-logo-:focus-visible,
+.menu-strip- .menu-title- a:focus-visible {
+  background: var(--menu-button-focus-bg-);
+  color: var(--menu-button-focus-fg-dim-);
 }
 
 .menu-strip- .menu-logo- {
   flex: none;
   padding: 0 var(--menu-logo-padding-inline-);
   white-space: nowrap;
-  cursor: pointer;
 }
 
-/* the address in words, each part a link in the title's own colours, a
-   long one clipped at its end rather than pushing the buttons off the row */
-.menu-strip- .menu-title- {
-  color: var(--menu-title-fg-);
-  background: var(--menu-title-bg-dim-);
-  white-space: pre;
-  overflow: hidden;
-  align-self: stretch;
-  display: flex;
-  align-items: center;
-  justify-content: safe center;
-  flex: none;
-  width: var(--menu-title-width-);
-}
-.menu-strip- .menu-title- a {
-  color: var(--menu-title-fg-);
-}
-
-.menu-strip-:has(.menu-pulldown-) {
-  overflow: visible;
-}
 /* the numbered button, or the search box in its place while open, the list
    dropping below either. No part draws a border, ring or box of its own */
 .menu-strip- .menu-pulldown- {
   position: relative;
   display: flex;
   flex: none;
-}
-.menu-strip- .menu-pulldown-search-box- {
-  background: none;
-  /* wide enough for its placeholder when every test name is shorter */
-  min-width: var(--menu-pulldown-search-box-min-width-);
-}
-.menu-strip- .menu-pulldown-search-box-::placeholder {
-  color: var(--menu-pulldown-search-box-placeholder-fg-dim-);
 }
 .menu-strip- .menu-pulldown-entry-list- {
   position: absolute;
@@ -97,6 +68,53 @@
   flex: none;
   padding: 0 var(--menu-pulldown-entry-padding-inline-);
 }
+/* the test on show in the open list is set off by a small colour variation */
+.menu-strip- .menu-pulldown-entry-list- a.current_ {
+  background: var(--menu-pulldown-entry-current-bg-);
+  color: var(--menu-pulldown-entry-current-fg-);
+}
+.menu-strip- .menu-pulldown-entry-list- a.highlighted-entry- {
+  background: var(--menu-pulldown-entry-highlighted-bg-);
+  color: var(--menu-pulldown-entry-highlighted-fg-dim-);
+}
 .menu-strip- .menu-pulldown-no-match-note- {
   color: var(--menu-pulldown-no-match-note-fg-dim-);
+}
+.menu-strip- .menu-pulldown-search-box- {
+  background: none;
+  /* wide enough for its placeholder when every test name is shorter */
+  min-width: var(--menu-pulldown-search-box-min-width-);
+}
+.menu-strip- .menu-pulldown-search-box-::placeholder {
+  color: var(--menu-pulldown-search-box-placeholder-fg-dim-);
+}
+
+.menu-strip- {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  flex: none;
+  background: var(--heat-map-menu-strip-bg-dim-);
+  overflow: hidden;
+}
+.menu-strip-:has(.menu-pulldown-) {
+  overflow: visible;
+}
+
+/* the address in words, each part a link in the title's own colours, a
+   long one clipped at its end rather than pushing the row past the window */
+.menu-strip- .menu-title- {
+  color: var(--menu-title-fg-);
+  background: var(--menu-title-bg-dim-);
+  white-space: pre;
+  overflow: hidden;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  justify-content: safe center;
+  flex: none;
+  width: var(--menu-title-width-);
+}
+.menu-strip- .menu-title- a {
+  color: var(--menu-title-fg-);
 }
