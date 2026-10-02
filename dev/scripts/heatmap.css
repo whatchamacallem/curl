@@ -1,13 +1,12 @@
-/* each box a table sits in is a container, so 100cqw in a <col> is exactly
-   the room its own table has; the source's leaves out the minimap's column */
+/* each box a table sits in is a container, so `100cqw` in a `<col>` is
+   exactly the room its own table has. The source's leaves out the minimap's
+   column */
 .heat-map-home-,
 .heat-map-source-,
 .heat-map-source-line-detail- {
   container-type: inline-size;
 }
 
-/* Chrome sizes an auto-scrollbar container before its scrollbar exists, so
-   100cqw would include it; a stable gutter makes it the visible width */
 #heat-map-main- {
   flex: 1;
   min-width: 0;
@@ -25,7 +24,6 @@
 #heat-map-menu- {
   gap: 0 var(--heat-map-menu-column-gap-);
 }
-/* the heat map's own second menu bar: its fields sit flat on the bar */
 #heat-map-menu- select,
 #heat-map-menu- input {
   background: var(--heat-map-menu-field-bg-dim-);
@@ -45,8 +43,6 @@
   color: var(--heat-map-menu-search-box-placeholder-fg-dim-);
 }
 
-/* the source view's last column, left of its scrollbar, held at the top of
-   what main shows while the source scrolls beside that column */
 #heat-map-minimap- {
   width: var(--heat-map-minimap-width-);
   overflow: hidden;
@@ -83,8 +79,6 @@
   cursor: grabbing;
 }
 
-/* clip, not hidden: a table too wide is cut at the column's edge with no
-   scroll box of its own, so the bands and column titles still stick */
 .heat-map-source- {
   overflow-x: clip;
 }
@@ -101,6 +95,7 @@
 }
 .heat-map-source-file-header-statistic-share- {
   color: var(--heat-map-source-file-header-statistic-share-fg-);
+  white-space: pre;
 }
 
 .heat-map-source-line-detail- {
@@ -124,6 +119,7 @@
 }
 .heat-map-source-line-detail-heading- {
   color: var(--heat-map-source-line-detail-heading-fg-dim-);
+  white-space: pre;
 }
 table.heat-map-source-table- tr.heat-map-source-line-detail-row- > td {
   white-space: normal;
@@ -178,7 +174,7 @@ table.heat-map-source-table- > tbody > tr:focus-visible > td {
   background: var(--heat-map-source-ticker-tape-entry-bg-);
   cursor: pointer;
   flex: none;
-  white-space: nowrap;
+  white-space: pre;
   padding: 0 var(--heat-map-source-ticker-tape-entry-padding-inline-);
 }
 .heat-map-source-ticker-tape-entry-:focus-visible {
@@ -195,7 +191,6 @@ table.heat-map-source-table- > tbody > tr:focus-visible > td {
   color: var(--heat-map-source-unavailable-note-fg-dim-);
 }
 
-/* the scrollbar's track shows even when the tree fits: no thumb to drag */
 #heat-map-tree- {
   width: var(--heat-map-tree-width-);
   flex: none;
@@ -207,13 +202,13 @@ table.heat-map-source-table- > tbody > tr:focus-visible > td {
   display: flex;
   align-items: center;
   gap: var(--heat-map-tree-node-gap-);
+  padding-right: var(--heat-map-tree-node-padding-right-);
   cursor: pointer;
   white-space: nowrap;
 }
 .heat-map-tree-node-.selected_ {
   background: var(--heat-map-tree-node-selected-bg-);
 }
-/* a node the keyboard focused: its inline heat colours give way */
 .heat-map-tree-node-:focus-visible {
   background: var(--heat-map-tree-node-focus-bg-) !important;
   color: var(--heat-map-tree-node-focus-fg-) !important;
@@ -244,6 +239,7 @@ table.heat-map-source-table- > tbody > tr:focus-visible > td {
   width: var(--heat-map-tree-node-share-percent-width-);
   text-align: right;
   color: var(--heat-map-tree-node-share-percent-fg-dim-);
+  white-space: pre;
 }
 .heat-map-tree-node-.cold_ .heat-map-tree-node-share-percent- {
   visibility: hidden;
@@ -260,7 +256,6 @@ table.heat-map-source-table- > tbody > tr:focus-visible > td {
   display: block;
 }
 
-/* no room of its own: its hit area's negative margins overlap both panes */
 .heat-map-tree-resize-handle- {
   position: relative;
   z-index: var(--heat-map-tree-resize-handle-z-index-);
@@ -275,7 +270,7 @@ table.heat-map-source-table- > tbody > tr:focus-visible > td {
   background: var(--heat-map-tree-resize-handle-focus-bg-);
 }
 
-#layout_ {
+#layout- {
   display: flex;
   flex: 1;
   min-height: 0;

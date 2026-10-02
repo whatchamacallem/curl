@@ -8,12 +8,11 @@ from typing import NamedTuple, NotRequired, TypedDict
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import callgrind, callgrind_diff, settings, theme
 
-# All constants needed from settings.py have to be loaded here before anything
-# else.
 _ASSET_HEAT_MAP_SCRIPT_NAME: str = ""
 _ASSET_HEAT_MAP_STYLESHEET_NAME: str = ""
 _ASSET_MENU_STYLESHEET_NAME: str = ""
 _ASSET_PULLDOWN_TEXT_SCRIPT_NAME: str = ""
+_ASSET_REPORT_COMPLETE_SCRIPT_NAME: str = ""
 _ASSET_SETTINGS_SCRIPT_NAME: str = ""
 _ASSET_TEMPLATE_HEAT_MAP_PAGE_NAME: str = ""
 _ASSET_THEME_SCRIPT_NAME: str = ""
@@ -27,95 +26,53 @@ _REPORT_ASSETS_DIR_NAME: str = ""
 _REPORT_SOURCES_DIR_NAME: str = ""
 settings.load_into(__name__)
 
-# The page skeleton the one heat map page is rendered into.
 BODY = theme.asset_text_read(_ASSET_TEMPLATE_HEAT_MAP_PAGE_NAME)
 
-# The one heat map page's path from the report root, and how far below the
-# root the page sits, a level per "/", fixing its hrefs to assets and sources.
 _HEAT_MAP_PAGE_PATH = _HEAT_MAP_VIEW_ENTRY[2]
 _HEAT_MAP_PAGE_DEPTH = _HEAT_MAP_PAGE_PATH.count("/")
 
 
-# CallgrindToHeatmap - Turns one profile into the model the heat map page
-# shows cost per source line from, and writes that one page.
 class CallgrindToHeatmap:
-    # CallRow - One end of one call edge, as the page's script reads it. Used
-    # for a line's callees and for a function's callers alike.
     class CallRow(NamedTuple):
-        # the other function, as an index into the functions list
         function: int
-        # the file to open when it is clicked
         file: str
-        # the line to jump to there
         line: int
-        # what the calls cost between them
         cost: callgrind.Costs
-        # how many calls
         count_: int
 
-    # DataArgs - What one test's model script is built from, and the report
-    # that script is written into.
     class DataArgs(NamedTuple):
-        # the callgrind file(s), merged into one profile
         callgrind_file: list[str]
-        # the report directory the script, sources and pulldown text go in
         report_dir: str
-        # the test the model is filed under and its script is named after
         test: str
-        # the input is a callgrind_diff.py delta
         diff: bool
-        # that delta's synthesized callers diff, holding what each share
-        # divides by
         baseline_data: str
 
-    # FileModel - One source file as the page's script sees it.
     class FileModel(TypedDict):
-        # the file's own cost
         self: callgrind.Costs
-        # cost below what it calls
         calls: callgrind.Costs
-        # the name of this file's script in the report's shared
-        # sources/ directory, or None when it is not on this box
         source: str | None
-        # per line number, that line's numbers
         lines: dict[str, CallgrindToHeatmap.LineCost]
-        # per line number, which function owns it
         lineFunction: dict[str, int]
-        # per line number, its baseline cost vector -- a diff's denominator,
-        # absent on a non-diff page and on a line the baseline never had
         baseline: NotRequired[dict[str, callgrind.Costs]]
-        # per line number, what that line calls
         callees: dict[str, list[CallgrindToHeatmap.CallRow]]
-        # repo, system or external
         group: callgrind.Group
-        # the path as callgrind spelled it
         raw: str
 
-    # FileTally - One file's numbers while they are still being added up.
     @dataclasses.dataclass
     class FileTally:
-        # repo, system or external
         group: callgrind.Group
-        # the path as callgrind spelled it
         raw: str
-        # the file's own cost so far
         self_cost: callgrind.Costs
-        # cost below what it calls, so far
         calls_cost: callgrind.Costs
-        # the source text once it has been read
         source: str | None = None
-        # per line number, that line's tally
         lines: dict[str, CallgrindToHeatmap.LineTally] = dataclasses.field(
             default_factory=dict
         )
-        # per line number, which function owns it
         line_function: dict[str, int] = dataclasses.field(default_factory=dict)
-        # per line number, what that line calls
         callees: dict[str, list[CallgrindToHeatmap.CallRow]] = (
             dataclasses.field(default_factory=dict)
         )
 
-        # Freeze the tally into the page's own shape, trailing zeros dropped.
         def emit(self) -> CallgrindToHeatmap.FileModel:
             trim = callgrind.costs_trim
             key = CallgrindToHeatmap.call_row_cost_key
@@ -144,7 +101,6 @@ class CallgrindToHeatmap:
                 "raw": self.raw,
             }
 
-        # One line's tally, started at zero the first time it is asked for.
         def line(
             self, line_number: int, counter_count: int
         ) -> CallgrindToHeatmap.LineTally:
@@ -157,80 +113,45 @@ class CallgrindToHeatmap:
                 )
             return record
 
-    # FunctionModel - One function as the page's script sees it.
     class FunctionModel(TypedDict):
-        # its name
         name: str
-        # where to open it
         file: str
-        # the line to jump to
         line: int
-        # cost in the function itself
         self: callgrind.Costs
-        # cost below what it calls
         calls: callgrind.Costs
-        # who calls it, most expensive first
         callers: list[CallgrindToHeatmap.CallRow]
 
-    # HeatMapTotals - What labels and scales the heat map. Not the report's
-    # LABEL=VALUE rows -- those are build_report.py's ManifestRow.
     class HeatMapTotals(TypedDict):
-        # the recorded counters, in cost-vector order
         counters: list[str]
-        # the counters the page adds up itself
         derived: list[callgrind.ResolvedDerivedCounter]
-        # which counter the page opens on
         defaultCounter: str
-        # what shares are taken against
         totals: callgrind.Costs
-        # signed numbers and a signed heat ramp
         diff: bool
 
-    # HeatModel - One test's whole model, in one JSON blob.
     class HeatModel(TypedDict):
-        # labels, totals and which counter to show
         heatMapTotals: CallgrindToHeatmap.HeatMapTotals
-        # the few theme values the script needs
         theme: theme.ThemeRuntime
-        # every file that has samples, by display path
         files: dict[str, CallgrindToHeatmap.FileModel]
-        # every function, indexed by the call rows
         functions: list[CallgrindToHeatmap.FunctionModel]
-        # tracked files with no samples at all
         cold: list[str]
-        # per function, its baseline cost vector, indexed like functions
         functionBaseline: NotRequired[list[callgrind.Costs]]
-        # per display path, that whole file's baseline cost vector, which is
-        # what a tree's file and directory shares divide by
         fileBaseline: NotRequired[dict[str, callgrind.Costs]]
 
-    # LineCost - One source line's numbers.
     class LineCost(NamedTuple):
-        # cost on the line itself
         self_cost: callgrind.Costs
-        # cost below the calls it makes
         calls_cost: callgrind.Costs
-        # how many calls it makes
         count_: int
 
-    # LineTally - One line's numbers while they are still being added up.
     @dataclasses.dataclass
     class LineTally:
-        # cost on the line itself, so far
         self_cost: callgrind.Costs
-        # cost below the calls it makes, so far
         calls_cost: callgrind.Costs
-        # how many calls it makes, so far
         count: int = 0
 
-    # Rank one call row dearest first, by the ranking counter's slot. Both
-    # the callee rows a line holds and a function's caller rows sort on it.
     @staticmethod
     def call_row_cost_key(row: CallgrindToHeatmap.CallRow) -> int:
         return -(row.cost[0] if row.cost else 0)
 
-    # One test's model script, the model filed under the test's name in the
-    # one global every test's script adds to, whichever loads first.
     def data_render(
         self, test_name: str, model: CallgrindToHeatmap.HeatModel
     ) -> str:
@@ -241,8 +162,6 @@ class CallgrindToHeatmap:
             f"{models_global}[{json.dumps(test_name)}] = {data};\n"
         )
 
-    # Read one test's profile, build its model, then write the sources it
-    # shows, the merged test's pulldown text, and the test's model script.
     def data_write(self, args: CallgrindToHeatmap.DataArgs) -> None:
         profile = callgrind.profile_load(args.callgrind_file)
         model, info = self.model(profile)
@@ -253,7 +172,6 @@ class CallgrindToHeatmap:
             info,
             model,
         )
-        # the merged test's model holds every test's names, the one list
         if args.test == _MENU_PULLDOWN_MERGED_TEST_NAME:
             self.pulldown_text_write(args.report_dir, model)
         model_script = self.data_render(args.test, model)
@@ -283,8 +201,6 @@ class CallgrindToHeatmap:
             file=sys.stderr,
         )
 
-    # Turn a finished model into a diff one: shares go against the summed
-    # magnitude of every change, since the signed total is near zero.
     def diff_model(
         self,
         model: CallgrindToHeatmap.HeatModel,
@@ -315,8 +231,6 @@ class CallgrindToHeatmap:
                     lines[line] = costs
             entry["baseline"] = lines
 
-    # Resolve every path once, qualifying an external file by its object so
-    # two libraries' same-named headers stay apart.
     def display_paths(
         self,
         profile: callgrind.Profile,
@@ -331,7 +245,6 @@ class CallgrindToHeatmap:
             )
         return info
 
-    # Add every line, call and callee up per file, and read the source in.
     def files_model(
         self,
         profile: callgrind.Profile,
@@ -394,8 +307,6 @@ class CallgrindToHeatmap:
             )
         return {name: entry.emit() for name, entry in accumulators.items()}
 
-    # Whether the heat map opens this function by name: it has a line in a
-    # file the page holds. heatmap.js's function_is_linkable is the twin.
     def function_is_linkable(
         self,
         function: CallgrindToHeatmap.FunctionModel,
@@ -403,7 +314,6 @@ class CallgrindToHeatmap:
     ) -> bool:
         return bool(function["line"]) and function["file"] in files
 
-    # Every function with its entry point and its callers, dearest first.
     def functions_model(
         self,
         profile: callgrind.Profile,
@@ -446,7 +356,6 @@ class CallgrindToHeatmap:
             )
         return functions
 
-    # The whole page's data.
     def model(
         self, profile: callgrind.Profile
     ) -> tuple[CallgrindToHeatmap.HeatModel, dict[str, callgrind.PathInfo]]:
@@ -467,8 +376,6 @@ class CallgrindToHeatmap:
             for relative in self.repo_tracked_files()
             if relative not in files
         )
-        # the page opens on this counter, so it must be one of the columns
-        # it is handed below: the one door checks exactly those two lists
         callgrind.ranking_counter_check(profile.counters, "this profile")
         default_counter = _RANKING_COUNTER_NAME
         return {
@@ -485,8 +392,6 @@ class CallgrindToHeatmap:
             "cold": cold,
         }, info
 
-    # The one heat map page, the strip and panes, then its scripts, every
-    # shared source among them. No model, as each test's is its own script.
     def page_render(self, source_names: Sequence[str]) -> str:
         assets_href = theme.shared_href(
             _HEAT_MAP_PAGE_DEPTH, _REPORT_ASSETS_DIR_NAME
@@ -494,7 +399,9 @@ class CallgrindToHeatmap:
         sources_href = theme.shared_href(
             _HEAT_MAP_PAGE_DEPTH, _REPORT_SOURCES_DIR_NAME
         )
-        scripts = theme.script_tags(assets_href, theme.page_preamble_scripts())
+        scripts = theme.script_tags(
+            assets_href, (_ASSET_REPORT_COMPLETE_SCRIPT_NAME,)
+        )
         scripts += theme.script_tags(sources_href, source_names)
         scripts += theme.script_tags(
             assets_href,
@@ -505,7 +412,6 @@ class CallgrindToHeatmap:
                 _ASSET_HEAT_MAP_SCRIPT_NAME,
             ),
         )
-        # the strip is a .menu-strip-, a rule menu.css holds
         return theme.page_document(
             _HEAT_MAP_VIEW_ENTRY[1],
             BODY.replace("__SCRIPTS__", scripts),
@@ -517,8 +423,6 @@ class CallgrindToHeatmap:
             body_holds_scripts=True,
         )
 
-    # Write the one heat map page once every test's model script is written,
-    # linking each source those scripts shared, which is the union of theirs.
     def page_write(self, report_dir: str) -> None:
         source_names = sorted(
             os.listdir(os.path.join(report_dir, _REPORT_SOURCES_DIR_NAME))
@@ -534,8 +438,6 @@ class CallgrindToHeatmap:
             file=sys.stderr,
         )
 
-    # Write the one pulldown text script into assets/, naming every file and
-    # function the merged test's heat map opens, which is every test's.
     def pulldown_text_write(
         self, report_dir: str, model: CallgrindToHeatmap.HeatModel
     ) -> None:
@@ -555,10 +457,8 @@ class CallgrindToHeatmap:
         )
         data = json.dumps(names, separators=(",", ":"), ensure_ascii=False)
         with open(path, "w", encoding="utf-8") as handle:
-            handle.write(f"window.report_pulldown_text = {data};\n")
+            handle.write(f"window.report_pulldown_text_ = {data};\n")
 
-    # Every tracked .c/.h under _HEAT_MAP_TREE_ALWAYS_LISTED_DIRS, so a file
-    # with no samples still shows: a missing cold file would read as measured.
     def repo_tracked_files(self) -> list[str]:
         command = [
             "git",
@@ -584,13 +484,11 @@ class CallgrindToHeatmap:
             line for line in output.split("\n") if line.endswith((".c", ".h"))
         ]
 
-    # The sources/ script file name for one display path.
     @staticmethod
     def source_name(display: str) -> str:
         flat = "".join(char if char.isalnum() else "_" for char in display)
         return f"{flat}.js"
 
-    # Read one source file, or None when it is not on this box.
     def source_read(self, local: str) -> str | None:
         try:
             with open(local, "rb") as handle:
@@ -599,8 +497,6 @@ class CallgrindToHeatmap:
             return None
         return data.decode("utf-8", errors="replace")
 
-    # Write one script per profiled file into sources/, which is made even
-    # when empty. Two display paths flattening to one name is an error.
     def sources_write(
         self,
         out_dir: str,
@@ -648,14 +544,12 @@ class CallgrindToHeatmap:
                 os.path.join(out_dir, str(name)), "w", encoding="utf-8"
             ) as handle:
                 handle.write(
-                    "window.report_sources = window.report_sources || {};\n"
-                    f"window.report_sources[{json.dumps(display)}] ="
+                    "window.report_sources_ = window.report_sources_ || {};\n"
+                    f"window.report_sources_[{json.dumps(display)}] ="
                     f" {body};\n"
                 )
 
 
-# heatmap.js reads these records off the model JSON by position, so each
-# field order below is wire contract: a reorder must fail here, not there.
 _WIRE_FIELD_ORDERS: tuple[tuple[tuple[str, ...], tuple[str, ...]], ...] = (
     (
         CallgrindToHeatmap.CallRow._fields,
@@ -671,13 +565,11 @@ _WIRE_FIELD_ORDERS: tuple[tuple[tuple[str, ...], tuple[str, ...]], ...] = (
 for _record_fields, _wire_fields in _WIRE_FIELD_ORDERS:
     if _record_fields != _wire_fields:
         raise ValueError(
-            "a page record's fields moved off the wire order heatmap.js"
+            "a page record's fields moved off the wire order heat_map.js"
             f" reads: {_record_fields} vs {_wire_fields}"
         )
 
 
-# main - The data and page subcommands, one test's model script from its
-# callgrind file or files, then the one heat map page over them all.
 def main() -> None:
     parser = argparse.ArgumentParser()
     subparsers = parser.add_subparsers(dest="cmd", required=True)

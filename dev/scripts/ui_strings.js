@@ -1,4 +1,4 @@
-window.ui_strings = (function () {
+window.ui_strings_ = (function () {
   "use strict";
   const STRINGS = {
     str_caret_right: "⯈",
@@ -50,6 +50,8 @@ window.ui_strings = (function () {
     str_detail_function_self: "{function}: self {self}.",
     str_detail_function_totals:
       "{function} by call count: self {self}, total {total}.",
+    str_error_dark_mode_unusable:
+      "the dark mode choice came out as {0}, naming neither state",
     str_error_diff_fall_past_baseline:
       "a change of {0} falls past its baseline of {1}",
     str_error_flame_graph_never_started:
@@ -111,6 +113,8 @@ window.ui_strings = (function () {
     str_in_function: " in {function}",
     str_line_self: "line self",
     str_menu_button: "{number} {label}",
+    str_menu_light_mode: "light",
+    str_menu_dark_mode_enabled: "dark",
     str_menu_file: "file",
     str_menu_function: "function",
     str_menu_help: "help",
@@ -138,7 +142,6 @@ window.ui_strings = (function () {
     str_scope_global: "global",
     str_scope_line: "per line",
     str_search_placeholder: "file name…",
-    str_share_zero: "0%",
     str_sort_by_heat: "by heat",
     str_sort_by_name: "by name",
     str_source_beyond_end: "error: Line beyond end of file, source changed.",

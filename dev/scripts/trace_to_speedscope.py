@@ -7,82 +7,52 @@ from typing import NamedTuple, NotRequired, TextIO, TypedDict
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import callgrind, settings
 
-# All constants needed from settings.py have to be loaded here before anything
-# else.
 _FLAME_GRAPH_EXPORTER_NAME: str = ""
 _FLAME_GRAPH_MAX_RECORDED_CALLS: int = 0
 settings.load_into(__name__)
 
-# The word cyg_callback.c starts a build-id line of the .maps copy with, the
-# recorded half. Its header comment is that format's reference.
 _BUILDID_KEYWORD = "buildid"
 
-# What readelf -n calls the note holding a build-id, the on-disk half of the
-# comparison. Part of readelf's output format, like "LOAD" is.
 _BUILDID_LABEL = "Build ID"
 
-# The high bit cyg.c sets on a timestamp to mark a function exit.
 _FUNCTION_EXIT_BIT = 1 << 63
 
-# The schema the written document declares. A format fact, not a setting:
-# another value names a schema speedscope does not know and is rejected.
 _FLAME_GRAPH_FILE_FORMAT_SCHEMA_URL = (
     "https://www.speedscope.app/file-format-schema.json"
 )
 
-# How many 64-bit words the trace file's header takes.
 _HEADER_WORDS = 8
 
-# The first word of a trace cyg_callback.c wrote, its CYG_CALLBACKS_MAGIC.
 _HEADER_MAGIC = 0xABCDEF0123456789
 
-# How many 64-bit words one recorded event takes: the function, then the stamp.
 _RECORD_WORDS = 2
 
 
-# Event - One enter or exit, as speedscope's evented format spells it.
 class Event(TypedDict):
-    # "O" to open a frame, "C" to close one
     type: str
-    # which frame of the shared list this is
     frame: int
-    # nanoseconds since the run's first timestamp
     at: int
 
 
-# EventedProfile - One timeline of enters and exits, and what it covers.
 class EventedProfile(TypedDict):
-    # always "evented" -- what test_report.py insists on
     type: str
-    # what the timeline is called in the page
     name: str
-    # what `at` is measured in
     unit: str
-    # the first event's time
     startValue: int
-    # the last event's time
     endValue: int
-    # the enters and exits themselves, in order
     events: list[Event]
 
 
-# Frame - One function as the flame graph names it.
 class Frame(TypedDict):
-    # the demangled symbol, or object+offset when there is none
     name: str
-    # the source file, repo-relative
     file: NotRequired[str]
-    # the line it is declared on
     line: NotRequired[int]
 
 
-# Shared - The one frame list every event indexes into.
 class Shared(TypedDict):
-    # every frame the profile mentions, in first-seen order
     frames: list[Frame]
 
 
-# The whole written document. Spelled functionally because of "$schema".
 SpeedscopeDoc = TypedDict(
     "SpeedscopeDoc",
     {
@@ -95,64 +65,35 @@ SpeedscopeDoc = TypedDict(
 )
 
 
-# TraceToSpeedscope - Turns one rdtsc trace into a speedscope document,
-# keeping the busiest run's first _FLAME_GRAPH_MAX_RECORDED_CALLS calls.
 class TraceToSpeedscope:
-    # CallSpan - One top-level call, as a span of record numbers.
     class CallSpan(NamedTuple):
-        # the record that entered it
         first: int
-        # the record that exited it
         last: int
 
-    # ExecutableMapping - One executable range of the traced process, and
-    # which file it came from.
     class ExecutableMapping(NamedTuple):
-        # first address in the range
         low: int
-        # one past the last address
         high: int
-        # where in the file that address maps from
         offset: int
-        # the file itself, which addr2line reads
         path: str
 
-    # LoadSegment - One LOAD segment of an ELF file, for turning a file offset
-    # back into the address the debug info is keyed by.
     class LoadSegment(NamedTuple):
-        # where the segment starts in the file
         offset: int
-        # how long it is
         size: int
-        # the virtual address it loads at
         address: int
 
-    # TraceArgs - What this tool reads and what it writes.
     class TraceArgs(NamedTuple):
-        # the .bin cyg.c wrote, with its .maps beside it
         trace_file: str
-        # where the speedscope document goes
         output: str
-        # what to call the document in the page
         name: str
 
-    # TraceRecording - One whole trace file, unpacked.
     class TraceRecording(NamedTuple):
-        # how many events the run counted, kept or not
         seen: int
-        # how many it dropped before the kept ones
         skip: int
-        # the timestamp everything is measured from
         origin_tsc: int
-        # the measured clock rate, for turning ticks into nanoseconds
         tsc_per_ns: float
-        # the function address of each kept event
         functions: list[int]
-        # the timestamp of each kept event, exit bit included
         stamps: list[int]
 
-    # The build-id of each object as it is on disk now, read straight out of
-    # its NT_GNU_BUILD_ID note -- the other half of what the trace recorded.
     def buildid_read(self, path: str) -> str:
         listing = subprocess.run(
             ["readelf", "-n", path],
@@ -166,8 +107,6 @@ class TraceToSpeedscope:
                 return value.strip().lower()
         return ""
 
-    # Refuse an object the trace was not recorded against: a stale trace
-    # resolves to whatever now sits there, a plausible graph that is fiction.
     def buildid_verify(
         self, maps_file: str, recorded: dict[str, str], path: str
     ) -> None:
@@ -185,8 +124,6 @@ class TraceToSpeedscope:
                 f" recorded against {want}. Re-record the trace"
             )
 
-    # Every build-id the traced process wrote beside its mappings, by the
-    # object path it named.
     def buildids_read(self, maps_file: str) -> dict[str, str]:
         out: dict[str, str] = {}
         with self.text_open(maps_file) as handle:
@@ -196,7 +133,6 @@ class TraceToSpeedscope:
                     out[fields[2].strip()] = fields[1].lower()
         return out
 
-    # Pair enters with exits and hand back the busiest run's top-level calls.
     def calls(
         self, trace: TraceToSpeedscope.TraceRecording
     ) -> list[TraceToSpeedscope.CallSpan]:
@@ -221,7 +157,6 @@ class TraceToSpeedscope:
             key=lambda run: sum(call.last - call.first + 1 for call in run),
         )
 
-    # Build the whole document from a chosen span of calls.
     def document(
         self,
         trace: TraceToSpeedscope.TraceRecording,
@@ -268,7 +203,6 @@ class TraceToSpeedscope:
             "exporter": _FLAME_GRAPH_EXPORTER_NAME,
         }
 
-    # Name every traced address, by asking addr2line once per object file.
     def frames(
         self, trace_file: str, functions: list[int]
     ) -> dict[int, Frame]:
@@ -316,8 +250,6 @@ class TraceToSpeedscope:
                 frames[address] = frame
         return frames
 
-    # Read one trace file, and refuse anything that is not one. A trace the
-    # traced run never finished writing is a stopped run, not a traceback.
     def load(self, trace_file: str) -> TraceToSpeedscope.TraceRecording:
         words = array.array("Q")
         try:
@@ -356,7 +288,6 @@ class TraceToSpeedscope:
             stamps=list(records[1::_RECORD_WORDS]),
         )
 
-    # Read the executable mappings the traced process had.
     def mappings_read(
         self, maps_file: str
     ) -> list[TraceToSpeedscope.ExecutableMapping]:
@@ -380,8 +311,6 @@ class TraceToSpeedscope:
                     )
         return mappings
 
-    # Read a trace and write the document for its first
-    # _FLAME_GRAPH_MAX_RECORDED_CALLS calls.
     def run(self, args: TraceToSpeedscope.TraceArgs) -> None:
         trace = self.load(args.trace_file)
         print(
@@ -416,11 +345,9 @@ class TraceToSpeedscope:
             file=sys.stderr,
         )
 
-    # How many events the run counted, without writing anything.
     def seen(self, trace_file: str) -> int:
         return self.load(trace_file).seen
 
-    # Read one ELF file's LOAD segments, for the file-offset arithmetic.
     def segments_read(self, path: str) -> list[TraceToSpeedscope.LoadSegment]:
         listing = subprocess.run(
             ["readelf", "-lW", path],
@@ -441,8 +368,6 @@ class TraceToSpeedscope:
                 )
         return segments
 
-    # Open one of the trace's own text sidecars, naming the file and what
-    # went wrong rather than raising through to a bare traceback.
     def text_open(self, path: str) -> TextIO:
         try:
             return open(path, encoding="utf-8")
@@ -452,8 +377,6 @@ class TraceToSpeedscope:
                 " writes it beside the trace at exit"
             )
 
-    # Undo the load address, so addr2line sees the address it has debug info
-    # for.
     def virtual_address(
         self,
         mapping: TraceToSpeedscope.ExecutableMapping,
@@ -470,7 +393,6 @@ class TraceToSpeedscope:
         )
 
 
-# main - Convert one trace, or just report how many events it counted.
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument(

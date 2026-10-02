@@ -11,7 +11,6 @@ pre.callers-collapsed-section-log-box- {
   );
   overflow: auto;
 }
-/* the browser makes a log box that scrolls a tab stop of its own */
 pre.callers-collapsed-section-log-box-:focus-visible {
   background: var(--callers-collapsed-section-log-box-focus-bg-);
 }
@@ -32,8 +31,6 @@ pre.callers-collapsed-section-log-box-::-webkit-scrollbar-corner {
   color: var(--callers-collapsed-section-title-marker-fg-dim-);
 }
 
-/* one font on every box, colour the only difference: no weight, slant,
-   line, ring or border */
 *,
 ::before,
 ::after,
@@ -64,8 +61,6 @@ body {
   height: 100%;
   margin: 0;
 }
-/* every font size is the design size times the fit theme.js measured, so a
-   ch is the design ch under whatever monospace this box has */
 body {
   background: var(--page-body-bg-dim-);
   color: var(--page-body-fg-);
@@ -73,7 +68,6 @@ body {
   font-size: calc(var(--design-font-size-px-) * var(--design-font-fit-));
   line-height: var(--page-body-line-height-);
 }
-/* the root alone scrolls sideways; a table too wide goes off the edge */
 html:has(body.frame_) {
   overflow-x: auto;
   overflow-y: hidden;
@@ -123,8 +117,6 @@ a:focus-visible {
   background: var(--page-scrollbar-corner-bg-dim-);
 }
 
-/* the box a page's tables sit in is a container, so 100cqw in a <col> is
-   exactly the room its own table has */
 .page_ {
   container-type: inline-size;
 }
@@ -167,11 +159,11 @@ table.columns_ th {
 }
 table.columns_ .numeric_ {
   text-align: right;
+  white-space: pre;
 }
 table.columns_ .dimmed_ {
   color: var(--page-table-dimmed-text-fg-dim-);
 }
-/* a row the keyboard focused: its cells' inline heat colours give way */
 table.columns_ > tbody > tr:focus-visible > td {
   background: var(--page-table-row-focus-bg-) !important;
   color: var(--page-table-row-focus-fg-) !important;

@@ -1,12 +1,12 @@
 /* one row on the strip's own colours: the logo, each button, then the
    title, each after the logo with 1ch of the strip before that item */
-#menu_ {
+#menu- {
   color: var(--menu-strip-fg-);
   background: var(--menu-strip-bg-dim-);
 }
-#menu_ > .menu-button-,
-#menu_ > .menu-pulldown-,
-#menu_ > .menu-title- {
+#menu- > .menu-button-,
+#menu- > .menu-pulldown-,
+#menu- > .menu-title- {
   margin-left: var(--menu-button-margin-left-);
 }
 
@@ -18,13 +18,10 @@
   background: var(--menu-button-bg-);
   cursor: pointer;
 }
-/* the current view's button holds the menu bar's inverse video block */
 .menu-strip- .menu-button-.current_ {
   background: var(--menu-button-current-bg-);
   color: var(--menu-button-current-fg-dim-);
 }
-/* a button or link the keyboard focused, the logo and the title's parts
-   among them, takes the same inverse video under roles of its own */
 .menu-strip- .menu-button-:focus-visible,
 .menu-strip- .menu-logo-:focus-visible,
 .menu-strip- .menu-title- a:focus-visible {
@@ -38,8 +35,6 @@
   white-space: nowrap;
 }
 
-/* the numbered button, or the search box in its place while open, the list
-   dropping below either. No part draws a border, ring or box of its own */
 .menu-strip- .menu-pulldown- {
   position: relative;
   display: flex;
@@ -68,7 +63,6 @@
   flex: none;
   padding: 0 var(--menu-pulldown-entry-padding-inline-);
 }
-/* the test on show in the open list is set off by a small colour variation */
 .menu-strip- .menu-pulldown-entry-list- a.current_ {
   background: var(--menu-pulldown-entry-current-bg-);
   color: var(--menu-pulldown-entry-current-fg-);
@@ -82,7 +76,6 @@
 }
 .menu-strip- .menu-pulldown-search-box- {
   background: none;
-  /* wide enough for its placeholder when every test name is shorter */
   min-width: var(--menu-pulldown-search-box-min-width-);
 }
 .menu-strip- .menu-pulldown-search-box-::placeholder {
@@ -101,8 +94,6 @@
   overflow: visible;
 }
 
-/* the address in words, each part a link in the title's own colours, a
-   long one clipped at its end rather than pushing the row past the window */
 .menu-strip- .menu-title- {
   color: var(--menu-title-fg-);
   background: var(--menu-title-bg-dim-);

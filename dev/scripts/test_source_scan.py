@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-# test_expected_behavior.sh uses this to enforce comment length, ascii-only
-# and no tag that styles text beyond colour.
+# `test_expected_behavior.sh` uses this to enforce comment length, ASCII
+# only, English punctuation in comments and no tag that styles text beyond
+# colour.
 from __future__ import annotations
 
 import argparse, os, re, sys
@@ -10,81 +11,70 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import callgrind
 
 
-# SourceScan - Every comment block over the limit, every non-ASCII character
-# outside the allowed set and every banned tag, in the files named.
 class SourceScan:
-    # CommentSyntax - How one kind of file writes a comment.
+    class CommentSpan(NamedTuple):
+        first_line: int
+        last_line: int
+
     class CommentSyntax(NamedTuple):
-        # what opens a comment that runs to the end of its line
         line_marks: tuple[str, ...]
-        # each block comment's opening and closing mark, which may span lines
         block_marks: tuple[tuple[str, str], ...]
 
-    # SourceFault - One line of one file that broke a rule, and how.
     class SourceFault(NamedTuple):
-        # the file it sits in
         path: str
-        # the line it is on, or a comment block opens on, 1-based
         line_number: int
-        # what is wrong there, for the message
         message: str
 
     def __init__(self) -> None:
-        # every fault found, printed together once every file is read
         self.faults: list[SourceScan.SourceFault] = []
 
-    # Any banned tag, opening or closing, in any letter case; a formatter
-    # may leave a tag's name alone at the end of a line.
     def banned_tag_re(self) -> re.Pattern[str]:
         names = "|".join(_SOURCE_SCAN_BANNED_TAG_NAMES)
         return re.compile(r"</?(" + names + r")(?=[\s/>]|$)", re.IGNORECASE)
 
-    # Record every comment block below a file's header that runs past the
-    # limit. A blank line outside a block comment splits one block into two.
     def comment_check(
-        self, path: str, lines: list[str], syntax: SourceScan.CommentSyntax
+        self,
+        path: str,
+        lines: list[str],
+        comments: list[SourceScan.CommentSpan],
     ) -> None:
-        comment_lines = self.comment_lines_of(lines, syntax)
-        header_end = self.header_ends_at(lines, comment_lines)
-        length = 0
-        first_line = 0
-        for number, is_comment in enumerate(comment_lines, start=1):
-            if number < header_end:
+        header_end = self.header_ends_at(lines, comments)
+        for comment in comments:
+            if comment.first_line < header_end:
                 continue
-            if is_comment:
-                if not length:
-                    first_line = number
-                length += 1
-                continue
-            self.run_record(path, first_line, length)
-            length = 0
-        self.run_record(path, first_line, length)
+            length = comment.last_line - comment.first_line + 1
+            if length > _COMMENT_BLOCK_MAX_LINES:
+                self.faults.append(
+                    SourceScan.SourceFault(
+                        path,
+                        comment.first_line,
+                        f"a comment block of {length} lines, over the limit"
+                        f" of {_COMMENT_BLOCK_MAX_LINES}. Say it in"
+                        f" {_COMMENT_BLOCK_MAX_LINES} lines or move the rest"
+                        " into README.md or test_expected_behavior.md",
+                    )
+                )
 
-    # Whether each line is a whole-line comment: one opening first on the
-    # line, or any line of a block comment still open from above it.
-    def comment_lines_of(
-        self, lines: list[str], syntax: SourceScan.CommentSyntax
-    ) -> list[bool]:
-        comment_lines: list[bool] = []
-        open_block_end = ""
-        for line in lines:
-            stripped = line.strip()
-            if open_block_end:
-                comment_lines.append(True)
-                if open_block_end in stripped:
-                    open_block_end = ""
-                continue
-            comment_lines.append(stripped.startswith(syntax.line_marks))
-            for opening_mark, closing_mark in syntax.block_marks:
-                if stripped.startswith(opening_mark):
-                    comment_lines[-1] = True
-                    if closing_mark not in stripped[len(opening_mark) :]:
-                        open_block_end = closing_mark
-                    break
-        return comment_lines
+    def comment_cut_re(self) -> re.Pattern[str]:
+        marks = sorted(_SOURCE_SCAN_COMMENT_MARKUP, key=len, reverse=True)
+        markup = "|".join(re.escape(mark) for mark in marks)
+        return re.compile(r"```[\s\S]*?```|`[^`\n]*`|" + markup)
 
-    # The comment syntax of a file's kind. A kind with none written down
-    # cannot be measured, so it stops the scan rather than passing unread.
+    def comment_re_of(
+        self, syntax: SourceScan.CommentSyntax
+    ) -> re.Pattern[str]:
+        alternatives: list[str] = []
+        for opening_mark, closing_mark in syntax.block_marks:
+            opening = re.escape(opening_mark)
+            closing = re.escape(closing_mark)
+            alternatives.append(
+                rf"^[ \t]*{opening}(?:(?!{closing})[\s\S])*{closing}[ \t]*$"
+            )
+        for line_mark in syntax.line_marks:
+            line_pattern = rf"[ \t]*{re.escape(line_mark)}[^\n]*"
+            alternatives.append(rf"^{line_pattern}(?:\n{line_pattern})*")
+        return re.compile("|".join(alternatives), re.MULTILINE)
+
     def comment_syntax_of(self, path: str) -> SourceScan.CommentSyntax:
         for extensions, syntax in _COMMENT_SYNTAX_BY_EXTENSION:
             if path.endswith(extensions):
@@ -94,15 +84,24 @@ class SourceScan:
             " file; add its extension to _COMMENT_SYNTAX_BY_EXTENSION"
         )
 
-    # Print every fault, or under --verbose the one ok line, and give the
-    # exit code. A quiet run prints nothing on success.
+    def comments_of(
+        self, text: str, syntax: SourceScan.CommentSyntax
+    ) -> list[SourceScan.CommentSpan]:
+        return [
+            SourceScan.CommentSpan(
+                text.count("\n", 0, match.start()) + 1,
+                text.count("\n", 0, match.end()) + 1,
+            )
+            for match in self.comment_re_of(syntax).finditer(text)
+        ]
+
     def exit_code(self, file_count: int, verbose: bool) -> int:
         if not self.faults:
             if verbose:
                 print(
                     f"{file_count} file(s): no comment block over"
                     f" {_COMMENT_BLOCK_MAX_LINES} lines, no stray non-ASCII,"
-                    " no banned tag"
+                    " no banned tag, no comment outside ENGLISH_PUNCT"
                 )
             return 0
         for fault in sorted(self.faults):
@@ -113,70 +112,92 @@ class SourceScan:
             )
         return 1
 
-    # Read one file once and run every check over it. A file this cannot
-    # read or decode was never checked, so that stops the scan.
     def file_scan(
         self,
         path: str,
         non_ascii: re.Pattern[str],
         banned_tag: re.Pattern[str],
+        comment_cut: re.Pattern[str],
+        outside_punctuation: re.Pattern[str],
     ) -> None:
         syntax = self.comment_syntax_of(path)
+        text = self.file_text_of(path)
+        lines = text.split("\n")
+        comments = self.comments_of(text, syntax)
+        self.unicode_check(path, lines, non_ascii)
+        self.tag_check(path, lines, banned_tag)
+        self.comment_check(path, lines, comments)
+        self.punctuation_check(
+            path, lines, comments, comment_cut, outside_punctuation
+        )
+
+    def file_text_of(self, path: str) -> str:
         try:
             with open(path, "rb") as handle:
                 raw_bytes = handle.read()
         except OSError as error:
             sys.exit(f"error: cannot read {path}: {error}")
         try:
-            text = raw_bytes.decode("utf-8")
+            return raw_bytes.decode("utf-8")
         except UnicodeDecodeError as error:
             line_number = raw_bytes.count(b"\n", 0, error.start) + 1
             sys.exit(f"error: {path}:{line_number}: not UTF-8, {error.reason}")
-        lines = text.split("\n")
-        self.unicode_check(path, lines, non_ascii)
-        self.tag_check(path, lines, banned_tag)
-        self.comment_check(path, lines, syntax)
 
-    # Scan each file named, and only those: test_expected_behavior.sh
-    # expands the list from its whitelist, so no directory is walked here.
     def files_scan(self, paths: list[str]) -> None:
         non_ascii = self.non_ascii_re()
         banned_tag = self.banned_tag_re()
+        comment_cut = self.comment_cut_re()
+        outside_punctuation = self.outside_punctuation_re()
         for path in paths:
-            self.file_scan(path, non_ascii, banned_tag)
+            self.file_scan(
+                path, non_ascii, banned_tag, comment_cut, outside_punctuation
+            )
 
-    # Where a file's header ends: the first line that is neither a comment
-    # nor blank. Everything above it, a "#!" line included, is exempt.
     def header_ends_at(
-        self, lines: list[str], comment_lines: list[bool]
+        self, lines: list[str], comments: list[SourceScan.CommentSpan]
     ) -> int:
-        for number, (line, is_comment) in enumerate(
-            zip(lines, comment_lines, strict=True), start=1
-        ):
-            if line.strip() and not is_comment:
-                return number
-        return len(lines) + 1
+        header_end = 1
+        for comment in comments:
+            if header_end == 2 and lines[0].startswith("#!"):
+                while not lines[header_end - 1].strip():
+                    header_end += 1
+            if comment.first_line != header_end:
+                break
+            header_end = comment.last_line + 1
+        return header_end
 
-    # Anything outside plain ASCII that the allow list does not permit.
     def non_ascii_re(self) -> re.Pattern[str]:
         allowed = "".join(_SOURCE_SCAN_ALLOWED_NON_ASCII_CHARS)
         return re.compile(r"[^\x00-\x7F" + allowed + r"]")
 
-    # Keep one finished comment block when it ran past the limit.
-    def run_record(self, path: str, first_line: int, length: int) -> None:
-        if length > _COMMENT_BLOCK_MAX_LINES:
-            self.faults.append(
-                SourceScan.SourceFault(
-                    path,
-                    first_line,
-                    f"a comment block of {length} lines, over the limit of"
-                    f" {_COMMENT_BLOCK_MAX_LINES}. Say it in"
-                    f" {_COMMENT_BLOCK_MAX_LINES} lines or move the rest"
-                    " into README.md or test_expected_behavior.md",
-                )
-            )
+    def outside_punctuation_re(self) -> re.Pattern[str]:
+        return re.compile(r"[^A-Za-z0-9\s" + re.escape(ENGLISH_PUNCT) + r"]")
 
-    # Record every line writing a banned tag, opening or closing.
+    def punctuation_check(
+        self,
+        path: str,
+        lines: list[str],
+        comments: list[SourceScan.CommentSpan],
+        comment_cut: re.Pattern[str],
+        outside_punctuation: re.Pattern[str],
+    ) -> None:
+        for comment in comments:
+            text = "\n".join(lines[comment.first_line - 1 : comment.last_line])
+            text = comment_cut.sub(
+                lambda cut: "\n" * cut.group().count("\n"), text
+            )
+            for offset, line in enumerate(text.split("\n")):
+                match = outside_punctuation.search(line)
+                if match:
+                    self.faults.append(
+                        SourceScan.SourceFault(
+                            path,
+                            comment.first_line + offset,
+                            f"comment holds {match.group()!r} outside"
+                            " ENGLISH_PUNCT",
+                        )
+                    )
+
     def tag_check(
         self, path: str, lines: list[str], banned_tag: re.Pattern[str]
     ) -> None:
@@ -194,7 +215,6 @@ class SourceScan:
                     )
                 )
 
-    # Record every line holding a character the allow list does not permit.
     def unicode_check(
         self, path: str, lines: list[str], non_ascii: re.Pattern[str]
     ) -> None:
@@ -211,12 +231,8 @@ class SourceScan:
                 )
 
 
-# How many consecutive comment lines a block may run to. Two names a thing
-# and says why; a third is a paragraph, which belongs in README.md.
-_COMMENT_BLOCK_MAX_LINES = 2
+_COMMENT_BLOCK_MAX_LINES = 0
 
-# How each whitelisted kind writes a comment. A page template holds script
-# and style too, so it takes their marks beside its own.
 _COMMENT_SYNTAX_BY_EXTENSION = (
     ((".py", ".sh"), SourceScan.CommentSyntax(("#",), ())),
     ((".c", ".h", ".js"), SourceScan.CommentSyntax(("//",), (("/*", "*/"),))),
@@ -228,31 +244,20 @@ _COMMENT_SYNTAX_BY_EXTENSION = (
     ((".md",), SourceScan.CommentSyntax((), (("<!--", "-->"),))),
 )
 
-# The diff vocabulary, spelled the same everywhere a reader sees it. These
-# are the only non-ASCII characters a whitelisted file may contain.
+ENGLISH_PUNCT = """.,"'?:!()/"""
+
 _SOURCE_SCAN_ALLOWED_NON_ASCII_CHARS = (
-    # almost equal to
     "≈",
-    # infinity
     "∞",
-    # up-pointing triangle
     "▲",
-    # left-pointing triangle
     "⯇",
-    # right-pointing triangle
     "⯈",
-    # down-pointing triangle
     "▼",
-    # horizontal ellipsis
     "…",
-    # full block, a filled cell of the menu's scale bar
     "█",
-    # light shade, an empty cell of the menu's scale bar
     "░",
 )
 
-# Tags a browser draws with a weight, slant, size, line, font or margin of
-# its own. A page is a terminal: one font, and colour the only difference.
 _SOURCE_SCAN_BANNED_TAG_NAMES = (
     "abbr",
     "address",
@@ -291,9 +296,18 @@ _SOURCE_SCAN_BANNED_TAG_NAMES = (
     "var",
 )
 
+_SOURCE_SCAN_COMMENT_MARKUP = (
+    "<!--",
+    "-->",
+    "/*",
+    "*/",
+    "///",
+    "//",
+    "#",
+    "*",
+)
 
-# main - Scan exactly the files named. test_expected_behavior.sh names
-# every whitelisted one, so nothing here decides which files are source.
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument(

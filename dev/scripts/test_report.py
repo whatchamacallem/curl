@@ -8,8 +8,7 @@ from typing import Any, NamedTuple
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import callgrind, settings
 
-# All constants needed from settings.py have to be loaded here before anything
-# else.
+_CALLGRIND_OUTPUT_FILE_PREFIX: str = ""
 _FLAME_GRAPH_APP_DIR_NAME: str = ""
 _FLAME_GRAPH_APP_FILE_GLOBS: tuple[str, ...] = ()
 _FLAME_GRAPH_EXPORTER_NAME: str = ""
@@ -30,57 +29,32 @@ _TIMER_ARTIFACTS_NAME_PREFIX: str = ""
 settings.load_into(__name__)
 
 
-# TestReport - A structural smoke test over a finished report directory:
-# every page present, closed, titled, and free of leftover markers.
 class TestReport:
-    # ReportLayout - What one kind of report is expected to contain -- this is
-    # the whole difference between checking a full report and a diff.
     class ReportLayout(NamedTuple):
-        # whether the report holds the flame graph view, its page and profiles
         has_flame_graph: bool
-        # the pattern the top-N heading has to match
         heading: str
-        # header blocks the overview must carry
         header_blocks: tuple[str, ...]
-        # the exact first line of MANIFEST.txt
         manifest_version: str
-        # the LABEL= rows MANIFEST.txt must have
         manifest_labels: tuple[str, ...]
-        # those of them whose value starts with a unix time
         manifest_recorded_labels: tuple[str, ...]
-        # whether a test records runs of its own: a perf log, a trace, a
-        # flame graph. never true of the synthesized "all"
         test_records_runs: bool
-        # whether the report's top holds the one timer artifacts archive of
-        # its recordings, which its overview links as raw data
         has_timer_artifacts: bool
-        # whether each heat map model files the baseline its changes divide
-        # by, for every file, line and function
         has_baselines: bool
 
-    # TestArgs - Which report to check, and which layout to check it as.
     class TestArgs(NamedTuple):
-        # the report directory
         out_dir: str
-        # check it as a diff report rather than a full one
         diff: bool
-        # print the ok line, on stdout: a quiet run prints nothing on success
         verbose: bool
 
     def __init__(self) -> None:
-        # every problem found so far, printed together at the end
         self.errors: list[str] = []
 
-    # Every link one page's own markup holds, as the browser reads its href,
-    # the markup's escapes undone.
     def anchor_hrefs(self, page_text: str) -> list[str]:
         return [
             html.unescape(href)
             for href in re.findall(r'<a\s[^>]*href="([^"]*)"', page_text)
         ]
 
-    # The POSIX cksum of every file except MANIFEST.txt, run through the
-    # very pipeline scripts/utility.sh wrote the row with, never our own.
     def checksum_compute(self, out_dir: str) -> str:
         try:
             done = subprocess.run(
@@ -101,8 +75,6 @@ class TestReport:
             return ""
         return done.stdout.strip()
 
-    # Every change a diff model files stays within its own baseline count:
-    # a fall past it, or from nothing, means a share divides by the wrong one.
     def diff_baseline_check(self, filed_model: Any, label: str) -> None:
         width = len(filed_model["heatMapTotals"]["counters"])
         changes: list[tuple[str, list[int], list[int]]] = []
@@ -131,12 +103,9 @@ class TestReport:
                     )
                     return
 
-    # Record one problem -- every check runs, so one page cannot hide another.
     def fail(self, message: str) -> None:
         self.errors.append(message)
 
-    # The one shared speedscope bundle every flame graph page loads. It holds
-    # exactly one file per glob, so a page can name it without a version.
     def flame_app_check(self, out_dir: str) -> None:
         app_dir = os.path.join(out_dir, _FLAME_GRAPH_APP_DIR_NAME)
         if not os.path.isdir(app_dir):
@@ -150,8 +119,6 @@ class TestReport:
                     f" matching {pattern}, expected exactly 1: {app_dir}"
                 )
 
-    # The one flame graph page, reaching the shared bundle and speedscope's
-    # loader, and one profile script per traced test, nothing else beside.
     def flame_graph_check(
         self,
         out_dir: str,
@@ -169,15 +136,11 @@ class TestReport:
         if not os.path.isdir(flame_dir):
             self.fail(f"no {_FLAME_GRAPH_VIEW_KEY}/ directory: {flame_dir}")
             return
-        # page_check follows every href itself, so an asset that is not
-        # there has already failed by the time this returns
         page = self.page_check(
             os.path.join(flame_dir, "index.html"),
             f"{_FLAME_GRAPH_VIEW_KEY}/index.html",
             _TEST_FLAME_GRAPH_PAGE_LEAST_BYTES,
         )
-        # the engine is not here, so the page is only a page if it reaches
-        # the shared bundle and hands a profile to speedscope's loader
         if page and f"{_FLAME_GRAPH_APP_DIR_NAME}/" not in page:
             self.fail(
                 f"{_FLAME_GRAPH_VIEW_KEY}/index.html does not load the shared "
@@ -188,8 +151,6 @@ class TestReport:
                 f"{_FLAME_GRAPH_VIEW_KEY}/index.html and its scripts never"
                 f" call loadFileFromBase64: {flame_dir}/index.html"
             )
-        # the engine is shared at the report root, so anything else here is
-        # the duplication that sharing exists to remove
         found_names = sorted(os.listdir(flame_dir))
         wanted_names = sorted(("index.html", _FLAME_GRAPH_PROFILE_DIR_NAME))
         if found_names != wanted_names:
@@ -210,8 +171,6 @@ class TestReport:
         for test_name in traced_tests:
             self.flame_graph_profile_check(profile_dir, test_name)
 
-    # One profile script, the test's recorded trace base64'd under the test,
-    # exactly one evented profile our own tool exported.
     def flame_graph_profile_check(
         self, profile_dir: str, test_name: str
     ) -> None:
@@ -251,8 +210,6 @@ class TestReport:
                 f" {document.get('exporter')!r}, profiles {kinds}): {path}"
             )
 
-    # The one heat map page, titled its view's label and carrying its runtime
-    # script, and one model script per test, the merged one included.
     def heat_map_check(
         self,
         out_dir: str,
@@ -267,10 +224,10 @@ class TestReport:
             _TEST_HEAT_MAP_PAGE_LEAST_BYTES,
             _HEAT_MAP_VIEW_LABEL,
         )
-        if text and "report_ui.layout_activate" not in text:
+        if text and "report_ui_.layout_activate" not in text:
             self.fail(
                 f"{_HEAT_MAP_VIEW_KEY}/index.html is missing its runtime"
-                f" script (no report_ui.layout_activate): {path}"
+                f" script (no report_ui_.layout_activate): {path}"
             )
         model_dir = os.path.join(heat_map_dir, _HEAT_MAP_MODEL_DIR_NAME)
         if not os.path.isdir(model_dir):
@@ -312,8 +269,6 @@ class TestReport:
                     filed_model, f"{_HEAT_MAP_MODEL_DIR_NAME}/{test_name}.js"
                 )
 
-    # Nothing anywhere may name the author's home directory -- a report gets
-    # copied off this box. Bytes: the archives are not text.
     def home_dir_check(self, out_dir: str) -> None:
         home = os.path.expanduser("~")
         if home == "~":
@@ -332,8 +287,6 @@ class TestReport:
                         f" them: {path}"
                     )
 
-    # One test's callers page, a view with no menu, its top-N table, its
-    # links each an address of its test, and a trace's log and flame graph.
     def index_check(
         self,
         out_dir: str,
@@ -354,7 +307,7 @@ class TestReport:
                 "index.html has no 'top N functions' section matching "
                 f"{layout.heading!r}: {path}"
             )
-        if '<nav id="menu_"' in page_text:
+        if '<nav id="menu-"' in page_text:
             self.fail(f"index.html draws the overview's menu: {path}")
         page_hrefs = self.anchor_hrefs(page_text)
         address_start = f"#test={test_name}&view="
@@ -388,8 +341,6 @@ class TestReport:
                 f" not: {path}"
             )
 
-    # MANIFEST.txt line 1 must be exact and its checksum row must still
-    # match the files beside it. Both failures name found and expected.
     def manifest_check(
         self, out_dir: str, layout: TestReport.ReportLayout
     ) -> None:
@@ -443,16 +394,13 @@ class TestReport:
                 f" after the report was written: {out_dir}"
             )
 
-    # The unix time out of one recorded row, whose human tail nothing parses.
     def manifest_recorded_value(self, text: str, label: str) -> str:
         return self.manifest_value(text, label).split(" ", 1)[0]
 
-    # One LABEL= row out of a manifest's text.
     def manifest_value(self, text: str, label: str) -> str:
         match = re.search(rf"^{re.escape(label)}=(.*)$", text, re.M)
         return match.group(1).strip() if match else ""
 
-    # One file out of an open archive, as text a scan can search.
     def member_text(
         self, archive: tarfile.TarFile, member: tarfile.TarInfo
     ) -> str:
@@ -461,8 +409,6 @@ class TestReport:
             raise ValueError(f"{member.name} in {archive.name} is not a file")
         return handle.read().decode("utf-8")
 
-    # The overview menu's numbered buttons in the setting's order, a report
-    # with no flame graph lacking that one button alone.
     def menu_check(
         self, path: str, page_text: str, layout: TestReport.ReportLayout
     ) -> None:
@@ -478,7 +424,6 @@ class TestReport:
                 f" expected {wanted_names}: {path}"
             )
 
-    # The overview page: its test-suites table, one link per test, its blocks.
     def overview_check(
         self,
         out_dir: str,
@@ -514,8 +459,6 @@ class TestReport:
                 )
         self.timer_artifacts_check(out_dir, page_text, tests, layout)
 
-    # Which tests this report holds, taken from the overview's own links to
-    # their heat maps. A test with no directory is a broken test link.
     def overview_test_names(self, index_path: str, out_dir: str) -> list[str]:
         with open(index_path, encoding="utf-8") as handle:
             text = handle.read()
@@ -538,8 +481,6 @@ class TestReport:
             names.append(test_name)
         return names
 
-    # Any page at all: big enough, titled, closed, no template leftovers.
-    # Returns the page plus every asset it links, for a caller to grep.
     def page_check(
         self,
         path: str,
@@ -575,12 +516,8 @@ class TestReport:
                     f"{label} contains a leftover template/error marker "
                     f"{marker!r}: {path}"
                 )
-        # every page follows its own hrefs, not heat maps alone: a
-        # misspelled assets/ link looks right until the browser opens it.
         return self.page_scripts(path, text)
 
-    # Everything a page runs or styles itself with, inline or linked. Each
-    # linked asset is read off disk, so a wrong relative href fails loudly.
     def page_scripts(self, path: str, text: str) -> str:
         parts = [text]
         page_dir = os.path.dirname(path)
@@ -595,15 +532,11 @@ class TestReport:
                 self.fail(f"{path} links {href}, which is unreadable: {error}")
         return "\n".join(parts)
 
-    # A page's title, which is how we tell an overview from a test page.
-    # None when it has none, which run() stops on: no title, no layout.
     def page_title(self, index_path: str) -> str | None:
         with open(index_path, encoding="utf-8") as handle:
             match = re.search(r"<title>(.*?)</title>", handle.read())
         return match.group(1) if match else None
 
-    # The perf log section: only where a timing run exists, and then holding
-    # a real timing line. The recording itself is an artifact, not shipped.
     def perf_tool_check(self, out_dir: str, has_perf_log: bool) -> None:
         index_path = os.path.join(out_dir, "index.html")
         index_text = self.size_check(
@@ -626,8 +559,6 @@ class TestReport:
                 f" timing line: {index_path}"
             )
 
-    # Check one whole report, overview or single test, and report every
-    # problem at once.
     def run(self, args: TestReport.TestArgs) -> int:
         out_dir = os.path.abspath(args.out_dir)
         index_path = os.path.join(out_dir, "index.html")
@@ -678,15 +609,11 @@ class TestReport:
             print(f"test_report: ok ({out_dir})")
         return 0
 
-    # Whether a test records runs of its own in this kind of report, a perf
-    # log, a trace, a flame graph. The synthesized "all" never does.
     def runs_recorded(
         self, layout: TestReport.ReportLayout, test_name: str
     ) -> bool:
         return layout.test_records_runs and test_name != "all"
 
-    # The value a page data script files under its test in its one global,
-    # as JSON, or None once a line missing or unreadable is reported.
     def script_value(
         self, script: str, global_name: str, test_name: str, path: str
     ) -> dict[str, object] | None:
@@ -712,7 +639,6 @@ class TestReport:
         self.fail(f"no {assignment_prefix!r} line: {path}")
         return None
 
-    # Read a text file, complaining if it is missing or implausibly small.
     def size_check(self, path: str, min_bytes: int, label: str) -> str:
         try:
             size = os.path.getsize(path)
@@ -728,8 +654,6 @@ class TestReport:
             )
         return text
 
-    # The heat map's source text sits in the report's one sources/
-    # directory. Confirm.
     def sources_check(self, out_dir: str) -> None:
         sources_dir = os.path.join(out_dir, _REPORT_SOURCES_DIR_NAME)
         path = os.path.join(out_dir, _HEAT_MAP_VIEW_KEY, "index.html")
@@ -740,14 +664,11 @@ class TestReport:
         if linked and not os.path.isdir(sources_dir):
             self.fail(f"no shared source directory: {sources_dir}")
 
-    # Everything one test's directory should hold, per the layout.
     def test_report_check(
         self, out_dir: str, name: str, layout: TestReport.ReportLayout
     ) -> None:
         records_runs = self.runs_recorded(layout, name)
         self.index_check(out_dir, name, layout, records_runs)
-        # the recordings are archived once at the report's top, and each
-        # view's one page sits at its root, so a test holds none of them
         for stray_name in ("raw", _HEAT_MAP_VIEW_KEY, _FLAME_GRAPH_VIEW_KEY):
             stray_dir = os.path.join(out_dir, stray_name)
             if os.path.exists(stray_dir):
@@ -758,8 +679,6 @@ class TestReport:
         if layout.test_records_runs:
             self.perf_tool_check(out_dir, records_runs)
 
-    # One timer artifacts archive, readable, one root entry named after it
-    # with every file right under it, a callgrind file for every test.
     def timer_artifacts_archive_check(
         self,
         path: str,
@@ -767,7 +686,6 @@ class TestReport:
         tests: Sequence[str],
         layout: TestReport.ReportLayout,
     ) -> None:
-        # bytes, never size_check's text: an archive is not utf-8
         size = os.path.getsize(path)
         if size < _TEST_RAW_ARCHIVE_LEAST_BYTES:
             self.fail(
@@ -810,7 +728,9 @@ class TestReport:
             if not self.runs_recorded(layout, test_name):
                 continue
             if not any(
-                file_name.startswith(f"callgrind.out.{test_name}.")
+                file_name.startswith(
+                    f"{_CALLGRIND_OUTPUT_FILE_PREFIX}.{test_name}."
+                )
                 and "events:" in text[:4096]
                 for file_name, text in texts_by_name.items()
             ):
@@ -825,8 +745,6 @@ class TestReport:
                     f"{callgrind.REPO_ROOT!r} in {member_name}: {path}"
                 )
 
-    # A full report's one timer artifacts archive at its top, which its
-    # overview links as raw data. A diff has neither the archive nor the line.
     def timer_artifacts_check(
         self,
         out_dir: str,
@@ -869,17 +787,11 @@ class TestReport:
             )
 
 
-# What each view's directory is called, from the entry production builds
-# with. Element 0 is the key: the URL hash's name and the page's directory.
 _FLAME_GRAPH_VIEW_KEY = _FLAME_GRAPH_VIEW_ENTRY[0]
 
-# The heat map's key and link label, element 1 of the same entry. Checking
-# the title against it is what keeps this a check, not a second spelling.
 _HEAT_MAP_VIEW_KEY = _HEAT_MAP_VIEW_ENTRY[0]
 _HEAT_MAP_VIEW_LABEL = _HEAT_MAP_VIEW_ENTRY[1]
 
-# What a perf2html_diff.sh report must contain: no flame graph, no timing.
-# The version line comes from settings.py, so this checks what wrote it.
 _LAYOUT_DIFF = TestReport.ReportLayout(
     has_flame_graph=False,
     heading=r">top \d+ functions by change in self</div>",
@@ -897,7 +809,6 @@ _LAYOUT_DIFF = TestReport.ReportLayout(
     has_baselines=True,
 )
 
-# What a perf2html.sh report must contain.
 _LAYOUT_FULL = TestReport.ReportLayout(
     has_flame_graph=True,
     heading=r">top \d+ functions by self</div>",
@@ -916,8 +827,6 @@ _LAYOUT_FULL = TestReport.ReportLayout(
     has_baselines=False,
 )
 
-# The POSIX pipeline this file re-derives the checksum row with, spelled
-# out separately from utility.sh's on purpose: not a twin.
 _REPORT_CHECKSUM_COMMAND = (
     "find . -type f ! -name MANIFEST.txt -print"
     " | LC_ALL=C sort | LC_ALL=C tr '\\n' '\\0'"
@@ -925,8 +834,6 @@ _REPORT_CHECKSUM_COMMAND = (
     " | LC_ALL=C sort | cksum"
 )
 
-# Smallest a file can be before it is plainly a failed generate. The two view
-# pages only load each test's script, so each has its own.
 _TEST_FLAME_GRAPH_PAGE_LEAST_BYTES = 300
 _TEST_FLAME_GRAPH_SCRIPT_LEAST_BYTES = 200
 _TEST_HEAT_MAP_MODEL_LEAST_BYTES = 5000
@@ -936,7 +843,6 @@ _TEST_OVERVIEW_PAGE_LEAST_BYTES = 2000
 _TEST_RAW_ARCHIVE_LEAST_BYTES = 100
 
 
-# main - Check one report. Source is test_source_scan.py's, never this file's.
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("out_dir", help="a report directory")

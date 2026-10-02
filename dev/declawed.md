@@ -105,6 +105,9 @@ The single function/check owning each concern - never bypass or duplicate:
   thing's own baseline through `diff_share_of()`.
 - `diff_share_of()` - every diff share, a fall past its baseline refused
   (theme.py/js).
+- `fixed_text()` - every decimal a page prints; `percent()`/`percent_text()`
+  every share, `signed_percent()`/`signed_percent_text()` every diff share
+  (theme.py `NumberFormat`, theme.js `report_ui_`).
 - `design_scale_travel_set()` - scale slider changes; `menu.js` then posts
   `report_ui:layout_reset`, which resets column widths.
 
@@ -252,7 +255,10 @@ Under `dev/`:
   overview template; `callers.js` the callers view; `heatmap.{js,css,html}`;
   `flame_graph.{js,html}`, `flame_graph.js` polls `window.speedscope`;
   `ui_strings.js` (`str_*`); `error_overlay.js` first script on every page;
-  `settings.js` (`settings("NAME")` throws on unknown).
+  `utility.js` second, relaying an error report up the frames and reporting a
+  failed `<link>`/`<script>`/`<img>` load; `light_mode.css` the light mode,
+  under `:root[data-dark-mode-="disabled"]`; `settings.js`
+  (`settings_("NAME")` throws on unknown).
 - `src/cyg_callback.c` trace hooks; `scripts/test_whitelist.txt`;
   `README.md` user contract, copied into every report; `tmp/` notes, `.md`
   only, gitignored, spared by `clean.sh`.
@@ -334,7 +340,8 @@ taskset -c 3 ./build-relwithdebinfo/22_DCMAKECFLAGSO2g/tests/perf/perf \
   `trace.<test>.<loops>.<recorded>.log` and the
   rows file `header.overview.<report basename>.txt` (`HEADER_ROWS_NAME`;
   `run_all` writes it, `_HEADER_FILE` set in `args_parse`). No `output.txt`
-  ships: the callers page embeds perf/trace logs (`perf_page_of`/`_TRACE_LOG`);
+  ships: the callers page embeds perf/trace logs (`artifact_path_of
+  timing-page`/`_TRACE_LOG`);
   the
   overview reads one `--perf-log NAME=FILE` per test, `all` included.
 - `timer_artifacts_write` fills a transient `timer-artifacts-<recorded>/` in
@@ -386,13 +393,16 @@ taskset -c 3 ./build-relwithdebinfo/22_DCMAKECFLAGSO2g/tests/perf/perf \
   allowed (`src/*.h`), a non-regular match or empty list is an error.
   `--config`/`--project` always passed; `pyrightconfig.json` names no file.
 - `test_screenshot.py`: modified + diff reports, `_VIEWS` ×
-  `_SCREENSHOT_VIEWPORTS`
-  → `dev/screenshots/<size>_<report>_<view>.png`, then 4k 3x3
-  `thumbnail_<size>_<report>.png`; imports no settings; each `_VIEWS` hash
+  `_SCREENSHOT_VIEWPORTS` × `_SCREENSHOT_DARK_VALUES` (`1`, then `0` light)
+  → `dev/screenshots/NN_<size>_<report>_<view>_dark-<0|1>.png`, `NN` the
+  view's number in `_VIEWS`, then per size and dark value a 4k sheet 3 shots
+  wide, `thumbnail_<size>_<report>_dark-<0|1>.png`; imports no settings;
+  each `_VIEWS` hash
   is a golden bookmark written out whole as one string literal, never
   formulated from a constant; error view
-  `bad_function`; `report_incomplete` shoots a copy lacking
-  `assets/report_complete.js` under `dev/build/screenshots_scratch/`;
+  `bad_function`; `report_incomplete` and `stylesheet_missing` shoot a copy
+  lacking `assets/report_complete.js` or `assets/theme.css` under
+  `dev/build/screenshots_scratch/`;
   `--incognito`; under `--verbose` it prints
   `<report> -> <dir>` and `N screenshot(s)`.
 - Debug modes, run in order: 1 `test_expected_behavior.sh` cold; 2
@@ -435,6 +445,7 @@ taskset -c 3 ./build-relwithdebinfo/22_DCMAKECFLAGSO2g/tests/perf/perf \
   `TARGET_DIR`, `VERBOSE`, `WRITE_REPORT_ARCHIVE` (`shared_options_parse`,
   `ARTIFACTS_DIR` again in `artifacts_dir_resolve`), `SPEEDSCOPE_RELEASE`,
   `RUN_LOG` (`report_begin`),
+  `SOURCE_CACHE_{PACKAGE,VERSION,DIR}` (`source_cache_sync`),
   `CHILD_EXIT_CODE`/`LOG_LINE_FROM` (`child_capture`), `QUIET_SWITCH`
   (`quiet_switch_set`), `VERBOSE_{COMMAND_NUMBER,ITEM_INDENT,BLOCK_PRINTED}`
   (`verbose_begin`, `block_lead`, `command_item_print`, `heading_write`,
@@ -541,7 +552,7 @@ timer-artifacts-<unix>.txz (full report only)
   plus `.js`); `FileModel.source` read via `source_text(file_path)`;
   `flame_app_install` needs each glob to match one file.
   `report_complete_write` ships `assets/report_complete.js`
-  (`window.report_manifest_table`, the preformatted manifest table
+  (`window.report_manifest_table_`, the preformatted manifest table
   string, no `checksum=`, then `screenshot_label_script_print`, showing a
   `screenshot` URL param as a label).
 
@@ -588,9 +599,10 @@ timer-artifacts-<unix>.txz (full report only)
   `heat-map/data/<test>.js`, the `sources/` it shows and, for the merged test,
   `assets/pulldown_text.js`; `page`, after the last `data`, writes the one
   `heat-map/index.html`, its `__SCRIPTS__` in the order
-  `theme.page_preamble_scripts()`, every `sources/` file, `pulldown_text.js`,
+  `report_complete.js`, every `sources/` file, `pulldown_text.js`,
   `settings.js`, `theme.js`, `heatmap.js`; head from `theme.page_document`
-  (`extra_css`, `body_holds_scripts`); `model()`/ `diff_model()`; `model()`
+  (`theme.page_preamble_scripts()`, `extra_css`, `body_holds_scripts`);
+  `model()`/ `diff_model()`; `model()`
   refuses an unemitted `RANKING_COUNTER_NAME`.
 - `trace_to_speedscope.py`: busiest run's first
   `FLAME_GRAPH_MAX_RECORDED_CALLS` (200) calls; `buildid_verify` refuses a
@@ -599,7 +611,7 @@ timer-artifacts-<unix>.txz (full report only)
 - `cyg_callback.c`: `next` a pointer, `end` a variable (11/12-instruction hot
   path); `buildid` path is `realpath`; single-threaded.
 - `test_report.py`: greps `loadFileFromBase64` in the flame graph page and
-  its scripts and `report_ui.layout_activate` in the heat map page's; reads
+  its scripts and `report_ui_.layout_activate` in the heat map page's; reads
   the entry each `data/<test>.js` and `profiles/<test>.js` files under its
   global; report dir required;
   `manifest_recorded_labels` get the unix-time check; `perf_tool_check` reads
@@ -616,7 +628,8 @@ timer-artifacts-<unix>.txz (full report only)
   `HEAT_MAP_SOURCE_VIEW_WIDTH_CHARS` (80).
 - Reformatting `heatmap.*`, `menu.*`, `frame.js`, `flame_graph.*`,
   `callers.js`, `overview.html`, `settings.js`, `error_overlay.js`,
-  `ui_strings.js`, `theme.css`, `theme.js`, `README.md` changes reports;
+  `utility.js`, `light_mode.css`, `ui_strings.js`, `theme.css`, `theme.js`,
+  `README.md` changes reports;
   text echoed into a perf/trace recording is page content.
 
 ## 8 Pages and JS
@@ -624,29 +637,30 @@ timer-artifacts-<unix>.txz (full report only)
 - `ui_strings.js`: `str_*`; `text_of(id)` throws on unknown; no boundary names
   or number notation; `(no recorded caller)` stays in Python matching
   `str_no_caller`; empty pulldown = `str_no_match`.
-- `error_overlay.js`, exempt from every rule: `window.catch_show_throw(fn)`
+- `error_overlay.js`, exempt from every rule: `window.catch_show_throw_(fn)`
   wraps an entry point (load body, listener, timer); a throw, or a returned
-  promise's rejection, reaches `err_overlay_show` as the `Error` itself, then
+  promise's rejection, reaches `err_overlay_show_` as the `Error` itself, then
   is rethrown, since a `file://` page gets another file's error as "Script
-  error."; `err_overlay_show(error)` and the `error`/`unhandledrejection`
-  listeners make `error_text_of(error)` (stack, else name and message, then
+  error."; `err_overlay_show_(error)` and the `error`/`unhandledrejection`
+  listeners make `error_text_of_(error)` (stack, else name and message, then
   each `cause`) in the realm that caught it; the first error of a load wins;
-  a frame posts `{report_ui: "report_error", report: {page, text}}` up,
+  a frame posts `{report_ui: "report_error", report: {page, text}}` up
+  through `utility.js`,
   `page` its report-relative path and hash; the top replaces the document
   through `document.open()` one task later with one well-formed page, every
   text HTML-escaped, one `<pre>` in `white-space: pre`, no Markdown, no
   wrapping: `perf2html error`, `address` (its report-relative path and hash
   at render), `page` when a frame threw, the text, then `manifest` and
-  `window.report_manifest_table` raw, else "Report has no
+  `window.report_manifest_table_` raw, else "Report has no
   assets/report_complete.js"; the report root, the directory above
   `assets/` from `document.currentScript`, is cut from every text; font
-  size is `DESIGN_FONT_SIZE_PX` (24) scaled once at `page_write` by
+  size is `DESIGN_FONT_SIZE_PX` (24) scaled once at `page_write_` by
   `window.innerWidth / DESIGN_COORDINATES_WIDTH_PX`, no resize listener;
   two links, `copy` (`navigator.clipboard.writeText` of the text shown,
   unescaped) and `back` (`history.back()`); a `hashchange` or `popstate` on
   the written page reloads it; touches the URL only via `back`, reads no
   other script.
-- JS settings: each `.js` resolves each `settings("NAME")` once into a
+- JS settings: each `.js` resolves each `settings_("NAME")` once into a
   same-named `const` at the top of its IIFE, never in a render path; every
   number/colour/key/bound is a setting (`MENU_PULLDOWN_KEY_NAMES`).
 - Names: `snake_case` ours; camelCase owned by browser/Python (DOM,
@@ -662,31 +676,32 @@ timer-artifacts-<unix>.txz (full report only)
   `.current_`, `--menu-title-width-`, `data-test-name-`), setting it apart
   from DOM and native widget names. JS reads a `data-*` attribute through
   `getAttribute()` by its written name, never `dataset`.
-  `window.report_sources` keyed by
+  `window.report_sources_` keyed by
   display path, read by `source_text()`. Markers `__NAME__` and `__DATA__`
   (the `settings.js` template), `__SCRIPTS__`, `__APP_CSS__`, `__APP_JS__`,
   `__RAW_DATA__`, `__MANIFEST__`, `__TESTS__`.
 - Frames: the overview frames one view at a time, a test's callers page,
   the heat map app or the flame graph app, the page
-  `report_ui.address.page_href_of()` names. `frame.js`, the model, runs on
-  the top page alone as `window.report_frame` (`activate()`,
+  `report_ui_.address.page_href_of()` names. `frame.js`, the model, runs on
+  the top page alone as `window.report_frame_` (`activate()`,
   `address_now()`, `address_request(hash)`, `view_post(message)`).
   `view_show()` parses and checks the top's hash, records it, calls
-  `report_menu.address_show()`, then loads the view by
+  `report_menu_.address_show()`, then loads the view by
   `location.replace(page_href + location.hash)`, never `iframe.src`, or
-  shows the home panel. `menu.js`, the controller, is `window.report_menu`
-  (`address_show()`, `menu_key_take(key)`) and starts every navigation
-  through `report_frame.address_request`. The frame's one message listener
+  shows the home panel. `menu.js`, the controller, is `window.report_menu_`
+  (`address_show()`, `dark_mode_show_()`, `menu_key_take(key)`) and starts
+  every navigation
+  through `report_frame_.address_request`. The frame's one message listener
   hands the controller each key a view sent up. A view uses `theme.js` doors
-  alone, `report_ui.address` and
-  `report_ui.view_activate({preferences_apply, recenter})`, which requests a
+  alone, `report_ui_.address` and
+  `report_ui_.view_activate({preferences_apply, recenter})`, which requests a
   clicked address link, forwards keys and meets the downward strings. The
   flame graph app forwards no keys.
 - URL = whole state, one grammar on every page: `#test=<t>&view=<v>`, `view`
   one of `callers`, `heat-map`, `flame-graph`; the heat map adds
   `&file=<f>[&line=<n>]` or `&function=<name>`; the flame graph adds
   `&localProfilePath=profile`, speedscope's own key, which speedscope reads
-  from the same hash; none = the overview's home. `report_ui.address`
+  from the same hash; none = the overview's home. `report_ui_.address`
   (`of_hash`, `hash_of`, `home_hash_of`, `link_hash_of`, `page_href_of`,
   `request`) is the one JS door and `build_report.py` `address_of` the one
   Python door, the key names string literals in those alone. Keys parse in
@@ -694,24 +709,27 @@ timer-artifacts-<unix>.txz (full report only)
   `str_error_hash_*`. The top page forwards its hash to the view unmodified,
   and no page rewrites a hash it received. Regression path
   `#test=<t>&view=heat-map&file=<f>&line=<n>` reloads both levels.
-- Storage: only `heat.counter`, `heat.scale`, `heat.sort`, `view.scale` (a
+- Storage: only `heat.counter`, `heat.scale`, `heat.sort`, `view.dark_mode`,
+  `view.scale` (a
   scale bar stop, 0..20), `split.<pane>`. `STORAGE_VERSION` =
-  `perf2html v4` under `STORAGE_VERSION_KEY` = `perf2html.version`;
+  `perf2html v5` under `STORAGE_VERSION_KEY` = `perf2html.version`;
   mismatch sweeps owned keys; `view_storage.preferences_clear()`, the reset
-  button's door, sweeps all but `view.scale`; new keys go in
+  button's door, sweeps every owned key; new keys go in
   `STORAGE_OWNED_KEYS`/`STORAGE_OWNED_PREFIXES` (`split.`). `localStorage`
   refused is a designed condition, not a fallback.
 - Messages up `{report_ui: <name>, ...}`: `address_request` (`hash`, from
-  `report_ui.address.request()`), `menu_key_pressed` (`key`, a view's
-  forwarded key), `report_error` (`report: {page, text}`, error_overlay.js's
+  `report_ui_.address.request()`), `menu_key_pressed` (`key`, a view's
+  forwarded key), `report_error` (`report: {page, text}`, utility.js's
   own, relayed up by each frame). Down, strings through
-  `report_frame.view_post()`: `report_ui:layout_reset`,
-  `report_ui:recenter`, `report_ui:tests_pulldown_closed`.
+  `report_frame_.view_post()`: `report_ui:layout_reset`,
+  `report_ui:recenter`, `report_ui:tests_pulldown_closed`,
+  `report_ui:dark_mode_apply`.
   `#menu-reset-button-` and a scale change post `report_ui:layout_reset`,
   which resets the home panel's columns too.
 - Menu, the overview's alone: logo → `index.html`, a plain link.
-  The buttons follow `MENU_BUTTON_ORDER`, the flame graph's before reset,
-  each numbered and keyed `(index + 1) % 10` by `menu.js`, which writes
+  The buttons follow `MENU_BUTTON_ORDER`, the flame graph's and dark mode's
+  before reset, each but dark mode's numbered and keyed `(index + 1) % 10`
+  by `menu.js`, which writes
   every label. A button a report lacks, a diff's flame graph, keeps every
   other number. The flame graph button hides while the buttons name
   `MENU_PULLDOWN_MERGED_TEST_NAME`, and the view buttons' hrefs follow the
@@ -719,7 +737,7 @@ timer-artifacts-<unix>.txz (full report only)
   (`menu.js`) each: tests entries are `menu_link_render()` links
   (`tabindex=-1`, `data-test-name-`), box reads the test on show or
   `MENU_PULLDOWN_MERGED_TEST_NAME`; files/functions entries are
-  `window.report_pulldown_text` names (`pulldown_text_write`), heat map
+  `window.report_pulldown_text_` names (`pulldown_text_write`), heat map
   addresses in that test; open, it is a `new RegExp(text, "i")` search
   steered by `MENU_PULLDOWN_KEY_NAMES`; blur closes; list `z-index: 3` over
   `.band_`. A view forwards keys typed outside a field (typed characters
@@ -728,7 +746,7 @@ timer-artifacts-<unix>.txz (full report only)
   Shift+Tab); the pulldown's `key_take` is the one key handler and
   `search_box_focus()` takes focus, else `str_error_pulldown_focus_refused`.
 - Keyboard: `WIDGET_KEY_NAMES` names every key a focused widget takes,
-  read through `report_ui.widget_key` (`of`, `activates`, `link_click_take`,
+  read through `report_ui_.widget_key` (`of`, `activates`, `link_click_take`,
   Space on a focused link). Each widget is one tab stop, moved by
   `tab_stop_move()`: the heat map tree (`role="tree"`), a table whose rows
   open something (`table_rows.attach`, `role="treegrid"`), the ticker tape
@@ -788,13 +806,23 @@ timer-artifacts-<unix>.txz (full report only)
   `#heat-map-main-`, the box scrolling the heat map's, keeps
   `scrollbar-gutter: stable`. Drags use `design_px()`
   rects and `clientX`, floored at `data-min-`.
-- Notation: `2.1K`/`2.0G`, `63.2%`, `<0.01%`, exact zero empty; floor
-  `NUMBER_SMALLEST_PRINTED_PERCENT` (0.01). Diff: no `+`; `▲11.1%`, `▼-100.0%`;
-  ASCII hyphen for amounts; `▲≈0.00%` under 0.01%; `▲∞%` on a rise from a
-  zero baseline, a fall past its baseline refused (`diff_share_of()`); past
-  100% a multiple `▲1.30x`; at/past `NUMBER_LARGEST_PRINTED_MULTIPLE_TIMES`
-  (999.99) `>1000x` unsigned. `theme.js` `report_ui` and `theme.py`
-  `NumberFormat` match by hand; README "Reading A Diff Report" is the spec.
+- Notation: `2.1K`/`2.0G`, `63.20%`, `≈0.00%` above 0 and under the floor,
+  exact zero empty, a heading's
+  zero share `0.00%` (`zero_percent_text()`); every share, multiple and time
+  keeps `NUMBER_FRACTION_DIGITS` (2) decimals; floor
+  `NUMBER_SMALLEST_PRINTED_PERCENT` (0.01). Diff: no `+`; the arrow, then the
+  amount right-aligned in the floor's amount width (8 characters, 9 in all;
+  `signed_percent_amount_chars`/`SIGNED_PERCENT_AMOUNT_CHARS`, derived from
+  `NUMBER_FRACTION_DIGITS`, not a setting), so the arrow touches the amount
+  only at the floor, share cells keeping the spaces (`white-space: pre`):
+  `▲  11.11%`, `▼-100.00%`; ASCII hyphen for amounts; `▲  ≈0.00%` under
+  0.01%; `▲      ∞%` on a
+  rise from a zero baseline, a fall past its baseline refused
+  (`diff_share_of()`), so `▼-100.00%` is the floor; past 100% a multiple
+  `▲   1.30x`; at/past `NUMBER_LARGEST_PRINTED_MULTIPLE_TIMES` (999.99)
+  `▲     ≈∞%`.
+  `theme.js` `report_ui_` and `theme.py` `NumberFormat` match by hand; README
+  "Reading A Diff Report" is the spec.
 
 ## 10 Diff semantics
 
@@ -803,8 +831,9 @@ timer-artifacts-<unix>.txz (full report only)
   callers from `callgrind_diff.py --callers-output` JSON keyed `<fn>` and
   `<display path>\n<line>`, a line's baseline summed over every function on
   it, as the line row sums its delta.
-- Share = `(new - old)/old` of the thing's own baseline: 1→0 = -100%, 90→100 =
-  +11.1%, 1→1 empty; new in modified = `inf`/`Infinity`, `▲∞%`, heat-clamped.
+- Share = `(new - old)/old` of the thing's own baseline: 1→0 = `▼-100.00%`,
+  90→100 = `▲  11.11%`, 1→1 empty; new in modified = `inf`/`Infinity`,
+  `▲      ∞%`, heat-clamped.
   `events` = recorded counters; `costs_fit()` pads, trims trailing zeros;
   ranking and heat use `abs()`; `profile_magnitudes()` (Σ|delta|) feeds
   `heatMapTotals.totals`; `summary:` is the signed total.

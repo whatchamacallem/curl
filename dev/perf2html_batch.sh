@@ -40,16 +40,12 @@ cd "$PERF2HTML_DIR_"
 
 _REPO="$(dirname "$PERF2HTML_DIR_")"
 
-# step_run - run one numbered step, its output reaching the terminal as it
-# is. A failed step is a hard error: one line here, then the child's code.
 step_run() {
   local _number="$1" _name="$2"
   shift 2
   local _exit_code=0 _start
   _start="$(clock_microseconds)"
   log_verbose "Starting: $_number $_name..."
-  # the child prints its own title, every line under it and its own
-  # refusal; nothing here captures, buffers or reprints any of it
   "$@" || _exit_code=$?
   _STEP_NAMES+=("$_name")
   _STEP_SECONDS+=("$((($(clock_microseconds) - _start) / 1000000))s")
@@ -64,10 +60,7 @@ step_run() {
   exit "$_exit_code"
 }
 
-# header_table_print - under --verbose, the one-row table naming what this
-# run measures on: when, which revision, toolchain, kernel and pinned core.
 header_table_print() {
-  # every value first: a fault in one ends the run instead of an empty cell
   local _revision _cmake_version _cc_version _curl_version
   _revision="$(revision_describe "$_REPO")"
   _cmake_version="$(cmake --version | head -1)"
@@ -81,12 +74,8 @@ header_table_print() {
     "$_curl_version" "$(uname -r)" "$PROFILE_PINNED_CPU"
 }
 
-# args_parse - read the command line, deriving every absolute *_DIR from
-# the target dir. A --report= is refused, every other argument a cmake flag.
 args_parse() {
   shared_options_parse "$@"
-  # perf2html.sh would take a --report= as its own, moving the modified
-  # report away from the name the diff reads
   local _remaining_argument
   for _remaining_argument in "${REMAINING_ARGUMENTS[@]}"; do
     case "$_remaining_argument" in
@@ -104,8 +93,6 @@ args_parse() {
   _DIFF_DIR="$(report_path_of "$REPORT_DIFF_DIR_NAME")"
 }
 
-# main - runs baseline, modified and diff, stopping at the first failure,
-# and owns the end-of-run deletion of the artifacts directory.
 main() {
   args_parse "$@"
   verbose_begin
@@ -124,8 +111,6 @@ main() {
         "error: --regenerate: no recordings at $_cache"
     done
   fi
-  # each child takes its report's default name under the target dir, and
-  # keeps its recordings: the batch alone deletes them, at the end
   local _child_args=("--target-dir=$TARGET_DIR" "--artifacts=$ARTIFACTS_DIR")
   if [ "$REGENERATE" = 1 ]; then
     _child_args+=(--regenerate)
@@ -138,8 +123,6 @@ main() {
   log_verbose "[$(elapsed_format)s] $_SCRIPT $TIMESTAMP: modified build" \
     "flags: ${_CMAKE_FLAGS[*]}"
 
-  # the reports are output only: a --regenerate rebuilds them from the kept
-  # recordings, reading nothing back from them
   log_verbose "[$(elapsed_format)s] removing previous reports"
   for _dir in "$_BASE_DIR" "$_MOD_DIR" "$_DIFF_DIR"; do
     report_delete "$_dir"

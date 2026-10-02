@@ -24,9 +24,7 @@ set -o xtrace
 
 "$_SCRIPTS/test_expected_behavior.sh" --keep-artifacts
 
-# This step expects the artifacts from the last step. No check needed here.
 "$_SCRIPTS/test_error_handling.sh"
 
-# echo ensures the script returns 1.
 { set +o xtrace; } 2>/dev/null
 echo "perf2html test_all.sh all_tests_pass"
