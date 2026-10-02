@@ -124,16 +124,20 @@ Version 3, 29 June 2007.
 
 ### Regular Report
 
-A regular report shows you a percentage of a total as you might expect. In most
-places it is a percentage of a global total cycle count, however in the source
-view it may also be a percentage of a file or function if selected.
+A regular report contains a suite of tests that can be explored using a menu.
+There is heat map data, call graph data, and a flame graph.
 
-| example     |      % |
-| ----------- | -----: |
-| 1 / 50000   | <0.01% |
-| 1 / 5000    |  0.02% |
-| 500 / 5000  |  10.0% |
-| 5000 / 5000 | 100.0% |
+A regular report shows you the selected counter, a total for that counter and
+a percentage of that total. places it is a percentage of a global total cycle
+count, however in the source view it may also be a percentage of a file or
+function if selected.
+
+| example     |       % |
+| ----------- | ------: |
+| 1 / 50000   |  ≈0.00% |
+| 1 / 5000    |   0.02% |
+| 500 / 5000  |  10.00% |
+| 5000 / 5000 | 100.00% |
 
 ### Diff Report
 
@@ -141,23 +145,23 @@ A diff report uses percentages the same way a stock market ticker does. Every
 number in it is the modified profile minus the baseline one, per function, file
 and line, and every share divides that difference by the same thing's own
 baseline count. So a share says how much this line moved against what it used
-to cost, not what part of the report it is. Half as long is `▼-50.0%`, twice as
-long is `▲100.0%`, and smaller is better.
+to cost, not what part of the report it is. Half as long is `▼-50.00%`, twice
+as long is `▲100.00%`, and smaller is better.
 
 | example            |         % |
 | ------------------ | --------: |
+| 0 -> 1000          | ▲      ∞% |
 | 1000 -> 1000       |           |
-|    0 -> 1000       |       ▲∞% |
-| 1000 -> 1000000    |  ▲999.00x |
-| 1000 -> 1001000    |      ▲≈∞% |
-| 1000 -> 101000     |  ▲100.00x |
-| 1000 -> 2000       |  ▲100.00% |
-| 1000 -> 2010       |    ▲1.01x |
-| 1000 -> 900        |  ▼-10.00% |
+| 1000 -> 1000000    | ▲ 999.00x |
+| 1000 -> 1001000    | ▲     ≈∞% |
+| 1000 -> 101000     | ▲ 100.00x |
+| 1000 -> 2000       | ▲ 100.00% |
+| 1000 -> 2010       | ▲   1.01x |
+| 1000 -> 900        | ▼ -10.00% |
 | 5000 -> 0          | ▼-100.00% |
-| 5000000 -> 4999999 |   ▼≈0.00% |
-| 5000000 -> 5000001 |   ▲≈0.00% |
-| 90 -> 100          |   ▲11.10% |
+| 5000000 -> 4999999 | ▼  ≈0.00% |
+| 5000000 -> 5000001 | ▲  ≈0.00% |
+| 90 -> 100          | ▲  11.11% |
 
 ## Flame Graph (speedscope)
 
