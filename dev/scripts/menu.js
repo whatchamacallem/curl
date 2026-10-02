@@ -370,7 +370,7 @@ window.catch_show_throw_(function () {
       if (button_element) button_element.textContent = button_text;
     }
   }
-  function dark_mode_show() {
+  function dark_mode_show_() {
     dark_mode_button.textContent = window.ui_strings_.text_of(
       window.report_ui_.dark_mode_enabled_now_()
         ? "str_menu_dark_mode_enabled"
@@ -584,7 +584,7 @@ window.catch_show_throw_(function () {
         window.report_ui_.design_scale_travel_set(default_stop);
         scale_bar_show(default_stop);
         window.report_ui_.dark_mode_set_(DARK_MODE_ENABLED_DEFAULT);
-        dark_mode_show();
+        dark_mode_show_();
         window.report_frame_.view_post("report_ui:layout_reset");
       }),
     );
@@ -595,11 +595,11 @@ window.catch_show_throw_(function () {
           !window.report_ui_.dark_mode_enabled_now_(),
         );
         window.report_frame_.view_post("report_ui:dark_mode_apply");
-        dark_mode_show();
+        dark_mode_show_();
       }),
     );
     buttons_label();
-    dark_mode_show();
+    dark_mode_show_();
     pulldowns_activate();
     scale_activate();
     document.addEventListener(
@@ -622,11 +622,11 @@ window.catch_show_throw_(function () {
 
   window.report_menu_ = {
     address_show,
-    dark_mode_show,
+    dark_mode_show_,
     menu_key_take,
   };
 
   activate();
   window.report_frame_.activate();
 })();
-5
+5;

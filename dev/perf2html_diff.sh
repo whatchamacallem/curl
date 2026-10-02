@@ -31,7 +31,7 @@ set -euo pipefail
 
 TIMESTAMP="$(date +%s)"
 INVOKED_FROM="$PWD"
-_SCRIPT="$(readlink -f "$0")"
+_SCRIPT="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
 PERF2HTML_DIR_="$(dirname "$_SCRIPT")"
 cd "$PERF2HTML_DIR_"
 
@@ -257,7 +257,8 @@ main() {
   local _log_file
   _log_file="$(artifact_path_of diff-log "")"
   report_begin "$_OUT_DIR" "$_log_file" \
-    "dev/perf2html_diff.sh $TIMESTAMP: $_BASE_DIR: $_MOD_DIR: $_OUT_DIR"
+    "tests/perf2html/perf2html_diff.sh $TIMESTAMP: $_BASE_DIR: $_MOD_DIR: \
+$_OUT_DIR"
   source_cache_fill
 
   local _tests _test_name _delta_file

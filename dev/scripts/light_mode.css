@@ -22,7 +22,8 @@
       max(
         var(--page-dark-mode-disabled-border-width-),
         var(--design-device-pixel-widest-px-)
-      ) / 2
+      ) /
+      2
   );
 }
 

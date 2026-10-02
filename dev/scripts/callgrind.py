@@ -15,8 +15,8 @@ settings.load_into(__name__)
 Costs: TypeAlias = list[int]
 Group = Literal["repo", "system", "external"]
 
-REPO_ROOT = os.path.dirname(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+REPO_ROOT = os.path.abspath(
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..")
 )
 
 _Key = TypeVar("_Key")

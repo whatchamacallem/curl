@@ -1,6 +1,9 @@
 window.catch_show_throw_(function () {
   "use strict";
 
+  const FLAME_GRAPH_LOCAL_PROFILE_URL_PREFIX = settings_(
+    "FLAME_GRAPH_LOCAL_PROFILE_URL_PREFIX",
+  );
   const FLAME_GRAPH_PROFILE_DIR_NAME = settings_(
     "FLAME_GRAPH_PROFILE_DIR_NAME",
   );
@@ -67,6 +70,9 @@ window.catch_show_throw_(function () {
     throw new Error(
       window.ui_strings_.text_of("str_error_hash_profile_path_missing"),
     );
+  window.resource_failure_expect_(
+    FLAME_GRAPH_LOCAL_PROFILE_URL_PREFIX + _FORWARDED_ADDRESS.localProfilePath,
+  );
   window.addEventListener(
     "hashchange",
     window.catch_show_throw_(() => location.reload()),

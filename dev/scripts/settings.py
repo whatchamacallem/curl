@@ -74,9 +74,10 @@ DERIVED_COUNTER_TERMS: dict[str, dict[str, int]] = {
     },
 }
 
-FLAME_GRAPH_EXPORTER_NAME = "dev/scripts/trace_to_speedscope.py"
+FLAME_GRAPH_EXPORTER_NAME = "tests/perf2html/scripts/trace_to_speedscope.py"
 
 FLAME_GRAPH_LOCAL_PROFILE_PATH = "profile"
+FLAME_GRAPH_LOCAL_PROFILE_URL_PREFIX = "file:///"
 
 FLAME_GRAPH_MAX_RECORDED_CALLS = 200
 
@@ -120,6 +121,7 @@ HEAT_MAP_TREE_AUTO_EXPAND_ABOVE_SHARE = 0.05
 
 HEAT_MAP_VIEW_ENTRY: tuple[str, str, str] = (
     "heat-map",
+    "heatmap",
     "heat-map/index.html",
 )
 

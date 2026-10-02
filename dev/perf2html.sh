@@ -33,14 +33,14 @@ set -euo pipefail
 
 TIMESTAMP="$(date +%s)"
 INVOKED_FROM="$PWD"
-_SCRIPT="$(readlink -f "$0")"
+_SCRIPT="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
 PERF2HTML_DIR_="$(dirname "$_SCRIPT")"
 cd "$PERF2HTML_DIR_"
 
 . ./scripts/settings.sh
 . ./scripts/utility.sh
 
-_REPO="$(dirname "$PERF2HTML_DIR_")"
+_REPO="$(dirname "$(dirname "$PERF2HTML_DIR_")")"
 
 args_parse() {
   shared_options_parse "$@"
@@ -274,10 +274,11 @@ trace_render() {
   _tree_display="$(path_display "$_TRACE_TREE" "$_REPO")"
   {
     echo "# $_tree_display = this report's build flags +"
-    echo "# -finstrument-functions, linked with dev/src/cyg_callback.c, which"
-    echo "# reads rdtsc at every function enter and exit. Run 1 counts events,"
-    echo "# run 2 keeps the ones right after the run's midpoint"
-    echo "# (CYG_CALLBACKS_MAX_REC in dev/src/cyg_callback.c)."
+    echo "# -finstrument-functions, linked with"
+    echo "# tests/perf2html/src/cyg_callback.c, which reads rdtsc at every"
+    echo "# function enter and exit. Run 1 counts events, run 2 keeps the ones"
+    echo "# right after the run's midpoint (CYG_CALLBACKS_MAX_REC in"
+    echo "# tests/perf2html/src/cyg_callback.c)."
   } >"$_TRACE_LOG"
   trace_run "$_test" "$_loops" "$_trace_file" "$TRACE_SKIP_ALL" "$_TRACE_LOG"
   _seen="$(python3 "$PERF2HTML_DIR_/scripts/trace_to_speedscope.py" --seen \
@@ -472,7 +473,7 @@ main() {
   fi
   _log_file="$(artifact_path_of "$_log_kind" "")"
   report_begin "$_OUT_DIR" "$_log_file" \
-    "dev/perf2html.sh $TIMESTAMP: ${_CMAKE_FLAGS[*]}: $_OUT_DIR"
+    "tests/perf2html/perf2html.sh $TIMESTAMP: ${_CMAKE_FLAGS[*]}: $_OUT_DIR"
   source_cache_fill
   build_compile
   flame_app_install "$_OUT_DIR"

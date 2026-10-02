@@ -1,9 +1,10 @@
-/* `dev/src/cyg_callback.c` is the enter/exit recorder for an
+/* `tests/perf2html/src/cyg_callback.c` is the enter/exit recorder for an
  * `-finstrument-functions` build.
  *
- * Linked into the perf executable by `dev/perf2html.sh` and exported
- * (`-Wl,--export-dynamic`), so `libcurl.so` binds to this copy of the hooks
- * instead of glibc's empty ones. Single threaded, like the perf tests.
+ * Linked into the perf executable by `tests/perf2html/perf2html.sh` and
+ * exported (`-Wl,--export-dynamic`), so `libcurl.so` binds to this copy of
+ * the hooks instead of glibc's empty ones. Single threaded, like the perf
+ * tests.
  *
  *   `PERF_TRACE_OUT=FILE`  write the trace here at exit. Unset records
  *                          nothing

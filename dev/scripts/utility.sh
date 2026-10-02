@@ -1,4 +1,4 @@
-# dev/scripts/utility.sh
+# tests/perf2html/scripts/utility.sh
 
 absolute_path() {
   local path="$1"
@@ -7,7 +7,7 @@ absolute_path() {
     /*) ;;
     *) path="$INVOKED_FROM/$path" ;;
   esac
-  readlink -m -- "$path"
+  realpath -m -s -- "$path"
 }
 
 archive_extract() {

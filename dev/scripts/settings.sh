@@ -1,4 +1,4 @@
-# dev/scripts/settings.sh
+# tests/perf2html/scripts/settings.sh
 
 ARTIFACTS_NAME=perf2html_temporary_artifacts
 

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-# `dev/scripts/test_screenshot.py REPORT PREFIX [--out=DIR]` shoots a report.
+# `tests/perf2html/scripts/test_screenshot.py REPORT PREFIX [--out=DIR]`
+# shoots a report.
 #
 # One PNG per entry in `_VIEWS` per viewport in `_SCREENSHOT_VIEWPORTS` per
 # dark mode value, each hash naming a view the report renders a different
@@ -15,8 +16,8 @@
 # line 1.
 #
 # A view lacking files (a report whose run stopped short) is shot from a
-# copy of the report under dev/build/, removed once shot: verification
-# never changes the report it checks.
+# copy of the report under tests/perf2html/build/, removed once shot:
+# verification never changes the report it checks.
 #
 # Nothing here is a setting: `test_expected_behavior.sh` is the only caller,
 # no report carries a shot, and a browser a page never sees is not the
@@ -153,7 +154,7 @@ class Screenshots:
         if not self.windows_browser_is():
             return path
         return subprocess.run(
-            ["wslpath", "-w", path],
+            ["wslpath", "-w", os.path.realpath(path)],
             capture_output=True,
             text=True,
             check=True,
@@ -375,7 +376,8 @@ def main() -> int:
     parser.add_argument(
         "--out",
         default="",
-        help=f"where the PNGs go (default dev/{_SCREENSHOT_DIR_NAME})",
+        help="where the PNGs go (default"
+        f" tests/perf2html/{_SCREENSHOT_DIR_NAME})",
     )
     parser.add_argument(
         "--verbose",
@@ -403,12 +405,16 @@ def main() -> int:
         )
         return 1
 
-    dev_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
-    out_dir = namespace.out or os.path.join(dev_dir, _SCREENSHOT_DIR_NAME)
+    perf2html_dir = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), ".."
+    )
+    out_dir = namespace.out or os.path.join(
+        perf2html_dir, _SCREENSHOT_DIR_NAME
+    )
     out_dir = os.path.abspath(out_dir)
     os.makedirs(out_dir, exist_ok=True)
     scratch_dir = os.path.abspath(
-        os.path.join(dev_dir, _SCREENSHOT_SCRATCH_DIR_PATH)
+        os.path.join(perf2html_dir, _SCREENSHOT_SCRATCH_DIR_PATH)
     )
 
     if namespace.verbose:

@@ -17,14 +17,14 @@ EOF
 
 set -euo pipefail
 
-_SCRIPT="$(readlink -f "$0")"
+_SCRIPT="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
 _SCRIPTS="$(dirname "$_SCRIPT")"
 
 INVOKED_FROM="$PWD"
 cd "$_SCRIPTS"
 
-_DIR_DEV=..
-_DIR_REPO=../..
+_DIR_PERF2HTML=..
+_DIR_REPO="$(cd ../../.. && pwd)"
 
 _COLUMNS_MAX=79
 _CLANG_FORMAT_CONFIG=../src/.clang-format
@@ -46,9 +46,9 @@ _BATCH_SCRIPT_NAME=perf2html_batch.sh
 _SCREENSHOT_SCRIPT_NAME=test_screenshot.py
 
 _DEFAULT_REPORTS=(
-  "$_DIR_DEV/$REPORT_BASELINE_DIR_NAME"
-  "$_DIR_DEV/$REPORT_MODIFIED_DIR_NAME"
-  "$_DIR_DEV/$REPORT_DIFF_DIR_NAME"
+  "$_DIR_PERF2HTML/$REPORT_BASELINE_DIR_NAME"
+  "$_DIR_PERF2HTML/$REPORT_MODIFIED_DIR_NAME"
+  "$_DIR_PERF2HTML/$REPORT_DIFF_DIR_NAME"
 )
 
 tools_resolve() {
@@ -87,7 +87,7 @@ whitelist_expand() {
       error_exit 1 "error: $_WHITELIST_FILE:$_line: not one glob: '$_glob'"
     fi
 
-    mapfile -t _matches < <(compgen -G "$_DIR_DEV/$_glob")
+    mapfile -t _matches < <(compgen -G "$_DIR_PERF2HTML/$_glob")
     for _match in "${_matches[@]}"; do
       if [ ! -f "$_match" ]; then
         error_exit 1 \
@@ -270,7 +270,8 @@ test_expected_report_check_run() {
       _args+=(--diff)
     fi
 
-    subprocess_run python3 test_report.py "${_flags[@]}" "${_args[@]}"
+    subprocess_run python3 "$_SCRIPTS/test_report.py" "${_flags[@]}" \
+      "${_args[@]}"
   done
 }
 
@@ -303,14 +304,14 @@ test_source_scan_run() {
   mapfile -t _flags < <(verbose_flags_of)
 
   heading_print test_source_scan.py
-  subprocess_run python3 test_source_scan.py "${_flags[@]}" \
+  subprocess_run python3 "$_SCRIPTS/test_source_scan.py" "${_flags[@]}" \
     "${_WHITELISTED_FILES[@]}"
 }
 
 batch_run() {
   local _flags=() _target _shown _exit_code=0
   mapfile -t _flags < <(verbose_flags_of)
-  _target="$(cd "$_DIR_DEV" && pwd)"
+  _target="$(cd "$_DIR_PERF2HTML" && pwd)"
 
   if [ "$_REGENERATE" = 1 ]; then _flags+=(--regenerate); fi
 
@@ -321,8 +322,8 @@ batch_run() {
 
   log_verbose "$_shown"
 
-  "$_DIR_DEV/$_BATCH_SCRIPT_NAME" "${_flags[@]}" "--target-dir=$_target" \
-    || _exit_code=$?
+  "$_DIR_PERF2HTML/$_BATCH_SCRIPT_NAME" "${_flags[@]}" \
+    "--target-dir=$_target" || _exit_code=$?
   [ "$_exit_code" = 0 ] \
     || error_exit "$_exit_code" "error: exit $_exit_code from: $_shown"
 }
@@ -333,13 +334,13 @@ screenshots_run() {
 
   heading_print "$_SCREENSHOT_SCRIPT_NAME"
   for _name in "$REPORT_MODIFIED_DIR_NAME" "$REPORT_DIFF_DIR_NAME"; do
-    _path="$_DIR_DEV/$_name"
+    _path="$_DIR_PERF2HTML/$_name"
 
     _prefix="${_name#perf2html_}"
     _prefix="${_prefix%_report}_"
 
-    subprocess_run python3 "$_SCREENSHOT_SCRIPT_NAME" "${_flags[@]}" \
-      "$_path" "$_prefix"
+    subprocess_run python3 "$_SCRIPTS/$_SCREENSHOT_SCRIPT_NAME" \
+      "${_flags[@]}" "$_path" "$_prefix"
   done
 }
 
@@ -354,7 +355,7 @@ header_row_of() {
 regenerate_check() {
   [ "$_REGENERATE" = 1 ] || return 0
 
-  local _artifacts="$_DIR_DEV/$ARTIFACTS_NAME"
+  local _artifacts="$_DIR_PERF2HTML/$ARTIFACTS_NAME"
   if [ ! -d "$_artifacts" ]; then
     regenerate_refuse "no recordings at $_artifacts"
   fi

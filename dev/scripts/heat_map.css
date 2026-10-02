@@ -1,6 +1,3 @@
-/* each box a table sits in is a container, so `100cqw` in a `<col>` is
-   exactly the room its own table has. The source's leaves out the minimap's
-   column */
 .heat-map-home-,
 .heat-map-source-,
 .heat-map-source-line-detail- {

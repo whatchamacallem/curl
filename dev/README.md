@@ -31,8 +31,8 @@ generators.
   `perf2html.sh` reports.
 - `perf2html_batch.sh` : Generate 3 reports, a baseline version, a modified
   version, and a diff.
-- `clean.sh` : Delete every generated file under `dev/` and the ccache entries
-  the builds made.
+- `clean.sh` : Delete every generated file under `tests/perf2html/` and the
+  ccache entries the builds made.
 
 Each script's `--help` prints the following.
 
@@ -167,9 +167,9 @@ as long is `▲100.00%`, and smaller is better.
 
 The flame graph is a recording, not a model: every box is one call that
 happened, as wide as it took. The test runs in a build with
-`-finstrument-functions`, where a hook (`dev/src/cyg_callback.c`) reads the
-CPU's time stamp counter at every function entry and exit. "Time Order" is the
-order the calls were made in.
+`-finstrument-functions`, where a hook (`tests/perf2html/src/cyg_callback.c`)
+reads the CPU's time stamp counter at every function entry and exit. "Time
+Order" is the order the calls were made in.
 
 It shows up to 200 top-level calls in a row, taken from the middle of the run,
 when caches are warm. Times are nanoseconds since the start of the run. Both

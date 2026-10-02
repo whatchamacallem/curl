@@ -1,4 +1,4 @@
-# `dev/scripts/test_utility.sh`
+# `tests/perf2html/scripts/test_utility.sh`
 
 path_shown() {
   printf '%s' "${1//"$HOME"\//"~/"}"

@@ -10,17 +10,18 @@ worth fixing.
 Do not use the AskUserQuestion tool and use numbered number sub-lists per ISO
 2145.
 
-Maintain an engineering log for each session in `dev/tmp` following this
-format: `dev/tmp/tasks_sat_0959am.md`. This is formal paperwork with no chit
-chat required. Text is only added and not modified. Use ISO 2145 for tasks and
-do not restart numbering tasks within a single conversation. Preserve the
-users literal text in the task list first, and concatenate additional feature
-requests to that section. In a second section, list your intended order of
-operations to execute the users requests before starting. Then add a separate
-postmortem section only when all subagents are complete and all tasks are
-ready for review. Anything like a postmortem at the end of a run must include
-all unfinished tasks and lost subagents. Provide the user with the postmortem
-text directly in the conversation as well as providing a link to the task doc.
+Maintain an engineering log for each session in `tests/perf2html/tmp`
+following this format: `tests/perf2html/tmp/tasks_sat_0959am.md`. This is
+formal paperwork with no chit chat required. Text is only added and not
+modified. Use ISO 2145 for tasks and do not restart numbering tasks within a
+single conversation. Preserve the users literal text in the task list first,
+and concatenate additional feature requests to that section. In a second
+section, list your intended order of operations to execute the users requests
+before starting. Then add a separate postmortem section only when all
+subagents are complete and all tasks are ready for review. Anything like a
+postmortem at the end of a run must include all unfinished tasks and lost
+subagents. Provide the user with the postmortem text directly in the
+conversation as well as providing a link to the task doc.
 
 ## 0 Design Principles
 
@@ -54,8 +55,9 @@ text directly in the conversation as well as providing a link to the task doc.
 - `STORAGE_VERSION` is the user's, never a session's - never bump it or reshape
   stored format as a side effect; a format change runs once without
   `--regenerate` and says so.
-- `dev/README.md` is the user-facing contract - code follows it, never the
-  reverse; never edit README to match code unless the user asked this session.
+- `tests/perf2html/README.md` is the user-facing contract - code follows it,
+  never the reverse; never edit README to match code unless the user asked
+  this session.
 - One cmake-flag tree per build, never shared between baseline/modified -
   sharing one tree corrupts comparisons.
 - No fake data - every value is a measurement or plain arithmetic on one. If a
@@ -115,13 +117,14 @@ The single function/check owning each concern - never bypass or duplicate:
 
 - This is a test driven development shop. Routine iteration on HTML generation
   can be tested while working (unless otherwise asked) with:
-  `perf2html_batch.sh --regenerate --verbose 2> dev/tmp/perf2html_batch.md`
-  Use `--keep-artifacts` to flush artifact cache and then keep the new ones.
+  `perf2html_batch.sh --regenerate --verbose 2> tmp/perf2html_batch.md`
+  from `tests/perf2html/`. Use `--keep-artifacts` to flush artifact cache and
+  then keep the new ones.
 - The full run is `test_all.sh` and only run that when asked to "test".
-- When iterating send `--verbose` output to `dev/tmp/perf2html_*.md` for
-  debugging and review.
-- Docs written on request go in `dev/tmp/` only, `.md`, never touched by the
-  whitelist.
+- When iterating send `--verbose` output to
+  `tests/perf2html/tmp/perf2html_*.md` for debugging and review.
+- Docs written on request go in `tests/perf2html/tmp/` only, `.md`, never
+  touched by the whitelist.
 - More than one goal in a response ends with a done/not-done checklist.
 - Numbering of multi-item communication in summaries follows ISO 2145.
 - Don't update usage text, tell the user to do that.
@@ -136,14 +139,14 @@ The single function/check owning each concern - never bypass or duplicate:
   is a report - never bypass or duplicate this check elsewhere.
 - Never buffer a child's output in a shipping script (`$( )` capture) - breaks
   `--verbose` streaming and hides live failures.
-- Nothing test-specific, ever - no test names/file lists baked into `dev/`;
-  every view must work for every test in `TESTS_C`. The one exception is
-  `test_screenshot.py`: screenshots are to be made from string literal golden
-  bookmarks, and changing the url format must require changing those string
-  literals.
-- Every `dev/*.sh` makes paths absolute at startup; `$PWD` is never read again
-  below `args_parse`. Getting this wrong breaks every relative invocation
-  silently.
+- Nothing test-specific, ever - no test names/file lists baked into
+  `tests/perf2html/`; every view must work for every test in `TESTS_C`. The
+  one exception is `test_screenshot.py`: screenshots are to be made from
+  string literal golden bookmarks, and changing the url format must require
+  changing those string literals.
+- Every `tests/perf2html/*.sh` makes paths absolute at startup; `$PWD` is
+  never read again below `args_parse`. Getting this wrong breaks every
+  relative invocation silently.
 - buffering command stdout and stderr with `mktemp` is banned. Use of `mktemp`
   is to be by request only. The two door policy as follows. Door one is that
   `--keep-artifacts` and `--regenerate` have not been used.  In this case the
@@ -174,18 +177,18 @@ The single function/check owning each concern - never bypass or duplicate:
 - Plumbing (`perf2html.sh`, `perf2html_diff.sh`) and the batch (porcelain)
   share one working-directory rule, `report_path_of`: a report name not
   starting with `/` or `~/` sits under `--target-dir` (default `$PWD`).
-- `dev/scripts/test_whitelist.txt` is the one list of what source stages
-  touch - no directory walk, no skip list, nothing unlisted touched.
+- `tests/perf2html/scripts/test_whitelist.txt` is the one list of what source
+  stages touch - no directory walk, no skip list, nothing unlisted touched.
 - Verification never reads from the code under test for a calculation it's
   checking - local expected constants or a different-route recomputation only.
 - `--verbose` is additive/counted - no bare `printf` wrappers.
-- `dev/` is bespoke tooling - one parser, one theme, no dead code or duplicate
-  systems.
+- `tests/perf2html/` is bespoke tooling - one parser, one theme, no dead code
+  or duplicate systems.
 - Pages are deterministic - same input, byte-identical output.
 - New identifiers need 2+ unabbreviated English words.
 - Naming split: `_SCREAMING_SNAKE` for a script's own global, `_lowercase` for
   locals, bare names crossing into `utility.sh`.
-- 79-column hard max for all `dev/` source.
+- 79-column hard max for all `tests/perf2html/` source.
 - Comment blocks max 2 lines (3 is an error via `test_source_scan.py`); longer
   reasoning goes in `declawed.md` instead.
 - ASCII plus the specific whitelisted glyphs (`≈ ∞ ▲⯈⯇▼ … █ ░`), written
@@ -232,7 +235,7 @@ The single function/check owning each concern - never bypass or duplicate:
 
 ## 1 Project Structure
 
-Under `dev/`:
+Under `tests/perf2html/`:
 
 - Shell: `perf2html.sh` builds, profiles, writes one report;
   `perf2html_diff.sh` measures nothing, subtracts two reports;
@@ -252,7 +255,7 @@ Under `dev/`:
   test-only: `test_report.py`, `test_source_scan.py`, `test_screenshot.py`.
 - Page assets (`scripts/`): `frame.js` the top page's model; `menu.{js,css}`
   the menu (`menu.css` also styles the heat map's strip); `overview.html` the
-  overview template; `callers.js` the callers view; `heatmap.{js,css,html}`;
+  overview template; `callers.js` the callers view; `heat_map.{js,css,html}`;
   `flame_graph.{js,html}`, `flame_graph.js` polls `window.speedscope`;
   `ui_strings.js` (`str_*`); `error_overlay.js` first script on every page;
   `utility.js` second, relaying an error report up the frames and reporting a
@@ -272,18 +275,22 @@ recordings are "artifacts"; "settings", never "constants"; rows are
 ## 2 Commands
 
 ```sh
-dev/perf2html.sh [--verbose] [--keep-artifacts] [--regenerate] [--txz]
-    [--report=DIR] [--target-dir=DIR] [--artifacts=TMP] [cmake_flags...]
-dev/perf2html_diff.sh [--verbose] [--keep-artifacts] [--regenerate] [--txz]
-    [--target-dir=DIR] [--artifacts=TMP] [baseline-dir] [modified-dir]
-    [report-dir]
-dev/perf2html_batch.sh [--verbose] [--keep-artifacts] [--regenerate] [--txz]
-    [--artifacts=TMP] [--target-dir=DIR] [cmake_flags...]
-dev/scripts/test_expected_behavior.sh [--check-formatting] [--keep-artifacts]
-    [--regenerate] [--verbose]
-dev/scripts/test_error_handling.sh [--help]
-dev/scripts/test_all.sh [--help]   # no arguments to prove reproducibility.
-dev/clean.sh [--help]              # no arguments to prove sobriety.
+tests/perf2html/perf2html.sh [--verbose] [--keep-artifacts] [--regenerate]
+    [--txz] [--report=DIR] [--target-dir=DIR] [--artifacts=TMP]
+    [cmake_flags...]
+tests/perf2html/perf2html_diff.sh [--verbose] [--keep-artifacts]
+    [--regenerate] [--txz] [--target-dir=DIR] [--artifacts=TMP]
+    [baseline-dir] [modified-dir] [report-dir]
+tests/perf2html/perf2html_batch.sh [--verbose] [--keep-artifacts]
+    [--regenerate] [--txz] [--artifacts=TMP] [--target-dir=DIR]
+    [cmake_flags...]
+tests/perf2html/scripts/test_expected_behavior.sh [--check-formatting]
+    [--keep-artifacts] [--regenerate] [--verbose]
+tests/perf2html/scripts/test_error_handling.sh [--help]
+# no arguments to prove reproducibility.
+tests/perf2html/scripts/test_all.sh [--help]
+# no arguments to prove sobriety.
+tests/perf2html/clean.sh [--help]
 cmake -S . -B build -G Ninja -DCURL_USE_LIBPSL=OFF
 cmake --build build --target perf      # EXCLUDE_FROM_ALL, must be named
 taskset -c 3 ./build-relwithdebinfo/22_DCMAKECFLAGSO2g/tests/perf/perf \
@@ -306,8 +313,9 @@ taskset -c 3 ./build-relwithdebinfo/22_DCMAKECFLAGSO2g/tests/perf/perf \
   <1s).
 - `usage_show`'s heredoc is the only usage text. `toolchain_check` lists every
   missing tool with its install command, exit 1.
-- After any `dev/` edit: `dev/scripts/test_expected_behavior.sh --regenerate`.
-  Before final: `tests/runtests.pl`.
+- After any `tests/perf2html/` edit:
+  `tests/perf2html/scripts/test_expected_behavior.sh --regenerate`. Before
+  final: `tests/runtests.pl`.
 
 ## 3 Build trees and measuring
 
@@ -394,15 +402,16 @@ taskset -c 3 ./build-relwithdebinfo/22_DCMAKECFLAGSO2g/tests/perf/perf \
   `--config`/`--project` always passed; `pyrightconfig.json` names no file.
 - `test_screenshot.py`: modified + diff reports, `_VIEWS` ×
   `_SCREENSHOT_VIEWPORTS` × `_SCREENSHOT_DARK_VALUES` (`1`, then `0` light)
-  → `dev/screenshots/NN_<size>_<report>_<view>_dark-<0|1>.png`, `NN` the
-  view's number in `_VIEWS`, then per size and dark value a 4k sheet 3 shots
-  wide, `thumbnail_<size>_<report>_dark-<0|1>.png`; imports no settings;
+  → `tests/perf2html/screenshots/NN_<size>_<report>_<view>_dark-<0|1>.png`,
+  `NN` the view's number in `_VIEWS`, then per size and dark value a 4k sheet
+  3 shots wide, `thumbnail_<size>_<report>_dark-<0|1>.png`; imports no
+  settings;
   each `_VIEWS` hash
   is a golden bookmark written out whole as one string literal, never
   formulated from a constant; error view
   `bad_function`; `report_incomplete` and `stylesheet_missing` shoot a copy
   lacking `assets/report_complete.js` or `assets/theme.css` under
-  `dev/build/screenshots_scratch/`;
+  `tests/perf2html/build/screenshots_scratch/`;
   `--incognito`; under `--verbose` it prints
   `<report> -> <dir>` and `N screenshot(s)`.
 - Debug modes, run in order: 1 `test_expected_behavior.sh` cold; 2
@@ -410,16 +419,18 @@ taskset -c 3 ./build-relwithdebinfo/22_DCMAKECFLAGSO2g/tests/perf/perf \
   `test_error_handling.sh`, and prints `perf2html test_all.sh all_tests_pass`
   last.
   `test_error_handling.sh` re-runs mode 2 `--verbose` with stderr `2>` into
-  `dev/test_expected_behavior.md` (gitignored), then checks the kept recordings
-  (`test_error_cache_populated_check`) and proves a batch `--regenerate`
-  measures nothing (`test_error_regenerate_cache_check`), then an uncached
-  diff expected to pass (`test_error_diff_uncached_test`) and failure-mode
-  tests on report copies in `dev/build/test_error_handling_scratch/`
+  `tests/perf2html/test_expected_behavior.md` (gitignored), then checks the
+  kept recordings (`test_error_cache_populated_check`) and proves a batch
+  `--regenerate` measures nothing (`test_error_regenerate_cache_check`), then
+  an uncached diff expected to pass (`test_error_diff_uncached_test`) and
+  failure-mode tests on report copies in
+  `tests/perf2html/build/test_error_handling_scratch/`
   (`_TEST_ERROR_SCRATCH`; kept by a failed run). `test_failure_expect NAME CODE
   --` checks the exit code and prints `ok <test>`; wrong code →
   `<test>: exit N, expected M, from: <command>` through `test_fail`, exit 1;
   last, `prettier --check` with `.prettierrc.json` over
-  `dev/test_expected_behavior.md`: the markdown must be what prettier prints.
+  `tests/perf2html/test_expected_behavior.md`: the markdown must be what
+  prettier prints.
   `test_expected_behavior.sh` and `test_error_handling.sh` source
   `test_utility.sh`, which holds `path_shown`, `test_fail`,
   `test_failure_expect`, `test_report_copy` and `tool_find`.
@@ -427,10 +438,11 @@ taskset -c 3 ./build-relwithdebinfo/22_DCMAKECFLAGSO2g/tests/perf/perf \
 ## 5 Shell library
 
 - Paths: `INVOKED_FROM="$PWD"` above the `cd` to the script dir;
-  `absolute_path` = `readlink -m` on `$INVOKED_FROM/<path>` (`~/` expanded);
-  `$PWD` is `dev/` after the `cd`; display via `path_display` only. `$_SCRIPT`
-  finds the tool's own code only. A leaf script derives nothing from a
-  collection (batch/test_expected_behavior own "three reports").
+  `absolute_path` = `realpath -m -s` on `$INVOKED_FROM/<path>` (`~/`
+  expanded); `$PWD` is `tests/perf2html/` after the `cd`; display via
+  `path_display` only. `$_SCRIPT` finds the tool's own code only. A leaf
+  script derives nothing from a collection (batch/test_expected_behavior own
+  "three reports").
 - `settings.sh`: alphabetical, no `$` words, parsed by
   `SettingsReader.shell_settings_read` (`-?[0-9]+` → int); one name in all
   three languages. `TIMESTAMP` per script (`$(date +%s)`) just above
@@ -516,7 +528,8 @@ taskset -c 3 ./build-relwithdebinfo/22_DCMAKECFLAGSO2g/tests/perf/perf \
   two paths where one is, holds or sits inside the other: a report and its
   artifacts dir (in `report_delete`), a diff's output and artifacts against
   its inputs, the batch's artifacts against its three reports. Each path is
-  also refused overlapping `dev/scripts/` or holding `$INVOKED_FROM`.
+  also refused overlapping `tests/perf2html/scripts/` or holding
+  `$INVOKED_FROM`.
 
 ## 6 Report layout
 
@@ -600,7 +613,7 @@ timer-artifacts-<unix>.txz (full report only)
   `assets/pulldown_text.js`; `page`, after the last `data`, writes the one
   `heat-map/index.html`, its `__SCRIPTS__` in the order
   `report_complete.js`, every `sources/` file, `pulldown_text.js`,
-  `settings.js`, `theme.js`, `heatmap.js`; head from `theme.page_document`
+  `settings.js`, `theme.js`, `heat_map.js`; head from `theme.page_document`
   (`theme.page_preamble_scripts()`, `extra_css`, `body_holds_scripts`);
   `model()`/ `diff_model()`; `model()`
   refuses an unemitted `RANKING_COUNTER_NAME`.
@@ -626,7 +639,7 @@ timer-artifacts-<unix>.txz (full report only)
   `_COMMENT_SYNTAX_BY_EXTENSION` (`.html` adds `//`, `/* */`); faults
   `path:line: message` sorted. The 79-column limit is unrelated to
   `HEAT_MAP_SOURCE_VIEW_WIDTH_CHARS` (80).
-- Reformatting `heatmap.*`, `menu.*`, `frame.js`, `flame_graph.*`,
+- Reformatting `heat_map.*`, `menu.*`, `frame.js`, `flame_graph.*`,
   `callers.js`, `overview.html`, `settings.js`, `error_overlay.js`,
   `utility.js`, `light_mode.css`, `ui_strings.js`, `theme.css`, `theme.js`,
   `README.md` changes reports;
