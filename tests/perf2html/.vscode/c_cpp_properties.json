@@ -1,0 +1,19 @@
+{
+  "configurations": [
+    {
+      "name": "curl-dev",
+      "includePath": [
+        "${workspaceFolder}/include",
+        "${workspaceFolder}/lib",
+        "${workspaceFolder}/build/lib",
+        "${workspaceFolder}/tests/perf"
+      ],
+      "defines": [],
+      "compilerPath": "/usr/bin/gcc",
+      "cStandard": "gnu17",
+      "cppStandard": "gnu++17",
+      "intelliSenseMode": "linux-gcc-x64"
+    }
+  ],
+  "version": 4
+}

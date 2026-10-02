@@ -1,0 +1,6 @@
+{
+  "executionEnvironments": [{ "root": "." }],
+  "typeCheckingMode": "standard",
+  "pythonVersion": "3.11",
+  "reportMissingImports": "error"
+}

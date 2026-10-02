@@ -66,6 +66,11 @@
 
 #define DEFAULT_SCHEME "https"
 
+/* Lines preceded by a "perf #N: X.XX%" comment are the 20 hottest source
+   lines in this file: N is the rank, X.XX% the share of all instructions
+   (callgrind Ir) executed by the urlparser perf test (loops=200,
+   RelWithDebInfo build). See dev/CLAUDE.md, "Line-level view". */
+
 static void free_urlhandle(struct Curl_URL *u)
 {
   curlx_free(u->scheme);
@@ -222,13 +227,19 @@ size_t Curl_is_absolute_url(const char *url, char *buf, size_t buflen,
   if(guess_scheme && STARTS_WITH_DRIVE_PREFIX(url))
     return 0;
 #endif
+  /* perf #17: 0.49% */
   if(ISALPHA(url[0])) {
     if(buf)
       buf[0] = Curl_raw_tolower(url[0]);
+    /* perf #7: 1.69% */
     for(i = 1; i < MAX_SCHEME_LEN; ++i) {
+      /* perf #19: 0.42% */
       char s = url[i];
+      /* perf #4: 2.70% */
       if(s && (ISALNUM(s) || (s == '+') || (s == '-') || (s == '.'))) {
+        /* perf #13: 0.68% */
         if(buf)
+          /* perf #16: 0.50% */
           buf[i] = Curl_raw_tolower(s);
       }
       else {
@@ -257,9 +268,12 @@ static bool badoctets(const char *input, size_t n, int flags)
 {
   const uint8_t *p = (const unsigned char *)input;
   const uint8_t control = flags & CURLU_ALLOW_SPACE ? 0x1f : 0x20;
+  /* perf #3: 4.82% */
   while(n--) {
+    /* perf #1: 11.94% (the hottest line in the whole benchmark) */
     if(*p <= control || *p == 127)
       return TRUE;
+    /* perf #5: 2.39% */
     p++;
   }
   return FALSE;
@@ -520,7 +534,9 @@ UNITTEST CURLUcode ipv6_parse(struct Curl_URL *u, char *hostname,
 static CURLUcode hostname_check(char *hostname, size_t hlen)
 {
   size_t i;
+  /* perf #6: 1.90% */
   for(i = 0; i < hlen; i++) {
+    /* perf #8: 1.68% */
     if(invalid_host_char[(unsigned char)hostname[i]])
       return CURLUE_BAD_HOSTNAME;
   }
@@ -704,6 +720,7 @@ static CURLUcode parse_authority(struct Curl_URL *u,
                                  struct dynbuf *host,
                                  bool has_scheme)
 {
+  /* perf #14: 0.65% (function entry, charged to the "{" line above) */
   size_t offset;
   CURLUcode uc;
   CURLcode result;
@@ -738,6 +755,7 @@ static CURLUcode parse_authority(struct Curl_URL *u,
     int type = ipv4_normalize(host);
 
     if(type == HOST_NAME)
+      /* perf #20: 0.41% */
       uc = hostname_check(curlx_dyn_ptr(host), curlx_dyn_len(host));
     else if(type == HOST_ERROR)
       uc = CURLUE_OUT_OF_MEMORY;
@@ -774,11 +792,13 @@ CURLUcode Curl_url_set_authority(CURLU *u, const char *authority)
 static bool is_dot(const char **str, size_t *clen)
 {
   const char *p = *str;
+  /* perf #15: 0.57% */
   if(*p == '.') {
     (*str)++;
     (*clen)--;
     return TRUE;
   }
+  /* perf #12: 0.68% */
   else if((*clen >= 3) &&
           (p[0] == '%') && (p[1] == '2') && ((p[2] | 0x20) == 'e')) {
     *str += 3;
@@ -796,6 +816,7 @@ static bool needs_dedotdot(const char *p, size_t pn)
   /* a single byte path cannot be cleaned up */
   if(pn < 2)
     return FALSE;
+  /* perf #18: 0.48% */
   if(!memchr(p, '.', pn) && !memchr(p, '%', pn))
     return FALSE;
   while(pn) {
@@ -1259,7 +1280,9 @@ static CURLUcode parseurl(const char *url, CURLU *u, unsigned int flags)
 
     /* find the end of the hostname + port number */
     p = hostp;
+    /* perf #2: 6.82% */
     while(*p && *p != '/' && *p != '?' && *p != '#')
+      /* perf #11: 0.73% */
       p++;
     hostlen = p - hostp;
     path = p;
@@ -1267,6 +1290,7 @@ static CURLUcode parseurl(const char *url, CURLU *u, unsigned int flags)
     /* this pathlen also contains the query and the fragment */
     pathlen = urllen - (path - url);
     if(hostlen) {
+      /* perf #10: 1.25% */
       ures = parse_authority(u, hostp, hostlen, flags, &host, !!u->scheme);
       if(!ures && (flags & CURLU_GUESS_SCHEME) && !u->scheme)
         ures = guess_scheme(u, &host);
@@ -1323,6 +1347,7 @@ static CURLUcode parseurl_and_replace(const char *url, CURLU *u,
   ures = parseurl(url, &tmpurl, flags);
   if(!ures) {
     free_urlhandle(u);
+    /* perf #9: 1.35% (struct copy) */
     *u = tmpurl;
   }
   return ures;

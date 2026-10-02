@@ -1,0 +1,111 @@
+/* one row on the strip's own colours: the logo, each button, then the
+   title, each after the logo with 1ch of the strip before that item */
+#menu- {
+  color: var(--menu-strip-fg-);
+  background: var(--menu-strip-bg-dim-);
+}
+#menu- > .menu-button-,
+#menu- > .menu-pulldown-,
+#menu- > .menu-title- {
+  margin-left: var(--menu-button-margin-left-);
+}
+
+.menu-strip- .menu-button- {
+  flex: none;
+  white-space: nowrap;
+  padding: 0 var(--menu-button-padding-inline-);
+  color: var(--menu-button-fg-);
+  background: var(--menu-button-bg-);
+  cursor: pointer;
+}
+.menu-strip- .menu-button-.current_ {
+  background: var(--menu-button-current-bg-);
+  color: var(--menu-button-current-fg-dim-);
+}
+.menu-strip- .menu-button-:focus-visible,
+.menu-strip- .menu-logo-:focus-visible,
+.menu-strip- .menu-title- a:focus-visible {
+  background: var(--menu-button-focus-bg-);
+  color: var(--menu-button-focus-fg-dim-);
+}
+
+.menu-strip- .menu-logo- {
+  flex: none;
+  padding: 0 var(--menu-logo-padding-inline-);
+  white-space: nowrap;
+}
+
+.menu-strip- .menu-pulldown- {
+  position: relative;
+  display: flex;
+  flex: none;
+}
+.menu-strip- .menu-pulldown-entry-list- {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: var(--menu-pulldown-entry-list-z-index-);
+  display: flex;
+  flex-direction: column;
+  min-width: 100%;
+  max-height: calc(
+    var(--menu-pulldown-entry-list-max-height-share-) *
+      var(--design-viewport-height-)
+  );
+  overflow-y: auto;
+  background: var(--menu-pulldown-entry-list-bg-dim-);
+}
+.menu-strip- .menu-pulldown-entry-list- a,
+.menu-strip- .menu-pulldown-no-match-note- {
+  white-space: nowrap;
+}
+.menu-strip- .menu-pulldown-entry-list- a {
+  flex: none;
+  padding: 0 var(--menu-pulldown-entry-padding-inline-);
+}
+.menu-strip- .menu-pulldown-entry-list- a.current_ {
+  background: var(--menu-pulldown-entry-current-bg-);
+  color: var(--menu-pulldown-entry-current-fg-);
+}
+.menu-strip- .menu-pulldown-entry-list- a.highlighted-entry- {
+  background: var(--menu-pulldown-entry-highlighted-bg-);
+  color: var(--menu-pulldown-entry-highlighted-fg-dim-);
+}
+.menu-strip- .menu-pulldown-no-match-note- {
+  color: var(--menu-pulldown-no-match-note-fg-dim-);
+}
+.menu-strip- .menu-pulldown-search-box- {
+  background: none;
+  min-width: var(--menu-pulldown-search-box-min-width-);
+}
+.menu-strip- .menu-pulldown-search-box-::placeholder {
+  color: var(--menu-pulldown-search-box-placeholder-fg-dim-);
+}
+
+.menu-strip- {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  flex: none;
+  background: var(--heat-map-menu-strip-bg-dim-);
+  overflow: hidden;
+}
+.menu-strip-:has(.menu-pulldown-) {
+  overflow: visible;
+}
+
+.menu-strip- .menu-title- {
+  color: var(--menu-title-fg-);
+  background: var(--menu-title-bg-dim-);
+  white-space: pre;
+  overflow: hidden;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  justify-content: safe center;
+  flex: none;
+  width: var(--menu-title-width-);
+}
+.menu-strip- .menu-title- a {
+  color: var(--menu-title-fg-);
+}
