@@ -1,4 +1,6 @@
-# tests/perf2html/scripts/utility.sh
+# SPDX-FileCopyrightText: © 2026 Adrian Johnston.
+# SPDX-License-Identifier: MIT
+# This file is licensed under the terms of the LICENSE-MIT.md file.
 
 absolute_path() {
   local path="$1"

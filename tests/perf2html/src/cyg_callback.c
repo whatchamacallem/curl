@@ -1,21 +1,7 @@
-/* `tests/perf2html/src/cyg_callback.c` is the enter/exit recorder for an
- * `-finstrument-functions` build.
- *
- * Linked into the perf executable by `tests/perf2html/perf2html.sh` and
- * exported (`-Wl,--export-dynamic`), so `libcurl.so` binds to this copy of
- * the hooks instead of glibc's empty ones. Single threaded, like the perf
- * tests.
- *
- *   `PERF_TRACE_OUT=FILE`  write the trace here at exit. Unset records
- *                          nothing
- *   `PERF_TRACE_SKIP=N`    let the first N events pass without recording
- *                          them
- *
- * Bit 63 of the stamp is `CYG_CALLBACKS_EXIT_BIT`, so the hook ORs it in
- * without masking: rdtsc counts from boot and bit 63 is over 100 years of
- * uptime away at current processor frequencies.
- *
- */
+/* SPDX-FileCopyrightText: © 2026 Adrian Johnston.
+ * SPDX-License-Identifier: MIT
+ * This file is licensed under the terms of the LICENSE-MIT.md file. */
+
 #define _GNU_SOURCE
 #include <elf.h>
 #include <link.h>

@@ -1,3 +1,7 @@
+/* SPDX-FileCopyrightText: © 2026 Adrian Johnston.
+ * SPDX-License-Identifier: MIT
+ * This file is licensed under the terms of the LICENSE-MIT.md file. */
+
 :root[data-dark-mode-="disabled"] button,
 :root[data-dark-mode-="disabled"] input,
 :root[data-dark-mode-="disabled"] select,

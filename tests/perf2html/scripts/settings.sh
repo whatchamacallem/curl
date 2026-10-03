@@ -1,4 +1,6 @@
-# tests/perf2html/scripts/settings.sh
+# SPDX-FileCopyrightText: © 2026 Adrian Johnston.
+# SPDX-License-Identifier: MIT
+# This file is licensed under the terms of the LICENSE-MIT.md file.
 
 ARTIFACTS_NAME=perf2html_temporary_artifacts
 

@@ -1,3 +1,7 @@
+/* SPDX-FileCopyrightText: © 2026 Adrian Johnston.
+ * SPDX-License-Identifier: MIT
+ * This file is licensed under the terms of the LICENSE-MIT.md file. */
+
 .callers-collapsed-section-file-name- {
   color: var(--callers-collapsed-section-file-name-fg-dim-);
   max-width: var(--callers-collapsed-section-file-name-max-width-);

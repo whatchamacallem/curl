@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: © 2026 Adrian Johnston.
+# SPDX-License-Identifier: MIT
+# This file is licensed under the terms of the LICENSE-MIT.md file.
+
 from __future__ import annotations
 
 import html, math, os, re

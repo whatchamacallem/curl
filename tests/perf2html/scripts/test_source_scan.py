@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-# `test_expected_behavior.sh` uses this to enforce comment length, ASCII
-# only, English punctuation in comments and no tag that styles text beyond
-# colour.
+# SPDX-FileCopyrightText: © 2026 Adrian Johnston.
+# SPDX-License-Identifier: MIT
+# This file is licensed under the terms of the LICENSE-MIT.md file.
+
 from __future__ import annotations
 
 import argparse, os, re, sys

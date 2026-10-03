@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: © 2026 Adrian Johnston.
+// SPDX-License-Identifier: MIT
+// This file is licensed under the terms of the LICENSE-MIT.md file.
+
 const __NAME__ = (function () {
   "use strict";
   function deep_freeze(value) {

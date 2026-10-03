@@ -1,5 +1,7 @@
-/* one row on the strip's own colours: the logo, each button, then the
-   title, each after the logo with 1ch of the strip before that item */
+/* SPDX-FileCopyrightText: © 2026 Adrian Johnston.
+ * SPDX-License-Identifier: MIT
+ * This file is licensed under the terms of the LICENSE-MIT.md file. */
+
 #menu- {
   color: var(--menu-strip-fg-);
   background: var(--menu-strip-bg-dim-);

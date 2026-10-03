@@ -1,4 +1,6 @@
-# `tests/perf2html/scripts/test_utility.sh`
+# SPDX-FileCopyrightText: © 2026 Adrian Johnston.
+# SPDX-License-Identifier: MIT
+# This file is licensed under the terms of the LICENSE-MIT.md file.
 
 path_shown() {
   printf '%s' "${1//"$HOME"\//"~/"}"

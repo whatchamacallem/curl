@@ -1,27 +1,8 @@
 #!/usr/bin/env python3
-# `tests/perf2html/scripts/test_screenshot.py REPORT PREFIX [--out=DIR]`
-# shoots a report.
-#
-# One PNG per entry in `_VIEWS` per viewport in `_SCREENSHOT_VIEWPORTS` per
-# dark mode value, each hash naming a view the report renders a different
-# way. The list is of views, not of data: two hashes differing only in which
-# test they name are one view and one shot. The viewports are there to be
-# compared: a page is designed once and fitted to the window, so one view's
-# shots in one dark mode differ in size and in nothing else.
-#
-# Each hash is a golden bookmark, a string literal written out whole and
-# formulated from nothing: changing the url format must require changing
-# those string literals. A diff report has no flame graph, so that view is
-# shot for a full report only, the kind of report read from its MANIFEST.txt
-# line 1.
-#
-# A view lacking files (a report whose run stopped short) is shot from a
-# copy of the report under tests/perf2html/build/, removed once shot:
-# verification never changes the report it checks.
-#
-# Nothing here is a setting: `test_expected_behavior.sh` is the only caller,
-# no report carries a shot, and a browser a page never sees is not the
-# pages' to read.
+# SPDX-FileCopyrightText: © 2026 Adrian Johnston.
+# SPDX-License-Identifier: MIT
+# This file is licensed under the terms of the LICENSE-MIT.md file.
+
 from __future__ import annotations
 
 import argparse, math, os, shutil, subprocess, sys, urllib.parse
