@@ -36,6 +36,9 @@ conversation as well as providing a link to the task doc.
   fails loud with a call stack or exit with the right Unix error code.
 - Any error is a hard error, reported immediately, first failure only - no
   script collects failures, tallies of failures.
+- When asked to update this document then further confirmation should not be
+  required to fix all discrepancies observed, and remove all obsolete
+  information even if unrelated to your work.
 - Breaking this architecture into the classic MVC/Model-View-Controller state
   diagram for web apps would have the frame hold the "model" (specifically the
   parameters encoded in the hash), the menu would be the "controller" and the
@@ -403,15 +406,21 @@ taskset -c 3 ./build-relwithdebinfo/22_DCMAKECFLAGSO2g/tests/perf/perf \
   extension; blank/`#`/whitespace lines refused; a glob matching nothing is
   allowed (`src/*.h`), a non-regular match or empty list is an error.
   `--config`/`--project` always passed; `pyrightconfig.json` names no file.
-- `test_screenshot.py`: modified + diff reports, `_VIEWS` ×
-  `_SCREENSHOT_VIEWPORTS` × `_SCREENSHOT_DARK_VALUES` (`1`, then `0` light)
-  → `tests/perf2html/screenshots/NN_<size>_<report>_<view>_dark-<0|1>.png`,
-  `NN` the view's number in `_VIEWS`, then per size and dark value a 4k sheet
-  3 shots wide, `thumbnail_<size>_<report>_dark-<0|1>.png`; imports no
-  settings;
+- `test_screenshot.py`: modified + diff reports, `--diff` for the diff
+  (its caller reads `MANIFEST.txt` line 1, the script reads no manifest);
+  each `_VIEWS` entry `ScreenshotSet(shot_flags, view_hash, view_name,
+  absent_files)`, `shot_flags` bits `_SHOOT_DIFF_REPORT`,
+  `_SHOOT_ERROR_VARIANT`, `_SHOOT_REGULAR_REPORT`, `_SHOOT_EVERY_VARIANT` both
+  reports; a view is shot at `_SCREENSHOT_VIEWPORTS` ×
+  `_SCREENSHOT_DARK_VALUES` (`1`, then `0` light), an error variant at 720p
+  dark only
+  → `tests/perf2html/screenshots/NN_<size>_<report>_<view>_<dark|light>.png`,
+  `NN` the view's number in `_VIEWS`, then per size and dark value 4k sheets
+  3 by 3, overflow to the next, empty cells mid grey,
+  `thumbnail_<size>_<report>_NN_<dark|light>.png`; imports no settings;
   each `_VIEWS` hash
   is a golden bookmark written out whole as one string literal, never
-  formulated from a constant; error view
+  formulated from a constant; error views
   `bad_function`; `report_incomplete` and `stylesheet_missing` shoot a copy
   lacking `assets/report_complete.js` or `assets/theme.css` under
   `tests/perf2html/build/screenshots_scratch/`;

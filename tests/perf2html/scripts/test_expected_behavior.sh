@@ -332,7 +332,7 @@ batch_run() {
 }
 
 screenshots_run() {
-  local _name _path _prefix _flags=()
+  local _name _path _prefix _args _flags=()
   mapfile -t _flags < <(verbose_flags_of)
 
   heading_print "$_SCREENSHOT_SCRIPT_NAME"
@@ -342,8 +342,13 @@ screenshots_run() {
     _prefix="${_name#perf2html_}"
     _prefix="${_prefix%_report}_"
 
+    _args=("$_path" "$_prefix")
+    if [ "$(report_version "$_path")" = "$REPORT_MANIFEST_VERSION_DIFF" ]; then
+      _args+=(--diff)
+    fi
+
     subprocess_run python3 "$_SCRIPTS/$_SCREENSHOT_SCRIPT_NAME" \
-      "${_flags[@]}" "$_path" "$_prefix"
+      "${_flags[@]}" "${_args[@]}"
   done
 }
 

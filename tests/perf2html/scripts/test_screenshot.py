@@ -5,9 +5,31 @@
 
 from __future__ import annotations
 
+from typing import NamedTuple
+
 import argparse, math, os, shutil, subprocess, sys, urllib.parse
 
 import PIL.Image
+
+
+class ShotVariant(NamedTuple):
+    size_name: str
+    width_px: int
+    height_px: int
+    dark_value: str
+
+
+class ScreenshotSet(NamedTuple):
+    shot_flags: int
+    view_hash: str
+    view_name: str
+    absent_files: tuple[str, ...]
+
+    def shot_variants(self) -> tuple[ShotVariant, ...]:
+        if self.shot_flags & _SHOOT_ERROR_HANDLER:
+            return _SHOT_ERROR_HANDLER
+        return _SHOT_REPORT_PERMUTATIONS
+
 
 _ENTRY_PAGE = "index.html"
 
@@ -17,9 +39,6 @@ _IMAGE_SUFFIX = ".png"
 
 _REPORT_COMPLETE_ASSET: tuple[str, ...] = ("assets/report_complete.js",)
 
-_REPORT_MANIFEST_NAME = "MANIFEST.txt"
-_REPORT_MANIFEST_VERSION_DIFF = "curl/perf2html_diff.sh v1"
-_REPORT_MANIFEST_VERSION_FULL = "curl/perf2html.sh v1"
 _REPORT_THEME_STYLESHEET_ASSET: tuple[str, ...] = ("assets/theme.css",)
 
 _SCREENSHOT_BROWSER_CANDIDATES: tuple[str, ...] = (
@@ -47,71 +66,86 @@ _SCREENSHOT_VIEWPORTS: tuple[tuple[str, int, int], ...] = (
     ("4k", 3840, 2160),
 )
 
-_SHOOT_BOTH_REPORTS: tuple[str, ...] = (
-    _REPORT_MANIFEST_VERSION_DIFF,
-    _REPORT_MANIFEST_VERSION_FULL,
-)
-_SHOOT_REGULAR_REPORT_ONLY: tuple[str, ...] = (_REPORT_MANIFEST_VERSION_FULL,)
+_SHOOT_DIFF_REPORT = 1 << 0
+_SHOOT_ERROR_HANDLER = 1 << 1
+_SHOOT_REGULAR_REPORT = 1 << 2
+_SHOOT_BOTH_REPORTS = _SHOOT_DIFF_REPORT | _SHOOT_REGULAR_REPORT
 
-_SHOT_DARK_NAME_PART = "_dark-"
+_SHOT_ERROR_HANDLER: tuple[ShotVariant, ...] = (
+    ShotVariant(*_SCREENSHOT_VIEWPORTS[0], _SCREENSHOT_DARK_VALUES[0]),
+)
+_SHOT_REPORT_PERMUTATIONS: tuple[ShotVariant, ...] = tuple(
+    ShotVariant(*viewport, dark_value)
+    for viewport in _SCREENSHOT_VIEWPORTS
+    for dark_value in _SCREENSHOT_DARK_VALUES
+)
+
+_SHOT_MODE_NAME_PARTS: dict[str, str] = {"1": "_dark", "0": "_light"}
 _SHOT_NUMBER_DIGITS = 2
 
-_THUMBNAIL_SHEET_BACKGROUND = (18, 20, 24)
+_THUMBNAIL_SHEET_BACKGROUND = (128, 128, 128)
 
 _THUMBNAIL_SHEET_COLUMNS = 3
 
 _THUMBNAIL_SHEET_HEIGHT_PX = 2160
+_THUMBNAIL_SHEET_NUMBER_DIGITS = 2
+_THUMBNAIL_SHEET_ROWS = 3
 _THUMBNAIL_SHEET_WIDTH_PX = 3840
 
-_VIEWS: tuple[tuple[tuple[str, ...], str, str, tuple[str, ...]], ...] = (
-    (_SHOOT_BOTH_REPORTS, "", "overview", ()),
-    (_SHOOT_BOTH_REPORTS, "#test=all&view=callers", "callers", ()),
-    (
+_VIEWS: tuple[ScreenshotSet, ...] = (
+    ScreenshotSet(_SHOOT_BOTH_REPORTS, "", "overview", ()),
+    ScreenshotSet(
+        _SHOOT_BOTH_REPORTS,
+        "#test=all&view=callers",
+        "callers",
+        (),
+    ),
+    ScreenshotSet(
         _SHOOT_BOTH_REPORTS,
         "#test=urlparser&view=heat-map",
         "heat_map_home",
         (),
     ),
-    (
+    ScreenshotSet(
         _SHOOT_BOTH_REPORTS,
         "#test=urlparser&view=heat-map"
         "&file=sysdeps/x86_64/multiarch/memchr-avx2.S",
         "heat_map_file",
         (),
     ),
-    (
+    ScreenshotSet(
         _SHOOT_BOTH_REPORTS,
         "#test=urlparser&view=heat-map"
         "&file=sysdeps/x86_64/multiarch/memchr-avx2.S&line=82",
         "heat_map_line",
         (),
     ),
-    (
+    ScreenshotSet(
         _SHOOT_BOTH_REPORTS,
         "#test=urlparser&view=heat-map&function=parseurl_and_replace",
         "heat_map_function",
         (),
     ),
-    (
-        _SHOOT_BOTH_REPORTS,
+    ScreenshotSet(
+        _SHOOT_BOTH_REPORTS | _SHOOT_ERROR_HANDLER,
         "#test=urlparser&view=heat-map&function=no_such_function",
         "bad_function",
         (),
     ),
-    (
-        _SHOOT_BOTH_REPORTS,
+    ScreenshotSet(
+        _SHOOT_BOTH_REPORTS | _SHOOT_ERROR_HANDLER,
         "",
         "report_incomplete",
         _REPORT_COMPLETE_ASSET,
     ),
-    (
-        _SHOOT_BOTH_REPORTS,
+    ScreenshotSet(
+        _SHOOT_BOTH_REPORTS | _SHOOT_ERROR_HANDLER,
         "",
         "stylesheet_missing",
         _REPORT_THEME_STYLESHEET_ASSET,
     ),
-    (
-        _SHOOT_REGULAR_REPORT_ONLY,
+    ScreenshotSet(
+        _SHOOT_REGULAR_REPORT,
         "#test=urlparser&view=flame-graph&localProfilePath=profile",
         "flame_graph",
         (),
@@ -123,10 +157,16 @@ _WINDOWS_BROWSER_SUFFIX = ".exe"
 
 class Screenshots:
     def __init__(
-        self, browser: str, report: str, out_dir: str, scratch_dir: str
+        self,
+        browser: str,
+        report: str,
+        report_flag: int,
+        out_dir: str,
+        scratch_dir: str,
     ) -> None:
         self.browser = browser
         self.report = report
+        self.report_flag = report_flag
         self.out_dir = out_dir
         self.scratch_dir = scratch_dir
         self.report_views = self.report_views_select()
@@ -145,19 +185,15 @@ class Screenshots:
         self,
         view_index: int,
         prefix: str,
-        name: str,
-        view_hash: str,
-        absent_files: tuple[str, ...],
+        view: ScreenshotSet,
     ) -> int:
         if os.path.exists(self.scratch_dir):
             shutil.rmtree(self.scratch_dir)
         shutil.copytree(self.report, self.scratch_dir)
         try:
-            for relative_path in absent_files:
+            for relative_path in view.absent_files:
                 os.remove(os.path.join(self.scratch_dir, relative_path))
-            return self.view_shoot(
-                self.scratch_dir, view_index, prefix, name, view_hash
-            )
+            return self.view_shoot(self.scratch_dir, view_index, prefix, view)
         finally:
             shutil.rmtree(self.scratch_dir)
 
@@ -182,32 +218,21 @@ class Screenshots:
 
     def report_views_select(
         self,
-    ) -> list[tuple[int, tuple[tuple[str, ...], str, str, tuple[str, ...]]]]:
-        manifest_path = os.path.join(self.report, _REPORT_MANIFEST_NAME)
-        with open(manifest_path, encoding="utf-8") as manifest_file:
-            manifest_version = manifest_file.readline().rstrip("\n")
-        if manifest_version not in _SHOOT_BOTH_REPORTS:
-            raise RuntimeError(
-                f"{manifest_path}: line 1 found {manifest_version!r},"
-                f" expected one of {_SHOOT_BOTH_REPORTS!r}"
-            )
+    ) -> list[tuple[int, ScreenshotSet]]:
         return [
             (view_index, view)
             for view_index, view in enumerate(_VIEWS, 1)
-            if manifest_version in view[0]
+            if view.shot_flags & self.report_flag
         ]
 
     def shoot_all(self, prefix: str) -> int:
         written = 0
         for view_index, view in self.report_views:
-            _versions, view_hash, name, absent_files = view
-            if absent_files:
-                written += self.copy_shoot(
-                    view_index, prefix, name, view_hash, absent_files
-                )
+            if view.absent_files:
+                written += self.copy_shoot(view_index, prefix, view)
             else:
                 written += self.view_shoot(
-                    self.report, view_index, prefix, name, view_hash
+                    self.report, view_index, prefix, view
                 )
         return written
 
@@ -258,37 +283,47 @@ class Screenshots:
     ) -> str:
         return (
             f"{view_index:0{_SHOT_NUMBER_DIGITS}d}_{size_name}_{prefix}"
-            f"{name}{_SHOT_DARK_NAME_PART}{dark_value}"
+            f"{name}{_SHOT_MODE_NAME_PARTS[dark_value]}"
         )
 
     def sheets_write(self, prefix: str) -> int:
         written = 0
-        for size_name, _width_px, _height_px in _SCREENSHOT_VIEWPORTS:
-            for dark_value in _SCREENSHOT_DARK_VALUES:
-                shots = [
-                    os.path.join(
-                        self.out_dir,
-                        self.shot_name_of(
-                            view_index, size_name, prefix, view[2], dark_value
-                        )
-                        + _IMAGE_SUFFIX,
+        sheet_cells = _THUMBNAIL_SHEET_COLUMNS * _THUMBNAIL_SHEET_ROWS
+        for variant in _SHOT_REPORT_PERMUTATIONS:
+            shots = [
+                os.path.join(
+                    self.out_dir,
+                    self.shot_name_of(
+                        view_index,
+                        variant.size_name,
+                        prefix,
+                        view.view_name,
+                        variant.dark_value,
                     )
-                    for view_index, view in self.report_views
-                ]
-                for path in shots:
-                    assert os.path.isfile(path), f"missing shot: {path}"
-                name = (
-                    f"thumbnail_{size_name}_{prefix.rstrip('_')}"
-                    f"{_SHOT_DARK_NAME_PART}{dark_value}"
+                    + _IMAGE_SUFFIX,
                 )
-                self.sheet_one(name + _IMAGE_SUFFIX, shots)
+                for view_index, view in self.report_views
+                if variant in view.shot_variants()
+            ]
+            for path in shots:
+                assert os.path.isfile(path), f"missing shot: {path}"
+            for sheet_index in range(math.ceil(len(shots) / sheet_cells)):
+                name = (
+                    f"thumbnail_{variant.size_name}_{prefix.rstrip('_')}"
+                    f"_{sheet_index + 1:0{_THUMBNAIL_SHEET_NUMBER_DIGITS}d}"
+                    f"{_SHOT_MODE_NAME_PARTS[variant.dark_value]}"
+                )
+                first_shot = sheet_index * sheet_cells
+                self.sheet_one(
+                    name + _IMAGE_SUFFIX,
+                    shots[first_shot : first_shot + sheet_cells],
+                )
                 written += 1
         return written
 
     def sheet_one(self, name: str, shots: list[str]) -> None:
-        sheet_rows = math.ceil(len(shots) / _THUMBNAIL_SHEET_COLUMNS)
         cell_width = _THUMBNAIL_SHEET_WIDTH_PX // _THUMBNAIL_SHEET_COLUMNS
-        cell_height = _THUMBNAIL_SHEET_HEIGHT_PX // sheet_rows
+        cell_height = _THUMBNAIL_SHEET_HEIGHT_PX // _THUMBNAIL_SHEET_ROWS
         sheet = PIL.Image.new(
             "RGB",
             (_THUMBNAIL_SHEET_WIDTH_PX, _THUMBNAIL_SHEET_HEIGHT_PX),
@@ -296,8 +331,10 @@ class Screenshots:
         )
         for index, path in enumerate(shots):
             shot = PIL.Image.open(path)
-            shot.thumbnail(
-                (cell_width, cell_height), PIL.Image.Resampling.LANCZOS
+            fit = min(cell_width / shot.width, cell_height / shot.height)
+            shot = shot.resize(
+                (round(shot.width * fit), round(shot.height * fit)),
+                PIL.Image.Resampling.LANCZOS,
             )
             column = index % _THUMBNAIL_SHEET_COLUMNS
             row = index // _THUMBNAIL_SHEET_COLUMNS
@@ -315,26 +352,27 @@ class Screenshots:
         page_dir: str,
         view_index: int,
         prefix: str,
-        name: str,
-        view_hash: str,
+        view: ScreenshotSet,
     ) -> int:
-        written = 0
-        for size_name, width_px, height_px in _SCREENSHOT_VIEWPORTS:
-            for dark_value in _SCREENSHOT_DARK_VALUES:
-                shot = self.shot_name_of(
-                    view_index, size_name, prefix, name, dark_value
-                )
-                self.shoot_one(
-                    shot,
-                    page_dir,
-                    name,
-                    view_hash,
-                    dark_value,
-                    width_px,
-                    height_px,
-                )
-                written += 1
-        return written
+        shot_variants = view.shot_variants()
+        for variant in shot_variants:
+            shot = self.shot_name_of(
+                view_index,
+                variant.size_name,
+                prefix,
+                view.view_name,
+                variant.dark_value,
+            )
+            self.shoot_one(
+                shot,
+                page_dir,
+                view.view_name,
+                view.view_hash,
+                variant.dark_value,
+                variant.width_px,
+                variant.height_px,
+            )
+        return len(shot_variants)
 
     def windows_browser_is(self) -> bool:
         return self.browser.lower().endswith(_WINDOWS_BROWSER_SUFFIX)
@@ -354,6 +392,9 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("report", help="a report directory to shoot")
     parser.add_argument("prefix", help="what every file name starts with")
+    parser.add_argument(
+        "--diff", action="store_true", help="the report is a diff report"
+    )
     parser.add_argument(
         "--out",
         default="",
@@ -400,7 +441,8 @@ def main() -> int:
 
     if namespace.verbose:
         print(f"{os.path.basename(report)} -> {out_dir}")
-    shooter = Screenshots(browser, report, out_dir, scratch_dir)
+    report_flag = _SHOOT_DIFF_REPORT if namespace.diff else _SHOOT_REGULAR_REPORT
+    shooter = Screenshots(browser, report, report_flag, out_dir, scratch_dir)
     written = shooter.shoot_all(namespace.prefix)
 
     shooter.sheets_write(namespace.prefix)

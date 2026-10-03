@@ -178,9 +178,8 @@ table.columns_ > tbody > tr:focus-visible > td {
   left: 0;
   bottom: 0;
   z-index: var(--screenshot-label-z-index-);
-  background: var(--screenshot-label-bg-);
-  color: var(--screenshot-label-fg-);
+  background: #000000;
+  color: #ffffff;
   font-size: var(--screenshot-label-font-size-);
-  border: var(--screenshot-label-border-width-) solid
-    var(--screenshot-label-border-);
+  border: var(--screenshot-label-border-width-) solid #000000;
 }

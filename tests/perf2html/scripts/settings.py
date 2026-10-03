@@ -221,7 +221,6 @@ STYLE_COLOR_PAIR_ENTRIES: dict[str, list[str]] = {
         "page-dark-mode-disabled-bg-",
         "page-link-focus-fg-",
         "page-table-row-focus-fg-",
-        "screenshot-label-fg-",
     ],
     "#DCDDE1": [
         "callers-collapsed-section-file-name-fg-dim-",
@@ -300,10 +299,6 @@ STYLE_COLOR_PAIR_ENTRIES: dict[str, list[str]] = {
         "page-dark-mode-disabled-fg-dim-",
         "page-scrollbar-corner-bg-dim-",
         "page-scrollbar-track-bg-dim-",
-    ],
-    "#000000": [
-        "screenshot-label-bg-",
-        "screenshot-label-border-",
     ],
 }
 
@@ -410,7 +405,7 @@ STYLE_VALUE_ENTRIES: dict[str, str] = {
     "page-table-cell-padding-inline-": "1ch",
     "page-table-column-title-z-index-": "1",
     "screenshot-label-border-width-": "1ch",
-    "screenshot-label-font-size-": "2em",
+    "screenshot-label-font-size-": "1.5em",
     "screenshot-label-z-index-": "3",
 }
 
