@@ -1,0 +1,143 @@
+/* SPDX-FileCopyrightText: © 2026 Adrian Johnston.
+ * SPDX-License-Identifier: MIT
+ * This file is licensed under the terms of the LICENSE-MIT.md file. */
+
+:root:not([data-dark-mode-="disabled"]) {
+  select,
+  input {
+    color: var(--heat-map-menu-field-fg-);
+  }
+  body {
+    background: var(--dark-mode-page-normal-bg-);
+    color: var(--dark-mode-page-normal-fg-);
+  }
+  body.frame_ > iframe {
+    background: var(--overview-view-frame-bg-dim-);
+  }
+  .page-heading- {
+    background: none;
+    color: var(--page-heading-fg-dim-);
+  }
+
+  button,
+  input,
+  select,
+  .menu-button- {
+    border: 0;
+  }
+
+  .columns_:not(.heat-map-source-table-) {
+    border-collapse: separate;
+  }
+  .columns_:not(.heat-map-source-table-),
+  .columns_:not(.heat-map-source-table-) th,
+  .columns_:not(.heat-map-source-table-) td {
+    border: 0;
+  }
+  .columns_:not(.heat-map-source-table-) th,
+  .columns_:not(.heat-map-source-table-) td {
+    padding-inline: var(--page-table-cell-padding-inline-);
+  }
+
+  #menu- {
+    color: var(--dark-mode-menu-normal-fg-);
+    background: var(--dark-mode-menu-normal-bg-);
+  }
+  .menu-strip- .menu-button- {
+    color: var(--menu-button-fg-);
+    background: var(--menu-button-bg-);
+  }
+  .menu-strip- .menu-button-.current_ {
+    background: var(--menu-button-current-bg-);
+    color: var(--menu-button-current-fg-dim-);
+  }
+  .menu-strip- .menu-button-:focus-visible,
+  .menu-strip- .menu-logo-:focus-visible,
+  .menu-strip- .menu-title- a:focus-visible {
+    background: var(--dark-mode-menu-focus-bg-);
+    color: var(--dark-mode-menu-focus-fg-);
+  }
+  .menu-strip- .menu-pulldown-entry-list- {
+    background: var(--menu-pulldown-entry-list-bg-dim-);
+  }
+  .menu-strip- .menu-pulldown-entry-list- a {
+    color: var(--page-link-fg-);
+  }
+  .menu-strip- .menu-pulldown-entry-list- a.current_ {
+    background: var(--menu-pulldown-entry-current-bg-);
+    color: var(--menu-pulldown-entry-current-fg-);
+  }
+  .menu-strip- .menu-pulldown-entry-list- a.highlighted-entry- {
+    background: var(--menu-pulldown-entry-highlighted-bg-);
+    color: var(--menu-pulldown-entry-highlighted-fg-dim-);
+  }
+  .menu-strip- .menu-pulldown-no-match-note- {
+    color: var(--menu-pulldown-no-match-note-fg-dim-);
+  }
+  .menu-strip- .menu-pulldown-search-box-::placeholder {
+    color: var(--menu-pulldown-search-box-placeholder-fg-dim-);
+  }
+  .menu-strip- {
+    background: var(--heat-map-menu-strip-bg-dim-);
+    padding-top: 0;
+  }
+  .menu-strip- .menu-title- {
+    color: var(--dark-mode-status-bar-fg-);
+    background: var(--dark-mode-status-bar-bg-);
+  }
+  .menu-strip- .menu-title- a {
+    color: var(--dark-mode-status-bar-fg-);
+  }
+
+  #heat-map-main- {
+    background: var(--heat-map-main-bg-dim-);
+  }
+  #heat-map-main-:focus-visible {
+    background: var(--heat-map-main-focus-bg-);
+  }
+  #heat-map-menu- select,
+  #heat-map-menu- input {
+    background: var(--heat-map-menu-field-bg-dim-);
+  }
+  #heat-map-menu- select:focus-visible,
+  #heat-map-menu- input:focus-visible {
+    background: var(--heat-map-menu-field-focus-bg-);
+    color: var(--heat-map-menu-field-fg-);
+  }
+  #heat-map-menu- label {
+    color: var(--heat-map-menu-label-fg-dim-);
+  }
+  #heat-map-menu- input::placeholder {
+    color: var(--heat-map-menu-search-box-placeholder-fg-dim-);
+  }
+  .heat-map-source-file-header- {
+    background: var(--dark-mode-page-highlight-bg-);
+    color: inherit;
+  }
+  .heat-map-source-file-header- .heat-map-source-file-header-statistic- {
+    color: var(--heat-map-source-file-header-statistic-fg-dim-);
+  }
+  .heat-map-source-file-header-statistic-share- {
+    color: var(--dark-mode-page-highlight-fg-);
+  }
+
+  &::-webkit-scrollbar-track,
+  ::-webkit-scrollbar-track,
+  &::-webkit-scrollbar-track:disabled,
+  ::-webkit-scrollbar-track:disabled {
+    background: var(--page-scrollbar-track-bg-dim-);
+  }
+  &::-webkit-scrollbar-thumb,
+  ::-webkit-scrollbar-thumb {
+    background: var(--page-scrollbar-thumb-bg-dim-);
+  }
+  &::-webkit-scrollbar-corner,
+  ::-webkit-scrollbar-corner {
+    background: var(--page-scrollbar-corner-bg-dim-);
+  }
+  pre.callers-collapsed-section-log-box-::-webkit-scrollbar-track,
+  pre.callers-collapsed-section-log-box-::-webkit-scrollbar-track:disabled,
+  pre.callers-collapsed-section-log-box-::-webkit-scrollbar-corner {
+    background: var(--callers-collapsed-section-log-box-scrollbar-bg-dim-);
+  }
+}

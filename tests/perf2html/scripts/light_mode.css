@@ -2,50 +2,143 @@
  * SPDX-License-Identifier: MIT
  * This file is licensed under the terms of the LICENSE-MIT.md file. */
 
-:root[data-dark-mode-="disabled"] button,
-:root[data-dark-mode-="disabled"] input,
-:root[data-dark-mode-="disabled"] select,
-:root[data-dark-mode-="disabled"] .menu-button- {
-  border: var(--page-dark-mode-disabled-border-width-) solid
-    var(--page-dark-mode-disabled-fg-dim-);
+select,
+input {
+  color: var(--light-mode-menu-normal-fg-);
+}
+body {
+  background: var(--light-mode-page-normal-bg-);
+  color: var(--light-mode-page-normal-fg-);
+}
+body.frame_ > iframe {
+  background: var(--light-mode-page-normal-bg-);
+}
+.page-heading- {
+  background: var(--light-mode-page-highlight-bg-);
+  color: var(--light-mode-page-highlight-fg-);
 }
 
-:root[data-dark-mode-="disabled"] .columns_:not(.heat-map-source-table-) {
+button,
+input,
+select,
+.menu-button- {
+  border: var(--light-mode-page-border-width-) solid
+    var(--light-mode-menu-normal-fg-);
+}
+
+.columns_:not(.heat-map-source-table-) {
   border-collapse: collapse;
 }
-:root[data-dark-mode-="disabled"] .columns_:not(.heat-map-source-table-),
-:root[data-dark-mode-="disabled"] .columns_:not(.heat-map-source-table-) th,
-:root[data-dark-mode-="disabled"] .columns_:not(.heat-map-source-table-) td {
-  border: var(--page-dark-mode-disabled-border-width-) solid
-    var(--page-dark-mode-disabled-fg-dim-);
+.columns_:not(.heat-map-source-table-),
+.columns_:not(.heat-map-source-table-) th,
+.columns_:not(.heat-map-source-table-) td {
+  border: var(--light-mode-page-border-width-) solid
+    var(--light-mode-page-normal-fg-);
 }
-:root[data-dark-mode-="disabled"] .columns_:not(.heat-map-source-table-) th,
-:root[data-dark-mode-="disabled"] .columns_:not(.heat-map-source-table-) td {
+.columns_:not(.heat-map-source-table-) th,
+.columns_:not(.heat-map-source-table-) td {
   padding-inline: calc(
     var(--page-table-cell-padding-inline-) -
       max(
-        var(--page-dark-mode-disabled-border-width-),
+        var(--light-mode-page-border-width-),
         var(--design-device-pixel-widest-px-)
       ) /
       2
   );
 }
 
-:root[data-dark-mode-="disabled"] .menu-strip- {
-  padding-top: calc(var(--page-dark-mode-disabled-border-width-) / 2);
+#menu- {
+  color: var(--light-mode-menu-normal-fg-);
+  background: var(--light-mode-menu-normal-bg-);
+}
+.menu-strip- .menu-button- {
+  color: var(--light-mode-menu-normal-fg-);
+  background: var(--light-mode-menu-normal-bg-);
+}
+.menu-strip- .menu-button-.current_ {
+  background: var(--light-mode-menu-focus-bg-);
+  color: var(--light-mode-menu-focus-fg-);
+}
+.menu-strip- .menu-button-:focus-visible,
+.menu-strip- .menu-logo-:focus-visible,
+.menu-strip- .menu-title- a:focus-visible {
+  background: var(--light-mode-menu-focus-bg-);
+  color: var(--light-mode-menu-focus-fg-);
+}
+.menu-strip- .menu-pulldown-entry-list- {
+  background: var(--light-mode-menu-normal-bg-);
+}
+.menu-strip- .menu-pulldown-entry-list- a {
+  color: var(--light-mode-menu-normal-fg-);
+}
+.menu-strip- .menu-pulldown-entry-list- a.current_ {
+  background: var(--light-mode-menu-focus-bg-);
+  color: var(--light-mode-menu-focus-fg-);
+}
+.menu-strip- .menu-pulldown-entry-list- a.highlighted-entry- {
+  background: var(--light-mode-menu-focus-bg-);
+  color: var(--light-mode-menu-focus-fg-);
+}
+.menu-strip- .menu-pulldown-no-match-note- {
+  color: var(--light-mode-menu-normal-fg-);
+}
+.menu-strip- .menu-pulldown-search-box-::placeholder {
+  color: var(--light-mode-menu-normal-fg-);
+}
+.menu-strip- {
+  background: var(--light-mode-menu-normal-bg-);
+  padding-top: calc(var(--light-mode-page-border-width-) / 2);
+}
+.menu-strip- .menu-title- {
+  color: var(--light-mode-status-bar-fg-);
+  background: var(--light-mode-status-bar-bg-);
+}
+.menu-strip- .menu-title- a {
+  color: var(--light-mode-status-bar-fg-);
 }
 
-:root[data-dark-mode-="disabled"]::-webkit-scrollbar-track,
-:root[data-dark-mode-="disabled"]::-webkit-scrollbar-corner,
-:root[data-dark-mode-="disabled"] ::-webkit-scrollbar-track,
-:root[data-dark-mode-="disabled"] ::-webkit-scrollbar-corner {
-  background: var(--page-dark-mode-disabled-fg-dim-);
+#heat-map-main- {
+  background: var(--light-mode-page-normal-bg-);
 }
-:root[data-dark-mode-="disabled"]::-webkit-scrollbar-thumb,
-:root[data-dark-mode-="disabled"] ::-webkit-scrollbar-thumb {
-  background: var(--page-dark-mode-disabled-bg-);
+#heat-map-main-:focus-visible {
+  background: var(--light-mode-page-normal-bg-);
 }
-:root[data-dark-mode-="disabled"]::-webkit-scrollbar-track:disabled,
-:root[data-dark-mode-="disabled"] ::-webkit-scrollbar-track:disabled {
-  background: var(--page-dark-mode-disabled-bg-);
+#heat-map-menu- select,
+#heat-map-menu- input {
+  background: var(--light-mode-menu-normal-bg-);
+}
+#heat-map-menu- select:focus-visible,
+#heat-map-menu- input:focus-visible {
+  background: var(--light-mode-menu-focus-bg-);
+  color: var(--light-mode-menu-focus-fg-);
+}
+#heat-map-menu- label {
+  color: var(--light-mode-menu-normal-fg-);
+}
+#heat-map-menu- input::placeholder {
+  color: var(--light-mode-menu-normal-fg-);
+}
+.heat-map-source-file-header- {
+  background: var(--light-mode-page-highlight-bg-);
+  color: var(--light-mode-page-highlight-fg-);
+}
+.heat-map-source-file-header- .heat-map-source-file-header-statistic- {
+  color: var(--light-mode-page-highlight-fg-);
+}
+.heat-map-source-file-header-statistic-share- {
+  color: var(--light-mode-page-highlight-fg-);
+}
+
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner,
+pre.callers-collapsed-section-log-box-::-webkit-scrollbar-track,
+pre.callers-collapsed-section-log-box-::-webkit-scrollbar-corner {
+  background: var(--light-mode-page-fg-);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--light-mode-page-bg-);
+}
+::-webkit-scrollbar-track:disabled,
+pre.callers-collapsed-section-log-box-::-webkit-scrollbar-track:disabled {
+  background: var(--light-mode-page-bg-);
 }

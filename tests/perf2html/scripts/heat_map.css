@@ -16,32 +16,16 @@
   overflow-x: hidden;
   overflow-y: auto;
   scrollbar-gutter: stable;
-  background: var(--heat-map-main-bg-dim-);
-}
-#heat-map-main-:focus-visible {
-  background: var(--heat-map-main-focus-bg-);
 }
 
 #heat-map-menu- {
   gap: 0 var(--heat-map-menu-column-gap-);
 }
-#heat-map-menu- select,
-#heat-map-menu- input {
-  background: var(--heat-map-menu-field-bg-dim-);
-}
-#heat-map-menu- select:focus-visible,
-#heat-map-menu- input:focus-visible {
-  background: var(--heat-map-menu-field-focus-bg-);
-}
 #heat-map-menu- label {
-  color: var(--heat-map-menu-label-fg-dim-);
   white-space: nowrap;
 }
 #heat-map-menu- input {
   width: var(--heat-map-menu-search-box-width-);
-}
-#heat-map-menu- input::placeholder {
-  color: var(--heat-map-menu-search-box-placeholder-fg-dim-);
 }
 
 #heat-map-minimap- {
@@ -85,17 +69,12 @@
 }
 
 .heat-map-source-file-header- {
-  background: var(--heat-map-source-file-header-bg-);
   display: flex;
   gap: 0 var(--heat-map-source-file-header-column-gap-);
   align-items: baseline;
   flex-wrap: wrap;
 }
-.heat-map-source-file-header- .heat-map-source-file-header-statistic- {
-  color: var(--heat-map-source-file-header-statistic-fg-dim-);
-}
 .heat-map-source-file-header-statistic-share- {
-  color: var(--heat-map-source-file-header-statistic-share-fg-);
   white-space: pre;
 }
 

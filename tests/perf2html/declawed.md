@@ -11,7 +11,7 @@ Do not use the AskUserQuestion tool and use numbered number sub-lists per ISO
 2145.
 
 Maintain an engineering log for each session in `tests/perf2html/tmp`
-following this format: `tests/perf2html/tmp/tasks_sat_0959am.md`. This is
+following this format: `tests/perf2html/tmp/tasks_sat_0626am.md`. This is
 formal paperwork with no chit chat required. Text is only added and not
 modified. Use ISO 2145 for tasks and do not restart numbering tasks within a
 single conversation. Preserve the users literal text in the task list first,
@@ -191,7 +191,7 @@ The single function/check owning each concern - never bypass or duplicate:
 - New identifiers need 2+ unabbreviated English words.
 - Naming split: `_SCREAMING_SNAKE` for a script's own global, `_lowercase` for
   locals, bare names crossing into `utility.sh`.
-- 79-column hard max for all `tests/perf2html/` source.
+- 79-column hard max for all `tests/perf2html/` source. Ruff will reformat.
 - Comment blocks max 1 line (2 is an error via `test_source_scan.py`); longer
   reasoning goes in `declawed.md` instead. The file header is exempt from the
   line limit, the glyph check and the `ENGLISH_PUNCT` check.
@@ -266,7 +266,9 @@ Under `tests/perf2html/`:
   `ui_strings.js` (`str_*`); `error_overlay.js` first script on every page;
   `utility.js` second, relaying an error report up the frames and reporting a
   failed `<link>`/`<script>`/`<img>` load; `light_mode.css` the light mode,
-  under `:root[data-dark-mode-="disabled"]`; `settings.js`
+  plain rules, linked before `dark_mode.css` the dark mode, which overrides
+  every light rule under `:root:not([data-dark-mode-="disabled"])`;
+  `settings.js`
   (`settings_("NAME")` throws on unknown).
 - `src/cyg_callback.c` trace hooks; `scripts/test_whitelist.txt`;
   `README.md` user contract, copied into every report; `tmp/` notes, `.md`
@@ -654,7 +656,8 @@ timer-artifacts-<unix>.txz (full report only)
   `HEAT_MAP_SOURCE_VIEW_WIDTH_CHARS` (80).
 - Reformatting `heat_map.*`, `menu.*`, `frame.js`, `flame_graph.*`,
   `callers.js`, `overview.html`, `settings.js`, `error_overlay.js`,
-  `utility.js`, `light_mode.css`, `ui_strings.js`, `theme.css`, `theme.js`,
+  `utility.js`, `dark_mode.css`, `light_mode.css`, `ui_strings.js`,
+  `theme.css`, `theme.js`,
   `README.md` changes reports;
   text echoed into a perf/trace recording is page content.
 
@@ -694,7 +697,9 @@ timer-artifacts-<unix>.txz (full report only)
   entry is its object path, `-` between words, singular words: the views
   it shows on (`callers`, `heat-map`, `menu`, `overview`, alphabetized, or
   `page` when the views are all of them), component, part; no word its
-  parent already gives. State classes
+  parent already gives. A mode colour role leads with its mode,
+  `dark-mode-` or `light-mode-`, then a concept: `menu-normal`,
+  `menu-focus`, `page-normal`, `page-highlight`, `status-bar`. State classes
   (`current_`, `selected_`, `open_`, `empty_`, `drag_`) and layout helpers
   (`.band_`, `.table-box-`, `.page_`) stay plain. Every class, id, CSS
   custom property and `data-*` attribute perf2html writes ends in a
@@ -803,13 +808,19 @@ timer-artifacts-<unix>.txz (full report only)
   `STYLE_HEAT_MAP_TREE_INDENT_PER_LEVEL_CHARS` in ch.
   The only `title=` attributes: `<iframe title="report page">` and `<th>`. Only
   `th`, `.band_` and `#heat-map-minimap-` are sticky.
-- Colour: `STYLE_COLOR_PAIR_ENTRIES` maps each palette colour, lighter then
-  dimmer per pair, to its roles. A role is its object path, then any state,
-  then `fg`, `bg`, `outline` or `border`, `-dim` on a dimmer colour, then
-  the marker `-`. Each thing a page colours has its own role, so the
-  palette is the one control surface. `Theme.css()` writes a role only
-  when a stylesheet names it. Every other value a stylesheet draws with is
-  a `STYLE_VALUE_ENTRIES` variable.
+- Colour: `STYLE_COLOR_DARK_MODE` maps each palette colour, lighter then
+  dimmer per pair, to its roles; `STYLE_COLOR_LIGHT_MODE` maps the light
+  palette to its `light-mode-` roles. A role is its object path, then any
+  state, then `fg`, `bg`, `outline` or `border`, `-dim` on a dimmer colour,
+  then the marker `-`. Each thing a page colours has its own role, so the
+  palettes are the one control surface. `Theme.css()` writes no colour
+  role; `Theme.light_mode_css()` writes, in `:root`, every `light-mode-`
+  role and each dark role `light_mode.css` names as its colour, then remaps
+  each role the shared stylesheets name to `light-mode-page-bg-`
+  or `light-mode-page-fg-`; `Theme.dark_mode_css()` writes
+  every dark role the shared stylesheets or `dark_mode.css` name in the
+  dark selector block. `light_mode.css` never names `data-dark-mode-`, and
+  `dark_mode.css` undoes each light rule it does not restate.
   `STYLE_HEAT_COLOR_STOPS` palette; `ramp_channels_at()` the one interpolation
   (`cell_style()`, `logo_color_at()`); cells paint the stop opaque, their
   text on-bright above `STYLE_HEAT_CELL_ON_BRIGHT_ABOVE_LUMINANCE_SHARE`.

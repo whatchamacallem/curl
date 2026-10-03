@@ -10,7 +10,8 @@ from typing import NoReturn, get_origin, get_type_hints
 
 
 ASSET_CALLERS_SCRIPT_NAME = "callers.js"
-ASSET_DARK_MODE_DISABLED_STYLESHEET_NAME = "light_mode.css"
+ASSET_LIGHT_MODE_STYLESHEET_NAME = "light_mode.css"
+ASSET_DARK_MODE_ENABLED_STYLESHEET_NAME = "dark_mode.css"
 ASSET_ERROR_OVERLAY_SCRIPT_NAME = "error_overlay.js"
 ASSET_FLAME_GRAPH_SCRIPT_NAME = "flame_graph.js"
 ASSET_FRAME_SCRIPT_NAME = "frame.js"
@@ -191,7 +192,7 @@ STORAGE_OWNED_PREFIXES: tuple[str, ...] = ("split.",)
 STORAGE_VERSION = "perf2html v5"
 STORAGE_VERSION_KEY = "perf2html.version"
 
-STYLE_COLOR_PAIR_ENTRIES: dict[str, list[str]] = {
+STYLE_COLOR_DARK_MODE: dict[str, list[str]] = {
     "#1AB6FF": [
         "heat-map-source-line-detail-action-bar-link-fg-",
         "heat-map-source-table-line-number-cell-callee-marker-fg-",
@@ -206,19 +207,18 @@ STYLE_COLOR_PAIR_ENTRIES: dict[str, list[str]] = {
     "#F5F6FA": [
         "callers-collapsed-section-title-focus-fg-",
         "callers-heat-cell-on-dark-fg-",
+        "dark-mode-menu-focus-bg-",
+        "dark-mode-menu-normal-fg-",
+        "dark-mode-page-highlight-fg-",
+        "dark-mode-page-normal-fg-",
+        "dark-mode-status-bar-fg-",
         "heat-map-heat-cell-on-dark-fg-",
         "heat-map-menu-field-fg-",
-        "heat-map-source-file-header-statistic-share-fg-",
         "heat-map-source-line-detail-function-name-fg-",
         "heat-map-source-table-row-focus-fg-",
         "heat-map-source-ticker-tape-entry-focus-fg-",
         "heat-map-tree-node-focus-fg-",
         "menu-button-current-bg-",
-        "menu-button-focus-bg-",
-        "menu-strip-fg-",
-        "menu-title-fg-",
-        "page-body-fg-",
-        "page-dark-mode-disabled-bg-",
         "page-link-focus-fg-",
         "page-table-row-focus-fg-",
     ],
@@ -253,9 +253,9 @@ STYLE_COLOR_PAIR_ENTRIES: dict[str, list[str]] = {
     "#273C75": [
         "callers-collapsed-section-log-box-focus-bg-",
         "callers-collapsed-section-title-focus-bg-",
+        "dark-mode-page-highlight-bg-",
         "heat-map-main-focus-bg-",
         "heat-map-menu-field-focus-bg-",
-        "heat-map-source-file-header-bg-",
         "heat-map-source-table-column-title-bg-",
         "heat-map-source-table-row-focus-bg-",
         "heat-map-source-ticker-tape-bg-",
@@ -271,11 +271,11 @@ STYLE_COLOR_PAIR_ENTRIES: dict[str, list[str]] = {
     "#192A56": [
         "callers-collapsed-section-log-box-bg-dim-",
         "callers-collapsed-section-log-box-scrollbar-bg-dim-",
+        "dark-mode-menu-focus-fg-",
         "heat-map-menu-field-bg-dim-",
         "heat-map-menu-strip-bg-dim-",
         "heat-map-source-line-detail-bg-dim-",
         "menu-button-current-fg-dim-",
-        "menu-button-focus-fg-dim-",
         "menu-pulldown-entry-highlighted-fg-dim-",
         "menu-pulldown-entry-list-bg-dim-",
         "page-table-column-title-bg-dim-",
@@ -288,17 +288,43 @@ STYLE_COLOR_PAIR_ENTRIES: dict[str, list[str]] = {
     ],
     "#2F3640": [
         "callers-heat-cell-on-bright-fg-dim-",
+        "dark-mode-menu-normal-bg-",
+        "dark-mode-page-normal-bg-",
+        "dark-mode-status-bar-bg-",
         "heat-map-heat-cell-on-bright-fg-dim-",
         "heat-map-main-bg-dim-",
         "heat-map-minimap-bg-dim-",
         "heat-map-source-line-detail-table-bg-dim-",
-        "menu-strip-bg-dim-",
-        "menu-title-bg-dim-",
         "overview-view-frame-bg-dim-",
-        "page-body-bg-dim-",
-        "page-dark-mode-disabled-fg-dim-",
         "page-scrollbar-corner-bg-dim-",
         "page-scrollbar-track-bg-dim-",
+    ],
+}
+
+STYLE_COLOR_LIGHT_MODE: dict[str, list[str]] = {
+    "#000000": [
+        "light-mode-menu-focus-bg-",
+        "light-mode-menu-normal-fg-",
+        "light-mode-page-highlight-bg-",
+        "light-mode-page-normal-fg-",
+        "light-mode-status-bar-fg-",
+    ],
+    "#FFFFFF": [
+        "light-mode-menu-focus-fg-",
+        "light-mode-page-highlight-fg-",
+        "light-mode-page-normal-bg-",
+    ],
+    "#AAAAAA": [
+        "light-mode-menu-normal-bg-",
+    ],
+    "#00AAAA": [
+        "light-mode-status-bar-bg-",
+    ],
+    "#F5F6FA": [
+        "light-mode-page-bg-",
+    ],
+    "#2F3640": [
+        "light-mode-page-fg-",
     ],
 }
 
@@ -400,7 +426,7 @@ STYLE_VALUE_ENTRIES: dict[str, str] = {
     "menu-pulldown-search-box-min-width-": "13ch",
     "menu-title-width-": "66ch",
     "page-body-line-height-": "1.1",
-    "page-dark-mode-disabled-border-width-": "0.125ch",
+    "light-mode-page-border-width-": "0.125ch",
     "page-scrollbar-thickness-": "14px",
     "page-table-cell-padding-inline-": "1ch",
     "page-table-column-title-z-index-": "1",

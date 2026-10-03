@@ -441,7 +441,9 @@ def main() -> int:
 
     if namespace.verbose:
         print(f"{os.path.basename(report)} -> {out_dir}")
-    report_flag = _SHOOT_DIFF_REPORT if namespace.diff else _SHOOT_REGULAR_REPORT
+    report_flag = (
+        _SHOOT_DIFF_REPORT if namespace.diff else _SHOOT_REGULAR_REPORT
+    )
     shooter = Screenshots(browser, report, report_flag, out_dir, scratch_dir)
     written = shooter.shoot_all(namespace.prefix)
 

@@ -11,12 +11,13 @@ from typing import NamedTuple, TypeAlias, TypedDict
 import settings
 
 _ASSET_CALLERS_SCRIPT_NAME: str = ""
-_ASSET_DARK_MODE_DISABLED_STYLESHEET_NAME: str = ""
+_ASSET_DARK_MODE_ENABLED_STYLESHEET_NAME: str = ""
 _ASSET_ERROR_OVERLAY_SCRIPT_NAME: str = ""
 _ASSET_FLAME_GRAPH_SCRIPT_NAME: str = ""
 _ASSET_FRAME_SCRIPT_NAME: str = ""
 _ASSET_HEAT_MAP_SCRIPT_NAME: str = ""
 _ASSET_HEAT_MAP_STYLESHEET_NAME: str = ""
+_ASSET_LIGHT_MODE_STYLESHEET_NAME: str = ""
 _ASSET_MENU_SCRIPT_NAME: str = ""
 _ASSET_MENU_STYLESHEET_NAME: str = ""
 _ASSET_REPORT_COMPLETE_SCRIPT_NAME: str = ""
@@ -26,12 +27,13 @@ _ASSET_THEME_STYLESHEET_NAME: str = ""
 _ASSET_UI_STRINGS_SCRIPT_NAME: str = ""
 _ASSET_UTILITY_SCRIPT_NAME: str = ""
 _DARK_MODE_ATTRIBUTE_NAME: str = ""
-_DARK_MODE_DISABLED_VALUE: str = ""
+_LIGHT_MODE_VALUE: str = ""
 _NUMBER_FRACTION_DIGITS: int = 0
 _NUMBER_LARGEST_PRINTED_MULTIPLE_TIMES: float = 0.0
 _NUMBER_SMALLEST_PRINTED_PERCENT: float = 0.0
 _REPORT_ASSETS_DIR_NAME: str = ""
-_STYLE_COLOR_PAIR_ENTRIES: dict[str, list[str]] = {}
+_STYLE_COLOR_DARK_MODE: dict[str, list[str]] = {}
+_STYLE_COLOR_LIGHT_MODE: dict[str, list[str]] = {}
 _STYLE_DESIGN_COORDINATES_WIDTH_PX: int = 0
 _STYLE_DESIGN_FONT_FIT_PROPERTY: str = ""
 _STYLE_DESIGN_FONT_SIZE_PX: int = 0
@@ -62,11 +64,13 @@ if not (
         f" {_STYLE_DESIGN_SCALE_LARGEST_MULTIPLE}"
     )
 
-_DARK_MODE_DISABLED_BACKGROUND_ROLE = "page-dark-mode-disabled-bg-"
-_DARK_MODE_DISABLED_FOREGROUND_ROLE = "page-dark-mode-disabled-fg-dim-"
-_DARK_MODE_DISABLED_SELECTOR = (
-    f':root[{_DARK_MODE_ATTRIBUTE_NAME}="{_DARK_MODE_DISABLED_VALUE}"]'
+_LIGHT_MODE_BACKGROUND_ROLE = "light-mode-page-bg-"
+_LIGHT_MODE_FOREGROUND_ROLE = "light-mode-page-fg-"
+_DARK_MODE_ENABLED_SELECTOR = (
+    f':root:not([{_DARK_MODE_ATTRIBUTE_NAME}="{_LIGHT_MODE_VALUE}"])'
 )
+_DARK_MODE_ROLE_PREFIX = "dark-mode-"
+_LIGHT_MODE_ROLE_PREFIX = "light-mode-"
 _ROLE_KIND_PATTERN = re.compile(r"-(bg|border|fg|outline)(-dim)?-$")
 
 
@@ -342,7 +346,12 @@ class Theme:
         seconds: float
 
     def __init__(self) -> None:
-        self.color_roles = self.roles()
+        self.color_roles = self.roles(
+            "STYLE_COLOR_DARK_MODE", _STYLE_COLOR_DARK_MODE
+        )
+        self.light_mode_roles = self.roles(
+            "STYLE_COLOR_LIGHT_MODE", _STYLE_COLOR_LIGHT_MODE
+        )
         self.heat_stops = [
             self.rgb(color) for color in _STYLE_HEAT_COLOR_STOPS
         ]
@@ -364,8 +373,12 @@ class Theme:
                 self.asset_read(_ASSET_CALLERS_SCRIPT_NAME),
             ),
             (
-                _ASSET_DARK_MODE_DISABLED_STYLESHEET_NAME,
+                _ASSET_LIGHT_MODE_STYLESHEET_NAME,
                 self.light_mode_css(),
+            ),
+            (
+                _ASSET_DARK_MODE_ENABLED_STYLESHEET_NAME,
+                self.dark_mode_css(),
             ),
             (
                 _ASSET_ERROR_OVERLAY_SCRIPT_NAME,
@@ -422,12 +435,9 @@ class Theme:
 
     def css(self) -> str:
         stylesheets_text = self.stylesheets_text()
-        root_values = {
-            f"--{role}": color
-            for role, color in self.stylesheet_roles(stylesheets_text).items()
-        }
+        root_values: dict[str, str] = {}
         for name, value in _STYLE_VALUE_ENTRIES.items():
-            if name in self.color_roles:
+            if name in self.color_roles or name in self.light_mode_roles:
                 raise ValueError(
                     f"STYLE_VALUE_ENTRIES names --{name}, a colour role too"
                 )
@@ -450,9 +460,19 @@ class Theme:
         )
         root_values[_STYLE_DESIGN_VIEWPORT_HEIGHT_PROPERTY] = "100vh"
         root_values["--page-font-family-"] = _STYLE_PAGE_FONT_FAMILY
-        for name in re.findall(r"var\((--[\w-]+)", stylesheets_text):
-            if name not in root_values:
-                raise ValueError(f"a stylesheet reads {name}, unset in :root")
+        dark_names = {f"--{role}" for role in self.dark_mode_roles()}
+        self.reads_check(
+            self.shared_stylesheets_text(), set(root_values) | dark_names
+        )
+        self.reads_check(
+            self.asset_read(_ASSET_DARK_MODE_ENABLED_STYLESHEET_NAME),
+            set(root_values) | dark_names,
+        )
+        light_text = self.asset_read(_ASSET_LIGHT_MODE_STYLESHEET_NAME)
+        self.reads_check(
+            light_text,
+            set(root_values) | {f"--{role}" for role in self.light_mode_roles},
+        )
         lines = [":root {"]
         lines.extend(
             f"  {name}: {value};" for name, value in root_values.items()
@@ -464,20 +484,39 @@ class Theme:
             + self.asset_read(_ASSET_THEME_STYLESHEET_NAME)
         )
 
+    def dark_mode_css(self) -> str:
+        stylesheet_text = self.mode_stylesheet_read(
+            _ASSET_DARK_MODE_ENABLED_STYLESHEET_NAME,
+            _DARK_MODE_ENABLED_SELECTOR,
+        )
+        lines = [f"{_DARK_MODE_ENABLED_SELECTOR} {{"]
+        lines.extend(
+            f"  --{role}: {color};"
+            for role, color in self.dark_mode_roles().items()
+        )
+        lines.append("}")
+        return "\n".join(lines) + "\n" + stylesheet_text
+
+    # Finds the dark roles that the shared or dark mode stylesheets read.
+    def dark_mode_roles(self) -> dict[str, str]:
+        return self.stylesheet_roles(
+            self.shared_stylesheets_text()
+            + self.asset_read(_ASSET_DARK_MODE_ENABLED_STYLESHEET_NAME)
+        )
+
     def light_mode_css(self) -> str:
         stylesheet_text = self.asset_read(
-            _ASSET_DARK_MODE_DISABLED_STYLESHEET_NAME
+            _ASSET_LIGHT_MODE_STYLESHEET_NAME
         )
-        if _DARK_MODE_DISABLED_SELECTOR not in stylesheet_text:
-            raise ValueError(
-                f"{_ASSET_DARK_MODE_DISABLED_STYLESHEET_NAME} never names "
-                f"{_DARK_MODE_DISABLED_SELECTOR}"
+        lines = [":root {"]
+        lines.extend(
+            f"  --{role}: {color};"
+            for role, color in self.light_mode_roles.items()
+        )
+        for role in self.stylesheet_roles(self.shared_stylesheets_text()):
+            lines.append(
+                f"  --{role}: var(--{self.light_mode_role_of(role)});"
             )
-        lines = [f"{_DARK_MODE_DISABLED_SELECTOR} {{"]
-        for role in self.stylesheet_roles(self.stylesheets_text()):
-            target_role = self.light_mode_role_of(role)
-            if target_role != role:
-                lines.append(f"  --{role}: var(--{target_role});")
         lines.append("}")
         return "\n".join(lines) + "\n" + stylesheet_text
 
@@ -488,8 +527,8 @@ class Theme:
                 f"role {role} ends in none of bg, fg, outline or border"
             )
         if role_kind.group(1) == "bg":
-            return _DARK_MODE_DISABLED_BACKGROUND_ROLE
-        return _DARK_MODE_DISABLED_FOREGROUND_ROLE
+            return _LIGHT_MODE_BACKGROUND_ROLE
+        return _LIGHT_MODE_FOREGROUND_ROLE
 
     def document(
         self,
@@ -509,7 +548,8 @@ class Theme:
             for name in (
                 _ASSET_THEME_STYLESHEET_NAME,
                 *extra_css,
-                _ASSET_DARK_MODE_DISABLED_STYLESHEET_NAME,
+                _ASSET_LIGHT_MODE_STYLESHEET_NAME,
+                _ASSET_DARK_MODE_ENABLED_STYLESHEET_NAME,
             )
         )
         script = (
@@ -584,6 +624,17 @@ class Theme:
             0.2126 * color.red + 0.7152 * color.green + 0.0722 * color.blue
         ) / 255
 
+    def mode_stylesheet_read(self, name: str, selector: str) -> str:
+        stylesheet_text = self.asset_read(name)
+        if selector not in stylesheet_text:
+            raise ValueError(f"{name} never names {selector}")
+        return stylesheet_text
+
+    def reads_check(self, stylesheet_text: str, names: set[str]) -> None:
+        for name in re.findall(r"var\((--[\w-]+)", stylesheet_text):
+            if name not in names:
+                raise ValueError(f"a stylesheet reads {name}, never set")
+
     def rgb(self, hex_color: str) -> Theme.Rgb:
         return Theme.Rgb(
             int(hex_color[1:3], 16),
@@ -591,13 +642,15 @@ class Theme:
             int(hex_color[5:7], 16),
         )
 
-    def roles(self) -> dict[str, str]:
+    def roles(
+        self, palette_name: str, palette: dict[str, list[str]]
+    ) -> dict[str, str]:
         resolved: dict[str, str] = {}
-        for color, roles in _STYLE_COLOR_PAIR_ENTRIES.items():
+        for color, roles in palette.items():
             for role in roles:
                 if role in resolved:
                     raise ValueError(
-                        f"STYLE_COLOR_PAIR_ENTRIES lists role {role} under "
+                        f"{palette_name} lists role {role} under "
                         f"both {resolved[role]} and {color}"
                     )
                 resolved[role] = color
@@ -610,6 +663,16 @@ class Theme:
             "fgDark": self.color_roles["heat-map-heat-cell-on-bright-fg-dim-"],
         }
 
+    def shared_stylesheets_text(self) -> str:
+        return "".join(
+            self.asset_read(name)
+            for name in (
+                _ASSET_HEAT_MAP_STYLESHEET_NAME,
+                _ASSET_MENU_STYLESHEET_NAME,
+                _ASSET_THEME_STYLESHEET_NAME,
+            )
+        )
+
     def stylesheet_roles(self, stylesheets_text: str) -> dict[str, str]:
         return {
             role: color
@@ -618,14 +681,10 @@ class Theme:
         }
 
     def stylesheets_text(self) -> str:
-        return "".join(
-            self.asset_read(name)
-            for name in (
-                _ASSET_DARK_MODE_DISABLED_STYLESHEET_NAME,
-                _ASSET_HEAT_MAP_STYLESHEET_NAME,
-                _ASSET_MENU_STYLESHEET_NAME,
-                _ASSET_THEME_STYLESHEET_NAME,
-            )
+        return (
+            self.shared_stylesheets_text()
+            + self.asset_read(_ASSET_LIGHT_MODE_STYLESHEET_NAME)
+            + self.asset_read(_ASSET_DARK_MODE_ENABLED_STYLESHEET_NAME)
         )
 
     def time_units(self) -> tuple[Theme.TimeUnit, ...]:

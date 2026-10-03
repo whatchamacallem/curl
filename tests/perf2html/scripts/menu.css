@@ -2,10 +2,6 @@
  * SPDX-License-Identifier: MIT
  * This file is licensed under the terms of the LICENSE-MIT.md file. */
 
-#menu- {
-  color: var(--menu-strip-fg-);
-  background: var(--menu-strip-bg-dim-);
-}
 #menu- > .menu-button-,
 #menu- > .menu-pulldown-,
 #menu- > .menu-title- {
@@ -16,19 +12,7 @@
   flex: none;
   white-space: nowrap;
   padding: 0 var(--menu-button-padding-inline-);
-  color: var(--menu-button-fg-);
-  background: var(--menu-button-bg-);
   cursor: pointer;
-}
-.menu-strip- .menu-button-.current_ {
-  background: var(--menu-button-current-bg-);
-  color: var(--menu-button-current-fg-dim-);
-}
-.menu-strip- .menu-button-:focus-visible,
-.menu-strip- .menu-logo-:focus-visible,
-.menu-strip- .menu-title- a:focus-visible {
-  background: var(--menu-button-focus-bg-);
-  color: var(--menu-button-focus-fg-dim-);
 }
 
 .menu-strip- .menu-logo- {
@@ -55,7 +39,6 @@
       var(--design-viewport-height-)
   );
   overflow-y: auto;
-  background: var(--menu-pulldown-entry-list-bg-dim-);
 }
 .menu-strip- .menu-pulldown-entry-list- a,
 .menu-strip- .menu-pulldown-no-match-note- {
@@ -65,23 +48,9 @@
   flex: none;
   padding: 0 var(--menu-pulldown-entry-padding-inline-);
 }
-.menu-strip- .menu-pulldown-entry-list- a.current_ {
-  background: var(--menu-pulldown-entry-current-bg-);
-  color: var(--menu-pulldown-entry-current-fg-);
-}
-.menu-strip- .menu-pulldown-entry-list- a.highlighted-entry- {
-  background: var(--menu-pulldown-entry-highlighted-bg-);
-  color: var(--menu-pulldown-entry-highlighted-fg-dim-);
-}
-.menu-strip- .menu-pulldown-no-match-note- {
-  color: var(--menu-pulldown-no-match-note-fg-dim-);
-}
 .menu-strip- .menu-pulldown-search-box- {
   background: none;
   min-width: var(--menu-pulldown-search-box-min-width-);
-}
-.menu-strip- .menu-pulldown-search-box-::placeholder {
-  color: var(--menu-pulldown-search-box-placeholder-fg-dim-);
 }
 
 .menu-strip- {
@@ -89,7 +58,6 @@
   flex-wrap: nowrap;
   align-items: center;
   flex: none;
-  background: var(--heat-map-menu-strip-bg-dim-);
   overflow: hidden;
 }
 .menu-strip-:has(.menu-pulldown-) {
@@ -97,8 +65,6 @@
 }
 
 .menu-strip- .menu-title- {
-  color: var(--menu-title-fg-);
-  background: var(--menu-title-bg-dim-);
   white-space: pre;
   overflow: hidden;
   align-self: stretch;
@@ -107,7 +73,4 @@
   justify-content: safe center;
   flex: none;
   width: var(--menu-title-width-);
-}
-.menu-strip- .menu-title- a {
-  color: var(--menu-title-fg-);
 }

@@ -18,10 +18,6 @@ pre.callers-collapsed-section-log-box- {
 pre.callers-collapsed-section-log-box-:focus-visible {
   background: var(--callers-collapsed-section-log-box-focus-bg-);
 }
-pre.callers-collapsed-section-log-box-::-webkit-scrollbar-track,
-pre.callers-collapsed-section-log-box-::-webkit-scrollbar-corner {
-  background: var(--callers-collapsed-section-log-box-scrollbar-bg-dim-);
-}
 
 .callers-collapsed-section-title- {
   cursor: pointer;
@@ -55,7 +51,6 @@ pre {
 }
 select,
 input {
-  color: var(--heat-map-menu-field-fg-);
   padding: 0;
   border-radius: 0;
 }
@@ -66,8 +61,6 @@ body {
   margin: 0;
 }
 body {
-  background: var(--page-body-bg-dim-);
-  color: var(--page-body-fg-);
   font-family: var(--page-font-family-);
   font-size: calc(var(--design-font-size-px-) * var(--design-font-fit-));
   line-height: var(--page-body-line-height-);
@@ -91,11 +84,6 @@ body.frame_ > iframe {
   flex: 1;
   min-height: 0;
   width: 100%;
-  background: var(--overview-view-frame-bg-dim-);
-}
-
-.page-heading- {
-  color: var(--page-heading-fg-dim-);
 }
 
 a {
@@ -110,15 +98,8 @@ a:focus-visible {
   width: var(--page-scrollbar-thickness-);
   height: var(--page-scrollbar-thickness-);
 }
-::-webkit-scrollbar-track {
-  background: var(--page-scrollbar-track-bg-dim-);
-}
 ::-webkit-scrollbar-thumb {
-  background: var(--page-scrollbar-thumb-bg-dim-);
   border-radius: 0;
-}
-::-webkit-scrollbar-corner {
-  background: var(--page-scrollbar-corner-bg-dim-);
 }
 
 .page_ {
