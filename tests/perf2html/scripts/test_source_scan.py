@@ -36,10 +36,9 @@ class SourceScan:
     def comment_check(
         self,
         path: str,
-        lines: list[str],
         comments: list[SourceScan.CommentSpan],
+        header_end: int,
     ) -> None:
-        header_end = self.header_ends_at(lines, comments)
         for comment in comments:
             if comment.first_line < header_end:
                 continue
@@ -50,9 +49,7 @@ class SourceScan:
                         path,
                         comment.first_line,
                         f"a comment block of {length} lines, over the limit"
-                        f" of {_COMMENT_BLOCK_MAX_LINES}. Say it in"
-                        f" {_COMMENT_BLOCK_MAX_LINES} lines or move the rest"
-                        " into README.md or test_expected_behavior.md",
+                        f" of {_COMMENT_BLOCK_MAX_LINES}",
                     )
                 )
 
@@ -125,11 +122,12 @@ class SourceScan:
         text = self.file_text_of(path)
         lines = text.split("\n")
         comments = self.comments_of(text, syntax)
-        self.unicode_check(path, lines, non_ascii)
+        header_end = self.header_ends_at(lines, comments)
+        self.unicode_check(path, lines, header_end, non_ascii)
         self.tag_check(path, lines, banned_tag)
-        self.comment_check(path, lines, comments)
+        self.comment_check(path, comments, header_end)
         self.punctuation_check(
-            path, lines, comments, comment_cut, outside_punctuation
+            path, lines, comments, header_end, comment_cut, outside_punctuation
         )
 
     def file_text_of(self, path: str) -> str:
@@ -179,10 +177,13 @@ class SourceScan:
         path: str,
         lines: list[str],
         comments: list[SourceScan.CommentSpan],
+        header_end: int,
         comment_cut: re.Pattern[str],
         outside_punctuation: re.Pattern[str],
     ) -> None:
         for comment in comments:
+            if comment.first_line < header_end:
+                continue
             text = "\n".join(lines[comment.first_line - 1 : comment.last_line])
             text = comment_cut.sub(
                 lambda cut: "\n" * cut.group().count("\n"), text
@@ -217,9 +218,15 @@ class SourceScan:
                 )
 
     def unicode_check(
-        self, path: str, lines: list[str], non_ascii: re.Pattern[str]
+        self,
+        path: str,
+        lines: list[str],
+        header_end: int,
+        non_ascii: re.Pattern[str],
     ) -> None:
         for line_number, line in enumerate(lines, start=1):
+            if line_number < header_end:
+                continue
             match = non_ascii.search(line)
             if match:
                 self.faults.append(
@@ -232,7 +239,7 @@ class SourceScan:
                 )
 
 
-_COMMENT_BLOCK_MAX_LINES = 0
+_COMMENT_BLOCK_MAX_LINES = 1
 
 _COMMENT_SYNTAX_BY_EXTENSION = (
     ((".py", ".sh"), SourceScan.CommentSyntax(("#",), ())),
@@ -257,6 +264,8 @@ _SOURCE_SCAN_ALLOWED_NON_ASCII_CHARS = (
     "…",
     "█",
     "░",
+    "▒",
+    "▓",
 )
 
 _SOURCE_SCAN_BANNED_TAG_NAMES = (

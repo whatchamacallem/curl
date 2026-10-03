@@ -189,9 +189,10 @@ The single function/check owning each concern - never bypass or duplicate:
 - Naming split: `_SCREAMING_SNAKE` for a script's own global, `_lowercase` for
   locals, bare names crossing into `utility.sh`.
 - 79-column hard max for all `tests/perf2html/` source.
-- Comment blocks max 2 lines (3 is an error via `test_source_scan.py`); longer
-  reasoning goes in `declawed.md` instead.
-- ASCII plus the specific whitelisted glyphs (`≈ ∞ ▲⯈⯇▼ … █ ░`), written
+- Comment blocks max 1 line (2 is an error via `test_source_scan.py`); longer
+  reasoning goes in `declawed.md` instead. The file header is exempt from the
+  line limit, the glyph check and the `ENGLISH_PUNCT` check.
+- ASCII plus the specific whitelisted glyphs (`≈ ∞ ▲⯈⯇▼ … █ ░ ▒ ▓`), written
   literally, never as HTML entities.
 - Never say "meta" - say "header" or "manifest".
 - Timer artifacts contain `counter` data. Never "events"/"metrics"/"stats".
@@ -203,7 +204,7 @@ The single function/check owning each concern - never bypass or duplicate:
 - No decorative borders, no tooltips outside the two named exceptions.
 - Design-pixel discipline: think in design px/ch, then scale; never retune a
   length by eyeballing one screen size.
-- `scripts/` page assets may carry comments under the 2-line limit, one `#`
+- `scripts/` page assets may carry comments under the 1-line limit, one `#`
   line per class/function/field, no trailing comments.
 - One dark theme, Monaco/monospace, no restyling the heat map's palette or
   curves without proposing first.
@@ -232,6 +233,8 @@ The single function/check owning each concern - never bypass or duplicate:
   was feeling chatty. Maximize signal to noise by documenting the purpose
   of a function in a single simple clear english sentence using only commas
   and periods for punctuation. Add a second line for warnings if needed.
+- A comment never opens with the name of what it documents. Not
+  `foo: the function foo finds bar.`, just `Finds bar.`
 
 ## 1 Project Structure
 
@@ -634,8 +637,9 @@ timer-artifacts-<unix>.txz (full report only)
 - `test_source_scan.py`: file paths (`nargs="+"`), read once; a block =
   consecutive whole-line comments plus a `/* */` or `<!-- -->` opened first on
   a line, file
-  header exempt (`_COMMENT_BLOCK_MAX_LINES`); glyphs
-  `_SOURCE_SCAN_ALLOWED_NON_ASCII_CHARS` (`≈ ∞ ▲ ⯇ ⯈ ▼ … █ ░`, literal);
+  header exempt from the block limit (`_COMMENT_BLOCK_MAX_LINES`, 1), the
+  glyphs and `ENGLISH_PUNCT`; glyphs
+  `_SOURCE_SCAN_ALLOWED_NON_ASCII_CHARS` (`≈ ∞ ▲ ⯇ ⯈ ▼ … █ ░ ▒ ▓`, literal);
   `_COMMENT_SYNTAX_BY_EXTENSION` (`.html` adds `//`, `/* */`); faults
   `path:line: message` sorted. The 79-column limit is unrelated to
   `HEAT_MAP_SOURCE_VIEW_WIDTH_CHARS` (80).
