@@ -249,7 +249,7 @@ install_command_of() {
       echo "sudo apt-get install -y ${CONTAINING_PACKAGES[$1]}"
       ;;
     cc) echo "sudo apt-get install -y build-essential" ;;
-    addr2line | readelf) echo "sudo apt-get install -y binutils" ;;
+    addr2line | objdump | readelf) echo "sudo apt-get install -y binutils" ;;
     perf) echo "sudo apt-get install -y linux-perf" ;;
     speedscope) echo "npm install -g speedscope" ;;
     *) error_exit 1 "error: no install command is recorded for $1" ;;
@@ -655,7 +655,7 @@ title_print() {
 toolchain_check() {
   local tool missing=() lines=()
   for tool in cmake ninja ccache cc valgrind perf taskset python3 \
-    addr2line readelf speedscope cksum curl tar xz dpkg-query; do
+    addr2line objdump readelf speedscope cksum curl tar xz dpkg-query; do
     command -v "$tool" >/dev/null 2>&1 || missing+=("$tool")
   done
   if [ "${#missing[@]}" != 0 ]; then

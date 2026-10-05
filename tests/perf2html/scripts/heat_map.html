@@ -2,36 +2,37 @@
      SPDX-License-Identifier: MIT
      This file is licensed under the terms of the LICENSE-MIT.md file. -->
 
-<div id="heat-map-menu-" class="menu-strip-">
-  <label
-    ><span id="heat-map-menu-counter-label-"></span>
-    <select id="heat-map-menu-counter-select-"></select
-  ></label>
-  <label
-    ><span id="heat-map-menu-scale-label-"></span>
-    <select id="heat-map-menu-scale-select-"></select
-  ></label>
-  <label
-    ><span id="heat-map-menu-tree-label-"></span>
-    <select id="heat-map-menu-tree-select-">
-      <option value="heat"></option>
-      <option value="name"></option></select
-  ></label>
-  <label
-    ><span id="heat-map-menu-search-label-"></span>
-    <input id="heat-map-menu-search-box-" type="search"
-  /></label>
+<div id="heat-map-menu-" class="menu-strip-"></div>
+<div id="heat-map-layout-">
+  <table>
+    <tbody>
+      <tr>
+        <td id="heat-map-tree-pane-">
+          <div id="heat-map-tree-" role="tree"></div>
+        </td>
+        <td>
+          <div
+            id="heat-map-tree-scrollbar-"
+            class="page-text-scrollbar- vertical_"
+          ></div>
+        </td>
+        <td>
+          <section id="heat-map-main-" tabindex="0"></section>
+        </td>
+        <td id="heat-map-minimap-" class="empty_" aria-hidden="true">
+          <div id="heat-map-minimap-box-"></div>
+          <div id="heat-map-minimap-viewport-" hidden></div>
+        </td>
+        <td>
+          <div
+            id="heat-map-main-scrollbar-"
+            class="page-text-scrollbar- vertical_"
+            aria-hidden="true"
+          ></div>
+        </td>
+      </tr>
+    </tbody>
+  </table>
 </div>
-<div id="layout-">
-  <div id="heat-map-tree-" role="tree"></div>
-  <div
-    id="heat-map-tree-resize-handle-"
-    class="heat-map-tree-resize-handle-"
-  ></div>
-  <section id="heat-map-main-" tabindex="0"></section>
-  <div id="heat-map-minimap-" class="empty_" aria-hidden="true">
-    <div id="heat-map-minimap-box-"></div>
-    <div id="heat-map-minimap-viewport-" hidden></div>
-  </div>
-</div>
+<template id="heat-map-main-template-">__HEAT_MAP_MAIN__</template>
 __SCRIPTS__

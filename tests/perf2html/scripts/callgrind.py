@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 import collections, dataclasses, functools, os, posixpath, re, sys
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from typing import Literal, NamedTuple, TypeAlias, TypeVar
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -25,7 +25,7 @@ REPO_ROOT = os.path.abspath(
 
 _Key = TypeVar("_Key")
 
-_CALLGRIND_UNKNOWN_FILE_NAME = "???"
+_CALLGRIND_UNKNOWN_NAME = "???"
 
 
 @functools.cache
@@ -187,6 +187,7 @@ class Tally:
 
 
 class Callgrind:
+    ADDRESS_NAME_RE = re.compile(r"0x[0-9a-f]+")
     NAME_COMPRESSION_RE = re.compile(r"^\((\d+)\)(?: (.*))?$")
 
     class CompressedNames:
@@ -248,6 +249,41 @@ class Callgrind:
                 )
             return self.previous[self.line_index]
 
+    # Renames each function spelled as an address, through its object or None.
+    def address_names_resolve(
+        self, text: str, name_of: Callable[[str | None, str], str | None]
+    ) -> str:
+        names = Callgrind.CompressedNames()
+        lines = text.split("\n")
+        cur_ob = _CALLGRIND_UNKNOWN_NAME
+        cur_callee_ob: str | None = None
+        for index, raw_line in enumerate(lines):
+            key, _, val = raw_line.partition("=")
+            if key == "ob":
+                cur_ob = names.uncompress("ob", val)
+            elif key == "cob":
+                cur_callee_ob = names.uncompress("ob", val)
+            elif key in ("fn", "cfn"):
+                object_path = (
+                    (cur_callee_ob or cur_ob) if key == "cfn" else cur_ob
+                )
+                cur_callee_ob = None
+                match = Callgrind.NAME_COMPRESSION_RE.match(val)
+                if not match or not match.group(2):
+                    continue
+                name = match.group(2)
+                if not Callgrind.ADDRESS_NAME_RE.fullmatch(name):
+                    continue
+                resolved = name_of(
+                    None
+                    if object_path == _CALLGRIND_UNKNOWN_NAME
+                    else object_path,
+                    name,
+                )
+                if resolved is not None:
+                    lines[index] = f"{key}=({match.group(1)}) {resolved}"
+        return "\n".join(lines)
+
     def entries_fill(self, profile: Profile) -> None:
         for function, lines in profile.function_lines.items():
             home = profile.function_home.get(function)
@@ -259,12 +295,31 @@ class Callgrind:
             if line:
                 profile.function_entry[function] = SourceLine(home, line)
 
+    # Refuses a function in no object that is still named by its address.
+    def function_name_of(
+        self,
+        names: Callgrind.CompressedNames,
+        val: str,
+        object_path: str,
+        path: str,
+    ) -> str:
+        name = names.uncompress("fn", val)
+        if object_path == _CALLGRIND_UNKNOWN_NAME and (
+            Callgrind.ADDRESS_NAME_RE.fullmatch(name)
+        ):
+            sys.exit(
+                f"error: {path}: function {name} in no object is named by its"
+                " address, recorded before callgrind_symbols.py named it:"
+                " measure again without --regenerate"
+            )
+        return name
+
     def load(self, paths: Sequence[str]) -> Profile:
         return self.merge([self.load_one(path) for path in paths])
 
     def load_one(self, path: str) -> Profile:
         with open(path, encoding="utf-8", errors="replace") as handle:
-            profile = self.parse(handle.read())
+            profile = self.parse(handle.read(), path)
         if not profile.counters:
             sys.exit(
                 f"error: no 'events:' line -- not a callgrind file? ({path})"
@@ -357,7 +412,7 @@ class Callgrind:
         for file, ob in other.file_ob.items():
             merged.file_ob.setdefault(file, ob)
 
-    def parse(self, text: str) -> Profile:
+    def parse(self, text: str, path: str) -> Profile:
         profile = Profile()
         names = Callgrind.CompressedNames()
         positions = Callgrind.PositionDecoder()
@@ -442,7 +497,9 @@ class Callgrind:
                 if key in ("fl", "fi", "fe"):
                     cur_file = file_key_of(names.uncompress("fl", val), cur_ob)
                 elif key == "fn":
-                    cur_function = names.uncompress("fn", val)
+                    cur_function = self.function_name_of(
+                        names, val, cur_ob, path
+                    )
                     profile.function_home.setdefault(cur_function, cur_file)
                     cur_callee_file = None
                 elif key == "ob":
@@ -454,7 +511,9 @@ class Callgrind:
                         names.uncompress("fl", val), cur_callee_ob or cur_ob
                     )
                 elif key == "cfn":
-                    cur_callee_function = names.uncompress("fn", val)
+                    cur_callee_function = self.function_name_of(
+                        names, val, cur_callee_ob or cur_ob, path
+                    )
                 elif key in ("jfi", "jfn"):
                     names.uncompress("fl" if key == "jfi" else "fn", val)
                 elif key == "calls":
@@ -491,6 +550,12 @@ class Callgrind:
 
 
 _profile_parser = Callgrind()
+
+
+def address_names_resolve(
+    text: str, name_of: Callable[[str | None, str], str | None]
+) -> str:
+    return _profile_parser.address_names_resolve(text, name_of)
 
 
 def baseline_line_key(display: str, line: int | str) -> str:
@@ -568,13 +633,13 @@ def display_path_of(path: str, object_path: str) -> str:
 
 
 def file_key_of(path: str, object_path: str) -> str:
-    if path != _CALLGRIND_UNKNOWN_FILE_NAME:
+    if path != _CALLGRIND_UNKNOWN_NAME:
         return path
     return f"{os.path.basename(object_path)}/{path}"
 
 
 def path_norm(path: str) -> PathInfo:
-    if posixpath.basename(path) == _CALLGRIND_UNKNOWN_FILE_NAME:
+    if posixpath.basename(path) == _CALLGRIND_UNKNOWN_NAME:
         return PathInfo("(unknown)", None, "external")
     root = REPO_ROOT + "/"
     if os.path.isabs(path):

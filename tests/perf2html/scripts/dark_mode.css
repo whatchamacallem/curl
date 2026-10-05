@@ -3,15 +3,11 @@
  * This file is licensed under the terms of the LICENSE-MIT.md file. */
 
 :root:not([data-dark-mode-="disabled"]) {
-  select,
-  input {
-    color: var(--heat-map-menu-field-fg-);
-  }
   body {
     background: var(--dark-mode-page-normal-bg-);
     color: var(--dark-mode-page-normal-fg-);
   }
-  body.frame_ > iframe {
+  #overview-view-frame- {
     background: var(--overview-view-frame-bg-dim-);
   }
   .page-heading- {
@@ -19,10 +15,7 @@
     color: var(--page-heading-fg-dim-);
   }
 
-  button,
-  input,
-  select,
-  .menu-button- {
+  .menu-button-:not([data-entry-name-="logo"], [data-entry-name-="title"]) {
     border: 0;
   }
 
@@ -38,55 +31,38 @@
   .columns_:not(.heat-map-source-table-) td {
     padding-inline: var(--page-table-cell-padding-inline-);
   }
+  table.columns_ col:nth-child(odd) {
+    background: var(--dark-mode-table-panel-odd-bg-);
+  }
+  table.columns_ col:nth-child(even) {
+    background: var(--dark-mode-table-panel-even-bg-);
+  }
 
-  #menu- {
-    color: var(--dark-mode-menu-normal-fg-);
-    background: var(--dark-mode-menu-normal-bg-);
-  }
-  .menu-strip- .menu-button- {
-    color: var(--menu-button-fg-);
-    background: var(--menu-button-bg-);
-  }
-  .menu-strip- .menu-button-.current_ {
-    background: var(--menu-button-current-bg-);
-    color: var(--menu-button-current-fg-dim-);
-  }
-  .menu-strip- .menu-button-:focus-visible,
-  .menu-strip- .menu-logo-:focus-visible,
-  .menu-strip- .menu-title- a:focus-visible {
-    background: var(--dark-mode-menu-focus-bg-);
-    color: var(--dark-mode-menu-focus-fg-);
-  }
-  .menu-strip- .menu-pulldown-entry-list- {
-    background: var(--menu-pulldown-entry-list-bg-dim-);
-  }
-  .menu-strip- .menu-pulldown-entry-list- a {
-    color: var(--page-link-fg-);
-  }
-  .menu-strip- .menu-pulldown-entry-list- a.current_ {
-    background: var(--menu-pulldown-entry-current-bg-);
-    color: var(--menu-pulldown-entry-current-fg-);
-  }
-  .menu-strip- .menu-pulldown-entry-list- a.highlighted-entry- {
-    background: var(--menu-pulldown-entry-highlighted-bg-);
-    color: var(--menu-pulldown-entry-highlighted-fg-dim-);
-  }
-  .menu-strip- .menu-pulldown-no-match-note- {
-    color: var(--menu-pulldown-no-match-note-fg-dim-);
-  }
-  .menu-strip- .menu-pulldown-search-box-::placeholder {
-    color: var(--menu-pulldown-search-box-placeholder-fg-dim-);
-  }
-  .menu-strip- {
-    background: var(--heat-map-menu-strip-bg-dim-);
+  .menu-strip-,
+  .page-heading-:has(> .menu-strip-table-) {
+    background: var(--dark-mode-page-normal-bg-);
+    color: var(--dark-mode-page-normal-fg-);
     padding-top: 0;
   }
-  .menu-strip- .menu-title- {
-    color: var(--dark-mode-status-bar-fg-);
-    background: var(--dark-mode-status-bar-bg-);
+  .menu-button-,
+  .menu-pulldown-entry-box- {
+    background: var(--dark-mode-menu-normal-bg-);
+    color: var(--dark-mode-menu-normal-fg-);
   }
-  .menu-strip- .menu-title- a {
+  [data-entry-name-="logo"] {
+    background: var(--dark-mode-page-normal-bg-);
+    color: var(--dark-mode-page-normal-fg-);
+  }
+  .menu-status-bar- {
+    background: var(--dark-mode-status-bar-bg-);
     color: var(--dark-mode-status-bar-fg-);
+  }
+  .menu-button-:focus-visible,
+  .menu-button-.flash_,
+  .menu-button-.open_,
+  .menu-pulldown-entry-list- > .highlighted-entry- {
+    background: var(--dark-mode-menu-focus-bg-);
+    color: var(--dark-mode-menu-focus-fg-);
   }
 
   #heat-map-main- {
@@ -95,49 +71,37 @@
   #heat-map-main-:focus-visible {
     background: var(--heat-map-main-focus-bg-);
   }
-  #heat-map-menu- select,
-  #heat-map-menu- input {
-    background: var(--heat-map-menu-field-bg-dim-);
+  #heat-map-minimap-viewport- {
+    border: var(--page-line-width-) solid var(--dark-mode-menu-normal-fg-);
   }
-  #heat-map-menu- select:focus-visible,
-  #heat-map-menu- input:focus-visible {
-    background: var(--heat-map-menu-field-focus-bg-);
-    color: var(--heat-map-menu-field-fg-);
-  }
-  #heat-map-menu- label {
-    color: var(--heat-map-menu-label-fg-dim-);
-  }
-  #heat-map-menu- input::placeholder {
-    color: var(--heat-map-menu-search-box-placeholder-fg-dim-);
-  }
-  .heat-map-source-file-header- {
+  .heat-map-source-information-line- {
     background: var(--dark-mode-page-highlight-bg-);
     color: inherit;
   }
-  .heat-map-source-file-header- .heat-map-source-file-header-statistic- {
-    color: var(--heat-map-source-file-header-statistic-fg-dim-);
+  .heat-map-source-information-line- a:not(:focus-visible) {
+    background: none;
+    color: var(--page-link-fg-);
   }
-  .heat-map-source-file-header-statistic-share- {
-    color: var(--dark-mode-page-highlight-fg-);
+  .heat-map-source-information-line-
+    .heat-map-source-information-box-control-:not(:focus-visible) {
+    background: none;
+    color: var(--heat-map-source-information-box-control-fg-);
+  }
+  tr.heat-map-source-information-box-synthetic-row- > td {
+    background: var(--dark-mode-status-bar-bg-);
+    color: var(--dark-mode-status-bar-fg-);
+  }
+  .heat-map-tree-node-.selected_ .heat-map-tree-node-name- {
+    outline: none;
   }
 
-  &::-webkit-scrollbar-track,
-  ::-webkit-scrollbar-track,
-  &::-webkit-scrollbar-track:disabled,
-  ::-webkit-scrollbar-track:disabled {
-    background: var(--page-scrollbar-track-bg-dim-);
+  .page-text-scrollbar- {
+    background: var(--dark-mode-menu-normal-bg-);
+    color: var(--dark-mode-menu-normal-fg-);
   }
-  &::-webkit-scrollbar-thumb,
-  ::-webkit-scrollbar-thumb {
-    background: var(--page-scrollbar-thumb-bg-dim-);
-  }
-  &::-webkit-scrollbar-corner,
-  ::-webkit-scrollbar-corner {
-    background: var(--page-scrollbar-corner-bg-dim-);
-  }
-  pre.callers-collapsed-section-log-box-::-webkit-scrollbar-track,
-  pre.callers-collapsed-section-log-box-::-webkit-scrollbar-track:disabled,
-  pre.callers-collapsed-section-log-box-::-webkit-scrollbar-corner {
-    background: var(--callers-collapsed-section-log-box-scrollbar-bg-dim-);
+  #heat-map-tree-scrollbar-:focus-visible,
+  .page-text-scrollbar-.drag_ {
+    background: var(--dark-mode-menu-focus-bg-);
+    color: var(--dark-mode-menu-focus-fg-);
   }
 }

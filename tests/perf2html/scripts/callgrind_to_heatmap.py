@@ -18,6 +18,7 @@ _ASSET_MENU_STYLESHEET_NAME: str = ""
 _ASSET_PULLDOWN_TEXT_SCRIPT_NAME: str = ""
 _ASSET_REPORT_COMPLETE_SCRIPT_NAME: str = ""
 _ASSET_SETTINGS_SCRIPT_NAME: str = ""
+_ASSET_TEMPLATE_HEAT_MAP_MAIN_NAME: str = ""
 _ASSET_TEMPLATE_HEAT_MAP_PAGE_NAME: str = ""
 _ASSET_THEME_SCRIPT_NAME: str = ""
 _HEAT_MAP_MODEL_DIR_NAME: str = ""
@@ -31,6 +32,8 @@ _REPORT_SOURCES_DIR_NAME: str = ""
 settings.load_into(__name__)
 
 BODY = theme.asset_text_read(_ASSET_TEMPLATE_HEAT_MAP_PAGE_NAME)
+
+_HEAT_MAP_MAIN = theme.asset_text_read(_ASSET_TEMPLATE_HEAT_MAP_MAIN_NAME)
 
 _HEAT_MAP_PAGE_PATH = _HEAT_MAP_VIEW_ENTRY[2]
 _HEAT_MAP_PAGE_DEPTH = _HEAT_MAP_PAGE_PATH.count("/")
@@ -418,7 +421,9 @@ class CallgrindToHeatmap:
         )
         return theme.page_document(
             _HEAT_MAP_VIEW_ENTRY[1],
-            BODY.replace("__SCRIPTS__", scripts),
+            BODY.replace("__HEAT_MAP_MAIN__", _HEAT_MAP_MAIN).replace(
+                "__SCRIPTS__", scripts
+            ),
             depth=_HEAT_MAP_PAGE_DEPTH,
             extra_css=(
                 _ASSET_MENU_STYLESHEET_NAME,

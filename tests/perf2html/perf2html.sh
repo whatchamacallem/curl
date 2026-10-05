@@ -347,10 +347,14 @@ run_one() {
   _line="$(printf '%-13sloops=%s' "$_test" "$_loops")"
   _start="$(clock_microseconds)"
   command_run taskset -c "$PROFILE_PINNED_CPU" valgrind --tool=callgrind \
-    --cache-sim=yes --branch-sim=yes \
+    --cache-sim=yes --branch-sim=yes --trace-redir=yes \
     --callgrind-out-file="$_cg_file" --log-file="$_log" \
     "$_BIN" "$_test" "$_loops"
   _line="$_line | $(duration_format "$_start")"
+
+  heading_print "python3 callgrind_symbols.py $_test"
+  command_run python3 "$PERF2HTML_DIR_/scripts/callgrind_symbols.py" \
+    --valgrind-log "$_log" --callgrind-file "$_cg_file"
 
   heading_print "perf stat -e cycles:u,instructions:u perf $_test" \
     "$TIMING_LOOPS"

@@ -10,16 +10,13 @@ from collections.abc import Sequence
 from typing import NamedTuple, TextIO, TypedDict
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import callgrind, settings
-
-_RANKING_COUNTER_NAME: str = ""
-settings.load_into(__name__)
+import callgrind
 
 
 class CallerDelta(NamedTuple):
     function: str
     count_: int
-    cost: int
+    baseline_count: int
 
 
 class CallersDoc(TypedDict):
@@ -105,9 +102,7 @@ class CallgrindDiff:
             " changed in any recorded counter",
             file=sys.stderr,
         )
-        callers = self.callers_subtract(
-            baseline, modified, _RANKING_COUNTER_NAME
-        )
+        callers = self.callers_subtract(baseline, modified)
         self.callers_write(callers, args.callers_output, baseline)
         print(
             f"wrote {args.callers_output} "
@@ -117,42 +112,33 @@ class CallgrindDiff:
         )
 
     def caller_tallies(
-        self, profile: callgrind.Profile, callee: str, counter: str
-    ) -> dict[str, tuple[int, int]]:
-        out: dict[str, tuple[int, int]] = {}
+        self, profile: callgrind.Profile, callee: str
+    ) -> dict[str, int]:
+        out: dict[str, int] = {}
         for caller, tally in profile.callers.get(callee, {}).items():
-            count, cost = out.get(caller.function, (0, 0))
-            out[caller.function] = (
-                count + tally.count,
-                cost + profile.value(tally.costs, counter),
-            )
+            out[caller.function] = out.get(caller.function, 0) + tally.count
         return out
 
     def callers_subtract(
         self,
         baseline: callgrind.Profile,
         modified: callgrind.Profile,
-        counter: str,
     ) -> dict[str, list[CallerDelta]]:
         out: dict[str, list[CallerDelta]] = {}
         for callee in sorted(set(baseline.callers) | set(modified.callers)):
-            before = self.caller_tallies(baseline, callee, counter)
-            after = self.caller_tallies(modified, callee, counter)
+            before = self.caller_tallies(baseline, callee)
+            after = self.caller_tallies(modified, callee)
             deltas: list[CallerDelta] = []
             for caller_name in sorted(set(before) | set(after)):
-                before_count, before_cost = before.get(caller_name, (0, 0))
-                after_count, after_cost = after.get(caller_name, (0, 0))
-                count = after_count - before_count
-                cost = after_cost - before_cost
-                if count or cost:
-                    deltas.append(CallerDelta(caller_name, count, cost))
+                before_count = before.get(caller_name, 0)
+                count = after.get(caller_name, 0) - before_count
+                if count:
+                    deltas.append(
+                        CallerDelta(caller_name, count, before_count)
+                    )
             if deltas:
                 deltas.sort(
-                    key=lambda delta: (
-                        -abs(delta.cost),
-                        -abs(delta.count_),
-                        delta.function,
-                    )
+                    key=lambda delta: (-abs(delta.count_), delta.function)
                 )
                 out[callee] = deltas
         return out

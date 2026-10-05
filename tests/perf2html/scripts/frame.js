@@ -9,14 +9,10 @@ window.catch_show_throw_(function () {
   const DARK_MODE_QUERY_VALUES = settings_("DARK_MODE_QUERY_VALUES");
   const FLAME_GRAPH_VIEW_ENTRY = settings_("FLAME_GRAPH_VIEW_ENTRY");
 
-  const has_flame_graph = !!document.getElementById(
-    `menu-${FLAME_GRAPH_VIEW_ENTRY[0]}-button-`,
-  );
   const home_panel = window.report_ui_.home_panel;
-  const test_names = Array.from(
-    document.querySelectorAll("#menu-test-pulldown- a[data-test-name-]"),
-    (entry_link) => entry_link.getAttribute("data-test-name-"),
-  );
+  const menu_strip = document.getElementById("menu-");
+  const has_flame_graph = menu_strip.getAttribute("data-flame-graph-") === "1";
+  const test_names = JSON.parse(menu_strip.getAttribute("data-test-names-"));
   const view_frame = window.report_ui_.view_frame;
 
   let current_address = null;
@@ -74,8 +70,12 @@ window.catch_show_throw_(function () {
     if (home_had_focus) view_frame.focus();
   }
   function address_request(requested_hash) {
-    if (requested_hash === (location.hash || "#")) view_show();
-    else location.hash = requested_hash;
+    if (requested_hash !== (location.hash || "#")) {
+      location.hash = requested_hash;
+      return;
+    }
+    view_show();
+    if (current_address.view !== null) view_post("report_ui:recenter");
   }
   function view_post(message_text) {
     if (message_text === "report_ui:layout_reset")
@@ -115,7 +115,6 @@ window.catch_show_throw_(function () {
           query_value,
         ]),
       );
-    window.report_menu_.dark_mode_show_();
   }
 
   function activate() {
@@ -132,6 +131,8 @@ window.catch_show_throw_(function () {
     activate,
     address_now,
     address_request,
+    has_flame_graph,
+    test_names,
     view_post,
   };
 })();

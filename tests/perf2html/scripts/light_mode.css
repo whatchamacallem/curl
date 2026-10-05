@@ -2,15 +2,11 @@
  * SPDX-License-Identifier: MIT
  * This file is licensed under the terms of the LICENSE-MIT.md file. */
 
-select,
-input {
-  color: var(--light-mode-menu-normal-fg-);
-}
 body {
   background: var(--light-mode-page-normal-bg-);
   color: var(--light-mode-page-normal-fg-);
 }
-body.frame_ > iframe {
+#overview-view-frame- {
   background: var(--light-mode-page-normal-bg-);
 }
 .page-heading- {
@@ -18,83 +14,55 @@ body.frame_ > iframe {
   color: var(--light-mode-page-highlight-fg-);
 }
 
-button,
-input,
-select,
-.menu-button- {
-  border: var(--light-mode-page-border-width-) solid
-    var(--light-mode-menu-normal-fg-);
+.menu-button-:not([data-entry-name-="logo"], [data-entry-name-="title"]) {
+  border: var(--page-line-width-) solid var(--light-mode-menu-normal-fg-);
 }
 
 .columns_:not(.heat-map-source-table-) {
   border-collapse: collapse;
+  border: var(--page-line-width-) solid var(--light-mode-page-normal-fg-);
 }
-.columns_:not(.heat-map-source-table-),
 .columns_:not(.heat-map-source-table-) th,
 .columns_:not(.heat-map-source-table-) td {
-  border: var(--light-mode-page-border-width-) solid
+  border-inline: var(--page-line-width-) solid
     var(--light-mode-page-normal-fg-);
-}
-.columns_:not(.heat-map-source-table-) th,
-.columns_:not(.heat-map-source-table-) td {
   padding-inline: calc(
     var(--page-table-cell-padding-inline-) -
-      max(
-        var(--light-mode-page-border-width-),
-        var(--design-device-pixel-widest-px-)
-      ) /
-      2
+      max(var(--page-line-width-), var(--design-device-pixel-widest-px-)) / 2
   );
 }
+table.columns_ col:nth-child(odd) {
+  background: var(--light-mode-table-panel-odd-bg-);
+}
+table.columns_ col:nth-child(even) {
+  background: var(--light-mode-table-panel-even-bg-);
+}
 
-#menu- {
-  color: var(--light-mode-menu-normal-fg-);
+.menu-strip-,
+.page-heading-:has(> .menu-strip-table-) {
+  background: var(--light-mode-page-normal-bg-);
+  color: var(--light-mode-page-normal-fg-);
+  padding-top: calc(var(--page-line-width-) / 2);
+}
+.menu-button-,
+.menu-pulldown-entry-box- {
   background: var(--light-mode-menu-normal-bg-);
-}
-.menu-strip- .menu-button- {
-  color: var(--light-mode-menu-normal-fg-);
-  background: var(--light-mode-menu-normal-bg-);
-}
-.menu-strip- .menu-button-.current_ {
-  background: var(--light-mode-menu-focus-bg-);
-  color: var(--light-mode-menu-focus-fg-);
-}
-.menu-strip- .menu-button-:focus-visible,
-.menu-strip- .menu-logo-:focus-visible,
-.menu-strip- .menu-title- a:focus-visible {
-  background: var(--light-mode-menu-focus-bg-);
-  color: var(--light-mode-menu-focus-fg-);
-}
-.menu-strip- .menu-pulldown-entry-list- {
-  background: var(--light-mode-menu-normal-bg-);
-}
-.menu-strip- .menu-pulldown-entry-list- a {
   color: var(--light-mode-menu-normal-fg-);
 }
-.menu-strip- .menu-pulldown-entry-list- a.current_ {
-  background: var(--light-mode-menu-focus-bg-);
-  color: var(--light-mode-menu-focus-fg-);
+[data-entry-name-="logo"] {
+  background: var(--light-mode-page-normal-bg-);
+  color: var(--light-mode-page-normal-fg-);
 }
-.menu-strip- .menu-pulldown-entry-list- a.highlighted-entry- {
-  background: var(--light-mode-menu-focus-bg-);
-  color: var(--light-mode-menu-focus-fg-);
-}
-.menu-strip- .menu-pulldown-no-match-note- {
-  color: var(--light-mode-menu-normal-fg-);
-}
-.menu-strip- .menu-pulldown-search-box-::placeholder {
-  color: var(--light-mode-menu-normal-fg-);
-}
-.menu-strip- {
-  background: var(--light-mode-menu-normal-bg-);
-  padding-top: calc(var(--light-mode-page-border-width-) / 2);
-}
-.menu-strip- .menu-title- {
-  color: var(--light-mode-status-bar-fg-);
+.menu-status-bar- {
   background: var(--light-mode-status-bar-bg-);
-}
-.menu-strip- .menu-title- a {
   color: var(--light-mode-status-bar-fg-);
+}
+.menu-button-:focus-visible,
+.menu-button-.flash_,
+.menu-button-.open_,
+.menu-pulldown-entry-list- > .highlighted-entry- {
+  background: var(--light-mode-menu-focus-bg-);
+  color: var(--light-mode-menu-focus-fg-);
 }
 
 #heat-map-main- {
@@ -103,42 +71,28 @@ select,
 #heat-map-main-:focus-visible {
   background: var(--light-mode-page-normal-bg-);
 }
-#heat-map-menu- select,
-#heat-map-menu- input {
-  background: var(--light-mode-menu-normal-bg-);
+#heat-map-minimap-viewport- {
+  border: var(--page-line-width-) solid var(--light-mode-menu-normal-fg-);
 }
-#heat-map-menu- select:focus-visible,
-#heat-map-menu- input:focus-visible {
-  background: var(--light-mode-menu-focus-bg-);
-  color: var(--light-mode-menu-focus-fg-);
-}
-#heat-map-menu- label {
-  color: var(--light-mode-menu-normal-fg-);
-}
-#heat-map-menu- input::placeholder {
-  color: var(--light-mode-menu-normal-fg-);
-}
-.heat-map-source-file-header- {
+.heat-map-source-information-line-,
+.heat-map-source-information-line- :not(:focus-visible) {
   background: var(--light-mode-page-highlight-bg-);
   color: var(--light-mode-page-highlight-fg-);
 }
-.heat-map-source-file-header- .heat-map-source-file-header-statistic- {
-  color: var(--light-mode-page-highlight-fg-);
+tr.heat-map-source-information-box-synthetic-row- > td {
+  background: var(--light-mode-status-bar-bg-);
+  color: var(--light-mode-status-bar-fg-);
 }
-.heat-map-source-file-header-statistic-share- {
-  color: var(--light-mode-page-highlight-fg-);
+.heat-map-tree-node-.selected_ .heat-map-tree-node-name- {
+  outline: var(--page-line-width-) solid var(--light-mode-page-normal-fg-);
 }
 
-::-webkit-scrollbar-track,
-::-webkit-scrollbar-corner,
-pre.callers-collapsed-section-log-box-::-webkit-scrollbar-track,
-pre.callers-collapsed-section-log-box-::-webkit-scrollbar-corner {
-  background: var(--light-mode-page-fg-);
+.page-text-scrollbar- {
+  background: var(--light-mode-menu-normal-bg-);
+  color: var(--light-mode-menu-normal-fg-);
 }
-::-webkit-scrollbar-thumb {
-  background: var(--light-mode-page-bg-);
-}
-::-webkit-scrollbar-track:disabled,
-pre.callers-collapsed-section-log-box-::-webkit-scrollbar-track:disabled {
-  background: var(--light-mode-page-bg-);
+#heat-map-tree-scrollbar-:focus-visible,
+.page-text-scrollbar-.drag_ {
+  background: var(--light-mode-menu-focus-bg-);
+  color: var(--light-mode-menu-focus-fg-);
 }

@@ -4,35 +4,56 @@
 
 .heat-map-home-,
 .heat-map-source-,
-.heat-map-source-line-detail- {
+.heat-map-source-information-box- {
   container-type: inline-size;
 }
+.heat-map-home-,
+.heat-map-source- {
+  overflow-x: clip;
+}
+.heat-map-home- {
+  padding: var(--heat-map-overview-home-border-block-)
+    var(--heat-map-overview-home-border-inline-);
+}
 
-#heat-map-main- {
+#heat-map-layout- {
   flex: 1;
-  min-width: 0;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  min-height: 0;
+  overflow: clip;
+}
+#heat-map-layout- > table {
+  table-layout: fixed;
+  border-collapse: collapse;
+  width: 100%;
+  height: 100%;
+}
+#heat-map-layout- > table > tbody > tr > td {
+  position: relative;
+  padding: 0;
+}
+#heat-map-layout- > table > tbody > tr > td:has(> .page-text-scrollbar-) {
+  width: var(--page-text-scrollbar-vertical-width-);
+}
+
+#heat-map-main-,
+#heat-map-main-scrollbar-,
+#heat-map-tree-,
+#heat-map-tree-scrollbar- {
+  position: absolute;
+  inset: 0;
+}
+#heat-map-main- {
   overflow-x: hidden;
   overflow-y: auto;
-  scrollbar-gutter: stable;
 }
 
 #heat-map-menu- {
-  gap: 0 var(--heat-map-menu-column-gap-);
-}
-#heat-map-menu- label {
-  white-space: nowrap;
-}
-#heat-map-menu- input {
-  width: var(--heat-map-menu-search-box-width-);
+  padding-bottom: var(--heat-map-menu-padding-bottom-);
 }
 
 #heat-map-minimap- {
   width: var(--heat-map-minimap-width-);
   overflow: hidden;
-  position: sticky;
-  top: 0;
   background: var(--heat-map-minimap-bg-dim-);
   cursor: pointer;
 }
@@ -64,50 +85,51 @@
   cursor: grabbing;
 }
 
-.heat-map-source- {
-  overflow-x: clip;
-}
-
-.heat-map-source-file-header- {
-  display: flex;
-  gap: 0 var(--heat-map-source-file-header-column-gap-);
-  align-items: baseline;
-  flex-wrap: wrap;
-}
-.heat-map-source-file-header-statistic-share- {
-  white-space: pre;
-}
-
-.heat-map-source-line-detail- {
+.heat-map-source-information-box- {
   position: relative;
-  background: var(--heat-map-source-line-detail-bg-dim-);
+  background: var(--heat-map-source-information-box-bg-dim-);
 }
-.heat-map-source-line-detail-action-bar- a {
-  color: var(--heat-map-source-line-detail-action-bar-link-fg-);
+.heat-map-source-information-box-action-bar-separator- {
+  color: var(--heat-map-source-information-box-action-bar-separator-fg-dim-);
 }
-.heat-map-source-line-detail-action-bar-separator- {
-  color: var(--heat-map-source-line-detail-action-bar-separator-fg-dim-);
+.heat-map-source-information-box-control- {
+  color: var(--heat-map-source-information-box-control-fg-);
+  cursor: pointer;
 }
-.heat-map-source-line-detail-close-symbol- {
+.heat-map-source-information-box-close-symbol- {
   position: absolute;
   top: 0;
   right: 0;
-  color: var(--heat-map-source-line-detail-close-symbol-fg-dim-);
+  color: var(--heat-map-source-information-box-close-symbol-fg-dim-);
 }
-.heat-map-source-line-detail-function-name- {
-  color: var(--heat-map-source-line-detail-function-name-fg-);
+.heat-map-source-information-box-control-:focus-visible {
+  background: var(--heat-map-source-information-box-control-focus-bg-);
+  color: var(--heat-map-source-information-box-control-focus-fg-);
 }
-.heat-map-source-line-detail-heading- {
-  color: var(--heat-map-source-line-detail-heading-fg-dim-);
+.heat-map-source-information-box-function-name- {
+  color: var(--heat-map-source-information-box-function-name-fg-);
+}
+.heat-map-source-information-box-heading- {
+  color: var(--heat-map-source-information-box-heading-fg-dim-);
   white-space: pre;
+}
+.heat-map-source-information-box-note- {
+  color: var(--heat-map-source-information-box-note-fg-dim-);
+}
+.heat-map-source-information-box- .table-box- {
+  background: var(--heat-map-source-information-box-table-bg-dim-);
 }
 table.heat-map-source-table- tr.heat-map-source-line-detail-row- > td {
   white-space: normal;
   overflow: visible;
   padding: 0;
 }
-.heat-map-source-line-detail- .table-box- {
-  background: var(--heat-map-source-line-detail-table-bg-dim-);
+
+.heat-map-source-information-line- {
+  white-space: pre;
+}
+.heat-map-source-information-line-.empty_ {
+  visibility: hidden;
 }
 
 table.heat-map-source-table- td.heat-map-source-table-code-cell- {
@@ -130,6 +152,8 @@ table.heat-map-source-table- td.heat-map-source-table-line-number-cell- {
 tr.has-callee- td.heat-map-source-table-line-number-cell-::before {
   content: var(--heat-map-source-table-line-number-cell-callee-marker-text-);
   color: var(--heat-map-source-table-line-number-cell-callee-marker-fg-);
+  display: inline-block;
+  width: var(--heat-map-source-table-line-number-cell-callee-marker-width-);
 }
 table.heat-map-source-table- tr.clickable_ {
   cursor: pointer;
@@ -137,10 +161,6 @@ table.heat-map-source-table- tr.clickable_ {
 table.heat-map-source-table- > tbody > tr:focus-visible > td {
   background: var(--heat-map-source-table-row-focus-bg-) !important;
   color: var(--heat-map-source-table-row-focus-fg-) !important;
-}
-
-.heat-map-source-tail- {
-  height: calc(0.5 * var(--design-viewport-height-));
 }
 
 .heat-map-source-ticker-tape- {
@@ -172,9 +192,7 @@ table.heat-map-source-table- > tbody > tr:focus-visible > td {
 }
 
 #heat-map-tree- {
-  width: var(--heat-map-tree-width-);
-  flex: none;
-  overflow-x: auto;
+  overflow-x: hidden;
   overflow-y: scroll;
 }
 
@@ -185,6 +203,7 @@ table.heat-map-source-table- > tbody > tr:focus-visible > td {
   padding-right: var(--heat-map-tree-node-padding-right-);
   cursor: pointer;
   white-space: nowrap;
+  overflow-x: clip;
 }
 .heat-map-tree-node-.selected_ {
   background: var(--heat-map-tree-node-selected-bg-);
@@ -236,24 +255,8 @@ table.heat-map-source-table- > tbody > tr:focus-visible > td {
   display: block;
 }
 
-.heat-map-tree-resize-handle- {
-  position: relative;
-  z-index: var(--heat-map-tree-resize-handle-z-index-);
-  flex: none;
-  width: var(--heat-map-tree-resize-handle-width-);
-  margin-left: var(--heat-map-tree-resize-handle-margin-left-);
-  margin-right: var(--heat-map-tree-resize-handle-margin-right-);
-  cursor: col-resize;
-  touch-action: none;
-}
-.heat-map-tree-resize-handle-:focus-visible {
-  background: var(--heat-map-tree-resize-handle-focus-bg-);
-}
-
-#layout- {
-  display: flex;
-  flex: 1;
-  min-height: 0;
+#heat-map-tree-pane- {
+  width: var(--heat-map-tree-width-);
 }
 
 body {

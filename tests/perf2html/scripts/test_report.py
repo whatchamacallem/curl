@@ -23,7 +23,6 @@ _FLAME_GRAPH_VIEW_ENTRY: tuple[str, str, str] = ("", "", "")
 _HEAT_MAP_MODEL_DIR_NAME: str = ""
 _HEAT_MAP_MODEL_GLOBAL_NAME: str = ""
 _HEAT_MAP_VIEW_ENTRY: tuple[str, str, str] = ("", "", "")
-_MENU_BUTTON_ORDER: tuple[str, ...] = ()
 _REPORT_MANIFEST_CHECKSUM_LABEL: str = ""
 _REPORT_MANIFEST_VERSION_DIFF: str = ""
 _REPORT_MANIFEST_VERSION_FULL: str = ""
@@ -58,6 +57,32 @@ class TestReport:
             html.unescape(href)
             for href in re.findall(r'<a\s[^>]*href="([^"]*)"', page_text)
         ]
+
+    def callers_columns_check(self, path: str, page_text: str) -> None:
+        table_head = re.search(
+            rf'data-key-="{re.escape(_TEST_CALLERS_TABLE_KEY)}"><colgroup>'
+            r".*?</colgroup><thead>(.*?)</thead>",
+            page_text,
+            re.S,
+        )
+        if table_head is None:
+            self.fail(
+                f"index.html has no {_TEST_CALLERS_TABLE_KEY} table with"
+                f" column titles: {path}"
+            )
+            return
+        found_titles = tuple(
+            html.unescape(title)
+            for title in re.findall(
+                r"<th[^>]*>([^<]*)</th>", table_head.group(1)
+            )
+        )
+        if found_titles != _TEST_CALLERS_COLUMN_TITLES:
+            self.fail(
+                f"index.html's {_TEST_CALLERS_TABLE_KEY} table has the"
+                f" columns {found_titles}, expected"
+                f" {_TEST_CALLERS_COLUMN_TITLES}: {path}"
+            )
 
     def checksum_compute(self, out_dir: str) -> str:
         try:
@@ -311,6 +336,7 @@ class TestReport:
                 "index.html has no 'top N functions' section matching "
                 f"{layout.heading!r}: {path}"
             )
+        self.callers_columns_check(path, page_text)
         if '<nav id="menu-"' in page_text:
             self.fail(f"index.html draws the overview's menu: {path}")
         page_hrefs = self.anchor_hrefs(page_text)
@@ -414,18 +440,34 @@ class TestReport:
         return handle.read().decode("utf-8")
 
     def menu_check(
-        self, path: str, page_text: str, layout: TestReport.ReportLayout
+        self,
+        path: str,
+        page_text: str,
+        tests: Sequence[str],
+        layout: TestReport.ReportLayout,
     ) -> None:
-        found_names = re.findall(r'id="menu-([\w-]+)-button-"', page_text)
-        wanted_names = [
-            name
-            for name in _MENU_BUTTON_ORDER
-            if layout.has_flame_graph or name != _FLAME_GRAPH_VIEW_KEY
-        ]
-        if found_names != wanted_names:
+        match = re.search(
+            r'<nav id="menu-" class="menu-strip-"([^>]*)></nav>', page_text
+        )
+        if not match:
+            self.fail(f"overview index.html has no empty menu strip: {path}")
+            return
+        found = {
+            name: html.unescape(value)
+            for name, value in re.findall(
+                r'\s(data-[\w-]+)="([^"]*)"', match.group(1)
+            )
+        }
+        wanted = {
+            "data-flame-graph-": "1" if layout.has_flame_graph else "0",
+            "data-help-href-": "README.md",
+            "data-logo-href-": "index.html",
+            "data-test-names-": json.dumps(list(tests), ensure_ascii=False),
+        }
+        if found != wanted:
             self.fail(
-                f"overview index.html menu buttons are {found_names},"
-                f" expected {wanted_names}: {path}"
+                f"overview index.html menu strip attributes are {found},"
+                f" expected {wanted}: {path}"
             )
 
     def overview_check(
@@ -454,7 +496,7 @@ class TestReport:
                     "overview index.html is missing its"
                     f" {test_name} heat map link: {path}"
                 )
-        self.menu_check(path, page_text, layout)
+        self.menu_check(path, page_text, tests, layout)
         for heading in layout.header_blocks:
             if f">{heading}</div>" not in text:
                 self.fail(
@@ -798,7 +840,11 @@ _HEAT_MAP_VIEW_LABEL = _HEAT_MAP_VIEW_ENTRY[1]
 
 _LAYOUT_DIFF = TestReport.ReportLayout(
     has_flame_graph=False,
-    heading=r">top \d+ functions by change in self</div>",
+    heading=(
+        r'<div class="page-heading-" data-row-count-key-="callers\.rows">'
+        r'top <span class="page-heading-row-count-">\d+</span>'
+        r" functions by change in calls</div>"
+    ),
     header_blocks=("baseline", "modified"),
     manifest_version=_REPORT_MANIFEST_VERSION_DIFF,
     manifest_labels=(
@@ -815,7 +861,11 @@ _LAYOUT_DIFF = TestReport.ReportLayout(
 
 _LAYOUT_FULL = TestReport.ReportLayout(
     has_flame_graph=True,
-    heading=r">top \d+ functions by self</div>",
+    heading=(
+        r'<div class="page-heading-" data-row-count-key-="callers\.rows">'
+        r'top <span class="page-heading-row-count-">\d+</span>'
+        r" functions by calls</div>"
+    ),
     header_blocks=("manifest",),
     manifest_version=_REPORT_MANIFEST_VERSION_FULL,
     manifest_labels=(
@@ -838,6 +888,8 @@ _REPORT_CHECKSUM_COMMAND = (
     " | LC_ALL=C sort | cksum"
 )
 
+_TEST_CALLERS_COLUMN_TITLES = ("#", "symbol", "calls", "callers")
+_TEST_CALLERS_TABLE_KEY = "report.functions"
 _TEST_FLAME_GRAPH_PAGE_LEAST_BYTES = 300
 _TEST_FLAME_GRAPH_SCRIPT_LEAST_BYTES = 200
 _TEST_HEAT_MAP_MODEL_LEAST_BYTES = 5000

@@ -81,6 +81,11 @@ window.catch_show_throw_(function () {
     "hashchange",
     window.catch_show_throw_(() => location.reload()),
   );
+  window.report_ui_.view_activate({
+    forwards_input: false,
+    preferences_apply: null,
+    recenter: () => location.reload(),
+  });
   const script_name = encodeURIComponent(_FORWARDED_ADDRESS.test) + ".js";
   _profile_script.src = FLAME_GRAPH_PROFILE_DIR_NAME + "/" + script_name;
   _profile_script.addEventListener(

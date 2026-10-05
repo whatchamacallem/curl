@@ -27,7 +27,7 @@ _ASSET_THEME_STYLESHEET_NAME: str = ""
 _ASSET_UI_STRINGS_SCRIPT_NAME: str = ""
 _ASSET_UTILITY_SCRIPT_NAME: str = ""
 _DARK_MODE_ATTRIBUTE_NAME: str = ""
-_LIGHT_MODE_VALUE: str = ""
+_DARK_MODE_DISABLED_VALUE: str = ""
 _NUMBER_FRACTION_DIGITS: int = 0
 _NUMBER_LARGEST_PRINTED_MULTIPLE_TIMES: float = 0.0
 _NUMBER_SMALLEST_PRINTED_PERCENT: float = 0.0
@@ -45,9 +45,11 @@ _STYLE_DESIGN_VIEWPORT_HEIGHT_PROPERTY: str = ""
 _STYLE_HEAT_CELL_ON_BRIGHT_ABOVE_LUMINANCE_SHARE: float = 0.0
 _STYLE_HEAT_COLOR_FULL_SCALE_PERCENT: int = 0
 _STYLE_HEAT_COLOR_STOPS: list[str] = []
+_STYLE_HEAT_MAP_SOURCE_LINE_NUMBER_MARKER_WIDTH_CHARS: int = 0
 _STYLE_PAGE_FONT_FAMILY: str = ""
 _STYLE_TABLE_COLUMN_EXTRA_WIDTH_CHARS: int = 0
 _STYLE_TABLE_GROW_COLUMN_NARROWEST_CHARS: int = 0
+_STYLE_TABLE_TWO_CELL_GLYPHS: str = ""
 _STYLE_VALUE_ENTRIES: dict[str, str] = {}
 _THEME_TIME_UNIT_ENTRIES: tuple[tuple[str, float], ...] = ()
 settings.load_into(__name__)
@@ -67,7 +69,7 @@ if not (
 _LIGHT_MODE_BACKGROUND_ROLE = "light-mode-page-bg-"
 _LIGHT_MODE_FOREGROUND_ROLE = "light-mode-page-fg-"
 _DARK_MODE_ENABLED_SELECTOR = (
-    f':root:not([{_DARK_MODE_ATTRIBUTE_NAME}="{_LIGHT_MODE_VALUE}"])'
+    f':root:not([{_DARK_MODE_ATTRIBUTE_NAME}="{_DARK_MODE_DISABLED_VALUE}"])'
 )
 _DARK_MODE_ROLE_PREFIX = "dark-mode-"
 _LIGHT_MODE_ROLE_PREFIX = "light-mode-"
@@ -78,7 +80,6 @@ class Cell(NamedTuple):
     text: str = ""
     html: str | None = None
     style: str = ""
-    cls: str = ""
 
 
 CellOrText: TypeAlias = Cell | str
@@ -133,7 +134,9 @@ class TableRenderer:
     def column_longest(
         self, rows: Sequence[Sequence[Cell]], index: int
     ) -> int:
-        return max((len(row[index].text) for row in rows), default=0)
+        return max(
+            (self.text_cells(row[index].text) for row in rows), default=0
+        )
 
     def column_width_text(
         self, limits: Sequence[tuple[int, int]], index: int, grow_index: int
@@ -183,26 +186,14 @@ class TableRenderer:
                 raise ValueError(f"table {key!r}: fill but no grow column")
         extents = self.column_extents(columns, cells, grow_index)
         limits = [self.column_limits(extent) for extent in extents]
-        out = [f'<div class="table-box-{" fill_" if fill else ""}">']
-        table_classes = "columns_" + (" fill_" if fill else "")
+        out = ['<div class="table-box-">']
         out.append(
-            f'<div class="table-columns-"><table class="{table_classes}" '
+            '<div class="table-columns-"><table class="columns_" '
             f'data-key-="{html_escape(key)}"><colgroup>'
         )
         for index, limit in enumerate(limits):
-            col_classes = " ".join(
-                class_name
-                for class_name in (
-                    "alternate_" if index % 2 else "",
-                    "grow_" if index == grow_index else "",
-                )
-                if class_name
-            )
-            attr = f' class="{col_classes}"' if col_classes else ""
             width = self.column_width_text(limits, index, grow_index)
-            out.append(
-                f'<col{attr} data-min-="{limit[0]}ch" style="width:{width}">'
-            )
+            out.append(f'<col data-min-="{limit[0]}ch" style="width:{width}">')
         out.append("</colgroup>")
         if column_titles:
             out.append("<thead><tr>")
@@ -215,17 +206,9 @@ class TableRenderer:
         for row in cells:
             out.append("<tr>")
             for column, cell in zip(columns, row, strict=True):
-                cell_classes = " ".join(
-                    class_name
-                    for class_name in (
-                        "numeric_" if column.numeric else "",
-                        cell.cls,
-                    )
-                    if class_name
+                attrs = (' class="numeric_"' if column.numeric else "") + (
+                    f' style="{cell.style}"' if cell.style else ""
                 )
-                attrs = (
-                    f' class="{cell_classes}"' if cell_classes else ""
-                ) + (f' style="{cell.style}"' if cell.style else "")
                 inner = (
                     cell.html
                     if cell.html is not None
@@ -236,6 +219,12 @@ class TableRenderer:
         out.append("</tbody></table></div>")
         out.append("</div>")
         return "".join(out)
+
+    # Counts the cells a text takes on a page, a wide glyph as two.
+    def text_cells(self, text: str) -> int:
+        return len(text) + sum(
+            1 for glyph in text if glyph in _STYLE_TABLE_TWO_CELL_GLYPHS
+        )
 
 
 class Theme:
@@ -301,7 +290,7 @@ class Theme:
         def signed_percent(self, percent: float) -> str:
             if percent == 0:
                 return ""
-            arrow = "▼" if percent < 0 else "▲"
+            arrow = "⯆" if percent < 0 else "⯅"
             digit_count = _NUMBER_FRACTION_DIGITS
             times = percent / 100
             if percent == math.inf:
@@ -459,6 +448,9 @@ class Theme:
             f"{_STYLE_DESIGN_FONT_SIZE_PX}px"
         )
         root_values[_STYLE_DESIGN_VIEWPORT_HEIGHT_PROPERTY] = "100vh"
+        root_values[
+            "--heat-map-source-table-line-number-cell-callee-marker-width-"
+        ] = f"{_STYLE_HEAT_MAP_SOURCE_LINE_NUMBER_MARKER_WIDTH_CHARS}ch"
         root_values["--page-font-family-"] = _STYLE_PAGE_FONT_FAMILY
         dark_names = {f"--{role}" for role in self.dark_mode_roles()}
         self.reads_check(
@@ -505,9 +497,7 @@ class Theme:
         )
 
     def light_mode_css(self) -> str:
-        stylesheet_text = self.asset_read(
-            _ASSET_LIGHT_MODE_STYLESHEET_NAME
-        )
+        stylesheet_text = self.asset_read(_ASSET_LIGHT_MODE_STYLESHEET_NAME)
         lines = [":root {"]
         lines.extend(
             f"  --{role}: {color};"

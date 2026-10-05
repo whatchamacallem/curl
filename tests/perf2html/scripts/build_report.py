@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-import argparse, os, re, sys, urllib.parse
+import argparse, json, os, re, sys, urllib.parse
 from collections.abc import Sequence
 from typing import NamedTuple
 
@@ -17,27 +17,30 @@ _ASSET_FRAME_SCRIPT_NAME: str = ""
 _ASSET_MENU_SCRIPT_NAME: str = ""
 _ASSET_MENU_STYLESHEET_NAME: str = ""
 _ASSET_PULLDOWN_TEXT_SCRIPT_NAME: str = ""
+_ASSET_TEMPLATE_CALLERS_PAGE_NAME: str = ""
 _ASSET_TEMPLATE_OVERVIEW_PAGE_NAME: str = ""
 _CALLERS_PERF_LOG_SKIPPED_HEAD_LINES: int = 0
 _CALLERS_TIME_SUFFIX_SECONDS: dict[str, float] = {}
 _CALLERS_TOP_FUNCTION_ROWS: int = 0
-_CALLERS_VIEW_KEY: str = ""
 _DIFF_CALLER_COUNTS_FILE_SUFFIX: str = ""
 _FLAME_GRAPH_LOCAL_PROFILE_PATH: str = ""
 _FLAME_GRAPH_VIEW_ENTRY: tuple[str, str, str] = ("", "", "")
 _HEAT_MAP_VIEW_ENTRY: tuple[str, str, str] = ("", "", "")
-_MENU_BUTTON_ORDER: tuple[str, ...] = ()
 _MENU_PULLDOWN_MERGED_TEST_NAME: str = ""
 _RANKING_COUNTER_NAME: str = ""
-_STYLE_MENU_PULLDOWN_EXTRA_WIDTH_CHARS: int = 0
 _STYLE_TABLE_FUNCTION_NAME_WIDTH_CHARS: int = 0
+_TABLE_ROW_COUNT_CHOICES: tuple[int, ...] = ()
 settings.load_into(__name__)
+
+_CALLERS_PAGE = theme.asset_text_read(_ASSET_TEMPLATE_CALLERS_PAGE_NAME)
 
 _CALLERS_PAGE_ASSETS_DEPTH = 1
 
 _EXIT_INPUT_UNREADABLE = 20
 
 _PID_PREFIX = re.compile(r"^==\d+==\s?")
+
+_VALGRIND_DEBUG_LINE = re.compile(r"^--\d+--")
 
 _OVERVIEW_PAGE_ASSETS_DEPTH = 0
 
@@ -52,13 +55,16 @@ _TIME_LINE = re.compile(
 
 
 class BuildReport:
+    class CallerShare(NamedTuple):
+        function: str
+        share_text: str
+
     class CallersData(NamedTuple):
         callers: dict[str, list[callgrind_diff.CallerDelta]]
-        baseline: dict[str, int]
         baseline_calls: dict[str, int]
 
-    class FunctionCost(NamedTuple):
-        cost: int
+    class FunctionCalls(NamedTuple):
+        calls: int
         function: str
 
     class ManifestBlock(NamedTuple):
@@ -68,10 +74,6 @@ class BuildReport:
     class ManifestRow(NamedTuple):
         label: str
         value: str
-
-    class MenuLink(NamedTuple):
-        test_name: str
-        href: str
 
     class OverviewArgs(NamedTuple):
         output: str
@@ -126,50 +128,36 @@ class BuildReport:
     def blank_line_render(self) -> str:
         return "<br />"
 
-    def caller_delta_cell(
-        self,
-        test_name: str,
-        profile: callgrind.LineProfile,
-        deltas: Sequence[callgrind_diff.CallerDelta],
-    ) -> theme.Cell:
-        if not deltas:
-            return theme.Cell("(no recorded caller change)", cls="dimmed_")
-        parts: list[str] = []
-        html_parts: list[str] = []
-        for delta in deltas:
-            count_text = (
-                f" {theme.num_signed(delta.count_)} calls"
-                if delta.count_
-                else ""
-            )
-            text = (
-                f"{theme.num_signed(delta.cost)} {delta.function}{count_text}"
-            )
-            parts.append(text)
-            href = self.entry_link(test_name, profile, delta.function)
-            label = (
-                f"{theme.num_signed(delta.cost)}"
-                f" {theme.html_escape(delta.function)}"
-                f"{theme.html_escape(count_text)}"
-            )
-            html_parts.append(
-                f'<a href="{href}">{label}</a>' if href else label
-            )
-        joined = ", ".join(parts)
-        return theme.Cell(joined, html=", ".join(html_parts))
-
     def caller_link(
         self,
         test_name: str,
         profile: callgrind.LineProfile,
-        caller_name: str,
-        count: int,
-        call_count: int,
+        caller: BuildReport.CallerShare,
     ) -> str:
-        href = self.entry_link(test_name, profile, caller_name)
-        share = theme.html_escape(theme.num_pct(100.0 * count / call_count))
-        label = f"{theme.html_escape(caller_name)} ({share})"
+        href = self.entry_link(test_name, profile, caller.function)
+        label = (
+            f"{theme.html_escape(caller.function)}"
+            f" ({theme.html_escape(caller.share_text)})"
+        )
         return f'<a href="{href}">{label}</a>' if href else label
+
+    # Lists each caller of a function with its share of calls, linked.
+    def callers_cell(
+        self,
+        test_name: str,
+        profile: callgrind.LineProfile,
+        callers: Sequence[BuildReport.CallerShare],
+    ) -> theme.Cell:
+        return theme.Cell(
+            ", ".join(
+                f"{caller.function} ({caller.share_text})"
+                for caller in callers
+            ),
+            html=", ".join(
+                self.caller_link(test_name, profile, caller)
+                for caller in callers
+            ),
+        )
 
     def callers_data_load(self, path: str) -> BuildReport.CallersData:
         if not path:
@@ -177,18 +165,16 @@ class BuildReport:
                 "error: --diff needs --callers-data, the callgrind_diff.py"
             )
         doc = callgrind_diff.callers_doc_load(path)
-        counters = doc["counters"]
-        callgrind.ranking_counter_check(counters, path)
         return BuildReport.CallersData(
-            callers=doc["callers"],
-            baseline={
-                name: callgrind.counter_value(
-                    counters, costs, _RANKING_COUNTER_NAME
-                )
-                for name, costs in doc["baseline"].items()
-                if "\n" not in name
-            },
-            baseline_calls=doc["baselineCalls"],
+            callers=doc["callers"], baseline_calls=doc["baselineCalls"]
+        )
+
+    def callers_heading_render(self, ranking_text: str) -> str:
+        return (
+            '<div class="page-heading-" data-row-count-key-="callers.rows">'
+            'top <span class="page-heading-row-count-">'
+            f"{_CALLERS_TOP_FUNCTION_ROWS}</span> functions by"
+            f" {theme.html_escape(ranking_text)}</div>"
         )
 
     def details_section(self, title: str, body: str) -> str:
@@ -204,63 +190,57 @@ class BuildReport:
         profile: callgrind.LineProfile,
         callers_data: BuildReport.CallersData,
     ) -> str:
-        ranked = sorted(
-            (
-                BuildReport.FunctionCost(
-                    profile.value(costs, _RANKING_COUNTER_NAME), function
-                )
-                for function, costs in profile.function_self.items()
-                if profile.value(costs, _RANKING_COUNTER_NAME) != 0
-            ),
-            key=lambda t: (-abs(t.cost), t.function),
-        )[:_CALLERS_TOP_FUNCTION_ROWS]
-        shares = [
-            theme.diff_share_of(
-                cost.cost, callers_data.baseline.get(cost.function)
-            )
-            for cost in ranked
-        ]
         call_counts = {
             callee: sum(delta.count_ for delta in deltas)
             for callee, deltas in callers_data.callers.items()
         }
-        call_shares = {
-            callee: theme.diff_share_of(
-                count, callers_data.baseline_calls.get(callee)
-            )
-            for callee, count in call_counts.items()
-        }
+        ranked = sorted(
+            (
+                BuildReport.FunctionCalls(calls, function)
+                for function, calls in call_counts.items()
+                if calls != 0
+            ),
+            key=lambda ranked_function: (
+                -abs(ranked_function.calls),
+                ranked_function.function,
+            ),
+        )[: max(_TABLE_ROW_COUNT_CHOICES)]
         columns = self.function_columns()
         rows: list[list[theme.CellOrText]] = []
         for rank, ranked_function in enumerate(ranked, 1):
-            share = shares[rank - 1]
-            deltas = callers_data.callers.get(ranked_function.function, [])
-            call_count = call_counts.get(ranked_function.function, 0)
+            call_share = theme.diff_share_of(
+                ranked_function.calls,
+                callers_data.baseline_calls.get(ranked_function.function),
+            )
             rows.append(
                 [
                     str(rank),
-                    theme.Cell(
-                        theme.num_signed_pct(share),
-                        style=theme.heat_style(
-                            theme.heat_of_share(share), signed=True
-                        ),
-                    ),
                     self.function_link_cell(
                         test_name, profile, ranked_function.function
                     ),
-                    theme.num_signed(ranked_function.cost),
                     theme.Cell(
-                        theme.num_signed(call_count),
+                        theme.num_signed(ranked_function.calls),
                         style=theme.heat_style(
-                            theme.heat_of_share(
-                                call_shares[ranked_function.function]
-                            ),
-                            signed=True,
+                            theme.heat_of_share(call_share), signed=True
                         ),
-                    )
-                    if call_count
-                    else "",
-                    self.caller_delta_cell(test_name, profile, deltas),
+                    ),
+                    self.callers_cell(
+                        test_name,
+                        profile,
+                        [
+                            BuildReport.CallerShare(
+                                delta.function,
+                                theme.num_signed_pct(
+                                    theme.diff_share_of(
+                                        delta.count_, delta.baseline_count
+                                    )
+                                ),
+                            )
+                            for delta in callers_data.callers[
+                                ranked_function.function
+                            ]
+                        ],
+                    ),
                 ]
             )
         return theme.table_render("report.functions", columns, rows, fill=True)
@@ -312,13 +292,10 @@ class BuildReport:
 
     def diff_test(self, args: BuildReport.TestArgs) -> None:
         profile = callgrind.profile_load(args.callgrind_file)
-        callgrind.ranking_counter_check(
-            profile.counters, " ".join(args.callgrind_file)
-        )
         callers_data = self.callers_data_load(args.callers_data)
         self.report_page(
             args,
-            f"top {_CALLERS_TOP_FUNCTION_ROWS} functions by change in self",
+            self.callers_heading_render("change in calls"),
             self.diff_functions_table(args.test, profile, callers_data),
         )
 
@@ -354,11 +331,9 @@ class BuildReport:
     def function_columns(self) -> list[theme.Column]:
         return [
             theme.Column("#", numeric=True),
-            theme.Column("% self", numeric=True),
             theme.Column(
                 "symbol", width=_STYLE_TABLE_FUNCTION_NAME_WIDTH_CHARS
             ),
-            theme.Column(_RANKING_COUNTER_NAME, numeric=True),
             theme.Column("calls", numeric=True),
             theme.Column("callers", grow=True),
         ]
@@ -377,58 +352,42 @@ class BuildReport:
     def functions_table(
         self, test_name: str, profile: callgrind.Profile
     ) -> str:
-        total = profile.value(profile.totals(), _RANKING_COUNTER_NAME) or 1
+        call_counts = {
+            callee: sum(tally.count for tally in callers.values())
+            for callee, callers in profile.callers.items()
+        }
+        calls_total = sum(call_counts.values())
         ranked = sorted(
             (
-                BuildReport.FunctionCost(
-                    profile.value(costs, _RANKING_COUNTER_NAME), function
-                )
-                for function, costs in profile.function_self.items()
-                if profile.value(costs, _RANKING_COUNTER_NAME) > 0
+                BuildReport.FunctionCalls(calls, function)
+                for function, calls in call_counts.items()
+                if calls > 0
             ),
-            key=lambda t: (-t.cost, t.function),
-        )[:_CALLERS_TOP_FUNCTION_ROWS]
-        function_calls = {
-            function: sum(tally.count for tally in callers.values())
-            for function, callers in profile.callers.items()
-        }
-        calls_total = sum(function_calls.values()) or 1
+            key=lambda ranked_function: (
+                -ranked_function.calls,
+                ranked_function.function,
+            ),
+        )[: max(_TABLE_ROW_COUNT_CHOICES)]
         columns = self.function_columns()
         rows: list[list[theme.CellOrText]] = []
         for rank, ranked_function in enumerate(ranked, 1):
+            call_count = ranked_function.calls
             by_caller: dict[str, int] = {}
-            for caller, tally in profile.callers.get(
-                ranked_function.function, {}
-            ).items():
+            for caller, tally in profile.callers[
+                ranked_function.function
+            ].items():
                 by_caller[caller.function] = (
                     by_caller.get(caller.function, 0) + tally.count
                 )
-            call_count = sum(by_caller.values())
-            share = 100.0 * ranked_function.cost / total
             by_caller_sorted = sorted(
                 by_caller.items(), key=lambda pair: (-pair[1], pair[0])
-            )
-            who = ", ".join(
-                f"{caller_name} ({theme.num_pct(100.0 * count / call_count)})"
-                for caller_name, count in by_caller_sorted
-            )
-            who_html = ", ".join(
-                self.caller_link(
-                    test_name, profile, caller_name, count, call_count
-                )
-                for caller_name, count in by_caller_sorted
             )
             rows.append(
                 [
                     str(rank),
-                    theme.Cell(
-                        theme.num_pct(share),
-                        style=theme.heat_style(theme.heat_of_share(share)),
-                    ),
                     self.function_link_cell(
                         test_name, profile, ranked_function.function
                     ),
-                    theme.num_human(ranked_function.cost),
                     theme.Cell(
                         theme.num_human(call_count),
                         style=theme.heat_style(
@@ -436,12 +395,18 @@ class BuildReport:
                                 100.0 * call_count / calls_total
                             )
                         ),
-                    )
-                    if call_count
-                    else "",
-                    theme.Cell(who, html=who_html)
-                    if who
-                    else theme.Cell("(no recorded caller)", cls="dimmed_"),
+                    ),
+                    self.callers_cell(
+                        test_name,
+                        profile,
+                        [
+                            BuildReport.CallerShare(
+                                caller_name,
+                                theme.num_pct(100.0 * count / calls_total),
+                            )
+                            for caller_name, count in by_caller_sorted
+                        ],
+                    ),
                 ]
             )
         return theme.table_render("report.functions", columns, rows, fill=True)
@@ -450,11 +415,11 @@ class BuildReport:
         return f'<div class="page-heading-">{theme.html_escape(text)}</div>'
 
     def log_block(self, path: str) -> str:
-        lines = (
-            self.file_read(path)
-            .rstrip()
-            .split("\n")[_CALLERS_PERF_LOG_SKIPPED_HEAD_LINES:]
-        )
+        lines = [
+            line
+            for line in self.file_read(path).rstrip().split("\n")
+            if not _VALGRIND_DEBUG_LINE.match(line)
+        ][_CALLERS_PERF_LOG_SKIPPED_HEAD_LINES:]
         text = "\n".join(_PID_PREFIX.sub("", line) for line in lines)
         return self.log_box_render(text)
 
@@ -474,9 +439,12 @@ class BuildReport:
     def log_box_render(self, text: str) -> str:
         return (
             '<div class="table-box-">'
-            '<pre class="callers-collapsed-section-log-box-">'
-            f"{theme.html_escape(text)}"
-            "</pre></div>"
+            '<pre class="callers-collapsed-section-log-box-'
+            ' page-text-scroll-box-">'
+            f"{theme.html_escape(text)}</pre>"
+            + self.text_scrollbar_render("vertical")
+            + self.text_scrollbar_render("horizontal")
+            + "</div>"
         )
 
     def manifest_blocks_render(
@@ -535,8 +503,7 @@ class BuildReport:
         if not pairs:
             return ""
         rows: list[list[theme.CellOrText]] = [
-            [theme.Cell(pair.label, cls="dimmed_"), pair.value]
-            for pair in pairs
+            [pair.label, pair.value] for pair in pairs
         ]
         return theme.table_render(
             key,
@@ -546,90 +513,28 @@ class BuildReport:
             column_titles=False,
         )
 
-    def menu_button_link_render(
-        self, name: str, href: str, new_tab: bool = False
+    # Writes the empty menu strip, its report facts in its attributes.
+    def menu_render(
+        self, test_names: Sequence[str], has_flame_graph: bool
     ) -> str:
-        target_attribute = ' target="_blank"' if new_tab else ""
-        return (
-            f'<a class="menu-button-" id="menu-{name}-button-"'
-            f' href="{theme.html_escape(href)}"{target_attribute}></a>'
-        )
-
-    def menu_button_render(self, name: str) -> str:
-        return (
-            f'<button class="menu-button-" id="menu-{name}-button-"'
-            ' type="button"></button>'
-        )
-
-    def menu_link_render(self, link: BuildReport.MenuLink) -> str:
-        test_name = theme.html_escape(link.test_name)
-        return (
-            f'<a href="{theme.html_escape(link.href)}"'
-            f' data-test-name-="{test_name}" tabindex=-1>{test_name}</a>'
-        )
-
-    def menu_pulldowns_render(
-        self, test_entries: Sequence[BuildReport.MenuLink]
-    ) -> dict[str, str]:
-        names = [entry.test_name for entry in test_entries]
-        if _MENU_PULLDOWN_MERGED_TEST_NAME not in names:
+        if _MENU_PULLDOWN_MERGED_TEST_NAME not in test_names:
             sys.exit(
                 "error: the overview's pulldowns start in"
                 f" {_MENU_PULLDOWN_MERGED_TEST_NAME!r}, the merged test,"
-                f" which is not one of its tests: {' '.join(names)}"
+                f" which is not one of its tests: {' '.join(test_names)}"
             )
-        width = (
-            max(len(name) for name in names)
-            + _STYLE_MENU_PULLDOWN_EXTRA_WIDTH_CHARS
-        )
-        test_links = "".join(
-            self.menu_link_render(entry) for entry in test_entries
-        )
-        return {
-            "test": self.pulldown_render("test", width, test_links),
-            "file": self.pulldown_render("file", width, ""),
-            "function": self.pulldown_render("function", width, ""),
-        }
-
-    def menu_render(
-        self,
-        test_entries: Sequence[BuildReport.MenuLink],
-        has_flame_graph: bool,
-    ) -> str:
-        root_href = theme.shared_href(
+        help_href = theme.shared_href(_OVERVIEW_PAGE_ASSETS_DEPTH, "README.md")
+        logo_href = theme.shared_href(
             _OVERVIEW_PAGE_ASSETS_DEPTH, "index.html"
         )
-        help_href = theme.shared_href(_OVERVIEW_PAGE_ASSETS_DEPTH, "README.md")
-        button_markups = {
-            "overview": self.menu_button_link_render("overview", "#"),
-            **self.menu_pulldowns_render(test_entries),
-            _HEAT_VIEW.key: self.menu_button_link_render(_HEAT_VIEW.key, "#"),
-            _CALLERS_VIEW_KEY: self.menu_button_link_render(
-                _CALLERS_VIEW_KEY, "#"
-            ),
-            _FLAME_VIEW.key: self.menu_button_link_render(
-                _FLAME_VIEW.key, "#"
-            ),
-            "dark-mode": self.menu_button_render("dark-mode"),
-            "reset": self.menu_button_render("reset"),
-            "help": self.menu_button_link_render(
-                "help", help_href, new_tab=True
-            ),
-            "scale": self.menu_button_render("scale"),
-        }
-        ordered_buttons = [
-            button_markups[name]
-            for name in _MENU_BUTTON_ORDER
-            if has_flame_graph or name != _FLAME_VIEW.key
-        ]
-        parts = [
-            '<a class="menu-logo-" id="menu-logo-"'
-            f' href="{theme.html_escape(root_href)}"></a>',
-            *ordered_buttons,
-            '<div class="menu-title-" id="menu-title-"></div>',
-        ]
-        menu_items = "".join(parts)
-        return f'<nav id="menu-" class="menu-strip-">{menu_items}</nav>'
+        names_text = json.dumps(list(test_names), ensure_ascii=False)
+        return (
+            '<nav id="menu-" class="menu-strip-"'
+            f' data-flame-graph-="{int(has_flame_graph)}"'
+            f' data-help-href-="{theme.html_escape(help_href)}"'
+            f' data-logo-href-="{theme.html_escape(logo_href)}"'
+            f' data-test-names-="{theme.html_escape(names_text)}"></nav>'
+        )
 
     def named_paths_of(
         self, entries: Sequence[str], flag: str
@@ -682,13 +587,6 @@ class BuildReport:
         rows: Sequence[Sequence[theme.CellOrText]],
         has_flame_graph: bool,
     ) -> None:
-        test_entries = [
-            BuildReport.MenuLink(
-                test.name, self.address_of(test.name, _HEAT_VIEW.key)
-            )
-            for test in tests
-        ]
-        body = self.menu_render(test_entries, has_flame_graph)
         out_dir = os.path.dirname(os.path.abspath(args.output))
         pairs = self.manifest_parse_rows(args.header) + (
             self.manifest_read_file(args.header_file)
@@ -702,17 +600,20 @@ class BuildReport:
         manifest_markup = self.manifest_blocks_render(
             "overview.block", manifest_blocks
         )
-        page_content = (
-            _OVERVIEW_PAGE.replace("__RAW_DATA__", raw_data_markup)
-            .replace("__TESTS__", tests_markup)
-            .replace("__MANIFEST__", manifest_markup)
+        menu_markup = self.menu_render(
+            [test.name for test in tests], has_flame_graph
         )
-        body += self.page_main_open() + page_content + self.page_main_close()
+        page_content = (
+            _OVERVIEW_PAGE.replace("__MENU__", menu_markup)
+            .replace("__RAW_DATA__", raw_data_markup)
+            .replace("__MANIFEST__", manifest_markup)
+            .replace("__TESTS__", tests_markup)
+        )
         self.page_write(
             args.output,
             theme.page_document(
                 "overview",
-                body,
+                page_content,
                 extra_js=(
                     _ASSET_PULLDOWN_TEXT_SCRIPT_NAME,
                     _ASSET_FRAME_SCRIPT_NAME,
@@ -735,15 +636,6 @@ class BuildReport:
         tests.sort()
         return tests
 
-    def page_main_close(self) -> str:
-        return (
-            '</div></main><iframe id="overview-view-frame-" hidden'
-            ' title="report page"></iframe>'
-        )
-
-    def page_main_open(self) -> str:
-        return '<main id="overview-home-"><div class="page_">'
-
     def page_write(self, path: str, page: str) -> None:
         os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
         with open(path, "w", encoding="utf-8") as handle:
@@ -751,19 +643,6 @@ class BuildReport:
         print(
             f"wrote {path} ({len(page.encode('utf-8')):,} bytes)",
             file=sys.stderr,
-        )
-
-    def pulldown_render(self, key: str, width: int, entries: str) -> str:
-        return (
-            f'<span class="menu-pulldown-" id="menu-{key}-pulldown-">'
-            '<button class="menu-button- menu-pulldown-button-"'
-            f' id="menu-{key}-button-" type="button"></button>'
-            '<input class="menu-pulldown-search-box-" type="text"'
-            f' style="width:{width}ch"'
-            ' hidden autocomplete="off" spellcheck="false">'
-            f'<span class="menu-pulldown-entry-list-" hidden>{entries}'
-            '<span class="menu-pulldown-no-match-note-" hidden></span>'
-            "</span></span>"
         )
 
     def raw_data_render(self, path: str, out_dir: str) -> str:
@@ -788,38 +667,53 @@ class BuildReport:
     def report_page(
         self,
         args: BuildReport.TestArgs,
-        heading: str,
+        heading_markup: str,
         table: str,
     ) -> None:
-        body = self.manifest_table(
-            "report.header", self.manifest_parse_rows(args.header)
+        page_content = (
+            _CALLERS_PAGE.replace(
+                "__MANIFEST__",
+                self.manifest_table(
+                    "report.header", self.manifest_parse_rows(args.header)
+                ),
+            )
+            .replace(
+                "__FLAME_GRAPH_LINK__",
+                self.flame_graph_link_render(args.test)
+                if args.trace_log
+                else "",
+            )
+            .replace(
+                "__PERF_LOG__", self.output_section("perf log", args.perf_log)
+            )
+            .replace(
+                "__TRACE_LOG__",
+                self.output_section("trace log", args.trace_log),
+            )
+            .replace(
+                "__VALGRIND_LOG__",
+                "" if args.no_log else self.log_section(args.log),
+            )
+            .replace("__HEADING__", heading_markup)
+            .replace("__FUNCTIONS__", table)
         )
-        if args.trace_log:
-            body += self.flame_graph_link_render(args.test)
-        body += self.output_section("perf log", args.perf_log)
-        body += self.output_section("trace log", args.trace_log)
-        if not args.no_log:
-            body += self.log_section(args.log)
-        body += self.heading_render(heading) + table
         self.page_write(
             args.output,
             theme.page_document(
                 args.test,
-                self.view_main_render(body),
+                page_content,
                 extra_js=(_ASSET_CALLERS_SCRIPT_NAME,),
                 body_class="frame_",
                 depth=_CALLERS_PAGE_ASSETS_DEPTH,
+                extra_css=(_ASSET_MENU_STYLESHEET_NAME,),
             ),
         )
 
     def test(self, args: BuildReport.TestArgs) -> None:
         profile = callgrind.profile_load(args.callgrind_file)
-        callgrind.ranking_counter_check(
-            profile.counters, " ".join(args.callgrind_file)
-        )
         self.report_page(
             args,
-            f"top {_CALLERS_TOP_FUNCTION_ROWS} functions by self",
+            self.callers_heading_render("calls"),
             self.functions_table(args.test, profile),
         )
 
@@ -827,6 +721,12 @@ class BuildReport:
         href = theme.html_escape(self.address_of(name, _HEAT_VIEW.key))
         return theme.Cell(
             name, html=f'<a href="{href}">{theme.html_escape(name)}</a>'
+        )
+
+    def text_scrollbar_render(self, axis_name: str) -> str:
+        return (
+            f'<div class="page-text-scrollbar- {axis_name}_"'
+            ' aria-hidden="true"></div>'
         )
 
     def time_humanize(self, text: str) -> str:
@@ -839,9 +739,6 @@ class BuildReport:
     def value_humanize(self, label: str, value: str) -> str:
         line = self.time_humanize(f"{label}: {value}")
         return line.split(": ", 1)[1] if line != f"{label}: {value}" else value
-
-    def view_main_render(self, view_content: str) -> str:
-        return f'<main><div class="page_">{view_content}</div></main>'
 
 
 _FLAME_VIEW = BuildReport.View(*_FLAME_GRAPH_VIEW_ENTRY[:2])

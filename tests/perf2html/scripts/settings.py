@@ -24,7 +24,9 @@ ASSET_PULLDOWN_TEXT_SCRIPT_NAME = "pulldown_text.js"
 
 ASSET_SETTINGS_SCRIPT_NAME = "settings.js"
 
+ASSET_TEMPLATE_CALLERS_PAGE_NAME = "callers.html"
 ASSET_TEMPLATE_FLAME_GRAPH_PAGE_NAME = "flame_graph.html"
+ASSET_TEMPLATE_HEAT_MAP_MAIN_NAME = "heat_map_main.html"
 ASSET_TEMPLATE_HEAT_MAP_PAGE_NAME = "heat_map.html"
 ASSET_TEMPLATE_OVERVIEW_PAGE_NAME = "overview.html"
 ASSET_TEMPLATE_SETTINGS_HANDLER_NAME = "settings.js"
@@ -34,7 +36,7 @@ ASSET_THEME_STYLESHEET_NAME = "theme.css"
 ASSET_UI_STRINGS_SCRIPT_NAME = "ui_strings.js"
 ASSET_UTILITY_SCRIPT_NAME = "utility.js"
 
-CALLERS_PERF_LOG_SKIPPED_HEAD_LINES = 9
+CALLERS_PERF_LOG_SKIPPED_HEAD_LINES = 8
 
 CALLERS_TIME_SUFFIX_SECONDS: dict[str, float] = {
     "msec": 1e-3,
@@ -104,7 +106,7 @@ HEAT_MAP_HOME_LINES_LOCATION_MAX_CHARS = 28
 HEAT_MAP_HOME_LINES_SOURCE_COLUMN_MAX_CHARS = 36
 HEAT_MAP_HOME_LINES_SOURCE_SNIPPET_MAX_CHARS = 110
 
-HEAT_MAP_HOME_TABLE_MAX_ROWS = 60
+HEAT_MAP_HOME_TABLE_DEFAULT_ROWS = 20
 
 HEAT_MAP_MINIMAP_SOURCE_WIDTH_CHARS = 80
 
@@ -132,22 +134,11 @@ HEAT_MAP_VIEW_ENTRY: tuple[str, str, str] = (
 
 LAYOUT_RESIZE_SETTLE_DELAY_MS = 120
 
-MENU_BUTTON_ORDER: tuple[str, ...] = (
-    "overview",
-    "test",
-    "file",
-    "function",
-    "heat-map",
-    "callers",
-    "flame-graph",
-    "dark-mode",
-    "reset",
-    "help",
-    "scale",
-)
+MENU_FLASH_DURATION_MS = 500
 
 MENU_PULLDOWN_KEY_NAMES: dict[str, str] = {
     "close": "Escape",
+    "erase": "Backspace",
     "next": "ArrowDown",
     "previous": "ArrowUp",
     "select": "Enter",
@@ -161,10 +152,7 @@ MENU_PULLDOWN_OPENING_KEY_PATTERN = "^[a-zA-Z]$"
 
 MENU_PULLDOWN_SKIPPED_KEY_NAMES: tuple[str, ...] = (" ",)
 
-MENU_SCALE_KEY_NAMES: dict[str, str] = {
-    "larger": "ArrowRight",
-    "smaller": "ArrowLeft",
-}
+MENU_SCALE_KEY_STEPS: dict[str, int] = {"+": 1, "=": 1, "-": -1}
 
 NUMBER_FRACTION_DIGITS = 2
 
@@ -174,14 +162,14 @@ NUMBER_SMALLEST_PRINTED_PERCENT = 0.01
 
 PAGE_SETTINGS_GLOBAL_NAME = "settings_"
 
-PANE_SPLITTER_WIDEST_WINDOW_SHARE = 0.6
-
 RANKING_COUNTER_NAME = "CEst"
 
 REPORT_SOURCES_DIR_NAME = "sources"
 
 STORAGE_OWNED_KEYS: tuple[str, ...] = (
+    "callers.rows",
     "heat.counter",
+    "heat.rows",
     "heat.scale",
     "heat.sort",
     "view.dark_mode",
@@ -189,36 +177,28 @@ STORAGE_OWNED_KEYS: tuple[str, ...] = (
 )
 STORAGE_OWNED_PREFIXES: tuple[str, ...] = ("split.",)
 
-STORAGE_VERSION = "perf2html v5"
+STORAGE_VERSION = "perf2html v6"
 STORAGE_VERSION_KEY = "perf2html.version"
 
 STYLE_COLOR_DARK_MODE: dict[str, list[str]] = {
     "#1AB6FF": [
-        "heat-map-source-line-detail-action-bar-link-fg-",
+        "heat-map-source-information-box-control-fg-",
         "heat-map-source-table-line-number-cell-callee-marker-fg-",
-        "menu-button-fg-",
-        "menu-pulldown-entry-current-fg-",
-        "menu-pulldown-entry-highlighted-bg-",
         "page-link-fg-",
-    ],
-    "#0097E6": [
-        "page-scrollbar-thumb-bg-dim-",
     ],
     "#F5F6FA": [
         "callers-collapsed-section-title-focus-fg-",
         "callers-heat-cell-on-dark-fg-",
         "dark-mode-menu-focus-bg-",
         "dark-mode-menu-normal-fg-",
-        "dark-mode-page-highlight-fg-",
         "dark-mode-page-normal-fg-",
         "dark-mode-status-bar-fg-",
         "heat-map-heat-cell-on-dark-fg-",
-        "heat-map-menu-field-fg-",
-        "heat-map-source-line-detail-function-name-fg-",
+        "heat-map-source-information-box-control-focus-fg-",
+        "heat-map-source-information-box-function-name-fg-",
         "heat-map-source-table-row-focus-fg-",
         "heat-map-source-ticker-tape-entry-focus-fg-",
         "heat-map-tree-node-focus-fg-",
-        "menu-button-current-bg-",
         "page-link-focus-fg-",
         "page-table-row-focus-fg-",
     ],
@@ -226,12 +206,10 @@ STYLE_COLOR_DARK_MODE: dict[str, list[str]] = {
         "callers-collapsed-section-file-name-fg-dim-",
         "callers-collapsed-section-title-fg-dim-",
         "callers-collapsed-section-title-marker-fg-dim-",
-        "heat-map-menu-label-fg-dim-",
-        "heat-map-menu-search-box-placeholder-fg-dim-",
-        "heat-map-source-file-header-statistic-fg-dim-",
-        "heat-map-source-line-detail-action-bar-separator-fg-dim-",
-        "heat-map-source-line-detail-close-symbol-fg-dim-",
-        "heat-map-source-line-detail-heading-fg-dim-",
+        "heat-map-source-information-box-action-bar-separator-fg-dim-",
+        "heat-map-source-information-box-close-symbol-fg-dim-",
+        "heat-map-source-information-box-heading-fg-dim-",
+        "heat-map-source-information-box-note-fg-dim-",
         "heat-map-source-table-counter-cell-fg-dim-",
         "heat-map-source-table-line-number-cell-fg-dim-",
         "heat-map-source-ticker-tape-label-fg-dim-",
@@ -240,64 +218,45 @@ STYLE_COLOR_DARK_MODE: dict[str, list[str]] = {
         "heat-map-tree-node-name-cold-fg-dim-",
         "heat-map-tree-node-name-more-fg-dim-",
         "heat-map-tree-node-share-percent-fg-dim-",
-        "menu-pulldown-no-match-note-fg-dim-",
-        "menu-pulldown-search-box-placeholder-fg-dim-",
         "page-heading-fg-dim-",
         "page-table-column-title-fg-dim-",
-        "page-table-dimmed-text-fg-dim-",
     ],
-    "#FBC531": [],
-    "#E1B12C": [],
-    "#7F8FA6": [],
-    "#718093": [],
     "#273C75": [
         "callers-collapsed-section-log-box-focus-bg-",
         "callers-collapsed-section-title-focus-bg-",
         "dark-mode-page-highlight-bg-",
         "heat-map-main-focus-bg-",
-        "heat-map-menu-field-focus-bg-",
+        "heat-map-source-information-box-control-focus-bg-",
         "heat-map-source-table-column-title-bg-",
         "heat-map-source-table-row-focus-bg-",
         "heat-map-source-ticker-tape-bg-",
         "heat-map-source-ticker-tape-entry-focus-bg-",
         "heat-map-tree-node-focus-bg-",
         "heat-map-tree-node-selected-bg-",
-        "heat-map-tree-resize-handle-focus-bg-",
-        "menu-button-bg-",
-        "menu-pulldown-entry-current-bg-",
         "page-link-focus-bg-",
         "page-table-row-focus-bg-",
     ],
     "#192A56": [
         "callers-collapsed-section-log-box-bg-dim-",
-        "callers-collapsed-section-log-box-scrollbar-bg-dim-",
         "dark-mode-menu-focus-fg-",
-        "heat-map-menu-field-bg-dim-",
-        "heat-map-menu-strip-bg-dim-",
-        "heat-map-source-line-detail-bg-dim-",
-        "menu-button-current-fg-dim-",
-        "menu-pulldown-entry-highlighted-fg-dim-",
-        "menu-pulldown-entry-list-bg-dim-",
+        "heat-map-source-information-box-bg-dim-",
         "page-table-column-title-bg-dim-",
     ],
-    "#487EB0": [],
-    "#40739E": [],
     "#353B48": [
+        "dark-mode-table-panel-even-bg-",
         "heat-map-source-ticker-tape-entry-bg-",
-        "page-table-alternate-column-bg-",
     ],
     "#2F3640": [
         "callers-heat-cell-on-bright-fg-dim-",
         "dark-mode-menu-normal-bg-",
         "dark-mode-page-normal-bg-",
         "dark-mode-status-bar-bg-",
+        "dark-mode-table-panel-odd-bg-",
         "heat-map-heat-cell-on-bright-fg-dim-",
         "heat-map-main-bg-dim-",
         "heat-map-minimap-bg-dim-",
-        "heat-map-source-line-detail-table-bg-dim-",
+        "heat-map-source-information-box-table-bg-dim-",
         "overview-view-frame-bg-dim-",
-        "page-scrollbar-corner-bg-dim-",
-        "page-scrollbar-track-bg-dim-",
     ],
 }
 
@@ -307,12 +266,14 @@ STYLE_COLOR_LIGHT_MODE: dict[str, list[str]] = {
         "light-mode-menu-normal-fg-",
         "light-mode-page-highlight-bg-",
         "light-mode-page-normal-fg-",
-        "light-mode-status-bar-fg-",
     ],
     "#FFFFFF": [
         "light-mode-menu-focus-fg-",
         "light-mode-page-highlight-fg-",
         "light-mode-page-normal-bg-",
+        "light-mode-status-bar-fg-",
+        "light-mode-table-panel-even-bg-",
+        "light-mode-table-panel-odd-bg-",
     ],
     "#AAAAAA": [
         "light-mode-menu-normal-bg-",
@@ -340,12 +301,12 @@ STYLE_DESIGN_MINIMUM_WINDOW_WIDTH_PX = 1280
 
 STYLE_DESIGN_SCALE_DEFAULT_MULTIPLE = 1
 
-STYLE_DESIGN_SCALE_DEFAULT_TRAVEL_SHARE = 0.5
+STYLE_DESIGN_SCALE_DEFAULT_STOP = 6
 
 STYLE_DESIGN_SCALE_LARGEST_MULTIPLE = 2
 STYLE_DESIGN_SCALE_SMALLEST_MULTIPLE = 0.5
 
-STYLE_DESIGN_SCALE_STOP_COUNT = 21
+STYLE_DESIGN_SCALE_STOP_COUNT = 11
 
 STYLE_DESIGN_SCALE_STOP_MULTIPLE_FRACTION_DIGITS = 2
 
@@ -370,13 +331,12 @@ STYLE_HEAT_COLOR_STOPS: list[str] = [
     "#F06142",
 ]
 
-STYLE_HEAT_MAP_MENU_DROPDOWN_EXTRA_WIDTH_CHARS = 4
-
 STYLE_HEAT_MAP_SOURCE_LINE_NUMBER_MARKER_WIDTH_CHARS = 2
 
 STYLE_HEAT_MAP_TREE_INDENT_PER_LEVEL_CHARS = 2
 
-STYLE_HEAT_MAP_TREE_PANE_NARROWEST_PX = 120
+STYLE_HEAT_MAP_TREE_PANE_NARROWEST_CHARS = 17
+STYLE_HEAT_MAP_TREE_PANE_WIDEST_CHARS = 40
 
 STYLE_MENU_LOGO_START_FRACTION = 0.5
 
@@ -386,7 +346,7 @@ STYLE_PAGE_FONT_FAMILY = (
     'Monaco, Menlo, "DejaVu Sans Mono", "Liberation Mono", Consolas, monospace'
 )
 
-STYLE_PANE_SPLITTER_KEY_STEP_PX = 36
+STYLE_PANE_SPLITTER_KEY_STEP_CHARS = 5
 
 STYLE_TABLE_COLUMN_EXTRA_WIDTH_CHARS = 2
 
@@ -396,46 +356,61 @@ STYLE_TABLE_GROW_COLUMN_NARROWEST_CHARS = 20
 
 STYLE_TABLE_LOCATION_COLUMN_MAX_CHARS = 48
 
+STYLE_TABLE_TWO_CELL_GLYPHS = "⯅⯆⯇⯈"
+
+STYLE_TEXT_SCROLLBAR_THUMB_SHORTEST_CHARS = 4
+
 STYLE_VALUE_ENTRIES: dict[str, str] = {
     "callers-collapsed-section-file-name-max-width-": "96ch",
     "callers-collapsed-section-log-box-max-height-share-": "0.6",
     "heat-map-band-z-index-": "2",
-    "heat-map-menu-column-gap-": "1ch",
-    "heat-map-menu-search-box-width-": "36ch",
+    "heat-map-menu-padding-bottom-": "1lh",
     "heat-map-minimap-width-": "110px",
-    "heat-map-source-file-header-column-gap-": "2ch",
+    "heat-map-overview-home-border-block-": "1lh",
+    "heat-map-overview-home-border-inline-": "2ch",
     "heat-map-source-table-code-cell-tab-size-": "4",
-    "heat-map-source-table-line-number-cell-callee-marker-text-": '"\\25B8 "',
+    "heat-map-source-table-line-number-cell-callee-marker-text-": '"⯈"',
     "heat-map-source-ticker-tape-entry-padding-inline-": "1ch",
     "heat-map-source-ticker-tape-gap-": "1ch",
     "heat-map-tree-node-caret-width-": "2ch",
     "heat-map-tree-node-gap-": "1ch",
     "heat-map-tree-node-padding-right-": "1ch",
     "heat-map-tree-node-share-percent-width-": "10ch",
-    "heat-map-tree-resize-handle-margin-left-": "-3px",
-    "heat-map-tree-resize-handle-margin-right-": "-4px",
-    "heat-map-tree-resize-handle-width-": "7px",
-    "heat-map-tree-resize-handle-z-index-": "1",
-    "heat-map-tree-width-": "280px",
-    "menu-button-margin-left-": "1ch",
+    "heat-map-tree-width-": "39ch",
     "menu-button-padding-inline-": "1ch",
-    "menu-logo-padding-inline-": "1ch",
     "menu-pulldown-entry-list-max-height-share-": "0.6",
     "menu-pulldown-entry-list-z-index-": "3",
     "menu-pulldown-entry-padding-inline-": "1ch",
     "menu-pulldown-search-box-min-width-": "13ch",
-    "menu-title-width-": "66ch",
+    "menu-status-bar-link-padding-inline-": "1ch",
     "page-body-line-height-": "1.1",
-    "light-mode-page-border-width-": "0.125ch",
-    "page-scrollbar-thickness-": "14px",
+    "page-line-width-": "0.125ch",
     "page-table-cell-padding-inline-": "1ch",
     "page-table-column-title-z-index-": "1",
+    "page-text-scrollbar-horizontal-height-": "1lh",
+    "page-text-scrollbar-vertical-width-": "1ch",
     "screenshot-label-border-width-": "1ch",
     "screenshot-label-font-size-": "1.5em",
     "screenshot-label-z-index-": "3",
 }
 
 TABLE_COLUMN_SLIDE_THRESHOLD_PX = 5
+
+TABLE_ROW_COUNT_CHOICES: tuple[int, ...] = (
+    10,
+    20,
+    30,
+    40,
+    50,
+    60,
+    70,
+    80,
+    90,
+    100,
+)
+
+TEXT_SCROLLBAR_WHEEL_DELTA_PER_NOTCH = 100
+TEXT_SCROLLBAR_WHEEL_NOTCH_LINES = 2.5
 
 THEME_TIME_UNIT_ENTRIES: tuple[tuple[str, float], ...] = (
     ("s", 1.0),
@@ -459,12 +434,6 @@ WIDGET_KEY_NAMES: dict[str, str] = {
 
 
 _SETTING_NAMES: frozenset[str] = frozenset()
-
-
-def _is_setting_name(name: str) -> bool:
-    bare = name.lstrip("_")
-    return bool(bare) and bare[0].isupper() and bare.isupper()
-
 
 _MANIFEST_TABLE_COLUMN_GAP_CHARS = 2
 
@@ -501,6 +470,11 @@ _SHELL_STATEMENT_PATTERN = re.compile(
 )
 
 _SHELL_WORD_PATTERN = re.compile(r"'([^']*)'|\"([^\"]*)\"|([^\s)]+)")
+
+
+def _is_setting_name(name: str) -> bool:
+    bare = name.lstrip("_")
+    return bool(bare) and bare[0].isupper() and bare.isupper()
 
 
 class SettingsReader:

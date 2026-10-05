@@ -5,5 +5,16 @@
 window.catch_show_throw_(function () {
   "use strict";
 
-  window.report_ui_.view_activate({ preferences_apply: null, recenter: null });
+  const page_scroll_box = document.querySelector("main.page-text-scroll-box-");
+
+  // Shows the page from its top when its address is followed again.
+  function page_top_show() {
+    page_scroll_box.scrollTo(0, 0);
+  }
+
+  window.report_ui_.view_activate({
+    forwards_input: true,
+    preferences_apply: null,
+    recenter: page_top_show,
+  });
 })();

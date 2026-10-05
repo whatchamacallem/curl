@@ -21,6 +21,11 @@ class SourceScan:
         line_marks: tuple[str, ...]
         block_marks: tuple[tuple[str, str], ...]
 
+    class EscapeRule(NamedTuple):
+        description: str
+        pattern: str
+        extensions: tuple[str, ...]
+
     class SourceFault(NamedTuple):
         path: str
         line_number: int
@@ -28,6 +33,9 @@ class SourceScan:
 
     def __init__(self) -> None:
         self.faults: list[SourceScan.SourceFault] = []
+        self.escape_patterns = [
+            (rule, re.compile(rule.pattern)) for rule in _ESCAPE_RULES
+        ]
 
     def banned_tag_re(self) -> re.Pattern[str]:
         names = "|".join(_SOURCE_SCAN_BANNED_TAG_NAMES)
@@ -93,13 +101,30 @@ class SourceScan:
             for match in self.comment_re_of(syntax).finditer(text)
         ]
 
+    def escape_check(self, path: str, lines: list[str]) -> None:
+        for rule, pattern in self.escape_patterns:
+            if rule.extensions and not path.endswith(rule.extensions):
+                continue
+            for line_number, line in enumerate(lines, start=1):
+                match = pattern.search(line)
+                if match:
+                    self.faults.append(
+                        SourceScan.SourceFault(
+                            path,
+                            line_number,
+                            f"writes {rule.description}"
+                            f" {match.group(1)!r}: {line.strip()}",
+                        )
+                    )
+
     def exit_code(self, file_count: int, verbose: bool) -> int:
         if not self.faults:
             if verbose:
                 print(
                     f"{file_count} file(s): no comment block over"
                     f" {_COMMENT_BLOCK_MAX_LINES} lines, no stray non-ASCII,"
-                    " no banned tag, no comment outside ENGLISH_PUNCT"
+                    " no unicode escape, no banned tag, no comment outside"
+                    " ENGLISH_PUNCT"
                 )
             return 0
         for fault in sorted(self.faults):
@@ -123,7 +148,8 @@ class SourceScan:
         lines = text.split("\n")
         comments = self.comments_of(text, syntax)
         header_end = self.header_ends_at(lines, comments)
-        self.unicode_check(path, lines, header_end, non_ascii)
+        self.unicode_check(path, lines, non_ascii)
+        self.escape_check(path, lines)
         self.tag_check(path, lines, banned_tag)
         self.comment_check(path, comments, header_end)
         self.punctuation_check(
@@ -167,7 +193,7 @@ class SourceScan:
 
     def non_ascii_re(self) -> re.Pattern[str]:
         allowed = "".join(_SOURCE_SCAN_ALLOWED_NON_ASCII_CHARS)
-        return re.compile(r"[^\x00-\x7F" + allowed + r"]")
+        return re.compile(r"[^\t\n\r -~" + allowed + r"]")
 
     def outside_punctuation_re(self) -> re.Pattern[str]:
         return re.compile(r"[^A-Za-z0-9\s" + re.escape(ENGLISH_PUNCT) + r"]")
@@ -218,22 +244,17 @@ class SourceScan:
                 )
 
     def unicode_check(
-        self,
-        path: str,
-        lines: list[str],
-        header_end: int,
-        non_ascii: re.Pattern[str],
+        self, path: str, lines: list[str], non_ascii: re.Pattern[str]
     ) -> None:
         for line_number, line in enumerate(lines, start=1):
-            if line_number < header_end:
-                continue
             match = non_ascii.search(line)
             if match:
                 self.faults.append(
                     SourceScan.SourceFault(
                         path,
                         line_number,
-                        f"contains a non-ASCII character {match.group()!r}:"
+                        "contains a character outside printable ASCII"
+                        f" {match.group()!r}:"
                         f" {line.strip()}",
                     )
                 )
@@ -254,12 +275,51 @@ _COMMENT_SYNTAX_BY_EXTENSION = (
 
 ENGLISH_PUNCT = """.,"'?:!()/"""
 
+_ESCAPE_PREFIX_PATTERN = r"(?<!\\)(?:\\\\)*"
+
+_ESCAPE_RULES = (
+    SourceScan.EscapeRule(
+        "the unicode escape",
+        _ESCAPE_PREFIX_PATTERN + r"(\\[uU][0-9A-Fa-f{])",
+        (),
+    ),
+    SourceScan.EscapeRule(
+        "the hex escape", _ESCAPE_PREFIX_PATTERN + r"(\\x[0-9A-Fa-f])", ()
+    ),
+    SourceScan.EscapeRule(
+        "the named escape", _ESCAPE_PREFIX_PATTERN + r"(\\N\{)", ()
+    ),
+    SourceScan.EscapeRule(
+        "the octal escape", _ESCAPE_PREFIX_PATTERN + r"(\\[0-3][0-7]{2})", ()
+    ),
+    SourceScan.EscapeRule(
+        "the stylesheet escape",
+        _ESCAPE_PREFIX_PATTERN + r"(\\[0-9A-Fa-f]{1,6})",
+        (".css",),
+    ),
+    SourceScan.EscapeRule(
+        "the numeric entity", r"(&#(?:[0-9]+|[xX][0-9A-Fa-f]+);)", ()
+    ),
+    SourceScan.EscapeRule(
+        "the character constructor",
+        r"(String\s*\.\s*from(?:CharCode|CodePoint)"
+        r"|(?<![\w.])(?:unescape|atob)(?=\()"
+        r"|(?<!\w)ch[r](?=\()"
+        r"|bytes\.fromhex"
+        r"|unicode[_]escape)",
+        (),
+    ),
+)
+
 _SOURCE_SCAN_ALLOWED_NON_ASCII_CHARS = (
+    "©",
     "≈",
     "∞",
     "▲",
+    "⯅",
     "⯇",
     "⯈",
+    "⯆",
     "▼",
     "…",
     "█",

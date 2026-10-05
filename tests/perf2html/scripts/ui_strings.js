@@ -6,9 +6,7 @@ window.ui_strings_ = (function () {
   "use strict";
   const STRINGS = {
     str_caret_right: "⯈",
-    str_caret_down: "▼",
-    str_caret_left: "⯇",
-    str_caret_up: "▲",
+    str_caret_down: "⯆",
     str_column_baseline_share: "vs baseline",
     str_column_call_count: "call count",
     str_column_called_at: "called at",
@@ -47,13 +45,6 @@ window.ui_strings_ = (function () {
     str_counter_ir: "instructions executed",
     str_counter_l1m: "L1 cache misses, all",
     str_counter_llm: "last level cache misses, all",
-    str_detail_callees: "calls from this line (total {counter})",
-    str_detail_close: "close",
-    str_detail_close_symbol: "[x]",
-    str_detail_copy: "copy",
-    str_detail_function_self: "{function}: self {self}.",
-    str_detail_function_totals:
-      "{function} by call count: self {self}, total {total}.",
     str_error_dark_mode_unusable:
       "the dark mode choice came out as {0}, naming neither state",
     str_error_diff_fall_past_baseline:
@@ -88,33 +79,58 @@ window.ui_strings_ = (function () {
     str_error_hash_view_missing: "url names test {0} but no view",
     str_error_hash_view_unknown:
       "url encodes a view this report does not have: {0}",
+    str_error_heading_attached_twice: "table heading {0} is attached twice",
+    str_error_heading_count_missing:
+      "table heading {0} names row count key {1} but shows no count",
+    str_error_heading_table_missing:
+      "table heading {0} sits immediately before no table",
     str_error_heat_map_unfiled:
       "the heat map script for test {0} filed no model",
-    str_error_menu_button_order_long:
-      "the menu orders {0} numbered buttons, more than the {1} digit keys",
-    str_error_menu_button_unlabelled: "menu button {0} has no label",
     str_error_message_tag_unknown: "cross-frame message tag unrecognized: {0}",
+    str_error_pane_width_unusable:
+      "the stored pane width {0} came out as {1}, not a number of characters",
     str_error_pulldown_focus_refused:
       "the browser kept focus on {0}, so keys cannot reach the pulldown",
     str_error_pulldown_text_missing:
       "no file and function names were shipped for the pulldowns",
     str_error_report_incomplete:
       "report incomplete, assets/report_complete.js not written.",
+    str_error_row_count_unusable:
+      "the row count for {0} came out as {1}, not one of {2}",
+    str_error_rows_unwalked:
+      "table {0} walks no rows, so none of its rows can be a tab stop",
     str_error_scale_stop_unusable:
       "the scale bar stop came out as {0}, not a whole number from 0 to {1}",
+    str_error_scale_stored_unusable:
+      "the stored page scale came out as {0}, not a number from {1} to {2}",
     str_error_scale_unusable: "the page scale came out as {0}",
+    str_error_strip_entry_kind_unknown:
+      "strip entry {0} has kind {1}, which no strip cell draws",
+    str_error_strip_entry_repeated: "the strip names entry {0} more than once",
+    str_error_strip_entry_unknown: "the strip holds no entry named {0}",
+    str_error_strip_entry_unusable: "strip entry {0} is no available {1}",
+    str_error_text_scrollbar_attached_twice:
+      "text scrollbar {0} inside {1} is attached twice",
+    str_error_text_scrollbar_axis_unknown:
+      "text scrollbar axis unrecognized: {0}",
+    str_error_wheel_delta_mode_unknown: "wheel delta mode unrecognized: {0}",
     str_function_name_unknown: "?",
-    str_heading_functions_by_self: "{prefix} functions by self {counter}",
-    str_heading_lines_by_counter: "{prefix} lines by {counter}",
-    str_heading_prefix_diff: "Most changed",
-    str_heading_prefix_self: "Hottest",
+    str_heading_functions_by_counter: "top {count} functions by {measure}",
+    str_heading_lines_by_counter: "top {count} lines by {measure}",
+    str_heading_measure_diff: "change in self {counter}",
+    str_heading_measure_self: "self {counter}",
     str_heat_map_main_label: "heat map view",
-    str_heat_map_menu_counter: "counter:",
-    str_heat_map_menu_scale: "scale:",
-    str_heat_map_menu_search: "search:",
-    str_heat_map_menu_tree: "tree:",
     str_heat_map_tree_label: "files",
     str_in_function: " in {function}",
+    str_information_box_callees: "calls from this line (total {counter})",
+    str_information_box_close: "close",
+    str_information_box_close_symbol: "[x]",
+    str_information_box_copy: "copy",
+    str_information_box_function: "function",
+    str_information_box_function_self: "{function}: self {self}.",
+    str_information_box_function_totals:
+      "{function} by call count: self {self}, total {total}.",
+    str_information_line_link: "{path} self {share} info",
     str_line_self: "line self",
     str_menu_button: "{number} {label}",
     str_menu_light_mode: "light",
@@ -125,12 +141,11 @@ window.ui_strings_ = (function () {
     str_menu_overview: "overview",
     str_menu_reset: "reset",
     str_menu_scale: "scale",
-    str_menu_scale_bar_empty: "░",
-    str_menu_scale_bar_end: "] {multiple}",
-    str_menu_scale_bar_filled: "█",
-    str_menu_scale_bar_lead: "{button}: ",
-    str_menu_scale_bar_start: "[",
+    str_menu_scale_cell_after_stop: "▓",
+    str_menu_scale_cell_before_stop: "▒",
+    str_menu_status_line: "line {line}",
     str_menu_test: "test",
+    str_menu_unavailable_fill: "▒",
     str_no_caller: "(no recorded caller)",
     str_no_match: "(no match)",
     str_no_samples: "no samples",
@@ -138,18 +153,18 @@ window.ui_strings_ = (function () {
     str_not_in_repo: "not in this repo ({path})",
     str_pulldown_placeholder: "<type here>",
     str_report_name: "perf2html",
-    str_scale_curve_linear: "linear",
-    str_scale_curve_log: "log",
+    str_scale_curve_linear: "linear scale",
+    str_scale_curve_log: "log scale",
     str_scale_entry: "{curve}, {scope}",
     str_scope_file: "per file",
     str_scope_function: "per function",
-    str_scope_global: "global",
-    str_scope_line: "per line",
-    str_search_placeholder: "file name…",
-    str_sort_by_heat: "by heat",
-    str_sort_by_name: "by name",
+    str_sort_alphabetical: "alphabetical",
+    str_sort_hottest_first: "hottest first",
     str_source_beyond_end: "error: Line beyond end of file, source changed.",
     str_source_unavailable: "Source not available.",
+    str_table_heading_copy: "copy",
+    str_text_scrollbar_gutter: "▒",
+    str_text_scrollbar_thumb: "▓",
     str_ticker_tape_heading_diff: "most changed lines",
     str_ticker_tape_heading_self: "hottest lines",
     str_view_callers: "callers",
