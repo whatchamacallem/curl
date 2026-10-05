@@ -145,6 +145,7 @@ window.ui_strings_ = (function () {
     str_menu_scale_cell_before_stop: "▒",
     str_menu_status_line: "line {line}",
     str_menu_test: "test",
+    str_menu_test_suite_name: "all",
     str_menu_unavailable_fill: "▒",
     str_no_caller: "(no recorded caller)",
     str_no_match: "(no match)",

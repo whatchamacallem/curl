@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 // This file is licensed under the terms of the LICENSE-MIT.md file.
 
-const __NAME__ = (function () {
+const settings_ = (function () {
   "use strict";
   function deep_freeze(value) {
     if (value === null || typeof value !== "object") {

@@ -95,6 +95,8 @@ conversation as well as providing a link to the task doc.
   making it an exception to a lot of rules. Try not to mention it.
 - Consider `speedscope` externally maintained and ignore it when applying the
   `perf2html` maintainers guidelines.
+- All constants must go in settings.py or settings.sh. The only exception if
+  for the numeric constant zero and the color clear.
 
 ### 0.2 One-door glossary
 
@@ -121,6 +123,10 @@ The single function/check owning each concern - never bypass or duplicate:
 - `report_ui_.strip.render(strip_element, entries, status_entries)` - every
   strip cell: the menu and its status bar, the heat map strip, each table
   heading (theme.js).
+- `report_ui_.resize_settle_register(callback)` - every window resize
+  settle: the one timer, the one reader of `LAYOUT_RESIZE_SETTLE_DELAY_MS`,
+  runs `layout_refresh`, then each callback in registration order; a scale
+  change settles with the refresh alone (theme.js).
 
 ### 0.3 Working agreement
 
@@ -366,8 +372,10 @@ taskset -c 3 ./build-relwithdebinfo/22_DCMAKECFLAGSO2g/tests/perf/perf \
 - `run_one`: `taskset -c 3 valgrind --tool=callgrind --cache-sim=yes
   --branch-sim=yes --trace-redir=yes --LL=16777216,16,64` (auto LL is
   direct-mapped; `--trace-redir=yes` logs each object's load address in
-  valgrind's debug lines, `--<pid>--`, which the callers page leaves out with
-  the log's first `CALLERS_PERF_LOG_SKIPPED_HEAD_LINES` own lines), then
+  valgrind's debug lines, `--<pid>--`, which the callers page leaves out;
+  the page then cuts each `==<pid>==` prefix and starts the valgrind log at
+  the first line matching `CALLERS_VALGRIND_LOG_FIRST_LINE_PATTERN`
+  (`^Events *:`), a log without one a hard error), then
   `callgrind_symbols.py` on that run's log and callgrind file. Timing is a
   separate pinned `perf stat -x, -e cycles:u,instructions:u`; its `Time*` lines
   are the only valid speed number. Flame graph for shape, perf log for speed;
@@ -585,7 +593,8 @@ timer-artifacts-<unix>.txz (full report only)
   stripped, + speedscope JSON, one deterministic `tar.xz` holding one root
   entry of the same name (`timer_artifacts_write`), the overview's raw data
   (`--raw-data`); a diff reads its inputs' (`timer_artifacts_find`) and
-  ships none. `all/` = every test merged: no perf log, trace, flame graph.
+  ships none. `all/` = every test merged, `REPORT_TEST_SUITE_NAME` the id in
+  shell, Python and JS: no perf log, trace, flame graph.
 - `MANIFEST.txt`: line 1 version string, then LABEL=VALUE. Full: `revision`,
   `cpu`, `build`, `executable` (repo-relative), `recorded` (`<unix> <human
   date>`), `checksum`. Diff: `baseline`, `modified`, `baseline_recorded`,
@@ -627,7 +636,9 @@ timer-artifacts-<unix>.txz (full report only)
   constant that changes a pixel is a setting; `STYLE_*` = every setting
   that changes a pixel or picks a colour, written into a style as is or
   computed with first. A stylesheet keeps only zero, none, hidden and
-  values with no visible effect.
+  values with no visible effect, and the grid units `1ch`, `2ch` and `1lh`
+  written literally where the maintainer authorized each use, the one
+  exception to both rules and no general licence.
   `settings_script_write()` ships the module as frozen JSON (all
   JSON-serializable; the manifest table is not among it, see `manifest_table`
   and `report_complete_write` in section 6); `settings.js` is read
@@ -732,13 +743,15 @@ timer-artifacts-<unix>.txz (full report only)
   same-named `const` at the top of its IIFE, never in a render path; every
   number/colour/key/bound is a setting (`MENU_PULLDOWN_KEY_NAMES`).
 - Names: `snake_case` ours; camelCase owned by browser/Python (DOM,
-  storage/URL key, TypedDict key). A CSS class, id, colour role or value
+  storage/URL key, TypedDict key). A CSS class, id or value
   entry is its object path, `-` between words, singular words: the views
   it shows on (`callers`, `heat-map`, `menu`, `overview`, alphabetized, or
   `page` when the views are all of them), component, part; no word its
-  parent already gives. A mode colour role leads with its mode,
+  parent already gives. A colour role leads with its mode,
   `dark-mode-` or `light-mode-`, then a concept: `menu-normal`,
-  `menu-focus`, `page-normal`, `page-highlight`, `status-bar`. State classes
+  `menu-focus`, `page`, `page-normal`, `page-highlight`, `page-dim`,
+  `page-link`, `panel`, `status-bar`, `table-panel-odd`,
+  `table-panel-even`. State classes
   (`selected_`, `open_`, `empty_`, `drag_`, `flash_`) and layout helpers
   (`.band_`, `.table-box-`, `.page_`) stay plain. Every class, id, CSS
   custom property and `data-*` attribute perf2html writes ends in a
@@ -747,8 +760,9 @@ timer-artifacts-<unix>.txz (full report only)
   from DOM and native widget names. JS reads a `data-*` attribute through
   `getAttribute()` by its written name, never `dataset`.
   `window.report_sources_` keyed by
-  display path, read by `source_text()`. Markers `__NAME__` and `__DATA__`
-  (the `settings.js` template), `__SCRIPTS__`, `__APP_CSS__`, `__APP_JS__`,
+  display path, read by `source_text()`. Markers `__DATA__` (the
+  `settings.js` template, whose global `settings_` is literal, no marker),
+  `__SCRIPTS__`, `__APP_CSS__`, `__APP_JS__`,
   `__MENU__`, `__RAW_DATA__`, `__MANIFEST__`, `__TESTS__`,
   `__FLAME_GRAPH_LINK__`, `__PERF_LOG__`, `__TRACE_LOG__`,
   `__VALGRIND_LOG__`, `__HEADING__`, `__FUNCTIONS__`, `__HEAT_MAP_MAIN__`,
@@ -814,8 +828,10 @@ timer-artifacts-<unix>.txz (full report only)
   page-normal colours, a design exception. Numbered entries take 1 to 9
   then 0 by position, ▒ past the tenth; an unavailable entry keeps its
   number and its label is drawn ▒, the flame graph's on a diff and for
-  `MENU_PULLDOWN_MERGED_TEST_NAME`. View, file and function entries address
-  the shown test, else `MENU_PULLDOWN_MERGED_TEST_NAME`. Every acting cell
+  `REPORT_TEST_SUITE_NAME`. View, file and function entries address the
+  shown test, else `REPORT_TEST_SUITE_NAME`, which the menu shows as
+  `str_menu_test_suite_name` in the test pulldown, the status bar and the
+  document title; a page Python renders shows the id. Every acting cell
   but the widget's is a tab stop, Enter or Space activating it. The status
   bar is one cell apart from the entry cells, `td.menu-status-bar-`, last in
   the row and as wide as the room left: one space, then each status entry
@@ -939,19 +955,23 @@ timer-artifacts-<unix>.txz (full report only)
   moved press swallowing its click; `report_ui_.pane_splitter.attach` sizes
   a pane in ch and answers `travel_take`, the travel it could not use.
 - Colour: `STYLE_COLOR_DARK_MODE` maps each palette colour, lighter then
-  dimmer per pair, to its roles; `STYLE_COLOR_LIGHT_MODE` maps the light
-  palette to its `light-mode-` roles. A role is its object path, then any
-  state, then `fg`, `bg`, `outline` or `border`, `-dim` on a dimmer colour,
-  then the marker `-`. The columns of a leaf table (`table.columns_`)
+  dimmer per pair, to its `dark-mode-` roles; `STYLE_COLOR_LIGHT_MODE` maps
+  the light palette to its `light-mode-` roles; `Theme.roles()` refuses a
+  role lacking its palette's mode prefix. A role is its mode, then a
+  concept, then `fg`, `bg`, `outline` or `border`, a digit where a concept
+  has several of one kind (`dark-mode-panel-bg0-` to `-bg2-`), then the
+  marker `-`. The columns of a leaf table (`table.columns_`)
   alternate through `<mode>-table-panel-odd-bg-` and
   `<mode>-table-panel-even-bg-`, counted from 1 by `col:nth-child()` in each
-  mode sheet; layout tables wear page colours. Each thing a page colours
-  has its own role, so the
+  mode sheet; layout tables wear page colours. A role names a concept, not
+  the thing coloured, so things coloured alike share one role and the
   palettes are the one control surface. `Theme.css()` writes no colour
   role; `Theme.light_mode_css()` writes, in `:root`, every `light-mode-`
   role, then remaps
-  each role the shared stylesheets name to `light-mode-page-bg-`
-  or `light-mode-page-fg-`; `light_mode.css` reads only value entries and
+  each `dark-mode-` role the shared stylesheets name, a `bg` role to
+  `light-mode-page-bg-` and any other to `light-mode-page-fg-`, so that
+  property holds a light colour while dark mode is off; `light_mode.css`
+  reads only the `:root` values `Theme.css()` writes and
   `light-mode-` roles. `Theme.dark_mode_css()` writes
   every dark role the shared stylesheets or `dark_mode.css` name in the
   dark selector block. `light_mode.css` never names `data-dark-mode-`, and
@@ -959,10 +979,12 @@ timer-artifacts-<unix>.txz (full report only)
   `dark_mode.css` menu colour rules are the `light_mode.css` ones with only
   the mode prefix changed; the strip ground and logo wear page-normal, the
   status bar status-bar (white fg in light mode), a focused status link
-  the page link focus colours.
+  the page-highlight roles, as every focused link.
   `STYLE_HEAT_COLOR_STOPS` palette; `ramp_channels_at()` the one interpolation
   (`cell_style()`, `logo_color_at()`); cells paint the stop opaque, their
-  text on-bright above `STYLE_HEAT_CELL_ON_BRIGHT_ABOVE_LUMINANCE_SHARE`.
+  text `dark-mode-page-normal-fg-`, or `dark-mode-page-normal-bg-` above
+  `STYLE_HEAT_CELL_ON_BRIGHT_ABOVE_LUMINANCE_SHARE`, the dark palette's
+  colours in either mode (`heat_style()`, `runtime()`).
   `heat_of_share()`: clamp to `STYLE_HEAT_COLOR_FULL_SCALE_PERCENT`, divide,
   curve;
   nothing measured off the data; a diff maps [-100..100%], 0% at the 5.5
@@ -987,7 +1009,8 @@ timer-artifacts-<unix>.txz (full report only)
   exact zero empty, a heading's
   zero share `0.00%` (`zero_percent_text()`); every share, multiple and time
   keeps `NUMBER_FRACTION_DIGITS` (2) decimals; floor
-  `NUMBER_SMALLEST_PRINTED_PERCENT` (0.01). Diff: no `+`; the arrow, then the
+  `1 / 10 ** NUMBER_FRACTION_DIGITS` (0.01; `smallest_printed_percent`/
+  `SMALLEST_PRINTED_PERCENT`, not a setting). Diff: no `+`; the arrow, then the
   amount right-aligned in the floor's amount width (8 characters, 9 in all;
   `signed_percent_amount_chars`/`SIGNED_PERCENT_AMOUNT_CHARS`, derived from
   `NUMBER_FRACTION_DIGITS`, not a setting), so the arrow touches the amount

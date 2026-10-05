@@ -10,13 +10,13 @@ from typing import NoReturn, get_origin, get_type_hints
 
 
 ASSET_CALLERS_SCRIPT_NAME = "callers.js"
-ASSET_LIGHT_MODE_STYLESHEET_NAME = "light_mode.css"
-ASSET_DARK_MODE_ENABLED_STYLESHEET_NAME = "dark_mode.css"
+ASSET_DARK_MODE_STYLESHEET_NAME = "dark_mode.css"
 ASSET_ERROR_OVERLAY_SCRIPT_NAME = "error_overlay.js"
 ASSET_FLAME_GRAPH_SCRIPT_NAME = "flame_graph.js"
 ASSET_FRAME_SCRIPT_NAME = "frame.js"
 ASSET_HEAT_MAP_SCRIPT_NAME = "heat_map.js"
 ASSET_HEAT_MAP_STYLESHEET_NAME = "heat_map.css"
+ASSET_LIGHT_MODE_STYLESHEET_NAME = "light_mode.css"
 ASSET_MENU_SCRIPT_NAME = "menu.js"
 ASSET_MENU_STYLESHEET_NAME = "menu.css"
 
@@ -29,31 +29,17 @@ ASSET_TEMPLATE_FLAME_GRAPH_PAGE_NAME = "flame_graph.html"
 ASSET_TEMPLATE_HEAT_MAP_MAIN_NAME = "heat_map_main.html"
 ASSET_TEMPLATE_HEAT_MAP_PAGE_NAME = "heat_map.html"
 ASSET_TEMPLATE_OVERVIEW_PAGE_NAME = "overview.html"
-ASSET_TEMPLATE_SETTINGS_HANDLER_NAME = "settings.js"
 
 ASSET_THEME_SCRIPT_NAME = "theme.js"
 ASSET_THEME_STYLESHEET_NAME = "theme.css"
 ASSET_UI_STRINGS_SCRIPT_NAME = "ui_strings.js"
 ASSET_UTILITY_SCRIPT_NAME = "utility.js"
 
-CALLERS_PERF_LOG_SKIPPED_HEAD_LINES = 8
-
-CALLERS_TIME_SUFFIX_SECONDS: dict[str, float] = {
-    "msec": 1e-3,
-    "msecs": 1e-3,
-    "ms": 1e-3,
-    "nsec": 1e-9,
-    "nsecs": 1e-9,
-    "ns": 1e-9,
-    "sec": 1.0,
-    "secs": 1.0,
-    "s": 1.0,
-    "usec": 1e-6,
-    "usecs": 1e-6,
-    "us": 1e-6,
-}
+CALLERS_TIME_SUFFIX_SECONDS: dict[str, float] = {"ns": 1e-9, "usecs": 1e-6}
 
 CALLERS_TOP_FUNCTION_ROWS = 50
+
+CALLERS_VALGRIND_LOG_FIRST_LINE_PATTERN = "^Events *:"
 
 CALLERS_VIEW_KEY = "callers"
 
@@ -81,6 +67,8 @@ DERIVED_COUNTER_TERMS: dict[str, dict[str, int]] = {
     },
 }
 
+DRAG_DIRECTION_THRESHOLD_PX = 5
+
 FLAME_GRAPH_EXPORTER_NAME = "tests/perf2html/scripts/trace_to_speedscope.py"
 
 FLAME_GRAPH_LOCAL_PROFILE_PATH = "profile"
@@ -107,8 +95,6 @@ HEAT_MAP_HOME_LINES_SOURCE_COLUMN_MAX_CHARS = 36
 HEAT_MAP_HOME_LINES_SOURCE_SNIPPET_MAX_CHARS = 110
 
 HEAT_MAP_HOME_TABLE_DEFAULT_ROWS = 20
-
-HEAT_MAP_MINIMAP_SOURCE_WIDTH_CHARS = 80
 
 HEAT_MAP_MINIMAP_VIEWPORT_BOX_SMALLEST_PX = 8
 
@@ -146,8 +132,6 @@ MENU_PULLDOWN_KEY_NAMES: dict[str, str] = {
 
 MENU_PULLDOWN_LINE_NUMBER_PATTERN = "^(.*):([0-9]+)$"
 
-MENU_PULLDOWN_MERGED_TEST_NAME = "all"
-
 MENU_PULLDOWN_OPENING_KEY_PATTERN = "^[a-zA-Z]$"
 
 MENU_PULLDOWN_SKIPPED_KEY_NAMES: tuple[str, ...] = (" ",)
@@ -157,10 +141,6 @@ MENU_SCALE_KEY_STEPS: dict[str, int] = {"+": 1, "=": 1, "-": -1}
 NUMBER_FRACTION_DIGITS = 2
 
 NUMBER_LARGEST_PRINTED_MULTIPLE_TIMES = 999.99
-
-NUMBER_SMALLEST_PRINTED_PERCENT = 0.01
-
-PAGE_SETTINGS_GLOBAL_NAME = "settings_"
 
 RANKING_COUNTER_NAME = "CEst"
 
@@ -182,81 +162,35 @@ STORAGE_VERSION_KEY = "perf2html.version"
 
 STYLE_COLOR_DARK_MODE: dict[str, list[str]] = {
     "#1AB6FF": [
-        "heat-map-source-information-box-control-fg-",
-        "heat-map-source-table-line-number-cell-callee-marker-fg-",
-        "page-link-fg-",
+        "dark-mode-page-link-fg-",
     ],
     "#F5F6FA": [
-        "callers-collapsed-section-title-focus-fg-",
-        "callers-heat-cell-on-dark-fg-",
         "dark-mode-menu-focus-bg-",
         "dark-mode-menu-normal-fg-",
+        "dark-mode-page-highlight-fg-",
         "dark-mode-page-normal-fg-",
         "dark-mode-status-bar-fg-",
-        "heat-map-heat-cell-on-dark-fg-",
-        "heat-map-source-information-box-control-focus-fg-",
-        "heat-map-source-information-box-function-name-fg-",
-        "heat-map-source-table-row-focus-fg-",
-        "heat-map-source-ticker-tape-entry-focus-fg-",
-        "heat-map-tree-node-focus-fg-",
-        "page-link-focus-fg-",
-        "page-table-row-focus-fg-",
     ],
     "#DCDDE1": [
-        "callers-collapsed-section-file-name-fg-dim-",
-        "callers-collapsed-section-title-fg-dim-",
-        "callers-collapsed-section-title-marker-fg-dim-",
-        "heat-map-source-information-box-action-bar-separator-fg-dim-",
-        "heat-map-source-information-box-close-symbol-fg-dim-",
-        "heat-map-source-information-box-heading-fg-dim-",
-        "heat-map-source-information-box-note-fg-dim-",
-        "heat-map-source-table-counter-cell-fg-dim-",
-        "heat-map-source-table-line-number-cell-fg-dim-",
-        "heat-map-source-ticker-tape-label-fg-dim-",
-        "heat-map-source-unavailable-note-fg-dim-",
-        "heat-map-tree-node-caret-fg-dim-",
-        "heat-map-tree-node-name-cold-fg-dim-",
-        "heat-map-tree-node-name-more-fg-dim-",
-        "heat-map-tree-node-share-percent-fg-dim-",
-        "page-heading-fg-dim-",
-        "page-table-column-title-fg-dim-",
+        "dark-mode-page-dim-fg-",
     ],
     "#273C75": [
-        "callers-collapsed-section-log-box-focus-bg-",
-        "callers-collapsed-section-title-focus-bg-",
         "dark-mode-page-highlight-bg-",
-        "heat-map-main-focus-bg-",
-        "heat-map-source-information-box-control-focus-bg-",
-        "heat-map-source-table-column-title-bg-",
-        "heat-map-source-table-row-focus-bg-",
-        "heat-map-source-ticker-tape-bg-",
-        "heat-map-source-ticker-tape-entry-focus-bg-",
-        "heat-map-tree-node-focus-bg-",
-        "heat-map-tree-node-selected-bg-",
-        "page-link-focus-bg-",
-        "page-table-row-focus-bg-",
     ],
     "#192A56": [
-        "callers-collapsed-section-log-box-bg-dim-",
         "dark-mode-menu-focus-fg-",
-        "heat-map-source-information-box-bg-dim-",
-        "page-table-column-title-bg-dim-",
+        "dark-mode-panel-bg2-",
     ],
     "#353B48": [
+        "dark-mode-panel-bg1-",
         "dark-mode-table-panel-even-bg-",
-        "heat-map-source-ticker-tape-entry-bg-",
     ],
     "#2F3640": [
-        "callers-heat-cell-on-bright-fg-dim-",
         "dark-mode-menu-normal-bg-",
         "dark-mode-page-normal-bg-",
+        "dark-mode-panel-bg0-",
         "dark-mode-status-bar-bg-",
         "dark-mode-table-panel-odd-bg-",
-        "heat-map-heat-cell-on-bright-fg-dim-",
-        "heat-map-main-bg-dim-",
-        "heat-map-minimap-bg-dim-",
-        "heat-map-source-information-box-table-bg-dim-",
-        "overview-view-frame-bg-dim-",
     ],
 }
 
@@ -338,7 +272,7 @@ STYLE_HEAT_MAP_TREE_INDENT_PER_LEVEL_CHARS = 2
 STYLE_HEAT_MAP_TREE_PANE_NARROWEST_CHARS = 17
 STYLE_HEAT_MAP_TREE_PANE_WIDEST_CHARS = 40
 
-STYLE_MENU_LOGO_START_FRACTION = 0.5
+STYLE_MENU_LOGO_START_SHARE = 0.5
 
 STYLE_MENU_PULLDOWN_EXTRA_WIDTH_CHARS = 2
 
@@ -361,40 +295,25 @@ STYLE_TABLE_TWO_CELL_GLYPHS = "⯅⯆⯇⯈"
 STYLE_TEXT_SCROLLBAR_THUMB_SHORTEST_CHARS = 4
 
 STYLE_VALUE_ENTRIES: dict[str, str] = {
-    "callers-collapsed-section-file-name-max-width-": "96ch",
     "callers-collapsed-section-log-box-max-height-share-": "0.6",
     "heat-map-band-z-index-": "2",
-    "heat-map-menu-padding-bottom-": "1lh",
     "heat-map-minimap-width-": "110px",
-    "heat-map-overview-home-border-block-": "1lh",
-    "heat-map-overview-home-border-inline-": "2ch",
     "heat-map-source-table-code-cell-tab-size-": "4",
     "heat-map-source-table-line-number-cell-callee-marker-text-": '"⯈"',
-    "heat-map-source-ticker-tape-entry-padding-inline-": "1ch",
-    "heat-map-source-ticker-tape-gap-": "1ch",
-    "heat-map-tree-node-caret-width-": "2ch",
-    "heat-map-tree-node-gap-": "1ch",
-    "heat-map-tree-node-padding-right-": "1ch",
     "heat-map-tree-node-share-percent-width-": "10ch",
     "heat-map-tree-width-": "39ch",
-    "menu-button-padding-inline-": "1ch",
     "menu-pulldown-entry-list-max-height-share-": "0.6",
     "menu-pulldown-entry-list-z-index-": "3",
-    "menu-pulldown-entry-padding-inline-": "1ch",
     "menu-pulldown-search-box-min-width-": "13ch",
     "menu-status-bar-link-padding-inline-": "1ch",
     "page-body-line-height-": "1.1",
     "page-line-width-": "0.125ch",
     "page-table-cell-padding-inline-": "1ch",
     "page-table-column-title-z-index-": "1",
-    "page-text-scrollbar-horizontal-height-": "1lh",
-    "page-text-scrollbar-vertical-width-": "1ch",
     "screenshot-label-border-width-": "1ch",
     "screenshot-label-font-size-": "1.5em",
     "screenshot-label-z-index-": "3",
 }
-
-TABLE_COLUMN_SLIDE_THRESHOLD_PX = 5
 
 TABLE_ROW_COUNT_CHOICES: tuple[int, ...] = (
     10,
@@ -457,7 +376,6 @@ _SENTINEL_TEXT = 'False, 0, 0.0, "", (), [], {}'
 _SETTINGS_DIRECTORY = os.path.dirname(os.path.abspath(__file__))
 
 _SETTINGS_PAGE_DATA_MARKER = "__DATA__"
-_SETTINGS_PAGE_NAME_MARKER = "__NAME__"
 
 _SHELL_INTEGER_PATTERN = re.compile(r"-?[0-9]+")
 
@@ -698,14 +616,10 @@ class SettingsWriter:
     def script_write(self) -> str:
         values = self.all_named()
         data = json.dumps(values, indent=2, sort_keys=True, ensure_ascii=False)
-        path = os.path.join(
-            _SETTINGS_DIRECTORY, ASSET_TEMPLATE_SETTINGS_HANDLER_NAME
-        )
+        path = os.path.join(_SETTINGS_DIRECTORY, ASSET_SETTINGS_SCRIPT_NAME)
         with open(path, encoding="utf-8") as handle:
             runtime = handle.read()
-        return runtime.replace(
-            _SETTINGS_PAGE_NAME_MARKER, PAGE_SETTINGS_GLOBAL_NAME
-        ).replace(_SETTINGS_PAGE_DATA_MARKER, data)
+        return runtime.replace(_SETTINGS_PAGE_DATA_MARKER, data)
 
 
 _reader = SettingsReader()

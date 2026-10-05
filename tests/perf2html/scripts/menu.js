@@ -9,18 +9,13 @@ window.catch_show_throw_(function () {
   const DARK_MODE_ENABLED_DEFAULT = settings_("DARK_MODE_ENABLED_DEFAULT");
   const FLAME_GRAPH_VIEW_ENTRY = settings_("FLAME_GRAPH_VIEW_ENTRY");
   const HEAT_MAP_VIEW_ENTRY = settings_("HEAT_MAP_VIEW_ENTRY");
-  const LAYOUT_RESIZE_SETTLE_DELAY_MS = settings_(
-    "LAYOUT_RESIZE_SETTLE_DELAY_MS",
-  );
-  const MENU_PULLDOWN_MERGED_TEST_NAME = settings_(
-    "MENU_PULLDOWN_MERGED_TEST_NAME",
-  );
   const MENU_SCALE_KEY_STEPS = settings_("MENU_SCALE_KEY_STEPS");
+  const REPORT_TEST_SUITE_NAME = settings_("REPORT_TEST_SUITE_NAME");
   const STYLE_DESIGN_SCALE_DEFAULT_STOP = settings_(
     "STYLE_DESIGN_SCALE_DEFAULT_STOP",
   );
-  const STYLE_MENU_LOGO_START_FRACTION = settings_(
-    "STYLE_MENU_LOGO_START_FRACTION",
+  const STYLE_MENU_LOGO_START_SHARE = settings_(
+    "STYLE_MENU_LOGO_START_SHARE",
   );
   const STYLE_MENU_PULLDOWN_EXTRA_WIDTH_CHARS = settings_(
     "STYLE_MENU_PULLDOWN_EXTRA_WIDTH_CHARS",
@@ -46,6 +41,9 @@ window.catch_show_throw_(function () {
   const SCALE_ENTRY_NAME = "scale";
   const SCALE_LAST_STOP = window.report_ui_.design_scale_last_stop;
   const TEST_ENTRY_NAME = "test";
+  const TEST_SUITE_NAME_TEXT = window.ui_strings_.text_of(
+    "str_menu_test_suite_name",
+  );
   const TITLE_PART_SEPARATOR = " / ";
   const VIEW_LABEL_TEXTS = {
     [CALLERS_VIEW_KEY]: window.ui_strings_.text_of("str_view_callers"),
@@ -59,19 +57,23 @@ window.catch_show_throw_(function () {
   const logo_href = menu_strip.getAttribute("data-logo-href-");
   const pulldown_box_width_chars =
     Math.max(
-      ...window.report_frame_.test_names.map((test_name) => test_name.length),
+      ...window.report_frame_.test_names.map(
+        (test_name) => test_name_text_of(test_name).length,
+      ),
     ) + STYLE_MENU_PULLDOWN_EXTRA_WIDTH_CHARS;
 
   if (typeof window.report_manifest_table_ === "undefined")
     throw new Error(window.ui_strings_.text_of("str_error_report_incomplete"));
   let flash_entry_name = "";
   let menu_strip_handle = null;
-  let resize_settle_timer = null;
 
   function active_test_name() {
-    return (
-      window.report_frame_.address_now().test ?? MENU_PULLDOWN_MERGED_TEST_NAME
-    );
+    return window.report_frame_.address_now().test ?? REPORT_TEST_SUITE_NAME;
+  }
+  function test_name_text_of(test_name) {
+    return test_name === REPORT_TEST_SUITE_NAME
+      ? TEST_SUITE_NAME_TEXT
+      : test_name;
   }
   function flash_request_of(entry_name) {
     return () => {
@@ -124,7 +126,7 @@ window.catch_show_throw_(function () {
   function tests_entries_of() {
     return window.report_frame_.test_names.map((test_name) =>
       pulldown_link_of(
-        test_name,
+        test_name_text_of(test_name),
         window.report_ui_.address.home_hash_of(test_name, HEAT_MAP_VIEW_KEY),
         TEST_ENTRY_NAME,
       ),
@@ -239,14 +241,14 @@ window.catch_show_throw_(function () {
   }
   // Assembles every menu entry in strip order, the one place the menu changes.
   function menu_entries_of(address) {
-    const test_name = address.test ?? MENU_PULLDOWN_MERGED_TEST_NAME;
+    const test_name = address.test ?? REPORT_TEST_SUITE_NAME;
     const view_hash_of = (view_key) =>
       window.report_ui_.address.home_hash_of(test_name, view_key);
     return [
       entry_of(
         "logo",
         "link",
-        logo_letters_build(REPORT_NAME_TEXT, STYLE_MENU_LOGO_START_FRACTION),
+        logo_letters_build(REPORT_NAME_TEXT, STYLE_MENU_LOGO_START_SHARE),
         { is_numbered: false, href: logo_href },
       ),
       view_entry_of(
@@ -293,7 +295,7 @@ window.catch_show_throw_(function () {
         VIEW_LABEL_TEXTS[FLAME_GRAPH_VIEW_KEY],
         view_hash_of(FLAME_GRAPH_VIEW_KEY),
         window.report_frame_.has_flame_graph &&
-          test_name !== MENU_PULLDOWN_MERGED_TEST_NAME,
+          test_name !== REPORT_TEST_SUITE_NAME,
       ),
       entry_of("dark-mode", "action", dark_mode_label_text(), {
         on_activate: dark_mode_toggle,
@@ -370,7 +372,7 @@ window.catch_show_throw_(function () {
     return [
       view_entry,
       status_entry_of(
-        address.test,
+        test_name_text_of(address.test),
         window.report_ui_.address.home_hash_of(address.test, CALLERS_VIEW_KEY),
       ),
       ...heat_map_status_entries_of(address),
@@ -379,7 +381,7 @@ window.catch_show_throw_(function () {
   function title_text_of(address) {
     if (address.test === null) return home_title_text;
     return [
-      address.test,
+      test_name_text_of(address.test),
       VIEW_LABEL_TEXTS[address.view],
       heat_map_part_text(address),
     ]
@@ -428,16 +430,7 @@ window.catch_show_throw_(function () {
         window.report_frame_.address_request(link_hash);
       }),
     );
-    window.addEventListener(
-      "resize",
-      window.catch_show_throw_(() => {
-        clearTimeout(resize_settle_timer);
-        resize_settle_timer = setTimeout(
-          window.catch_show_throw_(menu_render),
-          LAYOUT_RESIZE_SETTLE_DELAY_MS,
-        );
-      }),
-    );
+    window.report_ui_.resize_settle_register(menu_render);
   }
 
   window.report_menu_ = {

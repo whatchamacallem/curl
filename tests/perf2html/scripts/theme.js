@@ -10,6 +10,9 @@ window.report_ui_ = window.catch_show_throw_(function () {
   const DARK_MODE_DISABLED_VALUE = settings_("DARK_MODE_DISABLED_VALUE");
   const DARK_MODE_ENABLED_DEFAULT = settings_("DARK_MODE_ENABLED_DEFAULT");
   const DARK_MODE_ENABLED_VALUE = settings_("DARK_MODE_ENABLED_VALUE");
+  const DRAG_DIRECTION_THRESHOLD_PX = settings_(
+    "DRAG_DIRECTION_THRESHOLD_PX",
+  );
   const FLAME_GRAPH_LOCAL_PROFILE_PATH = settings_(
     "FLAME_GRAPH_LOCAL_PROFILE_PATH",
   );
@@ -33,9 +36,6 @@ window.report_ui_ = window.catch_show_throw_(function () {
   const NUMBER_FRACTION_DIGITS = settings_("NUMBER_FRACTION_DIGITS");
   const NUMBER_LARGEST_PRINTED_MULTIPLE_TIMES = settings_(
     "NUMBER_LARGEST_PRINTED_MULTIPLE_TIMES",
-  );
-  const NUMBER_SMALLEST_PRINTED_PERCENT = settings_(
-    "NUMBER_SMALLEST_PRINTED_PERCENT",
   );
   const STORAGE_OWNED_KEYS = settings_("STORAGE_OWNED_KEYS");
   const STORAGE_OWNED_PREFIXES = settings_("STORAGE_OWNED_PREFIXES");
@@ -89,12 +89,11 @@ window.report_ui_ = window.catch_show_throw_(function () {
   const STYLE_TABLE_GROW_COLUMN_NARROWEST_CHARS = settings_(
     "STYLE_TABLE_GROW_COLUMN_NARROWEST_CHARS",
   );
-  const STYLE_TABLE_TWO_CELL_GLYPHS = settings_("STYLE_TABLE_TWO_CELL_GLYPHS");
+  const STYLE_TABLE_TWO_CELL_GLYPHS = settings_(
+    "STYLE_TABLE_TWO_CELL_GLYPHS",
+  );
   const STYLE_TEXT_SCROLLBAR_THUMB_SHORTEST_CHARS = settings_(
     "STYLE_TEXT_SCROLLBAR_THUMB_SHORTEST_CHARS",
-  );
-  const TABLE_COLUMN_SLIDE_THRESHOLD_PX = settings_(
-    "TABLE_COLUMN_SLIDE_THRESHOLD_PX",
   );
   const TABLE_ROW_COUNT_CHOICES = settings_("TABLE_ROW_COUNT_CHOICES");
   const TEXT_SCROLLBAR_WHEEL_DELTA_PER_NOTCH = settings_(
@@ -136,6 +135,7 @@ window.report_ui_ = window.catch_show_throw_(function () {
   const SIGNED_PERCENT_AMOUNT_CHARS = (
     fixed_text(-100, NUMBER_FRACTION_DIGITS) + "%"
   ).length;
+  const SMALLEST_PRINTED_PERCENT = 1 / 10 ** NUMBER_FRACTION_DIGITS;
   const STRIP_DIGIT_KEY_COUNT = 10;
   const STRIP_ENTRY_KIND_NAMES = ["action", "link", "pulldown", "text"];
   const STRIP_GAP_TEXT = " ";
@@ -187,8 +187,10 @@ window.report_ui_ = window.catch_show_throw_(function () {
   };
   const registered_panes = [];
   const rendered_strips = new WeakMap();
+  const resize_settle_callbacks = [];
   const row_walks = new WeakMap();
   let resize_debounce_timer = null;
+  let window_resize_is_pending = false;
   let storage_is_checked = false;
   let tests_pulldown_is_open = false;
   let dark_mode_is_enabled = null;
@@ -413,7 +415,7 @@ window.report_ui_ = window.catch_show_throw_(function () {
     );
   }
   function percent_text(percent) {
-    if (percent >= NUMBER_SMALLEST_PRINTED_PERCENT) {
+    if (percent >= SMALLEST_PRINTED_PERCENT) {
       return fixed_text(percent, NUMBER_FRACTION_DIGITS) + "%";
     }
     if (percent > 0) {
@@ -445,7 +447,7 @@ window.report_ui_ = window.catch_show_throw_(function () {
     let amount_text;
     if (percent === Infinity) {
       amount_text = "∞%";
-    } else if (Math.abs(percent) < NUMBER_SMALLEST_PRINTED_PERCENT) {
+    } else if (Math.abs(percent) < SMALLEST_PRINTED_PERCENT) {
       amount_text = "≈" + fixed_text(0, NUMBER_FRACTION_DIGITS) + "%";
     } else if (percent <= 100) {
       amount_text = fixed_text(percent, NUMBER_FRACTION_DIGITS) + "%";
@@ -1364,7 +1366,7 @@ window.report_ui_ = window.catch_show_throw_(function () {
       move_event.clientY - press_event.clientY,
     );
     const travel_px = Math.hypot(sideways_travel_px, vertical_travel_px);
-    if (travel_px <= TABLE_COLUMN_SLIDE_THRESHOLD_PX) return "";
+    if (travel_px <= DRAG_DIRECTION_THRESHOLD_PX) return "";
     return Math.abs(vertical_travel_px) >= Math.abs(sideways_travel_px)
       ? "vertical"
       : "sideways";
@@ -2395,14 +2397,25 @@ window.report_ui_ = window.catch_show_throw_(function () {
     design_scale_apply();
     clearTimeout(resize_debounce_timer);
     resize_debounce_timer = setTimeout(
-      window.catch_show_throw_(layout_refresh),
+      window.catch_show_throw_(layout_settle),
       LAYOUT_RESIZE_SETTLE_DELAY_MS,
     );
+  }
+  // Refreshes the layout, then the callbacks when a window resize is pending.
+  function layout_settle() {
+    layout_refresh();
+    if (!window_resize_is_pending) return;
+    window_resize_is_pending = false;
+    for (const settle_callback of resize_settle_callbacks) settle_callback();
   }
   function page_activate() {
     if (is_scaled)
       text_scrollbar_attach(page_scrollbar, page_scroll_box, "horizontal");
     layout_activate();
+  }
+  // Runs the callback after the layout refresh of each window resize settle.
+  function resize_settle_register(settle_callback) {
+    resize_settle_callbacks.push(settle_callback);
   }
 
   font_fit_apply();
@@ -2411,7 +2424,10 @@ window.report_ui_ = window.catch_show_throw_(function () {
   design_scale_apply();
   window.addEventListener(
     "resize",
-    window.catch_show_throw_(design_scale_settle),
+    window.catch_show_throw_(() => {
+      window_resize_is_pending = true;
+      design_scale_settle();
+    }),
   );
   if (document.readyState === "loading") {
     document.addEventListener(
@@ -2450,6 +2466,7 @@ window.report_ui_ = window.catch_show_throw_(function () {
     pane_splitter: { attach: pane_splitter_attach },
     percent_text,
     ramp_channels_at,
+    resize_settle_register,
     signed_human_text,
     signed_percent_text,
     slide_cell_of,

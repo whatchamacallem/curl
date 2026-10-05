@@ -25,10 +25,10 @@ _HEAT_MAP_MODEL_DIR_NAME: str = ""
 _HEAT_MAP_MODEL_GLOBAL_NAME: str = ""
 _HEAT_MAP_TREE_ALWAYS_LISTED_DIRS: tuple[str, ...] = ()
 _HEAT_MAP_VIEW_ENTRY: tuple[str, str, str] = ("", "", "")
-_MENU_PULLDOWN_MERGED_TEST_NAME: str = ""
 _RANKING_COUNTER_NAME: str = ""
 _REPORT_ASSETS_DIR_NAME: str = ""
 _REPORT_SOURCES_DIR_NAME: str = ""
+_REPORT_TEST_SUITE_NAME: str = ""
 settings.load_into(__name__)
 
 BODY = theme.asset_text_read(_ASSET_TEMPLATE_HEAT_MAP_PAGE_NAME)
@@ -179,7 +179,7 @@ class CallgrindToHeatmap:
             info,
             model,
         )
-        if args.test == _MENU_PULLDOWN_MERGED_TEST_NAME:
+        if args.test == _REPORT_TEST_SUITE_NAME:
             self.pulldown_text_write(args.report_dir, model)
         model_script = self.data_render(args.test, model)
         data_dir = os.path.join(

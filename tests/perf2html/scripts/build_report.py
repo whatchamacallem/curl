@@ -19,15 +19,15 @@ _ASSET_MENU_STYLESHEET_NAME: str = ""
 _ASSET_PULLDOWN_TEXT_SCRIPT_NAME: str = ""
 _ASSET_TEMPLATE_CALLERS_PAGE_NAME: str = ""
 _ASSET_TEMPLATE_OVERVIEW_PAGE_NAME: str = ""
-_CALLERS_PERF_LOG_SKIPPED_HEAD_LINES: int = 0
 _CALLERS_TIME_SUFFIX_SECONDS: dict[str, float] = {}
 _CALLERS_TOP_FUNCTION_ROWS: int = 0
+_CALLERS_VALGRIND_LOG_FIRST_LINE_PATTERN: str = ""
 _DIFF_CALLER_COUNTS_FILE_SUFFIX: str = ""
 _FLAME_GRAPH_LOCAL_PROFILE_PATH: str = ""
 _FLAME_GRAPH_VIEW_ENTRY: tuple[str, str, str] = ("", "", "")
 _HEAT_MAP_VIEW_ENTRY: tuple[str, str, str] = ("", "", "")
-_MENU_PULLDOWN_MERGED_TEST_NAME: str = ""
 _RANKING_COUNTER_NAME: str = ""
+_REPORT_TEST_SUITE_NAME: str = ""
 _STYLE_TABLE_FUNCTION_NAME_WIDTH_CHARS: int = 0
 _TABLE_ROW_COUNT_CHOICES: tuple[int, ...] = ()
 settings.load_into(__name__)
@@ -46,10 +46,14 @@ _OVERVIEW_PAGE_ASSETS_DEPTH = 0
 
 _OVERVIEW_PAGE = theme.asset_text_read(_ASSET_TEMPLATE_OVERVIEW_PAGE_NAME)
 
+_TIME_SUFFIX_ALTERNATION = "|".join(
+    re.escape(suffix) for suffix in sorted(_CALLERS_TIME_SUFFIX_SECONDS)
+)
+
 _TIME_LINE = re.compile(
     r"^([ \t]*[A-Za-z][\w/ ]*:[ \t]*)"
     r"(-?\d+(?:\.\d+)?)[ \t]*"
-    r"(usecs?|us|msecs?|ms|nsecs?|ns|secs?|s)[ \t]*$",
+    rf"({_TIME_SUFFIX_ALTERNATION})[ \t]*$",
     re.I | re.M,
 )
 
@@ -416,12 +420,18 @@ class BuildReport:
 
     def log_block(self, path: str) -> str:
         lines = [
-            line
+            _PID_PREFIX.sub("", line)
             for line in self.file_read(path).rstrip().split("\n")
             if not _VALGRIND_DEBUG_LINE.match(line)
-        ][_CALLERS_PERF_LOG_SKIPPED_HEAD_LINES:]
-        text = "\n".join(_PID_PREFIX.sub("", line) for line in lines)
-        return self.log_box_render(text)
+        ]
+        for index, line in enumerate(lines):
+            if re.match(_CALLERS_VALGRIND_LOG_FIRST_LINE_PATTERN, line):
+                return self.log_box_render("\n".join(lines[index:]))
+        sys.exit(
+            f"error: {os.path.abspath(path)}: no line matches"
+            f" {_CALLERS_VALGRIND_LOG_FIRST_LINE_PATTERN!r}, the line the"
+            " valgrind log section starts at"
+        )
 
     def log_section(self, paths: Sequence[str]) -> str:
         if not paths:
@@ -517,10 +527,10 @@ class BuildReport:
     def menu_render(
         self, test_names: Sequence[str], has_flame_graph: bool
     ) -> str:
-        if _MENU_PULLDOWN_MERGED_TEST_NAME not in test_names:
+        if _REPORT_TEST_SUITE_NAME not in test_names:
             sys.exit(
                 "error: the overview's pulldowns start in"
-                f" {_MENU_PULLDOWN_MERGED_TEST_NAME!r}, the merged test,"
+                f" {_REPORT_TEST_SUITE_NAME!r}, the merged test,"
                 f" which is not one of its tests: {' '.join(test_names)}"
             )
         help_href = theme.shared_href(_OVERVIEW_PAGE_ASSETS_DEPTH, "README.md")

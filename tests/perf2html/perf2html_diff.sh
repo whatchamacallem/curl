@@ -167,7 +167,7 @@ profiles_extract() {
     _test="${_test#"$CALLGRIND_OUTPUT_FILE_PREFIX".}"
     listing_row_write "$_listing" "${_test%.*}" "$_file"
   done
-  listing_row_write "$_listing" all "${_files[@]}"
+  listing_row_write "$_listing" "$REPORT_TEST_SUITE_NAME" "${_files[@]}"
 }
 
 listing_row_write() {

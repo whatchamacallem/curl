@@ -3,12 +3,11 @@
  * This file is licensed under the terms of the LICENSE-MIT.md file. */
 
 .callers-collapsed-section-file-name- {
-  color: var(--callers-collapsed-section-file-name-fg-dim-);
-  max-width: var(--callers-collapsed-section-file-name-max-width-);
+  color: var(--dark-mode-page-dim-fg-);
 }
 
 pre.callers-collapsed-section-log-box- {
-  background: var(--callers-collapsed-section-log-box-bg-dim-);
+  background: var(--dark-mode-panel-bg2-);
   max-height: calc(
     var(--callers-collapsed-section-log-box-max-height-share-) *
       var(--design-viewport-height-)
@@ -16,19 +15,19 @@ pre.callers-collapsed-section-log-box- {
   overflow: auto;
 }
 pre.callers-collapsed-section-log-box-:focus-visible {
-  background: var(--callers-collapsed-section-log-box-focus-bg-);
+  background: var(--dark-mode-page-highlight-bg-);
 }
 
 .callers-collapsed-section-title- {
   cursor: pointer;
-  color: var(--callers-collapsed-section-title-fg-dim-);
+  color: var(--dark-mode-page-dim-fg-);
 }
 .callers-collapsed-section-title-:focus-visible {
-  background: var(--callers-collapsed-section-title-focus-bg-);
-  color: var(--callers-collapsed-section-title-focus-fg-);
+  background: var(--dark-mode-page-highlight-bg-);
+  color: var(--dark-mode-page-highlight-fg-);
 }
 .callers-collapsed-section-title-::marker {
-  color: var(--callers-collapsed-section-title-marker-fg-dim-);
+  color: var(--dark-mode-page-dim-fg-);
 }
 
 *,
@@ -90,11 +89,11 @@ body.frame_,
 }
 
 a {
-  color: var(--page-link-fg-);
+  color: var(--dark-mode-page-link-fg-);
 }
 a:focus-visible {
-  background: var(--page-link-focus-bg-);
-  color: var(--page-link-focus-fg-);
+  background: var(--dark-mode-page-highlight-bg-);
+  color: var(--dark-mode-page-highlight-fg-);
 }
 
 * {
@@ -125,12 +124,12 @@ main.page-text-scroll-box- {
 .page-text-scrollbar-.horizontal_ {
   grid-column: 1;
   grid-row: 2;
-  height: var(--page-text-scrollbar-horizontal-height-);
+  height: 1lh;
 }
 .page-text-scrollbar-.vertical_ {
   grid-column: 2;
   grid-row: 1;
-  width: var(--page-text-scrollbar-vertical-width-);
+  width: 1ch;
 }
 .page-text-scrollbar-.vertical_ > span {
   display: block;
@@ -140,8 +139,7 @@ main.page-text-scroll-box- {
   container-type: inline-size;
 }
 #overview-home- .page_ {
-  padding: var(--heat-map-overview-home-border-block-)
-    var(--heat-map-overview-home-border-inline-);
+  padding: 1lh 2ch;
 }
 .table-box- {
   position: relative;
@@ -174,15 +172,15 @@ table.columns_ th {
   top: 0;
   z-index: var(--page-table-column-title-z-index-);
   text-align: left;
-  color: var(--page-table-column-title-fg-dim-);
-  background: var(--page-table-column-title-bg-dim-);
+  color: var(--dark-mode-page-dim-fg-);
+  background: var(--dark-mode-panel-bg2-);
 }
 table.columns_ .numeric_ {
   text-align: right;
 }
 table.columns_ > tbody > tr:focus-visible > td {
-  background: var(--page-table-row-focus-bg-) !important;
-  color: var(--page-table-row-focus-fg-) !important;
+  background: var(--dark-mode-page-highlight-bg-) !important;
+  color: var(--dark-mode-page-highlight-fg-) !important;
 }
 
 .screenshot-label- {

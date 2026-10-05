@@ -553,7 +553,6 @@ class TestReport:
             )
         for marker in (
             "__DATA__",
-            "__NAME__",
             "Traceback (most recent call last)",
             "NaN%",
         ):

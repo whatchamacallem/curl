@@ -306,7 +306,7 @@ report_render() {
 
   heading_print "python3 build_report.py test $_name"
   for _log_file in "${_LOG_FILES[@]}"; do _log_args+=(--log "$_log_file"); done
-  if [ "$_name" = all ]; then
+  if [ "$_name" = "$REPORT_TEST_SUITE_NAME" ]; then
     _log_args+=(--no-log)
   else
     _perf_log_args=(--perf-log "$_perf_log" --trace-log "$_trace_log")
@@ -412,7 +412,7 @@ run_all() {
   local _out="$1"
   local _test_name _usecs _total=0 _rows="" _args _timing_lines=()
   local _page _test_page _perf_log_args=() _recording
-  _page="$(artifact_path_of timing-page all)"
+  _page="$(artifact_path_of timing-page "$REPORT_TEST_SUITE_NAME")"
   _CALLGRIND_FILES=()
   _LOG_FILES=()
   for _test_name in "${_TESTS[@]}"; do
@@ -441,9 +441,9 @@ run_all() {
   } >"$_page"
   command_item_print "taskset -c $PROFILE_PINNED_CPU $_BIN <test>"
   item_output_print "${_timing_lines[@]}" "Time: $_total usecs"
-  _perf_log_args+=(--perf-log "all=$_page")
+  _perf_log_args+=(--perf-log "$REPORT_TEST_SUITE_NAME=$_page")
 
-  report_render all "$_out" "" ""
+  report_render "$REPORT_TEST_SUITE_NAME" "$_out" "" ""
 
   heading_print "python3 build_report.py overview"
   _HEADER_ROWS=(
@@ -456,11 +456,13 @@ run_all() {
   printf '%s\n' "${_HEADER_ROWS[@]}" >"$_HEADER_FILE"
   _args=(-o "$_OUT_DIR/index.html" --header-file "$_HEADER_FILE"
     --raw-data "$_TIMER_ARTIFACTS_ARCHIVE" "${_perf_log_args[@]}")
-  for _test_name in "${_TESTS[@]}" all; do _args+=(--test "$_test_name"); done
+  for _test_name in "${_TESTS[@]}" "$REPORT_TEST_SUITE_NAME"; do
+    _args+=(--test "$_test_name")
+  done
   command_run python3 "$PERF2HTML_DIR_/scripts/build_report.py" overview \
     "${_args[@]}"
-  log_verbose "$(printf '%-13s%d profiles merged: %s' all \
-    "${#_TESTS[@]}" "$_OUT_DIR/index.html")"
+  log_verbose "$(printf '%-13s%d profiles merged: %s' \
+    "$REPORT_TEST_SUITE_NAME" "${#_TESTS[@]}" "$_OUT_DIR/index.html")"
 }
 
 main() {
@@ -491,7 +493,7 @@ main() {
     run_one "$_test_name" "$_OUT_DIR/$_test_name"
   done
   timer_artifacts_write
-  run_all "$_OUT_DIR/all"
+  run_all "$_OUT_DIR/$REPORT_TEST_SUITE_NAME"
   heading_print "python3 callgrind_to_heatmap.py page"
   command_run python3 "$PERF2HTML_DIR_/scripts/callgrind_to_heatmap.py" page \
     --report-dir "$_OUT_DIR"

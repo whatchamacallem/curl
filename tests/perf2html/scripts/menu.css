@@ -20,7 +20,7 @@
 }
 
 .menu-button- {
-  padding: 0 var(--menu-button-padding-inline-);
+  padding: 0 1ch;
   white-space: pre;
 }
 .menu-button-[tabindex],
@@ -74,5 +74,5 @@
 }
 .menu-pulldown-entry-list- > * {
   flex: none;
-  padding: 0 var(--menu-pulldown-entry-padding-inline-);
+  padding: 0 1ch;
 }

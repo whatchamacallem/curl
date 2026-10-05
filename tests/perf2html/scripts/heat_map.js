@@ -20,14 +20,13 @@ window.catch_show_throw_(function () {
   const HEAT_MAP_HOME_TABLE_DEFAULT_ROWS = settings_(
     "HEAT_MAP_HOME_TABLE_DEFAULT_ROWS",
   );
-  const HEAT_MAP_MINIMAP_SOURCE_WIDTH_CHARS = settings_(
-    "HEAT_MAP_MINIMAP_SOURCE_WIDTH_CHARS",
-  );
   const HEAT_MAP_MINIMAP_VIEWPORT_BOX_SMALLEST_PX = settings_(
     "HEAT_MAP_MINIMAP_VIEWPORT_BOX_SMALLEST_PX",
   );
   const HEAT_MAP_MODEL_DIR_NAME = settings_("HEAT_MAP_MODEL_DIR_NAME");
-  const HEAT_MAP_MODEL_GLOBAL_NAME = settings_("HEAT_MAP_MODEL_GLOBAL_NAME");
+  const HEAT_MAP_MODEL_GLOBAL_NAME = settings_(
+    "HEAT_MAP_MODEL_GLOBAL_NAME",
+  );
   const HEAT_MAP_SECONDARY_COUNTER_NAMES = settings_(
     "HEAT_MAP_SECONDARY_COUNTER_NAMES",
   );
@@ -44,9 +43,6 @@ window.catch_show_throw_(function () {
     "HEAT_MAP_TREE_AUTO_EXPAND_ABOVE_SHARE",
   );
   const HEAT_MAP_VIEW_ENTRY = settings_("HEAT_MAP_VIEW_ENTRY");
-  const LAYOUT_RESIZE_SETTLE_DELAY_MS = settings_(
-    "LAYOUT_RESIZE_SETTLE_DELAY_MS",
-  );
   const RANKING_COUNTER_NAME = settings_("RANKING_COUNTER_NAME");
   const STYLE_DESIGN_FONT_CHARACTER_WIDTH_PX = settings_(
     "STYLE_DESIGN_FONT_CHARACTER_WIDTH_PX",
@@ -1718,7 +1714,7 @@ window.catch_show_throw_(function () {
     scale_factor = Math.min(
       1,
       band_width_px /
-        (HEAT_MAP_MINIMAP_SOURCE_WIDTH_CHARS *
+        (HEAT_MAP_SOURCE_VIEW_WIDTH_CHARS *
           STYLE_DESIGN_FONT_CHARACTER_WIDTH_PX),
       band_height_px / clone_height_px,
     );
@@ -2441,20 +2437,10 @@ window.catch_show_throw_(function () {
     recenter: address_recenter,
   });
 
-  let resize_debounce_timer = null;
-  window.addEventListener(
-    "resize",
-    window.catch_show_throw_(() => {
-      clearTimeout(resize_debounce_timer);
-      resize_debounce_timer = setTimeout(
-        window.catch_show_throw_(() => {
-          minimap_layout();
-          information_line_refresh();
-          if (shown_test_name !== null) heat_strip_render();
-        }),
-        LAYOUT_RESIZE_SETTLE_DELAY_MS,
-      );
-    }),
-  );
+  report_ui_.resize_settle_register(() => {
+    minimap_layout();
+    information_line_refresh();
+    if (shown_test_name !== null) heat_strip_render();
+  });
   route_render();
 })();

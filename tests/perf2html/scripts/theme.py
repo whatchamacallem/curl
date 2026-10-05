@@ -11,7 +11,7 @@ from typing import NamedTuple, TypeAlias, TypedDict
 import settings
 
 _ASSET_CALLERS_SCRIPT_NAME: str = ""
-_ASSET_DARK_MODE_ENABLED_STYLESHEET_NAME: str = ""
+_ASSET_DARK_MODE_STYLESHEET_NAME: str = ""
 _ASSET_ERROR_OVERLAY_SCRIPT_NAME: str = ""
 _ASSET_FLAME_GRAPH_SCRIPT_NAME: str = ""
 _ASSET_FRAME_SCRIPT_NAME: str = ""
@@ -30,7 +30,6 @@ _DARK_MODE_ATTRIBUTE_NAME: str = ""
 _DARK_MODE_DISABLED_VALUE: str = ""
 _NUMBER_FRACTION_DIGITS: int = 0
 _NUMBER_LARGEST_PRINTED_MULTIPLE_TIMES: float = 0.0
-_NUMBER_SMALLEST_PRINTED_PERCENT: float = 0.0
 _REPORT_ASSETS_DIR_NAME: str = ""
 _STYLE_COLOR_DARK_MODE: dict[str, list[str]] = {}
 _STYLE_COLOR_LIGHT_MODE: dict[str, list[str]] = {}
@@ -73,7 +72,7 @@ _DARK_MODE_ENABLED_SELECTOR = (
 )
 _DARK_MODE_ROLE_PREFIX = "dark-mode-"
 _LIGHT_MODE_ROLE_PREFIX = "light-mode-"
-_ROLE_KIND_PATTERN = re.compile(r"-(bg|border|fg|outline)(-dim)?-$")
+_ROLE_KIND_PATTERN = re.compile(r"-(bg|border|fg|outline)[0-9]?-$")
 
 
 class Cell(NamedTuple):
@@ -235,6 +234,7 @@ class Theme:
             self.signed_percent_amount_chars = len(
                 self.fixed_text(-100, _NUMBER_FRACTION_DIGITS) + "%"
             )
+            self.smallest_printed_percent = 1 / 10**_NUMBER_FRACTION_DIGITS
             self.time_units = time_units
 
         def diff_share_of(self, delta: int, baseline: int | None) -> float:
@@ -271,7 +271,7 @@ class Theme:
 
         def percent(self, percent: float) -> str:
             digit_count = _NUMBER_FRACTION_DIGITS
-            if percent >= _NUMBER_SMALLEST_PRINTED_PERCENT:
+            if percent >= self.smallest_printed_percent:
                 return self.fixed_text(percent, digit_count) + "%"
             if percent > 0:
                 return "≈" + self.fixed_text(0, digit_count) + "%"
@@ -295,7 +295,7 @@ class Theme:
             times = percent / 100
             if percent == math.inf:
                 amount_text = "∞%"
-            elif abs(percent) < _NUMBER_SMALLEST_PRINTED_PERCENT:
+            elif abs(percent) < self.smallest_printed_percent:
                 amount_text = "≈" + self.fixed_text(0, digit_count) + "%"
             elif percent <= 100:
                 amount_text = self.fixed_text(percent, digit_count) + "%"
@@ -336,10 +336,14 @@ class Theme:
 
     def __init__(self) -> None:
         self.color_roles = self.roles(
-            "STYLE_COLOR_DARK_MODE", _STYLE_COLOR_DARK_MODE
+            "STYLE_COLOR_DARK_MODE",
+            _STYLE_COLOR_DARK_MODE,
+            _DARK_MODE_ROLE_PREFIX,
         )
         self.light_mode_roles = self.roles(
-            "STYLE_COLOR_LIGHT_MODE", _STYLE_COLOR_LIGHT_MODE
+            "STYLE_COLOR_LIGHT_MODE",
+            _STYLE_COLOR_LIGHT_MODE,
+            _LIGHT_MODE_ROLE_PREFIX,
         )
         self.heat_stops = [
             self.rgb(color) for color in _STYLE_HEAT_COLOR_STOPS
@@ -366,7 +370,7 @@ class Theme:
                 self.light_mode_css(),
             ),
             (
-                _ASSET_DARK_MODE_ENABLED_STYLESHEET_NAME,
+                _ASSET_DARK_MODE_STYLESHEET_NAME,
                 self.dark_mode_css(),
             ),
             (
@@ -457,7 +461,7 @@ class Theme:
             self.shared_stylesheets_text(), set(root_values) | dark_names
         )
         self.reads_check(
-            self.asset_read(_ASSET_DARK_MODE_ENABLED_STYLESHEET_NAME),
+            self.asset_read(_ASSET_DARK_MODE_STYLESHEET_NAME),
             set(root_values) | dark_names,
         )
         light_text = self.asset_read(_ASSET_LIGHT_MODE_STYLESHEET_NAME)
@@ -478,7 +482,7 @@ class Theme:
 
     def dark_mode_css(self) -> str:
         stylesheet_text = self.mode_stylesheet_read(
-            _ASSET_DARK_MODE_ENABLED_STYLESHEET_NAME,
+            _ASSET_DARK_MODE_STYLESHEET_NAME,
             _DARK_MODE_ENABLED_SELECTOR,
         )
         lines = [f"{_DARK_MODE_ENABLED_SELECTOR} {{"]
@@ -493,7 +497,7 @@ class Theme:
     def dark_mode_roles(self) -> dict[str, str]:
         return self.stylesheet_roles(
             self.shared_stylesheets_text()
-            + self.asset_read(_ASSET_DARK_MODE_ENABLED_STYLESHEET_NAME)
+            + self.asset_read(_ASSET_DARK_MODE_STYLESHEET_NAME)
         )
 
     def light_mode_css(self) -> str:
@@ -539,7 +543,7 @@ class Theme:
                 _ASSET_THEME_STYLESHEET_NAME,
                 *extra_css,
                 _ASSET_LIGHT_MODE_STYLESHEET_NAME,
-                _ASSET_DARK_MODE_ENABLED_STYLESHEET_NAME,
+                _ASSET_DARK_MODE_STYLESHEET_NAME,
             )
         )
         script = (
@@ -601,8 +605,8 @@ class Theme:
             "color:"
             + self.contrast_foreground(
                 mixed,
-                "callers-heat-cell-on-dark-fg-",
-                "callers-heat-cell-on-bright-fg-dim-",
+                "dark-mode-page-normal-fg-",
+                "dark-mode-page-normal-bg-",
             )
         )
 
@@ -633,11 +637,19 @@ class Theme:
         )
 
     def roles(
-        self, palette_name: str, palette: dict[str, list[str]]
+        self,
+        palette_name: str,
+        palette: dict[str, list[str]],
+        role_prefix: str,
     ) -> dict[str, str]:
         resolved: dict[str, str] = {}
         for color, roles in palette.items():
             for role in roles:
+                if not role.startswith(role_prefix):
+                    raise ValueError(
+                        f"{palette_name} lists role {role}, which lacks "
+                        f"the prefix {role_prefix}"
+                    )
                 if role in resolved:
                     raise ValueError(
                         f"{palette_name} lists role {role} under "
@@ -649,8 +661,8 @@ class Theme:
     def runtime(self) -> ThemeRuntime:
         return {
             "heat": _STYLE_HEAT_COLOR_STOPS,
-            "fgLight": self.color_roles["heat-map-heat-cell-on-dark-fg-"],
-            "fgDark": self.color_roles["heat-map-heat-cell-on-bright-fg-dim-"],
+            "fgLight": self.color_roles["dark-mode-page-normal-fg-"],
+            "fgDark": self.color_roles["dark-mode-page-normal-bg-"],
         }
 
     def shared_stylesheets_text(self) -> str:
@@ -674,7 +686,7 @@ class Theme:
         return (
             self.shared_stylesheets_text()
             + self.asset_read(_ASSET_LIGHT_MODE_STYLESHEET_NAME)
-            + self.asset_read(_ASSET_DARK_MODE_ENABLED_STYLESHEET_NAME)
+            + self.asset_read(_ASSET_DARK_MODE_STYLESHEET_NAME)
         )
 
     def time_units(self) -> tuple[Theme.TimeUnit, ...]:
