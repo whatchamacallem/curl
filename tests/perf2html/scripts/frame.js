@@ -90,7 +90,12 @@ window.catch_show_throw_(function () {
     const message_tag = message_data.report_ui;
     if (message_tag === "address_request") address_request(message_data.hash);
     else if (message_tag === "menu_key_pressed") {
-      if (!window.report_menu_.menu_key_take(message_data.key))
+      if (
+        !window.report_menu_.menu_key_take(
+          message_data.key,
+          message_data.repeat,
+        )
+      )
         view_post("report_ui:tests_pulldown_closed");
     } else if (message_tag !== undefined && message_tag !== "report_error")
       throw new Error(

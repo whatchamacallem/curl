@@ -28,8 +28,10 @@ _FLAME_GRAPH_VIEW_ENTRY: tuple[str, str, str] = ("", "", "")
 _HEAT_MAP_VIEW_ENTRY: tuple[str, str, str] = ("", "", "")
 _RANKING_COUNTER_NAME: str = ""
 _REPORT_TEST_SUITE_NAME: str = ""
+_STORAGE_KEY_CALLERS_ROWS: str = ""
 _STYLE_TABLE_FUNCTION_NAME_WIDTH_CHARS: int = 0
 _TABLE_ROW_COUNT_CHOICES: tuple[int, ...] = ()
+_VALGRIND_DEBUG_LINE_PATTERN: str = ""
 settings.load_into(__name__)
 
 _CALLERS_PAGE = theme.asset_text_read(_ASSET_TEMPLATE_CALLERS_PAGE_NAME)
@@ -39,8 +41,6 @@ _CALLERS_PAGE_ASSETS_DEPTH = 1
 _EXIT_INPUT_UNREADABLE = 20
 
 _PID_PREFIX = re.compile(r"^==\d+==\s?")
-
-_VALGRIND_DEBUG_LINE = re.compile(r"^--\d+--")
 
 _OVERVIEW_PAGE_ASSETS_DEPTH = 0
 
@@ -97,7 +97,6 @@ class BuildReport:
         perf_log: str
         trace_log: str
         no_log: bool
-        header: list[str]
         callers_data: str
 
     class TestDirectory(NamedTuple):
@@ -175,7 +174,8 @@ class BuildReport:
 
     def callers_heading_render(self, ranking_text: str) -> str:
         return (
-            '<div class="page-heading-" data-row-count-key-="callers.rows">'
+            '<div class="page-heading-"'
+            f' data-row-count-key-="{_STORAGE_KEY_CALLERS_ROWS}">'
             'top <span class="page-heading-row-count-">'
             f"{_CALLERS_TOP_FUNCTION_ROWS}</span> functions by"
             f" {theme.html_escape(ranking_text)}</div>"
@@ -422,7 +422,7 @@ class BuildReport:
         lines = [
             _PID_PREFIX.sub("", line)
             for line in self.file_read(path).rstrip().split("\n")
-            if not _VALGRIND_DEBUG_LINE.match(line)
+            if not re.match(_VALGRIND_DEBUG_LINE_PATTERN, line)
         ]
         for index, line in enumerate(lines):
             if re.match(_CALLERS_VALGRIND_LOG_FIRST_LINE_PATTERN, line):
@@ -682,12 +682,6 @@ class BuildReport:
     ) -> None:
         page_content = (
             _CALLERS_PAGE.replace(
-                "__MANIFEST__",
-                self.manifest_table(
-                    "report.header", self.manifest_parse_rows(args.header)
-                ),
-            )
-            .replace(
                 "__FLAME_GRAPH_LINK__",
                 self.flame_graph_link_render(args.test)
                 if args.trace_log
@@ -803,9 +797,6 @@ def main() -> None:
         " no data for",
     )
     test_parser.add_argument(
-        "--header", action="append", metavar="LABEL=VALUE", default=[]
-    )
-    test_parser.add_argument(
         "--callers-data",
         default="",
         metavar="FILE",
@@ -899,7 +890,6 @@ def main() -> None:
             perf_log=namespace.perf_log,
             trace_log=namespace.trace_log,
             no_log=namespace.no_log,
-            header=namespace.header,
             callers_data=namespace.callers_data,
         )
         (report.diff_test if namespace.diff else report.test)(test_args)

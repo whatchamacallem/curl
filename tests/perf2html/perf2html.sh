@@ -317,16 +317,21 @@ report_render() {
 }
 
 timing_record() {
+  local _counter_value _counter_unit _counter_name _remaining_fields
   perf stat -x, -o "$2" -e cycles:u,instructions:u \
     taskset -c "$PROFILE_PINNED_CPU" "$_BIN" "$1" "$TIMING_LOOPS" \
-    && awk -F, '
-      $3 ~ /cycles/ { printf "Cycles:    %s\n", $1 }
-      $3 ~ /instructions/ { printf "Instructions: %s\n", $1 }' "$2"
+    && while IFS=, read -r _counter_value _counter_unit _counter_name \
+      _remaining_fields; do
+      case "$_counter_name" in
+        *cycles*) printf 'Cycles:    %s\n' "$_counter_value" ;;
+        *instructions*) printf 'Instructions: %s\n' "$_counter_value" ;;
+      esac
+    done <"$2"
 }
 
 run_one() {
   local _test="$1" _out="$2"
-  local _loops _cg_file _log _start _line _timing _shown
+  local _loops _cg_file _log _start _line _timing _shown _page_words
   local _stat_file _page
   _stat_file="$(artifact_path_of timing-csv "$_test")"
   _page="$(artifact_path_of timing-page "$_test")"
@@ -348,6 +353,7 @@ run_one() {
   _start="$(clock_microseconds)"
   command_run taskset -c "$PROFILE_PINNED_CPU" valgrind --tool=callgrind \
     --cache-sim=yes --branch-sim=yes --trace-redir=yes \
+    --LL="$CALLGRIND_LAST_LEVEL_CACHE" \
     --callgrind-out-file="$_cg_file" --log-file="$_log" \
     "$_BIN" "$_test" "$_loops"
   _line="$_line | $(duration_format "$_start")"
@@ -364,17 +370,16 @@ run_one() {
   page_command_run "$_page" \
     "$_shown -c $PROFILE_PINNED_CPU $_BIN $_test $TIMING_LOOPS" \
     timing_record "$_test" "$_stat_file"
-  _timing="$(awk '
-    /^Time\/[A-Za-z]+:/ {
-      unit = $1
-      sub(/^Time\//, "", unit)
-      sub(/:$/, "", unit)
-      t = $2 " " $3
-      sub(/ /, "", t)
-      s = t "/" unit
-    }
-    /^Errors:/ { $1 = $1; s = s (s ? ", " : "") $0 }
-    END { print s }' "$_page")"
+  _timing=""
+  while read -r -a _page_words; do
+    case "${_page_words[0]-}" in
+      Time/*:)
+        _timing="${_page_words[1]-}${_page_words[2]-}"
+        _timing+="/${_page_words[0]:5:-1}"
+        ;;
+      Errors:*) _timing+="${_timing:+, }${_page_words[*]}" ;;
+    esac
+  done <"$_page"
   [ -n "$_timing" ] || error_exit 1 "error: no Time/<unit>: line in $_page"
   log_verbose "$_line | $_timing"
 
@@ -410,8 +415,9 @@ timer_artifacts_write() {
 
 run_all() {
   local _out="$1"
-  local _test_name _usecs _total=0 _rows="" _args _timing_lines=()
-  local _page _test_page _perf_log_args=() _recording
+  local _test_name _time_label _time_value _time_suffix _suite_suffix
+  local _remaining_fields _total=0 _row _rows="" _page _test_page _recording
+  local _perf_log_args=() _args _timing_lines=()
   _page="$(artifact_path_of timing-page "$REPORT_TEST_SUITE_NAME")"
   _CALLGRIND_FILES=()
   _LOG_FILES=()
@@ -425,11 +431,21 @@ run_all() {
   heading_print "taskset -c $PROFILE_PINNED_CPU perf <test>"
   for _test_name in "${_TESTS[@]}"; do
     _test_page="$(artifact_path_of timing-page "$_test_name")"
-    _usecs="$(awk '/^Time:/ { print $2; exit }' "$_test_page")"
-    [ -n "$_usecs" ] || error_exit 1 "error: no Time: line in $_test_page"
-    _rows+="$(printf '  %-14s %12s usecs' "$_test_name:" "$_usecs")"$'\n'
-    _timing_lines+=("$_test_name: $_usecs usecs")
-    _total=$((_total + _usecs))
+    while read -r _time_label _time_value _time_suffix _remaining_fields; do
+      [ "$_time_label" != Time: ] || break
+    done <"$_test_page"
+    [ "$_time_label" = Time: ] && [ -n "$_time_suffix" ] || error_exit 1 \
+      "error: no Time: <value> <suffix> line in $_test_page"
+    if [ "$_test_name" = "${_TESTS[0]}" ]; then
+      _suite_suffix="$_time_suffix"
+    fi
+    [ "$_time_suffix" = "$_suite_suffix" ] || error_exit 1 \
+      "error: $_test_page Time: suffix $_time_suffix, expected $_suite_suffix"
+    printf -v _row '  %-14s %12s %s\n' "$_test_name:" "$_time_value" \
+      "$_suite_suffix"
+    _rows+="$_row"
+    _timing_lines+=("$_test_name: $_time_value $_suite_suffix")
+    _total=$((_total + _time_value))
     _perf_log_args+=(--perf-log "$_test_name=$_test_page")
   done
   {
@@ -437,10 +453,10 @@ run_all() {
     echo "#   for every test, one after the other"
     echo "#   (each test's page has its full output)"
     printf '%s' "$_rows"
-    echo "Time:     $_total usecs"
+    echo "Time:     $_total $_suite_suffix"
   } >"$_page"
   command_item_print "taskset -c $PROFILE_PINNED_CPU $_BIN <test>"
-  item_output_print "${_timing_lines[@]}" "Time: $_total usecs"
+  item_output_print "${_timing_lines[@]}" "Time: $_total $_suite_suffix"
   _perf_log_args+=(--perf-log "$REPORT_TEST_SUITE_NAME=$_page")
 
   report_render "$REPORT_TEST_SUITE_NAME" "$_out" "" ""

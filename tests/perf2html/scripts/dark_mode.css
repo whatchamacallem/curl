@@ -3,12 +3,147 @@
  * This file is licensed under the terms of the LICENSE-MIT.md file. */
 
 :root:not([data-dark-mode-="disabled"]) {
+  .callers-collapsed-section-file-name- {
+    color: var(--dark-mode-page-dim-fg-);
+  }
+  pre.callers-collapsed-section-log-box- {
+    background: var(--dark-mode-panel-bg-);
+  }
+  pre.callers-collapsed-section-log-box-:focus-visible {
+    background: var(--dark-mode-page-highlight-bg-);
+    color: var(--dark-mode-page-fg-);
+  }
+  .callers-collapsed-section-title- {
+    color: var(--dark-mode-page-dim-fg-);
+  }
+  .callers-collapsed-section-title-:focus-visible {
+    background: var(--dark-mode-page-highlight-bg-);
+    color: var(--dark-mode-page-fg-);
+  }
+  .callers-collapsed-section-title-::marker {
+    color: var(--dark-mode-page-dim-fg-);
+  }
+  a {
+    color: var(--dark-mode-page-link-fg-);
+  }
+  a:focus-visible {
+    background: var(--dark-mode-page-highlight-bg-);
+    color: var(--dark-mode-page-fg-);
+  }
+  table.columns_ th {
+    color: var(--dark-mode-page-dim-fg-);
+    background: var(--dark-mode-panel-bg-);
+  }
+  table.columns_ > tbody > tr:focus-visible > td {
+    background: var(--dark-mode-page-highlight-bg-) !important;
+    color: var(--dark-mode-page-fg-) !important;
+  }
+
+  .menu-button- a {
+    color: inherit;
+  }
+  .menu-status-bar- a:not(:focus-visible) {
+    color: inherit;
+  }
+
+  #heat-map-minimap- {
+    background: var(--dark-mode-page-bg-);
+  }
+  .heat-map-source-information-box- {
+    background: var(--dark-mode-panel-bg-);
+  }
+  .heat-map-source-information-box-action-bar-separator- {
+    color: var(--dark-mode-page-dim-fg-);
+  }
+  .heat-map-source-information-box-control- {
+    color: var(--dark-mode-page-link-fg-);
+  }
+  .heat-map-source-information-box-close-symbol- {
+    color: var(--dark-mode-page-dim-fg-);
+  }
+  .heat-map-source-information-box-control-:focus-visible {
+    background: var(--dark-mode-page-highlight-bg-);
+    color: var(--dark-mode-page-fg-);
+  }
+  .heat-map-source-information-box-function-name- {
+    color: var(--dark-mode-page-fg-);
+  }
+  .heat-map-source-information-box-heading- {
+    color: var(--dark-mode-page-dim-fg-);
+  }
+  .heat-map-source-information-box-note- {
+    color: var(--dark-mode-page-dim-fg-);
+  }
+  .heat-map-source-information-box- .table-box- {
+    background: var(--dark-mode-page-bg-);
+  }
+  table.heat-map-source-table- th {
+    background: var(--dark-mode-page-highlight-bg-);
+    color: var(--dark-mode-page-fg-);
+  }
+  td.heat-map-source-table-self-cell-,
+  td.heat-map-source-table-calls-cell-,
+  td.heat-map-source-table-secondary-counter-cell- {
+    color: var(--dark-mode-page-dim-fg-);
+  }
+  table.heat-map-source-table- td.heat-map-source-table-line-number-cell- {
+    color: var(--dark-mode-page-dim-fg-);
+  }
+  tr.has-callee- td.heat-map-source-table-line-number-cell-::before {
+    color: var(--dark-mode-page-link-fg-);
+  }
+  table.heat-map-source-table- > tbody > tr:focus-visible > td {
+    background: var(--dark-mode-page-highlight-bg-) !important;
+    color: var(--dark-mode-page-fg-) !important;
+  }
+  .heat-map-source-ticker-tape- {
+    background: var(--dark-mode-page-highlight-bg-);
+    color: var(--dark-mode-page-fg-);
+  }
+  .heat-map-source-ticker-tape-entry- {
+    background: var(--dark-mode-table-panel-even-bg-);
+  }
+  .heat-map-source-ticker-tape-entry-:focus-visible {
+    background: var(--dark-mode-page-highlight-bg-) !important;
+    color: var(--dark-mode-page-fg-) !important;
+  }
+  .heat-map-source-ticker-tape- .heat-map-source-ticker-tape-label- {
+    color: var(--dark-mode-page-dim-fg-);
+  }
+  .heat-map-source-unavailable-note- {
+    color: var(--dark-mode-page-dim-fg-);
+  }
+  .heat-map-tree-node-.selected_ {
+    background: var(--dark-mode-page-highlight-bg-);
+    color: var(--dark-mode-page-fg-);
+  }
+  .heat-map-tree-node-:focus-visible {
+    background: var(--dark-mode-page-highlight-bg-) !important;
+    color: var(--dark-mode-page-fg-) !important;
+  }
+  .heat-map-tree-node- .heat-map-tree-node-caret- {
+    color: var(--dark-mode-page-dim-fg-);
+  }
+  .heat-map-tree-node-.cold_ .heat-map-tree-node-name- {
+    color: var(--dark-mode-page-dim-fg-);
+  }
+  .heat-map-tree-node-.more_ .heat-map-tree-node-name- {
+    color: var(--dark-mode-page-dim-fg-);
+  }
+  .heat-map-tree-node- .heat-map-tree-node-share-percent- {
+    color: var(--dark-mode-page-dim-fg-);
+  }
+  .heat-map-tree-node-.heat_ .heat-map-tree-node-share-percent-,
+  .heat-map-tree-node-.heat_ .heat-map-tree-node-caret- {
+    color: inherit;
+  }
+
   body {
-    background: var(--dark-mode-page-normal-bg-);
-    color: var(--dark-mode-page-normal-fg-);
+    background: var(--dark-mode-page-bg-);
+    color: var(--dark-mode-page-fg-);
   }
   #overview-view-frame- {
-    background: var(--dark-mode-page-normal-bg-);
+    background: var(--dark-mode-page-bg-);
   }
   .page-heading- {
     background: none;
@@ -40,8 +175,8 @@
 
   .menu-strip-,
   .page-heading-:has(> .menu-strip-table-) {
-    background: var(--dark-mode-page-normal-bg-);
-    color: var(--dark-mode-page-normal-fg-);
+    background: var(--dark-mode-page-bg-);
+    color: var(--dark-mode-page-fg-);
     padding-top: 0;
   }
   .menu-button-,
@@ -50,8 +185,8 @@
     color: var(--dark-mode-menu-normal-fg-);
   }
   [data-entry-name-="logo"] {
-    background: var(--dark-mode-page-normal-bg-);
-    color: var(--dark-mode-page-normal-fg-);
+    background: var(--dark-mode-page-bg-);
+    color: var(--dark-mode-page-fg-);
   }
   .menu-status-bar- {
     background: var(--dark-mode-status-bar-bg-);
@@ -66,17 +201,18 @@
   }
 
   #heat-map-main- {
-    background: var(--dark-mode-page-normal-bg-);
+    background: var(--dark-mode-page-bg-);
   }
   #heat-map-main-:focus-visible {
     background: var(--dark-mode-page-highlight-bg-);
+    color: var(--dark-mode-page-fg-);
   }
   #heat-map-minimap-viewport- {
     border: var(--page-line-width-) solid var(--dark-mode-menu-normal-fg-);
   }
   .heat-map-source-information-line- {
     background: var(--dark-mode-page-highlight-bg-);
-    color: inherit;
+    color: var(--dark-mode-page-highlight-fg-);
   }
   .heat-map-source-information-line- a:not(:focus-visible) {
     background: none;
@@ -103,5 +239,11 @@
   .page-text-scrollbar-.drag_ {
     background: var(--dark-mode-menu-focus-bg-);
     color: var(--dark-mode-menu-focus-fg-);
+  }
+
+  .screenshot-label- {
+    background: var(--dark-mode-screenshot-label-bg-);
+    color: var(--dark-mode-screenshot-label-fg-);
+    border-color: var(--dark-mode-screenshot-label-border-);
   }
 }

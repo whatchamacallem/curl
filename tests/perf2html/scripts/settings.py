@@ -23,6 +23,7 @@ ASSET_MENU_STYLESHEET_NAME = "menu.css"
 ASSET_PULLDOWN_TEXT_SCRIPT_NAME = "pulldown_text.js"
 
 ASSET_SETTINGS_SCRIPT_NAME = "settings.js"
+ASSET_SETTINGS_STYLESHEET_NAME = "settings.css"
 
 ASSET_TEMPLATE_CALLERS_PAGE_NAME = "callers.html"
 ASSET_TEMPLATE_FLAME_GRAPH_PAGE_NAME = "flame_graph.html"
@@ -68,6 +69,12 @@ DERIVED_COUNTER_TERMS: dict[str, dict[str, int]] = {
 }
 
 DRAG_DIRECTION_THRESHOLD_PX = 5
+
+FLAME_GRAPH_COLOR_SCHEME_KEY_NAME = "speedscope-color-scheme"
+FLAME_GRAPH_COLOR_SCHEME_VALUES: dict[str, str] = {
+    "disabled": "LIGHT",
+    "enabled": "DARK",
+}
 
 FLAME_GRAPH_EXPORTER_NAME = "tests/perf2html/scripts/trace_to_speedscope.py"
 
@@ -118,7 +125,7 @@ HEAT_MAP_VIEW_ENTRY: tuple[str, str, str] = (
     "heat-map/index.html",
 )
 
-LAYOUT_RESIZE_SETTLE_DELAY_MS = 120
+MENU_DIGIT_KEY_COUNT = 10
 
 MENU_FLASH_DURATION_MS = 500
 
@@ -146,16 +153,25 @@ RANKING_COUNTER_NAME = "CEst"
 
 REPORT_SOURCES_DIR_NAME = "sources"
 
+STORAGE_KEY_CALLERS_ROWS = "callers.rows"
+STORAGE_KEY_HEAT_COUNTER = "heat.counter"
+STORAGE_KEY_HEAT_ROWS = "heat.rows"
+STORAGE_KEY_HEAT_SCALE = "heat.scale"
+STORAGE_KEY_HEAT_SORT = "heat.sort"
+STORAGE_KEY_PREFIX_SPLIT = "split."
+STORAGE_KEY_VIEW_DARK_MODE = "view.dark_mode"
+STORAGE_KEY_VIEW_SCALE = "view.scale"
+
 STORAGE_OWNED_KEYS: tuple[str, ...] = (
-    "callers.rows",
-    "heat.counter",
-    "heat.rows",
-    "heat.scale",
-    "heat.sort",
-    "view.dark_mode",
-    "view.scale",
+    STORAGE_KEY_CALLERS_ROWS,
+    STORAGE_KEY_HEAT_COUNTER,
+    STORAGE_KEY_HEAT_ROWS,
+    STORAGE_KEY_HEAT_SCALE,
+    STORAGE_KEY_HEAT_SORT,
+    STORAGE_KEY_VIEW_DARK_MODE,
+    STORAGE_KEY_VIEW_SCALE,
 )
-STORAGE_OWNED_PREFIXES: tuple[str, ...] = ("split.",)
+STORAGE_OWNED_PREFIXES: tuple[str, ...] = (STORAGE_KEY_PREFIX_SPLIT,)
 
 STORAGE_VERSION = "perf2html v6"
 STORAGE_VERSION_KEY = "perf2html.version"
@@ -168,7 +184,7 @@ STYLE_COLOR_DARK_MODE: dict[str, list[str]] = {
         "dark-mode-menu-focus-bg-",
         "dark-mode-menu-normal-fg-",
         "dark-mode-page-highlight-fg-",
-        "dark-mode-page-normal-fg-",
+        "dark-mode-page-fg-",
         "dark-mode-status-bar-fg-",
     ],
     "#DCDDE1": [
@@ -179,32 +195,41 @@ STYLE_COLOR_DARK_MODE: dict[str, list[str]] = {
     ],
     "#192A56": [
         "dark-mode-menu-focus-fg-",
-        "dark-mode-panel-bg2-",
+        "dark-mode-panel-bg-",
     ],
     "#353B48": [
-        "dark-mode-panel-bg1-",
         "dark-mode-table-panel-even-bg-",
     ],
     "#2F3640": [
         "dark-mode-menu-normal-bg-",
-        "dark-mode-page-normal-bg-",
-        "dark-mode-panel-bg0-",
+        "dark-mode-page-bg-",
         "dark-mode-status-bar-bg-",
         "dark-mode-table-panel-odd-bg-",
     ],
+    "#FFFFFF": [
+        "dark-mode-screenshot-label-fg-",
+    ],
+    "#000000": [
+        "dark-mode-screenshot-label-bg-",
+        "dark-mode-screenshot-label-border-",
+    ],
 }
+STYLE_COLOR_DARK_MODE_ROLE_PREFIX = "dark-mode-"
 
 STYLE_COLOR_LIGHT_MODE: dict[str, list[str]] = {
     "#000000": [
         "light-mode-menu-focus-bg-",
         "light-mode-menu-normal-fg-",
         "light-mode-page-highlight-bg-",
-        "light-mode-page-normal-fg-",
+        "light-mode-page-fg-",
+        "light-mode-screenshot-label-bg-",
+        "light-mode-screenshot-label-border-",
     ],
     "#FFFFFF": [
         "light-mode-menu-focus-fg-",
         "light-mode-page-highlight-fg-",
-        "light-mode-page-normal-bg-",
+        "light-mode-page-bg-",
+        "light-mode-screenshot-label-fg-",
         "light-mode-status-bar-fg-",
         "light-mode-table-panel-even-bg-",
         "light-mode-table-panel-odd-bg-",
@@ -215,20 +240,19 @@ STYLE_COLOR_LIGHT_MODE: dict[str, list[str]] = {
     "#00AAAA": [
         "light-mode-status-bar-bg-",
     ],
-    "#F5F6FA": [
-        "light-mode-page-bg-",
-    ],
-    "#2F3640": [
-        "light-mode-page-fg-",
-    ],
 }
+STYLE_COLOR_LIGHT_MODE_ROLE_PREFIX = "light-mode-"
 
 STYLE_DESIGN_COORDINATES_WIDTH_PX = 1920
+
+STYLE_DESIGN_DEVICE_PIXEL_WIDEST_PROPERTY = "--design-device-pixel-widest-px-"
 
 STYLE_DESIGN_FONT_CHARACTER_WIDTH_PX = 7.2
 
 STYLE_DESIGN_FONT_FIT_PROPERTY = "--design-font-fit-"
+STYLE_DESIGN_FONT_FIT_START_MULTIPLE = 1
 
+STYLE_DESIGN_FONT_SIZE_PROPERTY = "--design-font-size-px-"
 STYLE_DESIGN_FONT_SIZE_PX = 12
 
 STYLE_DESIGN_MINIMUM_WINDOW_WIDTH_PX = 1280
@@ -245,8 +269,11 @@ STYLE_DESIGN_SCALE_STOP_COUNT = 11
 STYLE_DESIGN_SCALE_STOP_MULTIPLE_FRACTION_DIGITS = 2
 
 STYLE_DESIGN_VIEWPORT_HEIGHT_PROPERTY = "--design-viewport-height-"
+STYLE_DESIGN_VIEWPORT_HEIGHT_START_PERCENT = 100
 
 STYLE_HEAT_CELL_ON_BRIGHT_ABOVE_LUMINANCE_SHARE = 0.5
+STYLE_HEAT_CELL_ON_BRIGHT_ROLE = "dark-mode-page-bg-"
+STYLE_HEAT_CELL_ON_DARK_ROLE = "dark-mode-page-fg-"
 
 STYLE_HEAT_COLOR_FULL_SCALE_PERCENT = 100
 
@@ -266,6 +293,9 @@ STYLE_HEAT_COLOR_STOPS: list[str] = [
 ]
 
 STYLE_HEAT_MAP_SOURCE_LINE_NUMBER_MARKER_WIDTH_CHARS = 2
+STYLE_HEAT_MAP_SOURCE_LINE_NUMBER_MARKER_WIDTH_PROPERTY = (
+    "--heat-map-source-table-line-number-cell-callee-marker-width-"
+)
 
 STYLE_HEAT_MAP_TREE_INDENT_PER_LEVEL_CHARS = 2
 
@@ -279,6 +309,7 @@ STYLE_MENU_PULLDOWN_EXTRA_WIDTH_CHARS = 2
 STYLE_PAGE_FONT_FAMILY = (
     'Monaco, Menlo, "DejaVu Sans Mono", "Liberation Mono", Consolas, monospace'
 )
+STYLE_PAGE_FONT_FAMILY_PROPERTY = "--page-font-family-"
 
 STYLE_PANE_SPLITTER_KEY_STEP_CHARS = 5
 
@@ -297,19 +328,31 @@ STYLE_TEXT_SCROLLBAR_THUMB_SHORTEST_CHARS = 4
 STYLE_VALUE_ENTRIES: dict[str, str] = {
     "callers-collapsed-section-log-box-max-height-share-": "0.6",
     "heat-map-band-z-index-": "2",
+    "heat-map-menu-padding-bottom-": "1lh",
     "heat-map-minimap-width-": "110px",
+    "heat-map-overview-home-border-block-": "1lh",
+    "heat-map-overview-home-border-inline-": "2ch",
     "heat-map-source-table-code-cell-tab-size-": "4",
     "heat-map-source-table-line-number-cell-callee-marker-text-": '"⯈"',
+    "heat-map-source-ticker-tape-entry-padding-inline-": "1ch",
+    "heat-map-source-ticker-tape-gap-": "1ch",
+    "heat-map-tree-node-caret-width-": "2ch",
+    "heat-map-tree-node-gap-": "1ch",
+    "heat-map-tree-node-padding-right-": "1ch",
     "heat-map-tree-node-share-percent-width-": "10ch",
     "heat-map-tree-width-": "39ch",
+    "menu-button-padding-inline-": "1ch",
     "menu-pulldown-entry-list-max-height-share-": "0.6",
     "menu-pulldown-entry-list-z-index-": "3",
+    "menu-pulldown-entry-padding-inline-": "1ch",
     "menu-pulldown-search-box-min-width-": "13ch",
     "menu-status-bar-link-padding-inline-": "1ch",
     "page-body-line-height-": "1.1",
     "page-line-width-": "0.125ch",
     "page-table-cell-padding-inline-": "1ch",
     "page-table-column-title-z-index-": "1",
+    "page-text-scrollbar-horizontal-height-": "1lh",
+    "page-text-scrollbar-vertical-width-": "1ch",
     "screenshot-label-border-width-": "1ch",
     "screenshot-label-font-size-": "1.5em",
     "screenshot-label-z-index-": "3",
@@ -338,6 +381,8 @@ THEME_TIME_UNIT_ENTRIES: tuple[tuple[str, float], ...] = (
     ("ns", 1e-9),
     ("ps", 1e-12),
 )
+
+VALGRIND_DEBUG_LINE_PATTERN = "^--[0-9]+--"
 
 WIDGET_KEY_NAMES: dict[str, str] = {
     "activate": "Enter",

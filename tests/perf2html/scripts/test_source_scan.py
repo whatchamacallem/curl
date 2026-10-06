@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-import argparse, os, re, sys
+import argparse, html.entities, os, re, sys
 from typing import NamedTuple
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -275,6 +275,12 @@ _COMMENT_SYNTAX_BY_EXTENSION = (
 
 ENGLISH_PUNCT = """.,"'?:!()/"""
 
+_ESCAPE_NAMED_ENTITY_PATTERN = "|".join(
+    re.escape(name)
+    for name, glyph in sorted(html.entities.html5.items())
+    if name.endswith(";") and not glyph.isascii()
+)
+
 _ESCAPE_PREFIX_PATTERN = r"(?<!\\)(?:\\\\)*"
 
 _ESCAPE_RULES = (
@@ -290,7 +296,7 @@ _ESCAPE_RULES = (
         "the named escape", _ESCAPE_PREFIX_PATTERN + r"(\\N\{)", ()
     ),
     SourceScan.EscapeRule(
-        "the octal escape", _ESCAPE_PREFIX_PATTERN + r"(\\[0-3][0-7]{2})", ()
+        "the octal escape", _ESCAPE_PREFIX_PATTERN + r"(\\[0-7]{3})", ()
     ),
     SourceScan.EscapeRule(
         "the stylesheet escape",
@@ -298,12 +304,18 @@ _ESCAPE_RULES = (
         (".css",),
     ),
     SourceScan.EscapeRule(
+        "the named entity",
+        r"(&(?:" + _ESCAPE_NAMED_ENTITY_PATTERN + r"))",
+        (".css", ".html", ".js", ".md", ".py", ".sh"),
+    ),
+    SourceScan.EscapeRule(
         "the numeric entity", r"(&#(?:[0-9]+|[xX][0-9A-Fa-f]+);)", ()
     ),
     SourceScan.EscapeRule(
         "the character constructor",
         r"(String\s*\.\s*from(?:CharCode|CodePoint)"
-        r"|(?<![\w.])(?:unescape|atob)(?=\()"
+        r"|(?<![\w.])(?:(?:globalThis|self|window)\s*\.\s*)?"
+        r"(?:unescape|atob)(?=\()"
         r"|(?<!\w)ch[r](?=\()"
         r"|bytes\.fromhex"
         r"|unicode[_]escape)",

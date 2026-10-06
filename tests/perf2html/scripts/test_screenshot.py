@@ -258,6 +258,8 @@ class Screenshots:
                 "--no-sandbox",
                 "--hide-scrollbars",
                 "--incognito",
+                # Draws a frame only after the page's own work for it.
+                "--run-all-compositor-stages-before-draw",
                 f"--window-size={window}",
                 f"--screenshot={self.browser_path_of(out_path)}",
                 f"--virtual-time-budget={_SCREENSHOT_RENDER_BUDGET_MS}",

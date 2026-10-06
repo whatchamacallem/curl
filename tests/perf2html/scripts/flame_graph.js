@@ -5,6 +5,12 @@
 window.catch_show_throw_(function () {
   "use strict";
 
+  const FLAME_GRAPH_COLOR_SCHEME_KEY_NAME = settings_(
+    "FLAME_GRAPH_COLOR_SCHEME_KEY_NAME",
+  );
+  const FLAME_GRAPH_COLOR_SCHEME_VALUES = settings_(
+    "FLAME_GRAPH_COLOR_SCHEME_VALUES",
+  );
   const FLAME_GRAPH_LOCAL_PROFILE_URL_PREFIX = settings_(
     "FLAME_GRAPH_LOCAL_PROFILE_URL_PREFIX",
   );
@@ -34,6 +40,15 @@ window.catch_show_throw_(function () {
       window.ui_strings_.text_fill("str_error_flame_graph_never_started", [
         waited_seconds,
       ]),
+    );
+  }
+  // Hands the dark mode to speedscope, which reads its scheme at start.
+  function color_scheme_hand_over() {
+    localStorage.setItem(
+      FLAME_GRAPH_COLOR_SCHEME_KEY_NAME,
+      window.report_ui_.dark_mode_enabled_now_()
+        ? FLAME_GRAPH_COLOR_SCHEME_VALUES.enabled
+        : FLAME_GRAPH_COLOR_SCHEME_VALUES.disabled,
     );
   }
   function profile_hand_over() {
@@ -81,7 +96,9 @@ window.catch_show_throw_(function () {
     "hashchange",
     window.catch_show_throw_(() => location.reload()),
   );
+  color_scheme_hand_over();
   window.report_ui_.view_activate({
+    dark_mode_apply: () => location.reload(),
     forwards_input: false,
     preferences_apply: null,
     recenter: () => location.reload(),

@@ -10,17 +10,13 @@ window.report_ui_ = window.catch_show_throw_(function () {
   const DARK_MODE_DISABLED_VALUE = settings_("DARK_MODE_DISABLED_VALUE");
   const DARK_MODE_ENABLED_DEFAULT = settings_("DARK_MODE_ENABLED_DEFAULT");
   const DARK_MODE_ENABLED_VALUE = settings_("DARK_MODE_ENABLED_VALUE");
-  const DRAG_DIRECTION_THRESHOLD_PX = settings_(
-    "DRAG_DIRECTION_THRESHOLD_PX",
-  );
+  const DRAG_DIRECTION_THRESHOLD_PX = settings_("DRAG_DIRECTION_THRESHOLD_PX");
   const FLAME_GRAPH_LOCAL_PROFILE_PATH = settings_(
     "FLAME_GRAPH_LOCAL_PROFILE_PATH",
   );
   const FLAME_GRAPH_VIEW_ENTRY = settings_("FLAME_GRAPH_VIEW_ENTRY");
   const HEAT_MAP_VIEW_ENTRY = settings_("HEAT_MAP_VIEW_ENTRY");
-  const LAYOUT_RESIZE_SETTLE_DELAY_MS = settings_(
-    "LAYOUT_RESIZE_SETTLE_DELAY_MS",
-  );
+  const MENU_DIGIT_KEY_COUNT = settings_("MENU_DIGIT_KEY_COUNT");
   const MENU_FLASH_DURATION_MS = settings_("MENU_FLASH_DURATION_MS");
   const MENU_PULLDOWN_KEY_NAMES = settings_("MENU_PULLDOWN_KEY_NAMES");
   const MENU_PULLDOWN_LINE_NUMBER_PATTERN = settings_(
@@ -37,6 +33,9 @@ window.report_ui_ = window.catch_show_throw_(function () {
   const NUMBER_LARGEST_PRINTED_MULTIPLE_TIMES = settings_(
     "NUMBER_LARGEST_PRINTED_MULTIPLE_TIMES",
   );
+  const STORAGE_KEY_PREFIX_SPLIT = settings_("STORAGE_KEY_PREFIX_SPLIT");
+  const STORAGE_KEY_VIEW_DARK_MODE = settings_("STORAGE_KEY_VIEW_DARK_MODE");
+  const STORAGE_KEY_VIEW_SCALE = settings_("STORAGE_KEY_VIEW_SCALE");
   const STORAGE_OWNED_KEYS = settings_("STORAGE_OWNED_KEYS");
   const STORAGE_OWNED_PREFIXES = settings_("STORAGE_OWNED_PREFIXES");
   const STORAGE_VERSION = settings_("STORAGE_VERSION");
@@ -89,9 +88,7 @@ window.report_ui_ = window.catch_show_throw_(function () {
   const STYLE_TABLE_GROW_COLUMN_NARROWEST_CHARS = settings_(
     "STYLE_TABLE_GROW_COLUMN_NARROWEST_CHARS",
   );
-  const STYLE_TABLE_TWO_CELL_GLYPHS = settings_(
-    "STYLE_TABLE_TWO_CELL_GLYPHS",
-  );
+  const STYLE_TABLE_TWO_CELL_GLYPHS = settings_("STYLE_TABLE_TWO_CELL_GLYPHS");
   const STYLE_TEXT_SCROLLBAR_THUMB_SHORTEST_CHARS = settings_(
     "STYLE_TEXT_SCROLLBAR_THUMB_SHORTEST_CHARS",
   );
@@ -118,11 +115,9 @@ window.report_ui_ = window.catch_show_throw_(function () {
     [HEAT_MAP_VIEW_ENTRY[0], ["file", "line", "function"]],
   ]);
   const CH_UNIT_GLYPH = "0";
-  const DARK_MODE_STORAGE_KEY = "view.dark_mode";
   const DESIGN_SCALE_LAST_STOP = STYLE_DESIGN_SCALE_STOP_COUNT - 1;
   const DESIGN_SCALE_LOWER_TRAVEL_SHARE =
     STYLE_DESIGN_SCALE_DEFAULT_STOP / DESIGN_SCALE_LAST_STOP;
-  const DESIGN_SCALE_STORAGE_KEY = "view.scale";
   const PULLDOWN_COMMAND_KEY_NAMES = Object.values(MENU_PULLDOWN_KEY_NAMES);
   const PULLDOWN_HIGHLIGHTED_ENTRY_CLASS = "highlighted-entry-";
   const RAMP_CHANNEL_STOPS = STYLE_HEAT_COLOR_STOPS.map((hex) =>
@@ -136,9 +131,8 @@ window.report_ui_ = window.catch_show_throw_(function () {
     fixed_text(-100, NUMBER_FRACTION_DIGITS) + "%"
   ).length;
   const SMALLEST_PRINTED_PERCENT = 1 / 10 ** NUMBER_FRACTION_DIGITS;
-  const STRIP_DIGIT_KEY_COUNT = 10;
   const STRIP_ENTRY_KIND_NAMES = ["action", "link", "pulldown", "text"];
-  const STRIP_GAP_TEXT = " ";
+  const STRIP_GAP_TEXT = window.ui_strings_.text_of("str_strip_gap");
   const TABLE_HEADING_COUNT_BOX_WIDTH_CHARS =
     Math.max(
       ...TABLE_ROW_COUNT_CHOICES.map((row_count) => String(row_count).length),
@@ -189,7 +183,7 @@ window.report_ui_ = window.catch_show_throw_(function () {
   const rendered_strips = new WeakMap();
   const resize_settle_callbacks = [];
   const row_walks = new WeakMap();
-  let resize_debounce_timer = null;
+  let settle_animation_frame = 0;
   let window_resize_is_pending = false;
   let storage_is_checked = false;
   let tests_pulldown_is_open = false;
@@ -274,7 +268,7 @@ window.report_ui_ = window.catch_show_throw_(function () {
   }
   // Reads the stored scale itself and answers the stop nearest to it.
   function design_scale_stored_stop() {
-    const stored_multiple = view_storage.value_read(DESIGN_SCALE_STORAGE_KEY);
+    const stored_multiple = view_storage.value_read(STORAGE_KEY_VIEW_SCALE);
     if (stored_multiple === null) return STYLE_DESIGN_SCALE_DEFAULT_STOP;
     if (
       typeof stored_multiple !== "number" ||
@@ -296,7 +290,7 @@ window.report_ui_ = window.catch_show_throw_(function () {
     design_scale_stop_check(scale_stop);
     design_scale_stop = scale_stop;
     view_storage.value_write(
-      DESIGN_SCALE_STORAGE_KEY,
+      STORAGE_KEY_VIEW_SCALE,
       design_scale_multiple_of(scale_stop),
     );
     design_scale_settle();
@@ -363,14 +357,14 @@ window.report_ui_ = window.catch_show_throw_(function () {
       ? DARK_MODE_ENABLED_VALUE
       : DARK_MODE_DISABLED_VALUE;
     dark_mode_is_enabled = is_enabled;
-    view_storage.value_write(DARK_MODE_STORAGE_KEY, state_value);
+    view_storage.value_write(STORAGE_KEY_VIEW_DARK_MODE, state_value);
     document.documentElement.setAttribute(
       DARK_MODE_ATTRIBUTE_NAME,
       state_value,
     );
   }
   function dark_mode_stored_enabled_() {
-    const stored_value = view_storage.value_read(DARK_MODE_STORAGE_KEY);
+    const stored_value = view_storage.value_read(STORAGE_KEY_VIEW_DARK_MODE);
     if (stored_value === null) return DARK_MODE_ENABLED_DEFAULT;
     if (stored_value === DARK_MODE_ENABLED_VALUE) return true;
     if (stored_value === DARK_MODE_DISABLED_VALUE) return false;
@@ -634,12 +628,16 @@ window.report_ui_ = window.catch_show_throw_(function () {
   function view_key_opens_tests_pulldown(key_name) {
     return new RegExp(MENU_PULLDOWN_OPENING_KEY_PATTERN).test(key_name);
   }
-  function view_key_forward(key_name) {
+  function view_key_forward(key_name, is_repeat) {
     const is_command_key = pulldown_key_is_command(key_name);
     if (!is_framed || (is_command_key && !tests_pulldown_is_open))
       return false;
     if (view_key_opens_tests_pulldown(key_name)) tests_pulldown_is_open = true;
-    parent_post({ report_ui: "menu_key_pressed", key: key_name });
+    parent_post({
+      report_ui: "menu_key_pressed",
+      key: key_name,
+      repeat: is_repeat,
+    });
     return true;
   }
   function view_key_tests_pulldown_closed() {
@@ -687,7 +685,7 @@ window.report_ui_ = window.catch_show_throw_(function () {
         window.catch_show_throw_((key_event) => {
           link_click_key_take(key_event);
           const key_name = pulldown_key_of(key_event);
-          if (key_name && view_key_forward(key_name))
+          if (key_name && view_key_forward(key_name, key_event.repeat))
             key_event.preventDefault();
         }),
       );
@@ -696,10 +694,12 @@ window.report_ui_ = window.catch_show_throw_(function () {
       if (message_data === "report_ui:layout_reset") {
         layout_reset();
         dark_mode_stored_apply_();
+        if (view_options.dark_mode_apply) view_options.dark_mode_apply();
         if (view_options.preferences_apply) view_options.preferences_apply();
-      } else if (message_data === "report_ui:dark_mode_apply")
+      } else if (message_data === "report_ui:dark_mode_apply") {
         dark_mode_stored_apply_();
-      else if (message_data === "report_ui:recenter") {
+        if (view_options.dark_mode_apply) view_options.dark_mode_apply();
+      } else if (message_data === "report_ui:recenter") {
         if (view_options.recenter) view_options.recenter();
       } else if (message_data === "report_ui:tests_pulldown_closed")
         view_key_tests_pulldown_closed();
@@ -949,9 +949,9 @@ window.report_ui_ = window.catch_show_throw_(function () {
     return found_entry;
   }
   function strip_number_text_of(numbered_index) {
-    if (numbered_index >= STRIP_DIGIT_KEY_COUNT)
+    if (numbered_index >= MENU_DIGIT_KEY_COUNT)
       return window.ui_strings_.text_of("str_menu_unavailable_fill");
-    return String((numbered_index + 1) % STRIP_DIGIT_KEY_COUNT);
+    return String((numbered_index + 1) % MENU_DIGIT_KEY_COUNT);
   }
   // Answers the text label of an entry as the strip draws it, number included.
   function strip_label_text_of(entries, entry_name) {
@@ -1101,12 +1101,12 @@ window.report_ui_ = window.catch_show_throw_(function () {
         MENU_FLASH_DURATION_MS,
       );
     }
-    function strip_key_take(key_name) {
+    function strip_key_take(key_name, is_repeat) {
       for (const pulldown of pulldowns_by_name.values()) {
         if (pulldown.is_open()) return pulldown.key_take(key_name);
       }
       if (!digit_entries.has(key_name)) return false;
-      entry_activate(digit_entries.get(key_name));
+      if (!is_repeat) entry_activate(digit_entries.get(key_name));
       return true;
     }
     function strip_pulldown_open(entry_name, search_text) {
@@ -1159,7 +1159,7 @@ window.report_ui_ = window.catch_show_throw_(function () {
       .filter((entry) => entry.is_numbered)
       .forEach((entry, numbered_index) => {
         if (
-          numbered_index < STRIP_DIGIT_KEY_COUNT &&
+          numbered_index < MENU_DIGIT_KEY_COUNT &&
           entry.is_available &&
           !entry.is_widget
         )
@@ -1266,7 +1266,11 @@ window.report_ui_ = window.catch_show_throw_(function () {
       : { text: value == null ? "" : String(value) };
   // Writes columns and rows as a markdown table, numbers right aligned.
   function table_markdown(columns, rows) {
-    const cell_rows = rows.map((row) => row.map(cell_normalize));
+    const cell_rows = rows.map((row) =>
+      row.map((value) => ({
+        text: cell_normalize(value).text.replaceAll("|", "\\|"),
+      })),
+    );
     const column_width_list = columns.map((column, column_index) =>
       Math.max(
         column.label.length,
@@ -1296,12 +1300,7 @@ window.report_ui_ = window.catch_show_throw_(function () {
     output_parts.push("| " + rule.join(" | ") + " |");
     for (const row of cell_rows) {
       output_parts.push(
-        line(
-          columns.map(
-            (column, column_index) =>
-              (row[column_index] && row[column_index].text) || "",
-          ),
-        ),
+        line(columns.map((column, column_index) => row[column_index].text)),
       );
     }
     return output_parts.join("\n");
@@ -1357,7 +1356,7 @@ window.report_ui_ = window.catch_show_throw_(function () {
       }),
     );
   }
-  // Answers sideways or vertical once a press passes the slide threshold.
+  // Answers sideways or vertical once past the drag direction threshold.
   function drag_direction_of(press_event, move_event) {
     const sideways_travel_px = design_px(
       move_event.clientX - press_event.clientX,
@@ -1943,7 +1942,7 @@ window.report_ui_ = window.catch_show_throw_(function () {
     narrowest_chars,
     widest_chars,
   ) {
-    storage_key = "split." + storage_key;
+    storage_key = STORAGE_KEY_PREFIX_SPLIT + storage_key;
     let animation_frame = 0,
       press_start_chars = null,
       width_chars = null;
@@ -2395,14 +2394,14 @@ window.report_ui_ = window.catch_show_throw_(function () {
 
   function design_scale_settle() {
     design_scale_apply();
-    clearTimeout(resize_debounce_timer);
-    resize_debounce_timer = setTimeout(
-      window.catch_show_throw_(layout_settle),
-      LAYOUT_RESIZE_SETTLE_DELAY_MS,
-    );
+    if (!settle_animation_frame)
+      settle_animation_frame = requestAnimationFrame(
+        window.catch_show_throw_(layout_settle),
+      );
   }
-  // Refreshes the layout, then the callbacks when a window resize is pending.
+  // Refreshes the layout next frame, then callbacks after a window resize.
   function layout_settle() {
+    settle_animation_frame = 0;
     layout_refresh();
     if (!window_resize_is_pending) return;
     window_resize_is_pending = false;
@@ -2413,7 +2412,7 @@ window.report_ui_ = window.catch_show_throw_(function () {
       text_scrollbar_attach(page_scrollbar, page_scroll_box, "horizontal");
     layout_activate();
   }
-  // Runs the callback after the layout refresh of each window resize settle.
+  // Runs the callback after the layout refresh in each window resize frame.
   function resize_settle_register(settle_callback) {
     resize_settle_callbacks.push(settle_callback);
   }
@@ -2493,6 +2492,7 @@ window.report_ui_ = window.catch_show_throw_(function () {
     view_storage,
     widget_key: {
       activates: widget_key_activates,
+      link_click_take: link_click_key_take,
       of: widget_key_of,
     },
     zero_percent_text,

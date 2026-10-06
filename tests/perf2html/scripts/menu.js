@@ -14,9 +14,7 @@ window.catch_show_throw_(function () {
   const STYLE_DESIGN_SCALE_DEFAULT_STOP = settings_(
     "STYLE_DESIGN_SCALE_DEFAULT_STOP",
   );
-  const STYLE_MENU_LOGO_START_SHARE = settings_(
-    "STYLE_MENU_LOGO_START_SHARE",
-  );
+  const STYLE_MENU_LOGO_START_SHARE = settings_("STYLE_MENU_LOGO_START_SHARE");
   const STYLE_MENU_PULLDOWN_EXTRA_WIDTH_CHARS = settings_(
     "STYLE_MENU_PULLDOWN_EXTRA_WIDTH_CHARS",
   );
@@ -44,7 +42,9 @@ window.catch_show_throw_(function () {
   const TEST_SUITE_NAME_TEXT = window.ui_strings_.text_of(
     "str_menu_test_suite_name",
   );
-  const TITLE_PART_SEPARATOR = " / ";
+  const TITLE_PART_SEPARATOR = window.ui_strings_.text_of(
+    "str_title_part_separator",
+  );
   const VIEW_LABEL_TEXTS = {
     [CALLERS_VIEW_KEY]: window.ui_strings_.text_of("str_view_callers"),
     [FLAME_GRAPH_VIEW_KEY]: FLAME_GRAPH_VIEW_ENTRY[1],
@@ -148,15 +148,14 @@ window.catch_show_throw_(function () {
   function logo_color_at(fraction) {
     return `rgb(${window.report_ui_.ramp_channels_at(fraction).join(",")})`;
   }
-  function logo_letters_build(text, start_fraction) {
+  function logo_letters_build(text, start_share) {
     const letters = [...text];
     return letters.map((letter, index) => {
       const letter_element = document.createElement("span");
       letter_element.textContent = letter;
       letter_element.style.color = logo_color_at(
         letters.length > 1
-          ? start_fraction +
-              ((1 - start_fraction) * index) / (letters.length - 1)
+          ? start_share + ((1 - start_share) * index) / (letters.length - 1)
           : 1,
       );
       return letter_element;
@@ -404,8 +403,11 @@ window.catch_show_throw_(function () {
     menu_strip_handle.flash(flash_entry_name);
     flash_entry_name = "";
   }
-  function menu_key_take(key_name) {
-    if (menu_strip_handle.key_take(key_name) || scale_key_take(key_name))
+  function menu_key_take(key_name, is_repeat) {
+    if (
+      menu_strip_handle.key_take(key_name, is_repeat) ||
+      scale_key_take(key_name)
+    )
       return true;
     if (!window.report_ui_.view_key.opens_tests_pulldown(key_name))
       return false;
@@ -417,8 +419,10 @@ window.catch_show_throw_(function () {
     document.addEventListener(
       "keydown",
       window.catch_show_throw_((key_event) => {
+        window.report_ui_.widget_key.link_click_take(key_event);
         const key_name = window.report_ui_.view_key.of(key_event);
-        if (key_name && menu_key_take(key_name)) key_event.preventDefault();
+        if (key_name && menu_key_take(key_name, key_event.repeat))
+          key_event.preventDefault();
       }),
     );
     document.addEventListener(

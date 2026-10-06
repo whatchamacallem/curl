@@ -124,7 +124,7 @@ The single function/check owning each concern - never bypass or duplicate:
   strip cell: the menu and its status bar, the heat map strip, each table
   heading (theme.js).
 - `report_ui_.resize_settle_register(callback)` - every window resize
-  settle: the one timer, the one reader of `LAYOUT_RESIZE_SETTLE_DELAY_MS`,
+  settle: the one animation frame per rendering update,
   runs `layout_refresh`, then each callback in registration order; a scale
   change settles with the refresh alone (theme.js).
 
@@ -370,7 +370,9 @@ taskset -c 3 ./build-relwithdebinfo/22_DCMAKECFLAGSO2g/tests/perf/perf \
   build. `tree_build` sets `local -x CCACHE_NAMESPACE` from
   `BUILD_CCACHE_NAMESPACE` (`perf2html`).
 - `run_one`: `taskset -c 3 valgrind --tool=callgrind --cache-sim=yes
-  --branch-sim=yes --trace-redir=yes --LL=16777216,16,64` (auto LL is
+  --branch-sim=yes --trace-redir=yes --LL=16777216,16,64` (`--LL` is
+  `CALLGRIND_LAST_LEVEL_CACHE`; after a change to it run without
+  `--regenerate`, which does not see one; auto LL is
   direct-mapped; `--trace-redir=yes` logs each object's load address in
   valgrind's debug lines, `--<pid>--`, which the callers page leaves out;
   the page then cuts each `==<pid>==` prefix and starts the valgrind log at
@@ -378,7 +380,9 @@ taskset -c 3 ./build-relwithdebinfo/22_DCMAKECFLAGSO2g/tests/perf/perf \
   (`^Events *:`), a log without one a hard error), then
   `callgrind_symbols.py` on that run's log and callgrind file. Timing is a
   separate pinned `perf stat -x, -e cycles:u,instructions:u`; its `Time*` lines
-  are the only valid speed number. Flame graph for shape, perf log for speed;
+  are the only valid speed number. `run_all` sums each test's `Time:` value
+  under the first test's suffix, another suffix an `error_exit 1`, and the
+  merged page writes that suffix. Flame graph for shape, perf log for speed;
   native speed moves ~1.9x with host state. Callgrind `calls=` are aggregated;
   never feed `--separate-callers=N` output to the callers page/heat map.
 - Quick read: `perf <test>`, median of 3-5.
@@ -446,7 +450,7 @@ taskset -c 3 ./build-relwithdebinfo/22_DCMAKECFLAGSO2g/tests/perf/perf \
   (its caller reads `MANIFEST.txt` line 1, the script reads no manifest);
   each `_VIEWS` entry `ScreenshotSet(shot_flags, view_hash, view_name,
   absent_files)`, `shot_flags` bits `_SHOOT_DIFF_REPORT`,
-  `_SHOOT_ERROR_VARIANT`, `_SHOOT_REGULAR_REPORT`, `_SHOOT_EVERY_VARIANT` both
+  `_SHOOT_ERROR_HANDLER`, `_SHOOT_REGULAR_REPORT`, `_SHOOT_BOTH_REPORTS` both
   reports; a view is shot at `_SCREENSHOT_VIEWPORTS` ×
   `_SCREENSHOT_DARK_VALUES` (`1`, then `0` light), an error variant at 720p
   dark only
@@ -460,7 +464,10 @@ taskset -c 3 ./build-relwithdebinfo/22_DCMAKECFLAGSO2g/tests/perf/perf \
   `bad_function`; `report_incomplete` and `stylesheet_missing` shoot a copy
   lacking `assets/report_complete.js` or `assets/theme.css` under
   `tests/perf2html/build/screenshots_scratch/`;
-  `--incognito`; under `--verbose` it prints
+  `--incognito`; `--run-all-compositor-stages-before-draw`, since Windows
+  Chrome lays a page out short of `--window-size` and resizes the page to
+  it only to capture, and a frame drawn before the page's resize work
+  makes the shot vary run to run; under `--verbose` it prints
   `<report> -> <dir>` and `N screenshot(s)`.
 - Debug modes, run in order: 1 `test_expected_behavior.sh` cold; 2
   `--keep-artifacts`; 3 `--regenerate`. `test_all.sh` runs mode 2, then
@@ -567,7 +574,8 @@ taskset -c 3 ./build-relwithdebinfo/22_DCMAKECFLAGSO2g/tests/perf/perf \
   refused delete keeps the last run's recordings; the batch runs it on its
   three reports before step 1. `report_begin` (creates dirs, opens
   `$RUN_LOG`, lays `README.md`/empty `assets/`) and `report_finish` (writes
-  the shared `assets/`, `settings.js` among them, then `report_complete.js`,
+  the shared `assets/`, `settings.css` and `settings.js` among them, then
+  `report_complete.js`,
   then the checksum, then MANIFEST.txt last, `log_verbose`s the entry page
   and, under `--txz`, writes `<report>.txz` beside the report) bracket every
   writer. A target
@@ -609,7 +617,8 @@ timer-artifacts-<unix>.txz (full report only)
   test; a test in one report only → `tests_pair` error.
 - Pages: shared assets linked, never inlined; hrefs from
   `theme.shared_href(depth, name)` (overview 0; callers, heat map and flame
-  graph 1); stylesheet from `Theme.css()`; classic
+  graph 1); `assets/settings.css`, every `:root` value, linked first;
+  classic
   `<script src>`/`<link>` only, no `fetch()`, no ES modules; opens from
   `file://`. `sources/<source_name()>` (display path, non-alphanumerics → `_`,
   plus `.js`); `FileModel.source` read via `source_text(file_path)`;
@@ -749,9 +758,9 @@ timer-artifacts-<unix>.txz (full report only)
   `page` when the views are all of them), component, part; no word its
   parent already gives. A colour role leads with its mode,
   `dark-mode-` or `light-mode-`, then a concept: `menu-normal`,
-  `menu-focus`, `page`, `page-normal`, `page-highlight`, `page-dim`,
-  `page-link`, `panel`, `status-bar`, `table-panel-odd`,
-  `table-panel-even`. State classes
+  `menu-focus`, `page`, `page-highlight`, `page-dim`,
+  `page-link`, `panel`, `screenshot-label`, `status-bar`,
+  `table-panel-odd`, `table-panel-even`. State classes
   (`selected_`, `open_`, `empty_`, `drag_`, `flash_`) and layout helpers
   (`.band_`, `.table-box-`, `.page_`) stay plain. Every class, id, CSS
   custom property and `data-*` attribute perf2html writes ends in a
@@ -825,7 +834,7 @@ timer-artifacts-<unix>.txz (full report only)
   logo, overview, test, file,
   function, heat map, callers, flame graph, dark mode, reset, help, then
   the scale widget. The logo, a plain link to `index.html`, wears
-  page-normal colours, a design exception. Numbered entries take 1 to 9
+  page colours, a design exception. Numbered entries take 1 to 9
   then 0 by position, ▒ past the tenth; an unavailable entry keeps its
   number and its label is drawn ▒, the flame graph's on a diff and for
   `REPORT_TEST_SUITE_NAME`. View, file and function entries address the
@@ -840,7 +849,7 @@ timer-artifacts-<unix>.txz (full report only)
   the test (its callers page), then the file and line, or the function. It
   is no `.menu-button-`, never flashes and wears no menu colour. A
   render is a reset, closing pulldowns and dropping strip focus, on each
-  address, dark mode toggle, reset and settled resize; an entry that
+  address, dark mode toggle, reset and window resize frame; an entry that
   navigates wears `flash_` for `MENU_FLASH_DURATION_MS`. The menu-focus
   colours mark only the focused cell, a flash, an open pulldown and its
   highlighted entry. Pulldowns `test`, `file`, `function`, each made by the
@@ -954,35 +963,42 @@ timer-artifacts-<unix>.txz (full report only)
   `report_ui_.drag_scroll.attach` scrolls a box by a drag on its text, a
   moved press swallowing its click; `report_ui_.pane_splitter.attach` sizes
   a pane in ch and answers `travel_take`, the travel it could not use.
-- Colour: `STYLE_COLOR_DARK_MODE` maps each palette colour, lighter then
-  dimmer per pair, to its `dark-mode-` roles; `STYLE_COLOR_LIGHT_MODE` maps
+- Colour: `STYLE_COLOR_DARK_MODE` maps each palette colour, the link colour
+  first, then lighter then dimmer per pair, to its `dark-mode-` roles;
+  `STYLE_COLOR_LIGHT_MODE` maps
   the light palette to its `light-mode-` roles; `Theme.roles()` refuses a
-  role lacking its palette's mode prefix. A role is its mode, then a
-  concept, then `fg`, `bg`, `outline` or `border`, a digit where a concept
-  has several of one kind (`dark-mode-panel-bg0-` to `-bg2-`), then the
-  marker `-`. The columns of a leaf table (`table.columns_`)
-  alternate through `<mode>-table-panel-odd-bg-` and
-  `<mode>-table-panel-even-bg-`, counted from 1 by `col:nth-child()` in each
-  mode sheet; layout tables wear page colours. A role names a concept, not
-  the thing coloured, so things coloured alike share one role and the
-  palettes are the one control surface. `Theme.css()` writes no colour
-  role; `Theme.light_mode_css()` writes, in `:root`, every `light-mode-`
-  role, then remaps
-  each `dark-mode-` role the shared stylesheets name, a `bg` role to
-  `light-mode-page-bg-` and any other to `light-mode-page-fg-`, so that
-  property holds a light colour while dark mode is off; `light_mode.css`
-  reads only the `:root` values `Theme.css()` writes and
-  `light-mode-` roles. `Theme.dark_mode_css()` writes
-  every dark role the shared stylesheets or `dark_mode.css` name in the
-  dark selector block. `light_mode.css` never names `data-dark-mode-`, and
-  `dark_mode.css` undoes each light rule it does not restate. The
-  `dark_mode.css` menu colour rules are the `light_mode.css` ones with only
-  the mode prefix changed; the strip ground and logo wear page-normal, the
-  status bar status-bar (white fg in light mode), a focused status link
-  the page-highlight roles, as every focused link.
+  colour with no role and a role lacking its palette's prefix,
+  `STYLE_COLOR_DARK_MODE_ROLE_PREFIX` or
+  `STYLE_COLOR_LIGHT_MODE_ROLE_PREFIX`. A role is its mode, then a
+  concept, then `fg`, `bg`, `outline` or `border`, then the
+  marker `-`. A role names a concept, not the thing coloured, so things
+  coloured alike share one role and the palettes are the one control
+  surface. The light roles are the concepts: each `dark_mode.css` rule
+  reads the `dark-mode-` twin of the role its `light_mode.css` rule reads,
+  and another dark role only where that twin's colour is not the one dark
+  mode shows, where the light rule reads page colours:
+  `dark-mode-page-dim-fg-` dim text, `dark-mode-page-link-fg-` links,
+  `dark-mode-panel-bg-` the callers log box, the column titles and the
+  info box, `dark-mode-page-highlight-bg-` a focused or selected ground,
+  the source table heading and the ticker tape,
+  `dark-mode-table-panel-even-bg-` the ticker tape entries. The columns of
+  a leaf table (`table.columns_`) alternate through
+  `<mode>-table-panel-odd-bg-` and `<mode>-table-panel-even-bg-`, counted
+  from 1 by `col:nth-child()` in each mode sheet; layout tables wear page
+  colours. `Theme.settings_stylesheet_write()` writes `settings.css`, one
+  `:root` block of every `STYLE_VALUE_ENTRIES` value, the computed design
+  values and every role of both palettes, and refuses a name it sets that
+  no stylesheet reads. The shared stylesheets read no role: every colour
+  rule sits in both mode sheets, `light_mode.css` reading only
+  `light-mode-` roles and `dark_mode.css`, in the dark selector block, only
+  `dark-mode-` roles. `light_mode.css` never names `data-dark-mode-`, and
+  `dark_mode.css` undoes each light rule it does not restate. The strip
+  ground and logo wear page, the status bar status-bar (white fg in light
+  mode); text over the light page-highlight ground is page-highlight-fg.
   `STYLE_HEAT_COLOR_STOPS` palette; `ramp_channels_at()` the one interpolation
   (`cell_style()`, `logo_color_at()`); cells paint the stop opaque, their
-  text `dark-mode-page-normal-fg-`, or `dark-mode-page-normal-bg-` above
+  text `STYLE_HEAT_CELL_ON_DARK_ROLE` (`dark-mode-page-fg-`), or
+  `STYLE_HEAT_CELL_ON_BRIGHT_ROLE` (`dark-mode-page-bg-`) above
   `STYLE_HEAT_CELL_ON_BRIGHT_ABOVE_LUMINANCE_SHARE`, the dark palette's
   colours in either mode (`heat_style()`, `runtime()`).
   `heat_of_share()`: clamp to `STYLE_HEAT_COLOR_FULL_SCALE_PERCENT`, divide,

@@ -20,15 +20,12 @@
 }
 
 .menu-button- {
-  padding: 0 1ch;
+  padding: 0 var(--menu-button-padding-inline-);
   white-space: pre;
 }
 .menu-button-[tabindex],
 .menu-button-widget- {
   cursor: pointer;
-}
-.menu-button- a {
-  color: inherit;
 }
 .menu-strip-gap- {
   padding: 0;
@@ -41,9 +38,6 @@
 }
 .menu-status-bar- a {
   padding: 0 var(--menu-status-bar-link-padding-inline-);
-}
-.menu-status-bar- a:not(:focus-visible) {
-  color: inherit;
 }
 
 .menu-pulldown- {
@@ -70,9 +64,8 @@
   flex: 1;
   flex-direction: column;
   overflow-y: auto;
-  scrollbar-width: none;
 }
 .menu-pulldown-entry-list- > * {
   flex: none;
-  padding: 0 1ch;
+  padding: 0 var(--menu-pulldown-entry-padding-inline-);
 }

@@ -13,6 +13,7 @@ window.catch_show_throw_(function () {
   }
 
   window.report_ui_.view_activate({
+    dark_mode_apply: null,
     forwards_input: true,
     preferences_apply: null,
     recenter: page_top_show,

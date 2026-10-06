@@ -122,6 +122,7 @@ window.ui_strings_ = (function () {
     str_heat_map_main_label: "heat map view",
     str_heat_map_tree_label: "files",
     str_in_function: " in {function}",
+    str_information_box_action_bar_separator: " | ",
     str_information_box_callees: "calls from this line (total {counter})",
     str_information_box_close: "close",
     str_information_box_close_symbol: "[x]",
@@ -163,11 +164,14 @@ window.ui_strings_ = (function () {
     str_sort_hottest_first: "hottest first",
     str_source_beyond_end: "error: Line beyond end of file, source changed.",
     str_source_unavailable: "Source not available.",
+    str_strip_gap: " ",
     str_table_heading_copy: "copy",
     str_text_scrollbar_gutter: "▒",
     str_text_scrollbar_thumb: "▓",
+    str_ticker_tape_entry: "{line} - {share}",
     str_ticker_tape_heading_diff: "most changed lines",
     str_ticker_tape_heading_self: "hottest lines",
+    str_title_part_separator: " / ",
     str_view_callers: "callers",
   };
   function text_fill(string_id, replacements) {

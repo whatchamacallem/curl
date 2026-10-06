@@ -9,16 +9,22 @@ import argparse, os, re, subprocess, sys
 from typing import NamedTuple
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import callgrind
+import callgrind, settings
+
+_VALGRIND_DEBUG_LINE_PATTERN: str = ""
+settings.load_into(__name__)
 
 _OBJDUMP_FUNCTION_SYMBOL_RE = re.compile(r"^([0-9a-f]+) .{6}F .*\s(\S+)$")
 _OBJDUMP_LABEL_RE = re.compile(r"^([0-9a-f]+) <(.+)>:$")
 _OBJDUMP_TEXT_SECTION_NAME = ".text"
 
 _VALGRIND_LOAD_ADDRESS_RE = re.compile(
-    r"^--\d+--\s+svma (0x[0-9a-f]+), avma (0x[0-9a-f]+)$"
+    _VALGRIND_DEBUG_LINE_PATTERN
+    + r"\s+svma (0x[0-9a-f]+), avma (0x[0-9a-f]+)$"
 )
-_VALGRIND_READING_SYMBOLS_RE = re.compile(r"^--\d+-- Reading syms from (.+)$")
+_VALGRIND_READING_SYMBOLS_RE = re.compile(
+    _VALGRIND_DEBUG_LINE_PATTERN + r" Reading syms from (.+)$"
+)
 
 
 class CodeSection(NamedTuple):
@@ -79,7 +85,7 @@ class CallgrindSymbols:
         return subprocess.run(
             ["objdump", *options, path],
             check=True,
-            capture_output=True,
+            stdout=subprocess.PIPE,
             text=True,
         ).stdout
 

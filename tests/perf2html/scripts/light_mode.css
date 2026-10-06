@@ -2,12 +2,147 @@
  * SPDX-License-Identifier: MIT
  * This file is licensed under the terms of the LICENSE-MIT.md file. */
 
+.callers-collapsed-section-file-name- {
+  color: var(--light-mode-page-fg-);
+}
+pre.callers-collapsed-section-log-box- {
+  background: var(--light-mode-page-bg-);
+}
+pre.callers-collapsed-section-log-box-:focus-visible {
+  background: var(--light-mode-page-bg-);
+  color: var(--light-mode-page-fg-);
+}
+.callers-collapsed-section-title- {
+  color: var(--light-mode-page-fg-);
+}
+.callers-collapsed-section-title-:focus-visible {
+  background: var(--light-mode-page-bg-);
+  color: var(--light-mode-page-fg-);
+}
+.callers-collapsed-section-title-::marker {
+  color: var(--light-mode-page-fg-);
+}
+a {
+  color: var(--light-mode-page-fg-);
+}
+a:focus-visible {
+  background: var(--light-mode-page-bg-);
+  color: var(--light-mode-page-fg-);
+}
+table.columns_ th {
+  color: var(--light-mode-page-fg-);
+  background: var(--light-mode-page-bg-);
+}
+table.columns_ > tbody > tr:focus-visible > td {
+  background: var(--light-mode-page-bg-) !important;
+  color: var(--light-mode-page-fg-) !important;
+}
+
+.menu-button- a {
+  color: inherit;
+}
+.menu-status-bar- a:not(:focus-visible) {
+  color: inherit;
+}
+
+#heat-map-minimap- {
+  background: var(--light-mode-page-bg-);
+}
+.heat-map-source-information-box- {
+  background: var(--light-mode-page-bg-);
+}
+.heat-map-source-information-box-action-bar-separator- {
+  color: var(--light-mode-page-fg-);
+}
+.heat-map-source-information-box-control- {
+  color: var(--light-mode-page-fg-);
+}
+.heat-map-source-information-box-close-symbol- {
+  color: var(--light-mode-page-fg-);
+}
+.heat-map-source-information-box-control-:focus-visible {
+  background: var(--light-mode-page-bg-);
+  color: var(--light-mode-page-fg-);
+}
+.heat-map-source-information-box-function-name- {
+  color: var(--light-mode-page-fg-);
+}
+.heat-map-source-information-box-heading- {
+  color: var(--light-mode-page-fg-);
+}
+.heat-map-source-information-box-note- {
+  color: var(--light-mode-page-fg-);
+}
+.heat-map-source-information-box- .table-box- {
+  background: var(--light-mode-page-bg-);
+}
+table.heat-map-source-table- th {
+  background: var(--light-mode-page-bg-);
+  color: var(--light-mode-page-fg-);
+}
+td.heat-map-source-table-self-cell-,
+td.heat-map-source-table-calls-cell-,
+td.heat-map-source-table-secondary-counter-cell- {
+  color: var(--light-mode-page-fg-);
+}
+table.heat-map-source-table- td.heat-map-source-table-line-number-cell- {
+  color: var(--light-mode-page-fg-);
+}
+tr.has-callee- td.heat-map-source-table-line-number-cell-::before {
+  color: var(--light-mode-page-fg-);
+}
+table.heat-map-source-table- > tbody > tr:focus-visible > td {
+  background: var(--light-mode-page-bg-) !important;
+  color: var(--light-mode-page-fg-) !important;
+}
+.heat-map-source-ticker-tape- {
+  background: var(--light-mode-page-bg-);
+  color: var(--light-mode-page-fg-);
+}
+.heat-map-source-ticker-tape-entry- {
+  background: var(--light-mode-page-bg-);
+}
+.heat-map-source-ticker-tape-entry-:focus-visible {
+  background: var(--light-mode-page-bg-) !important;
+  color: var(--light-mode-page-fg-) !important;
+}
+.heat-map-source-ticker-tape- .heat-map-source-ticker-tape-label- {
+  color: var(--light-mode-page-fg-);
+}
+.heat-map-source-unavailable-note- {
+  color: var(--light-mode-page-fg-);
+}
+.heat-map-tree-node-.selected_ {
+  background: var(--light-mode-page-bg-);
+  color: var(--light-mode-page-fg-);
+}
+.heat-map-tree-node-:focus-visible {
+  background: var(--light-mode-page-bg-) !important;
+  color: var(--light-mode-page-fg-) !important;
+}
+.heat-map-tree-node- .heat-map-tree-node-caret- {
+  color: var(--light-mode-page-fg-);
+}
+.heat-map-tree-node-.cold_ .heat-map-tree-node-name- {
+  color: var(--light-mode-page-fg-);
+}
+.heat-map-tree-node-.more_ .heat-map-tree-node-name- {
+  color: var(--light-mode-page-fg-);
+}
+.heat-map-tree-node- .heat-map-tree-node-share-percent- {
+  color: var(--light-mode-page-fg-);
+}
+.heat-map-tree-node-.heat_ .heat-map-tree-node-share-percent-,
+.heat-map-tree-node-.heat_ .heat-map-tree-node-caret- {
+  color: inherit;
+}
+
 body {
-  background: var(--light-mode-page-normal-bg-);
-  color: var(--light-mode-page-normal-fg-);
+  background: var(--light-mode-page-bg-);
+  color: var(--light-mode-page-fg-);
 }
 #overview-view-frame- {
-  background: var(--light-mode-page-normal-bg-);
+  background: var(--light-mode-page-bg-);
 }
 .page-heading- {
   background: var(--light-mode-page-highlight-bg-);
@@ -20,12 +155,11 @@ body {
 
 .columns_:not(.heat-map-source-table-) {
   border-collapse: collapse;
-  border: var(--page-line-width-) solid var(--light-mode-page-normal-fg-);
+  border: var(--page-line-width-) solid var(--light-mode-page-fg-);
 }
 .columns_:not(.heat-map-source-table-) th,
 .columns_:not(.heat-map-source-table-) td {
-  border-inline: var(--page-line-width-) solid
-    var(--light-mode-page-normal-fg-);
+  border-inline: var(--page-line-width-) solid var(--light-mode-page-fg-);
   padding-inline: calc(
     var(--page-table-cell-padding-inline-) -
       max(var(--page-line-width-), var(--design-device-pixel-widest-px-)) / 2
@@ -40,8 +174,8 @@ table.columns_ col:nth-child(even) {
 
 .menu-strip-,
 .page-heading-:has(> .menu-strip-table-) {
-  background: var(--light-mode-page-normal-bg-);
-  color: var(--light-mode-page-normal-fg-);
+  background: var(--light-mode-page-bg-);
+  color: var(--light-mode-page-fg-);
   padding-top: calc(var(--page-line-width-) / 2);
 }
 .menu-button-,
@@ -50,8 +184,8 @@ table.columns_ col:nth-child(even) {
   color: var(--light-mode-menu-normal-fg-);
 }
 [data-entry-name-="logo"] {
-  background: var(--light-mode-page-normal-bg-);
-  color: var(--light-mode-page-normal-fg-);
+  background: var(--light-mode-page-bg-);
+  color: var(--light-mode-page-fg-);
 }
 .menu-status-bar- {
   background: var(--light-mode-status-bar-bg-);
@@ -66,10 +200,10 @@ table.columns_ col:nth-child(even) {
 }
 
 #heat-map-main- {
-  background: var(--light-mode-page-normal-bg-);
+  background: var(--light-mode-page-bg-);
 }
 #heat-map-main-:focus-visible {
-  background: var(--light-mode-page-normal-bg-);
+  background: var(--light-mode-page-bg-);
 }
 #heat-map-minimap-viewport- {
   border: var(--page-line-width-) solid var(--light-mode-menu-normal-fg-);
@@ -84,7 +218,7 @@ tr.heat-map-source-information-box-synthetic-row- > td {
   color: var(--light-mode-status-bar-fg-);
 }
 .heat-map-tree-node-.selected_ .heat-map-tree-node-name- {
-  outline: var(--page-line-width-) solid var(--light-mode-page-normal-fg-);
+  outline: var(--page-line-width-) solid var(--light-mode-page-fg-);
 }
 
 .page-text-scrollbar- {
@@ -95,4 +229,10 @@ tr.heat-map-source-information-box-synthetic-row- > td {
 .page-text-scrollbar-.drag_ {
   background: var(--light-mode-menu-focus-bg-);
   color: var(--light-mode-menu-focus-fg-);
+}
+
+.screenshot-label- {
+  background: var(--light-mode-screenshot-label-bg-);
+  color: var(--light-mode-screenshot-label-fg-);
+  border-color: var(--light-mode-screenshot-label-border-);
 }

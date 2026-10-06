@@ -24,9 +24,7 @@ window.catch_show_throw_(function () {
     "HEAT_MAP_MINIMAP_VIEWPORT_BOX_SMALLEST_PX",
   );
   const HEAT_MAP_MODEL_DIR_NAME = settings_("HEAT_MAP_MODEL_DIR_NAME");
-  const HEAT_MAP_MODEL_GLOBAL_NAME = settings_(
-    "HEAT_MAP_MODEL_GLOBAL_NAME",
-  );
+  const HEAT_MAP_MODEL_GLOBAL_NAME = settings_("HEAT_MAP_MODEL_GLOBAL_NAME");
   const HEAT_MAP_SECONDARY_COUNTER_NAMES = settings_(
     "HEAT_MAP_SECONDARY_COUNTER_NAMES",
   );
@@ -44,6 +42,10 @@ window.catch_show_throw_(function () {
   );
   const HEAT_MAP_VIEW_ENTRY = settings_("HEAT_MAP_VIEW_ENTRY");
   const RANKING_COUNTER_NAME = settings_("RANKING_COUNTER_NAME");
+  const STORAGE_KEY_HEAT_COUNTER = settings_("STORAGE_KEY_HEAT_COUNTER");
+  const STORAGE_KEY_HEAT_ROWS = settings_("STORAGE_KEY_HEAT_ROWS");
+  const STORAGE_KEY_HEAT_SCALE = settings_("STORAGE_KEY_HEAT_SCALE");
+  const STORAGE_KEY_HEAT_SORT = settings_("STORAGE_KEY_HEAT_SORT");
   const STYLE_DESIGN_FONT_CHARACTER_WIDTH_PX = settings_(
     "STYLE_DESIGN_FONT_CHARACTER_WIDTH_PX",
   );
@@ -124,7 +126,11 @@ window.catch_show_throw_(function () {
     { value: "name", label: text_of("str_sort_alphabetical") },
   ];
   const sort_mode_stored = () =>
-    stored_choice_of(SORT_CHOICES, "heat.sort", SORT_CHOICES[0].value);
+    stored_choice_of(
+      SORT_CHOICES,
+      STORAGE_KEY_HEAT_SORT,
+      SORT_CHOICES[0].value,
+    );
   let sort_mode = sort_mode_stored();
   const counter_label = (counter) =>
     text_of(
@@ -136,7 +142,7 @@ window.catch_show_throw_(function () {
   const counter_key_stored = () =>
     stored_choice_of(
       counter_choices,
-      "heat.counter",
+      STORAGE_KEY_HEAT_COUNTER,
       profile_model.heatMapTotals.defaultCounter,
     );
   function counters_build() {
@@ -223,6 +229,7 @@ window.catch_show_throw_(function () {
   let heat_signed = (curved) => curved;
   let file_counter_share = (value, counter, file_path) =>
     (100 * value) / counter.get(profile_model.heatMapTotals.totals);
+  let file_counter_scope = "global";
   let secondary_percent_of_cell = (
     self_cost,
     secondary,
@@ -256,6 +263,7 @@ window.catch_show_throw_(function () {
       heat_position_of = (heat_value) => (heat_value + 1) * 0.5;
       file_counter_share = (value, counter, file_path) =>
         share_of_baseline(value, file_counter_baseline(file_path, counter));
+      file_counter_scope = "line";
       secondary_percent_of_cell = (
         self_cost,
         secondary,
@@ -298,7 +306,11 @@ window.catch_show_throw_(function () {
   const SCALE_CHOICES = [];
   let active_scale = null;
   const scale_value_stored = () =>
-    stored_choice_of(SCALE_CHOICES, "heat.scale", SCALE_CHOICES[0].value);
+    stored_choice_of(
+      SCALE_CHOICES,
+      STORAGE_KEY_HEAT_SCALE,
+      SCALE_CHOICES[0].value,
+    );
   function scale_choices_fill() {
     const scope_choices = scope_choices_build();
     CURVE_CHOICES.forEach((curve) => {
@@ -917,7 +929,8 @@ window.catch_show_throw_(function () {
       measure: html_escape(measure_text),
     });
   }
-  function home_render() {
+  function home_render(is_new_address) {
+    const kept_scroll_top = is_new_address ? 0 : main_panel.scrollTop;
     current_file_path = null;
     scope_totals = null;
     const line_rows = top_lines(HOME_TABLE_RENDERED_ROW_COUNT);
@@ -1060,9 +1073,14 @@ window.catch_show_throw_(function () {
       "str_heading_functions_by_counter",
     );
     const counter_entry = counter_entry_of(current_counter.key);
-    for (const heading_element of [lines_heading, functions_heading])
+    for (const heading_element of [lines_heading, functions_heading]) {
+      heading_element.setAttribute(
+        "data-row-count-key-",
+        STORAGE_KEY_HEAT_ROWS,
+      );
       report_ui_.table_heading.attach(heading_element, [counter_entry]);
-    main_panel.scrollTop = 0;
+    }
+    main_panel.scrollTop = kept_scroll_top;
     tree_render();
     report_ui_.layout_activate(main_panel);
     minimap_clear();
@@ -1095,9 +1113,10 @@ window.catch_show_throw_(function () {
       `${html_escape(TICKER_TAPE_HEADING)}</span>`;
     const entry_texts = tape_lines.map(([line_number, cost], entry_index) => {
       const baseline_cost = line_baseline(file_path, line_number);
-      const entry_text =
-        `${line_number} -` +
-        ` ${line_share_text(cost, baseline_cost, line_number)}`;
+      const entry_text = text_fill("str_ticker_tape_entry", {
+        line: line_number,
+        share: line_share_text(cost, baseline_cost, line_number),
+      });
       markup +=
         `<a class="heat-map-source-ticker-tape-entry-"` +
         ` href="${hash_for_line(file_path, line_number)}"` +
@@ -1124,7 +1143,8 @@ window.catch_show_throw_(function () {
     `${html_escape(text_of(string_id))}</span>`;
   const box_separator_markup =
     `<span class="heat-map-source-information-box-action-bar-separator-">` +
-    ` | </span>`;
+    `${html_escape(text_of("str_information_box_action_bar_separator"))}` +
+    `</span>`;
 
   // Renders the information box of a file, or of a line when one is given.
   function information_box_render(file_path, line_number) {
@@ -1170,7 +1190,7 @@ window.catch_show_throw_(function () {
       {
         label: line_number
           ? scope_share_label()
-          : text_of(SCOPE_SHARE_STRING_IDS[IS_DIFF ? "line" : "global"]),
+          : text_of(SCOPE_SHARE_STRING_IDS[file_counter_scope]),
         numeric: true,
       },
       { label: text_of("str_column_count"), numeric: true },
@@ -1936,7 +1956,7 @@ window.catch_show_throw_(function () {
     if (report_ui_.widget_key.activates(key_name)) {
       key_event.preventDefault();
       if (!key_event.repeat) ticker_tape_entry.click();
-      return;
+      return true;
     }
     const tape_entries = [
       ...ticker_tape_entry.parentElement.querySelectorAll(
@@ -1961,12 +1981,13 @@ window.catch_show_throw_(function () {
         next_index = entry_index - 1;
         break;
       default:
-        return;
+        return false;
     }
     key_event.preventDefault();
     const next_entry = tape_entries[next_index];
     if (next_entry)
       report_ui_.tab_stop_move(ticker_tape_entry, next_entry, true);
+    return true;
   }
   main_panel.addEventListener(
     "focusin",
@@ -1992,10 +2013,11 @@ window.catch_show_throw_(function () {
       const ticker_tape_entry = key_event.target.closest(
         ".heat-map-source-ticker-tape-entry-",
       );
-      if (ticker_tape_entry) {
-        ticker_tape_key_take(key_event, key_name, ticker_tape_entry);
+      if (
+        ticker_tape_entry &&
+        ticker_tape_key_take(key_event, key_name, ticker_tape_entry)
+      )
         return;
-      }
       const box_control = key_event.target.closest(
         "[data-information-box-action-]",
       );
@@ -2124,7 +2146,7 @@ window.catch_show_throw_(function () {
   }
   // Stores and shows a counter chosen in the strip or in a home heading.
   function counter_choose(counter_key) {
-    view_storage.value_write("heat.counter", counter_key);
+    view_storage.value_write(STORAGE_KEY_HEAT_COUNTER, counter_key);
     counter_apply(counter_key);
     route_render();
     heat_strip_handle.pulldown_label_set(
@@ -2134,7 +2156,7 @@ window.catch_show_throw_(function () {
   }
   // Stores and shows a scale chosen in the strip.
   function scale_choose(scale_value) {
-    view_storage.value_write("heat.scale", scale_value);
+    view_storage.value_write(STORAGE_KEY_HEAT_SCALE, scale_value);
     scale_apply(scale_value);
     rendered_key = "";
     route_render();
@@ -2142,7 +2164,7 @@ window.catch_show_throw_(function () {
   }
   // Stores and shows a tree order chosen in the strip.
   function sort_choose(chosen_sort_mode) {
-    view_storage.value_write("heat.sort", chosen_sort_mode);
+    view_storage.value_write(STORAGE_KEY_HEAT_SORT, chosen_sort_mode);
     sort_mode = chosen_sort_mode;
     tree_render();
     heat_strip_handle.pulldown_label_set("sort", sort_label_of(sort_mode));
@@ -2195,7 +2217,8 @@ window.catch_show_throw_(function () {
       model_load(page_address.test);
       return;
     }
-    const is_new_address = location.hash !== routed_hash;
+    const is_new_address = location.hash !== routed_hash,
+      is_detail_closed = !is_new_address && !detail_line();
     routed_hash = location.hash;
     let file = page_address.file,
       line = page_address.line === null ? 0 : page_address.line,
@@ -2246,11 +2269,11 @@ window.catch_show_throw_(function () {
     if (key !== rendered_key) {
       rendered_key = key;
       if (file) file_render(file);
-      else home_render();
+      else home_render(is_new_address);
     }
     if (file) {
       if (line) line = line_clamp(line);
-      detail_set(line);
+      if (!is_detail_closed) detail_set(line);
       if (is_new_address) file_address_show(file, line);
     }
     rendered_line = line;
@@ -2332,6 +2355,7 @@ window.catch_show_throw_(function () {
   function address_recenter() {
     if (!current_file_path) {
       rendered_key = "";
+      routed_hash = null;
       route_render();
       return;
     }
@@ -2432,6 +2456,7 @@ window.catch_show_throw_(function () {
     window.catch_show_throw_(route_render),
   );
   report_ui_.view_activate({
+    dark_mode_apply: null,
     forwards_input: true,
     preferences_apply: layout_reset_apply,
     recenter: address_recenter,

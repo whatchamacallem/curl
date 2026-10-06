@@ -2,32 +2,16 @@
  * SPDX-License-Identifier: MIT
  * This file is licensed under the terms of the LICENSE-MIT.md file. */
 
-.callers-collapsed-section-file-name- {
-  color: var(--dark-mode-page-dim-fg-);
-}
-
 pre.callers-collapsed-section-log-box- {
-  background: var(--dark-mode-panel-bg2-);
   max-height: calc(
     var(--callers-collapsed-section-log-box-max-height-share-) *
       var(--design-viewport-height-)
   );
   overflow: auto;
 }
-pre.callers-collapsed-section-log-box-:focus-visible {
-  background: var(--dark-mode-page-highlight-bg-);
-}
 
 .callers-collapsed-section-title- {
   cursor: pointer;
-  color: var(--dark-mode-page-dim-fg-);
-}
-.callers-collapsed-section-title-:focus-visible {
-  background: var(--dark-mode-page-highlight-bg-);
-  color: var(--dark-mode-page-highlight-fg-);
-}
-.callers-collapsed-section-title-::marker {
-  color: var(--dark-mode-page-dim-fg-);
 }
 
 *,
@@ -88,14 +72,6 @@ body.frame_,
   width: 100%;
 }
 
-a {
-  color: var(--dark-mode-page-link-fg-);
-}
-a:focus-visible {
-  background: var(--dark-mode-page-highlight-bg-);
-  color: var(--dark-mode-page-highlight-fg-);
-}
-
 * {
   scrollbar-width: none;
 }
@@ -124,12 +100,12 @@ main.page-text-scroll-box- {
 .page-text-scrollbar-.horizontal_ {
   grid-column: 1;
   grid-row: 2;
-  height: 1lh;
+  height: var(--page-text-scrollbar-horizontal-height-);
 }
 .page-text-scrollbar-.vertical_ {
   grid-column: 2;
   grid-row: 1;
-  width: 1ch;
+  width: var(--page-text-scrollbar-vertical-width-);
 }
 .page-text-scrollbar-.vertical_ > span {
   display: block;
@@ -139,7 +115,8 @@ main.page-text-scroll-box- {
   container-type: inline-size;
 }
 #overview-home- .page_ {
-  padding: 1lh 2ch;
+  padding: var(--heat-map-overview-home-border-block-)
+    var(--heat-map-overview-home-border-inline-);
 }
 .table-box- {
   position: relative;
@@ -172,15 +149,9 @@ table.columns_ th {
   top: 0;
   z-index: var(--page-table-column-title-z-index-);
   text-align: left;
-  color: var(--dark-mode-page-dim-fg-);
-  background: var(--dark-mode-panel-bg2-);
 }
 table.columns_ .numeric_ {
   text-align: right;
-}
-table.columns_ > tbody > tr:focus-visible > td {
-  background: var(--dark-mode-page-highlight-bg-) !important;
-  color: var(--dark-mode-page-highlight-fg-) !important;
 }
 
 .screenshot-label- {
@@ -188,8 +159,6 @@ table.columns_ > tbody > tr:focus-visible > td {
   left: 0;
   bottom: 0;
   z-index: var(--screenshot-label-z-index-);
-  background: #000000;
-  color: #ffffff;
   font-size: var(--screenshot-label-font-size-);
-  border: var(--screenshot-label-border-width-) solid #000000;
+  border: var(--screenshot-label-border-width-) solid;
 }
