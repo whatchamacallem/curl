@@ -99,12 +99,7 @@ class TraceToSpeedscope:
         stamps: list[int]
 
     def buildid_read(self, path: str) -> str:
-        listing = subprocess.run(
-            ["readelf", "-n", path],
-            check=True,
-            capture_output=True,
-            text=True,
-        ).stdout
+        listing = self.command_output(["readelf", "-n", path])
         for line in listing.splitlines():
             label, separator, value = line.partition(":")
             if separator and label.strip() == _BUILDID_LABEL:
@@ -160,6 +155,17 @@ class TraceToSpeedscope:
             runs,
             key=lambda run: sum(call.last - call.first + 1 for call in run),
         )
+
+    # Answers the stdout of a command whose stderr passes through.
+    def command_output(self, command: list[str]) -> str:
+        completed = subprocess.run(
+            command, check=False, stdout=subprocess.PIPE, text=True
+        )
+        if completed.returncode != 0:
+            sys.exit(
+                f"error: exit {completed.returncode} from: {' '.join(command)}"
+            )
+        return completed.stdout
 
     def document(
         self,
@@ -232,13 +238,10 @@ class TraceToSpeedscope:
             )
         frames: dict[int, Frame] = {}
         for path, virtual in by_object.items():
-            lines = subprocess.run(
+            lines = self.command_output(
                 ["addr2line", "-f", "-C", "-e", path]
-                + [f"{address:#x}" for address in virtual.values()],
-                check=True,
-                capture_output=True,
-                text=True,
-            ).stdout.splitlines()
+                + [f"{address:#x}" for address in virtual.values()]
+            ).splitlines()
             for position, address in enumerate(virtual):
                 symbol, where = lines[2 * position], lines[2 * position + 1]
                 file, _, line = where.partition(" ")[0].rpartition(":")
@@ -353,12 +356,7 @@ class TraceToSpeedscope:
         return self.load(trace_file).seen
 
     def segments_read(self, path: str) -> list[TraceToSpeedscope.LoadSegment]:
-        listing = subprocess.run(
-            ["readelf", "-lW", path],
-            check=True,
-            capture_output=True,
-            text=True,
-        ).stdout
+        listing = self.command_output(["readelf", "-lW", path])
         segments: list[TraceToSpeedscope.LoadSegment] = []
         for line in listing.splitlines():
             fields = line.split()

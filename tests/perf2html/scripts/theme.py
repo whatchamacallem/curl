@@ -59,7 +59,6 @@ _STYLE_PAGE_FONT_FAMILY: str = ""
 _STYLE_PAGE_FONT_FAMILY_PROPERTY: str = ""
 _STYLE_TABLE_COLUMN_EXTRA_WIDTH_CHARS: int = 0
 _STYLE_TABLE_GROW_COLUMN_NARROWEST_CHARS: int = 0
-_STYLE_TABLE_TWO_CELL_GLYPHS: str = ""
 _STYLE_VALUE_ENTRIES: dict[str, str] = {}
 _THEME_TIME_UNIT_ENTRIES: tuple[tuple[str, float], ...] = ()
 settings.load_into(__name__)
@@ -139,9 +138,7 @@ class TableRenderer:
     def column_longest(
         self, rows: Sequence[Sequence[Cell]], index: int
     ) -> int:
-        return max(
-            (self.text_cells(row[index].text) for row in rows), default=0
-        )
+        return max((len(row[index].text) for row in rows), default=0)
 
     def column_width_text(
         self, limits: Sequence[tuple[int, int]], index: int, grow_index: int
@@ -225,12 +222,6 @@ class TableRenderer:
         out.append("</div>")
         return "".join(out)
 
-    # Counts the cells a text takes on a page, a wide glyph as two.
-    def text_cells(self, text: str) -> int:
-        return len(text) + sum(
-            1 for glyph in text if glyph in _STYLE_TABLE_TWO_CELL_GLYPHS
-        )
-
 
 class Theme:
     DIRECTORY = os.path.dirname(os.path.abspath(__file__))
@@ -293,11 +284,11 @@ class Theme:
                 return ""
             return ("-" if number < 0 else "") + self.human(abs(number))
 
-        def signed_percent(self, percent: float) -> str:
-            if percent == 0:
-                return ""
-            arrow = "⯆" if percent < 0 else "⯅"
+        def signed_percent(self, percent: float, is_line: bool = False) -> str:
             digit_count = _NUMBER_FRACTION_DIGITS
+            if percent == 0:
+                return "" if is_line else self.fixed_text(0, digit_count) + "%"
+            arrow = "▼" if percent < 0 else "▲"
             times = percent / 100
             if percent == math.inf:
                 amount_text = "∞%"
@@ -309,6 +300,8 @@ class Theme:
                 amount_text = "≈∞%"
             else:
                 amount_text = self.fixed_text(times, digit_count) + "x"
+            if not is_line:
+                return arrow + " " + amount_text
             return arrow + amount_text.rjust(self.signed_percent_amount_chars)
 
         def time(self, seconds: float) -> str:
@@ -700,8 +693,8 @@ def num_signed(number: float) -> str:
     return _renderer.number_format.signed(number)
 
 
-def num_signed_pct(percent: float) -> str:
-    return _renderer.number_format.signed_percent(percent)
+def num_signed_pct(percent: float, is_line: bool = False) -> str:
+    return _renderer.number_format.signed_percent(percent, is_line)
 
 
 def num_time(seconds: float) -> str:
@@ -754,6 +747,17 @@ def table_render(
     column_titles: bool = True,
 ) -> str:
     return _table_renderer.table(key, columns, rows, fill, column_titles)
+
+
+# Fills each marker with its markup, refusing a marker the template lacks.
+def template_fill(template_text: str, marker_values: dict[str, str]) -> str:
+    for marker in marker_values:
+        if marker not in template_text:
+            raise ValueError(f"the template holds no marker {marker}")
+    filled_text = template_text
+    for marker, markup in marker_values.items():
+        filled_text = filled_text.replace(marker, markup)
+    return filled_text
 
 
 def theme_assets_write(out_dir: str) -> None:

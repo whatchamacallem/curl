@@ -2,14 +2,20 @@
 // SPDX-License-Identifier: MIT
 // This file is licensed under the terms of the LICENSE-MIT.md file.
 
-window.catch_show_throw_(function () {
+window.try_catch_handler_(function () {
   "use strict";
 
   const DARK_MODE_QUERY_KEY_NAME = settings_("DARK_MODE_QUERY_KEY_NAME");
   const DARK_MODE_QUERY_VALUES = settings_("DARK_MODE_QUERY_VALUES");
   const FLAME_GRAPH_VIEW_ENTRY = settings_("FLAME_GRAPH_VIEW_ENTRY");
+  const SCREENSHOT_MENU_ENTRY_KEY_NAME = settings_(
+    "SCREENSHOT_MENU_ENTRY_KEY_NAME",
+  );
 
   const home_panel = window.report_ui_.home_panel;
+  const menu_entry_number = new URLSearchParams(location.search).get(
+    SCREENSHOT_MENU_ENTRY_KEY_NAME,
+  );
   const menu_strip = document.getElementById("menu-");
   const has_flame_graph = menu_strip.getAttribute("data-flame-graph-") === "1";
   const test_names = JSON.parse(menu_strip.getAttribute("data-test-names-"));
@@ -124,10 +130,13 @@ window.catch_show_throw_(function () {
 
   function activate() {
     dark_mode_query_apply_();
-    window.addEventListener("hashchange", window.catch_show_throw_(view_show));
+    window.addEventListener(
+      "hashchange",
+      window.try_catch_handler_(view_show),
+    );
     window.addEventListener(
       "message",
-      window.catch_show_throw_(view_message_take),
+      window.try_catch_handler_(view_message_take),
     );
     view_show();
   }
@@ -137,6 +146,7 @@ window.catch_show_throw_(function () {
     address_now,
     address_request,
     has_flame_graph,
+    menu_entry_number,
     test_names,
     view_post,
   };

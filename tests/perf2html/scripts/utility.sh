@@ -211,18 +211,20 @@ elapsed_format() {
 error_exit() {
   local exit_code="$1"
   shift
-  printf '%s\n' "$@" | verbose_filter 0
+  [ "$VERBOSE" -lt 1 ] || block_lead other
+  printf '%s\n' "$@" >&2
   exit "$exit_code"
 }
 
 failure_print_log_tail() {
   local exit_code="$1" shown="$2"
+  [ "$VERBOSE" -lt 1 ] || block_lead other
   {
     echo "error: exit $exit_code from: $shown"
     tail -n +"$((LOG_LINE_FROM + 1))" "$RUN_LOG" \
       | tail -n "$LOG_FAILURE_TAIL_LINES"
     echo "(see: $RUN_LOG)"
-  } | verbose_filter 0
+  } >&2
 }
 
 heading_print() {
@@ -687,19 +689,14 @@ verbose_begin() {
 }
 
 verbose_filter() {
-  local separate=0 lead=0 loose status=0 raw_line
+  local loose status=0 raw_line
   if [ "$VERBOSE" -ge "$VERBOSE_RAW_LEVEL" ]; then
     while IFS= read -r raw_line || [ -n "$raw_line" ]; do
       printf '%s\n' "$raw_line" >&2
     done
     return 0
   fi
-  if [ "$1" = 0 ]; then
-    separate=1
-    [ "${VERBOSE_BLOCK_PRINTED-other}" = none ] || lead=1
-  fi
-  loose="$(awk -v indent="$(printf '%*s' "$1" '')" -v home="${HOME:?}/" \
-    -v separate="$separate" -v lead="$lead" '
+  loose="$(awk -v indent="$(printf '%*s' "$1" '')" -v home="${HOME:?}/" '
   function line_print(text) {
     print text > "/dev/stderr"
     fflush("/dev/stderr")
@@ -757,7 +754,6 @@ verbose_filter() {
   $0 == "" { next }
   { while (at = index($0, home))
       $0 = substr($0, 1, at - 1) "~/" substr($0, at + length(home)) }
-  indent != "" &&
   /^[A-Za-z][A-Za-z0-9\/ ]*: +-?[0-9][0-9.,]*( [A-Za-z\/]+)?$/ {
     match($0, /: +/)
     held++

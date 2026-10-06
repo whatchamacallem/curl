@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 // This file is licensed under the terms of the LICENSE-MIT.md file.
 
-window.catch_show_throw_(function () {
+window.try_catch_handler_(function () {
   "use strict";
 
   const RELAY_MESSAGE_NAME = "report_error";
@@ -47,11 +47,11 @@ window.catch_show_throw_(function () {
   report_error_overlay.relay_set_(report_relay_);
   window.addEventListener(
     "message",
-    window.catch_show_throw_(relayed_report_take_),
+    window.try_catch_handler_(relayed_report_take_),
   );
   window.addEventListener(
     "error",
-    window.catch_show_throw_(resource_failure_take_),
+    window.try_catch_handler_(resource_failure_take_),
     true,
   );
 })();

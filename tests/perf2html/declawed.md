@@ -79,11 +79,11 @@ conversation as well as providing a link to the task doc.
   staged during a rename then unstage them. `git` is the permission system for
   permanent changes and therefore must be reviewed by a user. The one exception
   is for staging files before running reformatting tools below.
-- Do not reference `CLAUDE.md` or `declawed.md` outside this doc. No not
+- Do not reference `CLAUDE.md` or `declawed.md` outside this doc. Do not
   explicitly mention the tests being tested themselves in other source.
 - The source formatters may need to run twice to be stable. Alert the user
   if they are not.
-- If a source reformating tool can be used to fix an error then stage the
+- If a source reformatting tool can be used to fix an error then stage the
   file to be modified in git and run the tool. Then check the diff and if
   you believe there was an error the change can be reverted and applied
   manually.
@@ -95,7 +95,7 @@ conversation as well as providing a link to the task doc.
   making it an exception to a lot of rules. Try not to mention it.
 - Consider `speedscope` externally maintained and ignore it when applying the
   `perf2html` maintainers guidelines.
-- All constants must go in settings.py or settings.sh. The only exception if
+- All constants must go in settings.py or settings.sh. The only exception is
   for the numeric constant zero and the color clear.
 
 ### 0.2 One-door glossary
@@ -113,8 +113,9 @@ The single function/check owning each concern - never bypass or duplicate:
 - `diff_share_of()` - every diff share, a fall past its baseline refused
   (theme.py/js).
 - `fixed_text()` - every decimal a page prints; `percent()`/`percent_text()`
-  every share, `signed_percent()`/`signed_percent_text()` every diff share
-  (theme.py `NumberFormat`, theme.js `report_ui_`).
+  every share, `signed_percent()`/`signed_percent_text()` every diff share,
+  `is_line` true on the heat map source view alone (theme.py `NumberFormat`,
+  theme.js `report_ui_`).
 - `design_scale_stop_set()` - every scale change; `menu.js` then posts
   `report_ui:layout_reset`, which resets column widths.
 - `information_box_render(file_path, line_number)` - every file, function
@@ -127,6 +128,9 @@ The single function/check owning each concern - never bypass or duplicate:
   settle: the one animation frame per rendering update,
   runs `layout_refresh`, then each callback in registration order; a scale
   change settles with the refresh alone (theme.js).
+- `template_fill(template_text, marker_values)` - every template marker
+  fill, a marker its template lacks refused (theme.py/js; `settings.py`
+  refuses a missing `__DATA__` itself, as theme.py imports it).
 
 ### 0.3 Working agreement
 
@@ -213,7 +217,7 @@ The single function/check owning each concern - never bypass or duplicate:
   one plain English sentence. `test_source_scan.py` cuts the comment marks
   and any backtick code span, then faults the first other character on each
   comment line as `comment holds 'X' outside ENGLISH_PUNCT`.
-- ASCII plus the specific whitelisted glyphs (`© ≈ ∞ ▲⯅⯇⯈⯆▼ … █ ░ ▒ ▓`),
+- ASCII plus the specific whitelisted glyphs (`© ≈ ∞ ▲◄►▼ … █ ░ ▒ ▓`),
   written literally, never as HTML entities.
 - No unicode escapes or runtime character constructors in source, comments
   and header included: `\u`, `\U`, `\x`, `\N{`, octal `\NNN`, CSS hex
@@ -448,8 +452,13 @@ taskset -c 3 ./build-relwithdebinfo/22_DCMAKECFLAGSO2g/tests/perf/perf \
   `--config`/`--project` always passed; `pyrightconfig.json` names no file.
 - `test_screenshot.py`: modified + diff reports, `--diff` for the diff
   (its caller reads `MANIFEST.txt` line 1, the script reads no manifest);
-  each `_VIEWS` entry `ScreenshotSet(shot_flags, view_hash, view_name,
-  absent_files)`, `shot_flags` bits `_SHOOT_DIFF_REPORT`,
+  each `_VIEWS` entry `ScreenshotSet(shot_flags, view_hash,
+  menu_entry_number, view_name, absent_files)`, `menu_entry_number` the
+  digit sent as `screenshot_menu`, empty for none (the overview `4`, its
+  function pulldown open; the modified report's callers page,
+  `#test=urlparser&view=callers`, `7`, its flame graph entry focused; the
+  diff's callers page `#test=all&view=callers`), `shot_flags` bits
+  `_SHOOT_DIFF_REPORT`,
   `_SHOOT_ERROR_HANDLER`, `_SHOOT_REGULAR_REPORT`, `_SHOOT_BOTH_REPORTS` both
   reports; a view is shot at `_SCREENSHOT_VIEWPORTS` ×
   `_SCREENSHOT_DARK_VALUES` (`1`, then `0` light), an error variant at 720p
@@ -477,8 +486,7 @@ taskset -c 3 ./build-relwithdebinfo/22_DCMAKECFLAGSO2g/tests/perf/perf \
   `tests/perf2html/test_expected_behavior.md` (gitignored), then checks the
   kept recordings (`test_error_cache_populated_check`) and proves a batch
   `--regenerate` measures nothing (`test_error_regenerate_cache_check`), then
-  an uncached diff expected to pass (`test_error_diff_uncached_test`) and
-  the source scan's escape tests (`test_error_source_scan_tests`), and
+  an uncached diff expected to pass (`test_error_diff_uncached_test`), and
   failure-mode tests on report copies in
   `tests/perf2html/build/test_error_handling_scratch/`
   (`_TEST_ERROR_SCRATCH`; kept by a failed run). `test_failure_expect NAME CODE
@@ -527,8 +535,10 @@ taskset -c 3 ./build-relwithdebinfo/22_DCMAKECFLAGSO2g/tests/perf/perf \
   `"$@"` runs one of our scripts uncaptured. Values return through globals
   (`CHILD_EXIT_CODE`). `$( )` around `printf`/`date`/`basename`, or
   `verbose_filter`'s awk answer, is a value, fine.
-- Failure: `error_exit CODE LINE...` = one ```txt fence on stderr, exit. Tool
-  child: `failure_print_log_tail` = same fence holding `error: exit ...`.
+- Failure: `error_exit CODE LINE...` = the lines on stderr as written, no
+  fence, led under `--verbose` by `block_lead`, exit. Tool child:
+  `failure_print_log_tail` = the same for `error: exit ...`, the log tail
+  and `(see: <RUN_LOG>)`.
   `cmake` configure output goes to `/dev/null` below level 2; `tree_build` →
   `child_capture_noisy` (= `child_capture` at 2); failure prints only error:
   cmake failed to build $command...
@@ -537,9 +547,10 @@ taskset -c 3 ./build-relwithdebinfo/22_DCMAKECFLAGSO2g/tests/perf/perf \
   (`test_expected_behavior.sh` 1, batch
   2, perf2html/diff 3, work 4), and `PERF2HTML_CLOCK_START_US`, the outermost
   script's clock, so a child's `[elapsed]` continues its parent's, and sets
-  `lastpipe`. Every line printed is a code span, a table cell or sits in a
-  fence, so nothing is escaped or wrapped and `prettier --check` passes as
-  printed. `code_span` = text with
+  `lastpipe`. Good news is formatted, bad news is not: every line but a
+  failure's is a code span, a table cell or sits in a fence, so nothing is
+  escaped or wrapped and `prettier --check` passes as printed; a failure's
+  lines reach stderr raw (see Failure). `code_span` = text with
   `$HOME/` as `~/`, in the shortest backtick run it lacks; `block_lead` = the
   blank line before a block (none before a hand-run script's first, none
   between two items unless the first is loose). `title_print` = script heading;
@@ -550,14 +561,14 @@ taskset -c 3 ./build-relwithdebinfo/22_DCMAKECFLAGSO2g/tests/perf/perf \
   (awk, stderr, flushes every line) streams a child's lines into a ```txt fence
   at the item's indent: `$HOME/`→`~/`, trailing blanks and blank lines dropped,
   no fence when empty, a line with as many backticks as the fence closes it and
-  opens a longer one; indented, 2+ `words: number [unit]` lines in a row are
+  opens a longer one; 2+ `words: number [unit]` lines in a row are
   one single-row table (header words plain, values code spans, padded as
   `table_print` pads), tight after a fence, else led by a blank line that makes
   the item loose: the awk answers `loose` on stdout and
   `VERBOSE_BLOCK_PRINTED=loose` puts the blank line before the next block,
-  which `lastpipe` lets the filter, a pipeline's last stage, set; `error_exit`
-  and `failure_print_log_tail` use it at indent 0, `item_output_print` for our
-  own lines. `verbose_flags_of` = one `--verbose` per level, one per line
+  which `lastpipe` lets the filter, a pipeline's last stage, set;
+  `child_capture` uses it for a child's lines, `item_output_print` for our
+  own. `verbose_flags_of` = one `--verbose` per level, one per line
   (`mapfile -t`). Python tools' ok lines: stdout, `--verbose` only. Quiet
   switches `ruff --quiet` and prettier `--log-level warn`, recorded once in
   `quiet_switch_set` (`QUIET_SWITCH`, empty under `--verbose`); pyright has
@@ -673,8 +684,10 @@ timer-artifacts-<unix>.txz (full report only)
   `callers.html`, each marker replaced by markup it renders.
 - `callgrind_diff.py`: `counters_check()` names both lists; `--callers-output`
   required (name, flags, JSON keys are contract); a `callers` row is
-  `[caller, change in calls, baseline calls]`, a callee's rows ordered by
-  the size of the change in calls.
+  `[caller, change in calls, baseline calls]`; a callee is kept when any
+  caller's calls changed, its own total changed or not, with every caller,
+  the unchanged ones too, its rows ordered by the size of the change in
+  calls, then name.
 - `callgrind_to_heatmap.py`: `data` writes one test's
   `heat-map/data/<test>.js`, the `sources/` it shows and, for the merged test,
   `assets/pulldown_text.js`; `page`, after the last `data`, writes the one
@@ -684,11 +697,14 @@ timer-artifacts-<unix>.txz (full report only)
   `settings.js`, `theme.js`, `heat_map.js`; head from `theme.page_document`
   (`theme.page_preamble_scripts()`, `extra_css`, `body_holds_scripts`);
   `model()`/ `diff_model()`; `model()`
-  refuses an unemitted `RANKING_COUNTER_NAME`.
+  refuses an unemitted `RANKING_COUNTER_NAME`; `git ls-files` lets its
+  stderr through, a non-zero exit one `error:` line.
 - `trace_to_speedscope.py`: busiest run's first
   `FLAME_GRAPH_MAX_RECORDED_CALLS` (200) calls; `buildid_verify` refuses a
   moved build-id (run before rebuilding the trace tree); inlined helpers are
-  frames; `_HEADER_MAGIC` = `cyg_callback.c`'s `CYG_CALLBACKS_MAGIC`.
+  frames; `_HEADER_MAGIC` = `cyg_callback.c`'s `CYG_CALLBACKS_MAGIC`;
+  `readelf` and `addr2line` run through `command_output`, their stderr
+  passing through, a non-zero exit one `error:` line.
 - `cyg_callback.c`: `next` a pointer, `end` a variable (11/12-instruction hot
   path); `buildid` path is `realpath`; single-threaded.
 - `test_report.py`: greps `loadFileFromBase64` in the flame graph page and
@@ -706,7 +722,7 @@ timer-artifacts-<unix>.txz (full report only)
   `ENGLISH_PUNCT`, not from the glyphs; a character outside printable ASCII
   and the allowed glyphs faults; glyphs
   `_SOURCE_SCAN_ALLOWED_NON_ASCII_CHARS`
-  (`© ≈ ∞ ▲ ⯅ ⯇ ⯈ ⯆ ▼ … █ ░ ▒ ▓`, literal); `escape_check` over every line,
+  (`© ≈ ∞ ▲ ◄ ► ▼ … █ ░ ▒ ▓`, literal); `escape_check` over every line,
   `_ESCAPE_RULES` (escapes counted after an odd number of backslashes,
   `.css` adds the stylesheet escape);
   `_COMMENT_SYNTAX_BY_EXTENSION` (`.html` adds `//`, `/* */`); faults
@@ -725,7 +741,7 @@ timer-artifacts-<unix>.txz (full report only)
 - `ui_strings.js`: `str_*`; `text_of(id)` throws on unknown; no boundary names
   or number notation; `str_no_caller` is the heat map's alone, the callers
   table listing only called functions; empty pulldown = `str_no_match`.
-- `error_overlay.js`, exempt from every rule: `window.catch_show_throw_(fn)`
+- `error_overlay.js`, exempt from every rule: `window.try_catch_handler_(fn)`
   wraps an entry point (load body, listener, timer); a throw, or a returned
   promise's rejection, reaches `err_overlay_show_` as the `Error` itself, then
   is rethrown, since a `file://` page gets another file's error as "Script
@@ -775,13 +791,16 @@ timer-artifacts-<unix>.txz (full report only)
   `__MENU__`, `__RAW_DATA__`, `__MANIFEST__`, `__TESTS__`,
   `__FLAME_GRAPH_LINK__`, `__PERF_LOG__`, `__TRACE_LOG__`,
   `__VALGRIND_LOG__`, `__HEADING__`, `__FUNCTIONS__`, `__HEAT_MAP_MAIN__`,
-  and in `heat_map.js` `__LINES_TABLE__` and `__FUNCTIONS_TABLE__`.
+  and in `heat_map.js` `__LINES_TABLE__` and `__FUNCTIONS_TABLE__`, every
+  one but `__DATA__` filled through `template_fill`.
 - Frames: the overview frames one view at a time, a test's callers page,
   the heat map app or the flame graph app, the page
   `report_ui_.address.page_href_of()` names. `frame.js`, the model, runs on
   the top page alone as `window.report_frame_` (`activate()`,
-  `address_now()`, `address_request(hash)`, `view_post(message)`, and
-  `has_flame_graph` and `test_names`, read from `#menu-`).
+  `address_now()`, `address_request(hash)`, `view_post(message)`,
+  `has_flame_graph` and `test_names`, read from `#menu-`, and
+  `menu_entry_number`, the `SCREENSHOT_MENU_ENTRY_KEY_NAME` (`screenshot_menu`)
+  query value, else null).
   `view_show()` parses and checks the top's hash, records it, calls
   `report_menu_.address_show()`, then loads the view by
   `location.replace(page_href + location.hash)`, never `iframe.src`, or
@@ -798,7 +817,7 @@ timer-artifacts-<unix>.txz (full report only)
 - URL = whole state, one grammar on every page: `#test=<t>&view=<v>`, `view`
   one of `callers`, `heat-map`, `flame-graph`; the heat map adds
   `&file=<f>[&line=<n>]` or `&function=<name>`; the flame graph adds
-  `&localProfilePath=profile`, speedscope's own key, which speedscope reads
+  `&profiler_path=profile`, speedscope's own key, which speedscope reads
   from the same hash; none = the overview's home. `report_ui_.address`
   (`of_hash`, `hash_of`, `home_hash_of`, `link_hash_of`, `page_href_of`,
   `request`) is the one JS door and `build_report.py` `address_of` the one
@@ -809,13 +828,12 @@ timer-artifacts-<unix>.txz (full report only)
   `#test=<t>&view=heat-map&file=<f>&line=<n>` reloads both levels.
 - Storage: only `callers.rows`, `heat.counter`, `heat.rows`, `heat.scale`,
   `heat.sort`, `view.dark_mode`, `view.scale` (the scale multiple itself,
-  0.5..2, read back to the nearest stop), `split.<pane>` (`split.heat.tree`,
-  a width in ch). `STORAGE_VERSION` =
-  `perf2html v6` under `STORAGE_VERSION_KEY` = `perf2html.version`;
-  mismatch sweeps owned keys; `view_storage.preferences_clear()`, the reset
-  entry's door, sweeps every owned key; new keys go in
-  `STORAGE_OWNED_KEYS`/`STORAGE_OWNED_PREFIXES` (`split.`). `localStorage`
-  refused is a designed condition, not a fallback.
+  0.5..2, read back to the nearest stop); layout, the tree pane's width
+  among it, is never stored. `STORAGE_VERSION` = `perf2html v0` under
+  `STORAGE_VERSION_KEY` = `perf2html.version`; mismatch sweeps owned keys;
+  `view_storage.preferences_clear()`, the reset entry's door, sweeps every
+  owned key; a new key goes in `STORAGE_OWNED_KEYS` whole, never under a
+  prefix. `localStorage` refused is a designed condition, not a fallback.
 - Messages up `{report_ui: <name>, ...}`: `address_request` (`hash`, from
   `report_ui_.address.request()`), `menu_key_pressed` (`key`, a view's
   forwarded key), `report_error` (`report: {page, text}`, utility.js's
@@ -850,9 +868,15 @@ timer-artifacts-<unix>.txz (full report only)
   is no `.menu-button-`, never flashes and wears no menu colour. A
   render is a reset, closing pulldowns and dropping strip focus, on each
   address, dark mode toggle, reset and window resize frame; an entry that
-  navigates wears `flash_` for `MENU_FLASH_DURATION_MS`. The menu-focus
-  colours mark only the focused cell, a flash, an open pulldown and its
-  highlighted entry. Pulldowns `test`, `file`, `function`, each made by the
+  navigates wears `flash_` for `MENU_FLASH_DURATION_MS`. Under a
+  `screenshot_menu=N` query each render ends in the strip's
+  `numbered_entry_focus(N)`, which opens entry N when a pulldown, else
+  focuses it, an unavailable or unnumbered N refused
+  (`str_error_strip_number_unusable`). The menu-focus colours mark the
+  focused strip cell, a flash, an open pulldown and its highlighted entry,
+  and keyboard focus on a page: a link, a table row, a source table row, a
+  tree node, a ticker entry, an info box control, a log box and a section
+  title. Pulldowns `test`, `file`, `function`, each made by the
   strip through `theme.js` `pulldown_attach`: the cell is the typed box
   (`role="combobox"`, typed characters and `erase` only), its list
   (`role="listbox"`) scrolls by a text bar; test entries link each of
@@ -893,7 +917,9 @@ timer-artifacts-<unix>.txz (full report only)
   calls, a diff's by change in calls; a callers cell lists `caller (share)`,
   the share that caller's calls over the global total of calls, a diff's
   the change in that caller's calls over its baseline calls
-  (`diff_share_of()`); it and the heat map home print
+  (`diff_share_of()`); a diff lists a callee whose callers changed though
+  its calls did not, its calls cell empty, and every caller of a listed
+  callee, an unchanged one `(0.00%)`; it and the heat map home print
   `max(TABLE_ROW_COUNT_CHOICES)`
   rows and show `CALLERS_TOP_FUNCTION_ROWS` and
   `HEAT_MAP_HOME_TABLE_DEFAULT_ROWS` until a count is stored. Light mode
@@ -937,15 +963,19 @@ timer-artifacts-<unix>.txz (full report only)
   `STYLE_HEAT_MAP_TREE_PANE_NARROWEST_CHARS` 17 to `_WIDEST_CHARS` 40), the
   tree's text bar, `#heat-map-main-` taking the room left, the minimap, a
   pinned cell whose viewport box is a menu fg border, and the main text
-  bar. The row and the source table drag as one table, a press moving the
-  left edge of the column pressed: a sideways drag on the main box where no
-  column slides, its first column included, sizes the tree, stored in ch; a
-  sideways drag on the tree pushes the tree off the left edge and back to
-  it, not stored; a sideways drag on the tree's text bar does nothing. A
-  vertical drag scrolls. A file address opens at the top, its info box over
-  the source table; the info line (`.heat-map-source-information-line-`,
-  path, share, `info`, `copy`) is the `.band_`, blank while the file box
-  shows. Close and copy only call JavaScript (`role="button"`, no href);
+  bar. A drag on the tree or the main box scrolls that box, but a sideways
+  drag on a table cell past the first column moves the left edge of the
+  column pressed, within its own table. No drag sizes the tree: the tree's
+  text bar, its pane splitter, takes Left and Right, a step of
+  `STYLE_PANE_SPLITTER_KEY_STEP_CHARS` (5), and Home and End, the narrowest
+  and widest, the width kept until a layout reset or a reload; a drag on
+  that bar only scrolls. A file address opens at the top, its info box
+  over the source table; only a change of file moves the tree, revealing
+  and scrolling to the file, a line in the same file leaving the tree as
+  it was. The info line
+  (`.heat-map-source-information-line-`, path, share, `info`, `copy`) is
+  the `.band_`, blank while the file box shows. Close and copy only call
+  JavaScript (`role="button"`, no href);
   the hottest lines entries and the line box's `function` are real links.
 - Text scrollbars: no native bar shows.
   `report_ui_.text_scrollbar.attach(bar, target, axis)` draws a bar one cell
@@ -962,7 +992,7 @@ timer-artifacts-<unix>.txz (full report only)
   horizontal bar scrolls the whole page, menu included.
   `report_ui_.drag_scroll.attach` scrolls a box by a drag on its text, a
   moved press swallowing its click; `report_ui_.pane_splitter.attach` sizes
-  a pane in ch and answers `travel_take`, the travel it could not use.
+  a pane in ch by keys alone.
 - Colour: `STYLE_COLOR_DARK_MODE` maps each palette colour, the link colour
   first, then lighter then dimmer per pair, to its `dark-mode-` roles;
   `STYLE_COLOR_LIGHT_MODE` maps
@@ -979,8 +1009,8 @@ timer-artifacts-<unix>.txz (full report only)
   mode shows, where the light rule reads page colours:
   `dark-mode-page-dim-fg-` dim text, `dark-mode-page-link-fg-` links,
   `dark-mode-panel-bg-` the callers log box, the column titles and the
-  info box, `dark-mode-page-highlight-bg-` a focused or selected ground,
-  the source table heading and the ticker tape,
+  info box, `dark-mode-page-highlight-bg-` the focused main box, the
+  selected tree node, the source table heading and the ticker tape,
   `dark-mode-table-panel-even-bg-` the ticker tape entries. The columns of
   a leaf table (`table.columns_`) alternate through
   `<mode>-table-panel-odd-bg-` and `<mode>-table-panel-even-bg-`, counted
@@ -994,7 +1024,9 @@ timer-artifacts-<unix>.txz (full report only)
   `dark-mode-` roles. `light_mode.css` never names `data-dark-mode-`, and
   `dark_mode.css` undoes each light rule it does not restate. The strip
   ground and logo wear page, the status bar status-bar (white fg in light
-  mode); text over the light page-highlight ground is page-highlight-fg.
+  mode), a table heading's strip cells page-highlight (a page-highlight-fg
+  border in light mode); text over the light page-highlight ground is
+  page-highlight-fg.
   `STYLE_HEAT_COLOR_STOPS` palette; `ramp_channels_at()` the one interpolation
   (`cell_style()`, `logo_color_at()`); cells paint the stop opaque, their
   text `STYLE_HEAT_CELL_ON_DARK_ROLE` (`dark-mode-page-fg-`), or
@@ -1018,29 +1050,34 @@ timer-artifacts-<unix>.txz (full report only)
   `.heat-map-home-`, `.heat-map-source-`,
   `.heat-map-source-information-box-` are inline-size containers. A column
   counts its text in cells (`text_cells()`, twins), each glyph of
-  `STYLE_TABLE_TWO_CELL_GLYPHS` (`⯅⯆⯇⯈`, drawn 1.62ch wide) as two; the
-  markdown copy pads by characters, as prettier does. Drags use
+  `STYLE_TABLE_TWO_CELL_GLYPHS` (`▲▼◄►`, drawn 1.62ch wide) as two; the
+  markdown copy pads by characters, as prettier does, each column at least
+  `TABLE_MARKDOWN_COLUMN_NARROWEST_CHARS` (3), prettier's narrowest
+  delimiter (`---`, `--:`). Drags use
   `design_px()` rects and `clientX`, floored at `data-min-`.
 - Notation: `2.1K`/`2.0G`, `63.20%`, `≈0.00%` above 0 and under the floor,
   exact zero empty, a heading's
   zero share `0.00%` (`zero_percent_text()`); every share, multiple and time
   keeps `NUMBER_FRACTION_DIGITS` (2) decimals; floor
   `1 / 10 ** NUMBER_FRACTION_DIGITS` (0.01; `smallest_printed_percent`/
-  `SMALLEST_PRINTED_PERCENT`, not a setting). Diff: no `+`; the arrow, then the
-  amount right-aligned in the floor's amount width (8 characters, 9 in all;
+  `SMALLEST_PRINTED_PERCENT`, not a setting). Diff: no `+`; the arrow, then
+  the amount. On the heat map source view (`is_line` true: the source
+  table, its info line, the info boxes and the ticker tape) the amount is
+  right-aligned in the floor's amount width (8 characters, 9 in all;
   `signed_percent_amount_chars`/`SIGNED_PERCENT_AMOUNT_CHARS`, derived from
   `NUMBER_FRACTION_DIGITS`, not a setting), so the arrow touches the amount
-  only at the floor, every cell of the table door keeping the spaces
-  (`white-space: pre`), as the heat map's ticker tape, tree share, info line
-  and info box heading do; a markdown copy keeps them as text:
-  `⯅  11.11%`, `⯆-100.00%`; ASCII hyphen for amounts; `⯅  ≈0.00%` under
-  0.01%; `⯅      ∞%` on a
+  only at the floor, every cell keeping the spaces (`white-space: pre`) and
+  a markdown copy keeping them as text, and exact zero is empty; everywhere
+  else (`is_line` false: the overview, the callers page, the heat map home
+  tables and tree) the arrow touches the amount and exact zero is `0.00%`.
+  Source view forms: `▲  11.11%`, `▼-100.00%`; ASCII hyphen for amounts;
+  `▲  ≈0.00%` under 0.01%; `▲      ∞%` on a
   rise from a zero baseline, a fall past its baseline refused
-  (`diff_share_of()`), so `⯆-100.00%` is the floor; past 100% a multiple
-  `⯅   1.30x`; at/past `NUMBER_LARGEST_PRINTED_MULTIPLE_TIMES` (999.99)
-  `⯅     ≈∞%`.
+  (`diff_share_of()`), so `▼-100.00%` is the floor; past 100% a multiple
+  `▲   1.30x`; at/past `NUMBER_LARGEST_PRINTED_MULTIPLE_TIMES` (999.99)
+  `▲     ≈∞%`.
   `theme.js` `report_ui_` and `theme.py` `NumberFormat` match by hand; README
-  "Reading A Diff Report" is the spec but for its arrows, still ▲ and ▼.
+  "Reading A Diff Report" is the spec.
 
 ## 10 Diff semantics
 
@@ -1049,9 +1086,10 @@ timer-artifacts-<unix>.txz (full report only)
   callers from `callgrind_diff.py --callers-output` JSON keyed `<fn>` and
   `<display path>\n<line>`, a line's baseline summed over every function on
   it, as the line row sums its delta.
-- Share = `(new - old)/old` of the thing's own baseline: 1→0 = `⯆-100.00%`,
-  90→100 = `⯅  11.11%`, 1→1 empty; new in modified = `inf`/`Infinity`,
-  `⯅      ∞%`, heat-clamped.
+- Share = `(new - old)/old` of the thing's own baseline: 1→0 = `▼-100.00%`,
+  90→100 = `▲  11.11%`, 1→1 empty on the source view and `0.00%`
+  elsewhere; new in modified = `inf`/`Infinity`,
+  `▲      ∞%`, heat-clamped.
   `events` = recorded counters; `costs_fit()` pads, trims trailing zeros;
   ranking and heat use `abs()`; `profile_magnitudes()` (Σ|delta|) feeds
   `heatMapTotals.totals`; `summary:` is the signed total.

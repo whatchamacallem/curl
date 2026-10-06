@@ -357,7 +357,7 @@ class TestReport:
             )
         flame_graph_address = (
             f"#test={test_name}&view={_FLAME_GRAPH_VIEW_KEY}"
-            f"&localProfilePath={_FLAME_GRAPH_LOCAL_PROFILE_PATH}"
+            f"&profiler_path={_FLAME_GRAPH_LOCAL_PROFILE_PATH}"
         )
         if records_runs != (flame_graph_address in page_hrefs):
             lack = "is missing its" if records_runs else "should not have a"

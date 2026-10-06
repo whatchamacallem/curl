@@ -9,15 +9,15 @@ pre.callers-collapsed-section-log-box- {
   background: var(--light-mode-page-bg-);
 }
 pre.callers-collapsed-section-log-box-:focus-visible {
-  background: var(--light-mode-page-bg-);
-  color: var(--light-mode-page-fg-);
+  background: var(--light-mode-menu-focus-bg-);
+  color: var(--light-mode-menu-focus-fg-);
 }
 .callers-collapsed-section-title- {
   color: var(--light-mode-page-fg-);
 }
 .callers-collapsed-section-title-:focus-visible {
-  background: var(--light-mode-page-bg-);
-  color: var(--light-mode-page-fg-);
+  background: var(--light-mode-menu-focus-bg-);
+  color: var(--light-mode-menu-focus-fg-);
 }
 .callers-collapsed-section-title-::marker {
   color: var(--light-mode-page-fg-);
@@ -26,16 +26,16 @@ a {
   color: var(--light-mode-page-fg-);
 }
 a:focus-visible {
-  background: var(--light-mode-page-bg-);
-  color: var(--light-mode-page-fg-);
+  background: var(--light-mode-menu-focus-bg-);
+  color: var(--light-mode-menu-focus-fg-);
 }
 table.columns_ th {
   color: var(--light-mode-page-fg-);
   background: var(--light-mode-page-bg-);
 }
 table.columns_ > tbody > tr:focus-visible > td {
-  background: var(--light-mode-page-bg-) !important;
-  color: var(--light-mode-page-fg-) !important;
+  background: var(--light-mode-menu-focus-bg-) !important;
+  color: var(--light-mode-menu-focus-fg-) !important;
 }
 
 .menu-button- a {
@@ -61,8 +61,8 @@ table.columns_ > tbody > tr:focus-visible > td {
   color: var(--light-mode-page-fg-);
 }
 .heat-map-source-information-box-control-:focus-visible {
-  background: var(--light-mode-page-bg-);
-  color: var(--light-mode-page-fg-);
+  background: var(--light-mode-menu-focus-bg-);
+  color: var(--light-mode-menu-focus-fg-);
 }
 .heat-map-source-information-box-function-name- {
   color: var(--light-mode-page-fg-);
@@ -76,7 +76,7 @@ table.columns_ > tbody > tr:focus-visible > td {
 .heat-map-source-information-box- .table-box- {
   background: var(--light-mode-page-bg-);
 }
-table.heat-map-source-table- th {
+table.heat-map-source-table- > thead > tr > th {
   background: var(--light-mode-page-bg-);
   color: var(--light-mode-page-fg-);
 }
@@ -92,8 +92,8 @@ tr.has-callee- td.heat-map-source-table-line-number-cell-::before {
   color: var(--light-mode-page-fg-);
 }
 table.heat-map-source-table- > tbody > tr:focus-visible > td {
-  background: var(--light-mode-page-bg-) !important;
-  color: var(--light-mode-page-fg-) !important;
+  background: var(--light-mode-menu-focus-bg-) !important;
+  color: var(--light-mode-menu-focus-fg-) !important;
 }
 .heat-map-source-ticker-tape- {
   background: var(--light-mode-page-bg-);
@@ -103,8 +103,8 @@ table.heat-map-source-table- > tbody > tr:focus-visible > td {
   background: var(--light-mode-page-bg-);
 }
 .heat-map-source-ticker-tape-entry-:focus-visible {
-  background: var(--light-mode-page-bg-) !important;
-  color: var(--light-mode-page-fg-) !important;
+  background: var(--light-mode-menu-focus-bg-) !important;
+  color: var(--light-mode-menu-focus-fg-) !important;
 }
 .heat-map-source-ticker-tape- .heat-map-source-ticker-tape-label- {
   color: var(--light-mode-page-fg-);
@@ -117,8 +117,8 @@ table.heat-map-source-table- > tbody > tr:focus-visible > td {
   color: var(--light-mode-page-fg-);
 }
 .heat-map-tree-node-:focus-visible {
-  background: var(--light-mode-page-bg-) !important;
-  color: var(--light-mode-page-fg-) !important;
+  background: var(--light-mode-menu-focus-bg-) !important;
+  color: var(--light-mode-menu-focus-fg-) !important;
 }
 .heat-map-tree-node- .heat-map-tree-node-caret- {
   color: var(--light-mode-page-fg-);
@@ -182,6 +182,11 @@ table.columns_ col:nth-child(even) {
 .menu-pulldown-entry-box- {
   background: var(--light-mode-menu-normal-bg-);
   color: var(--light-mode-menu-normal-fg-);
+}
+.page-heading- .menu-button- {
+  background: var(--light-mode-page-highlight-bg-);
+  color: var(--light-mode-page-highlight-fg-);
+  border-color: var(--light-mode-page-highlight-fg-);
 }
 [data-entry-name-="logo"] {
   background: var(--light-mode-page-bg-);

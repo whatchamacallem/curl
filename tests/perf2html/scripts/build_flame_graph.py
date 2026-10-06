@@ -58,10 +58,13 @@ class BuildFlameGraph:
                 _ASSET_FLAME_GRAPH_SCRIPT_NAME,
             ),
         )
-        html = (
-            _PAGE.replace("__APP_CSS__", f"{app_href}/{args.app_css}")
-            .replace("__APP_JS__", f"{app_href}/{args.app_js}")
-            .replace("__SCRIPTS__", scripts)
+        html = theme.template_fill(
+            _PAGE,
+            {
+                "__APP_CSS__": f"{app_href}/{args.app_css}",
+                "__APP_JS__": f"{app_href}/{args.app_js}",
+                "__SCRIPTS__": scripts,
+            },
         )
         path = os.path.join(args.report_dir, _FLAME_GRAPH_PAGE_PATH)
         os.makedirs(os.path.dirname(path), exist_ok=True)

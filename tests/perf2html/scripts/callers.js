@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 // This file is licensed under the terms of the LICENSE-MIT.md file.
 
-window.catch_show_throw_(function () {
+window.try_catch_handler_(function () {
   "use strict";
 
   const page_scroll_box = document.querySelector("main.page-text-scroll-box-");

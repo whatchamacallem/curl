@@ -114,7 +114,7 @@ class BuildReport:
         if function_name:
             hash_text += f"&function={self.address_value_of(function_name)}"
         if view_key == _FLAME_VIEW.key:
-            hash_text += f"&localProfilePath={_FLAME_GRAPH_LOCAL_PROFILE_PATH}"
+            hash_text += f"&profiler_path={_FLAME_GRAPH_LOCAL_PROFILE_PATH}"
         return hash_text
 
     def address_value_of(self, value: str) -> str:
@@ -202,7 +202,6 @@ class BuildReport:
             (
                 BuildReport.FunctionCalls(calls, function)
                 for function, calls in call_counts.items()
-                if calls != 0
             ),
             key=lambda ranked_function: (
                 -abs(ranked_function.calls),
@@ -613,11 +612,14 @@ class BuildReport:
         menu_markup = self.menu_render(
             [test.name for test in tests], has_flame_graph
         )
-        page_content = (
-            _OVERVIEW_PAGE.replace("__MENU__", menu_markup)
-            .replace("__RAW_DATA__", raw_data_markup)
-            .replace("__MANIFEST__", manifest_markup)
-            .replace("__TESTS__", tests_markup)
+        page_content = theme.template_fill(
+            _OVERVIEW_PAGE,
+            {
+                "__MENU__": menu_markup,
+                "__RAW_DATA__": raw_data_markup,
+                "__MANIFEST__": manifest_markup,
+                "__TESTS__": tests_markup,
+            },
         )
         self.page_write(
             args.output,
@@ -680,26 +682,22 @@ class BuildReport:
         heading_markup: str,
         table: str,
     ) -> None:
-        page_content = (
-            _CALLERS_PAGE.replace(
-                "__FLAME_GRAPH_LINK__",
-                self.flame_graph_link_render(args.test)
-                if args.trace_log
-                else "",
-            )
-            .replace(
-                "__PERF_LOG__", self.output_section("perf log", args.perf_log)
-            )
-            .replace(
-                "__TRACE_LOG__",
-                self.output_section("trace log", args.trace_log),
-            )
-            .replace(
-                "__VALGRIND_LOG__",
-                "" if args.no_log else self.log_section(args.log),
-            )
-            .replace("__HEADING__", heading_markup)
-            .replace("__FUNCTIONS__", table)
+        flame_graph_markup = (
+            self.flame_graph_link_render(args.test) if args.trace_log else ""
+        )
+        perf_log_markup = self.output_section("perf log", args.perf_log)
+        trace_log_markup = self.output_section("trace log", args.trace_log)
+        valgrind_log_markup = "" if args.no_log else self.log_section(args.log)
+        page_content = theme.template_fill(
+            _CALLERS_PAGE,
+            {
+                "__FLAME_GRAPH_LINK__": flame_graph_markup,
+                "__PERF_LOG__": perf_log_markup,
+                "__TRACE_LOG__": trace_log_markup,
+                "__VALGRIND_LOG__": valgrind_log_markup,
+                "__HEADING__": heading_markup,
+                "__FUNCTIONS__": table,
+            },
         )
         self.page_write(
             args.output,

@@ -5,8 +5,8 @@
 window.ui_strings_ = (function () {
   "use strict";
   const STRINGS = {
-    str_caret_right: "⯈",
-    str_caret_down: "⯆",
+    str_caret_right: "►",
+    str_caret_down: "▼",
     str_column_baseline_share: "vs baseline",
     str_column_call_count: "call count",
     str_column_called_at: "called at",
@@ -87,8 +87,6 @@ window.ui_strings_ = (function () {
     str_error_heat_map_unfiled:
       "the heat map script for test {0} filed no model",
     str_error_message_tag_unknown: "cross-frame message tag unrecognized: {0}",
-    str_error_pane_width_unusable:
-      "the stored pane width {0} came out as {1}, not a number of characters",
     str_error_pulldown_focus_refused:
       "the browser kept focus on {0}, so keys cannot reach the pulldown",
     str_error_pulldown_text_missing:
@@ -109,6 +107,9 @@ window.ui_strings_ = (function () {
     str_error_strip_entry_repeated: "the strip names entry {0} more than once",
     str_error_strip_entry_unknown: "the strip holds no entry named {0}",
     str_error_strip_entry_unusable: "strip entry {0} is no available {1}",
+    str_error_strip_number_unusable:
+      "no available strip entry is numbered {0}",
+    str_error_template_marker_missing: "the template holds no marker {0}",
     str_error_text_scrollbar_attached_twice:
       "text scrollbar {0} inside {1} is attached twice",
     str_error_text_scrollbar_axis_unknown:

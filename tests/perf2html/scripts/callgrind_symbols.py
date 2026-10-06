@@ -35,7 +35,7 @@ class CodeSection(NamedTuple):
 
 class LoadedObject(NamedTuple):
     path: str
-    bias: int
+    load_bias: int
 
 
 class CallgrindSymbols:
@@ -130,7 +130,7 @@ class CallgrindSymbols:
             for loaded in loaded_objects
             if any(
                 section.start
-                <= name_address - loaded.bias
+                <= name_address - loaded.load_bias
                 < section.start + section.size
                 for section in self.code_sections(loaded.path)
             )
@@ -141,7 +141,7 @@ class CallgrindSymbols:
                 f" {len(owner_objects)} objects {args.valgrind_log} loads,"
                 " expected 1"
             )
-        object_offset = name_address - owner_objects[0].bias
+        object_offset = name_address - owner_objects[0].load_bias
         label_name = self.object_labels(owner_objects[0].path).get(
             object_offset
         )

@@ -10,15 +10,15 @@
     background: var(--dark-mode-panel-bg-);
   }
   pre.callers-collapsed-section-log-box-:focus-visible {
-    background: var(--dark-mode-page-highlight-bg-);
-    color: var(--dark-mode-page-fg-);
+    background: var(--dark-mode-menu-focus-bg-);
+    color: var(--dark-mode-menu-focus-fg-);
   }
   .callers-collapsed-section-title- {
     color: var(--dark-mode-page-dim-fg-);
   }
   .callers-collapsed-section-title-:focus-visible {
-    background: var(--dark-mode-page-highlight-bg-);
-    color: var(--dark-mode-page-fg-);
+    background: var(--dark-mode-menu-focus-bg-);
+    color: var(--dark-mode-menu-focus-fg-);
   }
   .callers-collapsed-section-title-::marker {
     color: var(--dark-mode-page-dim-fg-);
@@ -27,16 +27,16 @@
     color: var(--dark-mode-page-link-fg-);
   }
   a:focus-visible {
-    background: var(--dark-mode-page-highlight-bg-);
-    color: var(--dark-mode-page-fg-);
+    background: var(--dark-mode-menu-focus-bg-);
+    color: var(--dark-mode-menu-focus-fg-);
   }
   table.columns_ th {
     color: var(--dark-mode-page-dim-fg-);
     background: var(--dark-mode-panel-bg-);
   }
   table.columns_ > tbody > tr:focus-visible > td {
-    background: var(--dark-mode-page-highlight-bg-) !important;
-    color: var(--dark-mode-page-fg-) !important;
+    background: var(--dark-mode-menu-focus-bg-) !important;
+    color: var(--dark-mode-menu-focus-fg-) !important;
   }
 
   .menu-button- a {
@@ -62,8 +62,8 @@
     color: var(--dark-mode-page-dim-fg-);
   }
   .heat-map-source-information-box-control-:focus-visible {
-    background: var(--dark-mode-page-highlight-bg-);
-    color: var(--dark-mode-page-fg-);
+    background: var(--dark-mode-menu-focus-bg-);
+    color: var(--dark-mode-menu-focus-fg-);
   }
   .heat-map-source-information-box-function-name- {
     color: var(--dark-mode-page-fg-);
@@ -77,7 +77,7 @@
   .heat-map-source-information-box- .table-box- {
     background: var(--dark-mode-page-bg-);
   }
-  table.heat-map-source-table- th {
+  table.heat-map-source-table- > thead > tr > th {
     background: var(--dark-mode-page-highlight-bg-);
     color: var(--dark-mode-page-fg-);
   }
@@ -93,8 +93,8 @@
     color: var(--dark-mode-page-link-fg-);
   }
   table.heat-map-source-table- > tbody > tr:focus-visible > td {
-    background: var(--dark-mode-page-highlight-bg-) !important;
-    color: var(--dark-mode-page-fg-) !important;
+    background: var(--dark-mode-menu-focus-bg-) !important;
+    color: var(--dark-mode-menu-focus-fg-) !important;
   }
   .heat-map-source-ticker-tape- {
     background: var(--dark-mode-page-highlight-bg-);
@@ -104,8 +104,8 @@
     background: var(--dark-mode-table-panel-even-bg-);
   }
   .heat-map-source-ticker-tape-entry-:focus-visible {
-    background: var(--dark-mode-page-highlight-bg-) !important;
-    color: var(--dark-mode-page-fg-) !important;
+    background: var(--dark-mode-menu-focus-bg-) !important;
+    color: var(--dark-mode-menu-focus-fg-) !important;
   }
   .heat-map-source-ticker-tape- .heat-map-source-ticker-tape-label- {
     color: var(--dark-mode-page-dim-fg-);
@@ -118,8 +118,8 @@
     color: var(--dark-mode-page-fg-);
   }
   .heat-map-tree-node-:focus-visible {
-    background: var(--dark-mode-page-highlight-bg-) !important;
-    color: var(--dark-mode-page-fg-) !important;
+    background: var(--dark-mode-menu-focus-bg-) !important;
+    color: var(--dark-mode-menu-focus-fg-) !important;
   }
   .heat-map-tree-node- .heat-map-tree-node-caret- {
     color: var(--dark-mode-page-dim-fg-);
@@ -184,6 +184,10 @@
     background: var(--dark-mode-menu-normal-bg-);
     color: var(--dark-mode-menu-normal-fg-);
   }
+  .page-heading- .menu-button- {
+    background: var(--dark-mode-page-highlight-bg-);
+    color: var(--dark-mode-page-highlight-fg-);
+  }
   [data-entry-name-="logo"] {
     background: var(--dark-mode-page-bg-);
     color: var(--dark-mode-page-fg-);
@@ -224,7 +228,7 @@
     color: var(--dark-mode-page-link-fg-);
   }
   tr.heat-map-source-information-box-synthetic-row- > td {
-    background: var(--dark-mode-status-bar-bg-);
+    background: none;
     color: var(--dark-mode-status-bar-fg-);
   }
   .heat-map-tree-node-.selected_ .heat-map-tree-node-name- {

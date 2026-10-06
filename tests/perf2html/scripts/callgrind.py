@@ -255,20 +255,26 @@ class Callgrind:
     ) -> str:
         names = Callgrind.CompressedNames()
         lines = text.split("\n")
-        cur_ob = _CALLGRIND_UNKNOWN_NAME
-        cur_callee_ob: str | None = None
+        current_object = _CALLGRIND_UNKNOWN_NAME
+        current_callee_object: str | None = None
         for index, raw_line in enumerate(lines):
-            key, _, val = raw_line.partition("=")
+            key, _, specification_value = raw_line.partition("=")
             if key == "ob":
-                cur_ob = names.uncompress("ob", val)
+                current_object = names.uncompress("ob", specification_value)
             elif key == "cob":
-                cur_callee_ob = names.uncompress("ob", val)
+                current_callee_object = names.uncompress(
+                    "ob", specification_value
+                )
             elif key in ("fn", "cfn"):
                 object_path = (
-                    (cur_callee_ob or cur_ob) if key == "cfn" else cur_ob
+                    (current_callee_object or current_object)
+                    if key == "cfn"
+                    else current_object
                 )
-                cur_callee_ob = None
-                match = Callgrind.NAME_COMPRESSION_RE.match(val)
+                current_callee_object = None
+                match = Callgrind.NAME_COMPRESSION_RE.match(
+                    specification_value
+                )
                 if not match or not match.group(2):
                     continue
                 name = match.group(2)
@@ -299,11 +305,11 @@ class Callgrind:
     def function_name_of(
         self,
         names: Callgrind.CompressedNames,
-        val: str,
+        compressed_name: str,
         object_path: str,
         path: str,
     ) -> str:
-        name = names.uncompress("fn", val)
+        name = names.uncompress("fn", compressed_name)
         if object_path == _CALLGRIND_UNKNOWN_NAME and (
             Callgrind.ADDRESS_NAME_RE.fullmatch(name)
         ):
@@ -418,10 +424,10 @@ class Callgrind:
         positions = Callgrind.PositionDecoder()
 
         counter_count = 0
-        cur_file = "???"
+        current_file = "???"
         cur_function = "???"
-        cur_ob = "???"
-        cur_callee_ob: str | None = None
+        current_object = "???"
+        current_callee_object: str | None = None
         cur_callee_file: str | None = None
         cur_callee_function: str | None = None
         pending_call: Callgrind.PendingCall | None = None
@@ -436,13 +442,13 @@ class Callgrind:
                 costs = [int(token) for token in tokens[positions.count :]]
                 if len(costs) < counter_count:
                     costs.extend([0] * (counter_count - len(costs)))
-                key = SourceLine(cur_file, line)
+                key = SourceLine(current_file, line)
                 if pending_call is not None:
                     callee = cur_callee_function or "???"
                     callee_file = (
                         cur_callee_file
                         if cur_callee_file is not None
-                        else cur_file
+                        else current_file
                     )
                     cur_callee_file = None
                     costs_accumulate(profile.line_calls, key, costs)
@@ -453,13 +459,13 @@ class Callgrind:
                     )
                     tally_accumulate(
                         profile.callees,
-                        CallSite(cur_file, line, callee),
+                        CallSite(current_file, line, callee),
                         pending_call.call_count,
                         costs,
                     )
                     tally_accumulate(
                         profile.callers[callee],
-                        Caller(cur_function, cur_file, line),
+                        Caller(cur_function, current_file, line),
                         pending_call.call_count,
                         costs,
                     )
@@ -469,9 +475,9 @@ class Callgrind:
                         )
                     profile.function_home.setdefault(callee, callee_file)
                     profile.file_ob.setdefault(
-                        callee_file, cur_callee_ob or cur_ob
+                        callee_file, current_callee_object or current_object
                     )
-                    cur_callee_ob = None
+                    current_callee_object = None
                     pending_call = None
                 else:
                     costs_accumulate(profile.line_self, key, costs)
@@ -482,7 +488,7 @@ class Callgrind:
                     costs_accumulate(
                         profile.function_lines[cur_function], key, costs
                     )
-                    profile.file_ob.setdefault(cur_file, cur_ob)
+                    profile.file_ob.setdefault(current_file, current_object)
                 continue
 
             equals_index = raw_line.find("=")
@@ -490,34 +496,49 @@ class Callgrind:
             if equals_index != -1 and (
                 colon_index == -1 or equals_index < colon_index
             ):
-                key, val = (
+                key, specification_value = (
                     raw_line[:equals_index],
                     raw_line[equals_index + 1 :],
                 )
                 if key in ("fl", "fi", "fe"):
-                    cur_file = file_key_of(names.uncompress("fl", val), cur_ob)
+                    current_file = file_key_of(
+                        names.uncompress("fl", specification_value),
+                        current_object,
+                    )
                 elif key == "fn":
                     cur_function = self.function_name_of(
-                        names, val, cur_ob, path
+                        names, specification_value, current_object, path
                     )
-                    profile.function_home.setdefault(cur_function, cur_file)
+                    profile.function_home.setdefault(
+                        cur_function, current_file
+                    )
                     cur_callee_file = None
                 elif key == "ob":
-                    cur_ob = names.uncompress("ob", val)
+                    current_object = names.uncompress(
+                        "ob", specification_value
+                    )
                 elif key == "cob":
-                    cur_callee_ob = names.uncompress("ob", val)
+                    current_callee_object = names.uncompress(
+                        "ob", specification_value
+                    )
                 elif key in ("cfl", "cfi"):
                     cur_callee_file = file_key_of(
-                        names.uncompress("fl", val), cur_callee_ob or cur_ob
+                        names.uncompress("fl", specification_value),
+                        current_callee_object or current_object,
                     )
                 elif key == "cfn":
                     cur_callee_function = self.function_name_of(
-                        names, val, cur_callee_ob or cur_ob, path
+                        names,
+                        specification_value,
+                        current_callee_object or current_object,
+                        path,
                     )
                 elif key in ("jfi", "jfn"):
-                    names.uncompress("fl" if key == "jfi" else "fn", val)
+                    names.uncompress(
+                        "fl" if key == "jfi" else "fn", specification_value
+                    )
                 elif key == "calls":
-                    parts = val.split()
+                    parts = specification_value.split()
                     if len(parts) <= 1 + positions.line_index:
                         sys.exit(f"error: malformed 'calls=' line: {raw_line}")
                     target_line = positions.decode(
@@ -529,19 +550,19 @@ class Callgrind:
                 continue
             if colon_index == -1:
                 continue
-            key, val = (
+            key, header_value = (
                 raw_line[:colon_index],
                 raw_line[colon_index + 1 :].strip(),
             )
             if key == "events":
-                profile.counters = val.split()
+                profile.counters = header_value.split()
                 counter_count = len(profile.counters)
             elif key == "positions":
-                positions.reset(val.split())
+                positions.reset(header_value.split())
             elif key == "cmd":
-                profile.command = val
+                profile.command = header_value
             elif key in ("summary", "totals"):
-                values = [int(v) for v in val.split()]
+                values = [int(v) for v in header_value.split()]
                 if len(values) >= len(profile.summary):
                     profile.summary = values
 

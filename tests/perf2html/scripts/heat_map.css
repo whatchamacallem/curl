@@ -162,7 +162,6 @@ table.heat-map-source-table- tr.clickable_ {
 .heat-map-tree-node- .heat-map-tree-node-caret- {
   width: var(--heat-map-tree-node-caret-width-);
   flex: none;
-  text-align: center;
 }
 .heat-map-tree-node-.file_ .heat-map-tree-node-caret- {
   visibility: hidden;

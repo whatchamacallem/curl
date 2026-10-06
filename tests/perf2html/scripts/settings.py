@@ -127,6 +127,8 @@ HEAT_MAP_VIEW_ENTRY: tuple[str, str, str] = (
 
 MENU_DIGIT_KEY_COUNT = 10
 
+SCREENSHOT_MENU_ENTRY_KEY_NAME = "screenshot_menu"
+
 MENU_FLASH_DURATION_MS = 500
 
 MENU_PULLDOWN_KEY_NAMES: dict[str, str] = {
@@ -158,7 +160,6 @@ STORAGE_KEY_HEAT_COUNTER = "heat.counter"
 STORAGE_KEY_HEAT_ROWS = "heat.rows"
 STORAGE_KEY_HEAT_SCALE = "heat.scale"
 STORAGE_KEY_HEAT_SORT = "heat.sort"
-STORAGE_KEY_PREFIX_SPLIT = "split."
 STORAGE_KEY_VIEW_DARK_MODE = "view.dark_mode"
 STORAGE_KEY_VIEW_SCALE = "view.scale"
 
@@ -171,9 +172,8 @@ STORAGE_OWNED_KEYS: tuple[str, ...] = (
     STORAGE_KEY_VIEW_DARK_MODE,
     STORAGE_KEY_VIEW_SCALE,
 )
-STORAGE_OWNED_PREFIXES: tuple[str, ...] = (STORAGE_KEY_PREFIX_SPLIT,)
 
-STORAGE_VERSION = "perf2html v6"
+STORAGE_VERSION = "perf2html v0"
 STORAGE_VERSION_KEY = "perf2html.version"
 
 STYLE_COLOR_DARK_MODE: dict[str, list[str]] = {
@@ -321,8 +321,6 @@ STYLE_TABLE_GROW_COLUMN_NARROWEST_CHARS = 20
 
 STYLE_TABLE_LOCATION_COLUMN_MAX_CHARS = 48
 
-STYLE_TABLE_TWO_CELL_GLYPHS = "⯅⯆⯇⯈"
-
 STYLE_TEXT_SCROLLBAR_THUMB_SHORTEST_CHARS = 4
 
 STYLE_VALUE_ENTRIES: dict[str, str] = {
@@ -333,7 +331,7 @@ STYLE_VALUE_ENTRIES: dict[str, str] = {
     "heat-map-overview-home-border-block-": "1lh",
     "heat-map-overview-home-border-inline-": "2ch",
     "heat-map-source-table-code-cell-tab-size-": "4",
-    "heat-map-source-table-line-number-cell-callee-marker-text-": '"⯈"',
+    "heat-map-source-table-line-number-cell-callee-marker-text-": '"►"',
     "heat-map-source-ticker-tape-entry-padding-inline-": "1ch",
     "heat-map-source-ticker-tape-gap-": "1ch",
     "heat-map-tree-node-caret-width-": "2ch",
@@ -357,6 +355,8 @@ STYLE_VALUE_ENTRIES: dict[str, str] = {
     "screenshot-label-font-size-": "1.5em",
     "screenshot-label-z-index-": "3",
 }
+
+TABLE_MARKDOWN_COLUMN_NARROWEST_CHARS = 3
 
 TABLE_ROW_COUNT_CHOICES: tuple[int, ...] = (
     10,
@@ -664,6 +664,10 @@ class SettingsWriter:
         path = os.path.join(_SETTINGS_DIRECTORY, ASSET_SETTINGS_SCRIPT_NAME)
         with open(path, encoding="utf-8") as handle:
             runtime = handle.read()
+        if _SETTINGS_PAGE_DATA_MARKER not in runtime:
+            raise ValueError(
+                f"{path} holds no marker {_SETTINGS_PAGE_DATA_MARKER}"
+            )
         return runtime.replace(_SETTINGS_PAGE_DATA_MARKER, data)
 
 

@@ -10,7 +10,7 @@ is labelled with. Tab also moves focus forward through interactive elements
 (links, buttons, inputs), and Shift+Tab moves backward. This is the primary
 navigation system for keyboard-only users, including screen reader users and
 switch device users. Enter or Space activates the focused element, and arrow
-keys control widgets
+keys control widgets.
 
 The HTML will open straight from disk, with no server. Start by opening the top
 level `index.html` in the report and then bookmarks will work.
@@ -46,7 +46,7 @@ perf2html.sh [debug-flags] [--report=DIR] [cmake-flags...]
     --target-dir=DIR  Default directory for reports (default $PWD).
     --txz             Create .txz archives of all reports generated.
                       .txz files may also be used as inputs.
-    cmake-flags       Everything else, e.g. -D CMAKE_C_FLAGS=-Os.
+    cmake-flags       Everything else is passed directly to cmake.
 ```
 
 ```txt
@@ -67,8 +67,8 @@ perf2html_batch.sh [debug-flags] [--target-dir=DIR] [cmake-flags...]
                       batch cannot rename them.
     --txz             Create .txz archives of all reports generated.
                       .txz files may also be used as inputs.
-    cmake-flags:      Every argument not one of its own options, applied to the
-                      modified build (default -D CMAKE_C_FLAGS=-Os).
+    cmake-flags       Everything else is passed directly to cmake in the
+                      modified build (default is -D CMAKE_C_FLAGS=-Os).
 ```
 
 These are shared developer flags for the iterative development of `perf2html`
@@ -117,7 +117,7 @@ the heat map, under these same names.
 
 `CEst` weights a miss by roughly what it costs and is used by default.
 
-See the [callgrind](https://valgrind.org/tmp/manual/cl-manual.html) tmp. GPL
+See the [callgrind](https://valgrind.org/docs/manual/cl-manual.html) docs. GPL
 Version 3, 29 June 2007.
 
 ## Reading A Diff Report
@@ -128,8 +128,8 @@ A regular report contains a suite of tests that can be explored using a menu.
 There is heat map data, call graph data, and a flame graph.
 
 A regular report shows you the selected counter, a total for that counter and a
-percentage of that total. places it is a percentage of a global total cycle
-count, however in the source view it may also be a percentage of a file or
+percentage of that total. In most places it is a percentage of the global
+total, however in the source view it may also be a percentage of a file or
 function if selected.
 
 ```txt
@@ -151,20 +151,20 @@ to cost, not what part of the report it is. Half as long is `▼-50.00%`, twice
 as long is `▲100.00%`, and smaller is better.
 
 ```txt
-| example            |         % |
-| ------------------ | --------: |
-| 0 -> 1000          | ▲      ∞% |
-| 1000 -> 1000       |           |
-| 1000 -> 1000000    | ▲ 999.00x |
-| 1000 -> 1001000    | ▲     ≈∞% |
-| 1000 -> 101000     | ▲ 100.00x |
-| 1000 -> 2000       | ▲ 100.00% |
-| 1000 -> 2010       | ▲   1.01x |
-| 1000 -> 900        | ▼ -10.00% |
-| 5000 -> 0          | ▼-100.00% |
-| 5000000 -> 4999999 | ▼  ≈0.00% |
-| 5000000 -> 5000001 | ▲  ≈0.00% |
-| 90 -> 100          | ▲  11.11% |
+| delta              |           % |
+| ------------------ | ----------: |
+| 0 -> 1000          |   ▲      ∞% |
+| 1000 -> 1000       |             |
+| 1000 -> 1000000    |   ▲ 999.00x |
+| 1000 -> 1001000    |   ▲     ≈∞% |
+| 1000 -> 101000     |   ▲ 100.00x |
+| 1000 -> 2000       |   ▲ 100.00% |
+| 1000 -> 2010       |   ▲   1.01x |
+| 1000 -> 900        |   ▼ -10.00% |
+| 5000 -> 0          |   ▼-100.00% |
+| 5000000 -> 4999999 |   ▼  ≈0.00% |
+| 5000000 -> 5000001 |   ▲  ≈0.00% |
+| 90 -> 100          |   ▲  11.11% |
 ```
 
 ## Flame Graph (speedscope)

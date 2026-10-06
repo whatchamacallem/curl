@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 // This file is licensed under the terms of the LICENSE-MIT.md file.
 
-window.catch_show_throw_(function () {
+window.try_catch_handler_(function () {
   "use strict";
 
   const CALLERS_VIEW_KEY = settings_("CALLERS_VIEW_KEY");
@@ -86,7 +86,7 @@ window.catch_show_throw_(function () {
     entry_link.textContent = link_text;
     entry_link.addEventListener(
       "click",
-      window.catch_show_throw_((click_event) => {
+      window.try_catch_handler_((click_event) => {
         if (window.report_ui_.address.link_hash_of(click_event))
           flash_entry_name = entry_name;
       }),
@@ -396,6 +396,10 @@ window.catch_show_throw_(function () {
       status_entries_of(address, button_entries),
     );
     document.title = title_text_of(address);
+    if (window.report_frame_.menu_entry_number !== null)
+      menu_strip_handle.numbered_entry_focus(
+        window.report_frame_.menu_entry_number,
+      );
   }
   function address_show() {
     menu_render();
@@ -418,7 +422,7 @@ window.catch_show_throw_(function () {
   function activate() {
     document.addEventListener(
       "keydown",
-      window.catch_show_throw_((key_event) => {
+      window.try_catch_handler_((key_event) => {
         window.report_ui_.widget_key.link_click_take(key_event);
         const key_name = window.report_ui_.view_key.of(key_event);
         if (key_name && menu_key_take(key_name, key_event.repeat))
@@ -427,7 +431,7 @@ window.catch_show_throw_(function () {
     );
     document.addEventListener(
       "click",
-      window.catch_show_throw_((click_event) => {
+      window.try_catch_handler_((click_event) => {
         const link_hash = window.report_ui_.address.link_hash_of(click_event);
         if (!link_hash) return;
         click_event.preventDefault();

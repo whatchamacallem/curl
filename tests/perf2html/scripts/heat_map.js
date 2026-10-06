@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 // This file is licensed under the terms of the LICENSE-MIT.md file.
 
-window.catch_show_throw_(function () {
+window.try_catch_handler_(function () {
   "use strict";
 
   const HEAT_MAP_COUNTER_DESCRIPTION_STRING_ID_PREFIX = settings_(
@@ -83,7 +83,6 @@ window.catch_show_throw_(function () {
     file_table = null,
     function_table = null,
     shown_test_name = null;
-  const layout_box = document.getElementById("heat-map-layout-");
   const tree_pane = document.getElementById("heat-map-tree-pane-");
   const tree_panel = document.getElementById("heat-map-tree-");
   const tree_scrollbar = document.getElementById("heat-map-tree-scrollbar-");
@@ -195,7 +194,8 @@ window.catch_show_throw_(function () {
       .replace(/"/g, "&quot;");
   const share_of_total = (value) => (100 * value) / total_cost;
   let share_text = report_ui_.percent_text;
-  const share_of_total_text = (value) => share_text(share_of_total(value));
+  const share_of_total_text = (value, is_line) =>
+    share_text(share_of_total(value), is_line);
 
   let human_text = report_ui_.human_text;
   const cell_number = (value) => ({
@@ -258,7 +258,7 @@ window.catch_show_throw_(function () {
       line_share = (value, baseline_cost) =>
         share_of_baseline(value, baseline_cost);
       line_share_text = (value, baseline_cost) =>
-        share_of_baseline_text(value, baseline_cost);
+        share_of_baseline_text(value, baseline_cost, true);
       heat_signed = (curved, percent) => (percent < 0 ? -curved : curved);
       heat_position_of = (heat_value) => (heat_value + 1) * 0.5;
       file_counter_share = (value, counter, file_path) =>
@@ -279,8 +279,8 @@ window.catch_show_throw_(function () {
   }
   const baseline_of = (cost_vector) =>
     counter_baseline_of(cost_vector, current_counter);
-  const share_of_baseline_text = (value, baseline_cost) =>
-    share_text(share_of_baseline(value, baseline_cost));
+  const share_of_baseline_text = (value, baseline_cost, is_line) =>
+    share_text(share_of_baseline(value, baseline_cost), is_line);
   const line_baseline_vector = (file_path, line_number) => {
     const baseline_table =
       file_table[file_path] && file_table[file_path].baseline;
@@ -373,7 +373,7 @@ window.catch_show_throw_(function () {
     return scope_total ? (100 * value) / scope_total : 0;
   };
   const share_in_scope_text = (value, counter, line_number) =>
-    value ? share_text(share_in_scope(value, counter, line_number)) : "";
+    value ? share_text(share_in_scope(value, counter, line_number), true) : "";
   const scope_share_label = () =>
     text_of(SCOPE_SHARE_STRING_IDS[active_scale.scope]);
   const heat_of_line = (value, baseline_cost, line_number) =>
@@ -548,7 +548,7 @@ window.catch_show_throw_(function () {
         baseline_lookup,
       );
       return {
-        text: self_cost ? share_text(percent) : "",
+        text: share_text(percent, line_number != null),
         style: cell_style(heat_of_share(percent)),
       };
     });
@@ -804,7 +804,7 @@ window.catch_show_throw_(function () {
   }
   tree_panel.addEventListener(
     "focusin",
-    window.catch_show_throw_((focus_event) => {
+    window.try_catch_handler_((focus_event) => {
       const tree_node = focus_event.target.closest(".heat-map-tree-node-");
       if (!tree_node) return;
       tree_focus_selector = tree_node_selector_of(tree_node);
@@ -817,7 +817,7 @@ window.catch_show_throw_(function () {
   );
   tree_panel.addEventListener(
     "keydown",
-    window.catch_show_throw_((key_event) => {
+    window.try_catch_handler_((key_event) => {
       const key_name = report_ui_.widget_key.of(key_event);
       const tree_node = key_event.target.closest(".heat-map-tree-node-");
       if (key_name && tree_node) tree_key_take(key_event, key_name, tree_node);
@@ -825,7 +825,7 @@ window.catch_show_throw_(function () {
   );
   tree_panel.addEventListener(
     "click",
-    window.catch_show_throw_((click_event) => {
+    window.try_catch_handler_((click_event) => {
       const tree_node = click_event.target.closest(".heat-map-tree-node-");
       if (!tree_node) return;
       if (tree_node.getAttribute("data-dir-") != null) {
@@ -1060,9 +1060,10 @@ window.catch_show_throw_(function () {
         ),
       },
     );
-    main_panel.innerHTML = home_template_text
-      .replace("__LINES_TABLE__", () => lines_table_markup)
-      .replace("__FUNCTIONS_TABLE__", () => functions_table_markup);
+    main_panel.innerHTML = report_ui_.template_fill(home_template_text, {
+      __LINES_TABLE__: lines_table_markup,
+      __FUNCTIONS_TABLE__: functions_table_markup,
+    });
     const [lines_heading, functions_heading] = main_panel.querySelectorAll(
       ".heat-map-home- > .page-heading-",
     );
@@ -1170,6 +1171,7 @@ window.catch_show_throw_(function () {
               line_number,
             )
           : file_counter_share(value, counter, file_path),
+        true,
       );
     };
     const function_column = (label) => ({
@@ -1324,7 +1326,7 @@ window.catch_show_throw_(function () {
             ? call_file + ":" + call_line
             : call_file;
           return [
-            share_of_total_text(current_value(cost_vector)),
+            share_of_total_text(current_value(cost_vector), true),
             cell_number(current_value(cost_vector)),
             call_count_cell(call_count),
             {
@@ -1358,12 +1360,14 @@ window.catch_show_throw_(function () {
         share_of_baseline_text(
           current_value(function_entry.self),
           function_baseline_cost,
+          true,
         ) || report_ui_.zero_percent_text();
       const function_total_text =
         share_of_baseline_text(
           current_value(function_entry.self) +
             current_value(function_entry.calls),
           function_baseline_cost,
+          true,
         ) || report_ui_.zero_percent_text();
       const heading = HAS_CALL_GRAPH
         ? text_fill("str_information_box_function_totals", {
@@ -1396,7 +1400,7 @@ window.catch_show_throw_(function () {
               : call_file;
             return [
               call_count_cell(call_count),
-              share_of_total_text(current_value(cost_vector)),
+              share_of_total_text(current_value(cost_vector), true),
               cell_number(current_value(cost_vector)),
               {
                 text: function_name(caller_index),
@@ -1445,7 +1449,10 @@ window.catch_show_throw_(function () {
   function information_line_render(file_path, has_file_box) {
     const self_cost = current_value(file_table[file_path].self);
     const share_shown = self_cost
-      ? share_text(file_counter_share(self_cost, current_counter, file_path))
+      ? share_text(
+          file_counter_share(self_cost, current_counter, file_path),
+          true,
+        )
       : report_ui_.zero_percent_text();
     const link_text = text_fill("str_information_line_link", {
       path: file_path,
@@ -1611,13 +1618,14 @@ window.catch_show_throw_(function () {
   }
   // Opens the file box again if closed and shows the top of the view.
   function file_box_show() {
+    const information_line = main_panel.querySelector(
+      ".heat-map-source-information-line-",
+    );
     if (!file_box_of()) {
-      main_panel
-        .querySelector(".heat-map-source-information-line-")
-        .insertAdjacentHTML(
-          "beforebegin",
-          information_box_render(current_file_path, 0).markup,
-        );
+      information_line.insertAdjacentHTML(
+        "beforebegin",
+        information_box_render(current_file_path, 0).markup,
+      );
       report_ui_.layout_activate(file_box_of());
     }
     main_panel.scrollTop = 0;
@@ -1635,11 +1643,13 @@ window.catch_show_throw_(function () {
         .focus({ preventScroll: true });
     minimap_sync();
   }
-  // Shows what an address names in a file: the tree node, then the file box.
-  function file_address_show(file_path, line) {
-    tree_reveal(file_path);
-    tree_render();
-    tree_selected_show();
+  // Shows an address in a file: the tree node if asked, then the file box.
+  function file_address_show(file_path, line, moves_tree) {
+    if (moves_tree) {
+      tree_reveal(file_path);
+      tree_render();
+      tree_selected_show();
+    }
     if (!line) file_box_show();
   }
 
@@ -1816,16 +1826,16 @@ window.catch_show_throw_(function () {
   }
   main_panel.addEventListener(
     "scroll",
-    window.catch_show_throw_(minimap_sync),
+    window.try_catch_handler_(minimap_sync),
   );
   main_panel.addEventListener(
     "scroll",
-    window.catch_show_throw_(information_line_refresh),
+    window.try_catch_handler_(information_line_refresh),
   );
   // Centres the view on a pressed row outside the box, then drags the box.
   minimap_panel.addEventListener(
     "pointerdown",
-    window.catch_show_throw_((press_event) => {
+    window.try_catch_handler_((press_event) => {
       if (press_event.button) return;
       press_event.preventDefault();
       const scaled_height_px = clone_height_px * scale_factor;
@@ -1843,7 +1853,7 @@ window.catch_show_throw_(function () {
       const start_top_px = minimap_viewport.offsetTop;
       minimap_viewport.classList.add("drag_");
       minimap_panel.setPointerCapture(press_event.pointerId);
-      const pointer_move = window.catch_show_throw_((move_event) => {
+      const pointer_move = window.try_catch_handler_((move_event) => {
         if (move_event.pointerId !== press_event.pointerId) return;
         scroll_to_row(
           ((start_top_px +
@@ -1852,7 +1862,7 @@ window.catch_show_throw_(function () {
             geometry_measure().rows,
         );
       });
-      const pointer_release = window.catch_show_throw_((release_event) => {
+      const pointer_release = window.try_catch_handler_((release_event) => {
         if (release_event.pointerId !== press_event.pointerId) return;
         minimap_viewport.classList.remove("drag_");
         report_ui_.listeners_bind(
@@ -1929,7 +1939,7 @@ window.catch_show_throw_(function () {
 
   main_panel.addEventListener(
     "click",
-    window.catch_show_throw_((click_event) => {
+    window.try_catch_handler_((click_event) => {
       const box_control = click_event.target.closest(
         "[data-information-box-action-]",
       );
@@ -1991,7 +2001,7 @@ window.catch_show_throw_(function () {
   }
   main_panel.addEventListener(
     "focusin",
-    window.catch_show_throw_((focus_event) => {
+    window.try_catch_handler_((focus_event) => {
       const ticker_tape_entry = focus_event.target.closest(
         ".heat-map-source-ticker-tape-entry-",
       );
@@ -2007,7 +2017,7 @@ window.catch_show_throw_(function () {
   );
   main_panel.addEventListener(
     "keydown",
-    window.catch_show_throw_((key_event) => {
+    window.try_catch_handler_((key_event) => {
       const key_name = report_ui_.widget_key.of(key_event);
       if (!key_name) return;
       const ticker_tape_entry = key_event.target.closest(
@@ -2218,7 +2228,8 @@ window.catch_show_throw_(function () {
       return;
     }
     const is_new_address = location.hash !== routed_hash,
-      is_detail_closed = !is_new_address && !detail_line();
+      is_detail_closed = !is_new_address && !detail_line(),
+      previous_file_path = current_file_path;
     routed_hash = location.hash;
     let file = page_address.file,
       line = page_address.line === null ? 0 : page_address.line,
@@ -2274,7 +2285,8 @@ window.catch_show_throw_(function () {
     if (file) {
       if (line) line = line_clamp(line);
       if (!is_detail_closed) detail_set(line);
-      if (is_new_address) file_address_show(file, line);
+      if (is_new_address)
+        file_address_show(file, line, file !== previous_file_path);
     }
     rendered_line = line;
     main_focus_restore(main_had_focus);
@@ -2291,7 +2303,7 @@ window.catch_show_throw_(function () {
       HEAT_MAP_MODEL_DIR_NAME + "/" + encodeURIComponent(test_name) + ".js";
     model_script.addEventListener(
       "error",
-      window.catch_show_throw_(() => {
+      window.try_catch_handler_(() => {
         throw new Error(
           window.ui_strings_.text_fill("str_error_hash_test_unknown", [
             test_name,
@@ -2301,7 +2313,7 @@ window.catch_show_throw_(function () {
     );
     model_script.addEventListener(
       "load",
-      window.catch_show_throw_(() => {
+      window.try_catch_handler_(() => {
         const loaded_models = window[HEAT_MAP_MODEL_GLOBAL_NAME];
         if (!loaded_models || !loaded_models[test_name])
           throw new Error(
@@ -2359,84 +2371,15 @@ window.catch_show_throw_(function () {
       route_render();
       return;
     }
-    file_address_show(current_file_path, rendered_line);
+    file_address_show(current_file_path, rendered_line, true);
     if (!rendered_line) return;
     detail_set(rendered_line);
     row_center(document.getElementById("L" + rendered_line + "-"));
   }
 
-  let tree_push_off_px = 0,
-    press_push_off_px = null;
-  // Shifts the layout left so the left part of the tree leaves the window.
-  function tree_push_off_set(push_off_px) {
-    tree_push_off_px = Math.min(
-      tree_pane.offsetWidth,
-      Math.max(0, push_off_px),
-    );
-    layout_box.style.marginLeft = -tree_push_off_px + "px";
-  }
-  // Pushes the tree off the left edge by a sideways drag on the tree itself.
-  function tree_surface_travel_take(travel_screen_px, is_release) {
-    if (press_push_off_px === null) press_push_off_px = tree_push_off_px;
-    tree_push_off_set(
-      press_push_off_px - report_ui_.design_px(travel_screen_px),
-    );
-    if (is_release) press_push_off_px = null;
-  }
-  // Feeds the sideways travel of a drag on a surface to a taker.
-  function sideways_drag_attach(surface_element, travel_take) {
-    surface_element.addEventListener(
-      "pointerdown",
-      window.catch_show_throw_((press_event) => {
-        if (
-          press_event.button ||
-          press_event.defaultPrevented ||
-          report_ui_.slide_cell_of(press_event)
-        )
-          return;
-        let is_sideways = false,
-          travel_screen_px = 0;
-        const pointer_move = window.catch_show_throw_((move_event) => {
-          if (move_event.pointerId !== press_event.pointerId) return;
-          if (!move_event.buttons) return pointer_release(move_event);
-          travel_screen_px = move_event.clientX - press_event.clientX;
-          if (!is_sideways) {
-            const drag_direction = report_ui_.drag_direction_of(
-              press_event,
-              move_event,
-            );
-            if (!drag_direction) return;
-            if (drag_direction === "vertical") return listeners_set(false);
-            is_sideways = true;
-          }
-          travel_take(travel_screen_px, false);
-        });
-        const pointer_release = window.catch_show_throw_((release_event) => {
-          if (release_event.pointerId !== press_event.pointerId) return;
-          listeners_set(false);
-          if (is_sideways) travel_take(travel_screen_px, true);
-        });
-        function listeners_set(is_listening) {
-          report_ui_.listeners_bind(
-            window,
-            pointer_move,
-            pointer_release,
-            is_listening,
-          );
-        }
-        listeners_set(true);
-      }),
-    );
-  }
-  // Takes the tree back to the left edge, then applies the stored choices.
-  function layout_reset_apply() {
-    tree_push_off_set(0);
-    strip_preferences_apply();
-  }
-  const tree_splitter = report_ui_.pane_splitter.attach(
+  report_ui_.pane_splitter.attach(
     tree_scrollbar,
     tree_pane,
-    "heat.tree",
     STYLE_HEAT_MAP_TREE_PANE_NARROWEST_CHARS,
     STYLE_HEAT_MAP_TREE_PANE_WIDEST_CHARS,
   );
@@ -2444,21 +2387,15 @@ window.catch_show_throw_(function () {
   report_ui_.text_scrollbar.attach(main_scrollbar, main_panel, "vertical");
   report_ui_.drag_scroll.attach(tree_panel, tree_panel);
   report_ui_.drag_scroll.attach(main_panel, main_panel);
-  sideways_drag_attach(tree_panel, tree_surface_travel_take);
-  sideways_drag_attach(main_panel, tree_splitter.travel_take);
-  // Keeps the push off within the tree whenever the tree pane changes width.
-  new ResizeObserver(
-    window.catch_show_throw_(() => tree_push_off_set(tree_push_off_px)),
-  ).observe(tree_pane);
 
   window.addEventListener(
     "hashchange",
-    window.catch_show_throw_(route_render),
+    window.try_catch_handler_(route_render),
   );
   report_ui_.view_activate({
     dark_mode_apply: null,
     forwards_input: true,
-    preferences_apply: layout_reset_apply,
+    preferences_apply: strip_preferences_apply,
     recenter: address_recenter,
   });
 

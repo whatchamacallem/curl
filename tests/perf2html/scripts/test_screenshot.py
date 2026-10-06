@@ -22,6 +22,8 @@ class ShotVariant(NamedTuple):
 class ScreenshotSet(NamedTuple):
     shot_flags: int
     view_hash: str
+    # Digit of the menu entry the shot focuses or opens, empty for none.
+    menu_entry_number: str
     view_name: str
     absent_files: tuple[str, ...]
 
@@ -54,6 +56,8 @@ _SCREENSHOT_DARK_URL_PARAM = "screenshot-dark"
 _SCREENSHOT_DARK_VALUES: tuple[str, ...] = ("1", "0")
 
 _SCREENSHOT_DIR_NAME = "screenshots"
+
+_SCREENSHOT_MENU_URL_PARAM = "screenshot_menu"
 
 _SCREENSHOT_RENDER_BUDGET_MS = 8000
 
@@ -93,16 +97,25 @@ _THUMBNAIL_SHEET_ROWS = 3
 _THUMBNAIL_SHEET_WIDTH_PX = 3840
 
 _VIEWS: tuple[ScreenshotSet, ...] = (
-    ScreenshotSet(_SHOOT_BOTH_REPORTS, "", "overview", ()),
+    ScreenshotSet(_SHOOT_BOTH_REPORTS, "", "4", "overview", ()),
     ScreenshotSet(
-        _SHOOT_BOTH_REPORTS,
+        _SHOOT_REGULAR_REPORT,
+        "#test=urlparser&view=callers",
+        "7",
+        "callers",
+        (),
+    ),
+    ScreenshotSet(
+        _SHOOT_DIFF_REPORT,
         "#test=all&view=callers",
+        "",
         "callers",
         (),
     ),
     ScreenshotSet(
         _SHOOT_BOTH_REPORTS,
         "#test=urlparser&view=heat-map",
+        "",
         "heat_map_home",
         (),
     ),
@@ -110,6 +123,7 @@ _VIEWS: tuple[ScreenshotSet, ...] = (
         _SHOOT_BOTH_REPORTS,
         "#test=urlparser&view=heat-map"
         "&file=sysdeps/x86_64/multiarch/memchr-avx2.S",
+        "",
         "heat_map_file",
         (),
     ),
@@ -117,23 +131,27 @@ _VIEWS: tuple[ScreenshotSet, ...] = (
         _SHOOT_BOTH_REPORTS,
         "#test=urlparser&view=heat-map"
         "&file=sysdeps/x86_64/multiarch/memchr-avx2.S&line=82",
+        "",
         "heat_map_line",
         (),
     ),
     ScreenshotSet(
         _SHOOT_BOTH_REPORTS,
         "#test=urlparser&view=heat-map&function=parseurl_and_replace",
+        "",
         "heat_map_function",
         (),
     ),
     ScreenshotSet(
         _SHOOT_BOTH_REPORTS | _SHOOT_ERROR_HANDLER,
         "#test=urlparser&view=heat-map&function=no_such_function",
+        "",
         "bad_function",
         (),
     ),
     ScreenshotSet(
         _SHOOT_BOTH_REPORTS | _SHOOT_ERROR_HANDLER,
+        "",
         "",
         "report_incomplete",
         _REPORT_COMPLETE_ASSET,
@@ -141,12 +159,14 @@ _VIEWS: tuple[ScreenshotSet, ...] = (
     ScreenshotSet(
         _SHOOT_BOTH_REPORTS | _SHOOT_ERROR_HANDLER,
         "",
+        "",
         "stylesheet_missing",
         _REPORT_THEME_STYLESHEET_ASSET,
     ),
     ScreenshotSet(
         _SHOOT_REGULAR_REPORT,
-        "#test=urlparser&view=flame-graph&localProfilePath=profile",
+        "#test=urlparser&view=flame-graph&profiler_path=profile",
+        "",
         "flame_graph",
         (),
     ),
@@ -198,19 +218,24 @@ class Screenshots:
             shutil.rmtree(self.scratch_dir)
 
     def page_url_of(
-        self, name: str, page_dir: str, view_hash: str, dark_value: str
+        self,
+        name: str,
+        page_dir: str,
+        view_hash: str,
+        menu_entry_number: str,
+        dark_value: str,
     ) -> str:
         page = self.browser_path_of(os.path.join(page_dir, _ENTRY_PAGE))
+        query_values = {_SCREENSHOT_DARK_URL_PARAM: dark_value}
+        if menu_entry_number:
+            query_values[_SCREENSHOT_MENU_URL_PARAM] = menu_entry_number
         label_text = (
             (view_hash + "&" if view_hash else "#")
-            + f"{_SCREENSHOT_URL_PARAM}={name}"
-            + f"&{_SCREENSHOT_DARK_URL_PARAM}={dark_value}"
+            + f"{_SCREENSHOT_URL_PARAM}={name}&"
+            + urllib.parse.urlencode(query_values)
         )
         query = "?" + urllib.parse.urlencode(
-            {
-                _SCREENSHOT_URL_PARAM: label_text,
-                _SCREENSHOT_DARK_URL_PARAM: dark_value,
-            }
+            {_SCREENSHOT_URL_PARAM: label_text, **query_values}
         )
         if self.windows_browser_is():
             return "file://" + page.replace("\\", "/") + query + view_hash
@@ -242,6 +267,7 @@ class Screenshots:
         page_dir: str,
         name: str,
         view_hash: str,
+        menu_entry_number: str,
         dark_value: str,
         width_px: int,
         height_px: int,
@@ -263,7 +289,9 @@ class Screenshots:
                 f"--window-size={window}",
                 f"--screenshot={self.browser_path_of(out_path)}",
                 f"--virtual-time-budget={_SCREENSHOT_RENDER_BUDGET_MS}",
-                self.page_url_of(name, page_dir, view_hash, dark_value),
+                self.page_url_of(
+                    name, page_dir, view_hash, menu_entry_number, dark_value
+                ),
             ],
             capture_output=True,
             text=True,
@@ -370,6 +398,7 @@ class Screenshots:
                 page_dir,
                 view.view_name,
                 view.view_hash,
+                view.menu_entry_number,
                 variant.dark_value,
                 variant.width_px,
                 variant.height_px,

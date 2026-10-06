@@ -53,7 +53,7 @@ window.report_error_overlay_ = (function () {
     );
   }
 
-  function catch_show_throw_(entry_function) {
+  function try_catch_handler_(entry_function) {
     return function (...entry_arguments) {
       try {
         const entry_result = entry_function.apply(this, entry_arguments);
@@ -143,6 +143,6 @@ window.report_error_overlay_ = (function () {
     err_overlay_show_(browser_event.reason);
   });
 
-  window.catch_show_throw_ = catch_show_throw_;
+  window.try_catch_handler_ = try_catch_handler_;
   return { err_overlay_show_, relay_set_, relayed_report_show_ };
 })();

@@ -119,6 +119,7 @@ class CallgrindDiff:
             out[caller.function] = out.get(caller.function, 0) + tally.count
         return out
 
+    # Keeps each callee with a changed caller, listing unchanged callers last.
     def callers_subtract(
         self,
         baseline: callgrind.Profile,
@@ -132,11 +133,8 @@ class CallgrindDiff:
             for caller_name in sorted(set(before) | set(after)):
                 before_count = before.get(caller_name, 0)
                 count = after.get(caller_name, 0) - before_count
-                if count:
-                    deltas.append(
-                        CallerDelta(caller_name, count, before_count)
-                    )
-            if deltas:
+                deltas.append(CallerDelta(caller_name, count, before_count))
+            if any(delta.count_ for delta in deltas):
                 deltas.sort(
                     key=lambda delta: (-abs(delta.count_), delta.function)
                 )

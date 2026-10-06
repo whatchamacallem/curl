@@ -421,8 +421,9 @@ class CallgrindToHeatmap:
         )
         return theme.page_document(
             _HEAT_MAP_VIEW_ENTRY[1],
-            BODY.replace("__HEAT_MAP_MAIN__", _HEAT_MAP_MAIN).replace(
-                "__SCRIPTS__", scripts
+            theme.template_fill(
+                BODY,
+                {"__HEAT_MAP_MAIN__": _HEAT_MAP_MAIN, "__SCRIPTS__": scripts},
             ),
             depth=_HEAT_MAP_PAGE_DEPTH,
             extra_css=(
@@ -477,20 +478,18 @@ class CallgrindToHeatmap:
             "--",
             *_HEAT_MAP_TREE_ALWAYS_LISTED_DIRS,
         ]
-        try:
-            output = subprocess.run(
-                command,
-                check=True,
-                capture_output=True,
-                text=True,
-            ).stdout
-        except (OSError, subprocess.CalledProcessError) as failure:
+        completed = subprocess.run(
+            command, check=False, stdout=subprocess.PIPE, text=True
+        )
+        if completed.returncode != 0:
             sys.exit(
-                f"error: cannot list the tracked files a cold tree needs:"
-                f" {' '.join(command)}\n{failure}"
+                "error: cannot list the tracked files a cold tree needs:"
+                f" exit {completed.returncode} from: {' '.join(command)}"
             )
         return [
-            line for line in output.split("\n") if line.endswith((".c", ".h"))
+            line
+            for line in completed.stdout.split("\n")
+            if line.endswith((".c", ".h"))
         ]
 
     @staticmethod
