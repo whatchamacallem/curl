@@ -121,7 +121,6 @@ HEAT_MAP_TREE_AUTO_EXPAND_ABOVE_SHARE = 0.05
 
 HEAT_MAP_VIEW_ENTRY: tuple[str, str, str] = (
     "heat-map",
-    "heatmap",
     "heat-map/index.html",
 )
 
