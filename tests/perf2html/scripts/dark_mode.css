@@ -3,25 +3,15 @@
  * This file is licensed under the terms of the LICENSE-MIT.md file. */
 
 :root:not([data-dark-mode-="disabled"]) {
-  .callers-collapsed-section-file-name- {
+  .overview-collapsed-section-test-name- {
     color: var(--dark-mode-page-dim-fg-);
   }
-  pre.callers-collapsed-section-log-box- {
+  pre.overview-collapsed-section-log-box- {
     background: var(--dark-mode-panel-bg-);
   }
-  pre.callers-collapsed-section-log-box-:focus-visible {
+  pre.overview-collapsed-section-log-box-:focus-visible {
     background: var(--dark-mode-menu-focus-bg-);
     color: var(--dark-mode-menu-focus-fg-);
-  }
-  .callers-collapsed-section-title- {
-    color: var(--dark-mode-page-dim-fg-);
-  }
-  .callers-collapsed-section-title-:focus-visible {
-    background: var(--dark-mode-menu-focus-bg-);
-    color: var(--dark-mode-menu-focus-fg-);
-  }
-  .callers-collapsed-section-title-::marker {
-    color: var(--dark-mode-page-dim-fg-);
   }
   a {
     color: var(--dark-mode-page-link-fg-);
@@ -30,11 +20,12 @@
     background: var(--dark-mode-menu-focus-bg-);
     color: var(--dark-mode-menu-focus-fg-);
   }
-  table.columns_ th {
+  table.columns- th {
     color: var(--dark-mode-page-dim-fg-);
     background: var(--dark-mode-panel-bg-);
   }
-  table.columns_ > tbody > tr:focus-visible > td {
+  table.columns- > tbody > tr:focus-visible > td,
+  table.columns- > tbody > tr:focus-visible .menu-button- {
     background: var(--dark-mode-menu-focus-bg-) !important;
     color: var(--dark-mode-menu-focus-fg-) !important;
   }
@@ -55,16 +46,6 @@
   .heat-map-source-information-box-action-bar-separator- {
     color: var(--dark-mode-page-dim-fg-);
   }
-  .heat-map-source-information-box-control- {
-    color: var(--dark-mode-page-link-fg-);
-  }
-  .heat-map-source-information-box-close-symbol- {
-    color: var(--dark-mode-page-dim-fg-);
-  }
-  .heat-map-source-information-box-control-:focus-visible {
-    background: var(--dark-mode-menu-focus-bg-);
-    color: var(--dark-mode-menu-focus-fg-);
-  }
   .heat-map-source-information-box-function-name- {
     color: var(--dark-mode-page-fg-);
   }
@@ -78,7 +59,7 @@
     background: var(--dark-mode-page-bg-);
   }
   table.heat-map-source-table- > thead > tr > th {
-    background: var(--dark-mode-page-highlight-bg-);
+    background: var(--dark-mode-page-emphasis-bg-);
     color: var(--dark-mode-page-fg-);
   }
   td.heat-map-source-table-self-cell-,
@@ -97,11 +78,8 @@
     color: var(--dark-mode-menu-focus-fg-) !important;
   }
   .heat-map-source-ticker-tape- {
-    background: var(--dark-mode-page-highlight-bg-);
+    background: var(--dark-mode-page-emphasis-bg-);
     color: var(--dark-mode-page-fg-);
-  }
-  .heat-map-source-ticker-tape-entry- {
-    background: var(--dark-mode-table-panel-even-bg-);
   }
   .heat-map-source-ticker-tape-entry-:focus-visible {
     background: var(--dark-mode-menu-focus-bg-) !important;
@@ -113,8 +91,8 @@
   .heat-map-source-unavailable-note- {
     color: var(--dark-mode-page-dim-fg-);
   }
-  .heat-map-tree-node-.selected_ {
-    background: var(--dark-mode-page-highlight-bg-);
+  .heat-map-tree-node-.selected- {
+    background: var(--dark-mode-page-emphasis-bg-);
     color: var(--dark-mode-page-fg-);
   }
   .heat-map-tree-node-:focus-visible {
@@ -124,17 +102,17 @@
   .heat-map-tree-node- .heat-map-tree-node-caret- {
     color: var(--dark-mode-page-dim-fg-);
   }
-  .heat-map-tree-node-.cold_ .heat-map-tree-node-name- {
+  .heat-map-tree-node-.cold- .heat-map-tree-node-name- {
     color: var(--dark-mode-page-dim-fg-);
   }
-  .heat-map-tree-node-.more_ .heat-map-tree-node-name- {
+  .heat-map-tree-node-.more- .heat-map-tree-node-name- {
     color: var(--dark-mode-page-dim-fg-);
   }
   .heat-map-tree-node- .heat-map-tree-node-share-percent- {
     color: var(--dark-mode-page-dim-fg-);
   }
-  .heat-map-tree-node-.heat_ .heat-map-tree-node-share-percent-,
-  .heat-map-tree-node-.heat_ .heat-map-tree-node-caret- {
+  .heat-map-tree-node-.heat- .heat-map-tree-node-share-percent-,
+  .heat-map-tree-node-.heat- .heat-map-tree-node-caret- {
     color: inherit;
   }
 
@@ -145,31 +123,35 @@
   #overview-view-frame- {
     background: var(--dark-mode-page-bg-);
   }
-  .page-heading- {
-    background: none;
-    color: var(--dark-mode-page-dim-fg-);
+  .page-emphasis- {
+    background: var(--dark-mode-page-emphasis-bg-);
+    color: var(--dark-mode-page-emphasis-fg-);
   }
 
-  .menu-button-:not([data-entry-name-="logo"], [data-entry-name-="title"]) {
+  .menu-button-:not([data-entry-name-="logo"], .columns- td > *) {
     border: 0;
   }
 
-  .columns_:not(.heat-map-source-table-) {
+  .columns-:not(.heat-map-source-table-) {
     border-collapse: separate;
   }
-  .columns_:not(.heat-map-source-table-),
-  .columns_:not(.heat-map-source-table-) th,
-  .columns_:not(.heat-map-source-table-) td {
+  .columns-:not(.heat-map-source-table-),
+  .columns-:not(.heat-map-source-table-) th,
+  .columns-:not(.heat-map-source-table-) td {
     border: 0;
   }
-  .columns_:not(.heat-map-source-table-) th,
-  .columns_:not(.heat-map-source-table-) td {
+  .columns-:not(.heat-map-source-table-) th,
+  .columns-:not(.heat-map-source-table-) td,
+  .columns-:not(.heat-map-source-table-) td > a.menu-button-:only-child {
     padding-inline: var(--page-table-cell-padding-inline-);
   }
-  table.columns_ col:nth-child(odd) {
+  .columns-:not(.heat-map-source-table-) td:has(> a.menu-button-:only-child) {
+    padding-inline: 0;
+  }
+  table.columns- col:nth-child(odd) {
     background: var(--dark-mode-table-panel-odd-bg-);
   }
-  table.columns_ col:nth-child(even) {
+  table.columns- col:nth-child(even) {
     background: var(--dark-mode-table-panel-even-bg-);
   }
 
@@ -184,10 +166,6 @@
     background: var(--dark-mode-menu-normal-bg-);
     color: var(--dark-mode-menu-normal-fg-);
   }
-  .page-heading- .menu-button- {
-    background: var(--dark-mode-page-highlight-bg-);
-    color: var(--dark-mode-page-highlight-fg-);
-  }
   [data-entry-name-="logo"] {
     background: var(--dark-mode-page-bg-);
     color: var(--dark-mode-page-fg-);
@@ -197,8 +175,8 @@
     color: var(--dark-mode-status-bar-fg-);
   }
   .menu-button-:focus-visible,
-  .menu-button-.flash_,
-  .menu-button-.open_,
+  .menu-button-.flash-,
+  .menu-button-.open-,
   .menu-pulldown-entry-list- > .highlighted-entry- {
     background: var(--dark-mode-menu-focus-bg-);
     color: var(--dark-mode-menu-focus-fg-);
@@ -208,31 +186,24 @@
     background: var(--dark-mode-page-bg-);
   }
   #heat-map-main-:focus-visible {
-    background: var(--dark-mode-page-highlight-bg-);
+    background: var(--dark-mode-page-emphasis-bg-);
     color: var(--dark-mode-page-fg-);
   }
   #heat-map-minimap-viewport- {
-    border: var(--page-line-width-) solid var(--dark-mode-menu-normal-fg-);
+    border: var(--page-line-width-) solid;
+    border-color: var(--dark-mode-menu-normal-outline-);
   }
   .heat-map-source-information-line- {
-    background: var(--dark-mode-page-highlight-bg-);
-    color: var(--dark-mode-page-highlight-fg-);
-  }
-  .heat-map-source-information-line- a:not(:focus-visible) {
-    background: none;
-    color: var(--dark-mode-page-link-fg-);
-  }
-  .heat-map-source-information-line-
-    .heat-map-source-information-box-control-:not(:focus-visible) {
-    background: none;
-    color: var(--dark-mode-page-link-fg-);
+    background: var(--dark-mode-page-emphasis-bg-);
+    color: var(--dark-mode-page-emphasis-fg-);
   }
   tr.heat-map-source-information-box-synthetic-row- > td {
     background: none;
     color: var(--dark-mode-status-bar-fg-);
   }
-  .heat-map-tree-node-.selected_ .heat-map-tree-node-name- {
-    outline: none;
+  .heat-map-tree-node-.selected- .heat-map-tree-node-name- {
+    outline: var(--page-line-width-) solid;
+    outline-color: var(--dark-mode-menu-normal-outline-);
   }
 
   .page-text-scrollbar- {
@@ -240,14 +211,19 @@
     color: var(--dark-mode-menu-normal-fg-);
   }
   #heat-map-tree-scrollbar-:focus-visible,
-  .page-text-scrollbar-.drag_ {
+  .page-text-scrollbar-.drag- {
     background: var(--dark-mode-menu-focus-bg-);
     color: var(--dark-mode-menu-focus-fg-);
   }
 
-  .screenshot-label- {
-    background: var(--dark-mode-screenshot-label-bg-);
-    color: var(--dark-mode-screenshot-label-fg-);
-    border-color: var(--dark-mode-screenshot-label-border-);
+  .debug-tip- {
+    background: var(--dark-mode-debug-tip-bg-);
+    color: var(--dark-mode-debug-tip-fg-);
+    border-color: var(--dark-mode-debug-tip-border-);
+  }
+
+  .settings-value-box- {
+    background: var(--dark-mode-page-bg-);
+    color: var(--dark-mode-page-fg-);
   }
 }

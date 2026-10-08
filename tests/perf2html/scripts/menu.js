@@ -6,14 +6,11 @@ window.try_catch_handler_(function () {
   "use strict";
 
   const CALLERS_VIEW_KEY = settings_("CALLERS_VIEW_KEY");
-  const DARK_MODE_ENABLED_DEFAULT = settings_("DARK_MODE_ENABLED_DEFAULT");
   const FLAME_GRAPH_VIEW_ENTRY = settings_("FLAME_GRAPH_VIEW_ENTRY");
   const HEAT_MAP_VIEW_ENTRY = settings_("HEAT_MAP_VIEW_ENTRY");
   const MENU_SCALE_KEY_STEPS = settings_("MENU_SCALE_KEY_STEPS");
   const REPORT_TEST_SUITE_NAME = settings_("REPORT_TEST_SUITE_NAME");
-  const STYLE_DESIGN_SCALE_DEFAULT_STOP = settings_(
-    "STYLE_DESIGN_SCALE_DEFAULT_STOP",
-  );
+  const SETTINGS_VIEW_ENTRY = settings_("SETTINGS_VIEW_ENTRY");
   const STYLE_MENU_LOGO_START_SHARE = settings_("STYLE_MENU_LOGO_START_SHARE");
   const STYLE_MENU_PULLDOWN_EXTRA_WIDTH_CHARS = settings_(
     "STYLE_MENU_PULLDOWN_EXTRA_WIDTH_CHARS",
@@ -23,7 +20,7 @@ window.try_catch_handler_(function () {
     file: window.ui_strings_.text_of("str_menu_file"),
     function: window.ui_strings_.text_of("str_menu_function"),
     help: window.ui_strings_.text_of("str_menu_help"),
-    overview: window.ui_strings_.text_of("str_menu_overview"),
+    overview: window.ui_strings_.text_of("str_view_overview"),
     reset: window.ui_strings_.text_of("str_menu_reset"),
     scale: window.ui_strings_.text_of("str_menu_scale"),
     test: window.ui_strings_.text_of("str_menu_test"),
@@ -38,6 +35,7 @@ window.try_catch_handler_(function () {
   };
   const SCALE_ENTRY_NAME = "scale";
   const SCALE_LAST_STOP = window.report_ui_.design_scale_last_stop;
+  const SETTINGS_VIEW_KEY = SETTINGS_VIEW_ENTRY[0];
   const TEST_ENTRY_NAME = "test";
   const TEST_SUITE_NAME_TEXT = window.ui_strings_.text_of(
     "str_menu_test_suite_name",
@@ -47,14 +45,14 @@ window.try_catch_handler_(function () {
   );
   const VIEW_LABEL_TEXTS = {
     [CALLERS_VIEW_KEY]: window.ui_strings_.text_of("str_view_callers"),
-    [FLAME_GRAPH_VIEW_KEY]: FLAME_GRAPH_VIEW_ENTRY[1],
-    [HEAT_MAP_VIEW_KEY]: HEAT_MAP_VIEW_ENTRY[1],
+    [FLAME_GRAPH_VIEW_KEY]: window.ui_strings_.text_of("str_view_flame_graph"),
+    [HEAT_MAP_VIEW_KEY]: window.ui_strings_.text_of("str_view_heat_map"),
+    [SETTINGS_VIEW_KEY]: window.ui_strings_.text_of("str_view_settings"),
   };
 
   const home_title_text = document.title;
   const menu_strip = document.getElementById("menu-");
   const help_href = menu_strip.getAttribute("data-help-href-");
-  const logo_href = menu_strip.getAttribute("data-logo-href-");
   const pulldown_box_width_chars =
     Math.max(
       ...window.report_frame_.test_names.map(
@@ -81,9 +79,13 @@ window.try_catch_handler_(function () {
     };
   }
   function pulldown_link_of(link_text, link_hash, entry_name) {
-    const entry_link = document.createElement("a");
-    entry_link.setAttribute("href", link_hash);
-    entry_link.textContent = link_text;
+    const entry_link = window.shared_element_of_(
+      window.shared_element_render_(
+        "a",
+        { href: link_hash },
+        window.shared_html_escape_(link_text),
+      ),
+    );
     entry_link.addEventListener(
       "click",
       window.try_catch_handler_((click_event) => {
@@ -133,7 +135,7 @@ window.try_catch_handler_(function () {
     );
   }
   function tests_pulldown_closed() {
-    window.report_frame_.view_post("report_ui:tests_pulldown_closed");
+    window.report_frame_.view_post("tests_pulldown_closed");
   }
   function pulldown_options_of(entries_of, on_close, reads_line_number) {
     return {
@@ -148,18 +150,24 @@ window.try_catch_handler_(function () {
   function logo_color_at(fraction) {
     return `rgb(${window.report_ui_.ramp_channels_at(fraction).join(",")})`;
   }
-  function logo_letters_build(text, start_share) {
+  function logo_letters_markup(text, start_share) {
     const letters = [...text];
-    return letters.map((letter, index) => {
-      const letter_element = document.createElement("span");
-      letter_element.textContent = letter;
-      letter_element.style.color = logo_color_at(
-        letters.length > 1
-          ? start_share + ((1 - start_share) * index) / (letters.length - 1)
-          : 1,
-      );
-      return letter_element;
-    });
+    return letters
+      .map((letter, index) =>
+        window.shared_element_render_(
+          "span",
+          {
+            style: `color:${logo_color_at(
+              letters.length > 1
+                ? start_share +
+                    ((1 - start_share) * index) / (letters.length - 1)
+                : 1,
+            )}`,
+          },
+          window.shared_html_escape_(letter),
+        ),
+      )
+      .join("");
   }
   function dark_mode_label_text() {
     return window.ui_strings_.text_of(
@@ -172,14 +180,14 @@ window.try_catch_handler_(function () {
     window.report_ui_.dark_mode_set_(
       !window.report_ui_.dark_mode_enabled_now_(),
     );
-    window.report_frame_.view_post("report_ui:dark_mode_apply");
+    window.report_frame_.view_post("dark_mode_apply");
     menu_render();
   }
   function preferences_reset() {
     window.report_ui_.view_storage.preferences_clear();
-    window.report_ui_.design_scale_stop_set(STYLE_DESIGN_SCALE_DEFAULT_STOP);
-    window.report_ui_.dark_mode_set_(DARK_MODE_ENABLED_DEFAULT);
-    window.report_frame_.view_post("report_ui:layout_reset");
+    window.report_ui_.design_scale_stop_set(null);
+    window.report_ui_.dark_mode_set_(null);
+    window.report_frame_.view_post("layout_reset");
     menu_render();
   }
 
@@ -197,7 +205,7 @@ window.try_catch_handler_(function () {
     )
       return;
     window.report_ui_.design_scale_stop_set(scale_stop);
-    window.report_frame_.view_post("report_ui:layout_reset");
+    window.report_frame_.view_post("layout_reset");
     menu_strip_handle.widget_text_set(
       SCALE_ENTRY_NAME,
       scale_text_of(scale_stop),
@@ -244,12 +252,14 @@ window.try_catch_handler_(function () {
     const view_hash_of = (view_key) =>
       window.report_ui_.address.home_hash_of(test_name, view_key);
     return [
-      entry_of(
-        "logo",
-        "link",
-        logo_letters_build(REPORT_NAME_TEXT, STYLE_MENU_LOGO_START_SHARE),
-        { is_numbered: false, href: logo_href },
-      ),
+      entry_of("logo", "link", REPORT_NAME_TEXT, {
+        is_numbered: false,
+        href: view_hash_of(SETTINGS_VIEW_KEY),
+        label_markup: logo_letters_markup(
+          REPORT_NAME_TEXT,
+          STYLE_MENU_LOGO_START_SHARE,
+        ),
+      }),
       view_entry_of(
         OVERVIEW_ENTRY_NAME,
         ENTRY_LABEL_TEXTS.overview,
@@ -354,26 +364,25 @@ window.try_catch_handler_(function () {
       ),
     ];
   }
-  // Lists the status components: the view, the test, the heat map parts.
-  function status_entries_of(address, button_entries) {
-    const view_hash =
+  // Lists the status components: the test, the view, the heat map parts.
+  function status_entries_of(address) {
+    const view_entry =
       address.view === null
-        ? window.report_ui_.address.hash_of({})
-        : window.report_ui_.address.home_hash_of(address.test, address.view);
-    const view_entry = status_entry_of(
-      window.report_ui_.strip.label_text_of(
-        button_entries,
-        address.view ?? OVERVIEW_ENTRY_NAME,
-      ),
-      view_hash,
-    );
+        ? status_entry_of(
+            ENTRY_LABEL_TEXTS.overview,
+            window.report_ui_.address.hash_of({}),
+          )
+        : status_entry_of(
+            VIEW_LABEL_TEXTS[address.view],
+            window.report_ui_.address.home_hash_of(address.test, address.view),
+          );
     if (address.test === null) return [view_entry];
     return [
-      view_entry,
       status_entry_of(
         test_name_text_of(address.test),
         window.report_ui_.address.home_hash_of(address.test, CALLERS_VIEW_KEY),
       ),
+      view_entry,
       ...heat_map_status_entries_of(address),
     ];
   }
@@ -393,13 +402,12 @@ window.try_catch_handler_(function () {
     menu_strip_handle = window.report_ui_.strip.render(
       menu_strip,
       button_entries,
-      status_entries_of(address, button_entries),
+      status_entries_of(address),
     );
     document.title = title_text_of(address);
-    if (window.report_frame_.menu_entry_number !== null)
-      menu_strip_handle.numbered_entry_focus(
-        window.report_frame_.menu_entry_number,
-      );
+    const menu_entry_number = window.report_frame_.menu_entry_number_now();
+    if (menu_entry_number !== null)
+      menu_strip_handle.numbered_entry_focus(menu_entry_number);
   }
   function address_show() {
     menu_render();

@@ -22,14 +22,15 @@ ASSET_MENU_STYLESHEET_NAME = "menu.css"
 
 ASSET_PULLDOWN_TEXT_SCRIPT_NAME = "pulldown_text.js"
 
+ASSET_SETTINGS_PAGE_SCRIPT_NAME = "settings_page.js"
 ASSET_SETTINGS_SCRIPT_NAME = "settings.js"
-ASSET_SETTINGS_STYLESHEET_NAME = "settings.css"
 
 ASSET_TEMPLATE_CALLERS_PAGE_NAME = "callers.html"
 ASSET_TEMPLATE_FLAME_GRAPH_PAGE_NAME = "flame_graph.html"
 ASSET_TEMPLATE_HEAT_MAP_MAIN_NAME = "heat_map_main.html"
 ASSET_TEMPLATE_HEAT_MAP_PAGE_NAME = "heat_map.html"
 ASSET_TEMPLATE_OVERVIEW_PAGE_NAME = "overview.html"
+ASSET_TEMPLATE_SETTINGS_PAGE_NAME = "settings.html"
 
 ASSET_THEME_SCRIPT_NAME = "theme.js"
 ASSET_THEME_STYLESHEET_NAME = "theme.css"
@@ -40,16 +41,20 @@ CALLERS_TIME_SUFFIX_SECONDS: dict[str, float] = {"ns": 1e-9, "usecs": 1e-6}
 
 CALLERS_TOP_FUNCTION_ROWS = 50
 
-CALLERS_VALGRIND_LOG_FIRST_LINE_PATTERN = "^Events *:"
-
 CALLERS_VIEW_KEY = "callers"
 
 DARK_MODE_ATTRIBUTE_NAME = "data-dark-mode-"
 DARK_MODE_DISABLED_VALUE = "disabled"
 DARK_MODE_ENABLED_DEFAULT = True
 DARK_MODE_ENABLED_VALUE = "enabled"
-DARK_MODE_QUERY_KEY_NAME = "screenshot-dark"
+DARK_MODE_QUERY_KEY_NAME = "screenshot-mode"
 DARK_MODE_QUERY_VALUES: dict[str, str] = {"disabled": "0", "enabled": "1"}
+
+DEBUG_TIP_CURSOR_OFFSET_PX = 12
+
+DEBUG_TIP_HEIGHT_PX = 70
+
+DEBUG_TIP_WIDTH_PX = 250
 
 DERIVED_COUNTER_TERMS: dict[str, dict[str, int]] = {
     "D1m": {"D1mr": 1, "D1mw": 1},
@@ -89,9 +94,8 @@ FLAME_GRAPH_PROFILE_GLOBAL_NAME = "report_flame_graph_profiles_"
 FLAME_GRAPH_STARTUP_POLL_DELAY_MS = 50
 FLAME_GRAPH_STARTUP_POLL_MAX_ATTEMPTS = 200
 
-FLAME_GRAPH_VIEW_ENTRY: tuple[str, str, str] = (
+FLAME_GRAPH_VIEW_ENTRY: tuple[str, str] = (
     "flame-graph",
-    "flame graph",
     "flame-graph/index.html",
 )
 
@@ -108,7 +112,12 @@ HEAT_MAP_MINIMAP_VIEWPORT_BOX_SMALLEST_PX = 8
 HEAT_MAP_MODEL_DIR_NAME = "data"
 HEAT_MAP_MODEL_GLOBAL_NAME = "report_heat_map_models_"
 
+HEAT_MAP_SCALE_DEFAULT_VALUE = "log/global"
+HEAT_MAP_SCALE_DIFF_DEFAULT_VALUE = "log/line"
+
 HEAT_MAP_SECONDARY_COUNTER_NAMES: tuple[str, ...] = ("D1m", "DLm", "Bcm")
+
+HEAT_MAP_SORT_DEFAULT_MODE = "heat"
 
 HEAT_MAP_SOURCE_TICKER_TAPE_ENTRY_LEAST_SHARE = 0.01
 HEAT_MAP_SOURCE_TICKER_TAPE_ENTRY_MAX_COUNT = 10
@@ -119,14 +128,14 @@ HEAT_MAP_TREE_ALWAYS_LISTED_DIRS = ("lib", "include", "src", "tests/perf")
 
 HEAT_MAP_TREE_AUTO_EXPAND_ABOVE_SHARE = 0.05
 
-HEAT_MAP_VIEW_ENTRY: tuple[str, str, str] = (
+HEAT_MAP_VIEW_ENTRY: tuple[str, str] = (
     "heat-map",
     "heat-map/index.html",
 )
 
 MENU_DIGIT_KEY_COUNT = 10
 
-SCREENSHOT_MENU_ENTRY_KEY_NAME = "screenshot_menu"
+SCREENSHOT_MENU_ENTRY_KEY_NAME = "screenshot-menu"
 
 MENU_FLASH_DURATION_MS = 500
 
@@ -150,9 +159,21 @@ NUMBER_FRACTION_DIGITS = 2
 
 NUMBER_LARGEST_PRINTED_MULTIPLE_TIMES = 999.99
 
+OVERVIEW_VALGRIND_LOG_FIRST_LINE_PATTERN = "^Events *:"
+
 RANKING_COUNTER_NAME = "CEst"
 
 REPORT_SOURCES_DIR_NAME = "sources"
+
+SETTINGS_DEBUG_ENABLED = False
+SETTINGS_DEBUG_HASH_KEY_NAME = "setting-values"
+SETTINGS_DEBUG_JSON_INDENT_CHARS = 2
+SETTINGS_DEBUG_JSON_MAX_LENGTH_CHARS = 79
+SETTINGS_DEBUG_JSON_SPACING_PATTERN = r'("(?:[^\\"]|\\.)*")|[:,]'
+SETTINGS_DEBUG_QUERY_ENABLED_VALUE = "1"
+SETTINGS_DEBUG_QUERY_KEY_NAME = "debug"
+
+SETTINGS_VIEW_ENTRY: tuple[str, str] = ("settings", "settings/index.html")
 
 STORAGE_KEY_CALLERS_ROWS = "callers.rows"
 STORAGE_KEY_HEAT_COUNTER = "heat.counter"
@@ -172,17 +193,18 @@ STORAGE_OWNED_KEYS: tuple[str, ...] = (
     STORAGE_KEY_VIEW_SCALE,
 )
 
-STORAGE_VERSION = "perf2html v0"
+STORAGE_VERSION = "perf2html v1"
 STORAGE_VERSION_KEY = "perf2html.version"
 
 STYLE_COLOR_DARK_MODE: dict[str, list[str]] = {
     "#1AB6FF": [
+        "dark-mode-menu-normal-outline-",
         "dark-mode-page-link-fg-",
     ],
     "#F5F6FA": [
         "dark-mode-menu-focus-bg-",
         "dark-mode-menu-normal-fg-",
-        "dark-mode-page-highlight-fg-",
+        "dark-mode-page-emphasis-fg-",
         "dark-mode-page-fg-",
         "dark-mode-status-bar-fg-",
     ],
@@ -190,7 +212,7 @@ STYLE_COLOR_DARK_MODE: dict[str, list[str]] = {
         "dark-mode-page-dim-fg-",
     ],
     "#273C75": [
-        "dark-mode-page-highlight-bg-",
+        "dark-mode-page-emphasis-bg-",
     ],
     "#192A56": [
         "dark-mode-menu-focus-fg-",
@@ -206,29 +228,30 @@ STYLE_COLOR_DARK_MODE: dict[str, list[str]] = {
         "dark-mode-table-panel-odd-bg-",
     ],
     "#FFFFFF": [
-        "dark-mode-screenshot-label-fg-",
+        "dark-mode-debug-tip-fg-",
     ],
     "#000000": [
-        "dark-mode-screenshot-label-bg-",
-        "dark-mode-screenshot-label-border-",
+        "dark-mode-debug-tip-bg-",
+        "dark-mode-debug-tip-border-",
     ],
 }
 STYLE_COLOR_DARK_MODE_ROLE_PREFIX = "dark-mode-"
 
 STYLE_COLOR_LIGHT_MODE: dict[str, list[str]] = {
     "#000000": [
+        "light-mode-debug-tip-bg-",
+        "light-mode-debug-tip-border-",
         "light-mode-menu-focus-bg-",
         "light-mode-menu-normal-fg-",
-        "light-mode-page-highlight-bg-",
+        "light-mode-menu-normal-outline-",
+        "light-mode-page-emphasis-bg-",
         "light-mode-page-fg-",
-        "light-mode-screenshot-label-bg-",
-        "light-mode-screenshot-label-border-",
     ],
     "#FFFFFF": [
+        "light-mode-debug-tip-fg-",
         "light-mode-menu-focus-fg-",
-        "light-mode-page-highlight-fg-",
+        "light-mode-page-emphasis-fg-",
         "light-mode-page-bg-",
-        "light-mode-screenshot-label-fg-",
         "light-mode-status-bar-fg-",
         "light-mode-table-panel-even-bg-",
         "light-mode-table-panel-odd-bg-",
@@ -323,7 +346,9 @@ STYLE_TABLE_LOCATION_COLUMN_MAX_CHARS = 48
 STYLE_TEXT_SCROLLBAR_THUMB_SHORTEST_CHARS = 4
 
 STYLE_VALUE_ENTRIES: dict[str, str] = {
-    "callers-collapsed-section-log-box-max-height-share-": "0.6",
+    "debug-tip-border-width-": "1ch",
+    "debug-tip-font-size-": "1.5em",
+    "debug-tip-z-index-": "2147483647",
     "heat-map-band-z-index-": "2",
     "heat-map-menu-padding-bottom-": "1lh",
     "heat-map-minimap-width-": "110px",
@@ -331,7 +356,6 @@ STYLE_VALUE_ENTRIES: dict[str, str] = {
     "heat-map-overview-home-border-inline-": "2ch",
     "heat-map-source-table-code-cell-tab-size-": "4",
     "heat-map-source-table-line-number-cell-callee-marker-text-": '"►"',
-    "heat-map-source-ticker-tape-entry-padding-inline-": "1ch",
     "heat-map-source-ticker-tape-gap-": "1ch",
     "heat-map-tree-node-caret-width-": "2ch",
     "heat-map-tree-node-gap-": "1ch",
@@ -343,16 +367,14 @@ STYLE_VALUE_ENTRIES: dict[str, str] = {
     "menu-pulldown-entry-list-z-index-": "3",
     "menu-pulldown-entry-padding-inline-": "1ch",
     "menu-pulldown-search-box-min-width-": "13ch",
-    "menu-status-bar-link-padding-inline-": "1ch",
+    "overview-collapsed-section-log-box-max-height-share-": "0.6",
     "page-body-line-height-": "1.1",
+    "page-emphasis-padding-inline-": "1ch",
     "page-line-width-": "0.125ch",
     "page-table-cell-padding-inline-": "1ch",
     "page-table-column-title-z-index-": "1",
     "page-text-scrollbar-horizontal-height-": "1lh",
     "page-text-scrollbar-vertical-width-": "1ch",
-    "screenshot-label-border-width-": "1ch",
-    "screenshot-label-font-size-": "1.5em",
-    "screenshot-label-z-index-": "3",
 }
 
 TABLE_MARKDOWN_COLUMN_NARROWEST_CHARS = 3

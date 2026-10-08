@@ -23,7 +23,25 @@
   padding: 0 var(--menu-button-padding-inline-);
   white-space: pre;
 }
+[data-entry-name-="logo"] {
+  padding-inline-end: 0;
+}
+a.menu-button-,
+span.menu-button- {
+  display: inline-block;
+}
+summary.menu-button- {
+  width: fit-content;
+}
+td > a.menu-button-:only-child {
+  display: block;
+  width: fit-content;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .menu-button-[tabindex],
+summary.menu-button-,
 .menu-button-widget- {
   cursor: pointer;
 }
@@ -35,9 +53,6 @@
   width: 100%;
   padding: 0;
   white-space: pre;
-}
-.menu-status-bar- a {
-  padding: 0 var(--menu-status-bar-link-padding-inline-);
 }
 
 .menu-pulldown- {

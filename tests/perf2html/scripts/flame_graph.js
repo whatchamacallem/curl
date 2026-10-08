@@ -42,14 +42,19 @@ window.try_catch_handler_(function () {
       ]),
     );
   }
-  // Hands the dark mode to speedscope, which reads its scheme at start.
+  // Answers the scheme speedscope reads at start for the dark mode shown.
+  function color_scheme_of_dark_mode() {
+    return window.report_ui_.dark_mode_enabled_now_()
+      ? FLAME_GRAPH_COLOR_SCHEME_VALUES.enabled
+      : FLAME_GRAPH_COLOR_SCHEME_VALUES.disabled;
+  }
+  // Hands the shown dark mode to speedscope, reloading when it differs.
   function color_scheme_hand_over() {
-    localStorage.setItem(
-      FLAME_GRAPH_COLOR_SCHEME_KEY_NAME,
-      window.report_ui_.dark_mode_enabled_now_()
-        ? FLAME_GRAPH_COLOR_SCHEME_VALUES.enabled
-        : FLAME_GRAPH_COLOR_SCHEME_VALUES.disabled,
-    );
+    const scheme = color_scheme_of_dark_mode();
+    if (localStorage.getItem(FLAME_GRAPH_COLOR_SCHEME_KEY_NAME) === scheme)
+      return;
+    localStorage.setItem(FLAME_GRAPH_COLOR_SCHEME_KEY_NAME, scheme);
+    location.reload();
   }
   function profile_hand_over() {
     const filed_profiles = window[FLAME_GRAPH_PROFILE_GLOBAL_NAME];
@@ -85,20 +90,20 @@ window.try_catch_handler_(function () {
         FLAME_GRAPH_VIEW_ENTRY[0],
       ]),
     );
-  if (_FORWARDED_ADDRESS.profiler_path === null)
+  if (_FORWARDED_ADDRESS.localProfilePath === null)
     throw new Error(
       window.ui_strings_.text_of("str_error_hash_profile_path_missing"),
     );
   window.resource_failure_expect_(
-    FLAME_GRAPH_LOCAL_PROFILE_URL_PREFIX + _FORWARDED_ADDRESS.profiler_path,
+    FLAME_GRAPH_LOCAL_PROFILE_URL_PREFIX + _FORWARDED_ADDRESS.localProfilePath,
   );
   window.addEventListener(
     "hashchange",
     window.try_catch_handler_(() => location.reload()),
   );
-  color_scheme_hand_over();
   window.report_ui_.view_activate({
-    dark_mode_apply: () => location.reload(),
+    dark_mode_apply: color_scheme_hand_over,
+    dark_mode_arrive: color_scheme_hand_over,
     forwards_input: false,
     preferences_apply: null,
     recenter: () => location.reload(),

@@ -7,9 +7,9 @@ from __future__ import annotations
 
 from typing import NamedTuple
 
-import argparse, math, os, shutil, subprocess, sys, urllib.parse
+import argparse, json, os, re, shutil, subprocess, sys, urllib.parse
 
-import PIL.Image
+import PIL.Image, PIL.ImageChops, PIL.ImageDraw, PIL.ImageEnhance
 
 
 class ShotVariant(NamedTuple):
@@ -25,13 +25,25 @@ class ScreenshotSet(NamedTuple):
     # Digit of the menu entry the shot focuses or opens, empty for none.
     menu_entry_number: str
     view_name: str
+    subview_name: str
     absent_files: tuple[str, ...]
 
     def shot_variants(self) -> tuple[ShotVariant, ...]:
-        if self.shot_flags & _SHOOT_ERROR_HANDLER:
-            return _SHOT_ERROR_HANDLER
+        if self.shot_flags & _SHOOT_INDEX_PAGE:
+            return _SHOT_INDEX_PAGE
+        if self.shot_flags & _SHOOT_ONE_VARIANT:
+            return _SHOT_ONE_VARIANT
         return _SHOT_REPORT_PERMUTATIONS
 
+
+_COMPARE_BOX_LINE_PX = 4
+_COMPARE_HIGHLIGHT_COLOR = (255, 0, 255)
+_COMPARE_IMAGE_PREFIX = "compare_"
+_COMPARE_KEPT_BRIGHTNESS_SHARE = 0.25
+_COMPARE_LISTED_REGION_COUNT = 4
+_COMPARE_REGION_TILE_PX = 16
+
+_DEBUG_SCRIPT_ASSET: tuple[str, ...] = ("assets/debug.js",)
 
 _ENTRY_PAGE = "index.html"
 
@@ -39,7 +51,13 @@ _FAULT_TAIL_CHARS = 400
 
 _IMAGE_SUFFIX = ".png"
 
-_REPORT_COMPLETE_ASSET: tuple[str, ...] = ("assets/report_complete.js",)
+_INDEX_DATA_PATTERN = re.compile(
+    r'<script id="shot-list-" type="application/json">(.*?)</script>',
+    re.DOTALL,
+)
+_INDEX_MARKER = "__SHOT_LIST__"
+_INDEX_PAGE_NAME = "test_index.html"
+_INDEX_TEMPLATE_NAME = "test_index.html"
 
 _REPORT_THEME_STYLESHEET_ASSET: tuple[str, ...] = ("assets/theme.css",)
 
@@ -52,18 +70,16 @@ _SCREENSHOT_BROWSER_CANDIDATES: tuple[str, ...] = (
     "/mnt/c/Program Files (x86)/Microsoft/Edge/Application/msedge.exe",
 )
 
-_SCREENSHOT_DARK_URL_PARAM = "screenshot-dark"
+_SCREENSHOT_DARK_URL_PARAM = "screenshot-mode"
 _SCREENSHOT_DARK_VALUES: tuple[str, ...] = ("1", "0")
 
 _SCREENSHOT_DIR_NAME = "screenshots"
 
-_SCREENSHOT_MENU_URL_PARAM = "screenshot_menu"
+_SCREENSHOT_MENU_URL_PARAM = "screenshot-menu"
 
 _SCREENSHOT_RENDER_BUDGET_MS = 8000
 
 _SCREENSHOT_SCRATCH_DIR_PATH = "build/screenshots_scratch"
-
-_SCREENSHOT_URL_PARAM = "screenshot"
 
 _SCREENSHOT_VIEWPORTS: tuple[tuple[str, int, int], ...] = (
     ("720p", 1280, 720),
@@ -71,11 +87,17 @@ _SCREENSHOT_VIEWPORTS: tuple[tuple[str, int, int], ...] = (
 )
 
 _SHOOT_DIFF_REPORT = 1 << 0
-_SHOOT_ERROR_HANDLER = 1 << 1
+# Shoots the index page of the finished run at 4k, once.
+_SHOOT_INDEX_PAGE = 1 << 3
+# Shoots 720p dark, once.
+_SHOOT_ONE_VARIANT = 1 << 1
 _SHOOT_REGULAR_REPORT = 1 << 2
 _SHOOT_BOTH_REPORTS = _SHOOT_DIFF_REPORT | _SHOOT_REGULAR_REPORT
 
-_SHOT_ERROR_HANDLER: tuple[ShotVariant, ...] = (
+_SHOT_INDEX_PAGE: tuple[ShotVariant, ...] = (
+    ShotVariant(*_SCREENSHOT_VIEWPORTS[1], _SCREENSHOT_DARK_VALUES[0]),
+)
+_SHOT_ONE_VARIANT: tuple[ShotVariant, ...] = (
     ShotVariant(*_SCREENSHOT_VIEWPORTS[0], _SCREENSHOT_DARK_VALUES[0]),
 )
 _SHOT_REPORT_PERMUTATIONS: tuple[ShotVariant, ...] = tuple(
@@ -84,25 +106,18 @@ _SHOT_REPORT_PERMUTATIONS: tuple[ShotVariant, ...] = tuple(
     for dark_value in _SCREENSHOT_DARK_VALUES
 )
 
-_SHOT_MODE_NAME_PARTS: dict[str, str] = {"1": "_dark", "0": "_light"}
+_SHOT_MODE_NAME_PARTS: dict[str, str] = {"1": "dark", "0": "light"}
+_SHOT_NAME_SEPARATOR = "-"
 _SHOT_NUMBER_DIGITS = 2
 
-_THUMBNAIL_SHEET_BACKGROUND = (128, 128, 128)
-
-_THUMBNAIL_SHEET_COLUMNS = 3
-
-_THUMBNAIL_SHEET_HEIGHT_PX = 2160
-_THUMBNAIL_SHEET_NUMBER_DIGITS = 2
-_THUMBNAIL_SHEET_ROWS = 3
-_THUMBNAIL_SHEET_WIDTH_PX = 3840
-
 _VIEWS: tuple[ScreenshotSet, ...] = (
-    ScreenshotSet(_SHOOT_BOTH_REPORTS, "", "4", "overview", ()),
+    ScreenshotSet(_SHOOT_BOTH_REPORTS, "", "4", "overview", "home", ()),
     ScreenshotSet(
         _SHOOT_REGULAR_REPORT,
         "#test=urlparser&view=callers",
         "7",
         "callers",
+        "urlparser",
         (),
     ),
     ScreenshotSet(
@@ -110,13 +125,15 @@ _VIEWS: tuple[ScreenshotSet, ...] = (
         "#test=all&view=callers",
         "",
         "callers",
+        "all",
         (),
     ),
     ScreenshotSet(
         _SHOOT_BOTH_REPORTS,
         "#test=urlparser&view=heat-map",
         "",
-        "heat_map_home",
+        "heat_map",
+        "home",
         (),
     ),
     ScreenshotSet(
@@ -124,7 +141,8 @@ _VIEWS: tuple[ScreenshotSet, ...] = (
         "#test=urlparser&view=heat-map"
         "&file=sysdeps/x86_64/multiarch/memchr-avx2.S",
         "",
-        "heat_map_file",
+        "heat_map",
+        "file",
         (),
     ),
     ScreenshotSet(
@@ -132,43 +150,69 @@ _VIEWS: tuple[ScreenshotSet, ...] = (
         "#test=urlparser&view=heat-map"
         "&file=sysdeps/x86_64/multiarch/memchr-avx2.S&line=82",
         "",
-        "heat_map_line",
+        "heat_map",
+        "line",
         (),
     ),
     ScreenshotSet(
         _SHOOT_BOTH_REPORTS,
         "#test=urlparser&view=heat-map&function=parseurl_and_replace",
         "",
-        "heat_map_function",
+        "heat_map",
+        "function",
         (),
     ),
     ScreenshotSet(
-        _SHOOT_BOTH_REPORTS | _SHOOT_ERROR_HANDLER,
+        _SHOOT_REGULAR_REPORT,
+        "#test=urlparser&view=flame-graph&localProfilePath=profile",
+        "",
+        "flame_graph",
+        "profile",
+        (),
+    ),
+    ScreenshotSet(
+        _SHOOT_BOTH_REPORTS | _SHOOT_ONE_VARIANT,
+        "#test=all&view=settings",
+        "",
+        "settings",
+        "list",
+        (),
+    ),
+    ScreenshotSet(
+        _SHOOT_BOTH_REPORTS | _SHOOT_ONE_VARIANT,
+        "#test=all&view=settings&setting=DARK_MODE_ENABLED_DEFAULT"
+        "&setting-values=eyJEQVJLX01PREVfRU5BQkxFRF9ERUZBVUxUIjpmYWxzZX0%3D",
+        "",
+        "settings",
+        "applied",
+        (),
+    ),
+    ScreenshotSet(
+        _SHOOT_BOTH_REPORTS | _SHOOT_ONE_VARIANT,
         "#test=urlparser&view=heat-map&function=no_such_function",
         "",
+        "error",
         "bad_function",
         (),
     ),
     ScreenshotSet(
-        _SHOOT_BOTH_REPORTS | _SHOOT_ERROR_HANDLER,
+        _SHOOT_BOTH_REPORTS | _SHOOT_ONE_VARIANT,
         "",
         "",
+        "error",
         "report_incomplete",
-        _REPORT_COMPLETE_ASSET,
+        _DEBUG_SCRIPT_ASSET,
     ),
     ScreenshotSet(
-        _SHOOT_BOTH_REPORTS | _SHOOT_ERROR_HANDLER,
+        _SHOOT_BOTH_REPORTS | _SHOOT_ONE_VARIANT,
         "",
         "",
+        "error",
         "stylesheet_missing",
         _REPORT_THEME_STYLESHEET_ASSET,
     ),
     ScreenshotSet(
-        _SHOOT_REGULAR_REPORT,
-        "#test=urlparser&view=flame-graph&profiler_path=profile",
-        "",
-        "flame_graph",
-        (),
+        _SHOOT_DIFF_REPORT | _SHOOT_INDEX_PAGE, "", "", "index", "page", ()
     ),
 )
 
@@ -190,6 +234,7 @@ class Screenshots:
         self.out_dir = out_dir
         self.scratch_dir = scratch_dir
         self.report_views = self.report_views_select()
+        self.written_shots: list[str] = []
 
     def browser_path_of(self, path: str) -> str:
         if not self.windows_browser_is():
@@ -217,29 +262,263 @@ class Screenshots:
         finally:
             shutil.rmtree(self.scratch_dir)
 
+    # Groups changed pixels into boxes, a tile touching another joining it.
+    def changed_regions_of(
+        self, changed_mask: PIL.Image.Image
+    ) -> list[tuple[int, int, int, int]]:
+        tile_mask = changed_mask.reduce(_COMPARE_REGION_TILE_PX)
+        marked_tiles = {
+            (tile_index % tile_mask.width, tile_index // tile_mask.width)
+            for tile_index, tile_value in enumerate(tile_mask.tobytes())
+            if tile_value
+        }
+        changed_regions: list[tuple[int, int, int, int]] = []
+        while marked_tiles:
+            pending_tiles = [marked_tiles.pop()]
+            region_columns: list[int] = []
+            region_rows: list[int] = []
+            while pending_tiles:
+                tile_column, tile_row = pending_tiles.pop()
+                region_columns.append(tile_column)
+                region_rows.append(tile_row)
+                for neighbour_tile in (
+                    (tile_column + column_step, tile_row + row_step)
+                    for column_step in (-1, 0, 1)
+                    for row_step in (-1, 0, 1)
+                ):
+                    if neighbour_tile in marked_tiles:
+                        marked_tiles.remove(neighbour_tile)
+                        pending_tiles.append(neighbour_tile)
+            tile_left = min(region_columns) * _COMPARE_REGION_TILE_PX
+            tile_top = min(region_rows) * _COMPARE_REGION_TILE_PX
+            inner_box = changed_mask.crop(
+                (
+                    tile_left,
+                    tile_top,
+                    (max(region_columns) + 1) * _COMPARE_REGION_TILE_PX,
+                    (max(region_rows) + 1) * _COMPARE_REGION_TILE_PX,
+                )
+            ).getbbox()
+            assert inner_box is not None, "a marked tile holds no change"
+            inner_left, inner_top, inner_right, inner_bottom = inner_box
+            changed_regions.append(
+                (
+                    tile_left + inner_left,
+                    tile_top + inner_top,
+                    tile_left + inner_right,
+                    tile_top + inner_bottom,
+                )
+            )
+        return sorted(
+            changed_regions,
+            key=lambda changed_region: (changed_region[1], changed_region[0]),
+        )
+
+    # Writes the shot dimmed, its changed pixels and their boxes highlighted.
+    def compare_image_write(
+        self,
+        new_shot: PIL.Image.Image,
+        changed_mask: PIL.Image.Image,
+        changed_regions: list[tuple[int, int, int, int]],
+        compare_path: str,
+    ) -> None:
+        compare_image = PIL.ImageEnhance.Brightness(new_shot).enhance(
+            _COMPARE_KEPT_BRIGHTNESS_SHARE
+        )
+        compare_image.paste(_COMPARE_HIGHLIGHT_COLOR, mask=changed_mask)
+        box_drawing = PIL.ImageDraw.Draw(compare_image)
+        for (
+            region_left,
+            region_top,
+            region_right,
+            region_bottom,
+        ) in changed_regions:
+            box_drawing.rectangle(
+                (
+                    region_left - _COMPARE_BOX_LINE_PX,
+                    region_top - _COMPARE_BOX_LINE_PX,
+                    region_right - 1 + _COMPARE_BOX_LINE_PX,
+                    region_bottom - 1 + _COMPARE_BOX_LINE_PX,
+                ),
+                outline=_COMPARE_HIGHLIGHT_COLOR,
+                width=_COMPARE_BOX_LINE_PX,
+            )
+        compare_image.save(compare_path)
+
+    # Names each shot that differs from its gold twin, each one missing.
+    def gold_compare(
+        self, gold_dir: str, prefix: str, is_verbose: bool
+    ) -> bool:
+        shot_pattern = re.compile(
+            f"[0-9]{{{_SHOT_NUMBER_DIGITS}}}-[^-]+-[^-]+-[^-]+"
+            f"-{re.escape(prefix.rstrip('_'))}-.*" + re.escape(_IMAGE_SUFFIX)
+        )
+        for file_name in os.listdir(self.out_dir):
+            if file_name.startswith(
+                _COMPARE_IMAGE_PREFIX
+            ) and shot_pattern.fullmatch(
+                file_name.removeprefix(_COMPARE_IMAGE_PREFIX)
+            ):
+                os.remove(os.path.join(self.out_dir, file_name))
+        is_same = True
+        for shot_name in self.written_shots:
+            if not self.gold_compare_one(
+                shot_name + _IMAGE_SUFFIX, gold_dir, is_verbose
+            ):
+                is_same = False
+        for file_name in sorted(os.listdir(gold_dir)):
+            if (
+                shot_pattern.fullmatch(file_name)
+                and file_name.removesuffix(_IMAGE_SUFFIX)
+                not in self.written_shots
+            ):
+                print(
+                    f"{file_name}: in {gold_dir}, not written by this run",
+                    file=sys.stderr,
+                )
+                is_same = False
+        return is_same
+
+    def gold_compare_one(
+        self, file_name: str, gold_dir: str, is_verbose: bool
+    ) -> bool:
+        gold_path = os.path.join(gold_dir, file_name)
+        if not os.path.isfile(gold_path):
+            print(f"{file_name}: absent from {gold_dir}", file=sys.stderr)
+            return False
+        new_shot = PIL.Image.open(os.path.join(self.out_dir, file_name))
+        new_shot = new_shot.convert("RGB")
+        gold_shot = PIL.Image.open(gold_path).convert("RGB")
+        if new_shot.size != gold_shot.size:
+            print(
+                f"{file_name}: {new_shot.width}x{new_shot.height}, gold"
+                f" {gold_shot.width}x{gold_shot.height}",
+                file=sys.stderr,
+            )
+            return False
+        red_change, green_change, blue_change = PIL.ImageChops.difference(
+            new_shot, gold_shot
+        ).split()
+        channel_change = PIL.ImageChops.lighter(
+            PIL.ImageChops.lighter(red_change, green_change), blue_change
+        )
+        if channel_change.getbbox() is None:
+            if is_verbose:
+                print(f"{file_name}: same as gold")
+            return True
+        changed_mask = channel_change.point(
+            lambda channel_value: 255 if channel_value else 0
+        )
+        changed_count = changed_mask.histogram()[255]
+        changed_regions = self.changed_regions_of(changed_mask)
+        compare_path = os.path.join(
+            self.out_dir, _COMPARE_IMAGE_PREFIX + file_name
+        )
+        self.compare_image_write(
+            new_shot, changed_mask, changed_regions, compare_path
+        )
+        listed_regions = "; ".join(
+            f"{region_left},{region_top} to {region_right},{region_bottom}"
+            for region_left, region_top, region_right, region_bottom in (
+                changed_regions[:_COMPARE_LISTED_REGION_COUNT]
+            )
+        )
+        unlisted_count = len(changed_regions) - _COMPARE_LISTED_REGION_COUNT
+        if unlisted_count > 0:
+            listed_regions += f"; {unlisted_count} more"
+        changed_percent = (
+            100 * changed_count / (new_shot.width * new_shot.height)
+        )
+        print(
+            f"{file_name}: {changed_count} pixels differ"
+            f" ({changed_percent:.2f}%),"
+            f" largest channel change {channel_change.getextrema()[1]},"
+            f" {len(changed_regions)} region(s) {listed_regions},"
+            f" see {compare_path}",
+            file=sys.stderr,
+        )
+        return False
+
+    # Merges this report's pages into the index, keeping other reports'.
+    def index_write(self, prefix: str, index_path: str, template: str) -> None:
+        assert template.count(_INDEX_MARKER) == 1, _INDEX_MARKER
+        report_name = prefix.rstrip("_")
+        report_href = urllib.parse.quote(
+            os.path.relpath(
+                os.path.join(self.report, _ENTRY_PAGE),
+                os.path.dirname(index_path),
+            )
+        )
+        width_px, height_px = _SCREENSHOT_VIEWPORTS[0][1:]
+        pages: dict[str, str] = {}
+        if os.path.isfile(index_path):
+            with open(index_path) as index_file:
+                found = _INDEX_DATA_PATTERN.search(index_file.read())
+            assert found, f"{index_path} holds no shot list"
+            for page in json.loads(found.group(1))["pages"]:
+                if page["report"] != report_name:
+                    pages[page["name"]] = page["href"]
+        for view_index, view in self.report_views:
+            if view.absent_files or view.shot_flags & _SHOOT_INDEX_PAGE:
+                continue
+            for dark_value in dict.fromkeys(
+                variant.dark_value for variant in view.shot_variants()
+            ):
+                pages[
+                    self.shot_name_of(view_index, "", prefix, view, dark_value)
+                ] = report_href + self.page_address_of(
+                    view.view_hash, view.menu_entry_number, dark_value
+                )
+        data = {
+            "width": width_px,
+            "height": height_px,
+            "pages": [
+                {
+                    "name": name,
+                    "report": name.split(_SHOT_NAME_SEPARATOR)[-2],
+                    "href": pages[name],
+                }
+                for name in sorted(pages)
+            ],
+        }
+        data_script = (
+            '<script id="shot-list-" type="application/json">'
+            + json.dumps(data, indent=1)
+            + "</script>"
+        )
+        with open(index_path, "w") as index_file:
+            index_file.write(template.replace(_INDEX_MARKER, data_script))
+
+    # Answers the query and hash a page is shot at.
+    def page_address_of(
+        self, view_hash: str, menu_entry_number: str, dark_value: str
+    ) -> str:
+        query_values = {_SCREENSHOT_DARK_URL_PARAM: dark_value}
+        if menu_entry_number:
+            query_values[_SCREENSHOT_MENU_URL_PARAM] = menu_entry_number
+        return "?" + urllib.parse.urlencode(query_values) + view_hash
+
     def page_url_of(
         self,
-        name: str,
         page_dir: str,
         view_hash: str,
         menu_entry_number: str,
         dark_value: str,
     ) -> str:
-        page = self.browser_path_of(os.path.join(page_dir, _ENTRY_PAGE))
-        query_values = {_SCREENSHOT_DARK_URL_PARAM: dark_value}
-        if menu_entry_number:
-            query_values[_SCREENSHOT_MENU_URL_PARAM] = menu_entry_number
-        label_text = (
-            (view_hash + "&" if view_hash else "#")
-            + f"{_SCREENSHOT_URL_PARAM}={name}&"
-            + urllib.parse.urlencode(query_values)
+        page = self.browser_path_of(
+            page_dir
+            if os.path.isfile(page_dir)
+            else os.path.join(page_dir, _ENTRY_PAGE)
         )
-        query = "?" + urllib.parse.urlencode(
-            {_SCREENSHOT_URL_PARAM: label_text, **query_values}
+        address = self.page_address_of(
+            view_hash, menu_entry_number, dark_value
         )
         if self.windows_browser_is():
-            return "file://" + page.replace("\\", "/") + query + view_hash
-        return "file://" + page + query + view_hash
+            # A share path (//host/dir) names the host, a drive needs a slash.
+            slashed = page.replace("\\", "/")
+            lead = "file:" if slashed.startswith("//") else "file:///"
+            return lead + slashed + address
+        return "file://" + page + address
 
     def report_views_select(
         self,
@@ -253,6 +532,8 @@ class Screenshots:
     def shoot_all(self, prefix: str) -> int:
         written = 0
         for view_index, view in self.report_views:
+            if view.shot_flags & _SHOOT_INDEX_PAGE:
+                continue
             if view.absent_files:
                 written += self.copy_shoot(view_index, prefix, view)
             else:
@@ -261,11 +542,19 @@ class Screenshots:
                 )
         return written
 
+    def index_shoot(self, prefix: str, index_path: str) -> int:
+        written = 0
+        for view_index, view in self.report_views:
+            if view.shot_flags & _SHOOT_INDEX_PAGE:
+                written += self.view_shoot(
+                    index_path, view_index, prefix, view
+                )
+        return written
+
     def shoot_one(
         self,
         shot: str,
         page_dir: str,
-        name: str,
         view_hash: str,
         menu_entry_number: str,
         dark_value: str,
@@ -290,7 +579,7 @@ class Screenshots:
                 f"--screenshot={self.browser_path_of(out_path)}",
                 f"--virtual-time-budget={_SCREENSHOT_RENDER_BUDGET_MS}",
                 self.page_url_of(
-                    name, page_dir, view_hash, menu_entry_number, dark_value
+                    page_dir, view_hash, menu_entry_number, dark_value
                 ),
             ],
             capture_output=True,
@@ -303,79 +592,27 @@ class Screenshots:
             f" {result.stderr.strip()[-_FAULT_TAIL_CHARS:]}"
         )
 
+    # Names a shot, leaving out the resolution when the size is empty.
     def shot_name_of(
         self,
         view_index: int,
         size_name: str,
         prefix: str,
-        name: str,
+        view: ScreenshotSet,
         dark_value: str,
     ) -> str:
-        return (
-            f"{view_index:0{_SHOT_NUMBER_DIGITS}d}_{size_name}_{prefix}"
-            f"{name}{_SHOT_MODE_NAME_PARTS[dark_value]}"
-        )
-
-    def sheets_write(self, prefix: str) -> int:
-        written = 0
-        sheet_cells = _THUMBNAIL_SHEET_COLUMNS * _THUMBNAIL_SHEET_ROWS
-        for variant in _SHOT_REPORT_PERMUTATIONS:
-            shots = [
-                os.path.join(
-                    self.out_dir,
-                    self.shot_name_of(
-                        view_index,
-                        variant.size_name,
-                        prefix,
-                        view.view_name,
-                        variant.dark_value,
-                    )
-                    + _IMAGE_SUFFIX,
-                )
-                for view_index, view in self.report_views
-                if variant in view.shot_variants()
-            ]
-            for path in shots:
-                assert os.path.isfile(path), f"missing shot: {path}"
-            for sheet_index in range(math.ceil(len(shots) / sheet_cells)):
-                name = (
-                    f"thumbnail_{variant.size_name}_{prefix.rstrip('_')}"
-                    f"_{sheet_index + 1:0{_THUMBNAIL_SHEET_NUMBER_DIGITS}d}"
-                    f"{_SHOT_MODE_NAME_PARTS[variant.dark_value]}"
-                )
-                first_shot = sheet_index * sheet_cells
-                self.sheet_one(
-                    name + _IMAGE_SUFFIX,
-                    shots[first_shot : first_shot + sheet_cells],
-                )
-                written += 1
-        return written
-
-    def sheet_one(self, name: str, shots: list[str]) -> None:
-        cell_width = _THUMBNAIL_SHEET_WIDTH_PX // _THUMBNAIL_SHEET_COLUMNS
-        cell_height = _THUMBNAIL_SHEET_HEIGHT_PX // _THUMBNAIL_SHEET_ROWS
-        sheet = PIL.Image.new(
-            "RGB",
-            (_THUMBNAIL_SHEET_WIDTH_PX, _THUMBNAIL_SHEET_HEIGHT_PX),
-            _THUMBNAIL_SHEET_BACKGROUND,
-        )
-        for index, path in enumerate(shots):
-            shot = PIL.Image.open(path)
-            fit = min(cell_width / shot.width, cell_height / shot.height)
-            shot = shot.resize(
-                (round(shot.width * fit), round(shot.height * fit)),
-                PIL.Image.Resampling.LANCZOS,
+        return _SHOT_NAME_SEPARATOR.join(
+            name_part
+            for name_part in (
+                f"{view_index:0{_SHOT_NUMBER_DIGITS}d}",
+                size_name,
+                view.view_name,
+                view.subview_name,
+                prefix.rstrip("_"),
+                _SHOT_MODE_NAME_PARTS[dark_value],
             )
-            column = index % _THUMBNAIL_SHEET_COLUMNS
-            row = index // _THUMBNAIL_SHEET_COLUMNS
-            sheet.paste(
-                shot,
-                (
-                    column * cell_width + (cell_width - shot.width) // 2,
-                    row * cell_height + (cell_height - shot.height) // 2,
-                ),
-            )
-        sheet.save(os.path.join(self.out_dir, name))
+            if name_part
+        )
 
     def view_shoot(
         self,
@@ -387,16 +624,12 @@ class Screenshots:
         shot_variants = view.shot_variants()
         for variant in shot_variants:
             shot = self.shot_name_of(
-                view_index,
-                variant.size_name,
-                prefix,
-                view.view_name,
-                variant.dark_value,
+                view_index, variant.size_name, prefix, view, variant.dark_value
             )
+            self.written_shots.append(shot)
             self.shoot_one(
                 shot,
                 page_dir,
-                view.view_name,
                 view.view_hash,
                 view.menu_entry_number,
                 variant.dark_value,
@@ -424,6 +657,14 @@ def main() -> int:
     parser.add_argument("report", help="a report directory to shoot")
     parser.add_argument("prefix", help="what every file name starts with")
     parser.add_argument(
+        "--compare-gold",
+        default="",
+        metavar="DIR",
+        help="compare each new shot with the same named shot in DIR, naming"
+        " every difference and writing a compare_ image of it; exit 1 if"
+        " any shot differs or is missing",
+    )
+    parser.add_argument(
         "--diff", action="store_true", help="the report is a diff report"
     )
     parser.add_argument(
@@ -443,6 +684,14 @@ def main() -> int:
     report = os.path.abspath(namespace.report)
     if not os.path.isfile(os.path.join(report, _ENTRY_PAGE)):
         print(f"error: {report} holds no {_ENTRY_PAGE}", file=sys.stderr)
+        return 1
+
+    gold_dir = os.path.abspath(namespace.compare_gold)
+    if namespace.compare_gold and not os.path.isdir(gold_dir):
+        print(
+            f"error: --compare-gold {gold_dir} is no directory",
+            file=sys.stderr,
+        )
         return 1
 
     browser = browser_find()
@@ -478,9 +727,24 @@ def main() -> int:
     shooter = Screenshots(browser, report, report_flag, out_dir, scratch_dir)
     written = shooter.shoot_all(namespace.prefix)
 
-    shooter.sheets_write(namespace.prefix)
+    with open(
+        os.path.join(perf2html_dir, "scripts", _INDEX_TEMPLATE_NAME)
+    ) as template_file:
+        index_template = template_file.read()
+    shooter.index_write(
+        namespace.prefix,
+        os.path.join(perf2html_dir, _INDEX_PAGE_NAME),
+        index_template,
+    )
+    written += shooter.index_shoot(
+        namespace.prefix, os.path.join(perf2html_dir, _INDEX_PAGE_NAME)
+    )
     if namespace.verbose:
         print(f"{written} screenshot(s)")
+    if namespace.compare_gold and not shooter.gold_compare(
+        gold_dir, namespace.prefix, namespace.verbose
+    ):
+        return 1
     return 0
 
 

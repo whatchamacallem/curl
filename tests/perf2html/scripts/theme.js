@@ -33,6 +33,10 @@ window.report_ui_ = window.try_catch_handler_(function () {
   const NUMBER_LARGEST_PRINTED_MULTIPLE_TIMES = settings_(
     "NUMBER_LARGEST_PRINTED_MULTIPLE_TIMES",
   );
+  const SETTINGS_DEBUG_HASH_KEY_NAME = settings_(
+    "SETTINGS_DEBUG_HASH_KEY_NAME",
+  );
+  const SETTINGS_VIEW_ENTRY = settings_("SETTINGS_VIEW_ENTRY");
   const STORAGE_KEY_VIEW_DARK_MODE = settings_("STORAGE_KEY_VIEW_DARK_MODE");
   const STORAGE_KEY_VIEW_SCALE = settings_("STORAGE_KEY_VIEW_SCALE");
   const STORAGE_OWNED_KEYS = settings_("STORAGE_OWNED_KEYS");
@@ -107,12 +111,15 @@ window.report_ui_ = window.try_catch_handler_(function () {
     "file",
     "line",
     "function",
-    "profiler_path",
+    "localProfilePath",
+    "setting",
+    SETTINGS_DEBUG_HASH_KEY_NAME,
   ];
   const ADDRESS_VIEW_KEY_NAMES = new Map([
     [CALLERS_VIEW_KEY, []],
-    [FLAME_GRAPH_VIEW_ENTRY[0], ["profiler_path"]],
+    [FLAME_GRAPH_VIEW_ENTRY[0], ["localProfilePath"]],
     [HEAT_MAP_VIEW_ENTRY[0], ["file", "line", "function"]],
+    [SETTINGS_VIEW_ENTRY[0], ["setting"]],
   ]);
   const CH_UNIT_GLYPH = "0";
   const DESIGN_SCALE_LAST_STOP = STYLE_DESIGN_SCALE_STOP_COUNT - 1;
@@ -133,6 +140,9 @@ window.report_ui_ = window.try_catch_handler_(function () {
   const SMALLEST_PRINTED_PERCENT = 1 / 10 ** NUMBER_FRACTION_DIGITS;
   const STRIP_ENTRY_KIND_NAMES = ["action", "link", "pulldown", "text"];
   const STRIP_GAP_TEXT = window.ui_strings_.text_of("str_strip_gap");
+  const STRIP_STATUS_SEPARATOR_TEXT = window.ui_strings_.text_of(
+    "str_menu_status_separator",
+  );
   const TABLE_HEADING_COUNT_BOX_WIDTH_CHARS =
     Math.max(
       ...TABLE_ROW_COUNT_CHOICES.map((row_count) => String(row_count).length),
@@ -164,7 +174,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
     },
   };
 
-  const is_framed = window.parent !== window;
+  const is_framed = window.shared_is_framed_;
   const home_panel = document.getElementById("overview-home-");
   const view_frame = document.getElementById("overview-view-frame-");
   const is_scaled = !is_framed && !!home_panel;
@@ -285,13 +295,15 @@ window.report_ui_ = window.try_catch_handler_(function () {
     }
     return design_scale_stop_nearest(stored_multiple);
   }
-  // Moves the scale to a stop and stores the scale itself, not the stop.
+  // Moves the scale to a stop, null the default, storing the scale itself.
   function design_scale_stop_set(scale_stop) {
-    design_scale_stop_check(scale_stop);
-    design_scale_stop = scale_stop;
+    const shown_stop =
+      scale_stop === null ? STYLE_DESIGN_SCALE_DEFAULT_STOP : scale_stop;
+    design_scale_stop_check(shown_stop);
+    design_scale_stop = shown_stop;
     view_storage.value_write(
       STORAGE_KEY_VIEW_SCALE,
-      design_scale_multiple_of(scale_stop),
+      scale_stop === null ? null : design_scale_multiple_of(scale_stop),
     );
     design_scale_settle();
   }
@@ -352,15 +364,25 @@ window.report_ui_ = window.try_catch_handler_(function () {
   function dark_mode_enabled_now_() {
     return dark_mode_is_enabled;
   }
-  function dark_mode_set_(is_enabled) {
-    const state_value = is_enabled
-      ? DARK_MODE_ENABLED_VALUE
-      : DARK_MODE_DISABLED_VALUE;
+  function dark_mode_state_of(is_enabled) {
+    return is_enabled ? DARK_MODE_ENABLED_VALUE : DARK_MODE_DISABLED_VALUE;
+  }
+  // Shows a dark mode on the page, storing nothing.
+  function dark_mode_show(is_enabled) {
     dark_mode_is_enabled = is_enabled;
-    view_storage.value_write(STORAGE_KEY_VIEW_DARK_MODE, state_value);
     document.documentElement.setAttribute(
       DARK_MODE_ATTRIBUTE_NAME,
-      state_value,
+      dark_mode_state_of(is_enabled),
+    );
+  }
+  // Stores the dark mode the user chose, null the default, then shows it.
+  function dark_mode_set_(is_enabled) {
+    view_storage.value_write(
+      STORAGE_KEY_VIEW_DARK_MODE,
+      is_enabled === null ? null : dark_mode_state_of(is_enabled),
+    );
+    dark_mode_show(
+      is_enabled === null ? DARK_MODE_ENABLED_DEFAULT : is_enabled,
     );
   }
   function dark_mode_stored_enabled_() {
@@ -375,7 +397,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
     );
   }
   function dark_mode_stored_apply_() {
-    dark_mode_set_(dark_mode_stored_enabled_());
+    dark_mode_show(dark_mode_stored_enabled_());
   }
 
   function rounded_units(value, digit_count) {
@@ -450,7 +472,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
     } else {
       amount_text = fixed_text(times, NUMBER_FRACTION_DIGITS) + "x";
     }
-    if (!is_line) return arrow + " " + amount_text;
+    if (!is_line) return arrow + amount_text;
     return arrow + amount_text.padStart(SIGNED_PERCENT_AMOUNT_CHARS);
   }
   function zero_percent_text() {
@@ -494,7 +516,9 @@ window.report_ui_ = window.try_catch_handler_(function () {
         throw address_error("str_error_hash_value_empty", [key_name]);
     }
     const is_home = ADDRESS_KEY_NAMES.every(
-      (key_name) => parsed_address[key_name] === null,
+      (key_name) =>
+        parsed_address[key_name] === null ||
+        key_name === SETTINGS_DEBUG_HASH_KEY_NAME,
     );
     if (parsed_address.test === null && !is_home)
       throw address_error("str_error_hash_test_missing", []);
@@ -510,6 +534,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
     for (const key_name of ADDRESS_KEY_NAMES.slice(2)) {
       if (
         parsed_address[key_name] !== null &&
+        key_name !== SETTINGS_DEBUG_HASH_KEY_NAME &&
         !ADDRESS_VIEW_KEY_NAMES.get(parsed_address.view).includes(key_name)
       )
         throw address_error("str_error_hash_part_misplaced", [
@@ -558,12 +583,19 @@ window.report_ui_ = window.try_catch_handler_(function () {
       parsed_address.line = Number(parsed_address.line);
     return Object.freeze(parsed_address);
   }
+  // Writes a hash, carrying the settings the page's own hash applies.
   function address_hash_of(partial_address) {
+    const full_address = {
+      ...partial_address,
+      [SETTINGS_DEBUG_HASH_KEY_NAME]:
+        partial_address[SETTINGS_DEBUG_HASH_KEY_NAME] ??
+        address_of_hash(location.hash)[SETTINGS_DEBUG_HASH_KEY_NAME],
+    };
     const hash_parts = [];
     for (const key_name of ADDRESS_KEY_NAMES) {
-      if (partial_address[key_name] == null) continue;
+      if (full_address[key_name] == null) continue;
       hash_parts.push(
-        `${key_name}=${hash_value_encode(String(partial_address[key_name]))}`,
+        `${key_name}=${hash_value_encode(String(full_address[key_name]))}`,
       );
     }
     return "#" + hash_parts.join("&");
@@ -572,7 +604,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
     return address_hash_of({
       test: test_name,
       view: view_key,
-      profiler_path:
+      localProfilePath:
         view_key === FLAME_GRAPH_VIEW_ENTRY[0]
           ? FLAME_GRAPH_LOCAL_PROFILE_PATH
           : null,
@@ -591,21 +623,32 @@ window.report_ui_ = window.try_catch_handler_(function () {
   function address_link_hash_of(click_event) {
     const link_element = click_event.target.closest('a[href^="#"]');
     return link_element && !link_element.target && click_is_plain(click_event)
-      ? link_element.getAttribute("href")
+      ? address_hash_of(address_of_hash(link_element.getAttribute("href")))
       : "";
   }
   function address_page_href_of(checked_address) {
     if (checked_address.view === CALLERS_VIEW_KEY)
       return encodeURIComponent(checked_address.test) + "/index.html";
     if (checked_address.view === HEAT_MAP_VIEW_ENTRY[0])
-      return HEAT_MAP_VIEW_ENTRY[2];
+      return HEAT_MAP_VIEW_ENTRY[1];
     if (checked_address.view === FLAME_GRAPH_VIEW_ENTRY[0])
-      return FLAME_GRAPH_VIEW_ENTRY[2];
+      return FLAME_GRAPH_VIEW_ENTRY[1];
+    if (checked_address.view === SETTINGS_VIEW_ENTRY[0])
+      return SETTINGS_VIEW_ENTRY[1];
     throw address_error("str_error_hash_view_unknown", [checked_address.view]);
   }
+  // Answers the link to the top page at a hash, the address the menu shows.
+  function address_top_href_of(hash) {
+    return REPORT_TOP_PAGE_HREF + hash;
+  }
   function address_request_send(hash) {
-    if (is_framed) parent_post({ report_ui: "address_request", hash });
-    else location.assign(REPORT_TOP_PAGE_HREF + hash);
+    const carried_hash = address_hash_of(address_of_hash(hash));
+    if (is_framed)
+      parent_post({ report_ui: "address_request", hash: carried_hash });
+    else location.assign(address_top_href_of(carried_hash));
+  }
+  function settings_apply_send(setting_name, setting_value) {
+    parent_post({ report_ui: "settings_apply", setting_name, setting_value });
   }
 
   function pulldown_key_is_command(key_name) {
@@ -692,28 +735,30 @@ window.report_ui_ = window.try_catch_handler_(function () {
       );
     }
     parent_listen((message_data) => {
-      if (message_data === "report_ui:layout_reset") {
+      const message_name = message_data.report_ui;
+      if (message_name === "layout_reset") {
         layout_reset();
-        dark_mode_stored_apply_();
+        dark_mode_show(message_data.dark_mode_enabled);
         if (view_options.dark_mode_apply) view_options.dark_mode_apply();
         if (view_options.preferences_apply) view_options.preferences_apply();
-      } else if (message_data === "report_ui:dark_mode_apply") {
-        dark_mode_stored_apply_();
+      } else if (message_name === "dark_mode_show") {
+        dark_mode_show(message_data.dark_mode_enabled);
+        if (view_options.dark_mode_arrive) view_options.dark_mode_arrive();
+      } else if (message_name === "dark_mode_apply") {
+        dark_mode_show(message_data.dark_mode_enabled);
         if (view_options.dark_mode_apply) view_options.dark_mode_apply();
-      } else if (message_data === "report_ui:recenter") {
+      } else if (message_name === "recenter") {
         if (view_options.recenter) view_options.recenter();
-      } else if (message_data === "report_ui:tests_pulldown_closed")
+      } else if (message_name === "tests_pulldown_closed")
         view_key_tests_pulldown_closed();
-      else if (
-        typeof message_data === "string" &&
-        message_data.startsWith("report_ui:")
-      )
+      else if (message_name !== "settings_relay")
         throw new Error(
           window.ui_strings_.text_fill("str_error_message_tag_unknown", [
-            message_data,
+            message_name,
           ]),
         );
     });
+    parent_post({ report_ui: "dark_mode_request" });
   }
 
   function pulldown_pattern_of(search_text) {
@@ -732,12 +777,40 @@ window.report_ui_ = window.try_catch_handler_(function () {
   }
   // Turns a cell into a text pulldown whose typed box is the cell itself.
   function pulldown_attach(root_element, pulldown_options) {
-    const entry_box = document.createElement("span");
-    const entry_list = document.createElement("span");
-    const label_box = document.createElement("span");
-    const list_scrollbar = document.createElement("span");
-    const no_match_note = document.createElement("span");
-    const search_box = document.createElement("span");
+    const element_render = window.shared_element_render_;
+    root_element.innerHTML =
+      element_render("span", {}, "") +
+      element_render(
+        "span",
+        {
+          class: "menu-pulldown-search-box-",
+          style: `width:${pulldown_options.box_width_chars}ch`,
+        },
+        "",
+      ) +
+      element_render(
+        "span",
+        { class: "menu-pulldown-entry-box-" },
+        element_render(
+          "span",
+          { class: "menu-pulldown-entry-list-", role: "listbox" },
+          "",
+        ) +
+          element_render(
+            "span",
+            { class: "page-text-scrollbar- vertical-", "aria-hidden": "true" },
+            "",
+          ),
+      );
+    const [label_box, search_box, entry_box] = root_element.children;
+    const [entry_list, list_scrollbar] = entry_box.children;
+    const no_match_note = window.shared_element_of_(
+      element_render(
+        "span",
+        {},
+        window.shared_html_escape_(window.ui_strings_.text_of("str_no_match")),
+      ),
+    );
     let entries = [],
       entries_line_number = 0,
       highlight_index = 0,
@@ -809,7 +882,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
     function pulldown_open(typed_text) {
       is_open = true;
       search_text = typed_text;
-      root_element.classList.add("open_");
+      root_element.classList.add("open-");
       root_element.setAttribute("aria-expanded", "true");
       label_box.hidden = true;
       search_box.hidden = false;
@@ -821,7 +894,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
     function closed_show() {
       is_open = false;
       search_text = "";
-      root_element.classList.remove("open_");
+      root_element.classList.remove("open-");
       root_element.setAttribute("aria-expanded", "false");
       label_box.hidden = false;
       search_box.hidden = true;
@@ -865,20 +938,10 @@ window.report_ui_ = window.try_catch_handler_(function () {
       return true;
     }
 
-    search_box.className = "menu-pulldown-search-box-";
-    search_box.style.width = pulldown_options.box_width_chars + "ch";
-    entry_list.className = "menu-pulldown-entry-list-";
-    entry_list.setAttribute("role", "listbox");
-    list_scrollbar.className = "page-text-scrollbar- vertical_";
-    list_scrollbar.setAttribute("aria-hidden", "true");
-    no_match_note.textContent = window.ui_strings_.text_of("str_no_match");
-    entry_box.className = "menu-pulldown-entry-box-";
-    entry_box.append(entry_list, list_scrollbar);
     root_element.classList.add("menu-pulldown-");
     root_element.setAttribute("role", "combobox");
     root_element.setAttribute("aria-haspopup", "listbox");
     root_element.tabIndex = 0;
-    root_element.append(label_box, search_box, entry_box);
     closed_show();
     const list_scrollbar_handle = text_scrollbar_attach(
       list_scrollbar,
@@ -907,8 +970,19 @@ window.report_ui_ = window.try_catch_handler_(function () {
     root_element.addEventListener(
       "focusout",
       window.try_catch_handler_((focus_event) => {
-        if (is_open && !root_element.contains(focus_event.relatedTarget))
-          pulldown_close();
+        if (!is_open || root_element.contains(focus_event.relatedTarget))
+          return;
+        // A page losing focus to another frame or window keeps the list open.
+        setTimeout(
+          window.try_catch_handler_(() => {
+            if (
+              is_open &&
+              document.hasFocus() &&
+              !root_element.contains(document.activeElement)
+            )
+              pulldown_close();
+          }),
+        );
       }),
     );
     entry_box.addEventListener("mousedown", default_prevent);
@@ -971,22 +1045,24 @@ window.report_ui_ = window.try_catch_handler_(function () {
       label: shown_text,
     });
   }
-  function strip_widget_draw(widget_box, widget_text) {
-    widget_box.replaceChildren(
-      ...Array.from(widget_text, (widget_character) => {
-        const character_span = document.createElement("span");
-        character_span.textContent = widget_character;
-        return character_span;
-      }),
+  function strip_widget_cells_markup(widget_text) {
+    return Array.from(widget_text, (widget_character) =>
+      window.shared_element_render_(
+        "span",
+        {},
+        window.shared_html_escape_(widget_character),
+      ),
+    ).join("");
+  }
+  function strip_gap_cell_render() {
+    return window.shared_element_render_(
+      "td",
+      { class: "menu-strip-gap-" },
+      window.shared_html_escape_(STRIP_GAP_TEXT),
     );
   }
-  function strip_gap_cell_of() {
-    const gap_cell = document.createElement("td");
-    gap_cell.className = "menu-strip-gap-";
-    gap_cell.textContent = STRIP_GAP_TEXT;
-    return gap_cell;
-  }
-  function strip_cell_of(entry, label_parts) {
+  // Writes an entry cell, a title as page emphasis, else a menu button.
+  function strip_cell_render(entry, label_markup) {
     if (!STRIP_ENTRY_KIND_NAMES.includes(entry.kind))
       throw new Error(
         window.ui_strings_.text_fill("str_error_strip_entry_kind_unknown", [
@@ -994,43 +1070,52 @@ window.report_ui_ = window.try_catch_handler_(function () {
           entry.kind,
         ]),
       );
-    const entry_cell = document.createElement("td");
-    entry_cell.className = "menu-button-";
-    entry_cell.setAttribute("data-entry-name-", entry.name);
-    if (!entry.is_available) {
-      entry_cell.append(...label_parts);
-      return entry_cell;
-    }
-    if (entry.kind !== "text" && !entry.is_widget) entry_cell.tabIndex = 0;
-    if (entry.kind === "action") entry_cell.setAttribute("role", "button");
-    if (entry.kind === "link") {
-      const entry_link = document.createElement("a");
-      entry_link.setAttribute("href", entry.href);
-      if (entry.opens_new_tab) entry_link.setAttribute("target", "_blank");
-      entry_link.tabIndex = -1;
-      entry_link.append(...label_parts);
-      entry_cell.append(entry_link);
-    } else if (entry.kind !== "pulldown") entry_cell.append(...label_parts);
-    if (!entry.is_widget) return entry_cell;
-    const widget_box = document.createElement("span");
-    widget_box.className = "menu-button-widget-";
-    strip_widget_draw(widget_box, entry.widget_text);
-    entry_cell.append(STRIP_GAP_TEXT, widget_box);
-    return entry_cell;
+    const name_attributes = { "data-entry-name-": entry.name };
+    if (entry.kind === "text")
+      return window.shared_page_emphasis_render_(label_markup, {
+        tag_name: "td",
+        attributes: name_attributes,
+      });
+    const shown_markup =
+      entry.kind === "pulldown" && entry.is_available ? "" : label_markup;
+    const widget_markup = entry.is_widget
+      ? window.shared_html_escape_(STRIP_GAP_TEXT) +
+        window.shared_element_render_(
+          "span",
+          { class: "menu-button-widget-" },
+          strip_widget_cells_markup(entry.widget_text),
+        )
+      : "";
+    return window.shared_menu_button_render_(
+      entry.kind,
+      shown_markup + widget_markup,
+      {
+        tag_name: "td",
+        href: entry.href,
+        opens_new_tab: entry.opens_new_tab,
+        is_unavailable: !entry.is_available,
+        is_widget: entry.is_widget,
+        attributes: name_attributes,
+      },
+    );
   }
-  // Draws the status bar, one cell of links apart from the entry cells.
-  function strip_status_cell_of(status_entries) {
-    const status_cell = document.createElement("td");
-    status_cell.className = "menu-status-bar-";
-    status_cell.append(STRIP_GAP_TEXT);
-    status_entries.forEach((status_entry, status_index) => {
-      if (status_index) status_cell.append(STRIP_GAP_TEXT);
-      const status_link = document.createElement("a");
-      status_link.setAttribute("href", status_entry.href);
-      status_link.textContent = status_entry.label;
-      status_cell.append(status_link);
-    });
-    return status_cell;
+  // Writes the status bar, one cell of links apart from the entry cells.
+  function strip_status_cell_render(status_entries) {
+    const link_markups = status_entries.map((status_entry) =>
+      window.shared_element_render_(
+        "a",
+        { href: status_entry.href },
+        window.shared_html_escape_(status_entry.label),
+      ),
+    );
+    return window.shared_element_render_(
+      "td",
+      { class: "menu-status-bar-" },
+      window.shared_html_escape_(STRIP_GAP_TEXT) +
+        link_markups.join(
+          window.shared_html_escape_(STRIP_STATUS_SEPARATOR_TEXT),
+        ),
+    );
   }
   // Renders a whole strip again from its entries, the one door for its cells.
   function strip_render(strip_element, entries, status_entries) {
@@ -1039,8 +1124,8 @@ window.report_ui_ = window.try_catch_handler_(function () {
     const entries_by_name = new Map();
     const previous_strip = rendered_strips.get(strip_element);
     const pulldowns_by_name = new Map();
-    const strip_table = document.createElement("table");
-    const strip_row = strip_table.createTBody().insertRow();
+    const row_markups = [];
+    let strip_row = null;
 
     function strip_cell_named(entry_name) {
       if (!cells_by_name.has(entry_name))
@@ -1096,9 +1181,9 @@ window.report_ui_ = window.try_catch_handler_(function () {
     }
     function strip_flash(entry_name) {
       const entry_cell = strip_cell_named(entry_name);
-      entry_cell.classList.add("flash_");
+      entry_cell.classList.add("flash-");
       setTimeout(
-        window.try_catch_handler_(() => entry_cell.classList.remove("flash_")),
+        window.try_catch_handler_(() => entry_cell.classList.remove("flash-")),
         MENU_FLASH_DURATION_MS,
       );
     }
@@ -1146,7 +1231,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
         ".menu-button-widget-",
       );
       if (!widget_box) throw strip_entry_unusable(entry_name, "widget");
-      strip_widget_draw(widget_box, widget_text);
+      widget_box.innerHTML = strip_widget_cells_markup(widget_text);
     }
 
     if (previous_strip) previous_strip.reset();
@@ -1158,17 +1243,20 @@ window.report_ui_ = window.try_catch_handler_(function () {
           ]),
         );
       entries_by_name.set(entry.name, entry);
-      const label_parts =
-        typeof entry.label === "string"
-          ? [strip_label_text_of(entries, entry.name)]
-          : entry.label;
-      const entry_cell = strip_cell_of(entry, label_parts);
-      if (strip_row.cells.length) strip_row.append(strip_gap_cell_of());
-      strip_row.append(entry_cell);
-      cells_by_name.set(entry.name, entry_cell);
+      const label_markup =
+        entry.label_markup === null
+          ? window.shared_html_escape_(
+              strip_label_text_of(entries, entry.name),
+            )
+          : entry.label_markup;
+      if (row_markups.length) row_markups.push(strip_gap_cell_render());
+      row_markups.push(strip_cell_render(entry, label_markup));
     }
     if (status_entries.length)
-      strip_row.append(strip_status_cell_of(status_entries));
+      row_markups.push(
+        strip_gap_cell_render(),
+        strip_status_cell_render(status_entries),
+      );
     entries
       .filter((entry) => entry.is_numbered)
       .forEach((entry, numbered_index) => {
@@ -1179,7 +1267,26 @@ window.report_ui_ = window.try_catch_handler_(function () {
         )
           digit_entries.set(strip_number_text_of(numbered_index), entry);
       });
-    strip_table.className = "menu-strip-table-";
+    if (strip_element.contains(document.activeElement))
+      document.activeElement.blur();
+    strip_element.innerHTML = window.shared_element_render_(
+      "table",
+      { class: "menu-strip-table-" },
+      window.shared_element_render_(
+        "tbody",
+        {},
+        window.shared_element_render_("tr", {}, row_markups.join("")),
+      ),
+    );
+    const strip_table = strip_element.firstElementChild;
+    strip_row = strip_table.tBodies[0].rows[0];
+    for (const entry_cell of strip_row.cells) {
+      if (entry_cell.hasAttribute("data-entry-name-"))
+        cells_by_name.set(
+          entry_cell.getAttribute("data-entry-name-"),
+          entry_cell,
+        );
+    }
     strip_table.addEventListener(
       "click",
       window.try_catch_handler_(entry_click_take),
@@ -1188,9 +1295,6 @@ window.report_ui_ = window.try_catch_handler_(function () {
       "keydown",
       window.try_catch_handler_(entry_key_take),
     );
-    if (strip_element.contains(document.activeElement))
-      document.activeElement.blur();
-    strip_element.replaceChildren(strip_table);
     for (const entry of entries) {
       if (entry.kind !== "pulldown" || !entry.is_available) continue;
       const pulldown = pulldown_attach(
@@ -1320,12 +1424,102 @@ window.report_ui_ = window.try_catch_handler_(function () {
     const sample_cells = [...(title_row || body_rows[0]).cells];
     const markdown_columns = sample_cells.map((sample_cell) => ({
       label: title_row ? sample_cell.textContent : "",
-      numeric: sample_cell.classList.contains("numeric_"),
+      numeric: sample_cell.classList.contains("numeric-"),
     }));
     const markdown_rows = body_rows.map((body_row) =>
       [...body_row.cells].map((body_cell) => body_cell.textContent),
     );
     return table_markdown(markdown_columns, markdown_rows);
+  }
+  function table_cell_render(cell, column) {
+    const cell_attributes = {};
+    const class_names = [column.numeric ? "numeric-" : "", column.cls || ""]
+      .filter(Boolean)
+      .join(" ");
+    if (class_names) cell_attributes.class = class_names;
+    if (cell.style) cell_attributes.style = cell.style;
+    return window.shared_element_render_(
+      "td",
+      cell_attributes,
+      cell.html != null ? cell.html : window.shared_html_escape_(cell.text),
+    );
+  }
+  // Writes columns and rows as a table, the one table writer in JS.
+  function table_render(table_key, columns, rows, table_options) {
+    const element_render = window.shared_element_render_;
+    const cell_rows = rows.map((row) => row.map(cell_normalize));
+    const grow_index = table_options.fill
+      ? columns.findIndex((column) => column.grow)
+      : -1;
+    const column_limit_list = column_extents(
+      columns,
+      cell_rows,
+      grow_index,
+    ).map(column_limits);
+    const column_markup = column_limit_list
+      .map((limit, column_index) => {
+        const width_text = column_width_text(
+          column_limit_list,
+          column_index,
+          grow_index,
+        );
+        return element_render(
+          "col",
+          { "data-min-": `${limit[0]}ch`, style: `width:${width_text}` },
+          null,
+        );
+      })
+      .join("");
+    const title_markup = columns
+      .map((column) =>
+        element_render(
+          "th",
+          {
+            ...(column.numeric ? { class: "numeric-" } : {}),
+            title: column.label,
+          },
+          window.shared_html_escape_(column.label),
+        ),
+      )
+      .join("");
+    const body_markup = cell_rows
+      .map((row, row_index) => {
+        const row_href =
+          table_options.row_href && table_options.row_href[row_index];
+        const row_attributes = row_href
+          ? { class: "row-link-", "data-href-": row_href }
+          : table_options.row_attributes
+            ? table_options.row_attributes[row_index]
+            : {};
+        return element_render(
+          "tr",
+          row_attributes,
+          row
+            .map((cell, column_index) =>
+              table_cell_render(cell, columns[column_index]),
+            )
+            .join(""),
+        );
+      })
+      .join("");
+    const table_markup = element_render(
+      "div",
+      { class: "table-columns-" },
+      element_render(
+        "table",
+        {
+          class: ["columns-", table_options.cls || ""]
+            .filter(Boolean)
+            .join(" "),
+          "data-key-": table_key,
+        },
+        element_render("colgroup", {}, column_markup) +
+          element_render("thead", {}, element_render("tr", {}, title_markup)) +
+          element_render("tbody", {}, body_markup),
+      ),
+    );
+    if (table_options.bare) return table_markup;
+    return element_render("div", { class: "table-box-" }, table_markup);
   }
   // Fills each marker with its markup, refusing a marker the template lacks.
   function template_fill(template_text, marker_values) {
@@ -1475,7 +1669,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
   function offsets_align(scroll_container) {
     let stacked_top_px = 0;
     for (const band_element of scroll_container.querySelectorAll(
-      ":scope > .band_",
+      ":scope > .band-",
     )) {
       band_element.style.top = stacked_top_px + "px";
       stacked_top_px += design_px(band_element.getBoundingClientRect().height);
@@ -1490,7 +1684,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
   }
   function layout_refresh(root_element) {
     root_element = root_element || document.body;
-    const band_elements = [...root_element.querySelectorAll(".band_")];
+    const band_elements = [...root_element.querySelectorAll(".band-")];
     new Set(
       band_elements.map((band_element) => band_element.parentElement),
     ).forEach(offsets_align);
@@ -1504,19 +1698,17 @@ window.report_ui_ = window.try_catch_handler_(function () {
   function layout_activate(root_element) {
     root_element = root_element || document.body;
     const table_elements = root_element.querySelectorAll(
-      ".table-columns- > table.columns_",
+      ".table-columns- > table.columns-",
     );
     for (const table_element of table_elements) {
       table_slide_attach(table_element);
       if (table_element.tBodies[0].querySelector("a[href]"))
         table_rows_attach(table_element, "tr");
     }
-    const heading_elements = root_element.querySelectorAll(
-      ".page-heading-:has(+ .table-box-)",
-    );
+    const heading_elements = root_element.querySelectorAll(".page-heading-");
     for (const heading_element of heading_elements) {
       if (!attached_headings.has(heading_element))
-        table_heading_attach(heading_element, []);
+        page_heading_attach(heading_element, []);
     }
     const bar_elements = root_element.querySelectorAll(
       ":has(> .page-text-scroll-box-) > .page-text-scrollbar-",
@@ -1770,18 +1962,22 @@ window.report_ui_ = window.try_catch_handler_(function () {
   }
   // Makes one pulldown entry element per choice of a label and a value.
   function strip_choice_entries_of(choices) {
-    return choices.map((choice) => {
-      const entry_element = document.createElement("span");
-      entry_element.setAttribute("data-entry-value-", choice.value);
-      entry_element.textContent = choice.label;
-      return entry_element;
-    });
+    return choices.map((choice) =>
+      window.shared_element_of_(
+        window.shared_element_render_(
+          "span",
+          { "data-entry-value-": choice.value },
+          window.shared_html_escape_(choice.label),
+        ),
+      ),
+    );
   }
   // Fills every strip entry field the caller leaves out.
   function strip_entry_make(entry_name, kind_name, label, entry_fields) {
     return {
       name: entry_name,
       label,
+      label_markup: null,
       kind: kind_name,
       is_numbered: false,
       is_available: true,
@@ -1794,8 +1990,8 @@ window.report_ui_ = window.try_catch_handler_(function () {
       ...entry_fields,
     };
   }
-  // Turns a heading over a table into cells: title, count, extras and copy.
-  function table_heading_attach(heading_element, extra_entries) {
+  // Shows a heading title as page emphasis, over a table as the strip's title.
+  function page_heading_attach(heading_element, extra_entries) {
     const heading_text = heading_element.textContent;
     if (attached_headings.has(heading_element))
       throw new Error(
@@ -1803,22 +1999,30 @@ window.report_ui_ = window.try_catch_handler_(function () {
           heading_text,
         ]),
       );
+    const title_markup = heading_element.innerHTML;
+    const count_key = heading_element.getAttribute("data-row-count-key-");
+    const count_span_of = () =>
+      heading_element.querySelector(".page-heading-row-count-");
     const table_box = heading_element.nextElementSibling;
     const table_element =
       table_box && table_box.matches(".table-box-")
-        ? table_box.querySelector(":scope > .table-columns- > table.columns_")
+        ? table_box.querySelector(":scope > .table-columns- > table.columns-")
         : null;
-    if (!table_element)
+    if (!table_element && (count_key !== null || extra_entries.length))
       throw new Error(
         window.ui_strings_.text_fill("str_error_heading_table_missing", [
           heading_text,
         ]),
       );
-    const count_key = heading_element.getAttribute("data-row-count-key-");
-    const count_span = heading_element.querySelector(
-      ".page-heading-row-count-",
-    );
-    if (count_key !== null && !count_span)
+    if (!table_element) {
+      heading_element.innerHTML = window.shared_page_emphasis_render_(
+        title_markup,
+        { tag_name: "span" },
+      );
+      attached_headings.set(heading_element, { reset: () => {} });
+      return;
+    }
+    if (count_key !== null && !count_span_of())
       throw new Error(
         window.ui_strings_.text_fill("str_error_heading_count_missing", [
           heading_text,
@@ -1828,11 +2032,10 @@ window.report_ui_ = window.try_catch_handler_(function () {
     const default_count =
       count_key === null
         ? 0
-        : row_count_checked(count_key, Number(count_span.textContent));
+        : row_count_checked(count_key, Number(count_span_of().textContent));
     const table_body = table_element.tBodies[0];
     const all_rows = [...table_body.rows];
     const copy_text = window.ui_strings_.text_of("str_table_heading_copy");
-    const title_nodes = [...heading_element.childNodes];
     const row_count_options = {
       box_width_chars: TABLE_HEADING_COUNT_BOX_WIDTH_CHARS,
       entries_of: row_count_entries_of,
@@ -1845,7 +2048,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
 
     function rows_show(row_count) {
       shown_count = row_count;
-      count_span.textContent = String(row_count);
+      count_span_of().textContent = String(row_count);
       all_rows.forEach((table_row, row_index) => {
         if (row_index >= row_count) table_row.remove();
         else if (table_row.parentElement !== table_body)
@@ -1881,7 +2084,9 @@ window.report_ui_ = window.try_catch_handler_(function () {
       strip_handle = strip_render(
         heading_element,
         [
-          strip_entry_make("title", "text", title_nodes),
+          strip_entry_make("title", "text", heading_text, {
+            label_markup: title_markup,
+          }),
           ...count_entries,
           ...extra_entries,
           strip_entry_make("copy", "action", copy_text, {
@@ -1890,6 +2095,8 @@ window.report_ui_ = window.try_catch_handler_(function () {
         ],
         [],
       );
+      if (count_key !== null)
+        count_span_of().textContent = String(shown_count);
     }
     // Shows the stored count, or the printed one, and renders the cells again.
     function heading_reset() {
@@ -1905,9 +2112,10 @@ window.report_ui_ = window.try_catch_handler_(function () {
     heading_reset();
   }
 
+  // Stores null in every owned key, each preference one the user never set.
   function storage_sweep() {
     for (const storage_key of STORAGE_OWNED_KEYS) {
-      localStorage.removeItem(storage_key);
+      localStorage.setItem(storage_key, JSON.stringify(null));
     }
   }
   function storage_version_check() {
@@ -1939,10 +2147,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
     value_write(storage_key, stored_value) {
       storage_version_check();
       try {
-        if (stored_value == null) localStorage.removeItem(storage_key);
-        else {
-          localStorage.setItem(storage_key, JSON.stringify(stored_value));
-        }
+        localStorage.setItem(storage_key, JSON.stringify(stored_value));
       } catch (storage_error) {}
     },
   };
@@ -2016,7 +2221,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
 
   function text_scrollbar_axis_of(bar_element) {
     const axis_names = Object.keys(TEXT_SCROLLBAR_AXES).filter((axis_name) =>
-      bar_element.classList.contains(axis_name + "_"),
+      bar_element.classList.contains(axis_name + "-"),
     );
     if (axis_names.length !== 1)
       throw new Error(
@@ -2066,9 +2271,13 @@ window.report_ui_ = window.try_catch_handler_(function () {
     const taken_wheel_events = wheel_taken_events[axis_name];
     let press_state = null;
     function cell_make() {
-      const cell_element = document.createElement("span");
-      cell_element.textContent = gutter_text;
-      return cell_element;
+      return window.shared_element_of_(
+        window.shared_element_render_(
+          "span",
+          {},
+          window.shared_html_escape_(gutter_text),
+        ),
+      );
     }
     // Measures in characters, null when the bar is not laid out.
     function geometry_of() {
@@ -2185,7 +2394,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
       if (!bar_geometry) return;
       press_event.preventDefault();
       bar_element.setPointerCapture(press_event.pointerId);
-      bar_element.classList.add("drag_");
+      bar_element.classList.add("drag-");
       let grab_offset = 0;
       if (bar_geometry.is_scrolling) {
         const pointer_cells = pointer_cells_of(press_event, bar_geometry);
@@ -2221,7 +2430,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
       )
         return;
       press_state = null;
-      bar_element.classList.remove("drag_");
+      bar_element.classList.remove("drag-");
       click_swallow_next();
     });
     const wheel_take = window.try_catch_handler_((wheel_event) => {
@@ -2411,13 +2620,11 @@ window.report_ui_ = window.try_catch_handler_(function () {
       of_hash: address_of_hash,
       page_href_of: address_page_href_of,
       request: address_request_send,
+      top_href_of: address_top_href_of,
     },
-    cell_normalize,
-    column_extents,
-    column_limits,
-    column_width_text,
     dark_mode_enabled_now_,
     dark_mode_set_,
+    dark_mode_show_: dark_mode_show,
     design_px,
     design_scale_last_stop: DESIGN_SCALE_LAST_STOP,
     design_scale_stop_now,
@@ -2430,21 +2637,22 @@ window.report_ui_ = window.try_catch_handler_(function () {
     layout_refresh,
     layout_reset,
     listeners_bind,
+    page_heading: { attach: page_heading_attach },
     pane_splitter: { attach: pane_splitter_attach },
     percent_text,
     ramp_channels_at,
     resize_settle_register,
+    settings_apply_send,
     signed_human_text,
     signed_percent_text,
     strip: {
       choice_entries_of: strip_choice_entries_of,
       entry_make: strip_entry_make,
-      label_text_of: strip_label_text_of,
       render: strip_render,
     },
     tab_stop_move,
-    table_heading: { attach: table_heading_attach },
     table_markdown,
+    table_render,
     table_rows: {
       attach: table_rows_attach,
       tab_stop_set: table_row_tab_stop_set,

@@ -6,28 +6,32 @@
 from __future__ import annotations
 
 import argparse, json, os, re, sys, urllib.parse
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from typing import NamedTuple
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import callgrind, callgrind_diff, settings, theme
 
 _ASSET_CALLERS_SCRIPT_NAME: str = ""
+_ASSET_DEBUG_SCRIPT_NAME: str = ""
 _ASSET_FRAME_SCRIPT_NAME: str = ""
 _ASSET_MENU_SCRIPT_NAME: str = ""
 _ASSET_MENU_STYLESHEET_NAME: str = ""
 _ASSET_PULLDOWN_TEXT_SCRIPT_NAME: str = ""
+_ASSET_SETTINGS_PAGE_SCRIPT_NAME: str = ""
 _ASSET_TEMPLATE_CALLERS_PAGE_NAME: str = ""
 _ASSET_TEMPLATE_OVERVIEW_PAGE_NAME: str = ""
+_ASSET_TEMPLATE_SETTINGS_PAGE_NAME: str = ""
 _CALLERS_TIME_SUFFIX_SECONDS: dict[str, float] = {}
 _CALLERS_TOP_FUNCTION_ROWS: int = 0
-_CALLERS_VALGRIND_LOG_FIRST_LINE_PATTERN: str = ""
 _DIFF_CALLER_COUNTS_FILE_SUFFIX: str = ""
 _FLAME_GRAPH_LOCAL_PROFILE_PATH: str = ""
-_FLAME_GRAPH_VIEW_ENTRY: tuple[str, str, str] = ("", "", "")
-_HEAT_MAP_VIEW_ENTRY: tuple[str, str, str] = ("", "", "")
+_FLAME_GRAPH_VIEW_ENTRY: tuple[str, str] = ("", "")
+_HEAT_MAP_VIEW_ENTRY: tuple[str, str] = ("", "")
+_OVERVIEW_VALGRIND_LOG_FIRST_LINE_PATTERN: str = ""
 _RANKING_COUNTER_NAME: str = ""
 _REPORT_TEST_SUITE_NAME: str = ""
+_SETTINGS_VIEW_ENTRY: tuple[str, str] = ("", "")
 _STORAGE_KEY_CALLERS_ROWS: str = ""
 _STYLE_TABLE_FUNCTION_NAME_WIDTH_CHARS: int = 0
 _TABLE_ROW_COUNT_CHOICES: tuple[int, ...] = ()
@@ -38,9 +42,19 @@ _CALLERS_PAGE = theme.asset_text_read(_ASSET_TEMPLATE_CALLERS_PAGE_NAME)
 
 _CALLERS_PAGE_ASSETS_DEPTH = 1
 
+_DEBUG_SCRIPT = theme.asset_text_read(_ASSET_DEBUG_SCRIPT_NAME)
+
 _EXIT_INPUT_UNREADABLE = 20
 
+_FLAME_GRAPH_VIEW_KEY = _FLAME_GRAPH_VIEW_ENTRY[0]
+
+_HEAT_MAP_VIEW_KEY = _HEAT_MAP_VIEW_ENTRY[0]
+
 _PID_PREFIX = re.compile(r"^==\d+==\s?")
+
+_SETTINGS_PAGE = theme.asset_text_read(_ASSET_TEMPLATE_SETTINGS_PAGE_NAME)
+
+_SETTINGS_PAGE_ASSETS_DEPTH = 1
 
 _OVERVIEW_PAGE_ASSETS_DEPTH = 0
 
@@ -87,25 +101,19 @@ class BuildReport:
         header_block: list[str]
         diff_profile: list[str]
         perf_log: list[str]
+        trace_log: list[str]
+        valgrind_log: list[str]
         raw_data: str
 
     class TestArgs(NamedTuple):
         callgrind_file: list[str]
         output: str
         test: str
-        log: list[str]
-        perf_log: str
-        trace_log: str
-        no_log: bool
         callers_data: str
 
     class TestDirectory(NamedTuple):
         name: str
         directory: str
-
-    class View(NamedTuple):
-        key: str
-        label: str
 
     def address_of(
         self, test_name: str, view_key: str, function_name: str = ""
@@ -113,8 +121,8 @@ class BuildReport:
         hash_text = f"#test={self.address_value_of(test_name)}&view={view_key}"
         if function_name:
             hash_text += f"&function={self.address_value_of(function_name)}"
-        if view_key == _FLAME_VIEW.key:
-            hash_text += f"&profiler_path={_FLAME_GRAPH_LOCAL_PROFILE_PATH}"
+        if view_key == _FLAME_GRAPH_VIEW_KEY:
+            hash_text += f"&localProfilePath={_FLAME_GRAPH_LOCAL_PROFILE_PATH}"
         return hash_text
 
     def address_value_of(self, value: str) -> str:
@@ -129,7 +137,7 @@ class BuildReport:
         )
 
     def blank_line_render(self) -> str:
-        return "<br />"
+        return theme.element_render("br", {}, None)
 
     def caller_link(
         self,
@@ -138,11 +146,12 @@ class BuildReport:
         caller: BuildReport.CallerShare,
     ) -> str:
         href = self.entry_link(test_name, profile, caller.function)
-        label = (
-            f"{theme.html_escape(caller.function)}"
-            f" ({theme.html_escape(caller.share_text)})"
+        label = theme.html_escape(f"{caller.function} ({caller.share_text})")
+        if not href:
+            return label
+        return theme.menu_button_render(
+            "link", label, theme.MenuButtonFields("a", href)
         )
-        return f'<a href="{href}">{label}</a>' if href else label
 
     # Lists each caller of a function with its share of calls, linked.
     def callers_cell(
@@ -172,20 +181,50 @@ class BuildReport:
             callers=doc["callers"], baseline_calls=doc["baselineCalls"]
         )
 
-    def callers_heading_render(self, ranking_text: str) -> str:
-        return (
-            '<div class="page-heading-"'
-            f' data-row-count-key-="{_STORAGE_KEY_CALLERS_ROWS}">'
-            'top <span class="page-heading-row-count-">'
-            f"{_CALLERS_TOP_FUNCTION_ROWS}</span> functions by"
-            f" {theme.html_escape(ranking_text)}</div>"
+    def callers_heading_render(self, measure_string_id: str) -> str:
+        count_markup = theme.element_render(
+            "span",
+            {"class": "page-heading-row-count-"},
+            str(_CALLERS_TOP_FUNCTION_ROWS),
+        )
+        return theme.heading_render(
+            theme.ui_text_fill(
+                "str_heading_functions_by_counter",
+                {
+                    "count": count_markup,
+                    "measure": theme.html_escape(
+                        theme.ui_text_of(measure_string_id)
+                    ),
+                },
+            ),
+            _STORAGE_KEY_CALLERS_ROWS,
         )
 
-    def details_section(self, title: str, body: str) -> str:
-        return (
-            '<details class="callers-collapsed-section-">'
-            '<summary class="callers-collapsed-section-title-">'
-            f"{theme.html_escape(title)}</summary>{body}</details>"
+    # Writes the report's debug script, its manifest table filled in.
+    def debug_script_write(
+        self, assets_dir: str, manifest_lines: Sequence[str]
+    ) -> None:
+        table_text = json.dumps(
+            settings.manifest_table(manifest_lines), ensure_ascii=False
+        )
+        path = os.path.join(assets_dir, _ASSET_DEBUG_SCRIPT_NAME)
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write(
+                theme.template_fill(
+                    _DEBUG_SCRIPT, {"__MANIFEST_TABLE__": table_text}
+                )
+            )
+
+    def details_section(self, title_string_id: str, body: str) -> str:
+        return theme.element_render(
+            "details",
+            {"class": "overview-collapsed-section-"},
+            theme.menu_button_render(
+                "action",
+                theme.html_escape(theme.ui_text_of(title_string_id)),
+                theme.MenuButtonFields("summary"),
+            )
+            + body,
         )
 
     def diff_functions_table(
@@ -259,11 +298,17 @@ class BuildReport:
         diff_profiles: Sequence[str],
     ) -> tuple[list[theme.Column], list[list[theme.CellOrText]]]:
         columns = [
-            theme.Column("one report per test"),
+            theme.Column(theme.ui_text_of("str_column_report_per_test")),
             theme.Column(_RANKING_COUNTER_NAME, numeric=True),
-            theme.Column("% of change", numeric=True),
             theme.Column(
-                f"functions changed in {_RANKING_COUNTER_NAME}", numeric=True
+                theme.ui_text_of("str_column_change_share"), numeric=True
+            ),
+            theme.Column(
+                theme.ui_text_fill(
+                    "str_column_functions_changed",
+                    {"counter": _RANKING_COUNTER_NAME},
+                ),
+                numeric=True,
             ),
         ]
         profile_of = self.named_paths_of(diff_profiles, "--diff-profile")
@@ -298,7 +343,7 @@ class BuildReport:
         callers_data = self.callers_data_load(args.callers_data)
         self.report_page(
             args,
-            self.callers_heading_render("change in calls"),
+            self.callers_heading_render("str_heading_measure_calls_diff"),
             self.diff_functions_table(args.test, profile, callers_data),
         )
 
@@ -308,9 +353,7 @@ class BuildReport:
         entry = profile.function_entry.get(function)
         if entry is None or not entry.line:
             return ""
-        return theme.html_escape(
-            self.address_of(test_name, _HEAT_VIEW.key, function)
-        )
+        return self.address_of(test_name, _HEAT_MAP_VIEW_KEY, function)
 
     def file_read(self, path: str) -> str:
         try:
@@ -324,21 +367,15 @@ class BuildReport:
             )
             sys.exit(_EXIT_INPUT_UNREADABLE)
 
-    def flame_graph_link_render(self, test_name: str) -> str:
-        href = self.address_of(test_name, _FLAME_VIEW.key)
-        return (
-            f'<div><a href="{theme.html_escape(href)}">'
-            f"{theme.html_escape(_FLAME_VIEW.label)}</a></div>"
-        )
-
     def function_columns(self) -> list[theme.Column]:
         return [
-            theme.Column("#", numeric=True),
+            theme.Column(theme.ui_text_of("str_column_rank"), numeric=True),
             theme.Column(
-                "symbol", width=_STYLE_TABLE_FUNCTION_NAME_WIDTH_CHARS
+                theme.ui_text_of("str_column_symbol"),
+                width=_STYLE_TABLE_FUNCTION_NAME_WIDTH_CHARS,
             ),
-            theme.Column("calls", numeric=True),
-            theme.Column("callers", grow=True),
+            theme.Column(theme.ui_text_of("str_column_calls"), numeric=True),
+            theme.Column(theme.ui_text_of("str_column_callers"), grow=True),
         ]
 
     def function_link_cell(
@@ -347,7 +384,11 @@ class BuildReport:
         href = self.entry_link(test_name, profile, function)
         return theme.Cell(
             function,
-            html=f'<a href="{href}">{theme.html_escape(function)}</a>'
+            html=theme.menu_button_render(
+                "link",
+                theme.html_escape(function),
+                theme.MenuButtonFields("a", href),
+            )
             if href
             else None,
         )
@@ -414,9 +455,6 @@ class BuildReport:
             )
         return theme.table_render("report.functions", columns, rows, fill=True)
 
-    def heading_render(self, text: str) -> str:
-        return f'<div class="page-heading-">{theme.html_escape(text)}</div>'
-
     def log_block(self, path: str) -> str:
         lines = [
             _PID_PREFIX.sub("", line)
@@ -424,36 +462,58 @@ class BuildReport:
             if not re.match(_VALGRIND_DEBUG_LINE_PATTERN, line)
         ]
         for index, line in enumerate(lines):
-            if re.match(_CALLERS_VALGRIND_LOG_FIRST_LINE_PATTERN, line):
+            if re.match(_OVERVIEW_VALGRIND_LOG_FIRST_LINE_PATTERN, line):
                 return self.log_box_render("\n".join(lines[index:]))
         sys.exit(
             f"error: {os.path.abspath(path)}: no line matches"
-            f" {_CALLERS_VALGRIND_LOG_FIRST_LINE_PATTERN!r}, the line the"
+            f" {_OVERVIEW_VALGRIND_LOG_FIRST_LINE_PATTERN!r}, the line the"
             " valgrind log section starts at"
         )
 
-    def log_section(self, paths: Sequence[str]) -> str:
-        if not paths:
+    # Writes one collapsed section holding each named test's log in turn.
+    def logs_section(
+        self,
+        title_string_id: str,
+        tests: Sequence[BuildReport.TestDirectory],
+        paths: Sequence[str],
+        flag: str,
+        box_of: Callable[[str], str],
+    ) -> str:
+        path_of = self.named_paths_of(paths, flag)
+        test_names = [test.name for test in tests]
+        for name in path_of:
+            if name not in test_names:
+                sys.exit(f"error: {flag} names no --test: {name}")
+        if not path_of:
             return ""
-        body = ""
-        for path in paths:
-            if len(paths) > 1:
-                body += (
-                    '<div class="callers-collapsed-section-file-name-">'
-                    f"{theme.html_escape(os.path.basename(path))}</div>"
-                )
-            body += self.log_block(path)
-        return self.details_section("valgrind log", body)
+        body = "".join(
+            theme.element_render(
+                "div",
+                {"class": "overview-collapsed-section-test-name-"},
+                theme.html_escape(name),
+            )
+            + box_of(path_of[name])
+            for name in test_names
+            if name in path_of
+        )
+        return self.blank_line_render() + self.details_section(
+            title_string_id, body
+        )
 
     def log_box_render(self, text: str) -> str:
-        return (
-            '<div class="table-box-">'
-            '<pre class="callers-collapsed-section-log-box-'
-            ' page-text-scroll-box-">'
-            f"{theme.html_escape(text)}</pre>"
+        return theme.element_render(
+            "div",
+            {"class": "table-box-"},
+            theme.element_render(
+                "pre",
+                {
+                    "class": "overview-collapsed-section-log-box-"
+                    " page-text-scroll-box-"
+                },
+                theme.html_escape(text),
+            )
             + self.text_scrollbar_render("vertical")
-            + self.text_scrollbar_render("horizontal")
-            + "</div>"
+            + self.text_scrollbar_render("horizontal"),
         )
 
     def manifest_blocks_render(
@@ -462,7 +522,7 @@ class BuildReport:
         blocks: Sequence[BuildReport.ManifestBlock],
     ) -> str:
         return self.blank_line_render().join(
-            self.heading_render(block.label)
+            theme.heading_render(theme.html_escape(block.label))
             + self.manifest_table(f"{key}.{index}", block.pairs)
             for index, block in enumerate(blocks)
             if block.pairs
@@ -516,7 +576,7 @@ class BuildReport:
         ]
         return theme.table_render(
             key,
-            [theme.Column("label"), theme.Column("value", grow=True)],
+            [theme.Column(""), theme.Column("", grow=True)],
             rows,
             fill=True,
             column_titles=False,
@@ -533,16 +593,17 @@ class BuildReport:
                 f" which is not one of its tests: {' '.join(test_names)}"
             )
         help_href = theme.shared_href(_OVERVIEW_PAGE_ASSETS_DEPTH, "README.md")
-        logo_href = theme.shared_href(
-            _OVERVIEW_PAGE_ASSETS_DEPTH, "index.html"
-        )
         names_text = json.dumps(list(test_names), ensure_ascii=False)
-        return (
-            '<nav id="menu-" class="menu-strip-"'
-            f' data-flame-graph-="{int(has_flame_graph)}"'
-            f' data-help-href-="{theme.html_escape(help_href)}"'
-            f' data-logo-href-="{theme.html_escape(logo_href)}"'
-            f' data-test-names-="{theme.html_escape(names_text)}"></nav>'
+        return theme.element_render(
+            "nav",
+            {
+                "id": "menu-",
+                "class": "menu-strip-",
+                "data-flame-graph-": str(int(has_flame_graph)),
+                "data-help-href-": help_href,
+                "data-test-names-": names_text,
+            },
+            "",
         )
 
     def named_paths_of(
@@ -555,12 +616,6 @@ class BuildReport:
             name, path = entry.split("=", 1)
             path_of[name] = path
         return path_of
-
-    def output_section(self, title: str, path: str) -> str:
-        if not path:
-            return ""
-        output = self.time_humanize(self.file_read(path).rstrip())
-        return self.details_section(title, self.log_box_render(output))
 
     def overview(self, args: BuildReport.OverviewArgs) -> None:
         tests = self.overview_tests(args)
@@ -578,7 +633,7 @@ class BuildReport:
                     if match.group(1) not in keys:
                         keys.append(match.group(1))
             numbers[test.name] = values
-        columns = [theme.Column("report")] + [
+        columns = [theme.Column(theme.ui_text_of("str_column_report"))] + [
             theme.Column(key, numeric=True) for key in keys
         ]
         rows: list[list[theme.CellOrText]] = [
@@ -602,7 +657,11 @@ class BuildReport:
             if args.header_file
             else []
         )
-        manifest_blocks = [BuildReport.ManifestBlock("manifest", pairs)]
+        manifest_blocks = [
+            BuildReport.ManifestBlock(
+                theme.ui_text_of("str_heading_manifest"), pairs
+            )
+        ]
         manifest_blocks += self.manifest_parse_blocks(args.header_block)
         raw_data_markup = self.raw_data_render(args.raw_data, out_dir)
         tests_markup = theme.table_render("overview.tests", columns, rows)
@@ -616,22 +675,52 @@ class BuildReport:
             _OVERVIEW_PAGE,
             {
                 "__MENU__": menu_markup,
+                "__OVERVIEW_HEADING__": theme.heading_render(
+                    theme.html_escape(theme.ui_text_of("str_view_overview"))
+                ),
                 "__RAW_DATA__": raw_data_markup,
                 "__MANIFEST__": manifest_markup,
+                "__TESTS_HEADING__": theme.heading_render(
+                    theme.html_escape(theme.ui_text_of("str_heading_tests"))
+                ),
                 "__TESTS__": tests_markup,
+                "__PERF_LOG__": self.logs_section(
+                    "str_section_perf_log",
+                    tests,
+                    args.perf_log,
+                    "--perf-log",
+                    self.output_box_render,
+                ),
+                "__TRACE_LOG__": self.logs_section(
+                    "str_section_trace_log",
+                    tests,
+                    args.trace_log,
+                    "--trace-log",
+                    self.output_box_render,
+                ),
+                "__VALGRIND_LOG__": self.logs_section(
+                    "str_section_valgrind_log",
+                    tests,
+                    args.valgrind_log,
+                    "--valgrind-log",
+                    self.log_block,
+                ),
+                "__VIEW_FRAME_TITLE__": theme.html_escape(
+                    theme.ui_text_of("str_view_frame_title")
+                ),
             },
         )
         self.page_write(
             args.output,
             theme.page_document(
-                "overview",
+                theme.ui_text_of("str_view_overview"),
                 page_content,
                 extra_js=(
                     _ASSET_PULLDOWN_TEXT_SCRIPT_NAME,
                     _ASSET_FRAME_SCRIPT_NAME,
                     _ASSET_MENU_SCRIPT_NAME,
                 ),
-                body_class="frame_",
+                body_class="frame-",
                 depth=_OVERVIEW_PAGE_ASSETS_DEPTH,
                 extra_css=(_ASSET_MENU_STYLESHEET_NAME,),
             ),
@@ -657,23 +746,28 @@ class BuildReport:
             file=sys.stderr,
         )
 
+    # Writes a captured output in a log box, its times humanized.
+    def output_box_render(self, path: str) -> str:
+        return self.log_box_render(
+            self.time_humanize(self.file_read(path).rstrip())
+        )
+
     def raw_data_render(self, path: str, out_dir: str) -> str:
         if not path:
             return ""
-        archive_name = os.path.basename(path)
-        line_label = "raw data: "
-        archive_link = (
-            f'<a href="{theme.html_escape(os.path.relpath(path, out_dir))}"'
-            f' target="_blank">{theme.html_escape(archive_name)}</a>'
+        link_text = theme.ui_text_fill(
+            "str_raw_data_link", {"name": os.path.basename(path)}
         )
-        raw_data_cell = theme.Cell(
-            line_label + archive_name, html=line_label + archive_link
-        )
-        return self.blank_line_render() + theme.table_render(
-            "overview.raw_data",
-            [theme.Column("raw data")],
-            [[raw_data_cell]],
-            column_titles=False,
+        return self.blank_line_render() + theme.element_render(
+            "div",
+            {},
+            theme.menu_button_render(
+                "link",
+                theme.html_escape(link_text),
+                theme.MenuButtonFields(
+                    "a", os.path.relpath(path, out_dir), opens_new_tab=True
+                ),
+            ),
         )
 
     def report_page(
@@ -682,19 +776,9 @@ class BuildReport:
         heading_markup: str,
         table: str,
     ) -> None:
-        flame_graph_markup = (
-            self.flame_graph_link_render(args.test) if args.trace_log else ""
-        )
-        perf_log_markup = self.output_section("perf log", args.perf_log)
-        trace_log_markup = self.output_section("trace log", args.trace_log)
-        valgrind_log_markup = "" if args.no_log else self.log_section(args.log)
         page_content = theme.template_fill(
             _CALLERS_PAGE,
             {
-                "__FLAME_GRAPH_LINK__": flame_graph_markup,
-                "__PERF_LOG__": perf_log_markup,
-                "__TRACE_LOG__": trace_log_markup,
-                "__VALGRIND_LOG__": valgrind_log_markup,
                 "__HEADING__": heading_markup,
                 "__FUNCTIONS__": table,
             },
@@ -705,8 +789,22 @@ class BuildReport:
                 args.test,
                 page_content,
                 extra_js=(_ASSET_CALLERS_SCRIPT_NAME,),
-                body_class="frame_",
+                body_class="frame-",
                 depth=_CALLERS_PAGE_ASSETS_DEPTH,
+                extra_css=(_ASSET_MENU_STYLESHEET_NAME,),
+            ),
+        )
+
+    # Writes the settings view, the settings relayed to it.
+    def settings_page(self, report_dir: str) -> None:
+        self.page_write(
+            os.path.join(report_dir, _SETTINGS_VIEW_ENTRY[1]),
+            theme.page_document(
+                theme.ui_text_of("str_view_settings"),
+                _SETTINGS_PAGE,
+                extra_js=(_ASSET_SETTINGS_PAGE_SCRIPT_NAME,),
+                body_class="frame-",
+                depth=_SETTINGS_PAGE_ASSETS_DEPTH,
                 extra_css=(_ASSET_MENU_STYLESHEET_NAME,),
             ),
         )
@@ -715,20 +813,30 @@ class BuildReport:
         profile = callgrind.profile_load(args.callgrind_file)
         self.report_page(
             args,
-            self.callers_heading_render("calls"),
+            self.callers_heading_render("str_heading_measure_calls"),
             self.functions_table(args.test, profile),
         )
 
     def test_link_cell(self, name: str) -> theme.Cell:
-        href = theme.html_escape(self.address_of(name, _HEAT_VIEW.key))
         return theme.Cell(
-            name, html=f'<a href="{href}">{theme.html_escape(name)}</a>'
+            name,
+            html=theme.menu_button_render(
+                "link",
+                theme.html_escape(name),
+                theme.MenuButtonFields(
+                    "a", self.address_of(name, _HEAT_MAP_VIEW_KEY)
+                ),
+            ),
         )
 
     def text_scrollbar_render(self, axis_name: str) -> str:
-        return (
-            f'<div class="page-text-scrollbar- {axis_name}_"'
-            ' aria-hidden="true"></div>'
+        return theme.element_render(
+            "div",
+            {
+                "class": f"page-text-scrollbar- {axis_name}-",
+                "aria-hidden": "true",
+            },
+            "",
         )
 
     def time_humanize(self, text: str) -> str:
@@ -741,11 +849,6 @@ class BuildReport:
     def value_humanize(self, label: str, value: str) -> str:
         line = self.time_humanize(f"{label}: {value}")
         return line.split(": ", 1)[1] if line != f"{label}: {value}" else value
-
-
-_FLAME_VIEW = BuildReport.View(*_FLAME_GRAPH_VIEW_ENTRY[:2])
-
-_HEAT_VIEW = BuildReport.View(*_HEAT_MAP_VIEW_ENTRY[:2])
 
 
 def main() -> None:
@@ -762,31 +865,6 @@ def main() -> None:
     )
     test_parser.add_argument("-o", "--output", required=True)
     test_parser.add_argument("--test", required=True, help="the page's title")
-    test_parser.add_argument(
-        "--log",
-        action="append",
-        default=[],
-        help="valgrind log to include (repeatable)",
-    )
-    test_parser.add_argument(
-        "--perf-log",
-        default="",
-        metavar="FILE",
-        help="the perf tool's captured stdout, shown in a collapsed"
-        " 'perf log' section",
-    )
-    test_parser.add_argument(
-        "--trace-log",
-        default="",
-        metavar="FILE",
-        help="the native trace run's captured output, shown in a collapsed"
-        " 'trace log' section; without it the page has no flame graph link",
-    )
-    test_parser.add_argument(
-        "--no-log",
-        action="store_true",
-        help="omit the valgrind log section even if --log was given",
-    )
     test_parser.add_argument(
         "--diff",
         action="store_true",
@@ -810,6 +888,34 @@ def main() -> None:
         "--output",
         required=True,
         help="the directory to write the shared stylesheets and scripts to",
+    )
+
+    debug_parser = subparsers.add_parser(
+        "debug", help="the report's debug script, holding its manifest table"
+    )
+    debug_parser.add_argument(
+        "-o",
+        "--output",
+        required=True,
+        help="the directory to write the debug script to",
+    )
+    debug_parser.add_argument(
+        "manifest_line",
+        nargs="+",
+        help="the manifest's version line, then each LABEL=VALUE row but the"
+        " checksum",
+    )
+
+    settings_parser = subparsers.add_parser(
+        "settings",
+        help="the settings view, editing the settings while settings"
+        " debugging is enabled",
+    )
+    settings_parser.add_argument(
+        "-o",
+        "--output",
+        required=True,
+        help="the report directory to write the settings view into",
     )
 
     overview_parser = subparsers.add_parser(
@@ -839,7 +945,24 @@ def main() -> None:
         metavar="NAME=FILE",
         default=[],
         help="without --diff, a test's perf log as the timing run wrote it,"
-        " to read its row from. repeatable, one per --test",
+        " to read its row from and show in a collapsed 'perf log' section."
+        " repeatable, one per --test",
+    )
+    overview_parser.add_argument(
+        "--trace-log",
+        action="append",
+        metavar="NAME=FILE",
+        default=[],
+        help="without --diff, a test's native trace run output, shown in a"
+        " collapsed 'trace log' section. repeatable",
+    )
+    overview_parser.add_argument(
+        "--valgrind-log",
+        action="append",
+        metavar="NAME=FILE",
+        default=[],
+        help="without --diff, a test's valgrind log, shown in a collapsed"
+        " 'valgrind log' section. repeatable",
     )
     overview_parser.add_argument(
         "--raw-data",
@@ -879,15 +1002,15 @@ def main() -> None:
     report = BuildReport()
     if namespace.cmd == "assets":
         theme.theme_assets_write(namespace.output)
+    elif namespace.cmd == "debug":
+        report.debug_script_write(namespace.output, namespace.manifest_line)
+    elif namespace.cmd == "settings":
+        report.settings_page(namespace.output)
     elif namespace.cmd == "test":
         test_args = BuildReport.TestArgs(
             callgrind_file=namespace.callgrind_file,
             output=namespace.output,
             test=namespace.test,
-            log=namespace.log,
-            perf_log=namespace.perf_log,
-            trace_log=namespace.trace_log,
-            no_log=namespace.no_log,
             callers_data=namespace.callers_data,
         )
         (report.diff_test if namespace.diff else report.test)(test_args)
@@ -900,6 +1023,8 @@ def main() -> None:
             header_block=namespace.header_block,
             diff_profile=namespace.diff_profile,
             perf_log=namespace.perf_log,
+            trace_log=namespace.trace_log,
+            valgrind_log=namespace.valgrind_log,
             raw_data=namespace.raw_data,
         )
         (report.diff_overview if namespace.diff else report.overview)(

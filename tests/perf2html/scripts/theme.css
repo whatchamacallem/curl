@@ -2,16 +2,12 @@
  * SPDX-License-Identifier: MIT
  * This file is licensed under the terms of the LICENSE-MIT.md file. */
 
-pre.callers-collapsed-section-log-box- {
+pre.overview-collapsed-section-log-box- {
   max-height: calc(
-    var(--callers-collapsed-section-log-box-max-height-share-) *
+    var(--overview-collapsed-section-log-box-max-height-share-) *
       var(--design-viewport-height-)
   );
   overflow: auto;
-}
-
-.callers-collapsed-section-title- {
-  cursor: pointer;
 }
 
 *,
@@ -42,13 +38,13 @@ body {
   font-size: calc(var(--design-font-size-px-) * var(--design-font-fit-));
   line-height: var(--page-body-line-height-);
 }
-html:has(body.frame_) {
+html:has(body.frame-) {
   overflow: hidden;
 }
-body.frame_ {
+body.frame- {
   height: var(--design-viewport-height-);
 }
-body.frame_,
+body.frame-,
 :has(> .page-text-scroll-box-) {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -97,24 +93,28 @@ main.page-text-scroll-box- {
   user-select: none;
   touch-action: none;
 }
-.page-text-scrollbar-.horizontal_ {
+.page-text-scrollbar-.horizontal- {
   grid-column: 1;
   grid-row: 2;
   height: var(--page-text-scrollbar-horizontal-height-);
 }
-.page-text-scrollbar-.vertical_ {
+.page-text-scrollbar-.vertical- {
   grid-column: 2;
   grid-row: 1;
   width: var(--page-text-scrollbar-vertical-width-);
 }
-.page-text-scrollbar-.vertical_ > span {
+.page-text-scrollbar-.vertical- > span {
   display: block;
 }
 
-.page_ {
+.page- {
   container-type: inline-size;
 }
-#overview-home- .page_ {
+.page-emphasis- {
+  padding: 0 var(--page-emphasis-padding-inline-);
+  white-space: pre;
+}
+#overview-home- .page- {
   padding: var(--heat-map-overview-home-border-block-)
     var(--heat-map-overview-home-border-inline-);
 }
@@ -122,7 +122,7 @@ main.page-text-scroll-box- {
   position: relative;
   width: fit-content;
 }
-.band_ {
+.band- {
   position: sticky;
   top: 0;
   z-index: var(--heat-map-band-z-index-);
@@ -130,35 +130,36 @@ main.page-text-scroll-box- {
 .table-columns- {
   width: fit-content;
 }
-table.columns_ {
+table.columns- {
   table-layout: fixed;
   border-collapse: separate;
   border-spacing: 0;
   width: 0;
 }
-table.columns_ th,
-table.columns_ td {
+table.columns- th,
+table.columns- td {
   padding: 0 var(--page-table-cell-padding-inline-);
   white-space: pre;
   overflow: hidden;
   text-overflow: ellipsis;
   vertical-align: top;
 }
-table.columns_ th {
+table.columns- th {
   position: sticky;
   top: 0;
   z-index: var(--page-table-column-title-z-index-);
   text-align: left;
 }
-table.columns_ .numeric_ {
+table.columns- .numeric- {
   text-align: right;
 }
 
-.screenshot-label- {
+.debug-tip- {
   position: fixed;
-  left: 0;
-  bottom: 0;
-  z-index: var(--screenshot-label-z-index-);
-  font-size: var(--screenshot-label-font-size-);
-  border: var(--screenshot-label-border-width-) solid;
+  z-index: var(--debug-tip-z-index-);
+  pointer-events: none;
+  white-space: pre;
+  display: none;
+  font-size: var(--debug-tip-font-size-);
+  border: var(--debug-tip-border-width-) solid;
 }

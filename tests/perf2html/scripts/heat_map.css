@@ -56,7 +56,7 @@
   overflow: hidden;
   cursor: pointer;
 }
-#heat-map-minimap-.empty_ {
+#heat-map-minimap-.empty- {
   display: none;
 }
 #heat-map-minimap-box- {
@@ -80,15 +80,12 @@
   right: 0;
   cursor: grab;
 }
-#heat-map-minimap-viewport-.drag_ {
+#heat-map-minimap-viewport-.drag- {
   cursor: grabbing;
 }
 
 .heat-map-source-information-box- {
   position: relative;
-}
-.heat-map-source-information-box-control- {
-  cursor: pointer;
 }
 .heat-map-source-information-box-close-symbol- {
   position: absolute;
@@ -107,7 +104,7 @@ table.heat-map-source-table- tr.heat-map-source-line-detail-row- > td {
 .heat-map-source-information-line- {
   white-space: pre;
 }
-.heat-map-source-information-line-.empty_ {
+.heat-map-source-information-line-.empty- {
   visibility: hidden;
 }
 
@@ -124,7 +121,7 @@ tr.has-callee- td.heat-map-source-table-line-number-cell-::before {
   display: inline-block;
   width: var(--heat-map-source-table-line-number-cell-callee-marker-width-);
 }
-table.heat-map-source-table- tr.clickable_ {
+table.heat-map-source-table- tr.clickable- {
   cursor: pointer;
 }
 
@@ -135,10 +132,7 @@ table.heat-map-source-table- tr.clickable_ {
   overflow: hidden;
 }
 .heat-map-source-ticker-tape-entry- {
-  cursor: pointer;
   flex: none;
-  white-space: pre;
-  padding: 0 var(--heat-map-source-ticker-tape-entry-padding-inline-);
 }
 .heat-map-source-ticker-tape- .heat-map-source-ticker-tape-label- {
   align-self: center;
@@ -163,7 +157,7 @@ table.heat-map-source-table- tr.clickable_ {
   width: var(--heat-map-tree-node-caret-width-);
   flex: none;
 }
-.heat-map-tree-node-.file_ .heat-map-tree-node-caret- {
+.heat-map-tree-node-.file- .heat-map-tree-node-caret- {
   visibility: hidden;
 }
 .heat-map-tree-node- .heat-map-tree-node-name- {
@@ -178,14 +172,14 @@ table.heat-map-source-table- tr.clickable_ {
   text-align: right;
   white-space: pre;
 }
-.heat-map-tree-node-.cold_ .heat-map-tree-node-share-percent- {
+.heat-map-tree-node-.cold- .heat-map-tree-node-share-percent- {
   visibility: hidden;
 }
 
 .heat-map-tree-node-child-group- {
   display: none;
 }
-.heat-map-tree-node-child-group-.open_ {
+.heat-map-tree-node-child-group-.open- {
   display: block;
 }
 

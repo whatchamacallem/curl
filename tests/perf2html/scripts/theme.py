@@ -4,14 +4,15 @@
 
 from __future__ import annotations
 
-import html, math, os, re
+import json, math, os, re
 from collections.abc import Sequence
-from typing import NamedTuple, TypeAlias, TypedDict
+from typing import NamedTuple, TypeAlias
 
 import settings
 
 _ASSET_CALLERS_SCRIPT_NAME: str = ""
 _ASSET_DARK_MODE_STYLESHEET_NAME: str = ""
+_ASSET_DEBUG_SCRIPT_NAME: str = ""
 _ASSET_ERROR_OVERLAY_SCRIPT_NAME: str = ""
 _ASSET_FLAME_GRAPH_SCRIPT_NAME: str = ""
 _ASSET_FRAME_SCRIPT_NAME: str = ""
@@ -20,9 +21,8 @@ _ASSET_HEAT_MAP_STYLESHEET_NAME: str = ""
 _ASSET_LIGHT_MODE_STYLESHEET_NAME: str = ""
 _ASSET_MENU_SCRIPT_NAME: str = ""
 _ASSET_MENU_STYLESHEET_NAME: str = ""
-_ASSET_REPORT_COMPLETE_SCRIPT_NAME: str = ""
+_ASSET_SETTINGS_PAGE_SCRIPT_NAME: str = ""
 _ASSET_SETTINGS_SCRIPT_NAME: str = ""
-_ASSET_SETTINGS_STYLESHEET_NAME: str = ""
 _ASSET_THEME_SCRIPT_NAME: str = ""
 _ASSET_THEME_STYLESHEET_NAME: str = ""
 _ASSET_UI_STRINGS_SCRIPT_NAME: str = ""
@@ -36,26 +36,19 @@ _STYLE_COLOR_DARK_MODE: dict[str, list[str]] = {}
 _STYLE_COLOR_DARK_MODE_ROLE_PREFIX: str = ""
 _STYLE_COLOR_LIGHT_MODE: dict[str, list[str]] = {}
 _STYLE_COLOR_LIGHT_MODE_ROLE_PREFIX: str = ""
-_STYLE_DESIGN_COORDINATES_WIDTH_PX: int = 0
 _STYLE_DESIGN_DEVICE_PIXEL_WIDEST_PROPERTY: str = ""
 _STYLE_DESIGN_FONT_FIT_PROPERTY: str = ""
-_STYLE_DESIGN_FONT_FIT_START_MULTIPLE: int = 0
 _STYLE_DESIGN_FONT_SIZE_PROPERTY: str = ""
-_STYLE_DESIGN_FONT_SIZE_PX: int = 0
-_STYLE_DESIGN_MINIMUM_WINDOW_WIDTH_PX: int = 0
 _STYLE_DESIGN_SCALE_DEFAULT_MULTIPLE: int = 0
 _STYLE_DESIGN_SCALE_LARGEST_MULTIPLE: int = 0
 _STYLE_DESIGN_SCALE_SMALLEST_MULTIPLE: float = 0.0
 _STYLE_DESIGN_VIEWPORT_HEIGHT_PROPERTY: str = ""
-_STYLE_DESIGN_VIEWPORT_HEIGHT_START_PERCENT: int = 0
 _STYLE_HEAT_CELL_ON_BRIGHT_ABOVE_LUMINANCE_SHARE: float = 0.0
 _STYLE_HEAT_CELL_ON_BRIGHT_ROLE: str = ""
 _STYLE_HEAT_CELL_ON_DARK_ROLE: str = ""
 _STYLE_HEAT_COLOR_FULL_SCALE_PERCENT: int = 0
 _STYLE_HEAT_COLOR_STOPS: list[str] = []
-_STYLE_HEAT_MAP_SOURCE_LINE_NUMBER_MARKER_WIDTH_CHARS: int = 0
 _STYLE_HEAT_MAP_SOURCE_LINE_NUMBER_MARKER_WIDTH_PROPERTY: str = ""
-_STYLE_PAGE_FONT_FAMILY: str = ""
 _STYLE_PAGE_FONT_FAMILY_PROPERTY: str = ""
 _STYLE_TABLE_COLUMN_EXTRA_WIDTH_CHARS: int = 0
 _STYLE_TABLE_GROW_COLUMN_NARROWEST_CHARS: int = 0
@@ -79,6 +72,14 @@ _DARK_MODE_ENABLED_SELECTOR = (
     f':root:not([{_DARK_MODE_ATTRIBUTE_NAME}="{_DARK_MODE_DISABLED_VALUE}"])'
 )
 
+_MENU_BUTTON_KIND_NAMES = ("action", "link")
+
+_UI_STRINGS_BLOCK = re.compile(r"\n  const STRINGS = \{\n(.*?)\n  \};\n", re.S)
+
+_UI_STRINGS_ENTRY = re.compile(r'\s*(str_\w+):\s*("(?:[^"\\\n]|\\.)*"),')
+
+_UI_TEXT_MARKER = re.compile(r"\{(\w+)\}")
+
 
 class Cell(NamedTuple):
     text: str = ""
@@ -101,10 +102,10 @@ class ColumnExtent(NamedTuple):
     content_chars: int
 
 
-class ThemeRuntime(TypedDict):
-    heat: list[str]
-    fgLight: str
-    fgDark: str
+class MenuButtonFields(NamedTuple):
+    tag_name: str
+    href: str = ""
+    opens_new_tab: bool = False
 
 
 class TableRenderer:
@@ -163,6 +164,9 @@ class TableRenderer:
             f"{high_total - low_total}, {widest}ch)"
         )
 
+    def numeric_attributes(self, column: Column) -> dict[str, str]:
+        return {"class": "numeric-"} if column.numeric else {}
+
     def table(
         self,
         key: str,
@@ -188,39 +192,75 @@ class TableRenderer:
                 raise ValueError(f"table {key!r}: fill but no grow column")
         extents = self.column_extents(columns, cells, grow_index)
         limits = [self.column_limits(extent) for extent in extents]
-        out = ['<div class="table-box-">']
-        out.append(
-            '<div class="table-columns-"><table class="columns_" '
-            f'data-key-="{html_escape(key)}"><colgroup>'
+        column_markup = "".join(
+            element_render(
+                "col",
+                {
+                    "data-min-": f"{limit[0]}ch",
+                    "style": "width:"
+                    + self.column_width_text(limits, index, grow_index),
+                },
+                None,
+            )
+            for index, limit in enumerate(limits)
         )
-        for index, limit in enumerate(limits):
-            width = self.column_width_text(limits, index, grow_index)
-            out.append(f'<col data-min-="{limit[0]}ch" style="width:{width}">')
-        out.append("</colgroup>")
-        if column_titles:
-            out.append("<thead><tr>")
-            for column in columns:
-                attrs = ' class="numeric_"' if column.numeric else ""
-                label = html_escape(column.label)
-                out.append(f'<th{attrs} title="{label}">{label}</th>')
-            out.append("</tr></thead>")
-        out.append("<tbody>")
-        for row in cells:
-            out.append("<tr>")
-            for column, cell in zip(columns, row, strict=True):
-                attrs = (' class="numeric_"' if column.numeric else "") + (
-                    f' style="{cell.style}"' if cell.style else ""
-                )
-                inner = (
-                    cell.html
-                    if cell.html is not None
-                    else html_escape(cell.text)
-                )
-                out.append(f"<td{attrs}>{inner}</td>")
-            out.append("</tr>")
-        out.append("</tbody></table></div>")
-        out.append("</div>")
-        return "".join(out)
+        title_markup = (
+            element_render(
+                "thead",
+                {},
+                element_render(
+                    "tr",
+                    {},
+                    "".join(
+                        element_render(
+                            "th",
+                            self.numeric_attributes(column)
+                            | {"title": column.label},
+                            html_escape(column.label),
+                        )
+                        for column in columns
+                    ),
+                ),
+            )
+            if column_titles
+            else ""
+        )
+        body_markup = "".join(
+            element_render(
+                "tr",
+                {},
+                "".join(
+                    self.table_cell_render(cell, column)
+                    for column, cell in zip(columns, row, strict=True)
+                ),
+            )
+            for row in cells
+        )
+        return element_render(
+            "div",
+            {"class": "table-box-"},
+            element_render(
+                "div",
+                {"class": "table-columns-"},
+                element_render(
+                    "table",
+                    {"class": "columns-", "data-key-": key},
+                    element_render("colgroup", {}, column_markup)
+                    + title_markup
+                    + element_render("tbody", {}, body_markup),
+                ),
+            ),
+        )
+
+    def table_cell_render(self, cell: Cell, column: Column) -> str:
+        cell_attributes = self.numeric_attributes(column)
+        if cell.style:
+            cell_attributes["style"] = cell.style
+        return element_render(
+            "td",
+            cell_attributes,
+            cell.html if cell.html is not None else html_escape(cell.text),
+        )
 
 
 class Theme:
@@ -301,7 +341,7 @@ class Theme:
             else:
                 amount_text = self.fixed_text(times, digit_count) + "x"
             if not is_line:
-                return arrow + " " + amount_text
+                return arrow + amount_text
             return arrow + amount_text.rjust(self.signed_percent_amount_chars)
 
         def time(self, seconds: float) -> str:
@@ -348,6 +388,7 @@ class Theme:
             self.rgb(color) for color in _STYLE_HEAT_COLOR_STOPS
         ]
         self.number_format = Theme.NumberFormat(self.time_units())
+        self.ui_strings = self.ui_strings_read()
 
     def asset_read(self, name: str) -> str:
         with open(
@@ -356,6 +397,7 @@ class Theme:
             return handle.read()
 
     def assets_write(self, out_dir: str) -> None:
+        self.root_value_names_check()
         os.makedirs(out_dir, exist_ok=True)
         heat_map_script = _ASSET_HEAT_MAP_SCRIPT_NAME
         heat_map_stylesheet = _ASSET_HEAT_MAP_STYLESHEET_NAME
@@ -398,12 +440,12 @@ class Theme:
                 self.asset_read(_ASSET_MENU_STYLESHEET_NAME),
             ),
             (
-                _ASSET_SETTINGS_SCRIPT_NAME,
-                settings.settings_script_write(),
+                _ASSET_SETTINGS_PAGE_SCRIPT_NAME,
+                self.asset_read(_ASSET_SETTINGS_PAGE_SCRIPT_NAME),
             ),
             (
-                _ASSET_SETTINGS_STYLESHEET_NAME,
-                self.settings_stylesheet_write(),
+                _ASSET_SETTINGS_SCRIPT_NAME,
+                settings.settings_script_write(),
             ),
             (
                 _ASSET_THEME_STYLESHEET_NAME,
@@ -428,12 +470,15 @@ class Theme:
     def contrast_foreground(
         self, color: Theme.Rgb, on_dark_role: str, on_bright_role: str
     ) -> str:
-        if (
-            self.luminance(color)
+        role = (
+            on_bright_role
+            if self.luminance(color)
             > _STYLE_HEAT_CELL_ON_BRIGHT_ABOVE_LUMINANCE_SHARE
-        ):
-            return self.color_roles[on_bright_role]
-        return self.color_roles[on_dark_role]
+            else on_dark_role
+        )
+        if role not in self.color_roles:
+            raise ValueError(f"{role} is no role of the dark palette")
+        return f"var(--{role})"
 
     def document(
         self,
@@ -446,42 +491,76 @@ class Theme:
         body_holds_scripts: bool = False,
     ) -> str:
         assets_href = shared_href(depth, _REPORT_ASSETS_DIR_NAME)
-        body_attr = f' class="{body_class}"' if body_class else ""
-        head_scripts = script_tags(assets_href, page_preamble_scripts())
-        head = "".join(
-            f'<link rel="stylesheet" href="{assets_href}/{name}">\n'
+        body_attributes = {"class": body_class} if body_class else {}
+        html_attributes = {"lang": self.ui_text_of("str_page_language")}
+        head_names = page_preamble_scripts()
+        head_links = "".join(
+            element_render(
+                "link",
+                {"rel": "stylesheet", "href": f"{assets_href}/{name}"},
+                None,
+            )
+            + "\n"
             for name in (
-                _ASSET_SETTINGS_STYLESHEET_NAME,
                 _ASSET_THEME_STYLESHEET_NAME,
                 *extra_css,
                 _ASSET_LIGHT_MODE_STYLESHEET_NAME,
                 _ASSET_DARK_MODE_STYLESHEET_NAME,
             )
         )
-        script = (
-            ""
-            if body_holds_scripts
-            else script_tags(
+        # A page below the report root is a framed view, its settings relayed.
+        if body_holds_scripts:
+            script = ""
+        elif depth:
+            script = held_script_tags(
+                script_tags(
+                    assets_href,
+                    (
+                        _ASSET_DEBUG_SCRIPT_NAME,
+                        _ASSET_THEME_SCRIPT_NAME,
+                        *extra_js,
+                    ),
+                )
+            )
+        else:
+            html_attributes["data-top-page-"] = ""
+            script = script_tags(
                 assets_href,
                 (
-                    _ASSET_REPORT_COMPLETE_SCRIPT_NAME,
-                    _ASSET_SETTINGS_SCRIPT_NAME,
+                    _ASSET_DEBUG_SCRIPT_NAME,
                     _ASSET_THEME_SCRIPT_NAME,
                     *extra_js,
                 ),
             )
+        head_scripts = script_tags(assets_href, head_names)
+        head_markup = (
+            "\n"
+            + element_render("meta", {"charset": "utf-8"}, None)
+            + "\n"
+            + head_scripts
+            + element_render(
+                "meta",
+                {
+                    "name": "viewport",
+                    "content": "width=device-width, initial-scale=1",
+                },
+                None,
+            )
+            + "\n"
+            + element_render("title", {}, html_escape(title))
+            + "\n"
+            + head_links
         )
-        return (
-            '<!doctype html>\n<html lang="en">\n'
-            '<head>\n<meta charset="utf-8">\n'
-            f"{head_scripts}"
-            '<meta name="viewport"'
-            ' content="width=device-width, initial-scale=1">\n'
-            f"<title>{html_escape(title)}</title>\n"
-            f"{head}</head>\n"
-            f"<body{body_attr}>\n{body}\n"
-            f"{script}</body>\n</html>\n"
+        page_markup = element_render(
+            "html",
+            html_attributes,
+            "\n"
+            + element_render("head", {}, head_markup)
+            + "\n"
+            + element_render("body", body_attributes, f"\n{body}\n{script}")
+            + "\n",
         )
+        return f"<!doctype html>\n{page_markup}\n"
 
     def heat_of_share(self, percent: float) -> float:
         sign = -1.0 if percent < 0 else 1.0
@@ -572,65 +651,40 @@ class Theme:
                 resolved[role] = color
         return resolved
 
-    def runtime(self) -> ThemeRuntime:
-        return {
-            "heat": _STYLE_HEAT_COLOR_STOPS,
-            "fgLight": self.color_roles[_STYLE_HEAT_CELL_ON_DARK_ROLE],
-            "fgDark": self.color_roles[_STYLE_HEAT_CELL_ON_BRIGHT_ROLE],
-        }
-
-    def settings_stylesheet_write(self) -> str:
-        root_values: dict[str, str] = {}
-        for name, value in _STYLE_VALUE_ENTRIES.items():
+    def root_value_names_check(self) -> None:
+        names: set[str] = set()
+        for name in _STYLE_VALUE_ENTRIES:
             if name in self.color_roles or name in self.light_mode_roles:
                 raise ValueError(
                     f"STYLE_VALUE_ENTRIES names --{name}, a colour role too"
                 )
-            root_values[f"--{name}"] = value
-        design_device_pixel_widest_px = _STYLE_DESIGN_COORDINATES_WIDTH_PX / (
-            _STYLE_DESIGN_MINIMUM_WINDOW_WIDTH_PX
-            * _STYLE_DESIGN_SCALE_SMALLEST_MULTIPLE
-        )
-        root_values[_STYLE_DESIGN_DEVICE_PIXEL_WIDEST_PROPERTY] = (
-            f"{design_device_pixel_widest_px}px"
-        )
-        root_values[_STYLE_DESIGN_FONT_FIT_PROPERTY] = str(
-            _STYLE_DESIGN_FONT_FIT_START_MULTIPLE
-        )
-        root_values[_STYLE_DESIGN_FONT_SIZE_PROPERTY] = (
-            f"{_STYLE_DESIGN_FONT_SIZE_PX}px"
-        )
-        root_values[_STYLE_DESIGN_VIEWPORT_HEIGHT_PROPERTY] = (
-            f"{_STYLE_DESIGN_VIEWPORT_HEIGHT_START_PERCENT}vh"
-        )
-        root_values[
-            _STYLE_HEAT_MAP_SOURCE_LINE_NUMBER_MARKER_WIDTH_PROPERTY
-        ] = f"{_STYLE_HEAT_MAP_SOURCE_LINE_NUMBER_MARKER_WIDTH_CHARS}ch"
-        root_values[_STYLE_PAGE_FONT_FAMILY_PROPERTY] = _STYLE_PAGE_FONT_FAMILY
-        self.reads_check(self.shared_stylesheets_text(), set(root_values))
+            names.add(f"--{name}")
+        names |= {
+            _STYLE_DESIGN_DEVICE_PIXEL_WIDEST_PROPERTY,
+            _STYLE_DESIGN_FONT_FIT_PROPERTY,
+            _STYLE_DESIGN_FONT_SIZE_PROPERTY,
+            _STYLE_DESIGN_VIEWPORT_HEIGHT_PROPERTY,
+            _STYLE_HEAT_MAP_SOURCE_LINE_NUMBER_MARKER_WIDTH_PROPERTY,
+            _STYLE_PAGE_FONT_FAMILY_PROPERTY,
+        }
+        self.reads_check(self.shared_stylesheets_text(), names)
         self.reads_check(
             self.asset_read(_ASSET_DARK_MODE_STYLESHEET_NAME),
-            set(root_values) | {f"--{role}" for role in self.color_roles},
+            names | {f"--{role}" for role in self.color_roles},
         )
         self.reads_check(
             self.asset_read(_ASSET_LIGHT_MODE_STYLESHEET_NAME),
-            set(root_values) | {f"--{role}" for role in self.light_mode_roles},
+            names | {f"--{role}" for role in self.light_mode_roles},
         )
-        for role, color in (self.light_mode_roles | self.color_roles).items():
-            root_values[f"--{role}"] = color
+        names |= {
+            f"--{role}" for role in (self.light_mode_roles | self.color_roles)
+        }
         stylesheets_text = self.stylesheets_text()
-        for name in root_values:
+        for name in sorted(names):
             if f"var({name})" not in stylesheets_text:
                 raise ValueError(
-                    f"{_ASSET_SETTINGS_STYLESHEET_NAME} sets {name}, which "
-                    "no stylesheet reads"
+                    f"the root values set {name}, which no stylesheet reads"
                 )
-        lines = [":root {"]
-        lines.extend(
-            f"  {name}: {value};" for name, value in root_values.items()
-        )
-        lines.append("}")
-        return "\n".join(lines) + "\n"
 
     def shared_stylesheets_text(self) -> str:
         return "".join(
@@ -655,6 +709,46 @@ class Theme:
             for suffix, seconds in _THEME_TIME_UNIT_ENTRIES
         )
 
+    # Reads every string of `ui_strings.js`, the one table of UI text.
+    def ui_strings_read(self) -> dict[str, str]:
+        script_text = self.asset_read(_ASSET_UI_STRINGS_SCRIPT_NAME)
+        block = _UI_STRINGS_BLOCK.search(script_text)
+        if block is None:
+            raise ValueError(
+                f"{_ASSET_UI_STRINGS_SCRIPT_NAME} holds no STRINGS block"
+            )
+        unread_text = _UI_STRINGS_ENTRY.sub("", block.group(1)).strip()
+        if unread_text:
+            raise ValueError(
+                f"{_ASSET_UI_STRINGS_SCRIPT_NAME} holds a STRINGS line no"
+                f" reader parses: {unread_text.splitlines()[0]}"
+            )
+        strings: dict[str, str] = {}
+        for string_id, literal in _UI_STRINGS_ENTRY.findall(block.group(1)):
+            if string_id in strings:
+                raise ValueError(
+                    f"{_ASSET_UI_STRINGS_SCRIPT_NAME} names {string_id} twice"
+                )
+            strings[string_id] = json.loads(literal)
+        return strings
+
+    def ui_text_fill(
+        self, string_id: str, replacements: dict[str, str]
+    ) -> str:
+        def marker_value(marker: re.Match[str]) -> str:
+            if marker.group(1) not in replacements:
+                raise ValueError(
+                    f"ui string {string_id} has no value for {marker.group(0)}"
+                )
+            return replacements[marker.group(1)]
+
+        return _UI_TEXT_MARKER.sub(marker_value, self.ui_text_of(string_id))
+
+    def ui_text_of(self, string_id: str) -> str:
+        if string_id not in self.ui_strings:
+            raise ValueError(f"missing ui string: {string_id}")
+        return self.ui_strings[string_id]
+
 
 _renderer = Theme()
 
@@ -669,6 +763,28 @@ def diff_share_of(delta: int, baseline: int | None) -> float:
     return _renderer.number_format.diff_share_of(delta, baseline)
 
 
+# Writes one element, the one writer of a tag, a None inner a void tag.
+def element_render(
+    tag_name: str, attributes: dict[str, str], inner_markup: str | None
+) -> str:
+    attribute_text = "".join(
+        f' {attribute_name}="{html_escape(attribute_value)}"'
+        for attribute_name, attribute_value in attributes.items()
+    )
+    start_tag = f"<{tag_name}{attribute_text}>"
+    if inner_markup is None:
+        return start_tag
+    return f"{start_tag}{inner_markup}</{tag_name}>"
+
+
+# Writes a heading, the page scripts showing its title as page emphasis.
+def heading_render(title_markup: str, count_key: str = "") -> str:
+    count_attributes = {"data-row-count-key-": count_key} if count_key else {}
+    return element_render(
+        "div", {"class": "page-heading-"} | count_attributes, title_markup
+    )
+
+
 def heat_of_share(percent: float) -> float:
     return _renderer.heat_of_share(percent)
 
@@ -677,8 +793,47 @@ def heat_style(heat: float, signed: bool = False) -> str:
     return _renderer.heat_style(heat, signed)
 
 
+# Holds a framed page's scripts until utility.js relays the settings down.
+def held_script_tags(script_markup: str) -> str:
+    return (
+        element_render("template", {"id": "page-held-script-"}, script_markup)
+        + "\n"
+    )
+
+
+# Escapes text for markup, the one escape the page builders write through.
 def html_escape(value: object) -> str:
-    return html.escape(str(value), quote=True)
+    return (
+        str(value)
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
+    )
+
+
+# Writes a menu button: menu colours, then a tab stop, link or role by kind.
+def menu_button_render(
+    kind_name: str, label_markup: str, fields: MenuButtonFields
+) -> str:
+    if kind_name not in _MENU_BUTTON_KIND_NAMES:
+        raise ValueError(f"menu button kind unrecognized: {kind_name}")
+    own_attributes = {"class": "menu-button-"}
+    inner_markup = label_markup
+    if kind_name == "link":
+        link_attributes = {"href": fields.href}
+        if fields.opens_new_tab:
+            link_attributes["target"] = "_blank"
+        if fields.tag_name == "a":
+            own_attributes |= link_attributes
+        else:
+            own_attributes["tabindex"] = "0"
+            inner_markup = element_render(
+                "a", link_attributes | {"tabindex": "-1"}, label_markup
+            )
+    elif fields.tag_name != "summary":
+        own_attributes |= {"role": "button", "tabindex": "0"}
+    return element_render(fields.tag_name, own_attributes, inner_markup)
 
 
 def num_human(number: float) -> str:
@@ -726,12 +881,14 @@ def page_preamble_scripts() -> tuple[str, ...]:
         _ASSET_ERROR_OVERLAY_SCRIPT_NAME,
         _ASSET_UTILITY_SCRIPT_NAME,
         _ASSET_UI_STRINGS_SCRIPT_NAME,
+        _ASSET_SETTINGS_SCRIPT_NAME,
     )
 
 
 def script_tags(href: str, names: Sequence[str]) -> str:
     return "".join(
-        f'<script src="{href}/{name}"></script>\n' for name in names
+        element_render("script", {"src": f"{href}/{name}"}, "") + "\n"
+        for name in names
     )
 
 
@@ -764,5 +921,9 @@ def theme_assets_write(out_dir: str) -> None:
     _renderer.assets_write(out_dir)
 
 
-def theme_runtime() -> ThemeRuntime:
-    return _renderer.runtime()
+def ui_text_fill(string_id: str, replacements: dict[str, str]) -> str:
+    return _renderer.ui_text_fill(string_id, replacements)
+
+
+def ui_text_of(string_id: str) -> str:
+    return _renderer.ui_text_of(string_id)

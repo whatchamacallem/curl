@@ -263,15 +263,6 @@ item_output_print() {
   printf '%s\n' "$@" | verbose_filter "$VERBOSE_ITEM_INDENT"
 }
 
-json_quote() {
-  local text="$1"
-  text="${text//\\/\\\\}"
-  text="${text//\"/\\\"}"
-  text="${text//$'\r'/\\r}"
-  text="${text//$'\n'/\\n}"
-  printf '"%s"' "$text"
-}
-
 log_verbose() {
   [ "$VERBOSE" -ge 1 ] || return 0
   block_lead other
@@ -335,12 +326,6 @@ manifest_recorded_row() {
   echo "recorded=$TIMESTAMP $(date -d "@$TIMESTAMP" +'%F %I:%M:%S %p')"
 }
 
-manifest_table_of() {
-  PYTHONPATH="$PERF2HTML_DIR_/scripts${PYTHONPATH:+:$PYTHONPATH}" \
-    python3 -c 'import sys, settings
-print(settings.manifest_table(sys.argv[1:]), end="")' "$@"
-}
-
 manifest_value() {
   sed -n "s/^$2=//p" "$1/MANIFEST.txt" | head -1
 }
@@ -366,11 +351,13 @@ manifest_wanted_phrase() {
 manifest_write() {
   local version="$1" dir="$2"
   shift 2
-  local manifest="$dir/MANIFEST.txt" table checksum
+  local manifest="$dir/MANIFEST.txt" checksum
   command_run python3 "$PERF2HTML_DIR_/scripts/build_report.py" assets \
     -o "$dir/$REPORT_ASSETS_DIR_NAME"
-  table="$(manifest_table_of "$version" "$@")"
-  report_complete_write "$dir" "$table"
+  command_run python3 "$PERF2HTML_DIR_/scripts/build_report.py" settings \
+    -o "$dir"
+  command_run python3 "$PERF2HTML_DIR_/scripts/build_report.py" debug \
+    -o "$dir/$REPORT_ASSETS_DIR_NAME" -- "$version" "$@"
   checksum="$(checksum_compute "$dir")"
   {
     printf '%s\n' "$version"
@@ -442,15 +429,6 @@ report_begin() {
   cp README.md "$dir/README.md"
 }
 
-report_complete_write() {
-  local dir="$1" table="$2"
-  local out="$dir/$REPORT_ASSETS_DIR_NAME/$ASSET_REPORT_COMPLETE_SCRIPT_NAME"
-  {
-    printf 'window.report_manifest_table_ = %s;\n' "$(json_quote "$table")"
-    screenshot_label_script_print
-  } >"$out"
-}
-
 report_delete() {
   local dir="$1" answer present=0
   local archive="$dir$REPORT_RAW_ARCHIVE_SUFFIX"
@@ -503,19 +481,6 @@ revision_describe() {
     error_exit 1 "error: git diff --quiet exited $dirty in $repository"
   fi
   echo "$revision"
-}
-
-screenshot_label_script_print() {
-  cat <<'EOF'
-(function () {
-  var value = new URLSearchParams(location.search).get("screenshot");
-  if (value === null) return;
-  var label = document.createElement("div");
-  label.className = "screenshot-label-";
-  label.textContent = value;
-  document.body.appendChild(label);
-})();
-EOF
 }
 
 shared_options_parse() {

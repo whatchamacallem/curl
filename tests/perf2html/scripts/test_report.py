@@ -16,13 +16,12 @@ _CALLGRIND_OUTPUT_FILE_PREFIX: str = ""
 _FLAME_GRAPH_APP_DIR_NAME: str = ""
 _FLAME_GRAPH_APP_FILE_GLOBS: tuple[str, ...] = ()
 _FLAME_GRAPH_EXPORTER_NAME: str = ""
-_FLAME_GRAPH_LOCAL_PROFILE_PATH: str = ""
 _FLAME_GRAPH_PROFILE_DIR_NAME: str = ""
 _FLAME_GRAPH_PROFILE_GLOBAL_NAME: str = ""
-_FLAME_GRAPH_VIEW_ENTRY: tuple[str, str, str] = ("", "", "")
+_FLAME_GRAPH_VIEW_ENTRY: tuple[str, str] = ("", "")
 _HEAT_MAP_MODEL_DIR_NAME: str = ""
 _HEAT_MAP_MODEL_GLOBAL_NAME: str = ""
-_HEAT_MAP_VIEW_ENTRY: tuple[str, str, str] = ("", "", "")
+_HEAT_MAP_VIEW_ENTRY: tuple[str, str] = ("", "")
 _REPORT_MANIFEST_CHECKSUM_LABEL: str = ""
 _REPORT_MANIFEST_VERSION_DIFF: str = ""
 _REPORT_MANIFEST_VERSION_FULL: str = ""
@@ -251,7 +250,7 @@ class TestReport:
             path,
             f"{_HEAT_MAP_VIEW_KEY}/index.html",
             _TEST_HEAT_MAP_PAGE_LEAST_BYTES,
-            _HEAT_MAP_VIEW_LABEL,
+            _HEAT_MAP_PAGE_TITLE,
         )
         if text and "report_ui_.layout_activate" not in text:
             self.fail(
@@ -321,7 +320,6 @@ class TestReport:
         out_dir: str,
         test_name: str,
         layout: TestReport.ReportLayout,
-        records_runs: bool,
     ) -> None:
         path = os.path.join(out_dir, "index.html")
         text = self.page_check(
@@ -355,16 +353,11 @@ class TestReport:
                 f"index.html links no function into the heat map"
                 f" ({function_start}...): {path}"
             )
-        flame_graph_address = (
-            f"#test={test_name}&view={_FLAME_GRAPH_VIEW_KEY}"
-            f"&profiler_path={_FLAME_GRAPH_LOCAL_PROFILE_PATH}"
-        )
-        if records_runs != (flame_graph_address in page_hrefs):
-            lack = "is missing its" if records_runs else "should not have a"
-            self.fail(f"index.html {lack} {flame_graph_address} link: {path}")
-        if records_runs != (">trace log</summary>" in page_text):
-            lack = "is missing its" if records_runs else "should not have a"
-            self.fail(f"index.html {lack} 'trace log' section: {path}")
+        if "<details" in page_text:
+            self.fail(
+                f"index.html holds a log section, which the overview holds:"
+                f" {path}"
+            )
         if "raw data" in page_text:
             self.fail(
                 "index.html has a 'raw data' section, but it should"
@@ -461,7 +454,6 @@ class TestReport:
         wanted = {
             "data-flame-graph-": "1" if layout.has_flame_graph else "0",
             "data-help-href-": "README.md",
-            "data-logo-href-": "index.html",
             "data-test-names-": json.dumps(list(tests), ensure_ascii=False),
         }
         if found != wanted:
@@ -497,6 +489,7 @@ class TestReport:
                     f" {test_name} heat map link: {path}"
                 )
         self.menu_check(path, page_text, tests, layout)
+        self.logs_check(path, page_text, layout.test_records_runs)
         for heading in layout.header_blocks:
             if f">{heading}</div>" not in text:
                 self.fail(
@@ -582,26 +575,18 @@ class TestReport:
             match = re.search(r"<title>(.*?)</title>", handle.read())
         return match.group(1) if match else None
 
-    def perf_tool_check(self, out_dir: str, has_perf_log: bool) -> None:
-        index_path = os.path.join(out_dir, "index.html")
-        index_text = self.size_check(
-            index_path, _TEST_OVERVIEW_PAGE_LEAST_BYTES, "index.html"
-        )
-        if not index_text:
-            return
-        if not has_perf_log:
-            if ">perf log</summary>" in index_text:
+    # Checks the overview's log sections, which a report recording runs has.
+    def logs_check(self, path: str, page_text: str, has_logs: bool) -> None:
+        for title in ("perf log", "trace log", "valgrind log"):
+            if has_logs != (f">{title}</summary>" in page_text):
+                lack = "has no" if has_logs else "should not have a"
                 self.fail(
-                    "index.html has a 'perf log' section, but it should"
-                    f" not: {index_path}"
+                    f"overview index.html {lack} '{title}' section: {path}"
                 )
-            return
-        if ">perf log</summary>" not in index_text:
-            self.fail(f"index.html has no 'perf log' section: {index_path}")
-        elif not re.search(r"^Time(/\w+)?:\s+\d", index_text, re.M):
+        if has_logs and not re.search(r"^Time(/\w+)?:\s+\d", page_text, re.M):
             self.fail(
-                "index.html's 'perf log' section has no recognizable"
-                f" timing line: {index_path}"
+                "overview index.html's 'perf log' section has no"
+                f" recognizable timing line: {path}"
             )
 
     def run(self, args: TestReport.TestArgs) -> int:
@@ -712,8 +697,7 @@ class TestReport:
     def test_report_check(
         self, out_dir: str, name: str, layout: TestReport.ReportLayout
     ) -> None:
-        records_runs = self.runs_recorded(layout, name)
-        self.index_check(out_dir, name, layout, records_runs)
+        self.index_check(out_dir, name, layout)
         for stray_name in ("raw", _HEAT_MAP_VIEW_KEY, _FLAME_GRAPH_VIEW_KEY):
             stray_dir = os.path.join(out_dir, stray_name)
             if os.path.exists(stray_dir):
@@ -721,8 +705,6 @@ class TestReport:
                     f"{stray_name}/ in a test, which no report keeps:"
                     f" {stray_dir}"
                 )
-        if layout.test_records_runs:
-            self.perf_tool_check(out_dir, records_runs)
 
     def timer_artifacts_archive_check(
         self,
@@ -835,7 +817,7 @@ class TestReport:
 _FLAME_GRAPH_VIEW_KEY = _FLAME_GRAPH_VIEW_ENTRY[0]
 
 _HEAT_MAP_VIEW_KEY = _HEAT_MAP_VIEW_ENTRY[0]
-_HEAT_MAP_VIEW_LABEL = _HEAT_MAP_VIEW_ENTRY[1]
+_HEAT_MAP_PAGE_TITLE = "heat map"
 
 _LAYOUT_DIFF = TestReport.ReportLayout(
     has_flame_graph=False,

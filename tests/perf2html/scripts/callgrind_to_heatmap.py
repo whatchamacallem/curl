@@ -12,20 +12,18 @@ from typing import NamedTuple, NotRequired, TypedDict
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import callgrind, callgrind_diff, settings, theme
 
+_ASSET_DEBUG_SCRIPT_NAME: str = ""
 _ASSET_HEAT_MAP_SCRIPT_NAME: str = ""
 _ASSET_HEAT_MAP_STYLESHEET_NAME: str = ""
 _ASSET_MENU_STYLESHEET_NAME: str = ""
 _ASSET_PULLDOWN_TEXT_SCRIPT_NAME: str = ""
-_ASSET_REPORT_COMPLETE_SCRIPT_NAME: str = ""
-_ASSET_SETTINGS_SCRIPT_NAME: str = ""
 _ASSET_TEMPLATE_HEAT_MAP_MAIN_NAME: str = ""
 _ASSET_TEMPLATE_HEAT_MAP_PAGE_NAME: str = ""
 _ASSET_THEME_SCRIPT_NAME: str = ""
 _HEAT_MAP_MODEL_DIR_NAME: str = ""
 _HEAT_MAP_MODEL_GLOBAL_NAME: str = ""
 _HEAT_MAP_TREE_ALWAYS_LISTED_DIRS: tuple[str, ...] = ()
-_HEAT_MAP_VIEW_ENTRY: tuple[str, str, str] = ("", "", "")
-_RANKING_COUNTER_NAME: str = ""
+_HEAT_MAP_VIEW_ENTRY: tuple[str, str] = ("", "")
 _REPORT_ASSETS_DIR_NAME: str = ""
 _REPORT_SOURCES_DIR_NAME: str = ""
 _REPORT_TEST_SUITE_NAME: str = ""
@@ -35,7 +33,7 @@ BODY = theme.asset_text_read(_ASSET_TEMPLATE_HEAT_MAP_PAGE_NAME)
 
 _HEAT_MAP_MAIN = theme.asset_text_read(_ASSET_TEMPLATE_HEAT_MAP_MAIN_NAME)
 
-_HEAT_MAP_PAGE_PATH = _HEAT_MAP_VIEW_ENTRY[2]
+_HEAT_MAP_PAGE_PATH = _HEAT_MAP_VIEW_ENTRY[1]
 _HEAT_MAP_PAGE_DEPTH = _HEAT_MAP_PAGE_PATH.count("/")
 
 
@@ -131,13 +129,11 @@ class CallgrindToHeatmap:
     class HeatMapTotals(TypedDict):
         counters: list[str]
         derived: list[callgrind.ResolvedDerivedCounter]
-        defaultCounter: str
         totals: callgrind.Costs
         diff: bool
 
     class HeatModel(TypedDict):
         heatMapTotals: CallgrindToHeatmap.HeatMapTotals
-        theme: theme.ThemeRuntime
         files: dict[str, CallgrindToHeatmap.FileModel]
         functions: list[CallgrindToHeatmap.FunctionModel]
         cold: list[str]
@@ -384,16 +380,13 @@ class CallgrindToHeatmap:
             if relative not in files
         )
         callgrind.ranking_counter_check(profile.counters, "this profile")
-        default_counter = _RANKING_COUNTER_NAME
         return {
             "heatMapTotals": {
                 "counters": profile.counters,
                 "derived": profile.resolved_derived_counters(),
-                "defaultCounter": default_counter,
                 "totals": profile.totals(),
                 "diff": False,
             },
-            "theme": theme.theme_runtime(),
             "files": files,
             "functions": functions,
             "cold": cold,
@@ -406,21 +399,22 @@ class CallgrindToHeatmap:
         sources_href = theme.shared_href(
             _HEAT_MAP_PAGE_DEPTH, _REPORT_SOURCES_DIR_NAME
         )
-        scripts = theme.script_tags(
-            assets_href, (_ASSET_REPORT_COMPLETE_SCRIPT_NAME,)
-        )
-        scripts += theme.script_tags(sources_href, source_names)
+        scripts = theme.script_tags(sources_href, source_names)
         scripts += theme.script_tags(
-            assets_href,
-            (
-                _ASSET_PULLDOWN_TEXT_SCRIPT_NAME,
-                _ASSET_SETTINGS_SCRIPT_NAME,
-                _ASSET_THEME_SCRIPT_NAME,
-                _ASSET_HEAT_MAP_SCRIPT_NAME,
-            ),
+            assets_href, (_ASSET_PULLDOWN_TEXT_SCRIPT_NAME,)
+        )
+        scripts += theme.held_script_tags(
+            theme.script_tags(
+                assets_href,
+                (
+                    _ASSET_DEBUG_SCRIPT_NAME,
+                    _ASSET_THEME_SCRIPT_NAME,
+                    _ASSET_HEAT_MAP_SCRIPT_NAME,
+                ),
+            )
         )
         return theme.page_document(
-            _HEAT_MAP_VIEW_ENTRY[1],
+            theme.ui_text_of("str_view_heat_map"),
             theme.template_fill(
                 BODY,
                 {"__HEAT_MAP_MAIN__": _HEAT_MAP_MAIN, "__SCRIPTS__": scripts},

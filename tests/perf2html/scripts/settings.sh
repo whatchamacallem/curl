@@ -4,7 +4,7 @@
 
 ARTIFACTS_NAME=perf2html_temporary_artifacts
 
-ASSET_REPORT_COMPLETE_SCRIPT_NAME=report_complete.js
+ASSET_DEBUG_SCRIPT_NAME=debug.js
 
 BUILD_CCACHE_NAMESPACE=perf2html
 

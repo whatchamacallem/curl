@@ -1,0 +1,122 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>test index</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        background: #202020;
+        color: #e0e0e0;
+        font-family: monospace;
+      }
+      label {
+        display: block;
+        padding: 4px;
+      }
+      table {
+        width: 100%;
+        border: 0;
+        border-spacing: 0;
+        border-collapse: collapse;
+        table-layout: fixed;
+      }
+      td {
+        padding: 0;
+        border: 0;
+        overflow: hidden;
+      }
+      .cell- {
+        position: relative;
+        overflow: hidden;
+      }
+      .cell- iframe {
+        position: absolute;
+        left: 0;
+        top: 0;
+        border: 0;
+        transform-origin: 0 0;
+        pointer-events: none;
+      }
+      .cell- a {
+        position: absolute;
+        left: 0;
+        top: 0;
+        right: 0;
+        bottom: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <label
+      >width
+      <select id="width-"></select
+    ></label>
+    <div id="grid-"></div>
+    __SHOT_LIST__
+    <script>
+      (function () {
+        const data = JSON.parse(
+          document.getElementById("shot-list-").textContent,
+        );
+        const select = document.getElementById("width-");
+        const grid = document.getElementById("grid-");
+        const WIDTH_CHOICE_MAX = 16;
+        const WIDTH_DEFAULT = 4;
+        for (let n = 1; n <= WIDTH_CHOICE_MAX; n++) {
+          const option = document.createElement("option");
+          option.value = String(n);
+          option.textContent = String(n);
+          select.appendChild(option);
+        }
+        select.value = String(WIDTH_DEFAULT);
+
+        function layout() {
+          const count = Number(select.value);
+          const cell_width = grid.clientWidth / count;
+          const scale = cell_width / data.width;
+          const cell_height = data.height * scale;
+          for (const cell of grid.querySelectorAll(".cell-")) {
+            cell.style.height = cell_height + "px";
+            cell.firstChild.style.transform = "scale(" + scale + ")";
+          }
+        }
+
+        function build() {
+          const count = Number(select.value);
+          const table = document.createElement("table");
+          let row = null;
+          data.pages.forEach(function (page, index) {
+            if (index % count === 0) {
+              row = table.insertRow();
+            }
+            const cell = row.insertCell();
+            cell.style.width = 100 / count + "%";
+            const box = document.createElement("div");
+            box.className = "cell-";
+            const frame = document.createElement("iframe");
+            frame.src = page.href;
+            frame.width = data.width;
+            frame.height = data.height;
+            const link = document.createElement("a");
+            link.href = page.href;
+            link.setAttribute("aria-label", page.name);
+            box.appendChild(frame);
+            box.appendChild(link);
+            cell.appendChild(box);
+          });
+          while (row.cells.length < count) {
+            row.insertCell();
+          }
+          grid.replaceChildren(table);
+          layout();
+        }
+
+        select.addEventListener("change", build);
+        new ResizeObserver(layout).observe(grid);
+        build();
+      })();
+    </script>
+  </body>
+</html>

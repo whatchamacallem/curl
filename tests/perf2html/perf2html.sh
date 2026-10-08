@@ -297,23 +297,15 @@ trace_render() {
 }
 
 report_render() {
-  local _name="$1" _out="$2" _perf_log="$3" _trace_log="$4"
-  local _log_args=() _perf_log_args=() _log_file
+  local _name="$1" _out="$2"
 
   heading_print "python3 callgrind_to_heatmap.py data $_name"
   command_run python3 "$PERF2HTML_DIR_/scripts/callgrind_to_heatmap.py" data \
     "${_CALLGRIND_FILES[@]}" --report-dir "$_OUT_DIR" --test "$_name"
 
   heading_print "python3 build_report.py test $_name"
-  for _log_file in "${_LOG_FILES[@]}"; do _log_args+=(--log "$_log_file"); done
-  if [ "$_name" = "$REPORT_TEST_SUITE_NAME" ]; then
-    _log_args+=(--no-log)
-  else
-    _perf_log_args=(--perf-log "$_perf_log" --trace-log "$_trace_log")
-  fi
   command_run python3 "$PERF2HTML_DIR_/scripts/build_report.py" test \
-    "${_CALLGRIND_FILES[@]}" -o "$_out/index.html" --test "$_name" \
-    "${_perf_log_args[@]}" "${_log_args[@]}"
+    "${_CALLGRIND_FILES[@]}" -o "$_out/index.html" --test "$_name"
 }
 
 timing_record() {
@@ -342,8 +334,7 @@ run_one() {
   if [ "$REGENERATE" = 1 ]; then
     trace_render "$_test" "$_loops"
     _CALLGRIND_FILES=("$_cg_file")
-    _LOG_FILES=("$_log")
-    report_render "$_test" "$_out" "$_page" "$_TRACE_LOG"
+    report_render "$_test" "$_out"
     log_verbose "$(printf '%-13sloops=%s | reused' "$_test" "$_loops")"
     return
   fi
@@ -385,8 +376,7 @@ run_one() {
 
   trace_render "$_test" "$_loops"
   _CALLGRIND_FILES=("$_cg_file")
-  _LOG_FILES=("$_log")
-  report_render "$_test" "$_out" "$_page" "$_TRACE_LOG"
+  report_render "$_test" "$_out"
 }
 
 timer_artifacts_write() {
@@ -417,15 +407,16 @@ run_all() {
   local _out="$1"
   local _test_name _time_label _time_value _time_suffix _suite_suffix
   local _remaining_fields _total=0 _row _rows="" _page _test_page _recording
-  local _perf_log_args=() _args _timing_lines=()
+  local _log_args=() _args _timing_lines=()
   _page="$(artifact_path_of timing-page "$REPORT_TEST_SUITE_NAME")"
   _CALLGRIND_FILES=()
-  _LOG_FILES=()
   for _test_name in "${_TESTS[@]}"; do
     _recording="$(artifact_path_of callgrind "$_test_name")"
     _CALLGRIND_FILES+=("$_recording")
     _recording="$(artifact_path_of valgrind-log "$_test_name")"
-    _LOG_FILES+=("$_recording")
+    _log_args+=(--valgrind-log "$_test_name=$_recording")
+    _recording="$(artifact_path_of trace-log "$_test_name")"
+    _log_args+=(--trace-log "$_test_name=$_recording")
   done
 
   heading_print "taskset -c $PROFILE_PINNED_CPU perf <test>"
@@ -446,20 +437,20 @@ run_all() {
     _rows+="$_row"
     _timing_lines+=("$_test_name: $_time_value $_suite_suffix")
     _total=$((_total + _time_value))
-    _perf_log_args+=(--perf-log "$_test_name=$_test_page")
+    _log_args+=(--perf-log "$_test_name=$_test_page")
   done
   {
     echo "\$ taskset -c $PROFILE_PINNED_CPU $_BIN_REL <test>"
     echo "#   for every test, one after the other"
-    echo "#   (each test's page has its full output)"
+    echo "#   (the perf log of each test follows)"
     printf '%s' "$_rows"
     echo "Time:     $_total $_suite_suffix"
   } >"$_page"
   command_item_print "taskset -c $PROFILE_PINNED_CPU $_BIN <test>"
   item_output_print "${_timing_lines[@]}" "Time: $_total $_suite_suffix"
-  _perf_log_args+=(--perf-log "$REPORT_TEST_SUITE_NAME=$_page")
+  _log_args+=(--perf-log "$REPORT_TEST_SUITE_NAME=$_page")
 
-  report_render "$REPORT_TEST_SUITE_NAME" "$_out" "" ""
+  report_render "$REPORT_TEST_SUITE_NAME" "$_out"
 
   heading_print "python3 build_report.py overview"
   _HEADER_ROWS=(
@@ -471,7 +462,7 @@ run_all() {
   )
   printf '%s\n' "${_HEADER_ROWS[@]}" >"$_HEADER_FILE"
   _args=(-o "$_OUT_DIR/index.html" --header-file "$_HEADER_FILE"
-    --raw-data "$_TIMER_ARTIFACTS_ARCHIVE" "${_perf_log_args[@]}")
+    --raw-data "$_TIMER_ARTIFACTS_ARCHIVE" "${_log_args[@]}")
   for _test_name in "${_TESTS[@]}" "$REPORT_TEST_SUITE_NAME"; do
     _args+=(--test "$_test_name")
   done
