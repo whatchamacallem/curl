@@ -56,13 +56,6 @@ window.ui_strings_ = (function () {
     str_debug_tip_text: "<{tag}> class={class}\nid={id}\nfg={fg}\nbg={bg}",
     str_error_dark_mode_unusable:
       "the dark mode choice came out as {0}, naming neither state",
-    str_error_diff_fall_past_baseline:
-      "a change of {0} falls past its baseline of {1}",
-    str_error_flame_graph_never_started:
-      "flame graph viewer did not start within {0}s",
-    str_error_flame_graph_unfiled:
-      "the flame graph script for test {0} filed no profile",
-    str_error_font_refused: "the browser refused the page font",
     str_error_hash_file_missing: "url names line {0} but no file",
     str_error_hash_file_unknown:
       "url encodes a file this report never profiled: {0}",
@@ -85,62 +78,21 @@ window.ui_strings_ = (function () {
     str_error_hash_test_unknown:
       "url encodes a test this report does not have: {0}",
     str_error_hash_value_empty: "url part {0} holds no value",
-    str_error_hash_view_mismatch:
-      "url does not name view {0}, the one this page shows",
     str_error_hash_view_missing: "url names test {0} but no view",
     str_error_hash_view_unknown:
       "url encodes a view this report does not have: {0}",
-    str_error_heading_attached_twice: "table heading {0} is attached twice",
-    str_error_heading_count_missing:
-      "table heading {0} names row count key {1} but shows no count",
-    str_error_heading_table_missing:
-      "table heading {0} sits immediately before no table",
-    str_error_heat_map_unfiled:
-      "the heat map script for test {0} filed no model",
-    str_error_held_script_missing:
-      "the settings arrived, and the page holds no scripts to run under them",
     str_error_held_script_unframed:
       "a view page opened outside the overview gets no settings to run under",
-    str_error_markup_attribute_unusable:
-      "markup attribute {0} holds {1}, which is neither text nor a number",
-    str_error_markup_element_count: "markup makes no single element: {0}",
-    str_error_menu_button_attribute_owned:
-      "menu button attribute {0} is one the menu button door writes",
-    str_error_menu_button_kind_unknown: "menu button kind unrecognized: {0}",
-    str_error_message_tag_unknown: "cross-frame message tag unrecognized: {0}",
-    str_error_pulldown_focus_refused:
-      "the browser kept focus on {0}, so keys cannot reach the pulldown",
-    str_error_pulldown_text_missing:
-      "no file and function names were shipped for the pulldowns",
+    str_error_internal: "internal error: halted and caught fire",
     str_error_report_incomplete:
       "report incomplete, assets/debug.js not written.",
-    str_error_row_count_unusable:
-      "the row count for {0} came out as {1}, not one of {2}",
-    str_error_rows_unwalked:
-      "table {0} walks no rows, so none of its rows can be a tab stop",
-    str_error_scale_stop_unusable:
-      "the scale bar stop came out as {0}, not a whole number from 0 to {1}",
-    str_error_scale_stored_unusable:
-      "the stored page scale came out as {0}, not a number from {1} to {2}",
-    str_error_scale_unusable: "the page scale came out as {0}",
     str_error_setting_unknown: "no such setting: {0}",
     str_error_settings_debug_query_unusable:
       "the {0} query value came out as {1}, expected {2}",
     str_error_settings_values_unusable:
       "url part {0} holds no object of setting values",
-    str_error_strip_entry_kind_unknown:
-      "strip entry {0} has kind {1}, which no strip cell draws",
-    str_error_strip_entry_repeated: "the strip names entry {0} more than once",
-    str_error_strip_entry_unknown: "the strip holds no entry named {0}",
-    str_error_strip_entry_unusable: "strip entry {0} is no available {1}",
     str_error_strip_number_unusable:
       "no available strip entry is numbered {0}",
-    str_error_template_marker_missing: "the template holds no marker {0}",
-    str_error_text_scrollbar_attached_twice:
-      "text scrollbar {0} inside {1} is attached twice",
-    str_error_text_scrollbar_axis_unknown:
-      "text scrollbar axis unrecognized: {0}",
-    str_error_wheel_delta_mode_unknown: "wheel delta mode unrecognized: {0}",
     str_flame_graph_page_title: "speedscope",
     str_function_name_unknown: "?",
     str_heading_functions_by_counter: "top {count} functions by {measure}",

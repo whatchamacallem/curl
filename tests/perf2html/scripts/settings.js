@@ -133,11 +133,7 @@ window.try_catch_handler_(function () {
   // Reads one setting of the window settings object, refusing an unknown one.
   function settings_(setting_name) {
     if (!Object.hasOwn(settings_object, setting_name))
-      throw new Error(
-        window.ui_strings_.text_fill("str_error_setting_unknown", [
-          setting_name,
-        ]),
-      );
+      throw new Error(window.ui_strings_.text_of("str_error_internal"));
     return settings_object[setting_name];
   }
   function settings_names_() {
@@ -151,9 +147,7 @@ window.try_catch_handler_(function () {
   function held_scripts_load() {
     const held_template = document.getElementById(HELD_SCRIPT_TEMPLATE_ID);
     if (!held_template)
-      throw new Error(
-        window.ui_strings_.text_of("str_error_held_script_missing"),
-      );
+      throw new Error(window.ui_strings_.text_of("str_error_internal"));
     for (const held_script of held_template.content.querySelectorAll(
       "script",
     )) {

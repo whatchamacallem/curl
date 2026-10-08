@@ -254,12 +254,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
       scale_stop < 0 ||
       scale_stop > DESIGN_SCALE_LAST_STOP
     ) {
-      throw new Error(
-        window.ui_strings_.text_fill("str_error_scale_stop_unusable", [
-          scale_stop,
-          DESIGN_SCALE_LAST_STOP,
-        ]),
-      );
+      throw new Error(window.ui_strings_.text_of("str_error_internal"));
     }
   }
   function design_scale_stop_nearest(wanted_multiple) {
@@ -285,13 +280,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
       stored_multiple < STYLE_DESIGN_SCALE_SMALLEST_MULTIPLE ||
       stored_multiple > STYLE_DESIGN_SCALE_LARGEST_MULTIPLE
     ) {
-      throw new Error(
-        window.ui_strings_.text_fill("str_error_scale_stored_unusable", [
-          stored_multiple,
-          STYLE_DESIGN_SCALE_SMALLEST_MULTIPLE,
-          STYLE_DESIGN_SCALE_LARGEST_MULTIPLE,
-        ]),
-      );
+      throw new Error(window.ui_strings_.text_of("str_error_internal"));
     }
     return design_scale_stop_nearest(stored_multiple);
   }
@@ -314,7 +303,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
     const default_font = context.font;
     context.font = wanted_font;
     if (context.font === default_font) {
-      throw new Error(window.ui_strings_.text_of("str_error_font_refused"));
+      throw new Error(window.ui_strings_.text_of("str_error_internal"));
     }
     const measured_px = context.measureText(CH_UNIT_GLYPH).width;
     document.documentElement.style.setProperty(
@@ -338,9 +327,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
       : 1;
     const wanted = root_zoom * multiple;
     if (!isFinite(wanted) || !(wanted > 0)) {
-      throw new Error(
-        window.ui_strings_.text_fill("str_error_scale_unusable", [wanted]),
-      );
+      throw new Error(window.ui_strings_.text_of("str_error_internal"));
     }
     design_scale = wanted;
     root_element.style.zoom = String(root_zoom);
@@ -390,11 +377,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
     if (stored_value === null) return DARK_MODE_ENABLED_DEFAULT;
     if (stored_value === DARK_MODE_ENABLED_VALUE) return true;
     if (stored_value === DARK_MODE_DISABLED_VALUE) return false;
-    throw new Error(
-      window.ui_strings_.text_fill("str_error_dark_mode_unusable", [
-        stored_value,
-      ]),
-    );
+    throw new Error(window.ui_strings_.text_of("str_error_internal"));
   }
   function dark_mode_stored_apply_() {
     dark_mode_show(dark_mode_stored_enabled_());
@@ -446,12 +429,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
   function diff_share_of(delta, baseline) {
     const baseline_count = baseline === null ? 0 : baseline;
     if (delta < -baseline_count) {
-      throw new Error(
-        window.ui_strings_.text_fill("str_error_diff_fall_past_baseline", [
-          delta,
-          baseline_count,
-        ]),
-      );
+      throw new Error(window.ui_strings_.text_of("str_error_internal"));
     }
     if (!delta) return 0;
     return baseline_count ? (100 * delta) / baseline_count : Infinity;
@@ -635,7 +613,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
       return FLAME_GRAPH_VIEW_ENTRY[1];
     if (checked_address.view === SETTINGS_VIEW_ENTRY[0])
       return SETTINGS_VIEW_ENTRY[1];
-    throw address_error("str_error_hash_view_unknown", [checked_address.view]);
+    throw new Error(window.ui_strings_.text_of("str_error_internal"));
   }
   // Answers the link to the top page at a hash, the address the menu shows.
   function address_top_href_of(hash) {
@@ -752,11 +730,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
       } else if (message_name === "tests_pulldown_closed")
         view_key_tests_pulldown_closed();
       else if (message_name !== "settings_relay")
-        throw new Error(
-          window.ui_strings_.text_fill("str_error_message_tag_unknown", [
-            message_name,
-          ]),
-        );
+        throw new Error(window.ui_strings_.text_of("str_error_internal"));
     });
     parent_post({ report_ui: "dark_mode_request" });
   }
@@ -873,11 +847,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
     function root_focus() {
       root_element.focus({ preventScroll: true });
       if (document.activeElement !== root_element)
-        throw new Error(
-          window.ui_strings_.text_fill("str_error_pulldown_focus_refused", [
-            document.activeElement.tagName.toLowerCase(),
-          ]),
-        );
+        throw new Error(window.ui_strings_.text_of("str_error_internal"));
     }
     function pulldown_open(typed_text) {
       is_open = true;
@@ -1016,11 +986,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
       (candidate_entry) => candidate_entry.name === entry_name,
     );
     if (!found_entry)
-      throw new Error(
-        window.ui_strings_.text_fill("str_error_strip_entry_unknown", [
-          entry_name,
-        ]),
-      );
+      throw new Error(window.ui_strings_.text_of("str_error_internal"));
     return found_entry;
   }
   function strip_number_text_of(numbered_index) {
@@ -1064,12 +1030,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
   // Writes an entry cell, a title as page emphasis, else a menu button.
   function strip_cell_render(entry, label_markup) {
     if (!STRIP_ENTRY_KIND_NAMES.includes(entry.kind))
-      throw new Error(
-        window.ui_strings_.text_fill("str_error_strip_entry_kind_unknown", [
-          entry.name,
-          entry.kind,
-        ]),
-      );
+      throw new Error(window.ui_strings_.text_of("str_error_internal"));
     const name_attributes = { "data-entry-name-": entry.name };
     if (entry.kind === "text")
       return window.shared_page_emphasis_render_(label_markup, {
@@ -1129,20 +1090,8 @@ window.report_ui_ = window.try_catch_handler_(function () {
 
     function strip_cell_named(entry_name) {
       if (!cells_by_name.has(entry_name))
-        throw new Error(
-          window.ui_strings_.text_fill("str_error_strip_entry_unknown", [
-            entry_name,
-          ]),
-        );
+        throw new Error(window.ui_strings_.text_of("str_error_internal"));
       return cells_by_name.get(entry_name);
-    }
-    function strip_entry_unusable(entry_name, kind_name) {
-      return new Error(
-        window.ui_strings_.text_fill("str_error_strip_entry_unusable", [
-          entry_name,
-          kind_name,
-        ]),
-      );
     }
     function entry_activate(entry) {
       const entry_cell = cells_by_name.get(entry.name);
@@ -1211,14 +1160,14 @@ window.report_ui_ = window.try_catch_handler_(function () {
     function strip_pulldown_open(entry_name, search_text) {
       strip_cell_named(entry_name);
       if (!pulldowns_by_name.has(entry_name))
-        throw strip_entry_unusable(entry_name, "pulldown");
+        throw new Error(window.ui_strings_.text_of("str_error_internal"));
       pulldowns_by_name.get(entry_name).open(search_text);
     }
     // Relabels a pulldown cell without a render, so focus stays where it is.
     function strip_pulldown_label_set(entry_name, label_text) {
       strip_cell_named(entry_name);
       if (!pulldowns_by_name.has(entry_name))
-        throw strip_entry_unusable(entry_name, "pulldown");
+        throw new Error(window.ui_strings_.text_of("str_error_internal"));
       const labelled_entries = entries.map((entry) =>
         entry.name === entry_name ? { ...entry, label: label_text } : entry,
       );
@@ -1230,18 +1179,15 @@ window.report_ui_ = window.try_catch_handler_(function () {
       const widget_box = strip_cell_named(entry_name).querySelector(
         ".menu-button-widget-",
       );
-      if (!widget_box) throw strip_entry_unusable(entry_name, "widget");
+      if (!widget_box)
+        throw new Error(window.ui_strings_.text_of("str_error_internal"));
       widget_box.innerHTML = strip_widget_cells_markup(widget_text);
     }
 
     if (previous_strip) previous_strip.reset();
     for (const entry of entries) {
       if (entries_by_name.has(entry.name))
-        throw new Error(
-          window.ui_strings_.text_fill("str_error_strip_entry_repeated", [
-            entry.name,
-          ]),
-        );
+        throw new Error(window.ui_strings_.text_of("str_error_internal"));
       entries_by_name.set(entry.name, entry);
       const label_markup =
         entry.label_markup === null
@@ -1525,11 +1471,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
   function template_fill(template_text, marker_values) {
     for (const marker of Object.keys(marker_values)) {
       if (!template_text.includes(marker))
-        throw new Error(
-          window.ui_strings_.text_fill("str_error_template_marker_missing", [
-            marker,
-          ]),
-        );
+        throw new Error(window.ui_strings_.text_of("str_error_internal"));
     }
     let filled_text = template_text;
     for (const [marker, markup] of Object.entries(marker_values))
@@ -1800,11 +1742,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
     const owning_table = row_element.closest("table");
     const row_walk = row_walks.get(owning_table);
     if (!row_walk)
-      throw new Error(
-        window.ui_strings_.text_fill("str_error_rows_unwalked", [
-          owning_table.getAttribute("data-key-"),
-        ]),
-      );
+      throw new Error(window.ui_strings_.text_of("str_error_internal"));
     tab_stop_move(
       row_element.parentElement.querySelector(':scope > tr[tabindex="0"]'),
       row_element,
@@ -1938,13 +1876,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
 
   function row_count_checked(count_key, row_count) {
     if (!TABLE_ROW_COUNT_CHOICES.includes(row_count))
-      throw new Error(
-        window.ui_strings_.text_fill("str_error_row_count_unusable", [
-          count_key,
-          row_count,
-          TABLE_ROW_COUNT_CHOICES.join(" "),
-        ]),
-      );
+      throw new Error(window.ui_strings_.text_of("str_error_internal"));
     return row_count;
   }
   function row_count_stored(count_key, default_count) {
@@ -1994,11 +1926,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
   function page_heading_attach(heading_element, extra_entries) {
     const heading_text = heading_element.textContent;
     if (attached_headings.has(heading_element))
-      throw new Error(
-        window.ui_strings_.text_fill("str_error_heading_attached_twice", [
-          heading_text,
-        ]),
-      );
+      throw new Error(window.ui_strings_.text_of("str_error_internal"));
     const title_markup = heading_element.innerHTML;
     const count_key = heading_element.getAttribute("data-row-count-key-");
     const count_span_of = () =>
@@ -2009,11 +1937,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
         ? table_box.querySelector(":scope > .table-columns- > table.columns-")
         : null;
     if (!table_element && (count_key !== null || extra_entries.length))
-      throw new Error(
-        window.ui_strings_.text_fill("str_error_heading_table_missing", [
-          heading_text,
-        ]),
-      );
+      throw new Error(window.ui_strings_.text_of("str_error_internal"));
     if (!table_element) {
       heading_element.innerHTML = window.shared_page_emphasis_render_(
         title_markup,
@@ -2023,12 +1947,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
       return;
     }
     if (count_key !== null && !count_span_of())
-      throw new Error(
-        window.ui_strings_.text_fill("str_error_heading_count_missing", [
-          heading_text,
-          count_key,
-        ]),
-      );
+      throw new Error(window.ui_strings_.text_of("str_error_internal"));
     const default_count =
       count_key === null
         ? 0
@@ -2224,11 +2143,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
       bar_element.classList.contains(axis_name + "-"),
     );
     if (axis_names.length !== 1)
-      throw new Error(
-        window.ui_strings_.text_fill("str_error_text_scrollbar_axis_unknown", [
-          bar_element.className,
-        ]),
-      );
+      throw new Error(window.ui_strings_.text_of("str_error_internal"));
     return axis_names[0];
   }
   // Converts a wheel delta to characters, one pixel per delta unit.
@@ -2242,27 +2157,14 @@ window.report_ui_ = window.try_catch_handler_(function () {
       return wheel_delta;
     if (wheel_event.deltaMode === WheelEvent.DOM_DELTA_PAGE)
       return wheel_delta * page_size;
-    throw new Error(
-      window.ui_strings_.text_fill("str_error_wheel_delta_mode_unknown", [
-        wheel_event.deltaMode,
-      ]),
-    );
+    throw new Error(window.ui_strings_.text_of("str_error_internal"));
   }
   // Shows and drives the target's scroll offset on one axis in text cells.
   function text_scrollbar_attach(bar_element, target_element, axis_name) {
     if (!Object.hasOwn(TEXT_SCROLLBAR_AXES, axis_name))
-      throw new Error(
-        window.ui_strings_.text_fill("str_error_text_scrollbar_axis_unknown", [
-          axis_name,
-        ]),
-      );
+      throw new Error(window.ui_strings_.text_of("str_error_internal"));
     if (attached_scrollbars.has(bar_element))
-      throw new Error(
-        window.ui_strings_.text_fill(
-          "str_error_text_scrollbar_attached_twice",
-          [bar_element.className, bar_element.parentElement.tagName],
-        ),
-      );
+      throw new Error(window.ui_strings_.text_of("str_error_internal"));
     const scroll_axis = TEXT_SCROLLBAR_AXES[axis_name];
     const gutter_text = window.ui_strings_.text_of(
       "str_text_scrollbar_gutter",

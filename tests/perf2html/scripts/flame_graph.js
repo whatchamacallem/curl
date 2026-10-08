@@ -31,17 +31,6 @@ window.try_catch_handler_(function () {
   const _FORWARDED_ADDRESS = window.report_ui_.address.of_hash(location.hash);
   const _profile_script = document.createElement("script");
 
-  function startup_failure() {
-    const waited_seconds =
-      (FLAME_GRAPH_STARTUP_POLL_MAX_ATTEMPTS *
-        FLAME_GRAPH_STARTUP_POLL_DELAY_MS) /
-      1000;
-    return new Error(
-      window.ui_strings_.text_fill("str_error_flame_graph_never_started", [
-        waited_seconds,
-      ]),
-    );
-  }
   // Answers the scheme speedscope reads at start for the dark mode shown.
   function color_scheme_of_dark_mode() {
     return window.report_ui_.dark_mode_enabled_now_()
@@ -59,11 +48,7 @@ window.try_catch_handler_(function () {
   function profile_hand_over() {
     const filed_profiles = window[FLAME_GRAPH_PROFILE_GLOBAL_NAME];
     if (!filed_profiles || !filed_profiles[_FORWARDED_ADDRESS.test])
-      throw new Error(
-        window.ui_strings_.text_fill("str_error_flame_graph_unfiled", [
-          _FORWARDED_ADDRESS.test,
-        ]),
-      );
+      throw new Error(window.ui_strings_.text_of("str_error_internal"));
     const test_profile = filed_profiles[_FORWARDED_ADDRESS.test];
     let attempt_count = 0;
     const poll_timer = setInterval(
@@ -78,18 +63,14 @@ window.try_catch_handler_(function () {
         }
         if (++attempt_count < FLAME_GRAPH_STARTUP_POLL_MAX_ATTEMPTS) return;
         clearInterval(poll_timer);
-        throw startup_failure();
+        throw new Error(window.ui_strings_.text_of("str_error_internal"));
       }),
       FLAME_GRAPH_STARTUP_POLL_DELAY_MS,
     );
   }
 
   if (_FORWARDED_ADDRESS.view !== FLAME_GRAPH_VIEW_ENTRY[0])
-    throw new Error(
-      window.ui_strings_.text_fill("str_error_hash_view_mismatch", [
-        FLAME_GRAPH_VIEW_ENTRY[0],
-      ]),
-    );
+    throw new Error(window.ui_strings_.text_of("str_error_internal"));
   if (_FORWARDED_ADDRESS.localProfilePath === null)
     throw new Error(
       window.ui_strings_.text_of("str_error_hash_profile_path_missing"),

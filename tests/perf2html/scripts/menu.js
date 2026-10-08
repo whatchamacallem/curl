@@ -98,9 +98,7 @@ window.try_catch_handler_(function () {
   function heat_map_entries_of(names_key, entry_name, part_of) {
     const pulldown_text = window.report_pulldown_text_;
     if (!pulldown_text)
-      throw new Error(
-        window.ui_strings_.text_of("str_error_pulldown_text_missing"),
-      );
+      throw new Error(window.ui_strings_.text_of("str_error_internal"));
     const entry_test_name = active_test_name();
     return pulldown_text[names_key].map((name) =>
       pulldown_link_of(

@@ -1513,12 +1513,7 @@ window.try_catch_handler_(function () {
 
   function file_render(file_path) {
     const file = file_table[file_path];
-    if (!file)
-      throw new Error(
-        window.ui_strings_.text_fill("str_error_hash_file_unknown", [
-          file_path,
-        ]),
-      );
+    if (!file) throw new Error(text_of("str_error_internal"));
     const is_first_view = current_file_path !== file_path,
       kept_scroll_top = is_first_view ? 0 : main_panel.scrollTop,
       has_file_box = is_first_view || !!file_box_of();
@@ -2233,7 +2228,7 @@ window.try_catch_handler_(function () {
   }
   function pulldown_text_lists(names_key, entry_name) {
     if (!window.report_pulldown_text_)
-      throw new Error(text_of("str_error_pulldown_text_missing"));
+      throw new Error(text_of("str_error_internal"));
     return window.report_pulldown_text_[names_key].includes(entry_name);
   }
   function no_samples_note_render(unsampled_name) {
@@ -2272,11 +2267,7 @@ window.try_catch_handler_(function () {
       document.hasFocus() && main_panel.contains(document.activeElement);
     const page_address = report_ui_.address.of_hash(location.hash);
     if (page_address.view !== HEAT_MAP_VIEW_ENTRY[0])
-      throw new Error(
-        window.ui_strings_.text_fill("str_error_hash_view_mismatch", [
-          HEAT_MAP_VIEW_ENTRY[0],
-        ]),
-      );
+      throw new Error(text_of("str_error_internal"));
     if (page_address.test !== shown_test_name) {
       model_load(page_address.test);
       return;
@@ -2358,11 +2349,7 @@ window.try_catch_handler_(function () {
     model_script.addEventListener(
       "error",
       window.try_catch_handler_(() => {
-        throw new Error(
-          window.ui_strings_.text_fill("str_error_hash_test_unknown", [
-            test_name,
-          ]),
-        );
+        throw new Error(text_of("str_error_internal"));
       }),
     );
     model_script.addEventListener(
@@ -2370,11 +2357,7 @@ window.try_catch_handler_(function () {
       window.try_catch_handler_(() => {
         const loaded_models = window[HEAT_MAP_MODEL_GLOBAL_NAME];
         if (!loaded_models || !loaded_models[test_name])
-          throw new Error(
-            window.ui_strings_.text_fill("str_error_heat_map_unfiled", [
-              test_name,
-            ]),
-          );
+          throw new Error(text_of("str_error_internal"));
         route_render();
       }),
     );

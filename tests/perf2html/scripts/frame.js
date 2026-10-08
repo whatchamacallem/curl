@@ -181,11 +181,7 @@ window.try_catch_handler_(function () {
       message_tag !== "report_error" &&
       message_tag !== "settings_request"
     )
-      throw new Error(
-        window.ui_strings_.text_fill("str_error_message_tag_unknown", [
-          message_tag,
-        ]),
-      );
+      throw new Error(window.ui_strings_.text_of("str_error_internal"));
   }
 
   function dark_mode_query_apply_() {

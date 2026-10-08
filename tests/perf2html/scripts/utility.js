@@ -28,12 +28,7 @@ window.try_catch_handler_(function () {
     const attribute_text = Object.entries(attributes)
       .map(([attribute_name, attribute_value]) => {
         if (!["number", "string"].includes(typeof attribute_value))
-          throw new Error(
-            window.ui_strings_.text_fill(
-              "str_error_markup_attribute_unusable",
-              [attribute_name, String(attribute_value)],
-            ),
-          );
+          throw new Error(window.ui_strings_.text_of("str_error_internal"));
         return ` ${attribute_name}="${shared_html_escape_(attribute_value)}"`;
       })
       .join("");
@@ -50,21 +45,13 @@ window.try_catch_handler_(function () {
       made_nodes.length !== 1 ||
       made_nodes[0].nodeType !== Node.ELEMENT_NODE
     )
-      throw new Error(
-        window.ui_strings_.text_fill("str_error_markup_element_count", [
-          markup,
-        ]),
-      );
+      throw new Error(window.ui_strings_.text_of("str_error_internal"));
     return made_nodes[0];
   }
   // Writes a menu button: menu colours, then a tab stop, link or role by kind.
   function shared_menu_button_render_(kind_name, label_markup, fields) {
     if (!MENU_BUTTON_KIND_NAMES.includes(kind_name))
-      throw new Error(
-        window.ui_strings_.text_fill("str_error_menu_button_kind_unknown", [
-          kind_name,
-        ]),
-      );
+      throw new Error(window.ui_strings_.text_of("str_error_internal"));
     const own_attributes = {
       class: ["menu-button-", ...(fields.class_names || [])].join(" "),
     };
@@ -93,12 +80,7 @@ window.try_catch_handler_(function () {
     const extra_attributes = fields.attributes || {};
     for (const attribute_name of Object.keys(extra_attributes)) {
       if (Object.hasOwn(own_attributes, attribute_name))
-        throw new Error(
-          window.ui_strings_.text_fill(
-            "str_error_menu_button_attribute_owned",
-            [attribute_name],
-          ),
-        );
+        throw new Error(window.ui_strings_.text_of("str_error_internal"));
     }
     return shared_element_render_(
       fields.tag_name,
