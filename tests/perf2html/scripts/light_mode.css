@@ -224,6 +224,12 @@ tr.heat-map-source-information-box-synthetic-row- > td {
   border-color: var(--light-mode-debug-tip-border-);
 }
 
+.screenshot-label- {
+  background: var(--light-mode-screenshot-label-bg-);
+  color: var(--light-mode-screenshot-label-fg-);
+  border-color: var(--light-mode-screenshot-label-border-);
+}
+
 .settings-value-box- {
   background: var(--light-mode-page-bg-);
   color: var(--light-mode-page-fg-);

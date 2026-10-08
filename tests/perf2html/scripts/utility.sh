@@ -483,7 +483,7 @@ revision_describe() {
   echo "$revision"
 }
 
-shared_options_parse() {
+options_parse() {
   KEEP_ARTIFACTS=0
   REGENERATE=0
   REMAINING_ARGUMENTS=()

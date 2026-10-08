@@ -78,7 +78,7 @@ header_table_print() {
 }
 
 args_parse() {
-  shared_options_parse "$@"
+  options_parse "$@"
   local _remaining_argument
   for _remaining_argument in "${REMAINING_ARGUMENTS[@]}"; do
     case "$_remaining_argument" in

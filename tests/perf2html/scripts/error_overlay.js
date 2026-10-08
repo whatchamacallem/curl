@@ -18,7 +18,7 @@ window.report_error_overlay_ = (function () {
   const REPORT_ROOT_URL = new URL("..", document.currentScript.src).href;
 
   let shown = false;
-  let report_relay_ = null;
+  let report_relay = null;
 
   function html_escape_(text) {
     return text
@@ -69,6 +69,23 @@ window.report_error_overlay_ = (function () {
     };
   }
 
+  // Throws the filled UI string or its id, a trailing Error value its cause.
+  function throw_exception_(string_id, ...fill_values) {
+    const error_options =
+      fill_values.at(-1) instanceof Error
+        ? { cause: fill_values.pop() }
+        : undefined;
+    if (window.ui_strings_ === undefined)
+      throw new Error(
+        "error (and missing ui string): " + string_id,
+        error_options,
+      );
+    throw new Error(
+      window.ui_strings_.text_fill(string_id, fill_values),
+      error_options,
+    );
+  }
+
   function err_overlay_show_(thrown_value) {
     const error_text = report_relative_(error_text_of_(thrown_value));
     report_render_({ page: page_address_(), text: error_text }, false);
@@ -77,12 +94,12 @@ window.report_error_overlay_ = (function () {
   function report_render_(report, is_relayed) {
     if (shown) return;
     shown = true;
-    if (report_relay_ !== null && report_relay_(report)) return;
+    if (report_relay !== null && report_relay(report)) return;
     setTimeout(page_write_, 0, report, is_relayed);
   }
 
   function relay_set_(relay_function) {
-    report_relay_ = relay_function;
+    report_relay = relay_function;
   }
 
   function relayed_report_show_(report) {
@@ -143,6 +160,7 @@ window.report_error_overlay_ = (function () {
     err_overlay_show_(browser_event.reason);
   });
 
+  window.throw_exception_ = throw_exception_;
   window.try_catch_handler_ = try_catch_handler_;
   return { err_overlay_show_, relay_set_, relayed_report_show_ };
 })();

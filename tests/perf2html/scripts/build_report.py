@@ -137,7 +137,7 @@ class BuildReport:
         )
 
     def blank_line_render(self) -> str:
-        return theme.element_render("br", {}, None)
+        return theme.render_element("br", {}, None)
 
     def caller_link(
         self,
@@ -146,10 +146,12 @@ class BuildReport:
         caller: BuildReport.CallerShare,
     ) -> str:
         href = self.entry_link(test_name, profile, caller.function)
-        label = theme.html_escape(f"{caller.function} ({caller.share_text})")
+        label = theme.render_html_escape(
+            f"{caller.function} ({caller.share_text})"
+        )
         if not href:
             return label
-        return theme.menu_button_render(
+        return theme.render_menu_button(
             "link", label, theme.MenuButtonFields("a", href)
         )
 
@@ -182,7 +184,7 @@ class BuildReport:
         )
 
     def callers_heading_render(self, measure_string_id: str) -> str:
-        count_markup = theme.element_render(
+        count_markup = theme.render_element(
             "span",
             {"class": "page-heading-row-count-"},
             str(_CALLERS_TOP_FUNCTION_ROWS),
@@ -192,7 +194,7 @@ class BuildReport:
                 "str_heading_functions_by_counter",
                 {
                     "count": count_markup,
-                    "measure": theme.html_escape(
+                    "measure": theme.render_html_escape(
                         theme.ui_text_of(measure_string_id)
                     ),
                 },
@@ -216,12 +218,12 @@ class BuildReport:
             )
 
     def details_section(self, title_string_id: str, body: str) -> str:
-        return theme.element_render(
+        return theme.render_element(
             "details",
             {"class": "overview-collapsed-section-"},
-            theme.menu_button_render(
+            theme.render_menu_button(
                 "action",
-                theme.html_escape(theme.ui_text_of(title_string_id)),
+                theme.render_html_escape(theme.ui_text_of(title_string_id)),
                 theme.MenuButtonFields("summary"),
             )
             + body,
@@ -384,9 +386,9 @@ class BuildReport:
         href = self.entry_link(test_name, profile, function)
         return theme.Cell(
             function,
-            html=theme.menu_button_render(
+            html=theme.render_menu_button(
                 "link",
-                theme.html_escape(function),
+                theme.render_html_escape(function),
                 theme.MenuButtonFields("a", href),
             )
             if href
@@ -487,10 +489,10 @@ class BuildReport:
         if not path_of:
             return ""
         body = "".join(
-            theme.element_render(
+            theme.render_element(
                 "div",
                 {"class": "overview-collapsed-section-test-name-"},
-                theme.html_escape(name),
+                theme.render_html_escape(name),
             )
             + box_of(path_of[name])
             for name in test_names
@@ -501,16 +503,16 @@ class BuildReport:
         )
 
     def log_box_render(self, text: str) -> str:
-        return theme.element_render(
+        return theme.render_element(
             "div",
             {"class": "table-box-"},
-            theme.element_render(
+            theme.render_element(
                 "pre",
                 {
                     "class": "overview-collapsed-section-log-box-"
                     " page-text-scroll-box-"
                 },
-                theme.html_escape(text),
+                theme.render_html_escape(text),
             )
             + self.text_scrollbar_render("vertical")
             + self.text_scrollbar_render("horizontal"),
@@ -522,7 +524,7 @@ class BuildReport:
         blocks: Sequence[BuildReport.ManifestBlock],
     ) -> str:
         return self.blank_line_render().join(
-            theme.heading_render(theme.html_escape(block.label))
+            theme.heading_render(theme.render_html_escape(block.label))
             + self.manifest_table(f"{key}.{index}", block.pairs)
             for index, block in enumerate(blocks)
             if block.pairs
@@ -592,9 +594,9 @@ class BuildReport:
                 f" {_REPORT_TEST_SUITE_NAME!r}, the merged test,"
                 f" which is not one of its tests: {' '.join(test_names)}"
             )
-        help_href = theme.shared_href(_OVERVIEW_PAGE_ASSETS_DEPTH, "README.md")
+        help_href = theme.href(_OVERVIEW_PAGE_ASSETS_DEPTH, "README.md")
         names_text = json.dumps(list(test_names), ensure_ascii=False)
-        return theme.element_render(
+        return theme.render_element(
             "nav",
             {
                 "id": "menu-",
@@ -676,12 +678,16 @@ class BuildReport:
             {
                 "__MENU__": menu_markup,
                 "__OVERVIEW_HEADING__": theme.heading_render(
-                    theme.html_escape(theme.ui_text_of("str_view_overview"))
+                    theme.render_html_escape(
+                        theme.ui_text_of("str_view_overview")
+                    )
                 ),
                 "__RAW_DATA__": raw_data_markup,
                 "__MANIFEST__": manifest_markup,
                 "__TESTS_HEADING__": theme.heading_render(
-                    theme.html_escape(theme.ui_text_of("str_heading_tests"))
+                    theme.render_html_escape(
+                        theme.ui_text_of("str_heading_tests")
+                    )
                 ),
                 "__TESTS__": tests_markup,
                 "__PERF_LOG__": self.logs_section(
@@ -705,7 +711,7 @@ class BuildReport:
                     "--valgrind-log",
                     self.log_block,
                 ),
-                "__VIEW_FRAME_TITLE__": theme.html_escape(
+                "__VIEW_FRAME_TITLE__": theme.render_html_escape(
                     theme.ui_text_of("str_view_frame_title")
                 ),
             },
@@ -758,12 +764,12 @@ class BuildReport:
         link_text = theme.ui_text_fill(
             "str_raw_data_link", {"name": os.path.basename(path)}
         )
-        return self.blank_line_render() + theme.element_render(
+        return self.blank_line_render() + theme.render_element(
             "div",
             {},
-            theme.menu_button_render(
+            theme.render_menu_button(
                 "link",
-                theme.html_escape(link_text),
+                theme.render_html_escape(link_text),
                 theme.MenuButtonFields(
                     "a", os.path.relpath(path, out_dir), opens_new_tab=True
                 ),
@@ -820,9 +826,9 @@ class BuildReport:
     def test_link_cell(self, name: str) -> theme.Cell:
         return theme.Cell(
             name,
-            html=theme.menu_button_render(
+            html=theme.render_menu_button(
                 "link",
-                theme.html_escape(name),
+                theme.render_html_escape(name),
                 theme.MenuButtonFields(
                     "a", self.address_of(name, _HEAT_MAP_VIEW_KEY)
                 ),
@@ -830,7 +836,7 @@ class BuildReport:
         )
 
     def text_scrollbar_render(self, axis_name: str) -> str:
-        return theme.element_render(
+        return theme.render_element(
             "div",
             {
                 "class": f"page-text-scrollbar- {axis_name}-",

@@ -222,6 +222,12 @@
     border-color: var(--dark-mode-debug-tip-border-);
   }
 
+  .screenshot-label- {
+    background: var(--dark-mode-screenshot-label-bg-);
+    color: var(--dark-mode-screenshot-label-fg-);
+    border-color: var(--dark-mode-screenshot-label-border-);
+  }
+
   .settings-value-box- {
     background: var(--dark-mode-page-bg-);
     color: var(--dark-mode-page-fg-);

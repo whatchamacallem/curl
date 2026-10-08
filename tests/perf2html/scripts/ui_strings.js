@@ -160,7 +160,7 @@ window.ui_strings_ = (function () {
     str_table_heading_copy: "copy",
     str_text_scrollbar_gutter: "▒",
     str_text_scrollbar_thumb: "▓",
-    str_ticker_tape_entry: "{line} - {share}",
+    str_ticker_tape_entry: "{line}{share}",
     str_ticker_tape_heading_diff: "most changed lines",
     str_ticker_tape_heading_self: "hottest lines",
     str_title_part_separator: " / ",
@@ -175,15 +175,13 @@ window.ui_strings_ = (function () {
     const template = text_of(string_id);
     return template.replace(/\{(\w+)\}/g, (marker, field_name) => {
       if (!Object.prototype.hasOwnProperty.call(replacements, field_name))
-        throw new Error(
-          "missing ui string value: " + string_id + " " + marker,
-        );
+        return "error (and missing ui string): " + string_id + " " + marker;
       return String(replacements[field_name]);
     });
   }
   function text_of(string_id) {
     if (!Object.prototype.hasOwnProperty.call(STRINGS, string_id)) {
-      throw new Error("missing ui string: " + string_id);
+      return "error (and missing ui string): " + string_id;
     }
     return STRINGS[string_id];
   }

@@ -46,7 +46,7 @@ cd "$PERF2HTML_DIR_"
 _REPO="$(dirname "$(dirname "$PERF2HTML_DIR_")")"
 
 args_parse() {
-  shared_options_parse "$@"
+  options_parse "$@"
   local _remaining_argument
   _OUT_DIR=""
   _CMAKE_FLAGS=()

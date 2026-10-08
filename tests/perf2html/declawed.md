@@ -100,6 +100,9 @@ postmortem reference to a numbered item that is not itself in the postmortem.
   `perf2html` maintainers guidelines.
 - All constants must go in settings.py or settings.sh. The only exception is
   for the numeric constant zero and the color clear.
+- `CLAUDE.md`/`declawed.md` is not user documentation and is exempt from
+  formatting and validation. Ignore formatting errors it will never be added
+  to thw whitelist.
 
 ### 0.2 One-door glossary
 
@@ -134,16 +137,16 @@ The single function/check owning each concern - never bypass or duplicate:
 - `template_fill(template_text, marker_values)` - every template marker
   fill, a marker its template lacks refused (theme.py/js; `settings.py`
   refuses a missing `__DATA__` itself, as theme.py imports it).
-- `window.shared_element_render_`/`element_render()` - every tag a page
+- `window.element_render_`/`element_render()` - every tag a page
   script or a page builder writes, each attribute escaped through
-  `window.shared_html_escape_`/`html_escape()` (utility.js/theme.py); the
+  `window.html_escape_`/`html_escape()` (utility.js/theme.py); the
   one HTML composition system per language, `report_ui_.table_render`
   and `table_render()` every table (theme.js/theme.py),
-  `window.shared_element_of_` every element made from markup.
-- `window.shared_menu_button_render_`/`menu_button_render()` - every menu
+  `window.element_of_` every element made from markup.
+- `window.menu_button_render_`/`menu_button_render()` - every menu
   button: a strip cell, a link, a control (utility.js/theme.py; strip
   pulldown, unavailable and widget cells JS only).
-- `window.shared_page_emphasis_render_` - every page emphasis, called by
+- `window.page_emphasis_render_` - every page emphasis, called by
   the strip for a heading title and by `report_ui_.page_heading.attach`
   for a heading over no table (utility.js).
 - `ui_text_of()`/`ui_text_fill()` - every UI string Python writes, read
@@ -336,7 +339,7 @@ Under `tests/perf2html/`:
   `flame_graph.js` polls `window.speedscope`;
   `ui_strings.js` (`str_*`); `error_overlay.js` first script on every page;
   `utility.js` second, relaying an error report up the frames, reporting a
-  failed `<link>`/`<script>`/`<img>` load, holding the `window.shared_*`
+  failed `<link>`/`<script>`/`<img>` load, holding the `window.*`
   composition doors, which read no setting; `light_mode.css` the light mode,
   plain rules, linked before `dark_mode.css` the dark mode, which overrides
   every light rule under `:root:not([data-dark-mode-="disabled"])`;
@@ -579,7 +582,7 @@ taskset -c 3 ./build-relwithdebinfo/22_DCMAKECFLAGSO2g/tests/perf/perf \
   `INVOKED_FROM`, `KEEP_ARTIFACTS`, `REGENERATE`, `RUN_LOG` (batch has none),
   `TARGET_DIR`, `TIMESTAMP`, `VERBOSE`, `WRITE_REPORT_ARCHIVE`; sets
   `ARTIFACTS_DIR`, `KEEP_ARTIFACTS`, `REGENERATE`, `REMAINING_ARGUMENTS`,
-  `TARGET_DIR`, `VERBOSE`, `WRITE_REPORT_ARCHIVE` (`shared_options_parse`,
+  `TARGET_DIR`, `VERBOSE`, `WRITE_REPORT_ARCHIVE` (`options_parse`,
   `ARTIFACTS_DIR` again in `artifacts_dir_resolve`), `SPEEDSCOPE_RELEASE`,
   `RUN_LOG` (`report_begin`),
   `SOURCE_CACHE_{PACKAGE,VERSION,DIR}` (`source_cache_sync`),
@@ -689,7 +692,7 @@ settings/index.html
   Overview reads `--diff-profile NAME=FILE` per paired
   test; a test in one report only → `tests_pair` error.
 - Pages: shared assets linked, never inlined; hrefs from
-  `theme.shared_href(depth, name)` (overview 0; callers, heat map and flame
+  `theme.href(depth, name)` (overview 0; callers, heat map and flame
   graph 1); no stylesheet sets a `:root` value, `settings.js` writing each;
   classic
   `<script src>`/`<link>` only, no `fetch()`, no ES modules; opens from
@@ -882,11 +885,11 @@ settings/index.html
   the heat map app or the flame graph app, the page
   `report_ui_.address.page_href_of()` names. `frame.js`, the model, runs on
   the top page alone, which wears `data-top-page-` on `<html>` so
-  `window.shared_is_framed_` is false for it though a page outside the report
+  `window.is_framed_` is false for it though a page outside the report
   frames it, as `window.report_frame_` (`activate()`,
   `address_now()`, `address_request(hash)`, `view_post(message)`,
   `has_flame_graph` and `test_names`, read from `#menu-`, and
-  `menu_entry_number_now()`, the `SCREENSHOT_MENU_ENTRY_KEY_NAME`
+  `menu_entry_number_now()`, the `SCREENSHOT_MENU_KEY_NUMBER`
   (`screenshot-menu`) query value while the address the page loaded at
   shows, else null).
   `view_show()` parses and checks the top's hash, records it, at a

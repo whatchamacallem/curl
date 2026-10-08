@@ -8,7 +8,8 @@ perf2html_modified_report/
 perf2html_modified_report.txz
 perf2html_temporary_artifacts/
 screenshots/
+screenshots-diff/
 screenshots-gold/
 tmp/
 test_expected_behavior.md
-/test_index.html
+test_index.html

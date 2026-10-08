@@ -187,14 +187,14 @@ class CallgrindToHeatmap:
         path = os.path.join(data_dir, f"{args.test}.js")
         with open(path, "w", encoding="utf-8") as handle:
             handle.write(model_script)
-        shared_count = sum(
+        count = sum(
             1
             for entry in model["files"].values()
             if entry["source"] is not None
         )
         print(
             f"files with samples: {len(model['files'])}"
-            f" ({shared_count} with source shared),"
+            f" ({count} with source shared),"
             f" cold files listed: {len(model['cold'])}, "
             f"functions: {len(model['functions'])}",
             file=sys.stderr,
@@ -393,10 +393,8 @@ class CallgrindToHeatmap:
         }, info
 
     def page_render(self, source_names: Sequence[str]) -> str:
-        assets_href = theme.shared_href(
-            _HEAT_MAP_PAGE_DEPTH, _REPORT_ASSETS_DIR_NAME
-        )
-        sources_href = theme.shared_href(
+        assets_href = theme.href(_HEAT_MAP_PAGE_DEPTH, _REPORT_ASSETS_DIR_NAME)
+        sources_href = theme.href(
             _HEAT_MAP_PAGE_DEPTH, _REPORT_SOURCES_DIR_NAME
         )
         scripts = theme.script_tags(sources_href, source_names)

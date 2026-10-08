@@ -193,7 +193,7 @@ class TableRenderer:
         extents = self.column_extents(columns, cells, grow_index)
         limits = [self.column_limits(extent) for extent in extents]
         column_markup = "".join(
-            element_render(
+            render_element(
                 "col",
                 {
                     "data-min-": f"{limit[0]}ch",
@@ -205,18 +205,18 @@ class TableRenderer:
             for index, limit in enumerate(limits)
         )
         title_markup = (
-            element_render(
+            render_element(
                 "thead",
                 {},
-                element_render(
+                render_element(
                     "tr",
                     {},
                     "".join(
-                        element_render(
+                        render_element(
                             "th",
                             self.numeric_attributes(column)
                             | {"title": column.label},
-                            html_escape(column.label),
+                            render_html_escape(column.label),
                         )
                         for column in columns
                     ),
@@ -226,7 +226,7 @@ class TableRenderer:
             else ""
         )
         body_markup = "".join(
-            element_render(
+            render_element(
                 "tr",
                 {},
                 "".join(
@@ -236,18 +236,18 @@ class TableRenderer:
             )
             for row in cells
         )
-        return element_render(
+        return render_element(
             "div",
             {"class": "table-box-"},
-            element_render(
+            render_element(
                 "div",
                 {"class": "table-columns-"},
-                element_render(
+                render_element(
                     "table",
                     {"class": "columns-", "data-key-": key},
-                    element_render("colgroup", {}, column_markup)
+                    render_element("colgroup", {}, column_markup)
                     + title_markup
-                    + element_render("tbody", {}, body_markup),
+                    + render_element("tbody", {}, body_markup),
                 ),
             ),
         )
@@ -256,10 +256,12 @@ class TableRenderer:
         cell_attributes = self.numeric_attributes(column)
         if cell.style:
             cell_attributes["style"] = cell.style
-        return element_render(
+        return render_element(
             "td",
             cell_attributes,
-            cell.html if cell.html is not None else html_escape(cell.text),
+            cell.html
+            if cell.html is not None
+            else render_html_escape(cell.text),
         )
 
 
@@ -490,12 +492,12 @@ class Theme:
         extra_css: Sequence[str] = (),
         body_holds_scripts: bool = False,
     ) -> str:
-        assets_href = shared_href(depth, _REPORT_ASSETS_DIR_NAME)
+        assets_href = href(depth, _REPORT_ASSETS_DIR_NAME)
         body_attributes = {"class": body_class} if body_class else {}
         html_attributes = {"lang": self.ui_text_of("str_page_language")}
         head_names = page_preamble_scripts()
         head_links = "".join(
-            element_render(
+            render_element(
                 "link",
                 {"rel": "stylesheet", "href": f"{assets_href}/{name}"},
                 None,
@@ -535,10 +537,10 @@ class Theme:
         head_scripts = script_tags(assets_href, head_names)
         head_markup = (
             "\n"
-            + element_render("meta", {"charset": "utf-8"}, None)
+            + render_element("meta", {"charset": "utf-8"}, None)
             + "\n"
             + head_scripts
-            + element_render(
+            + render_element(
                 "meta",
                 {
                     "name": "viewport",
@@ -547,17 +549,17 @@ class Theme:
                 None,
             )
             + "\n"
-            + element_render("title", {}, html_escape(title))
+            + render_element("title", {}, render_html_escape(title))
             + "\n"
             + head_links
         )
-        page_markup = element_render(
+        page_markup = render_element(
             "html",
             html_attributes,
             "\n"
-            + element_render("head", {}, head_markup)
+            + render_element("head", {}, head_markup)
             + "\n"
-            + element_render("body", body_attributes, f"\n{body}\n{script}")
+            + render_element("body", body_attributes, f"\n{body}\n{script}")
             + "\n",
         )
         return f"<!doctype html>\n{page_markup}\n"
@@ -667,27 +669,7 @@ class Theme:
             _STYLE_HEAT_MAP_SOURCE_LINE_NUMBER_MARKER_WIDTH_PROPERTY,
             _STYLE_PAGE_FONT_FAMILY_PROPERTY,
         }
-        self.reads_check(self.shared_stylesheets_text(), names)
-        self.reads_check(
-            self.asset_read(_ASSET_DARK_MODE_STYLESHEET_NAME),
-            names | {f"--{role}" for role in self.color_roles},
-        )
-        self.reads_check(
-            self.asset_read(_ASSET_LIGHT_MODE_STYLESHEET_NAME),
-            names | {f"--{role}" for role in self.light_mode_roles},
-        )
-        names |= {
-            f"--{role}" for role in (self.light_mode_roles | self.color_roles)
-        }
-        stylesheets_text = self.stylesheets_text()
-        for name in sorted(names):
-            if f"var({name})" not in stylesheets_text:
-                raise ValueError(
-                    f"the root values set {name}, which no stylesheet reads"
-                )
-
-    def shared_stylesheets_text(self) -> str:
-        return "".join(
+        common_stylesheets_text = "".join(
             self.asset_read(name)
             for name in (
                 _ASSET_HEAT_MAP_STYLESHEET_NAME,
@@ -695,13 +677,28 @@ class Theme:
                 _ASSET_THEME_STYLESHEET_NAME,
             )
         )
-
-    def stylesheets_text(self) -> str:
-        return (
-            self.shared_stylesheets_text()
-            + self.asset_read(_ASSET_LIGHT_MODE_STYLESHEET_NAME)
-            + self.asset_read(_ASSET_DARK_MODE_STYLESHEET_NAME)
+        dark_mode_text = self.asset_read(_ASSET_DARK_MODE_STYLESHEET_NAME)
+        light_mode_text = self.asset_read(_ASSET_LIGHT_MODE_STYLESHEET_NAME)
+        self.reads_check(common_stylesheets_text, names)
+        self.reads_check(
+            dark_mode_text,
+            names | {f"--{role}" for role in self.color_roles},
         )
+        self.reads_check(
+            light_mode_text,
+            names | {f"--{role}" for role in self.light_mode_roles},
+        )
+        names |= {
+            f"--{role}" for role in (self.light_mode_roles | self.color_roles)
+        }
+        stylesheets_text = (
+            common_stylesheets_text + light_mode_text + dark_mode_text
+        )
+        for name in sorted(names):
+            if f"var({name})" not in stylesheets_text:
+                raise ValueError(
+                    f"the root values set {name}, which no stylesheet reads"
+                )
 
     def time_units(self) -> tuple[Theme.TimeUnit, ...]:
         return tuple(
@@ -763,24 +760,10 @@ def diff_share_of(delta: int, baseline: int | None) -> float:
     return _renderer.number_format.diff_share_of(delta, baseline)
 
 
-# Writes one element, the one writer of a tag, a None inner a void tag.
-def element_render(
-    tag_name: str, attributes: dict[str, str], inner_markup: str | None
-) -> str:
-    attribute_text = "".join(
-        f' {attribute_name}="{html_escape(attribute_value)}"'
-        for attribute_name, attribute_value in attributes.items()
-    )
-    start_tag = f"<{tag_name}{attribute_text}>"
-    if inner_markup is None:
-        return start_tag
-    return f"{start_tag}{inner_markup}</{tag_name}>"
-
-
 # Writes a heading, the page scripts showing its title as page emphasis.
 def heading_render(title_markup: str, count_key: str = "") -> str:
     count_attributes = {"data-row-count-key-": count_key} if count_key else {}
-    return element_render(
+    return render_element(
         "div", {"class": "page-heading-"} | count_attributes, title_markup
     )
 
@@ -793,47 +776,12 @@ def heat_style(heat: float, signed: bool = False) -> str:
     return _renderer.heat_style(heat, signed)
 
 
-# Holds a framed page's scripts until utility.js relays the settings down.
+# Holds a framed page's scripts until settings.js relays the settings down.
 def held_script_tags(script_markup: str) -> str:
     return (
-        element_render("template", {"id": "page-held-script-"}, script_markup)
+        render_element("template", {"id": "page-held-script-"}, script_markup)
         + "\n"
     )
-
-
-# Escapes text for markup, the one escape the page builders write through.
-def html_escape(value: object) -> str:
-    return (
-        str(value)
-        .replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-        .replace('"', "&quot;")
-    )
-
-
-# Writes a menu button: menu colours, then a tab stop, link or role by kind.
-def menu_button_render(
-    kind_name: str, label_markup: str, fields: MenuButtonFields
-) -> str:
-    if kind_name not in _MENU_BUTTON_KIND_NAMES:
-        raise ValueError(f"menu button kind unrecognized: {kind_name}")
-    own_attributes = {"class": "menu-button-"}
-    inner_markup = label_markup
-    if kind_name == "link":
-        link_attributes = {"href": fields.href}
-        if fields.opens_new_tab:
-            link_attributes["target"] = "_blank"
-        if fields.tag_name == "a":
-            own_attributes |= link_attributes
-        else:
-            own_attributes["tabindex"] = "0"
-            inner_markup = element_render(
-                "a", link_attributes | {"tabindex": "-1"}, label_markup
-            )
-    elif fields.tag_name != "summary":
-        own_attributes |= {"role": "button", "tabindex": "0"}
-    return element_render(fields.tag_name, own_attributes, inner_markup)
 
 
 def num_human(number: float) -> str:
@@ -885,14 +833,64 @@ def page_preamble_scripts() -> tuple[str, ...]:
     )
 
 
-def script_tags(href: str, names: Sequence[str]) -> str:
+# Writes one element, the one writer of a tag, a None inner a void tag.
+def render_element(
+    tag_name: str, attributes: dict[str, str], inner_markup: str | None
+) -> str:
+    attribute_text = "".join(
+        f' {attribute_name}="{render_html_escape(attribute_value)}"'
+        for attribute_name, attribute_value in attributes.items()
+    )
+    start_tag = f"<{tag_name}{attribute_text}>"
+    if inner_markup is None:
+        return start_tag
+    return f"{start_tag}{inner_markup}</{tag_name}>"
+
+
+# Escapes text for markup, the one escape the page builders write through.
+def render_html_escape(value: object) -> str:
+    return (
+        str(value)
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
+    )
+
+
+# Writes a menu button: menu colours, then a tab stop, link or role by kind.
+def render_menu_button(
+    kind_name: str, label_markup: str, fields: MenuButtonFields
+) -> str:
+    if kind_name not in _MENU_BUTTON_KIND_NAMES:
+        raise ValueError(f"menu button kind unrecognized: {kind_name}")
+    own_attributes = {"class": "menu-button-"}
+    inner_markup = label_markup
+    if kind_name == "link":
+        link_attributes = {"href": fields.href}
+        if fields.opens_new_tab:
+            link_attributes["target"] = "_blank"
+        if fields.tag_name == "a":
+            own_attributes |= link_attributes
+        else:
+            own_attributes["tabindex"] = "0"
+            inner_markup = render_element(
+                "a", link_attributes | {"tabindex": "-1"}, label_markup
+            )
+    elif fields.tag_name != "summary":
+        own_attributes |= {"role": "button", "tabindex": "0"}
+    return render_element(fields.tag_name, own_attributes, inner_markup)
+
+
+def script_tags(directory_href: str, names: Sequence[str]) -> str:
     return "".join(
-        element_render("script", {"src": f"{href}/{name}"}, "") + "\n"
+        render_element("script", {"src": f"{directory_href}/{name}"}, "")
+        + "\n"
         for name in names
     )
 
 
-def shared_href(depth: int, name: str) -> str:
+def href(depth: int, name: str) -> str:
     return "../" * depth + name
 
 

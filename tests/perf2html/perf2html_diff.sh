@@ -71,7 +71,7 @@ input_archives_clean() {
 }
 
 args_parse() {
-  shared_options_parse "$@"
+  options_parse "$@"
   local _remaining_argument _report_names=()
   for _remaining_argument in "${REMAINING_ARGUMENTS[@]}"; do
     case "$_remaining_argument" in

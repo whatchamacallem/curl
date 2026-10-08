@@ -157,9 +157,17 @@ table.columns- .numeric- {
 .debug-tip- {
   position: fixed;
   z-index: var(--debug-tip-z-index-);
-  pointer-events: none;
   white-space: pre;
   display: none;
   font-size: var(--debug-tip-font-size-);
   border: var(--debug-tip-border-width-) solid;
+}
+
+.screenshot-label- {
+  position: fixed;
+  left: 0;
+  bottom: 0;
+  z-index: var(--screenshot-label-z-index-);
+  font-size: var(--screenshot-label-font-size-);
+  border: var(--screenshot-label-border-width-) solid;
 }

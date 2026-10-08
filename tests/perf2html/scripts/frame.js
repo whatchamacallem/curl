@@ -8,9 +8,7 @@ window.try_catch_handler_(function () {
   const DARK_MODE_QUERY_KEY_NAME = settings_("DARK_MODE_QUERY_KEY_NAME");
   const DARK_MODE_QUERY_VALUES = settings_("DARK_MODE_QUERY_VALUES");
   const FLAME_GRAPH_VIEW_ENTRY = settings_("FLAME_GRAPH_VIEW_ENTRY");
-  const SCREENSHOT_MENU_ENTRY_KEY_NAME = settings_(
-    "SCREENSHOT_MENU_ENTRY_KEY_NAME",
-  );
+  const SCREENSHOT_MENU_KEY_NUMBER = settings_("SCREENSHOT_MENU_KEY_NUMBER");
   const SETTINGS_DEBUG_ENABLED = settings_("SETTINGS_DEBUG_ENABLED");
   const SETTINGS_DEBUG_HASH_KEY_NAME = settings_(
     "SETTINGS_DEBUG_HASH_KEY_NAME",
@@ -27,7 +25,7 @@ window.try_catch_handler_(function () {
   const loaded_hash = location.hash;
   const loaded_address = window.report_ui_.address.of_hash(loaded_hash);
   const loaded_menu_entry_number = new URLSearchParams(location.search).get(
-    SCREENSHOT_MENU_ENTRY_KEY_NAME,
+    SCREENSHOT_MENU_KEY_NUMBER,
   );
   const menu_strip = document.getElementById("menu-");
   const has_flame_graph = menu_strip.getAttribute("data-flame-graph-") === "1";
@@ -49,25 +47,22 @@ window.try_catch_handler_(function () {
       parsed_address.test !== null &&
       !test_names.includes(parsed_address.test)
     )
-      throw new Error(
-        window.ui_strings_.text_fill("str_error_hash_test_unknown", [
-          parsed_address.test,
-        ]),
+      window.throw_exception_(
+        "str_error_hash_test_unknown",
+        parsed_address.test,
       );
     if (parsed_address.view === FLAME_GRAPH_VIEW_ENTRY[0] && !has_flame_graph)
-      throw new Error(
-        window.ui_strings_.text_fill("str_error_hash_view_unknown", [
-          parsed_address.view,
-        ]),
+      window.throw_exception_(
+        "str_error_hash_view_unknown",
+        parsed_address.view,
       );
     if (
       parsed_address.setting !== null &&
       !window.settings_names_().includes(parsed_address.setting)
     )
-      throw new Error(
-        window.ui_strings_.text_fill("str_error_hash_setting_unknown", [
-          parsed_address.setting,
-        ]),
+      window.throw_exception_(
+        "str_error_hash_setting_unknown",
+        parsed_address.setting,
       );
   }
   // Loads the top page again at its hash under the settings debug query.
@@ -181,7 +176,7 @@ window.try_catch_handler_(function () {
       message_tag !== "report_error" &&
       message_tag !== "settings_request"
     )
-      throw new Error(window.ui_strings_.text_of("str_error_internal"));
+      window.throw_exception_("str_error_internal");
   }
 
   function dark_mode_query_apply_() {
@@ -193,12 +188,7 @@ window.try_catch_handler_(function () {
       window.report_ui_.dark_mode_show_(true);
     else if (query_value === DARK_MODE_QUERY_VALUES.disabled)
       window.report_ui_.dark_mode_show_(false);
-    else
-      throw new Error(
-        window.ui_strings_.text_fill("str_error_dark_mode_unusable", [
-          query_value,
-        ]),
-      );
+    else window.throw_exception_("str_error_dark_mode_unusable", query_value);
   }
 
   function activate() {

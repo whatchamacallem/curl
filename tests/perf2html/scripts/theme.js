@@ -125,6 +125,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
   const DESIGN_SCALE_LAST_STOP = STYLE_DESIGN_SCALE_STOP_COUNT - 1;
   const DESIGN_SCALE_LOWER_TRAVEL_SHARE =
     STYLE_DESIGN_SCALE_DEFAULT_STOP / DESIGN_SCALE_LAST_STOP;
+  const MENU_BUTTON_KIND_NAMES = ["action", "link", "pulldown"];
   const PULLDOWN_COMMAND_KEY_NAMES = Object.values(MENU_PULLDOWN_KEY_NAMES);
   const PULLDOWN_HIGHLIGHTED_ENTRY_CLASS = "highlighted-entry-";
   const RAMP_CHANNEL_STOPS = STYLE_HEAT_COLOR_STOPS.map((hex) =>
@@ -174,7 +175,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
     },
   };
 
-  const is_framed = window.shared_is_framed_;
+  const is_framed = window.is_framed_;
   const home_panel = document.getElementById("overview-home-");
   const view_frame = document.getElementById("overview-view-frame-");
   const is_scaled = !is_framed && !!home_panel;
@@ -254,7 +255,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
       scale_stop < 0 ||
       scale_stop > DESIGN_SCALE_LAST_STOP
     ) {
-      throw new Error(window.ui_strings_.text_of("str_error_internal"));
+      window.throw_exception_("str_error_internal");
     }
   }
   function design_scale_stop_nearest(wanted_multiple) {
@@ -280,7 +281,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
       stored_multiple < STYLE_DESIGN_SCALE_SMALLEST_MULTIPLE ||
       stored_multiple > STYLE_DESIGN_SCALE_LARGEST_MULTIPLE
     ) {
-      throw new Error(window.ui_strings_.text_of("str_error_internal"));
+      window.throw_exception_("str_error_internal");
     }
     return design_scale_stop_nearest(stored_multiple);
   }
@@ -303,7 +304,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
     const default_font = context.font;
     context.font = wanted_font;
     if (context.font === default_font) {
-      throw new Error(window.ui_strings_.text_of("str_error_internal"));
+      window.throw_exception_("str_error_internal");
     }
     const measured_px = context.measureText(CH_UNIT_GLYPH).width;
     document.documentElement.style.setProperty(
@@ -327,7 +328,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
       : 1;
     const wanted = root_zoom * multiple;
     if (!isFinite(wanted) || !(wanted > 0)) {
-      throw new Error(window.ui_strings_.text_of("str_error_internal"));
+      window.throw_exception_("str_error_internal");
     }
     design_scale = wanted;
     root_element.style.zoom = String(root_zoom);
@@ -377,7 +378,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
     if (stored_value === null) return DARK_MODE_ENABLED_DEFAULT;
     if (stored_value === DARK_MODE_ENABLED_VALUE) return true;
     if (stored_value === DARK_MODE_DISABLED_VALUE) return false;
-    throw new Error(window.ui_strings_.text_of("str_error_internal"));
+    window.throw_exception_("str_error_internal");
   }
   function dark_mode_stored_apply_() {
     dark_mode_show(dark_mode_stored_enabled_());
@@ -429,7 +430,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
   function diff_share_of(delta, baseline) {
     const baseline_count = baseline === null ? 0 : baseline;
     if (delta < -baseline_count) {
-      throw new Error(window.ui_strings_.text_of("str_error_internal"));
+      window.throw_exception_("str_error_internal");
     }
     if (!delta) return 0;
     return baseline_count ? (100 * delta) / baseline_count : Infinity;
@@ -474,24 +475,22 @@ window.report_ui_ = window.try_catch_handler_(function () {
     return encodeURIComponent(value).replace(/%2F/g, "/");
   }
 
-  function address_error(string_id, fill_values) {
-    return new Error(window.ui_strings_.text_fill(string_id, fill_values));
-  }
   function address_value_decode(part, encoded_value) {
     try {
       return decodeURIComponent(encoded_value);
     } catch (decode_error) {
       if (!(decode_error instanceof URIError)) throw decode_error;
-      throw new Error(
-        window.ui_strings_.text_fill("str_error_hash_part_unknown", [part]),
-        { cause: decode_error },
+      window.throw_exception_(
+        "str_error_hash_part_unknown",
+        part,
+        decode_error,
       );
     }
   }
   function address_parts_check(parsed_address) {
     for (const key_name of ADDRESS_KEY_NAMES) {
       if (parsed_address[key_name] === "")
-        throw address_error("str_error_hash_value_empty", [key_name]);
+        window.throw_exception_("str_error_hash_value_empty", key_name);
     }
     const is_home = ADDRESS_KEY_NAMES.every(
       (key_name) =>
@@ -499,45 +498,51 @@ window.report_ui_ = window.try_catch_handler_(function () {
         key_name === SETTINGS_DEBUG_HASH_KEY_NAME,
     );
     if (parsed_address.test === null && !is_home)
-      throw address_error("str_error_hash_test_missing", []);
+      window.throw_exception_("str_error_hash_test_missing");
     if (parsed_address.test !== null && parsed_address.view === null)
-      throw address_error("str_error_hash_view_missing", [
+      window.throw_exception_(
+        "str_error_hash_view_missing",
         parsed_address.test,
-      ]);
+      );
     if (is_home) return;
     if (!ADDRESS_VIEW_KEY_NAMES.has(parsed_address.view))
-      throw address_error("str_error_hash_view_unknown", [
+      window.throw_exception_(
+        "str_error_hash_view_unknown",
         parsed_address.view,
-      ]);
+      );
     for (const key_name of ADDRESS_KEY_NAMES.slice(2)) {
       if (
         parsed_address[key_name] !== null &&
         key_name !== SETTINGS_DEBUG_HASH_KEY_NAME &&
         !ADDRESS_VIEW_KEY_NAMES.get(parsed_address.view).includes(key_name)
       )
-        throw address_error("str_error_hash_part_misplaced", [
+        window.throw_exception_(
+          "str_error_hash_part_misplaced",
           key_name,
           parsed_address.view,
-        ]);
+        );
     }
     if (parsed_address.line !== null && parsed_address.file === null)
-      throw address_error("str_error_hash_file_missing", [
+      window.throw_exception_(
+        "str_error_hash_file_missing",
         parsed_address.line,
-      ]);
+      );
     if (
       parsed_address.function !== null &&
       (parsed_address.file !== null || parsed_address.line !== null)
     )
-      throw address_error("str_error_hash_function_conflicting", [
+      window.throw_exception_(
+        "str_error_hash_function_conflicting",
         parsed_address.function,
-      ]);
+      );
     if (
       parsed_address.line !== null &&
       !/^[1-9][0-9]*$/.test(parsed_address.line)
     )
-      throw address_error("str_error_hash_line_unusable", [
+      window.throw_exception_(
+        "str_error_hash_line_unusable",
         parsed_address.line,
-      ]);
+      );
   }
   function address_of_hash(hash) {
     const parsed_address = Object.fromEntries(
@@ -548,9 +553,9 @@ window.report_ui_ = window.try_catch_handler_(function () {
       const equals_index = part.indexOf("=");
       const key_name = part.slice(0, equals_index);
       if (equals_index < 0 || !ADDRESS_KEY_NAMES.includes(key_name))
-        throw address_error("str_error_hash_part_unknown", [part]);
+        window.throw_exception_("str_error_hash_part_unknown", part);
       if (parsed_address[key_name] !== null)
-        throw address_error("str_error_hash_part_repeated", [key_name]);
+        window.throw_exception_("str_error_hash_part_repeated", key_name);
       parsed_address[key_name] = address_value_decode(
         part,
         part.slice(equals_index + 1),
@@ -613,7 +618,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
       return FLAME_GRAPH_VIEW_ENTRY[1];
     if (checked_address.view === SETTINGS_VIEW_ENTRY[0])
       return SETTINGS_VIEW_ENTRY[1];
-    throw new Error(window.ui_strings_.text_of("str_error_internal"));
+    window.throw_exception_("str_error_internal");
   }
   // Answers the link to the top page at a hash, the address the menu shows.
   function address_top_href_of(hash) {
@@ -730,9 +735,91 @@ window.report_ui_ = window.try_catch_handler_(function () {
       } else if (message_name === "tests_pulldown_closed")
         view_key_tests_pulldown_closed();
       else if (message_name !== "settings_relay")
-        throw new Error(window.ui_strings_.text_of("str_error_internal"));
+        window.throw_exception_("str_error_internal");
     });
     parent_post({ report_ui: "dark_mode_request" });
+  }
+
+  // Escapes text for markup, the one escape the page scripts write through.
+  function render_html_escape(text) {
+    return String(text)
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;");
+  }
+  // Writes one element, the one writer of a tag, a null inner a void tag.
+  function render_element(tag_name, attributes, inner_markup) {
+    const attribute_text = Object.entries(attributes)
+      .map(([attribute_name, attribute_value]) => {
+        if (!["number", "string"].includes(typeof attribute_value))
+          window.throw_exception_("str_error_internal");
+        return ` ${attribute_name}="${render_html_escape(attribute_value)}"`;
+      })
+      .join("");
+    const start_tag = `<${tag_name}${attribute_text}>`;
+    if (inner_markup === null) return start_tag;
+    return `${start_tag}${inner_markup}</${tag_name}>`;
+  }
+  // Makes the one element a piece of markup holds.
+  function render_element_of(markup) {
+    const markup_template = document.createElement("template");
+    markup_template.innerHTML = markup;
+    const made_nodes = markup_template.content.childNodes;
+    if (
+      made_nodes.length !== 1 ||
+      made_nodes[0].nodeType !== Node.ELEMENT_NODE
+    )
+      window.throw_exception_("str_error_internal");
+    return made_nodes[0];
+  }
+  // Writes a menu button: menu colours, then a tab stop, link or role by kind.
+  function render_menu_button(kind_name, label_markup, fields) {
+    if (!MENU_BUTTON_KIND_NAMES.includes(kind_name))
+      window.throw_exception_("str_error_internal");
+    const own_attributes = {
+      class: ["menu-button-", ...(fields.class_names || [])].join(" "),
+    };
+    let inner_markup = label_markup;
+    if (!fields.is_unavailable && kind_name === "link") {
+      const link_attributes = { href: fields.href };
+      if (fields.opens_new_tab) link_attributes.target = "_blank";
+      if (fields.tag_name === "a")
+        Object.assign(own_attributes, link_attributes);
+      else {
+        own_attributes.tabindex = 0;
+        inner_markup = render_element(
+          "a",
+          { ...link_attributes, tabindex: -1 },
+          label_markup,
+        );
+      }
+    } else if (
+      !fields.is_unavailable &&
+      kind_name === "action" &&
+      fields.tag_name !== "summary"
+    ) {
+      own_attributes.role = "button";
+      if (!fields.is_widget) own_attributes.tabindex = 0;
+    }
+    const extra_attributes = fields.attributes || {};
+    for (const attribute_name of Object.keys(extra_attributes)) {
+      if (Object.hasOwn(own_attributes, attribute_name))
+        window.throw_exception_("str_error_internal");
+    }
+    return render_element(
+      fields.tag_name,
+      { ...own_attributes, ...extra_attributes },
+      inner_markup,
+    );
+  }
+  // Writes page emphasis: its colours and one space each side, in either mode.
+  function render_page_emphasis(label_markup, fields) {
+    return render_element(
+      fields.tag_name,
+      { class: "page-emphasis-", ...(fields.attributes || {}) },
+      label_markup,
+    );
   }
 
   function pulldown_pattern_of(search_text) {
@@ -751,10 +838,9 @@ window.report_ui_ = window.try_catch_handler_(function () {
   }
   // Turns a cell into a text pulldown whose typed box is the cell itself.
   function pulldown_attach(root_element, pulldown_options) {
-    const element_render = window.shared_element_render_;
     root_element.innerHTML =
-      element_render("span", {}, "") +
-      element_render(
+      render_element("span", {}, "") +
+      render_element(
         "span",
         {
           class: "menu-pulldown-search-box-",
@@ -762,15 +848,15 @@ window.report_ui_ = window.try_catch_handler_(function () {
         },
         "",
       ) +
-      element_render(
+      render_element(
         "span",
         { class: "menu-pulldown-entry-box-" },
-        element_render(
+        render_element(
           "span",
           { class: "menu-pulldown-entry-list-", role: "listbox" },
           "",
         ) +
-          element_render(
+          render_element(
             "span",
             { class: "page-text-scrollbar- vertical-", "aria-hidden": "true" },
             "",
@@ -778,11 +864,11 @@ window.report_ui_ = window.try_catch_handler_(function () {
       );
     const [label_box, search_box, entry_box] = root_element.children;
     const [entry_list, list_scrollbar] = entry_box.children;
-    const no_match_note = window.shared_element_of_(
-      element_render(
+    const no_match_note = render_element_of(
+      render_element(
         "span",
         {},
-        window.shared_html_escape_(window.ui_strings_.text_of("str_no_match")),
+        render_html_escape(window.ui_strings_.text_of("str_no_match")),
       ),
     );
     let entries = [],
@@ -847,7 +933,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
     function root_focus() {
       root_element.focus({ preventScroll: true });
       if (document.activeElement !== root_element)
-        throw new Error(window.ui_strings_.text_of("str_error_internal"));
+        window.throw_exception_("str_error_internal");
     }
     function pulldown_open(typed_text) {
       is_open = true;
@@ -985,8 +1071,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
     const found_entry = entries.find(
       (candidate_entry) => candidate_entry.name === entry_name,
     );
-    if (!found_entry)
-      throw new Error(window.ui_strings_.text_of("str_error_internal"));
+    if (!found_entry) window.throw_exception_("str_error_internal");
     return found_entry;
   }
   function strip_number_text_of(numbered_index) {
@@ -1013,69 +1098,59 @@ window.report_ui_ = window.try_catch_handler_(function () {
   }
   function strip_widget_cells_markup(widget_text) {
     return Array.from(widget_text, (widget_character) =>
-      window.shared_element_render_(
-        "span",
-        {},
-        window.shared_html_escape_(widget_character),
-      ),
+      render_element("span", {}, render_html_escape(widget_character)),
     ).join("");
   }
   function strip_gap_cell_render() {
-    return window.shared_element_render_(
+    return render_element(
       "td",
       { class: "menu-strip-gap-" },
-      window.shared_html_escape_(STRIP_GAP_TEXT),
+      render_html_escape(STRIP_GAP_TEXT),
     );
   }
   // Writes an entry cell, a title as page emphasis, else a menu button.
   function strip_cell_render(entry, label_markup) {
     if (!STRIP_ENTRY_KIND_NAMES.includes(entry.kind))
-      throw new Error(window.ui_strings_.text_of("str_error_internal"));
+      window.throw_exception_("str_error_internal");
     const name_attributes = { "data-entry-name-": entry.name };
     if (entry.kind === "text")
-      return window.shared_page_emphasis_render_(label_markup, {
+      return render_page_emphasis(label_markup, {
         tag_name: "td",
         attributes: name_attributes,
       });
     const shown_markup =
       entry.kind === "pulldown" && entry.is_available ? "" : label_markup;
     const widget_markup = entry.is_widget
-      ? window.shared_html_escape_(STRIP_GAP_TEXT) +
-        window.shared_element_render_(
+      ? render_html_escape(STRIP_GAP_TEXT) +
+        render_element(
           "span",
           { class: "menu-button-widget-" },
           strip_widget_cells_markup(entry.widget_text),
         )
       : "";
-    return window.shared_menu_button_render_(
-      entry.kind,
-      shown_markup + widget_markup,
-      {
-        tag_name: "td",
-        href: entry.href,
-        opens_new_tab: entry.opens_new_tab,
-        is_unavailable: !entry.is_available,
-        is_widget: entry.is_widget,
-        attributes: name_attributes,
-      },
-    );
+    return render_menu_button(entry.kind, shown_markup + widget_markup, {
+      tag_name: "td",
+      href: entry.href,
+      opens_new_tab: entry.opens_new_tab,
+      is_unavailable: !entry.is_available,
+      is_widget: entry.is_widget,
+      attributes: name_attributes,
+    });
   }
   // Writes the status bar, one cell of links apart from the entry cells.
   function strip_status_cell_render(status_entries) {
     const link_markups = status_entries.map((status_entry) =>
-      window.shared_element_render_(
+      render_element(
         "a",
         { href: status_entry.href },
-        window.shared_html_escape_(status_entry.label),
+        render_html_escape(status_entry.label),
       ),
     );
-    return window.shared_element_render_(
+    return render_element(
       "td",
       { class: "menu-status-bar-" },
-      window.shared_html_escape_(STRIP_GAP_TEXT) +
-        link_markups.join(
-          window.shared_html_escape_(STRIP_STATUS_SEPARATOR_TEXT),
-        ),
+      render_html_escape(STRIP_GAP_TEXT) +
+        link_markups.join(render_html_escape(STRIP_STATUS_SEPARATOR_TEXT)),
     );
   }
   // Renders a whole strip again from its entries, the one door for its cells.
@@ -1090,7 +1165,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
 
     function strip_cell_named(entry_name) {
       if (!cells_by_name.has(entry_name))
-        throw new Error(window.ui_strings_.text_of("str_error_internal"));
+        window.throw_exception_("str_error_internal");
       return cells_by_name.get(entry_name);
     }
     function entry_activate(entry) {
@@ -1147,10 +1222,9 @@ window.report_ui_ = window.try_catch_handler_(function () {
     // Focuses the entry a digit reaches, opening a pulldown as its key does.
     function strip_numbered_entry_focus(number_text) {
       if (!digit_entries.has(number_text))
-        throw new Error(
-          window.ui_strings_.text_fill("str_error_strip_number_unusable", [
-            number_text,
-          ]),
+        window.throw_exception_(
+          "str_error_strip_number_unusable",
+          number_text,
         );
       const entry = digit_entries.get(number_text);
       const entry_cell = cells_by_name.get(entry.name);
@@ -1160,14 +1234,14 @@ window.report_ui_ = window.try_catch_handler_(function () {
     function strip_pulldown_open(entry_name, search_text) {
       strip_cell_named(entry_name);
       if (!pulldowns_by_name.has(entry_name))
-        throw new Error(window.ui_strings_.text_of("str_error_internal"));
+        window.throw_exception_("str_error_internal");
       pulldowns_by_name.get(entry_name).open(search_text);
     }
     // Relabels a pulldown cell without a render, so focus stays where it is.
     function strip_pulldown_label_set(entry_name, label_text) {
       strip_cell_named(entry_name);
       if (!pulldowns_by_name.has(entry_name))
-        throw new Error(window.ui_strings_.text_of("str_error_internal"));
+        window.throw_exception_("str_error_internal");
       const labelled_entries = entries.map((entry) =>
         entry.name === entry_name ? { ...entry, label: label_text } : entry,
       );
@@ -1179,21 +1253,18 @@ window.report_ui_ = window.try_catch_handler_(function () {
       const widget_box = strip_cell_named(entry_name).querySelector(
         ".menu-button-widget-",
       );
-      if (!widget_box)
-        throw new Error(window.ui_strings_.text_of("str_error_internal"));
+      if (!widget_box) window.throw_exception_("str_error_internal");
       widget_box.innerHTML = strip_widget_cells_markup(widget_text);
     }
 
     if (previous_strip) previous_strip.reset();
     for (const entry of entries) {
       if (entries_by_name.has(entry.name))
-        throw new Error(window.ui_strings_.text_of("str_error_internal"));
+        window.throw_exception_("str_error_internal");
       entries_by_name.set(entry.name, entry);
       const label_markup =
         entry.label_markup === null
-          ? window.shared_html_escape_(
-              strip_label_text_of(entries, entry.name),
-            )
+          ? render_html_escape(strip_label_text_of(entries, entry.name))
           : entry.label_markup;
       if (row_markups.length) row_markups.push(strip_gap_cell_render());
       row_markups.push(strip_cell_render(entry, label_markup));
@@ -1215,13 +1286,13 @@ window.report_ui_ = window.try_catch_handler_(function () {
       });
     if (strip_element.contains(document.activeElement))
       document.activeElement.blur();
-    strip_element.innerHTML = window.shared_element_render_(
+    strip_element.innerHTML = render_element(
       "table",
       { class: "menu-strip-table-" },
-      window.shared_element_render_(
+      render_element(
         "tbody",
         {},
-        window.shared_element_render_("tr", {}, row_markups.join("")),
+        render_element("tr", {}, row_markups.join("")),
       ),
     );
     const strip_table = strip_element.firstElementChild;
@@ -1384,15 +1455,14 @@ window.report_ui_ = window.try_catch_handler_(function () {
       .join(" ");
     if (class_names) cell_attributes.class = class_names;
     if (cell.style) cell_attributes.style = cell.style;
-    return window.shared_element_render_(
+    return render_element(
       "td",
       cell_attributes,
-      cell.html != null ? cell.html : window.shared_html_escape_(cell.text),
+      cell.html != null ? cell.html : render_html_escape(cell.text),
     );
   }
   // Writes columns and rows as a table, the one table writer in JS.
   function table_render(table_key, columns, rows, table_options) {
-    const element_render = window.shared_element_render_;
     const cell_rows = rows.map((row) => row.map(cell_normalize));
     const grow_index = table_options.fill
       ? columns.findIndex((column) => column.grow)
@@ -1409,7 +1479,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
           column_index,
           grow_index,
         );
-        return element_render(
+        return render_element(
           "col",
           { "data-min-": `${limit[0]}ch`, style: `width:${width_text}` },
           null,
@@ -1418,13 +1488,13 @@ window.report_ui_ = window.try_catch_handler_(function () {
       .join("");
     const title_markup = columns
       .map((column) =>
-        element_render(
+        render_element(
           "th",
           {
             ...(column.numeric ? { class: "numeric-" } : {}),
             title: column.label,
           },
-          window.shared_html_escape_(column.label),
+          render_html_escape(column.label),
         ),
       )
       .join("");
@@ -1437,7 +1507,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
           : table_options.row_attributes
             ? table_options.row_attributes[row_index]
             : {};
-        return element_render(
+        return render_element(
           "tr",
           row_attributes,
           row
@@ -1448,10 +1518,10 @@ window.report_ui_ = window.try_catch_handler_(function () {
         );
       })
       .join("");
-    const table_markup = element_render(
+    const table_markup = render_element(
       "div",
       { class: "table-columns-" },
-      element_render(
+      render_element(
         "table",
         {
           class: ["columns-", table_options.cls || ""]
@@ -1459,19 +1529,19 @@ window.report_ui_ = window.try_catch_handler_(function () {
             .join(" "),
           "data-key-": table_key,
         },
-        element_render("colgroup", {}, column_markup) +
-          element_render("thead", {}, element_render("tr", {}, title_markup)) +
-          element_render("tbody", {}, body_markup),
+        render_element("colgroup", {}, column_markup) +
+          render_element("thead", {}, render_element("tr", {}, title_markup)) +
+          render_element("tbody", {}, body_markup),
       ),
     );
     if (table_options.bare) return table_markup;
-    return element_render("div", { class: "table-box-" }, table_markup);
+    return render_element("div", { class: "table-box-" }, table_markup);
   }
   // Fills each marker with its markup, refusing a marker the template lacks.
   function template_fill(template_text, marker_values) {
     for (const marker of Object.keys(marker_values)) {
       if (!template_text.includes(marker))
-        throw new Error(window.ui_strings_.text_of("str_error_internal"));
+        window.throw_exception_("str_error_internal");
     }
     let filled_text = template_text;
     for (const [marker, markup] of Object.entries(marker_values))
@@ -1741,8 +1811,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
   function table_row_tab_stop_set(row_element, takes_focus) {
     const owning_table = row_element.closest("table");
     const row_walk = row_walks.get(owning_table);
-    if (!row_walk)
-      throw new Error(window.ui_strings_.text_of("str_error_internal"));
+    if (!row_walk) window.throw_exception_("str_error_internal");
     tab_stop_move(
       row_element.parentElement.querySelector(':scope > tr[tabindex="0"]'),
       row_element,
@@ -1876,7 +1945,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
 
   function row_count_checked(count_key, row_count) {
     if (!TABLE_ROW_COUNT_CHOICES.includes(row_count))
-      throw new Error(window.ui_strings_.text_of("str_error_internal"));
+      window.throw_exception_("str_error_internal");
     return row_count;
   }
   function row_count_stored(count_key, default_count) {
@@ -1895,11 +1964,11 @@ window.report_ui_ = window.try_catch_handler_(function () {
   // Makes one pulldown entry element per choice of a label and a value.
   function strip_choice_entries_of(choices) {
     return choices.map((choice) =>
-      window.shared_element_of_(
-        window.shared_element_render_(
+      render_element_of(
+        render_element(
           "span",
           { "data-entry-value-": choice.value },
-          window.shared_html_escape_(choice.label),
+          render_html_escape(choice.label),
         ),
       ),
     );
@@ -1926,7 +1995,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
   function page_heading_attach(heading_element, extra_entries) {
     const heading_text = heading_element.textContent;
     if (attached_headings.has(heading_element))
-      throw new Error(window.ui_strings_.text_of("str_error_internal"));
+      window.throw_exception_("str_error_internal");
     const title_markup = heading_element.innerHTML;
     const count_key = heading_element.getAttribute("data-row-count-key-");
     const count_span_of = () =>
@@ -1937,17 +2006,16 @@ window.report_ui_ = window.try_catch_handler_(function () {
         ? table_box.querySelector(":scope > .table-columns- > table.columns-")
         : null;
     if (!table_element && (count_key !== null || extra_entries.length))
-      throw new Error(window.ui_strings_.text_of("str_error_internal"));
+      window.throw_exception_("str_error_internal");
     if (!table_element) {
-      heading_element.innerHTML = window.shared_page_emphasis_render_(
-        title_markup,
-        { tag_name: "span" },
-      );
+      heading_element.innerHTML = render_page_emphasis(title_markup, {
+        tag_name: "span",
+      });
       attached_headings.set(heading_element, { reset: () => {} });
       return;
     }
     if (count_key !== null && !count_span_of())
-      throw new Error(window.ui_strings_.text_of("str_error_internal"));
+      window.throw_exception_("str_error_internal");
     const default_count =
       count_key === null
         ? 0
@@ -1983,11 +2051,11 @@ window.report_ui_ = window.try_catch_handler_(function () {
     function row_count_choose(value_text) {
       const chosen_count = row_count_checked(count_key, Number(value_text));
       view_storage.value_write(count_key, chosen_count);
-      for (const shared_heading of document.querySelectorAll(
+      for (const heading of document.querySelectorAll(
         ".page-heading-[data-row-count-key-]",
       )) {
-        if (shared_heading.getAttribute("data-row-count-key-") === count_key)
-          attached_headings.get(shared_heading).row_count_show(chosen_count);
+        if (heading.getAttribute("data-row-count-key-") === count_key)
+          attached_headings.get(heading).row_count_show(chosen_count);
       }
     }
     function count_entry_of() {
@@ -2142,8 +2210,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
     const axis_names = Object.keys(TEXT_SCROLLBAR_AXES).filter((axis_name) =>
       bar_element.classList.contains(axis_name + "-"),
     );
-    if (axis_names.length !== 1)
-      throw new Error(window.ui_strings_.text_of("str_error_internal"));
+    if (axis_names.length !== 1) window.throw_exception_("str_error_internal");
     return axis_names[0];
   }
   // Converts a wheel delta to characters, one pixel per delta unit.
@@ -2157,14 +2224,14 @@ window.report_ui_ = window.try_catch_handler_(function () {
       return wheel_delta;
     if (wheel_event.deltaMode === WheelEvent.DOM_DELTA_PAGE)
       return wheel_delta * page_size;
-    throw new Error(window.ui_strings_.text_of("str_error_internal"));
+    window.throw_exception_("str_error_internal");
   }
   // Shows and drives the target's scroll offset on one axis in text cells.
   function text_scrollbar_attach(bar_element, target_element, axis_name) {
     if (!Object.hasOwn(TEXT_SCROLLBAR_AXES, axis_name))
-      throw new Error(window.ui_strings_.text_of("str_error_internal"));
+      window.throw_exception_("str_error_internal");
     if (attached_scrollbars.has(bar_element))
-      throw new Error(window.ui_strings_.text_of("str_error_internal"));
+      window.throw_exception_("str_error_internal");
     const scroll_axis = TEXT_SCROLLBAR_AXES[axis_name];
     const gutter_text = window.ui_strings_.text_of(
       "str_text_scrollbar_gutter",
@@ -2173,12 +2240,8 @@ window.report_ui_ = window.try_catch_handler_(function () {
     const taken_wheel_events = wheel_taken_events[axis_name];
     let press_state = null;
     function cell_make() {
-      return window.shared_element_of_(
-        window.shared_element_render_(
-          "span",
-          {},
-          window.shared_html_escape_(gutter_text),
-        ),
+      return render_element_of(
+        render_element("span", {}, render_html_escape(gutter_text)),
       );
     }
     // Measures in characters, null when the bar is not laid out.
@@ -2497,6 +2560,11 @@ window.report_ui_ = window.try_catch_handler_(function () {
     resize_settle_callbacks.push(settle_callback);
   }
 
+  window.render_element_ = render_element;
+  window.render_element_of_ = render_element_of;
+  window.render_html_escape_ = render_html_escape;
+  window.render_menu_button_ = render_menu_button;
+  window.render_page_emphasis_ = render_page_emphasis;
   font_fit_apply();
   dark_mode_stored_apply_();
   if (is_scaled) design_scale_stop = design_scale_stored_stop();

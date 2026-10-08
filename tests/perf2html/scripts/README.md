@@ -6,14 +6,14 @@ profile and generate reports.
 - [HTML Report Generators](#html-report-generators)
 
 The remainder of these sections describe the source code implementing the
-`perf2html` report generators as a guide for interested developers.
+`perf2html` report generators as a guide for interested developers. Starting
+with running the tests and checking the results is recommended.
 
 - [Callers Page](#callers-page)
 - [Callgrind Parsing](#callgrind-parsing)
 - [Error Overlay](#error-overlay)
 - [Flame Graph](#flame-graph)
 - [Heat Map](#heat-map)
-- [Maintenance](#maintenance)
 - [Menu Strip](#menu-strip)
 - [Overview Page](#overview-page)
 - [Settings Files](#settings-files)
@@ -93,15 +93,6 @@ The remainder of these sections describe the source code implementing the
 |                           | view and info boxes for every test.          |
 | `heat_map_main.html`      | Templates the heat map home with its lines   |
 |                           | table and functions table.                   |
-
-## Maintenance
-
-| File            | Purpose                                                  |
-| --------------- | -------------------------------------------------------- |
-| `../archive.sh` | Packs the git repository into a dated `.git.txz` backup, |
-|                 | or restores one when it is the only file present.        |
-| `../clean.sh`   | Removes every ignored file but `tmp/`, then evicts the   |
-|                 | profiling builds from ccache.                            |
 
 ## Menu Strip
 

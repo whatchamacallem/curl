@@ -10,6 +10,7 @@ from typing import NamedTuple
 import argparse, json, os, re, shutil, subprocess, sys, urllib.parse
 
 import PIL.Image, PIL.ImageChops, PIL.ImageDraw, PIL.ImageEnhance
+import PIL.ImageFont
 
 
 class ShotVariant(NamedTuple):
@@ -36,11 +37,17 @@ class ScreenshotSet(NamedTuple):
         return _SHOT_REPORT_PERMUTATIONS
 
 
+_COMPARE_BACKGROUND_COLOR = (96, 96, 96)
 _COMPARE_BOX_LINE_PX = 4
+_COMPARE_CROP_MARGIN_PX = 8
+_COMPARE_GAP_PX = 8
 _COMPARE_HIGHLIGHT_COLOR = (255, 0, 255)
 _COMPARE_IMAGE_PREFIX = "compare_"
 _COMPARE_KEPT_BRIGHTNESS_SHARE = 0.25
+_COMPARE_LABEL_COLOR = (255, 255, 255)
+_COMPARE_LABEL_FONT_PX = 20
 _COMPARE_LISTED_REGION_COUNT = 4
+_COMPARE_PANELS_MAX_HEIGHT_SHARE = 2
 _COMPARE_REGION_TILE_PX = 16
 
 _DEBUG_SCRIPT_ASSET: tuple[str, ...] = ("assets/debug.js",)
@@ -226,12 +233,14 @@ class Screenshots:
         report: str,
         report_flag: int,
         out_dir: str,
+        compare_dir: str,
         scratch_dir: str,
     ) -> None:
         self.browser = browser
         self.report = report
         self.report_flag = report_flag
         self.out_dir = out_dir
+        self.compare_dir = compare_dir
         self.scratch_dir = scratch_dir
         self.report_views = self.report_views_select()
         self.written_shots: list[str] = []
@@ -314,25 +323,27 @@ class Screenshots:
             key=lambda changed_region: (changed_region[1], changed_region[0]),
         )
 
-    # Writes the shot dimmed, its changed pixels and their boxes highlighted.
+    # Writes the dimmed shot with boxes, then each region gold and new.
     def compare_image_write(
         self,
         new_shot: PIL.Image.Image,
+        gold_shot: PIL.Image.Image,
         changed_mask: PIL.Image.Image,
         changed_regions: list[tuple[int, int, int, int]],
         compare_path: str,
     ) -> None:
-        compare_image = PIL.ImageEnhance.Brightness(new_shot).enhance(
+        overview_image = PIL.ImageEnhance.Brightness(new_shot).enhance(
             _COMPARE_KEPT_BRIGHTNESS_SHARE
         )
-        compare_image.paste(_COMPARE_HIGHLIGHT_COLOR, mask=changed_mask)
-        box_drawing = PIL.ImageDraw.Draw(compare_image)
-        for (
+        overview_image.paste(_COMPARE_HIGHLIGHT_COLOR, mask=changed_mask)
+        box_drawing = PIL.ImageDraw.Draw(overview_image)
+        label_font = PIL.ImageFont.load_default(size=_COMPARE_LABEL_FONT_PX)
+        for region_number, (
             region_left,
             region_top,
             region_right,
             region_bottom,
-        ) in changed_regions:
+        ) in enumerate(changed_regions, 1):
             box_drawing.rectangle(
                 (
                     region_left - _COMPARE_BOX_LINE_PX,
@@ -343,6 +354,56 @@ class Screenshots:
                 outline=_COMPARE_HIGHLIGHT_COLOR,
                 width=_COMPARE_BOX_LINE_PX,
             )
+            box_drawing.text(
+                (
+                    max(region_left - _COMPARE_BOX_LINE_PX, 0),
+                    max(
+                        region_top
+                        - _COMPARE_BOX_LINE_PX
+                        - _COMPARE_LABEL_FONT_PX,
+                        0,
+                    ),
+                ),
+                str(region_number),
+                fill=_COMPARE_HIGHLIGHT_COLOR,
+                font=label_font,
+            )
+        region_panels: list[PIL.Image.Image] = []
+        panels_height = 0
+        for region_number, changed_region in enumerate(changed_regions, 1):
+            if any(
+                self.region_holds(other_region, changed_region)
+                for other_region in changed_regions
+                if other_region != changed_region
+            ):
+                continue
+            region_panel = self.region_panel_of(
+                region_number, changed_region, gold_shot, new_shot, label_font
+            )
+            if (
+                panels_height + region_panel.height
+                > _COMPARE_PANELS_MAX_HEIGHT_SHARE * new_shot.height
+            ):
+                continue
+            region_panels.append(region_panel)
+            panels_height += region_panel.height + _COMPARE_GAP_PX
+        compare_image = PIL.Image.new(
+            "RGB",
+            (
+                max(
+                    [overview_image.width]
+                    + [region_panel.width for region_panel in region_panels]
+                ),
+                overview_image.height + panels_height,
+            ),
+            _COMPARE_BACKGROUND_COLOR,
+        )
+        compare_image.paste(overview_image, (0, 0))
+        panel_top = overview_image.height
+        for region_panel in region_panels:
+            compare_image.paste(region_panel, (0, panel_top))
+            panel_top += region_panel.height + _COMPARE_GAP_PX
+        os.makedirs(self.compare_dir, exist_ok=True)
         compare_image.save(compare_path)
 
     # Names each shot that differs from its gold twin, each one missing.
@@ -353,13 +414,14 @@ class Screenshots:
             f"[0-9]{{{_SHOT_NUMBER_DIGITS}}}-[^-]+-[^-]+-[^-]+"
             f"-{re.escape(prefix.rstrip('_'))}-.*" + re.escape(_IMAGE_SUFFIX)
         )
-        for file_name in os.listdir(self.out_dir):
-            if file_name.startswith(
-                _COMPARE_IMAGE_PREFIX
-            ) and shot_pattern.fullmatch(
-                file_name.removeprefix(_COMPARE_IMAGE_PREFIX)
-            ):
-                os.remove(os.path.join(self.out_dir, file_name))
+        if os.path.isdir(self.compare_dir):
+            for file_name in os.listdir(self.compare_dir):
+                if file_name.startswith(
+                    _COMPARE_IMAGE_PREFIX
+                ) and shot_pattern.fullmatch(
+                    file_name.removeprefix(_COMPARE_IMAGE_PREFIX)
+                ):
+                    os.remove(os.path.join(self.compare_dir, file_name))
         is_same = True
         for shot_name in self.written_shots:
             if not self.gold_compare_one(
@@ -377,6 +439,8 @@ class Screenshots:
                     file=sys.stderr,
                 )
                 is_same = False
+        if not is_same:
+            os.makedirs(self.compare_dir, exist_ok=True)
         return is_same
 
     def gold_compare_one(
@@ -412,10 +476,10 @@ class Screenshots:
         changed_count = changed_mask.histogram()[255]
         changed_regions = self.changed_regions_of(changed_mask)
         compare_path = os.path.join(
-            self.out_dir, _COMPARE_IMAGE_PREFIX + file_name
+            self.compare_dir, _COMPARE_IMAGE_PREFIX + file_name
         )
         self.compare_image_write(
-            new_shot, changed_mask, changed_regions, compare_path
+            new_shot, gold_shot, changed_mask, changed_regions, compare_path
         )
         listed_regions = "; ".join(
             f"{region_left},{region_top} to {region_right},{region_bottom}"
@@ -519,6 +583,64 @@ class Screenshots:
             lead = "file:" if slashed.startswith("//") else "file:///"
             return lead + slashed + address
         return "file://" + page + address
+
+    # Answers whether the outer region holds the whole inner region.
+    def region_holds(
+        self,
+        outer_region: tuple[int, int, int, int],
+        inner_region: tuple[int, int, int, int],
+    ) -> bool:
+        return (
+            outer_region[0] <= inner_region[0]
+            and outer_region[1] <= inner_region[1]
+            and inner_region[2] <= outer_region[2]
+            and inner_region[3] <= outer_region[3]
+        )
+
+    # Sets the gold and the new cut of one region side by side under a label.
+    def region_panel_of(
+        self,
+        region_number: int,
+        changed_region: tuple[int, int, int, int],
+        gold_shot: PIL.Image.Image,
+        new_shot: PIL.Image.Image,
+        label_font: PIL.ImageFont.FreeTypeFont | PIL.ImageFont.ImageFont,
+    ) -> PIL.Image.Image:
+        region_left, region_top, region_right, region_bottom = changed_region
+        crop_box = (
+            max(region_left - _COMPARE_CROP_MARGIN_PX, 0),
+            max(region_top - _COMPARE_CROP_MARGIN_PX, 0),
+            min(region_right + _COMPARE_CROP_MARGIN_PX, new_shot.width),
+            min(region_bottom + _COMPARE_CROP_MARGIN_PX, new_shot.height),
+        )
+        crop_width = crop_box[2] - crop_box[0]
+        crop_height = crop_box[3] - crop_box[1]
+        gold_label = (
+            f"{region_number} gold {region_left},{region_top}"
+            f" to {region_right},{region_bottom}"
+        )
+        gold_label_width = int(label_font.getlength(gold_label)) + 1
+        column_width = max(crop_width, gold_label_width)
+        label_height = _COMPARE_LABEL_FONT_PX + _COMPARE_GAP_PX
+        new_left = column_width + _COMPARE_GAP_PX
+        region_panel = PIL.Image.new(
+            "RGB",
+            (new_left + column_width, label_height + crop_height),
+            _COMPARE_BACKGROUND_COLOR,
+        )
+        region_panel.paste(gold_shot.crop(crop_box), (0, label_height))
+        region_panel.paste(new_shot.crop(crop_box), (new_left, label_height))
+        panel_drawing = PIL.ImageDraw.Draw(region_panel)
+        panel_drawing.text(
+            (0, 0), gold_label, fill=_COMPARE_LABEL_COLOR, font=label_font
+        )
+        panel_drawing.text(
+            (new_left, 0),
+            f"{region_number} new",
+            fill=_COMPARE_LABEL_COLOR,
+            font=label_font,
+        )
+        return region_panel
 
     def report_views_select(
         self,
@@ -665,6 +787,13 @@ def main() -> int:
         " any shot differs or is missing",
     )
     parser.add_argument(
+        "--compare-out",
+        default="",
+        metavar="DIR",
+        help="where the compare_ images go, made when a shot differs"
+        " (default the --out directory)",
+    )
+    parser.add_argument(
         "--diff", action="store_true", help="the report is a diff report"
     )
     parser.add_argument(
@@ -692,6 +821,10 @@ def main() -> int:
             f"error: --compare-gold {gold_dir} is no directory",
             file=sys.stderr,
         )
+        return 1
+
+    if namespace.compare_out and not namespace.compare_gold:
+        print("error: --compare-out needs --compare-gold", file=sys.stderr)
         return 1
 
     browser = browser_find()
@@ -724,7 +857,10 @@ def main() -> int:
     report_flag = (
         _SHOOT_DIFF_REPORT if namespace.diff else _SHOOT_REGULAR_REPORT
     )
-    shooter = Screenshots(browser, report, report_flag, out_dir, scratch_dir)
+    compare_dir = os.path.abspath(namespace.compare_out or out_dir)
+    shooter = Screenshots(
+        browser, report, report_flag, out_dir, compare_dir, scratch_dir
+    )
     written = shooter.shoot_all(namespace.prefix)
 
     with open(

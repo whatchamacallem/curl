@@ -42,10 +42,10 @@ class BuildFlameGraph:
         test: str
 
     def page_write(self, args: BuildFlameGraph.PageArgs) -> None:
-        assets_href = theme.shared_href(
+        assets_href = theme.href(
             _FLAME_GRAPH_PAGE_DEPTH, _REPORT_ASSETS_DIR_NAME
         )
-        app_href = theme.shared_href(
+        app_href = theme.href(
             _FLAME_GRAPH_PAGE_DEPTH, _FLAME_GRAPH_APP_DIR_NAME
         )
         scripts = theme.script_tags(
@@ -68,7 +68,7 @@ class BuildFlameGraph:
             {
                 "__APP_CSS__": f"{app_href}/{args.app_css}",
                 "__HELD_SCRIPTS__": held_scripts,
-                "__PAGE_TITLE__": theme.html_escape(
+                "__PAGE_TITLE__": theme.render_html_escape(
                     theme.ui_text_of("str_flame_graph_page_title")
                 ),
                 "__SCRIPTS__": scripts,

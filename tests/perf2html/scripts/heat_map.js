@@ -133,9 +133,9 @@ window.try_catch_handler_(function () {
 
   const text_of = window.ui_strings_.text_of;
   const text_fill = window.ui_strings_.text_fill;
-  const element_render = window.shared_element_render_;
-  const html_escape = window.shared_html_escape_;
-  const menu_button_render = window.shared_menu_button_render_;
+  const render_element = window.render_element_;
+  const render_html_escape = window.render_html_escape_;
+  const render_menu_button = window.render_menu_button_;
   const SORT_CHOICES = [
     { value: "heat", label: text_of("str_sort_hottest_first") },
     { value: "name", label: text_of("str_sort_alphabetical") },
@@ -462,8 +462,8 @@ window.try_catch_handler_(function () {
   }
 
   function line_link(file_path, line, text) {
-    if (!file_table[file_path] || !line) return html_escape(text);
-    return menu_button_render("link", html_escape(text), {
+    if (!file_table[file_path] || !line) return render_html_escape(text);
+    return render_menu_button("link", render_html_escape(text), {
       tag_name: "a",
       href: hash_for_line(file_path, line),
     });
@@ -475,8 +475,8 @@ window.try_catch_handler_(function () {
     function_table[function_index].line &&
     file_table[function_table[function_index].file];
   function function_link(function_index, text) {
-    if (!function_is_linkable(function_index)) return html_escape(text);
-    return menu_button_render("link", html_escape(text), {
+    if (!function_is_linkable(function_index)) return render_html_escape(text);
+    return render_menu_button("link", render_html_escape(text), {
       tag_name: "a",
       href: hash_for_function(function_table[function_index].name),
     });
@@ -584,20 +584,20 @@ window.try_catch_handler_(function () {
   });
   // Writes the caret, name and share spans that one tree node holds.
   const tree_node_inner_markup = (caret_text, name_text, share_shown) =>
-    element_render(
+    render_element(
       "span",
       { class: "heat-map-tree-node-caret-" },
-      html_escape(caret_text),
+      render_html_escape(caret_text),
     ) +
-    element_render(
+    render_element(
       "span",
       { class: "heat-map-tree-node-name-" },
-      html_escape(name_text),
+      render_html_escape(name_text),
     ) +
-    element_render(
+    render_element(
       "span",
       { class: "heat-map-tree-node-share-percent-" },
-      html_escape(share_shown),
+      render_html_escape(share_shown),
     );
   function tree_render() {
     function nodes_emit(tree_node, depth) {
@@ -610,7 +610,7 @@ window.try_catch_handler_(function () {
           heat_of_delta(directory_node.self, directory_node.base),
         );
         output_parts.push(
-          element_render(
+          render_element(
             "div",
             {
               class:
@@ -628,7 +628,7 @@ window.try_catch_handler_(function () {
           ),
         );
         output_parts.push(
-          element_render(
+          render_element(
             "div",
             {
               class:
@@ -646,7 +646,7 @@ window.try_catch_handler_(function () {
         const heat_style_attribute = file.cold
           ? ""
           : cell_style(heat_of_delta(file.self, file.base));
-        return element_render(
+        return render_element(
           "div",
           {
             class:
@@ -672,7 +672,7 @@ window.try_catch_handler_(function () {
       if (zero_cost_files.length) {
         const is_expanded = expanded_cold_groups.has(tree_node.path);
         output_parts.push(
-          element_render(
+          render_element(
             "div",
             {
               class: "heat-map-tree-node- more-",
@@ -690,7 +690,7 @@ window.try_catch_handler_(function () {
         );
         if (is_expanded) {
           output_parts.push(
-            element_render(
+            render_element(
               "div",
               {
                 class: "heat-map-tree-node-child-group- open-",
@@ -907,7 +907,7 @@ window.try_catch_handler_(function () {
   }
   // Writes the text of a home table heading, its row count a span.
   function home_heading_markup(string_id) {
-    const row_count_markup = element_render(
+    const row_count_markup = render_element(
       "span",
       { class: "page-heading-row-count-" },
       String(HEAT_MAP_HOME_TABLE_DEFAULT_ROWS),
@@ -917,7 +917,7 @@ window.try_catch_handler_(function () {
     });
     return text_fill(string_id, {
       count: row_count_markup,
-      measure: html_escape(measure_text),
+      measure: render_html_escape(measure_text),
     });
   }
   function home_render(is_new_address) {
@@ -1105,29 +1105,33 @@ window.try_catch_handler_(function () {
         line: line_number,
         share: line_share_text(cost, baseline_cost, line_number),
       });
-      entries_markup += menu_button_render("link", html_escape(entry_text), {
-        tag_name: "a",
-        href: hash_for_line(file_path, line_number),
-        class_names: ["heat-map-source-ticker-tape-entry-"],
-        attributes: {
-          tabindex: entry_index ? -1 : 0,
-          style: cell_style(heat_of_line(cost, baseline_cost, line_number)),
+      entries_markup += render_menu_button(
+        "link",
+        render_html_escape(entry_text),
+        {
+          tag_name: "a",
+          href: hash_for_line(file_path, line_number),
+          class_names: ["heat-map-source-ticker-tape-entry-"],
+          attributes: {
+            tabindex: entry_index ? -1 : 0,
+            style: cell_style(heat_of_line(cost, baseline_cost, line_number)),
+          },
         },
-      });
+      );
       return entry_text;
     });
     return {
-      markup: element_render(
+      markup: render_element(
         "div",
         {
           class: "heat-map-source-ticker-tape-",
           role: "toolbar",
           "aria-label": TICKER_TAPE_HEADING,
         },
-        element_render(
+        render_element(
           "span",
           { class: "heat-map-source-ticker-tape-label-" },
-          html_escape(TICKER_TAPE_HEADING),
+          render_html_escape(TICKER_TAPE_HEADING),
         ) + entries_markup,
       ),
       copy_text: [TICKER_TAPE_HEADING, ...entry_texts].join("\n"),
@@ -1136,7 +1140,7 @@ window.try_catch_handler_(function () {
 
   // Builds a control that only calls JavaScript, copy or close.
   const box_control_markup = (action_name, string_id, extra_class_name) =>
-    menu_button_render("action", html_escape(text_of(string_id)), {
+    render_menu_button("action", render_html_escape(text_of(string_id)), {
       tag_name: "span",
       class_names: [
         "heat-map-source-information-box-control-",
@@ -1144,10 +1148,10 @@ window.try_catch_handler_(function () {
       ],
       attributes: { "data-information-box-action-": action_name },
     });
-  const box_separator_markup = element_render(
+  const box_separator_markup = render_element(
     "span",
     { class: "heat-map-source-information-box-action-bar-separator-" },
-    html_escape(text_of("str_information_box_action_bar_separator")),
+    render_html_escape(text_of("str_information_box_action_bar_separator")),
   );
 
   // Renders the information box of a file, or of a line when one is given.
@@ -1259,10 +1263,10 @@ window.try_catch_handler_(function () {
     const in_function_html =
       line_function_index != null
         ? text_fill("str_in_function", {
-            function: element_render(
+            function: render_element(
               "span",
               { class: "heat-map-source-information-box-function-name-" },
-              html_escape(function_name(line_function_index)),
+              render_html_escape(function_name(line_function_index)),
             ),
           })
         : "";
@@ -1283,10 +1287,10 @@ window.try_catch_handler_(function () {
       "str_information_box_close_symbol",
       "heat-map-source-information-box-close-symbol-",
     );
-    markup += element_render(
+    markup += render_element(
       "div",
       {},
-      html_escape(file_path) +
+      render_html_escape(file_path) +
         (line_number ? ":" + line_number : "") +
         in_function_html,
     );
@@ -1297,10 +1301,10 @@ window.try_catch_handler_(function () {
       { row_attributes: counter_row_attributes },
     );
     for (const note_text of note_texts) {
-      markup += element_render(
+      markup += render_element(
         "div",
         { class: "heat-map-source-information-box-note-" },
-        html_escape(note_text),
+        render_html_escape(note_text),
       );
     }
     markup += hottest_lines.markup;
@@ -1350,10 +1354,10 @@ window.try_catch_handler_(function () {
         counter: counter_label(current_counter),
       });
       markup +=
-        element_render(
+        render_element(
           "div",
           { class: "heat-map-source-information-box-heading-" },
-          html_escape(heading),
+          render_html_escape(heading),
         ) + report_ui_.table_render("heat.detail.callees", columns, rows, {});
       text_parts.push(
         heading + "\n" + report_ui_.table_markdown(columns, rows),
@@ -1388,10 +1392,10 @@ window.try_catch_handler_(function () {
             function: function_entry.name,
             self: function_self_text,
           });
-      markup += element_render(
+      markup += render_element(
         "div",
         { class: "heat-map-source-information-box-heading-" },
-        html_escape(heading),
+        render_html_escape(heading),
       );
       if (callers.length) {
         const columns = [
@@ -1434,7 +1438,7 @@ window.try_catch_handler_(function () {
         );
       } else if (HAS_CALL_GRAPH) {
         const none = text_of("str_no_caller");
-        markup += element_render("div", {}, html_escape(none));
+        markup += render_element("div", {}, render_html_escape(none));
         text_parts.push(heading + "\n" + none);
       } else {
         text_parts.push(heading);
@@ -1444,9 +1448,9 @@ window.try_catch_handler_(function () {
       line_number &&
       function_index == null &&
       function_is_linkable(line_function_index)
-        ? menu_button_render(
+        ? render_menu_button(
             "link",
-            html_escape(text_of("str_information_box_function")),
+            render_html_escape(text_of("str_information_box_function")),
             {
               tag_name: "a",
               href: hash_for_function(
@@ -1456,7 +1460,7 @@ window.try_catch_handler_(function () {
             },
           ) + box_separator_markup
         : "";
-    markup += element_render(
+    markup += render_element(
       "div",
       {},
       owner_link_markup +
@@ -1465,7 +1469,7 @@ window.try_catch_handler_(function () {
         box_control_markup("close", "str_information_box_close"),
     );
     return {
-      markup: element_render(
+      markup: render_element(
         "div",
         {
           class: "heat-map-source-information-box-",
@@ -1490,7 +1494,7 @@ window.try_catch_handler_(function () {
       path: file_path,
       share: share_shown,
     });
-    return element_render(
+    return render_element(
       "div",
       {
         class:
@@ -1498,7 +1502,7 @@ window.try_catch_handler_(function () {
           (has_file_box ? " empty-" : ""),
         "data-information-box-line-": 0,
       },
-      menu_button_render("link", html_escape(link_text), {
+      render_menu_button("link", render_html_escape(link_text), {
         tag_name: "a",
         href: hash_for_line(file_path),
       }) +
@@ -1513,7 +1517,7 @@ window.try_catch_handler_(function () {
 
   function file_render(file_path) {
     const file = file_table[file_path];
-    if (!file) throw new Error(text_of("str_error_internal"));
+    if (!file) window.throw_exception_("str_error_internal");
     const is_first_view = current_file_path !== file_path,
       kept_scroll_top = is_first_view ? 0 : main_panel.scrollTop,
       has_file_box = is_first_view || !!file_box_of();
@@ -1623,7 +1627,7 @@ window.try_catch_handler_(function () {
       cls: "heat-map-source-table-",
       bare: true,
     });
-    main_panel.innerHTML = element_render(
+    main_panel.innerHTML = render_element(
       "div",
       { class: "heat-map-source-" },
       markup,
@@ -1759,16 +1763,16 @@ window.try_catch_handler_(function () {
       if (row.classList.contains("heat-map-source-line-detail-row-")) continue;
       const code = row.querySelector("td.heat-map-source-table-code-cell-");
       if (!code) continue;
-      clone_rows_markup += element_render(
+      clone_rows_markup += render_element(
         "tr",
         row.className ? { class: row.className } : {},
         code.outerHTML,
       );
     }
-    minimap_box.innerHTML = element_render(
+    minimap_box.innerHTML = render_element(
       "table",
       { class: "heat-map-source-table-" },
-      element_render("tbody", {}, clone_rows_markup),
+      render_element("tbody", {}, clone_rows_markup),
     );
     const clone_table = minimap_box.firstElementChild;
     minimap_panel.classList.remove("empty-");
@@ -1957,10 +1961,10 @@ window.try_catch_handler_(function () {
   function detail_open(file_path, line_number, row) {
     row.insertAdjacentHTML(
       "afterend",
-      element_render(
+      render_element(
         "tr",
         { class: "heat-map-source-line-detail-row-" },
-        element_render(
+        render_element(
           "td",
           { colspan: row.cells.length },
           information_box_render(file_path, line_number).markup,
@@ -2228,17 +2232,17 @@ window.try_catch_handler_(function () {
   }
   function pulldown_text_lists(names_key, entry_name) {
     if (!window.report_pulldown_text_)
-      throw new Error(text_of("str_error_internal"));
+      window.throw_exception_("str_error_internal");
     return window.report_pulldown_text_[names_key].includes(entry_name);
   }
   function no_samples_note_render(unsampled_name) {
     current_file_path = null;
     scope_totals = null;
     const note = text_fill("str_no_samples_in_test", { name: unsampled_name });
-    main_panel.innerHTML = element_render(
+    main_panel.innerHTML = render_element(
       "div",
       { class: "heat-map-source-unavailable-note-" },
-      html_escape(note),
+      render_html_escape(note),
     );
     main_panel.scrollTop = 0;
     tree_render();
@@ -2267,7 +2271,7 @@ window.try_catch_handler_(function () {
       document.hasFocus() && main_panel.contains(document.activeElement);
     const page_address = report_ui_.address.of_hash(location.hash);
     if (page_address.view !== HEAT_MAP_VIEW_ENTRY[0])
-      throw new Error(text_of("str_error_internal"));
+      window.throw_exception_("str_error_internal");
     if (page_address.test !== shown_test_name) {
       model_load(page_address.test);
       return;
@@ -2294,17 +2298,11 @@ window.try_catch_handler_(function () {
       } else if (pulldown_text_lists("functions", fn)) {
         unsampled_name = fn;
       } else {
-        throw new Error(
-          window.ui_strings_.text_fill("str_error_hash_function_unknown", [
-            fn,
-          ]),
-        );
+        window.throw_exception_("str_error_hash_function_unknown", fn);
       }
     } else if (file && !file_table[file]) {
       if (!pulldown_text_lists("files", file)) {
-        throw new Error(
-          window.ui_strings_.text_fill("str_error_hash_file_unknown", [file]),
-        );
+        window.throw_exception_("str_error_hash_file_unknown", file);
       }
       unsampled_name = file;
     }
@@ -2349,7 +2347,7 @@ window.try_catch_handler_(function () {
     model_script.addEventListener(
       "error",
       window.try_catch_handler_(() => {
-        throw new Error(text_of("str_error_internal"));
+        window.throw_exception_("str_error_internal");
       }),
     );
     model_script.addEventListener(
@@ -2357,7 +2355,7 @@ window.try_catch_handler_(function () {
       window.try_catch_handler_(() => {
         const loaded_models = window[HEAT_MAP_MODEL_GLOBAL_NAME];
         if (!loaded_models || !loaded_models[test_name])
-          throw new Error(text_of("str_error_internal"));
+          window.throw_exception_("str_error_internal");
         route_render();
       }),
     );

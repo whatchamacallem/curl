@@ -75,9 +75,9 @@ window.try_catch_handler_(function () {
   function setting_markup_of(setting_name) {
     const json_text = compact_json_of(settings_(setting_name), "", 0);
     const button_markups = ACTION_NAMES.map((action_name) =>
-      window.shared_menu_button_render_(
+      window.render_menu_button_(
         "action",
-        window.shared_html_escape_(ACTION_LABEL_TEXTS[action_name]),
+        window.render_html_escape_(ACTION_LABEL_TEXTS[action_name]),
         {
           tag_name: "span",
           attributes: { "data-setting-action-": action_name },
@@ -85,19 +85,21 @@ window.try_catch_handler_(function () {
       ),
     );
     return (
-      window.shared_element_render_(
+      window.render_element_(
         "span",
         { "data-setting-name-": setting_name },
         [
-          window.shared_page_emphasis_render_(
-            window.shared_html_escape_(setting_name),
-            { tag_name: "span" },
+          window.render_page_emphasis_(
+            window.render_html_escape_(setting_name),
+            {
+              tag_name: "span",
+            },
           ),
           ...button_markups,
         ].join(" "),
       ) +
       "\n" +
-      window.shared_element_render_(
+      window.render_element_(
         "textarea",
         {
           class: "settings-value-box-",
@@ -107,7 +109,7 @@ window.try_catch_handler_(function () {
           wrap: "off",
           "data-setting-name-": setting_name,
         },
-        window.shared_html_escape_(json_text),
+        window.render_html_escape_(json_text),
       ) +
       "\n"
     );

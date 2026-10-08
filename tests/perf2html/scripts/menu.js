@@ -61,7 +61,7 @@ window.try_catch_handler_(function () {
     ) + STYLE_MENU_PULLDOWN_EXTRA_WIDTH_CHARS;
 
   if (typeof window.report_manifest_table_ === "undefined")
-    throw new Error(window.ui_strings_.text_of("str_error_report_incomplete"));
+    window.throw_exception_("str_error_report_incomplete");
   let flash_entry_name = "";
   let menu_strip_handle = null;
 
@@ -79,11 +79,11 @@ window.try_catch_handler_(function () {
     };
   }
   function pulldown_link_of(link_text, link_hash, entry_name) {
-    const entry_link = window.shared_element_of_(
-      window.shared_element_render_(
+    const entry_link = window.render_element_of_(
+      window.render_element_(
         "a",
         { href: link_hash },
-        window.shared_html_escape_(link_text),
+        window.render_html_escape_(link_text),
       ),
     );
     entry_link.addEventListener(
@@ -97,8 +97,7 @@ window.try_catch_handler_(function () {
   }
   function heat_map_entries_of(names_key, entry_name, part_of) {
     const pulldown_text = window.report_pulldown_text_;
-    if (!pulldown_text)
-      throw new Error(window.ui_strings_.text_of("str_error_internal"));
+    if (!pulldown_text) window.throw_exception_("str_error_internal");
     const entry_test_name = active_test_name();
     return pulldown_text[names_key].map((name) =>
       pulldown_link_of(
@@ -152,7 +151,7 @@ window.try_catch_handler_(function () {
     const letters = [...text];
     return letters
       .map((letter, index) =>
-        window.shared_element_render_(
+        window.render_element_(
           "span",
           {
             style: `color:${logo_color_at(
@@ -162,7 +161,7 @@ window.try_catch_handler_(function () {
                 : 1,
             )}`,
           },
-          window.shared_html_escape_(letter),
+          window.render_html_escape_(letter),
         ),
       )
       .join("");

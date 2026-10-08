@@ -8,7 +8,7 @@ window.try_catch_handler_(function () {
   const HELD_SCRIPT_TEMPLATE_ID = "page-held-script-";
   const SETTINGS_RELAY_MESSAGE_NAME = "settings_relay";
   const SETTINGS_REQUEST_MESSAGE_NAME = "settings_request";
-  const is_framed = window.shared_is_framed_;
+  const is_framed = window.is_framed_;
   let applied_values = {};
   let settings_object = null;
 
@@ -68,15 +68,11 @@ window.try_catch_handler_(function () {
     );
     if (query_value === null) return false;
     if (query_value !== written_object.SETTINGS_DEBUG_QUERY_ENABLED_VALUE)
-      throw new Error(
-        window.ui_strings_.text_fill(
-          "str_error_settings_debug_query_unusable",
-          [
-            written_object.SETTINGS_DEBUG_QUERY_KEY_NAME,
-            query_value,
-            written_object.SETTINGS_DEBUG_QUERY_ENABLED_VALUE,
-          ],
-        ),
+      window.throw_exception_(
+        "str_error_settings_debug_query_unusable",
+        written_object.SETTINGS_DEBUG_QUERY_KEY_NAME,
+        query_value,
+        written_object.SETTINGS_DEBUG_QUERY_ENABLED_VALUE,
       );
     return true;
   }
@@ -100,18 +96,13 @@ window.try_catch_handler_(function () {
       typeof hash_values !== "object" ||
       Array.isArray(hash_values)
     )
-      throw new Error(
-        window.ui_strings_.text_fill("str_error_settings_values_unusable", [
-          applied_part,
-        ]),
+      window.throw_exception_(
+        "str_error_settings_values_unusable",
+        applied_part,
       );
     for (const setting_name of Object.keys(hash_values)) {
       if (!Object.hasOwn(written_object, setting_name))
-        throw new Error(
-          window.ui_strings_.text_fill("str_error_setting_unknown", [
-            setting_name,
-          ]),
-        );
+        window.throw_exception_("str_error_setting_unknown", setting_name);
     }
     return hash_values;
   }
@@ -133,7 +124,7 @@ window.try_catch_handler_(function () {
   // Reads one setting of the window settings object, refusing an unknown one.
   function settings_(setting_name) {
     if (!Object.hasOwn(settings_object, setting_name))
-      throw new Error(window.ui_strings_.text_of("str_error_internal"));
+      window.throw_exception_("str_error_internal");
     return settings_object[setting_name];
   }
   function settings_names_() {
@@ -146,8 +137,7 @@ window.try_catch_handler_(function () {
   // Loads the scripts a framed page holds, in order, under its settings.
   function held_scripts_load() {
     const held_template = document.getElementById(HELD_SCRIPT_TEMPLATE_ID);
-    if (!held_template)
-      throw new Error(window.ui_strings_.text_of("str_error_internal"));
+    if (!held_template) window.throw_exception_("str_error_internal");
     for (const held_script of held_template.content.querySelectorAll(
       "script",
     )) {
@@ -185,9 +175,7 @@ window.try_catch_handler_(function () {
   }
   function held_scripts_unframed_check() {
     if (document.getElementById(HELD_SCRIPT_TEMPLATE_ID))
-      throw new Error(
-        window.ui_strings_.text_of("str_error_held_script_unframed"),
-      );
+      window.throw_exception_("str_error_held_script_unframed");
   }
 
   window.settings_ = settings_;

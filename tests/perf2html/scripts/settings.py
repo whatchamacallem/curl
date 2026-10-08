@@ -19,28 +19,22 @@ ASSET_HEAT_MAP_STYLESHEET_NAME = "heat_map.css"
 ASSET_LIGHT_MODE_STYLESHEET_NAME = "light_mode.css"
 ASSET_MENU_SCRIPT_NAME = "menu.js"
 ASSET_MENU_STYLESHEET_NAME = "menu.css"
-
 ASSET_PULLDOWN_TEXT_SCRIPT_NAME = "pulldown_text.js"
-
 ASSET_SETTINGS_PAGE_SCRIPT_NAME = "settings_page.js"
 ASSET_SETTINGS_SCRIPT_NAME = "settings.js"
-
 ASSET_TEMPLATE_CALLERS_PAGE_NAME = "callers.html"
 ASSET_TEMPLATE_FLAME_GRAPH_PAGE_NAME = "flame_graph.html"
 ASSET_TEMPLATE_HEAT_MAP_MAIN_NAME = "heat_map_main.html"
 ASSET_TEMPLATE_HEAT_MAP_PAGE_NAME = "heat_map.html"
 ASSET_TEMPLATE_OVERVIEW_PAGE_NAME = "overview.html"
 ASSET_TEMPLATE_SETTINGS_PAGE_NAME = "settings.html"
-
 ASSET_THEME_SCRIPT_NAME = "theme.js"
 ASSET_THEME_STYLESHEET_NAME = "theme.css"
 ASSET_UI_STRINGS_SCRIPT_NAME = "ui_strings.js"
 ASSET_UTILITY_SCRIPT_NAME = "utility.js"
 
 CALLERS_TIME_SUFFIX_SECONDS: dict[str, float] = {"ns": 1e-9, "usecs": 1e-6}
-
 CALLERS_TOP_FUNCTION_ROWS = 50
-
 CALLERS_VIEW_KEY = "callers"
 
 DARK_MODE_ATTRIBUTE_NAME = "data-dark-mode-"
@@ -50,11 +44,7 @@ DARK_MODE_ENABLED_VALUE = "enabled"
 DARK_MODE_QUERY_KEY_NAME = "screenshot-mode"
 DARK_MODE_QUERY_VALUES: dict[str, str] = {"disabled": "0", "enabled": "1"}
 
-DEBUG_TIP_CURSOR_OFFSET_PX = 12
-
-DEBUG_TIP_HEIGHT_PX = 70
-
-DEBUG_TIP_WIDTH_PX = 250
+DEBUG_TIP_IDLE_DELAY_MS = 2000
 
 DERIVED_COUNTER_TERMS: dict[str, dict[str, int]] = {
     "D1m": {"D1mr": 1, "D1mw": 1},
@@ -80,65 +70,43 @@ FLAME_GRAPH_COLOR_SCHEME_VALUES: dict[str, str] = {
     "disabled": "LIGHT",
     "enabled": "DARK",
 }
-
 FLAME_GRAPH_EXPORTER_NAME = "tests/perf2html/scripts/trace_to_speedscope.py"
-
 FLAME_GRAPH_LOCAL_PROFILE_PATH = "profile"
 FLAME_GRAPH_LOCAL_PROFILE_URL_PREFIX = "file:///"
-
 FLAME_GRAPH_MAX_RECORDED_CALLS = 200
-
 FLAME_GRAPH_PROFILE_DIR_NAME = "profiles"
 FLAME_GRAPH_PROFILE_GLOBAL_NAME = "report_flame_graph_profiles_"
-
 FLAME_GRAPH_STARTUP_POLL_DELAY_MS = 50
 FLAME_GRAPH_STARTUP_POLL_MAX_ATTEMPTS = 200
-
 FLAME_GRAPH_VIEW_ENTRY: tuple[str, str] = (
     "flame-graph",
     "flame-graph/index.html",
 )
 
 HEAT_MAP_COUNTER_DESCRIPTION_STRING_ID_PREFIX = "str_counter_"
-
 HEAT_MAP_HOME_LINES_LOCATION_MAX_CHARS = 28
 HEAT_MAP_HOME_LINES_SOURCE_COLUMN_MAX_CHARS = 36
 HEAT_MAP_HOME_LINES_SOURCE_SNIPPET_MAX_CHARS = 110
-
 HEAT_MAP_HOME_TABLE_DEFAULT_ROWS = 20
-
 HEAT_MAP_MINIMAP_VIEWPORT_BOX_SMALLEST_PX = 8
-
 HEAT_MAP_MODEL_DIR_NAME = "data"
 HEAT_MAP_MODEL_GLOBAL_NAME = "report_heat_map_models_"
-
 HEAT_MAP_SCALE_DEFAULT_VALUE = "log/global"
 HEAT_MAP_SCALE_DIFF_DEFAULT_VALUE = "log/line"
-
 HEAT_MAP_SECONDARY_COUNTER_NAMES: tuple[str, ...] = ("D1m", "DLm", "Bcm")
-
 HEAT_MAP_SORT_DEFAULT_MODE = "heat"
-
 HEAT_MAP_SOURCE_TICKER_TAPE_ENTRY_LEAST_SHARE = 0.01
 HEAT_MAP_SOURCE_TICKER_TAPE_ENTRY_MAX_COUNT = 10
-
 HEAT_MAP_SOURCE_VIEW_WIDTH_CHARS = 80
-
 HEAT_MAP_TREE_ALWAYS_LISTED_DIRS = ("lib", "include", "src", "tests/perf")
-
 HEAT_MAP_TREE_AUTO_EXPAND_ABOVE_SHARE = 0.05
-
 HEAT_MAP_VIEW_ENTRY: tuple[str, str] = (
     "heat-map",
     "heat-map/index.html",
 )
 
 MENU_DIGIT_KEY_COUNT = 10
-
-SCREENSHOT_MENU_ENTRY_KEY_NAME = "screenshot-menu"
-
 MENU_FLASH_DURATION_MS = 500
-
 MENU_PULLDOWN_KEY_NAMES: dict[str, str] = {
     "close": "Escape",
     "erase": "Backspace",
@@ -146,17 +114,12 @@ MENU_PULLDOWN_KEY_NAMES: dict[str, str] = {
     "previous": "ArrowUp",
     "select": "Enter",
 }
-
 MENU_PULLDOWN_LINE_NUMBER_PATTERN = "^(.*):([0-9]+)$"
-
 MENU_PULLDOWN_OPENING_KEY_PATTERN = "^[a-zA-Z]$"
-
 MENU_PULLDOWN_SKIPPED_KEY_NAMES: tuple[str, ...] = (" ",)
-
 MENU_SCALE_KEY_STEPS: dict[str, int] = {"+": 1, "=": 1, "-": -1}
 
 NUMBER_FRACTION_DIGITS = 2
-
 NUMBER_LARGEST_PRINTED_MULTIPLE_TIMES = 999.99
 
 OVERVIEW_VALGRIND_LOG_FIRST_LINE_PATTERN = "^Events *:"
@@ -165,6 +128,8 @@ RANKING_COUNTER_NAME = "CEst"
 
 REPORT_SOURCES_DIR_NAME = "sources"
 
+SCREENSHOT_MENU_KEY_NUMBER = "screenshot-menu"
+
 SETTINGS_DEBUG_ENABLED = False
 SETTINGS_DEBUG_HASH_KEY_NAME = "setting-values"
 SETTINGS_DEBUG_JSON_INDENT_CHARS = 2
@@ -172,7 +137,6 @@ SETTINGS_DEBUG_JSON_MAX_LENGTH_CHARS = 79
 SETTINGS_DEBUG_JSON_SPACING_PATTERN = r'("(?:[^\\"]|\\.)*")|[:,]'
 SETTINGS_DEBUG_QUERY_ENABLED_VALUE = "1"
 SETTINGS_DEBUG_QUERY_KEY_NAME = "debug"
-
 SETTINGS_VIEW_ENTRY: tuple[str, str] = ("settings", "settings/index.html")
 
 STORAGE_KEY_CALLERS_ROWS = "callers.rows"
@@ -182,7 +146,6 @@ STORAGE_KEY_HEAT_SCALE = "heat.scale"
 STORAGE_KEY_HEAT_SORT = "heat.sort"
 STORAGE_KEY_VIEW_DARK_MODE = "view.dark_mode"
 STORAGE_KEY_VIEW_SCALE = "view.scale"
-
 STORAGE_OWNED_KEYS: tuple[str, ...] = (
     STORAGE_KEY_CALLERS_ROWS,
     STORAGE_KEY_HEAT_COUNTER,
@@ -192,47 +155,37 @@ STORAGE_OWNED_KEYS: tuple[str, ...] = (
     STORAGE_KEY_VIEW_DARK_MODE,
     STORAGE_KEY_VIEW_SCALE,
 )
-
 STORAGE_VERSION = "perf2html v1"
 STORAGE_VERSION_KEY = "perf2html.version"
 
 STYLE_COLOR_DARK_MODE: dict[str, list[str]] = {
     "#1AB6FF": [
+        "dark-mode-menu-normal-fg-",
         "dark-mode-menu-normal-outline-",
         "dark-mode-page-link-fg-",
     ],
+    "#0E4F6E": ["dark-mode-menu-normal-bg-"],
     "#F5F6FA": [
         "dark-mode-menu-focus-bg-",
-        "dark-mode-menu-normal-fg-",
         "dark-mode-page-emphasis-fg-",
         "dark-mode-page-fg-",
         "dark-mode-status-bar-fg-",
     ],
-    "#DCDDE1": [
-        "dark-mode-page-dim-fg-",
-    ],
-    "#273C75": [
-        "dark-mode-page-emphasis-bg-",
-    ],
-    "#192A56": [
-        "dark-mode-menu-focus-fg-",
-        "dark-mode-panel-bg-",
-    ],
-    "#353B48": [
-        "dark-mode-table-panel-even-bg-",
-    ],
+    "#DCDDE1": ["dark-mode-page-dim-fg-"],
+    "#273C75": ["dark-mode-page-emphasis-bg-"],
+    "#192A56": ["dark-mode-menu-focus-fg-", "dark-mode-panel-bg-"],
+    "#353B48": ["dark-mode-table-panel-even-bg-"],
     "#2F3640": [
-        "dark-mode-menu-normal-bg-",
         "dark-mode-page-bg-",
         "dark-mode-status-bar-bg-",
         "dark-mode-table-panel-odd-bg-",
     ],
-    "#FFFFFF": [
-        "dark-mode-debug-tip-fg-",
-    ],
+    "#FFFFFF": ["dark-mode-debug-tip-fg-", "dark-mode-screenshot-label-fg-"],
     "#000000": [
         "dark-mode-debug-tip-bg-",
         "dark-mode-debug-tip-border-",
+        "dark-mode-screenshot-label-bg-",
+        "dark-mode-screenshot-label-border-",
     ],
 }
 STYLE_COLOR_DARK_MODE_ROLE_PREFIX = "dark-mode-"
@@ -246,12 +199,15 @@ STYLE_COLOR_LIGHT_MODE: dict[str, list[str]] = {
         "light-mode-menu-normal-outline-",
         "light-mode-page-emphasis-bg-",
         "light-mode-page-fg-",
+        "light-mode-screenshot-label-bg-",
+        "light-mode-screenshot-label-border-",
     ],
     "#FFFFFF": [
         "light-mode-debug-tip-fg-",
         "light-mode-menu-focus-fg-",
         "light-mode-page-emphasis-fg-",
         "light-mode-page-bg-",
+        "light-mode-screenshot-label-fg-",
         "light-mode-status-bar-fg-",
         "light-mode-table-panel-even-bg-",
         "light-mode-table-panel-odd-bg-",
@@ -264,41 +220,26 @@ STYLE_COLOR_LIGHT_MODE: dict[str, list[str]] = {
     ],
 }
 STYLE_COLOR_LIGHT_MODE_ROLE_PREFIX = "light-mode-"
-
 STYLE_DESIGN_COORDINATES_WIDTH_PX = 1920
-
 STYLE_DESIGN_DEVICE_PIXEL_WIDEST_PROPERTY = "--design-device-pixel-widest-px-"
-
 STYLE_DESIGN_FONT_CHARACTER_WIDTH_PX = 7.2
-
 STYLE_DESIGN_FONT_FIT_PROPERTY = "--design-font-fit-"
 STYLE_DESIGN_FONT_FIT_START_MULTIPLE = 1
-
 STYLE_DESIGN_FONT_SIZE_PROPERTY = "--design-font-size-px-"
 STYLE_DESIGN_FONT_SIZE_PX = 12
-
 STYLE_DESIGN_MINIMUM_WINDOW_WIDTH_PX = 1280
-
 STYLE_DESIGN_SCALE_DEFAULT_MULTIPLE = 1
-
 STYLE_DESIGN_SCALE_DEFAULT_STOP = 6
-
 STYLE_DESIGN_SCALE_LARGEST_MULTIPLE = 2
 STYLE_DESIGN_SCALE_SMALLEST_MULTIPLE = 0.5
-
 STYLE_DESIGN_SCALE_STOP_COUNT = 11
-
 STYLE_DESIGN_SCALE_STOP_MULTIPLE_FRACTION_DIGITS = 2
-
 STYLE_DESIGN_VIEWPORT_HEIGHT_PROPERTY = "--design-viewport-height-"
 STYLE_DESIGN_VIEWPORT_HEIGHT_START_PERCENT = 100
-
 STYLE_HEAT_CELL_ON_BRIGHT_ABOVE_LUMINANCE_SHARE = 0.5
 STYLE_HEAT_CELL_ON_BRIGHT_ROLE = "dark-mode-page-bg-"
 STYLE_HEAT_CELL_ON_DARK_ROLE = "dark-mode-page-fg-"
-
 STYLE_HEAT_COLOR_FULL_SCALE_PERCENT = 100
-
 STYLE_HEAT_COLOR_STOPS: list[str] = [
     "#3E4A89",
     "#31688E",
@@ -313,38 +254,25 @@ STYLE_HEAT_COLOR_STOPS: list[str] = [
     "#FF7F21",
     "#F06142",
 ]
-
 STYLE_HEAT_MAP_SOURCE_LINE_NUMBER_MARKER_WIDTH_CHARS = 2
 STYLE_HEAT_MAP_SOURCE_LINE_NUMBER_MARKER_WIDTH_PROPERTY = (
     "--heat-map-source-table-line-number-cell-callee-marker-width-"
 )
-
 STYLE_HEAT_MAP_TREE_INDENT_PER_LEVEL_CHARS = 2
-
 STYLE_HEAT_MAP_TREE_PANE_NARROWEST_CHARS = 17
 STYLE_HEAT_MAP_TREE_PANE_WIDEST_CHARS = 40
-
 STYLE_MENU_LOGO_START_SHARE = 0.5
-
 STYLE_MENU_PULLDOWN_EXTRA_WIDTH_CHARS = 2
-
 STYLE_PAGE_FONT_FAMILY = (
     'Monaco, Menlo, "DejaVu Sans Mono", "Liberation Mono", Consolas, monospace'
 )
 STYLE_PAGE_FONT_FAMILY_PROPERTY = "--page-font-family-"
-
 STYLE_PANE_SPLITTER_KEY_STEP_CHARS = 5
-
 STYLE_TABLE_COLUMN_EXTRA_WIDTH_CHARS = 2
-
 STYLE_TABLE_FUNCTION_NAME_WIDTH_CHARS = 20
-
 STYLE_TABLE_GROW_COLUMN_NARROWEST_CHARS = 20
-
 STYLE_TABLE_LOCATION_COLUMN_MAX_CHARS = 48
-
 STYLE_TEXT_SCROLLBAR_THUMB_SHORTEST_CHARS = 4
-
 STYLE_VALUE_ENTRIES: dict[str, str] = {
     "debug-tip-border-width-": "1ch",
     "debug-tip-font-size-": "1.5em",
@@ -375,10 +303,12 @@ STYLE_VALUE_ENTRIES: dict[str, str] = {
     "page-table-column-title-z-index-": "1",
     "page-text-scrollbar-horizontal-height-": "1lh",
     "page-text-scrollbar-vertical-width-": "1ch",
+    "screenshot-label-border-width-": "1.5ch",
+    "screenshot-label-font-size-": "1.5em",
+    "screenshot-label-z-index-": "3",
 }
 
 TABLE_MARKDOWN_COLUMN_NARROWEST_CHARS = 3
-
 TABLE_ROW_COUNT_CHOICES: tuple[int, ...] = (
     10,
     20,
@@ -417,7 +347,6 @@ WIDGET_KEY_NAMES: dict[str, str] = {
     "up": "ArrowUp",
 }
 
-
 _SETTING_NAMES: frozenset[str] = frozenset()
 
 _MANIFEST_TABLE_COLUMN_GAP_CHARS = 2
@@ -440,19 +369,14 @@ _SENTINEL_EMPTY_TYPES = (
 _SENTINEL_TEXT = 'False, 0, 0.0, "", (), [], {}'
 
 _SETTINGS_DIRECTORY = os.path.dirname(os.path.abspath(__file__))
-
 _SETTINGS_PAGE_DATA_MARKER = "__DATA__"
 
 _SHELL_INTEGER_PATTERN = re.compile(r"-?[0-9]+")
-
 _SHELL_MAP_KEY_PATTERN = re.compile(r"\[\"?([A-Za-z0-9_.+-]+)\"?\]=")
-
 _SHELL_SETTINGS_FILE_NAME = "settings.sh"
-
 _SHELL_STATEMENT_PATTERN = re.compile(
     r"(declare -A )?([A-Za-z_][A-Za-z0-9_]*)=(.*)"
 )
-
 _SHELL_WORD_PATTERN = re.compile(r"'([^']*)'|\"([^\"]*)\"|([^\s)]+)")
 
 

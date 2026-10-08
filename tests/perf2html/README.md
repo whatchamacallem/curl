@@ -181,9 +181,8 @@ hooks cost time too and that time is in the boxes, so a function of a few
 instructions looks slower than it is, and the traced run is slower than the
 perf log's native one. Use the perf log for speed and the flame graph for
 shape: what calls what, in which order, and which call was the slow one. The
-callers page's "trace log" has the commands and the traced run's own output,
-and the overview's "raw data" archive holds the same profile as a speedscope
-JSON file.
+overview's "trace log" has the commands and the traced run's own output, and
+its "raw data" archive holds the same profile as a speedscope JSON file.
 
 The merged "all" report and a diff have no flame graph: a trace neither adds up
 nor subtracts.

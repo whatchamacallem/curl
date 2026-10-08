@@ -48,7 +48,7 @@ window.try_catch_handler_(function () {
   function profile_hand_over() {
     const filed_profiles = window[FLAME_GRAPH_PROFILE_GLOBAL_NAME];
     if (!filed_profiles || !filed_profiles[_FORWARDED_ADDRESS.test])
-      throw new Error(window.ui_strings_.text_of("str_error_internal"));
+      window.throw_exception_("str_error_internal");
     const test_profile = filed_profiles[_FORWARDED_ADDRESS.test];
     let attempt_count = 0;
     const poll_timer = setInterval(
@@ -63,18 +63,16 @@ window.try_catch_handler_(function () {
         }
         if (++attempt_count < FLAME_GRAPH_STARTUP_POLL_MAX_ATTEMPTS) return;
         clearInterval(poll_timer);
-        throw new Error(window.ui_strings_.text_of("str_error_internal"));
+        window.throw_exception_("str_error_internal");
       }),
       FLAME_GRAPH_STARTUP_POLL_DELAY_MS,
     );
   }
 
   if (_FORWARDED_ADDRESS.view !== FLAME_GRAPH_VIEW_ENTRY[0])
-    throw new Error(window.ui_strings_.text_of("str_error_internal"));
+    window.throw_exception_("str_error_internal");
   if (_FORWARDED_ADDRESS.localProfilePath === null)
-    throw new Error(
-      window.ui_strings_.text_of("str_error_hash_profile_path_missing"),
-    );
+    window.throw_exception_("str_error_hash_profile_path_missing");
   window.resource_failure_expect_(
     FLAME_GRAPH_LOCAL_PROFILE_URL_PREFIX + _FORWARDED_ADDRESS.localProfilePath,
   );
@@ -94,10 +92,9 @@ window.try_catch_handler_(function () {
   _profile_script.addEventListener(
     "error",
     window.try_catch_handler_(() => {
-      throw new Error(
-        window.ui_strings_.text_fill("str_error_hash_flame_graph_missing", [
-          _FORWARDED_ADDRESS.test,
-        ]),
+      window.throw_exception_(
+        "str_error_hash_flame_graph_missing",
+        _FORWARDED_ADDRESS.test,
       );
     }),
   );
