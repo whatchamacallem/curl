@@ -412,7 +412,7 @@ class CallgrindToHeatmap:
             )
         )
         return theme.page_document(
-            theme.ui_text_of("str_view_heat_map"),
+            "",
             theme.template_fill(
                 BODY,
                 {"__HEAT_MAP_MAIN__": _HEAT_MAP_MAIN, "__SCRIPTS__": scripts},

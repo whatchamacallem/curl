@@ -137,20 +137,18 @@ The single function/check owning each concern - never bypass or duplicate:
 - `template_fill(template_text, marker_values)` - every template marker
   fill, a marker its template lacks refused (theme.py/js; `settings.py`
   refuses a missing `__DATA__` itself, as theme.py imports it).
-- `window.element_render_`/`element_render()` - every tag a page
+- `window.render_element_`/`render_element()` - every tag a page
   script or a page builder writes, each attribute escaped through
-  `window.html_escape_`/`html_escape()` (utility.js/theme.py); the
-  one HTML composition system per language, `report_ui_.table_render`
-  and `table_render()` every table (theme.js/theme.py),
-  `window.element_of_` every element made from markup.
-- `window.menu_button_render_`/`menu_button_render()` - every menu
-  button: a strip cell, a link, a control (utility.js/theme.py; strip
+  `window.render_html_escape_`/`render_html_escape()`
+  (theme.js/theme.py); the one HTML composition system per language,
+  `report_ui_.render_table` every table (theme.js),
+  `window.render_element_of_` every element made from markup.
+- `window.render_menu_button_`/`render_menu_button()` - every menu
+  button: a strip cell, a link, a control (theme.js/theme.py; strip
   pulldown, unavailable and widget cells JS only).
-- `window.page_emphasis_render_` - every page emphasis, called by
+- `window.render_page_emphasis_` - every page emphasis, called by
   the strip for a heading title and by `report_ui_.page_heading.attach`
-  for a heading over no table (utility.js).
-- `ui_text_of()`/`ui_text_fill()` - every UI string Python writes, read
-  from `ui_strings.js`, twins of `text_of`/`text_fill` (theme.py).
+  for a heading over no table (theme.js).
 
 ### 0.3 Working agreement
 
@@ -165,14 +163,34 @@ The single function/check owning each concern - never bypass or duplicate:
   recordings' file formats changed or a stage was killed part way, leaving
   recordings incomplete. Only then measure again, once, with
   `--keep-artifacts`.
+- Debug mode is a run given `--keep-artifacts` or `--regenerate`; every other
+  run is non-debug mode, `perf2html_batch.sh` with no arguments or cmake
+  flags alone among them. Non-debug mode keeps nothing: each `perf2html.sh`
+  and `perf2html_diff.sh` invocation deletes its artifacts subdir, its log
+  with it, at every exit, a failed one too, and the batch keeps no artifacts
+  dir and no log of its own; a failure's log tail still reaches stderr.
+  Debug mode keeps the artifacts in `perf2html_temporary_artifacts/` for a
+  later `--regenerate` and for debugging.
+- The normal development routine: measure once with
+  `scripts/test_expected_behavior.sh --keep-artifacts`, copy
+  `tests/perf2html/screenshots/` to `tests/perf2html/screenshots-gold/` once
+  its shots are right, then iterate with
+  `scripts/test_expected_behavior.sh --regenerate`. That rebuilds every page
+  from the same recordings, so the recorded time, the raw data archive name,
+  the timings and the counters the shots show match the gold, and it
+  compares each shot with its gold twin, writing a `compare_` image of each
+  difference into `tests/perf2html/screenshots-diff/`; a difference is then
+  the edit's own. Only `--regenerate` compares: a measuring run changes what
+  the shots show, so after one copy its shots to `screenshots-gold/` again.
 - After a `--regenerate` run, `scripts/test_screenshot.py` can run on its
   own against a report to diff the new shots with the golden references:
   `scripts/test_screenshot.py <report> <prefix> [--diff] --compare-gold DIR`
-  (`modified_` and `diff_` prefixes, `--diff` for the diff report). Iterate
-  on pages with that, not with `test_all.sh`.
+  (`modified_` and `diff_` prefixes, `--diff` for the diff report), or
+  `--compare-only` to compare the shots already taken. Iterate on pages
+  with that, not with `test_all.sh`.
 - The full run is `test_all.sh` and only run that when asked to "test".
 - When iterating send `--verbose` output to
-  `tests/perf2html/tmp/perf2html_*.md` for debugging and review.
+  `tests/perf2html/test_expected_behavior.md` for debugging and review.
 - Docs written on request go in `tests/perf2html/tmp/` only, `.md`, never
   touched by the whitelist.
 - More than one goal in a response ends with a done/not-done checklist.
@@ -205,10 +223,12 @@ The single function/check owning each concern - never bypass or duplicate:
   never read again below `args_parse`. Getting this wrong breaks every
   relative invocation silently.
 - buffering command stdout and stderr with `mktemp` is banned. Use of `mktemp`
-  is to be by request only. The two door policy as follows. Door one is that
-  `--keep-artifacts` and `--regenerate` have not been used.  In this case the
-  "TMP" directory is to be a directory created with `mktemp`. Door two is that
-  it can be used for `.txz` archive extraction. The design goal is that
+  is to be by request only. The two door policy as follows. Door one is
+  non-debug mode (section 0.3) with no `--artifacts`: each `perf2html.sh` and
+  `perf2html_diff.sh` makes its own "TMP" directory with `mktemp -d`, which
+  its `trap ... EXIT` deletes at every exit; the batch makes none. Door two
+  is the diff's `.txz` archive extraction, deleted by the same trap in either
+  mode. The design goal is that
   perf2html users get /tmp used as normal and cleaned up after too. And
   development work on perf2html uses a local artifact dir that can be
   debugged.
@@ -217,15 +237,20 @@ The single function/check owning each concern - never bypass or duplicate:
   not the other way round.
 - Every ok/success line a script of ours controls (including our Python tools'
   ok lines) is gated behind `--verbose`; an outside tool's own quiet switch is
-  passed unless `--verbose` (e.g. `ruff --quiet`); a tool with no quiet switch
-  (pyright) prints its one success line in a quiet run, accepted as-is; under
-  `--verbose` `pyright_filtered_run` drops it, the maintainer's one exception.
+  passed unless `--verbose` (e.g. `ruff --quiet`), curl's `--silent` unless
+  level 2, as its progress meter would break the level 1 Markdown; a tool with
+  no quiet switch (pyright) prints its one success line in a quiet run,
+  accepted as-is; at level 1 `pyright_filtered_run` drops it, the maintainer's
+  one exception.
+- Level 2 (`VERBOSE_RAW_LEVEL`, `--verbose --verbose`) is plain text: no
+  Markdown, no line of ours or a child's reformatted or filtered, every tool
+  run without its quiet switch.
 - `--regenerate` clears the report dir too - a report is output only, never
   read back as an input to itself.
 - `test_expected_behavior.sh` captures, redirects or reformats no output of its
   own or a child's - every child runs through `subprocess_run` and its lines
   reach the terminal verbatim; a non-zero exit is `error_exit`. The one
-  exception is `pyright_filtered_run` under `--verbose`.
+  exception is `pyright_filtered_run` at level 1.
 - `tools_resolve` (or equivalent) must find every formatter/linter before
   anything is deleted, naming every missing tool with its install command -
   never discover a missing tool mid-run after damage is done.
@@ -332,15 +357,15 @@ Under `tests/perf2html/`:
   menu; `menu.css` every strip and pulldown (the menu, the heat map's strip,
   the table headings); one template per page, speedscope's aside:
   `overview.html` the top page (skeleton, menu slot, home panel),
-  `callers.html` a test's callers page, `heat_map.html` the heat map page,
+  `overview.js` the home panel's headings, raw data link, log titles and
+  tables, `callers.html` a test's callers page, `heat_map.html` the heat map page,
   `heat_map_main.html` the heat map home, set in the heat map page as
   `<template id="heat-map-main-template-">`, `flame_graph.html` the flame
   graph page; `callers.js` the callers view; `heat_map.{js,css}`;
   `flame_graph.js` polls `window.speedscope`;
   `ui_strings.js` (`str_*`); `error_overlay.js` first script on every page;
   `utility.js` second, relaying an error report up the frames, reporting a
-  failed `<link>`/`<script>`/`<img>` load, holding the `window.*`
-  composition doors, which read no setting; `light_mode.css` the light mode,
+  failed `<link>`/`<script>`/`<img>` load; `light_mode.css` the light mode,
   plain rules, linked before `dark_mode.css` the dark mode, which overrides
   every light rule under `:root:not([data-dark-mode-="disabled"])`;
   `settings.js` the settings, fourth in the head of every page, the top
@@ -348,7 +373,7 @@ Under `tests/perf2html/`:
   page for them and holding its scripts until they arrive
   (`settings_("NAME")` throws on unknown), writing every `:root` value
   from them; `debug.js` the debug script template, its manifest table
-  filled in by `build_report.py debug`; `settings.html` and
+  filled in by `build_report.py debug`; `settings_page.html` and
   `settings_page.js` the
   settings view, always written, a perf2html developer's tool that
   refuses no setting and guards no page against one only a tool reads,
@@ -395,9 +420,10 @@ taskset -c 3 ./build-relwithdebinfo/22_DCMAKECFLAGSO2g/tests/perf/perf \
   `--report=perf2html_modified_report` yourself. `--report=DIR` is the report
   dir itself; `report_path_of` puts a name not starting with `/` or `~/`
   under `--target-dir` (default `$PWD`), the diff's three names too.
-  `--artifacts` defaults to a `mktemp -d`, or under `--keep-artifacts` or
-  `--regenerate` to `perf2html_temporary_artifacts/` in the report's parent
-  dir (all three).
+  `--artifacts` defaults in non-debug mode to a `mktemp -d` per
+  `perf2html.sh` or `perf2html_diff.sh` run, the batch making none and
+  passing on only a given `--artifacts`, or in debug mode to
+  `perf2html_temporary_artifacts/` in the report's parent dir (all three).
 - Batch: `--target-dir` (default $PWD) holds the three default-named reports;
   a `--report=` is refused, exit 2; every other argument is a cmake flag.
 - `test_expected_behavior.sh` takes only flags and runs the batch;
@@ -476,31 +502,35 @@ taskset -c 3 ./build-relwithdebinfo/22_DCMAKECFLAGSO2g/tests/perf/perf \
   recording, `executable=` or binary refuses, naming the report. The diff names
   no tree.
 - Each run owns `<artifacts>/<report basename>/`; `--keep-artifacts` flushes
-  that subdir, then keeps it. The batch appends `--keep-artifacts` flagless,
-  deletes the whole artifacts dir at the end (a failed flagless batch keeps
-  it), and under `--regenerate` proves all three subdirs exist before
-  deleting any report.
+  that subdir, then keeps it. In non-debug mode the run's `trap ... EXIT`
+  deletes that subdir and a then empty artifacts dir at every exit
+  (`artifacts_clean`; the diff's `temporary_directories_clean` also removes
+  its `.txz` extraction root, in both modes). The batch passes each step its
+  own debug flag and a given `--artifacts`, nothing else, and under
+  `--regenerate` proves all three subdirs exist before deleting any report.
 - Stage order (cost-ascending): `whitelist_expand` → `regenerate_check` →
   `tools_resolve` (`_SHFMT`, `_RUFF`, `_CLANG_FORMAT`, `_PRETTIER`, `_PYRIGHT`)
   → `clear_overwritten_folders` (three reports and their `.txz`, never
   artifacts) → shfmt, ruff, clang-format, prettier → `long_lines_report` →
   `test_source_scan_run` → `lint_run` (pyright) → `batch_run` →
   `test_expected_report_check_run` → `test_expected_archive_check_run` →
-  `screenshots_run`. No stage reaches inside a report; the batch itself runs
+  `screenshots_run` (the gold comparison under `--regenerate` alone). No
+  stage reaches inside a report; the batch itself runs
   no checks.
 - `test_expected_behavior.sh` internals: `subprocess_run` =
   `command_item_print` plus plain `"$@"`, non-zero → `error_exit`
   `error: exit N from: <command>`; a Python tool = `subprocess_run python3`
   with `verbose_flags_of`; a stage = `heading_print`; status lines
-  (`whitelist`, `regenerate`, `cleared`, `columns`) = `log_verbose`;
+  (`whitelist`, `regenerate`, `cleared`, `columns`, `screenshots`) =
+  `log_verbose`;
   `batch_run` = plain child, failure `error_exit` with its code; no `RUN_LOG`;
   own spellings `header_row_of`, `_REPORT_CHECKSUM_COMMAND`, `_SCREENSHOT_*`.
   `tool_find` (`test_utility.sh`, the pip and npm user bins too) answers
   through `$( )`, for `tools_resolve` and `test_error_handling.sh`'s prettier.
-  `lint_run` runs `pyright_filtered_run` under `--verbose`. Only caller of
-  `test_report.py`, `test_source_scan.py`, `pyright`, `ruff`, of
-  `test_screenshot.py` but for `test_all.sh`'s gold comparison, and of
-  `prettier` but for `test_error_handling.sh`'s last check.
+  `lint_run` runs `pyright_filtered_run` at level 1. Only caller of
+  `test_report.py`, `test_source_scan.py`, `pyright`, `ruff`,
+  `test_screenshot.py`, and of `prettier` but for `test_error_handling.sh`'s
+  last check.
 - Whitelist: `whitelist_expand` → `_WHITELISTED_FILES`; `files_of()` picks by
   extension; blank/`#`/whitespace lines refused; a glob matching nothing is
   allowed (`src/*.h`), a non-regular match or empty list is an error.
@@ -522,7 +552,7 @@ taskset -c 3 ./build-relwithdebinfo/22_DCMAKECFLAGSO2g/tests/perf/perf \
   `screenshot-mode`
   → `tests/perf2html/screenshots/NN-<size>-<view>-<subview>-<report>-<dark|light>.png`,
   `NN` the view's number in `_VIEWS`, then `tests/perf2html/test_index.html`
-  (`index_write`, filled from `scripts/test_index.html` at `__SHOT_LIST__`,
+  (`index_write`, filled from `scripts/test_template.html` at `__SHOT_LIST__`,
   one cell per report, view and mode, no size, none for a view that
   lacks a file, each href relative to the index, so the index opens from
   any copy that carries the report dirs beside it); imports no settings;
@@ -533,19 +563,23 @@ taskset -c 3 ./build-relwithdebinfo/22_DCMAKECFLAGSO2g/tests/perf/perf \
   lacking `assets/debug.js` or `assets/theme.css` under
   `tests/perf2html/build/screenshots_scratch/`; `--compare-gold DIR`
   compares each new shot with its same-named shot in DIR, names every
-  difference, writes a `compare_` image of each, exit 1 on any;
-  `test_all.sh` ends with that comparison of both reports against
-  `tests/perf2html/screenshots-gold/`, a developer's own, optional dir,
-  whose absence is a warning on stderr and success;
+  difference, writes a `compare_` image of each into `--compare-out DIR`
+  (default the shots' dir), exit 1 on any; `--compare-only` shoots
+  nothing and compares the shots already taken;
+  `test_expected_behavior.sh --regenerate` ends with that comparison of
+  both reports against `tests/perf2html/screenshots-gold/`, a developer's
+  own, optional dir, whose absence `--verbose` logs, its `compare_` images
+  in `tests/perf2html/screenshots-diff/`, which every run clears; a
+  measuring run compares nothing (see the routine in section 0.3);
   `--incognito`; `--run-all-compositor-stages-before-draw`, since Windows
   Chrome lays a page out short of `--window-size` and resizes the page to
   it only to capture, and a frame drawn before the page's resize work
   makes the shot vary run to run; under `--verbose` it prints
   `<report> -> <dir>` and `N screenshot(s)`.
-- Debug modes, run in order: 1 `test_expected_behavior.sh` cold; 2
-  `--keep-artifacts`; 3 `--regenerate`. `test_all.sh` runs mode 2, then
-  `test_error_handling.sh`, then the gold comparison, and prints
-  `perf2html test_all.sh all_tests_pass` last.
+- Test modes, run in order: 1 `test_expected_behavior.sh` cold, in
+  non-debug mode, keeping no recordings; 2 `--keep-artifacts`; 3
+  `--regenerate`, the one mode that compares shots with gold. `test_all.sh` runs mode 2, then `test_error_handling.sh`, and
+  prints `perf2html test_all.sh all_tests_pass` last.
   `test_error_handling.sh` re-runs mode 2 `--verbose` with stderr `2>` into
   `tests/perf2html/test_expected_behavior.md` (gitignored), then checks the
   kept recordings (`test_error_cache_populated_check`) and proves a batch
@@ -571,7 +605,9 @@ taskset -c 3 ./build-relwithdebinfo/22_DCMAKECFLAGSO2g/tests/perf/perf \
   `path_display` only. `$_SCRIPT` finds the tool's own code only. A leaf
   script derives nothing from a collection (batch/test_expected_behavior own
   "three reports").
-- `settings.sh`: alphabetical, no `$` words, parsed by
+- `settings.sh`: alphabetical, no `$` words but `$((NAME * INTEGER ...))`, an
+  integer setting assigned above times integers, and a single-quoted literal
+  (`DIFF_EXTRACTED_ROOT_DISPLAY_NAME='$tmp'`), parsed by
   `SettingsReader.shell_settings_read` (`-?[0-9]+` → int); one name in all
   three languages. `TIMESTAMP` per script (`$(date +%s)`) just above
   `INVOKED_FROM="$PWD"`; the test scripts declare none. Env vars,
@@ -591,8 +627,8 @@ taskset -c 3 ./build-relwithdebinfo/22_DCMAKECFLAGSO2g/tests/perf/perf \
   (`verbose_begin`, `block_lead`, `command_item_print`, `heading_write`,
   `verbose_filter`). A function's comment names every global it sets.
 - Children: `child_capture PAGE_FILE cmd` (a `tee` into `$RUN_LOG` and the
-  page, onward to stderr, `verbose_filter` or `/dev/null` by level, chosen
-  before start; tee behind `if ! { ...; }` for `PIPESTATUS[0]`, a tee or
+  page, onward to `/dev/null` at level 0, `verbose_filter` at 1, stderr as
+  is at 2, chosen before start; tee behind `if ! { ...; }` for `PIPESTATUS[0]`, a tee or
   filter failure a hard error);
   `command_run` for a tool; `page_command_run PAGE SHOWN cmd` when the lines
   are page content (caller writes the `$` line and `#` comments); `step_run`'s
@@ -602,7 +638,8 @@ taskset -c 3 ./build-relwithdebinfo/22_DCMAKECFLAGSO2g/tests/perf/perf \
 - Failure: `error_exit CODE LINE...` = the lines on stderr as written, no
   fence, led under `--verbose` by `block_lead`, exit. Tool child:
   `failure_print_log_tail` = the same for `error: exit ...`, the log tail
-  and `(see: <RUN_LOG>)`.
+  and, in debug mode alone, `(see: <RUN_LOG>)`, a non-debug log being gone
+  with its artifacts subdir once the run exits.
   `cmake` configure output goes to `/dev/null` below level 2; `tree_build` →
   `child_capture_noisy` (= `child_capture` at 2); failure prints only error:
   cmake failed to build $command...
@@ -634,9 +671,15 @@ taskset -c 3 ./build-relwithdebinfo/22_DCMAKECFLAGSO2g/tests/perf/perf \
   `child_capture` uses it for a child's lines, `item_output_print` for our
   own. `verbose_flags_of` = one `--verbose` per level, one per line
   (`mapfile -t`). Python tools' ok lines: stdout, `--verbose` only. Quiet
-  switches `ruff --quiet` and prettier `--log-level warn`, recorded once in
-  `quiet_switch_set` (`QUIET_SWITCH`, empty under `--verbose`); pyright has
-  none. `test_expected_behavior.sh --verbose 2> x.md` is the whole run.
+  switches `ruff --quiet` and prettier `--log-level warn`, dropped under
+  `--verbose`, and curl `--silent --show-error`, dropped at level 2, recorded
+  once in `quiet_switch_set` (`QUIET_SWITCH`); pyright has none.
+  `test_expected_behavior.sh --verbose 2> x.md` is the whole run. Level 2
+  (`VERBOSE_RAW_LEVEL`) prints the same lines as plain text: no `#` marks,
+  item numbers, code spans, fences or blank lead lines, `$HOME` as is,
+  `command_item_print` = `$ cmd`, `table_print` one `header: value` line per
+  cell, a child's lines and `item_output_print`'s straight to stderr, never
+  through `verbose_filter`; level 3 (`VERBOSE_TRACE_LEVEL`) adds `xtrace`.
 - Manifest contract (`utility.sh`): `manifest_fault_of` (reader: why a dir is
   not a report, or nothing; takes each acceptable version string),
   `manifest_verify` (hard-error policy), `manifest_recorded_of` (first token,
@@ -645,8 +688,9 @@ taskset -c 3 ./build-relwithdebinfo/22_DCMAKECFLAGSO2g/tests/perf/perf \
   `checksum_compute`. Version strings `curl/perf2html.sh v1`,
   `curl/perf2html_diff.sh v1` and the checksum label are settings.
   `revision_describe REPO` = the one `<short>[-dirty]`.
-- A writer runs `report_delete`, then flushes its artifacts subdir, so a
-  refused delete keeps the last run's recordings; the batch runs it on its
+- A writer runs `report_delete`, then flushes its artifacts subdir, so in
+  debug mode a refused delete keeps the last run's recordings; the batch runs
+  it on its
   three reports before step 1. `report_begin` (creates dirs, opens
   `$RUN_LOG`, lays `README.md`/empty `assets/`) and `report_finish` (writes
   the shared `assets/`, `settings.js` among them, then
@@ -658,15 +702,16 @@ taskset -c 3 ./build-relwithdebinfo/22_DCMAKECFLAGSO2g/tests/perf/perf \
   alone; a non-directory, or a dir without one, goes only on a typed y
   (prompt on stderr, a no is `error_exit 1`). `path_overlap_check` refuses
   two paths where one is, holds or sits inside the other: a report and its
-  artifacts dir (in `report_delete`), a diff's output and artifacts against
-  its inputs, the batch's artifacts against its three reports. Each path is
+  artifacts dir (in `report_delete`, the batch's only when it has one), a
+  diff's output and artifacts against its inputs, the batch's artifacts, in
+  debug mode or given, against its three reports. Each path is
   also refused overlapping `tests/perf2html/scripts/` or holding
   `$INVOKED_FROM`.
 
 ## 6 Report layout
 
 ```text
-OUTDIR/  index.html (overview)  <test>/index.html (callers, all included)
+OUTDIR/  index.html (overview)  callers/<test>.html (all included)
 heat-map/{index.html,data/<test>.js}  flame-graph/{index.html,profiles/
 <test>.js}  flame-graph-app/  assets/  sources/  README.md  MANIFEST.txt
 timer-artifacts-<unix>.txz (full report only)
@@ -681,7 +726,10 @@ settings/index.html
   shell, Python and JS: no perf log, trace, flame graph.
 - `MANIFEST.txt`: line 1 version string, then LABEL=VALUE. Full: `revision`,
   `cpu`, `build`, `executable` (repo-relative), `recorded` (`<unix> <human
-  date>`), `checksum`. Diff: `baseline`, `modified`, `baseline_recorded`,
+  date>`), `checksum`. Diff: `baseline`, `modified` (a `.txz` input shown
+  as `$tmp/<role>/<report>`, its extraction root a `mktemp -d`, through
+  `input_path_display`, which also writes the header block's `report=`),
+  `baseline_recorded`,
   `modified_recorded`, `checksum`, no `recorded=` (`manifest_check` copies
   rows verbatim). Line 1 decides a diff input, which also holds one
   `timer-artifacts-*.txz` at its top (`timer_artifacts_find`); diffs can't be
@@ -716,10 +764,10 @@ settings/index.html
   `collections.abc`, `typing`. `pyright` 0 errors. Costs are
   `callgrind.Costs`, summed by `costs_add`. No multi-line HTML/CSS/JS
   literal: real files via `theme.asset_text_read()`. Every tag through
-  `theme.element_render()`, `theme.menu_button_render()` or
-  `theme.heading_render()`, the doctype aside; no English UI text in
-  Python or a template, every string through `theme.ui_text_of()` or
-  `theme.ui_text_fill()`.
+  `theme.render_element()`, `theme.render_menu_button()` or
+  `theme.render_heading()`, the doctype aside; no English UI text in
+  Python or a template, every string written by a page script through
+  `text_of`/`text_fill`.
 - `settings.py`: settings first, then `SettingsReader` and `SettingsWriter`
   (constants carry `_`); cut at `_SETTING_NAMES`; `_is_setting_name()` strips
   a leading `_`. A consumer declares annotation + empty sentinel, then
@@ -820,13 +868,12 @@ settings/index.html
 ## 8 Pages and JS
 
 - `ui_strings.js`: `str_*`; `text_of(id)` throws on unknown, `text_fill`
-  and `ui_text_fill()` on a marker its values lack; no boundary names
+  on a marker its values lack; no boundary names
   or number notation; `str_no_caller` is the heat map's alone, the callers
   table listing only called functions; empty pulldown = `str_no_match`.
   Every English UI string of every page and template, the view labels
   (`str_view_*`) among them, the settings view entries holding a key and
-  a page path alone; theme.py reads the `STRINGS` block, refusing a line
-  it cannot parse.
+  a page path alone.
 - `error_overlay.js`, exempt from every rule: `window.try_catch_handler_(fn)`
   wraps an entry point (load body, listener, timer); a throw, or a returned
   promise's rejection, reaches `err_overlay_show_` as the `Error` itself, then
@@ -927,10 +974,10 @@ settings/index.html
   (`1`, settings debugging), `screenshot-mode` (`1` dark, `0` light) and
   `screenshot-menu` (an entry number). `report_ui_.address`
   (`of_hash`, `hash_of`, `home_hash_of`, `link_hash_of`, `page_href_of`,
-  `request`, `top_href_of`) is the one JS door and `build_report.py`
-  `address_of` the one
+  `request`, `settings_cleared_hash_of`, `top_href_of`) is the one JS door
+  and `build_report.py` `address_of` the one
   Python door, the key names string literals in those alone but
-  `setting-values`, a setting `utility.js` reads too. Keys parse in
+  `setting-values`, a setting `settings.js` reads too. Keys parse in
   any order and are written in that order; each fault throws its own
   `str_error_hash_*`. The top page forwards its hash to the view unmodified,
   and no page rewrites a hash it received. Regression path
@@ -1184,16 +1231,15 @@ settings/index.html
   a diff divides by the thing's own baseline (`diff_share_of()`), one scope
   `line`, shown bare.
 - Columns: `column_extents()` → `column_limits()` (lo, hi +
-  `STYLE_TABLE_COLUMN_EXTRA_WIDTH_CHARS`) → `column_width_text()`, twins in
-  `theme.py`/`theme.js`; lo = `data-min-`. L/H = Σlo/Σhi of non-grow,
+  `STYLE_TABLE_COLUMN_EXTRA_WIDTH_CHARS`) → `column_width_text()` in
+  `theme.js`; lo = `data-min-`. L/H = Σlo/Σhi of non-grow,
   S = H - L,
   G = grow lo: `{lo}ch` if hi = lo, else `clamp(lo, lo + (100cqw - (L+G)) *
   (hi-lo) / S, hi)`; grow `max(G, 100cqw - clamp(L, 100cqw - G, H))`; G = grow
   `width` or `STYLE_TABLE_GROW_COLUMN_NARROWEST_CHARS` + extra. `.page-`,
   `.heat-map-home-`, `.heat-map-source-`,
   `.heat-map-source-information-box-` are inline-size containers. A column
-  counts its text in cells (`text_cells()`, twins), each glyph of
-  `STYLE_TABLE_TWO_CELL_GLYPHS` (`▲▼◄►`, drawn 1.62ch wide) as two; the
+  counts its text in characters (`column_longest()`); the
   markdown copy pads by characters, as prettier does, each column at least
   `TABLE_MARKDOWN_COLUMN_NARROWEST_CHARS` (3), prettier's narrowest
   delimiter (`---`, `--:`). Drags use

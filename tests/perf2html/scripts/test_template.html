@@ -11,9 +11,18 @@
         color: #e0e0e0;
         font-family: monospace;
       }
-      label {
-        display: block;
+      a {
+        color: #89cff0;
+      }
+      #strip- {
+        position: sticky;
+        top: 0;
+        z-index: 1;
         padding: 4px;
+        background: inherit;
+      }
+      #strip- select {
+        font: inherit;
       }
       table {
         width: 100%;
@@ -49,10 +58,11 @@
     </style>
   </head>
   <body>
-    <label
-      >width
-      <select id="width-"></select
-    ></label>
+    <div id="strip-">
+      perf2html <span id="report-links-"></span>
+      <label for="width-">width:</label>
+      <select id="width-" autocomplete="off"></select>
+    </div>
     <div id="grid-"></div>
     __SHOT_LIST__
     <script>
@@ -62,15 +72,50 @@
         );
         const select = document.getElementById("width-");
         const grid = document.getElementById("grid-");
+        const report_links = document.getElementById("report-links-");
         const WIDTH_CHOICE_MAX = 16;
         const WIDTH_DEFAULT = 4;
+        const WIDTH_STORAGE_KEY = "perf2html.test.thumbs_width";
         for (let n = 1; n <= WIDTH_CHOICE_MAX; n++) {
           const option = document.createElement("option");
           option.value = String(n);
           option.textContent = String(n);
           select.appendChild(option);
         }
-        select.value = String(WIDTH_DEFAULT);
+        select.value = width_choice_read();
+        data.reports.forEach(function (report_entry, report_index) {
+          if (report_index > 0) {
+            report_links.append(" ");
+          }
+          const report_link = document.createElement("a");
+          report_link.href = report_entry.href;
+          report_link.textContent = report_entry.name;
+          report_links.append(report_link);
+        });
+
+        // Answers the stored width choice, the default when none is stored.
+        function width_choice_read() {
+          let stored_choice = null;
+          try {
+            stored_choice = localStorage.getItem(WIDTH_STORAGE_KEY);
+          } catch (storage_error) {}
+          if (stored_choice === null) {
+            return String(WIDTH_DEFAULT);
+          }
+          const width_choices = Array.from(select.options, function (option) {
+            return option.value;
+          });
+          if (!width_choices.includes(stored_choice)) {
+            throw new Error(WIDTH_STORAGE_KEY + " holds " + stored_choice);
+          }
+          return stored_choice;
+        }
+
+        function width_choice_write() {
+          try {
+            localStorage.setItem(WIDTH_STORAGE_KEY, select.value);
+          } catch (storage_error) {}
+        }
 
         function layout() {
           const count = Number(select.value);
@@ -113,7 +158,10 @@
           layout();
         }
 
-        select.addEventListener("change", build);
+        select.addEventListener("change", function () {
+          width_choice_write();
+          build();
+        });
         new ResizeObserver(layout).observe(grid);
         build();
       })();

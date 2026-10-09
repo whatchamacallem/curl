@@ -175,6 +175,9 @@ table.heat-map-source-table- tr.clickable- {
 .heat-map-tree-node-.cold- .heat-map-tree-node-share-percent- {
   visibility: hidden;
 }
+.heat-map-tree-node-.selected- {
+  outline-offset: calc(0px - var(--page-line-width-));
+}
 
 .heat-map-tree-node-child-group- {
   display: none;

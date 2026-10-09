@@ -4,7 +4,7 @@
 
 from __future__ import annotations
 
-import json, os, re, sys
+import json, math, os, re, sys
 from collections.abc import Sequence
 from typing import NoReturn, get_origin, get_type_hints
 
@@ -19,6 +19,7 @@ ASSET_HEAT_MAP_STYLESHEET_NAME = "heat_map.css"
 ASSET_LIGHT_MODE_STYLESHEET_NAME = "light_mode.css"
 ASSET_MENU_SCRIPT_NAME = "menu.js"
 ASSET_MENU_STYLESHEET_NAME = "menu.css"
+ASSET_OVERVIEW_SCRIPT_NAME = "overview.js"
 ASSET_PULLDOWN_TEXT_SCRIPT_NAME = "pulldown_text.js"
 ASSET_SETTINGS_PAGE_SCRIPT_NAME = "settings_page.js"
 ASSET_SETTINGS_SCRIPT_NAME = "settings.js"
@@ -27,12 +28,13 @@ ASSET_TEMPLATE_FLAME_GRAPH_PAGE_NAME = "flame_graph.html"
 ASSET_TEMPLATE_HEAT_MAP_MAIN_NAME = "heat_map_main.html"
 ASSET_TEMPLATE_HEAT_MAP_PAGE_NAME = "heat_map.html"
 ASSET_TEMPLATE_OVERVIEW_PAGE_NAME = "overview.html"
-ASSET_TEMPLATE_SETTINGS_PAGE_NAME = "settings.html"
+ASSET_TEMPLATE_SETTINGS_PAGE_NAME = "settings_page.html"
 ASSET_THEME_SCRIPT_NAME = "theme.js"
 ASSET_THEME_STYLESHEET_NAME = "theme.css"
 ASSET_UI_STRINGS_SCRIPT_NAME = "ui_strings.js"
 ASSET_UTILITY_SCRIPT_NAME = "utility.js"
 
+CALLERS_PAGE_DIR_NAME = "callers"
 CALLERS_TIME_SUFFIX_SECONDS: dict[str, float] = {"ns": 1e-9, "usecs": 1e-6}
 CALLERS_TOP_FUNCTION_ROWS = 50
 CALLERS_VIEW_KEY = "callers"
@@ -373,6 +375,9 @@ _SETTINGS_PAGE_DATA_MARKER = "__DATA__"
 
 _SHELL_INTEGER_PATTERN = re.compile(r"-?[0-9]+")
 _SHELL_MAP_KEY_PATTERN = re.compile(r"\[\"?([A-Za-z0-9_.+-]+)\"?\]=")
+_SHELL_PRODUCT_PATTERN = re.compile(
+    r"\$\(\(([A-Za-z_][A-Za-z0-9_]*)((?: \* -?[0-9]+)+)\)\)"
+)
 _SHELL_SETTINGS_FILE_NAME = "settings.sh"
 _SHELL_STATEMENT_PATTERN = re.compile(
     r"(declare -A )?([A-Za-z_][A-Za-z0-9_]*)=(.*)"
@@ -464,11 +469,26 @@ class SettingsReader:
                 "definition, in one of the two files",
             )
 
-    def shell_scalar_parse(self, number: int, text: str) -> int | str:
+    def shell_scalar_parse(
+        self, number: int, text: str, found: dict[str, object]
+    ) -> int | str:
+        product = _SHELL_PRODUCT_PATTERN.fullmatch(text)
+        if product is not None:
+            factor = found.get(product.group(1))
+            if not isinstance(factor, int):
+                self.shell_settings_fail(
+                    number,
+                    f"{product.group(1)} is not an integer setting assigned "
+                    "above",
+                )
+            factor_texts = _SHELL_INTEGER_PATTERN.findall(product.group(2))
+            return factor * math.prod(map(int, factor_texts))
         pairs, closed = self.shell_words_parse(number, text, False)
         if closed or len(pairs) != 1:
             self.shell_settings_fail(
-                number, "a scalar is exactly one bare or quoted word"
+                number,
+                "a scalar is exactly one bare or quoted word, or "
+                "$((NAME * INTEGER [* INTEGER ...]))",
             )
         value = pairs[0][1]
         if _SHELL_INTEGER_PATTERN.fullmatch(value):
@@ -507,7 +527,7 @@ class SettingsReader:
                         self.shell_settings_fail(
                             number, "declare -A NAME takes =([key]=word ...)"
                         )
-                    found[name] = self.shell_scalar_parse(number, text)
+                    found[name] = self.shell_scalar_parse(number, text, found)
                     continue
                 opened = (name, number, keyed, [])
                 text = text[1:]
@@ -594,8 +614,12 @@ class SettingsWriter:
         return {name: scope[name] for name in sorted(_SETTING_NAMES)}
 
     def manifest_table(self, lines: Sequence[str]) -> str:
-        rows = [("", "", lines[0])]
-        rows += [line.partition("=") for line in lines[1:]]
+        for line in lines:
+            if "=" not in line:
+                raise ValueError(
+                    f"error: manifest row {line!r} is not LABEL=VALUE"
+                )
+        rows = [line.partition("=") for line in lines]
         label_width = max(len(label) for label, _, _ in rows)
         column_gap = " " * _MANIFEST_TABLE_COLUMN_GAP_CHARS
         return "\n".join(

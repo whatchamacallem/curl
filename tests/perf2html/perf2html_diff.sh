@@ -42,7 +42,6 @@ cd "$PERF2HTML_DIR_"
 . ./scripts/utility.sh
 
 input_archives_extract() {
-  _EXTRACTED_ROOT=""
   case "$_BASE_DIR$_MOD_DIR" in
     *"$REPORT_RAW_ARCHIVE_SUFFIX"*)
       _EXTRACTED_ROOT="$(mktemp -d)" || error_exit 1 \
@@ -68,6 +67,20 @@ input_archives_clean() {
   [ -n "$_EXTRACTED_ROOT" ] || return 0
   rm -rf "$_EXTRACTED_ROOT" || error_exit 1 \
     "error: could not remove the extracted input at $_EXTRACTED_ROOT"
+}
+
+temporary_directories_clean() {
+  [ "$KEEP_ARTIFACTS" = 1 ] || artifacts_clean
+  input_archives_clean
+}
+
+input_path_display() {
+  local _dir="$1" _inside="${1#"$_EXTRACTED_ROOT/"}"
+  if [ -z "$_EXTRACTED_ROOT" ] || [ "$_inside" = "$_dir" ]; then
+    path_display "$_dir"
+  else
+    echo "$DIFF_EXTRACTED_ROOT_DISPLAY_NAME/$_inside"
+  fi
 }
 
 args_parse() {
@@ -103,9 +116,11 @@ args_parse() {
   _BASE_DIR="$(report_path_of "$_BASE_DIR")"
   _MOD_DIR="$(report_path_of "$_MOD_DIR")"
   _OUT_DIR="$(report_path_of "$_OUT_DIR")"
-  input_archives_extract
   artifacts_dir_resolve "$(dirname "$_OUT_DIR")"
   ARTIFACTS_DIR="$ARTIFACTS_DIR/$(basename "$_OUT_DIR")"
+  _EXTRACTED_ROOT=""
+  trap temporary_directories_clean EXIT
+  input_archives_extract
 }
 
 manifest_check() {
@@ -124,7 +139,7 @@ header_file_of() {
   local _dir="$1" _role="$2" _out
   _out="$(artifact_path_of header-block "$_role")"
   {
-    echo "report=$(path_display "$_dir")"
+    echo "report=$(input_path_display "$_dir")"
     grep '=' "$_dir/MANIFEST.txt" \
       || error_exit 2 "error: no LABEL=VALUE row in $_dir/MANIFEST.txt"
   } >"$_out"
@@ -165,7 +180,7 @@ profiles_extract() {
   for _file in "${_files[@]}"; do
     _test="$(basename "$_file")"
     _test="${_test#"$CALLGRIND_OUTPUT_FILE_PREFIX".}"
-    listing_row_write "$_listing" "${_test%.*}" "$_file"
+    listing_row_write "$_listing" "$_test" "$_file"
   done
   listing_row_write "$_listing" "$REPORT_TEST_SUITE_NAME" "${_files[@]}"
 }
@@ -206,7 +221,7 @@ profiles_of() {
 }
 
 diff_one() {
-  local _test="$1" _out="$2" _name="$3"
+  local _test="$1" _name="$2"
   local _diff_file _callers_file _file
   local -a _base_files _cur_files _args
   _diff_file="$(artifact_path_of delta "$_name")"
@@ -228,9 +243,9 @@ diff_one() {
 
   heading_print "python3 build_report.py test $_name"
   command_run python3 "$PERF2HTML_DIR_/scripts/build_report.py" test \
-    "$_diff_file" -o "$_out/index.html" --test "$_name" --diff \
+    "$_diff_file" -o "$_OUT_DIR" --test "$_name" --diff \
     --callers-data "$_callers_file"
-  log_verbose "$(printf '%-13sdiff: %s' "$_name" "$_out/index.html")"
+  log_verbose "$(printf '%-13sdiff: %s' "$_name" "$_OUT_DIR")"
 }
 
 main() {
@@ -279,7 +294,7 @@ $_OUT_DIR"
     --header-block "baseline=$(header_file_of "$_BASE_DIR" baseline)"
     --header-block "modified=$(header_file_of "$_MOD_DIR" modified)")
   for _test_name in $_tests; do
-    diff_one "$_test_name" "$_OUT_DIR/$_test_name" "$_test_name"
+    diff_one "$_test_name" "$_test_name"
     _delta_file="$(artifact_path_of delta "$_test_name")"
     _args+=(--test "$_test_name" --diff-profile "$_test_name=$_delta_file")
   done
@@ -292,12 +307,10 @@ $_OUT_DIR"
   log_verbose "$(printf '%-13s%s' overview "$_OUT_DIR/index.html")"
 
   report_finish "$_OUT_DIR" "$REPORT_MANIFEST_VERSION_DIFF" \
-    "baseline=$(path_display "$_BASE_DIR")" \
-    "modified=$(path_display "$_MOD_DIR")" \
+    "baseline=$(input_path_display "$_BASE_DIR")" \
+    "modified=$(input_path_display "$_MOD_DIR")" \
     "baseline_recorded=$_base_recorded" \
     "modified_recorded=$_mod_recorded"
-  if [ "$KEEP_ARTIFACTS" != 1 ]; then artifacts_clean; fi
-  input_archives_clean
 }
 
 main "$@"

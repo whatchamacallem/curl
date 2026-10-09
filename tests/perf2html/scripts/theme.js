@@ -5,6 +5,7 @@
 window.report_ui_ = window.try_catch_handler_(function () {
   "use strict";
 
+  const CALLERS_PAGE_DIR_NAME = settings_("CALLERS_PAGE_DIR_NAME");
   const CALLERS_VIEW_KEY = settings_("CALLERS_VIEW_KEY");
   const DARK_MODE_ATTRIBUTE_NAME = settings_("DARK_MODE_ATTRIBUTE_NAME");
   const DARK_MODE_DISABLED_VALUE = settings_("DARK_MODE_DISABLED_VALUE");
@@ -566,14 +567,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
       parsed_address.line = Number(parsed_address.line);
     return Object.freeze(parsed_address);
   }
-  // Writes a hash, carrying the settings the page's own hash applies.
-  function address_hash_of(partial_address) {
-    const full_address = {
-      ...partial_address,
-      [SETTINGS_DEBUG_HASH_KEY_NAME]:
-        partial_address[SETTINGS_DEBUG_HASH_KEY_NAME] ??
-        address_of_hash(location.hash)[SETTINGS_DEBUG_HASH_KEY_NAME],
-    };
+  function address_parts_hash_of(full_address) {
     const hash_parts = [];
     for (const key_name of ADDRESS_KEY_NAMES) {
       if (full_address[key_name] == null) continue;
@@ -582,6 +576,22 @@ window.report_ui_ = window.try_catch_handler_(function () {
       );
     }
     return "#" + hash_parts.join("&");
+  }
+  // Writes a hash, carrying the settings the page's own hash applies.
+  function address_hash_of(partial_address) {
+    return address_parts_hash_of({
+      ...partial_address,
+      [SETTINGS_DEBUG_HASH_KEY_NAME]:
+        partial_address[SETTINGS_DEBUG_HASH_KEY_NAME] ??
+        address_of_hash(location.hash)[SETTINGS_DEBUG_HASH_KEY_NAME],
+    });
+  }
+  // Writes a hash of the address with no applied settings, carrying none.
+  function address_settings_cleared_hash_of(partial_address) {
+    return address_parts_hash_of({
+      ...partial_address,
+      [SETTINGS_DEBUG_HASH_KEY_NAME]: null,
+    });
   }
   function address_home_hash_of(test_name, view_key) {
     return address_hash_of({
@@ -611,7 +621,12 @@ window.report_ui_ = window.try_catch_handler_(function () {
   }
   function address_page_href_of(checked_address) {
     if (checked_address.view === CALLERS_VIEW_KEY)
-      return encodeURIComponent(checked_address.test) + "/index.html";
+      return (
+        CALLERS_PAGE_DIR_NAME +
+        "/" +
+        encodeURIComponent(checked_address.test) +
+        ".html"
+      );
     if (checked_address.view === HEAT_MAP_VIEW_ENTRY[0])
       return HEAT_MAP_VIEW_ENTRY[1];
     if (checked_address.view === FLAME_GRAPH_VIEW_ENTRY[0])
@@ -634,6 +649,13 @@ window.report_ui_ = window.try_catch_handler_(function () {
     parent_post({ report_ui: "settings_apply", setting_name, setting_value });
   }
 
+  // Answers whether the key was typed in an editable field, which keeps it.
+  function field_owns_key(key_event) {
+    return (
+      key_event.target.matches("input, textarea") ||
+      key_event.target.isContentEditable
+    );
+  }
   function pulldown_key_is_command(key_name) {
     return PULLDOWN_COMMAND_KEY_NAMES.includes(key_name);
   }
@@ -644,7 +666,8 @@ window.report_ui_ = window.try_catch_handler_(function () {
       !key_event.isComposing &&
       !key_event.altKey &&
       !key_event.ctrlKey &&
-      !key_event.metaKey;
+      !key_event.metaKey &&
+      !field_owns_key(key_event);
     const is_typed =
       key_name.length === 1 &&
       !MENU_PULLDOWN_SKIPPED_KEY_NAMES.includes(key_name);
@@ -677,7 +700,8 @@ window.report_ui_ = window.try_catch_handler_(function () {
       !key_event.altKey &&
       !key_event.ctrlKey &&
       !key_event.metaKey &&
-      !key_event.shiftKey;
+      !key_event.shiftKey &&
+      !field_owns_key(key_event);
     return is_plain ? key_event.key : "";
   }
   function widget_key_activates(key_name) {
@@ -781,24 +805,20 @@ window.report_ui_ = window.try_catch_handler_(function () {
       class: ["menu-button-", ...(fields.class_names || [])].join(" "),
     };
     let inner_markup = label_markup;
-    if (!fields.is_unavailable && kind_name === "link") {
+    if (kind_name === "link") {
       const link_attributes = { href: fields.href };
       if (fields.opens_new_tab) link_attributes.target = "_blank";
       if (fields.tag_name === "a")
         Object.assign(own_attributes, link_attributes);
       else {
-        own_attributes.tabindex = 0;
+        if (!fields.withholds_tab_stop) own_attributes.tabindex = 0;
         inner_markup = render_element(
           "a",
           { ...link_attributes, tabindex: -1 },
           label_markup,
         );
       }
-    } else if (
-      !fields.is_unavailable &&
-      kind_name === "action" &&
-      fields.tag_name !== "summary"
-    ) {
+    } else if (kind_name === "action" && fields.tag_name !== "summary") {
       own_attributes.role = "button";
       if (!fields.is_widget) own_attributes.tabindex = 0;
     }
@@ -1075,25 +1095,18 @@ window.report_ui_ = window.try_catch_handler_(function () {
     return found_entry;
   }
   function strip_number_text_of(numbered_index) {
-    if (numbered_index >= MENU_DIGIT_KEY_COUNT)
-      return window.ui_strings_.text_of("str_menu_unavailable_fill");
     return String((numbered_index + 1) % MENU_DIGIT_KEY_COUNT);
   }
   // Answers the text label of an entry as the strip draws it, number included.
   function strip_label_text_of(entries, entry_name) {
     const entry = strip_entry_of(entries, entry_name);
-    const shown_text = entry.is_available
-      ? entry.label
-      : window.ui_strings_
-          .text_of("str_menu_unavailable_fill")
-          .repeat([...entry.label].length);
-    if (!entry.is_numbered) return shown_text;
+    if (!entry.is_numbered) return entry.label;
     const numbered_entries = entries.filter(
       (other_entry) => other_entry.is_numbered,
     );
     return window.ui_strings_.text_fill("str_menu_button", {
       number: strip_number_text_of(numbered_entries.indexOf(entry)),
-      label: shown_text,
+      label: entry.label,
     });
   }
   function strip_widget_cells_markup(widget_text) {
@@ -1118,8 +1131,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
         tag_name: "td",
         attributes: name_attributes,
       });
-    const shown_markup =
-      entry.kind === "pulldown" && entry.is_available ? "" : label_markup;
+    const shown_markup = entry.kind === "pulldown" ? "" : label_markup;
     const widget_markup = entry.is_widget
       ? render_html_escape(STRIP_GAP_TEXT) +
         render_element(
@@ -1132,7 +1144,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
       tag_name: "td",
       href: entry.href,
       opens_new_tab: entry.opens_new_tab,
-      is_unavailable: !entry.is_available,
+      withholds_tab_stop: entry.withholds_tab_stop,
       is_widget: entry.is_widget,
       attributes: name_attributes,
     });
@@ -1155,6 +1167,9 @@ window.report_ui_ = window.try_catch_handler_(function () {
   }
   // Renders a whole strip again from its entries, the one door for its cells.
   function strip_render(strip_element, entries, status_entries) {
+    const numbered_entries = entries.filter((entry) => entry.is_numbered);
+    if (numbered_entries.length > MENU_DIGIT_KEY_COUNT)
+      window.throw_exception_("str_error_internal");
     const cells_by_name = new Map();
     const digit_entries = new Map();
     const entries_by_name = new Map();
@@ -1182,7 +1197,6 @@ window.report_ui_ = window.try_catch_handler_(function () {
       const entry = entries_by_name.get(
         entry_cell.getAttribute("data-entry-name-"),
       );
-      if (!entry.is_available) return;
       if (entry.kind === "action") entry.on_activate(click_event);
       if (entry.kind !== "link" || !click_is_plain(click_event)) return;
       const entry_link = entry_cell.querySelector(":scope > a");
@@ -1262,6 +1276,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
       if (entries_by_name.has(entry.name))
         window.throw_exception_("str_error_internal");
       entries_by_name.set(entry.name, entry);
+      if (!entry.is_available) continue;
       const label_markup =
         entry.label_markup === null
           ? render_html_escape(strip_label_text_of(entries, entry.name))
@@ -1274,16 +1289,10 @@ window.report_ui_ = window.try_catch_handler_(function () {
         strip_gap_cell_render(),
         strip_status_cell_render(status_entries),
       );
-    entries
-      .filter((entry) => entry.is_numbered)
-      .forEach((entry, numbered_index) => {
-        if (
-          numbered_index < MENU_DIGIT_KEY_COUNT &&
-          entry.is_available &&
-          !entry.is_widget
-        )
-          digit_entries.set(strip_number_text_of(numbered_index), entry);
-      });
+    numbered_entries.forEach((entry, numbered_index) => {
+      if (entry.is_available && !entry.is_widget)
+        digit_entries.set(strip_number_text_of(numbered_index), entry);
+    });
     if (strip_element.contains(document.activeElement))
       document.activeElement.blur();
     strip_element.innerHTML = render_element(
@@ -1450,19 +1459,28 @@ window.report_ui_ = window.try_catch_handler_(function () {
   }
   function table_cell_render(cell, column) {
     const cell_attributes = {};
-    const class_names = [column.numeric ? "numeric-" : "", column.cls || ""]
+    const class_names = [
+      column.numeric ? "numeric-" : "",
+      column.cls || "",
+      cell.href ? "page-table-link-cell-" : "",
+    ]
       .filter(Boolean)
       .join(" ");
     if (class_names) cell_attributes.class = class_names;
     if (cell.style) cell_attributes.style = cell.style;
-    return render_element(
-      "td",
-      cell_attributes,
-      cell.html != null ? cell.html : render_html_escape(cell.text),
-    );
+    let inner_markup =
+      cell.html != null ? cell.html : render_html_escape(cell.text);
+    if (cell.href) {
+      if (cell.html != null) window.throw_exception_("str_error_internal");
+      inner_markup = render_menu_button("link", inner_markup, {
+        tag_name: "a",
+        href: cell.href,
+      });
+    }
+    return render_element("td", cell_attributes, inner_markup);
   }
   // Writes columns and rows as a table, the one table writer in JS.
-  function table_render(table_key, columns, rows, table_options) {
+  function render_table(table_key, columns, rows, table_options) {
     const cell_rows = rows.map((row) => row.map(cell_normalize));
     const grow_index = table_options.fill
       ? columns.findIndex((column) => column.grow)
@@ -1486,18 +1504,28 @@ window.report_ui_ = window.try_catch_handler_(function () {
         );
       })
       .join("");
-    const title_markup = columns
-      .map((column) =>
-        render_element(
-          "th",
-          {
-            ...(column.numeric ? { class: "numeric-" } : {}),
-            title: column.label,
-          },
-          render_html_escape(column.label),
-        ),
-      )
-      .join("");
+    const title_markup = table_options.omits_column_titles
+      ? ""
+      : render_element(
+          "thead",
+          {},
+          render_element(
+            "tr",
+            {},
+            columns
+              .map((column) =>
+                render_element(
+                  "th",
+                  {
+                    ...(column.numeric ? { class: "numeric-" } : {}),
+                    title: column.label,
+                  },
+                  render_html_escape(column.label),
+                ),
+              )
+              .join(""),
+          ),
+        );
     const body_markup = cell_rows
       .map((row, row_index) => {
         const row_href =
@@ -1530,7 +1558,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
           "data-key-": table_key,
         },
         render_element("colgroup", {}, column_markup) +
-          render_element("thead", {}, render_element("tr", {}, title_markup)) +
+          title_markup +
           render_element("tbody", {}, body_markup),
       ),
     );
@@ -1986,6 +2014,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
       widget_text: "",
       href: "",
       opens_new_tab: false,
+      withholds_tab_stop: false,
       on_activate: null,
       pulldown_options: null,
       ...entry_fields,
@@ -2590,6 +2619,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
       of_hash: address_of_hash,
       page_href_of: address_page_href_of,
       request: address_request_send,
+      settings_cleared_hash_of: address_settings_cleared_hash_of,
       top_href_of: address_top_href_of,
     },
     dark_mode_enabled_now_,
@@ -2611,6 +2641,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
     pane_splitter: { attach: pane_splitter_attach },
     percent_text,
     ramp_channels_at,
+    render_table,
     resize_settle_register,
     settings_apply_send,
     signed_human_text,
@@ -2622,7 +2653,6 @@ window.report_ui_ = window.try_catch_handler_(function () {
     },
     tab_stop_move,
     table_markdown,
-    table_render,
     table_rows: {
       attach: table_rows_attach,
       tab_stop_set: table_row_tab_stop_set,

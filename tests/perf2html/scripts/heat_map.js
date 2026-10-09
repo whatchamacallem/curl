@@ -121,6 +121,7 @@ window.try_catch_handler_(function () {
     "aria-label",
     window.ui_strings_.text_of("str_heat_map_main_label"),
   );
+  document.title = window.ui_strings_.text_of("str_view_heat_map");
 
   const vector_at = (cost_vector, index) =>
     cost_vector && index < cost_vector.length ? cost_vector[index] : 0;
@@ -461,12 +462,9 @@ window.try_catch_handler_(function () {
     return (sources && sources[file_path]) != null ? sources[file_path] : null;
   }
 
-  function line_link(file_path, line, text) {
-    if (!file_table[file_path] || !line) return render_html_escape(text);
-    return render_menu_button("link", render_html_escape(text), {
-      tag_name: "a",
-      href: hash_for_line(file_path, line),
-    });
+  function line_link_cell(file_path, line, text) {
+    if (!file_table[file_path] || !line) return { text };
+    return { text, href: hash_for_line(file_path, line) };
   }
 
   const function_is_linkable = (function_index) =>
@@ -474,12 +472,12 @@ window.try_catch_handler_(function () {
     function_table[function_index] &&
     function_table[function_index].line &&
     file_table[function_table[function_index].file];
-  function function_link(function_index, text) {
-    if (!function_is_linkable(function_index)) return render_html_escape(text);
-    return render_menu_button("link", render_html_escape(text), {
-      tag_name: "a",
+  function function_link_cell(function_index, text) {
+    if (!function_is_linkable(function_index)) return { text };
+    return {
+      text,
       href: hash_for_function(function_table[function_index].name),
-    });
+    };
   }
 
   const counter_column = (counter, extra) =>
@@ -925,7 +923,7 @@ window.try_catch_handler_(function () {
     current_file_path = null;
     scope_totals = null;
     const line_rows = top_lines(HOME_TABLE_RENDERED_ROW_COUNT);
-    const lines_table_markup = report_ui_.table_render(
+    const lines_table_markup = report_ui_.render_table(
       "heat.home.lines",
       [
         { label: text_of("str_column_rank"), numeric: true },
@@ -960,10 +958,7 @@ window.try_catch_handler_(function () {
           {
             text: function_name(function_index),
           },
-          {
-            text: location_text,
-            html: line_link(file_path, line_number, location_text),
-          },
+          line_link_cell(file_path, line_number, location_text),
           source_snippet,
           cell_number(cost),
           ...secondary_cells(line_costs[0], null, (secondary) =>
@@ -995,7 +990,7 @@ window.try_catch_handler_(function () {
           },
         ]
       : [];
-    const functions_table_markup = report_ui_.table_render(
+    const functions_table_markup = report_ui_.render_table(
       "heat.home.functions",
       [
         { label: text_of("str_column_rank"), numeric: true },
@@ -1033,10 +1028,7 @@ window.try_catch_handler_(function () {
             style: cell_style(heat_of_delta(self_cost, baseline_cost)),
           },
           { text: function_entry.name },
-          {
-            text: location_text,
-            html: function_link(function_index, location_text),
-          },
+          function_link_cell(function_index, location_text),
           ...calls,
           ...secondary_cells(function_entry.self, null, (secondary) =>
             function_counter_baseline(function_index, secondary),
@@ -1294,7 +1286,7 @@ window.try_catch_handler_(function () {
         (line_number ? ":" + line_number : "") +
         in_function_html,
     );
-    markup += report_ui_.table_render(
+    markup += report_ui_.render_table(
       "heat.detail.stats",
       counter_columns,
       counter_rows,
@@ -1343,10 +1335,7 @@ window.try_catch_handler_(function () {
             {
               text: function_name(callee_index),
             },
-            {
-              text: location_text,
-              html: function_link(callee_index, location_text),
-            },
+            function_link_cell(callee_index, location_text),
           ];
         },
       );
@@ -1358,7 +1347,7 @@ window.try_catch_handler_(function () {
           "div",
           { class: "heat-map-source-information-box-heading-" },
           render_html_escape(heading),
-        ) + report_ui_.table_render("heat.detail.callees", columns, rows, {});
+        ) + report_ui_.render_table("heat.detail.callees", columns, rows, {});
       text_parts.push(
         heading + "\n" + report_ui_.table_markdown(columns, rows),
       );
@@ -1420,14 +1409,11 @@ window.try_catch_handler_(function () {
               {
                 text: function_name(caller_index),
               },
-              {
-                text: location_text,
-                html: line_link(call_file, call_line, location_text),
-              },
+              line_link_cell(call_file, call_line, location_text),
             ];
           },
         );
-        markup += report_ui_.table_render(
+        markup += report_ui_.render_table(
           "heat.detail.callers",
           columns,
           rows,
@@ -1621,7 +1607,7 @@ window.try_catch_handler_(function () {
       ...call_column,
       ...secondary_columns(),
     ];
-    markup += report_ui_.table_render("heat.src", columns, rows, {
+    markup += report_ui_.render_table("heat.src", columns, rows, {
       row_attributes: attrs,
       fill: 1,
       cls: "heat-map-source-table-",

@@ -128,8 +128,11 @@
     color: var(--dark-mode-page-emphasis-fg-);
   }
 
-  .menu-button-:not([data-entry-name-="logo"], .columns- td > *) {
+  .menu-button-:not([data-entry-name-="str_report_name"], .columns- td > *) {
     border: 0;
+  }
+  td.page-table-link-cell- > .menu-button- {
+    outline: none;
   }
 
   .columns-:not(.heat-map-source-table-) {
@@ -142,10 +145,10 @@
   }
   .columns-:not(.heat-map-source-table-) th,
   .columns-:not(.heat-map-source-table-) td,
-  .columns-:not(.heat-map-source-table-) td > a.menu-button-:only-child {
+  td.page-table-link-cell- > .menu-button- {
     padding-inline: var(--page-table-cell-padding-inline-);
   }
-  .columns-:not(.heat-map-source-table-) td:has(> a.menu-button-:only-child) {
+  .columns-:not(.heat-map-source-table-) td.page-table-link-cell- {
     padding-inline: 0;
   }
   table.columns- col:nth-child(odd) {
@@ -166,7 +169,7 @@
     background: var(--dark-mode-menu-normal-bg-);
     color: var(--dark-mode-menu-normal-fg-);
   }
-  [data-entry-name-="logo"] {
+  [data-entry-name-="str_report_name"] {
     background: var(--dark-mode-page-bg-);
     color: var(--dark-mode-page-fg-);
   }
@@ -201,7 +204,7 @@
     background: none;
     color: var(--dark-mode-status-bar-fg-);
   }
-  .heat-map-tree-node-.selected- .heat-map-tree-node-name- {
+  .heat-map-tree-node-.selected- {
     outline: var(--page-line-width-) solid;
     outline-color: var(--dark-mode-menu-normal-outline-);
   }

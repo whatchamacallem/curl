@@ -43,12 +43,12 @@ archive_report_write() {
 }
 
 artifact_path_of() {
-  local kind="$1" name="$2" loops="$CALLGRIND_LOOPS" file
+  local kind="$1" name="$2" file
   local timer_root="$TIMER_ARTIFACTS_NAME_PREFIX$TIMESTAMP"
   case "$kind" in
-    callgrind) file="$CALLGRIND_OUTPUT_FILE_PREFIX.$name.$loops.$TIMESTAMP" ;;
+    callgrind) file="$CALLGRIND_OUTPUT_FILE_PREFIX.$name.$TIMESTAMP" ;;
     callgrind-member)
-      file="$timer_root/$CALLGRIND_OUTPUT_FILE_PREFIX.$name.$loops"
+      file="$timer_root/$CALLGRIND_OUTPUT_FILE_PREFIX.$name"
       ;;
     caller-counts)
       file="$DIFF_DELTA_FILE_PREFIX.$name.$TIMESTAMP"
@@ -69,18 +69,18 @@ artifact_path_of() {
     timer-artifacts) file="$timer_root" ;;
     timing-csv) file="$PROFILE_TIMING_FILE_PREFIX.$name.$TIMESTAMP.csv" ;;
     timing-page) file="$PROFILE_TIMING_FILE_PREFIX.$name.$TIMESTAMP.txt" ;;
-    trace-binary) file="$TRACE_FILE_PREFIX.$name.$loops.$TIMESTAMP.bin" ;;
-    trace-log) file="$TRACE_FILE_PREFIX.$name.$loops.$TIMESTAMP.log" ;;
+    trace-binary) file="$TRACE_FILE_PREFIX.$name.$TIMESTAMP.bin" ;;
+    trace-log) file="$TRACE_FILE_PREFIX.$name.$TIMESTAMP.log" ;;
     trace-speedscope)
-      file="$TRACE_FILE_PREFIX.$name.$loops.$TIMESTAMP"
+      file="$TRACE_FILE_PREFIX.$name.$TIMESTAMP"
       file="$file$TRACE_SPEEDSCOPE_FILE_SUFFIX"
       ;;
     trace-speedscope-member)
-      file="$timer_root/$TRACE_FILE_PREFIX.$name.$loops"
+      file="$timer_root/$TRACE_FILE_PREFIX.$name"
       file="$file$TRACE_SPEEDSCOPE_FILE_SUFFIX"
       ;;
     valgrind-log)
-      file="$VALGRIND_LOG_FILE_PREFIX.$name.$loops.$TIMESTAMP.log"
+      file="$VALGRIND_LOG_FILE_PREFIX.$name.$TIMESTAMP.log"
       ;;
     *) error_exit 1 "error: unknown artifact kind $kind, named $name" ;;
   esac
@@ -88,9 +88,9 @@ artifact_path_of() {
 }
 
 artifacts_clean() {
-  [ -d "$ARTIFACTS_DIR" ] || return 0
-  rm -r "$ARTIFACTS_DIR"
-  rmdir --ignore-fail-on-non-empty "$(dirname "$ARTIFACTS_DIR")"
+  [ ! -d "$ARTIFACTS_DIR" ] || rm -r "$ARTIFACTS_DIR"
+  [ ! -d "$(dirname "$ARTIFACTS_DIR")" ] \
+    || rmdir --ignore-fail-on-non-empty "$(dirname "$ARTIFACTS_DIR")"
 }
 
 artifacts_dir_resolve() {
@@ -122,7 +122,8 @@ checksum_compute() {
       | LC_ALL=C tr '\n' '\0' \
       | xargs -0 -r cksum -- \
       | LC_ALL=C sort \
-      | cksum
+      | cksum \
+      | sed 's/ .*//'
   )
 }
 
@@ -186,6 +187,7 @@ command_item_print() {
   VERBOSE_ITEM_INDENT="${#marker}"
   VERBOSE_COMMAND_NUMBER=$((VERBOSE_COMMAND_NUMBER + 1))
   [ "$VERBOSE" -ge 1 ] || return 0
+  [ "$VERBOSE" -lt "$VERBOSE_RAW_LEVEL" ] || marker=''
   block_lead item
   printf '%s%s\n' "$marker" "$(code_span "\$ $1")" >&2
 }
@@ -223,7 +225,7 @@ failure_print_log_tail() {
     echo "error: exit $exit_code from: $shown"
     tail -n +"$((LOG_LINE_FROM + 1))" "$RUN_LOG" \
       | tail -n "$LOG_FAILURE_TAIL_LINES"
-    echo "(see: $RUN_LOG)"
+    [ "$KEEP_ARTIFACTS" = 0 ] || echo "(see: $RUN_LOG)"
   } >&2
 }
 
@@ -260,6 +262,10 @@ install_command_of() {
 
 item_output_print() {
   [ "$VERBOSE" -ge 1 ] || return 0
+  if [ "$VERBOSE" -ge "$VERBOSE_RAW_LEVEL" ]; then
+    printf '%s\n' "$@" >&2
+    return 0
+  fi
   printf '%s\n' "$@" | verbose_filter "$VERBOSE_ITEM_INDENT"
 }
 
@@ -323,7 +329,7 @@ manifest_recorded_of() {
 }
 
 manifest_recorded_row() {
-  echo "recorded=$TIMESTAMP $(date -d "@$TIMESTAMP" +'%F %I:%M:%S %p')"
+  echo "recorded=$TIMESTAMP $(date -d "@$TIMESTAMP" +'%F %I:%M:%S %p %Z')"
 }
 
 manifest_value() {
@@ -357,7 +363,8 @@ manifest_write() {
   command_run python3 "$PERF2HTML_DIR_/scripts/build_report.py" settings \
     -o "$dir"
   command_run python3 "$PERF2HTML_DIR_/scripts/build_report.py" debug \
-    -o "$dir/$REPORT_ASSETS_DIR_NAME" -- "$version" "$@"
+    -o "$dir/$REPORT_ASSETS_DIR_NAME" \
+    -- "$REPORT_MANIFEST_VERSION_LABEL=$version" "$@"
   checksum="$(checksum_compute "$dir")"
   {
     printf '%s\n' "$version"
@@ -415,6 +422,10 @@ path_overlap_check() {
 quiet_switch_set() {
   QUIET_SWITCH=()
   case "$1" in
+    curl)
+      [ "$VERBOSE" -ge "$VERBOSE_RAW_LEVEL" ] \
+        || QUIET_SWITCH=(--silent --show-error)
+      ;;
     prettier) [ "$VERBOSE" -ge 1 ] || QUIET_SWITCH=(--log-level warn) ;;
     ruff) [ "$VERBOSE" -ge 1 ] || QUIET_SWITCH=(--quiet) ;;
     *) error_exit 1 "error: no quiet switch is recorded for $1" ;;
@@ -431,8 +442,9 @@ report_begin() {
 
 report_delete() {
   local dir="$1" answer present=0
-  local archive="$dir$REPORT_RAW_ARCHIVE_SUFFIX"
-  path_overlap_check "$dir" report "$ARTIFACTS_DIR" "artifacts dir"
+  local archive="$dir$REPORT_RAW_ARCHIVE_SUFFIX" checked_paths=("$dir" report)
+  [ -z "$ARTIFACTS_DIR" ] || checked_paths+=("$ARTIFACTS_DIR" "artifacts dir")
+  path_overlap_check "${checked_paths[@]}"
   [ ! -e "$dir" ] || present=1
   if [ "$present" = 1 ] \
     && { [ ! -d "$dir" ] || [ ! -e "$dir/MANIFEST.txt" ]; }; then
@@ -542,7 +554,8 @@ source_cache_fetch() {
   staged="$directory.$TIMESTAMP.part"
   mkdir -p "$staged"
   tarball="$staged/source.tar.xz"
-  command_run curl --fail --location --silent --show-error \
+  quiet_switch_set curl
+  command_run curl --fail --location "${QUIET_SWITCH[@]}" \
     --output "$tarball" "$url"
   command_run tar xJf "$tarball" -C "$staged"
   rm -f "$tarball"
@@ -654,13 +667,7 @@ verbose_begin() {
 }
 
 verbose_filter() {
-  local loose status=0 raw_line
-  if [ "$VERBOSE" -ge "$VERBOSE_RAW_LEVEL" ]; then
-    while IFS= read -r raw_line || [ -n "$raw_line" ]; do
-      printf '%s\n' "$raw_line" >&2
-    done
-    return 0
-  fi
+  local loose status=0
   loose="$(awk -v indent="$(printf '%*s' "$1" '')" -v home="${HOME:?}/" '
   function line_print(text) {
     print text > "/dev/stderr"

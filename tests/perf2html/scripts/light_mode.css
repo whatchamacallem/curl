@@ -127,9 +127,13 @@ body {
   color: var(--light-mode-page-emphasis-fg-);
 }
 
-.menu-button-:not([data-entry-name-="logo"], .columns- td > *) {
+.menu-button-:not([data-entry-name-="str_report_name"], .columns- td > *) {
   border: var(--page-line-width-) solid;
   border-color: var(--light-mode-menu-normal-outline-);
+}
+td.page-table-link-cell- > .menu-button- {
+  outline: var(--page-line-width-) solid;
+  outline-color: var(--light-mode-menu-normal-outline-);
 }
 
 .columns-:not(.heat-map-source-table-) {
@@ -142,13 +146,13 @@ body {
 }
 .columns-:not(.heat-map-source-table-) th,
 .columns-:not(.heat-map-source-table-) td,
-.columns-:not(.heat-map-source-table-) td > a.menu-button-:only-child {
+td.page-table-link-cell- > .menu-button- {
   padding-inline: calc(
     var(--page-table-cell-padding-inline-) -
       max(var(--page-line-width-), var(--design-device-pixel-widest-px-)) / 2
   );
 }
-.columns-:not(.heat-map-source-table-) td:has(> a.menu-button-:only-child) {
+.columns-:not(.heat-map-source-table-) td.page-table-link-cell- {
   padding-inline: 0;
 }
 table.columns- col:nth-child(odd) {
@@ -169,7 +173,7 @@ table.columns- col:nth-child(even) {
   background: var(--light-mode-menu-normal-bg-);
   color: var(--light-mode-menu-normal-fg-);
 }
-[data-entry-name-="logo"] {
+[data-entry-name-="str_report_name"] {
   background: var(--light-mode-page-bg-);
   color: var(--light-mode-page-fg-);
 }
@@ -203,7 +207,7 @@ tr.heat-map-source-information-box-synthetic-row- > td {
   background: var(--light-mode-status-bar-bg-);
   color: var(--light-mode-status-bar-fg-);
 }
-.heat-map-tree-node-.selected- .heat-map-tree-node-name- {
+.heat-map-tree-node-.selected- {
   outline: var(--page-line-width-) solid;
   outline-color: var(--light-mode-menu-normal-outline-);
 }

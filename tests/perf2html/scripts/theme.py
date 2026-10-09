@@ -21,6 +21,7 @@ _ASSET_HEAT_MAP_STYLESHEET_NAME: str = ""
 _ASSET_LIGHT_MODE_STYLESHEET_NAME: str = ""
 _ASSET_MENU_SCRIPT_NAME: str = ""
 _ASSET_MENU_STYLESHEET_NAME: str = ""
+_ASSET_OVERVIEW_SCRIPT_NAME: str = ""
 _ASSET_SETTINGS_PAGE_SCRIPT_NAME: str = ""
 _ASSET_SETTINGS_SCRIPT_NAME: str = ""
 _ASSET_THEME_SCRIPT_NAME: str = ""
@@ -50,8 +51,6 @@ _STYLE_HEAT_COLOR_FULL_SCALE_PERCENT: int = 0
 _STYLE_HEAT_COLOR_STOPS: list[str] = []
 _STYLE_HEAT_MAP_SOURCE_LINE_NUMBER_MARKER_WIDTH_PROPERTY: str = ""
 _STYLE_PAGE_FONT_FAMILY_PROPERTY: str = ""
-_STYLE_TABLE_COLUMN_EXTRA_WIDTH_CHARS: int = 0
-_STYLE_TABLE_GROW_COLUMN_NARROWEST_CHARS: int = 0
 _STYLE_VALUE_ENTRIES: dict[str, str] = {}
 _THEME_TIME_UNIT_ENTRIES: tuple[tuple[str, float], ...] = ()
 settings.load_into(__name__)
@@ -74,195 +73,21 @@ _DARK_MODE_ENABLED_SELECTOR = (
 
 _MENU_BUTTON_KIND_NAMES = ("action", "link")
 
-_UI_STRINGS_BLOCK = re.compile(r"\n  const STRINGS = \{\n(.*?)\n  \};\n", re.S)
-
-_UI_STRINGS_ENTRY = re.compile(r'\s*(str_\w+):\s*("(?:[^"\\\n]|\\.)*"),')
-
-_UI_TEXT_MARKER = re.compile(r"\{(\w+)\}")
-
 
 class Cell(NamedTuple):
     text: str = ""
     html: str | None = None
     style: str = ""
+    href: str = ""
 
 
 CellOrText: TypeAlias = Cell | str
-
-
-class Column(NamedTuple):
-    label: str
-    numeric: bool = False
-    width: int | None = None
-    grow: bool = False
-
-
-class ColumnExtent(NamedTuple):
-    heading_chars: int
-    content_chars: int
 
 
 class MenuButtonFields(NamedTuple):
     tag_name: str
     href: str = ""
     opens_new_tab: bool = False
-
-
-class TableRenderer:
-    def cell(self, value: CellOrText) -> Cell:
-        return value if isinstance(value, Cell) else Cell(text=value)
-
-    def column_extents(
-        self,
-        columns: Sequence[Column],
-        rows: Sequence[Sequence[Cell]],
-        grow_index: int,
-    ) -> list[ColumnExtent]:
-        extents: list[ColumnExtent] = []
-        for index, column in enumerate(columns):
-            if column.width is not None:
-                content_chars = column.width
-            elif index == grow_index:
-                content_chars = _STYLE_TABLE_GROW_COLUMN_NARROWEST_CHARS
-            else:
-                content_chars = self.column_longest(rows, index)
-            extents.append(ColumnExtent(len(column.label), content_chars))
-        return extents
-
-    def column_limits(self, extent: ColumnExtent) -> tuple[int, int]:
-        widest = max(extent.heading_chars, extent.content_chars)
-        return (
-            extent.content_chars,
-            widest + _STYLE_TABLE_COLUMN_EXTRA_WIDTH_CHARS,
-        )
-
-    def column_longest(
-        self, rows: Sequence[Sequence[Cell]], index: int
-    ) -> int:
-        return max((len(row[index].text) for row in rows), default=0)
-
-    def column_width_text(
-        self, limits: Sequence[tuple[int, int]], index: int, grow_index: int
-    ) -> str:
-        narrowest, widest = limits[index]
-        shared = [
-            limit for other, limit in enumerate(limits) if other != grow_index
-        ]
-        low_total = sum(limit[0] for limit in shared)
-        high_total = sum(limit[1] for limit in shared)
-        if index == grow_index:
-            return (
-                f"max({narrowest}ch, 100cqw - clamp({low_total}ch, "
-                f"100cqw - {narrowest}ch, {high_total}ch))"
-            )
-        if narrowest == widest:
-            return f"{narrowest}ch"
-        grow_narrowest = limits[grow_index][0] if grow_index >= 0 else 0
-        return (
-            f"clamp({narrowest}ch, {narrowest}ch + (100cqw - "
-            f"{low_total + grow_narrowest}ch) * {widest - narrowest} / "
-            f"{high_total - low_total}, {widest}ch)"
-        )
-
-    def numeric_attributes(self, column: Column) -> dict[str, str]:
-        return {"class": "numeric-"} if column.numeric else {}
-
-    def table(
-        self,
-        key: str,
-        columns: Sequence[Column],
-        rows: Sequence[Sequence[CellOrText]],
-        fill: bool = False,
-        column_titles: bool = True,
-    ) -> str:
-        cells = [[self.cell(value) for value in row] for row in rows]
-        for row in cells:
-            if len(row) != len(columns):
-                raise ValueError(
-                    f"table {key!r}: a row has {len(row)} cells "
-                    f"for {len(columns)} columns"
-                )
-        grow_index = -1
-        if fill:
-            grow_index = next(
-                (index for index, column in enumerate(columns) if column.grow),
-                -1,
-            )
-            if grow_index < 0:
-                raise ValueError(f"table {key!r}: fill but no grow column")
-        extents = self.column_extents(columns, cells, grow_index)
-        limits = [self.column_limits(extent) for extent in extents]
-        column_markup = "".join(
-            render_element(
-                "col",
-                {
-                    "data-min-": f"{limit[0]}ch",
-                    "style": "width:"
-                    + self.column_width_text(limits, index, grow_index),
-                },
-                None,
-            )
-            for index, limit in enumerate(limits)
-        )
-        title_markup = (
-            render_element(
-                "thead",
-                {},
-                render_element(
-                    "tr",
-                    {},
-                    "".join(
-                        render_element(
-                            "th",
-                            self.numeric_attributes(column)
-                            | {"title": column.label},
-                            render_html_escape(column.label),
-                        )
-                        for column in columns
-                    ),
-                ),
-            )
-            if column_titles
-            else ""
-        )
-        body_markup = "".join(
-            render_element(
-                "tr",
-                {},
-                "".join(
-                    self.table_cell_render(cell, column)
-                    for column, cell in zip(columns, row, strict=True)
-                ),
-            )
-            for row in cells
-        )
-        return render_element(
-            "div",
-            {"class": "table-box-"},
-            render_element(
-                "div",
-                {"class": "table-columns-"},
-                render_element(
-                    "table",
-                    {"class": "columns-", "data-key-": key},
-                    render_element("colgroup", {}, column_markup)
-                    + title_markup
-                    + render_element("tbody", {}, body_markup),
-                ),
-            ),
-        )
-
-    def table_cell_render(self, cell: Cell, column: Column) -> str:
-        cell_attributes = self.numeric_attributes(column)
-        if cell.style:
-            cell_attributes["style"] = cell.style
-        return render_element(
-            "td",
-            cell_attributes,
-            cell.html
-            if cell.html is not None
-            else render_html_escape(cell.text),
-        )
 
 
 class Theme:
@@ -390,7 +215,6 @@ class Theme:
             self.rgb(color) for color in _STYLE_HEAT_COLOR_STOPS
         ]
         self.number_format = Theme.NumberFormat(self.time_units())
-        self.ui_strings = self.ui_strings_read()
 
     def asset_read(self, name: str) -> str:
         with open(
@@ -442,6 +266,10 @@ class Theme:
                 self.asset_read(_ASSET_MENU_STYLESHEET_NAME),
             ),
             (
+                _ASSET_OVERVIEW_SCRIPT_NAME,
+                self.asset_read(_ASSET_OVERVIEW_SCRIPT_NAME),
+            ),
+            (
                 _ASSET_SETTINGS_PAGE_SCRIPT_NAME,
                 self.asset_read(_ASSET_SETTINGS_PAGE_SCRIPT_NAME),
             ),
@@ -469,6 +297,19 @@ class Theme:
             ) as handle:
                 handle.write(text)
 
+    # Answers a cell as the JS table writer's fields, defaults left out.
+    def cell_fields(self, value: CellOrText) -> str | dict[str, str]:
+        if isinstance(value, str):
+            return value
+        fields = {"text": value.text}
+        if value.html is not None:
+            fields["html"] = value.html
+        if value.style:
+            fields["style"] = value.style
+        if value.href:
+            fields["href"] = value.href
+        return fields
+
     def contrast_foreground(
         self, color: Theme.Rgb, on_dark_role: str, on_bright_role: str
     ) -> str:
@@ -494,7 +335,7 @@ class Theme:
     ) -> str:
         assets_href = href(depth, _REPORT_ASSETS_DIR_NAME)
         body_attributes = {"class": body_class} if body_class else {}
-        html_attributes = {"lang": self.ui_text_of("str_page_language")}
+        html_attributes = {"lang": "en"}
         head_names = page_preamble_scripts()
         head_links = "".join(
             render_element(
@@ -706,50 +547,8 @@ class Theme:
             for suffix, seconds in _THEME_TIME_UNIT_ENTRIES
         )
 
-    # Reads every string of `ui_strings.js`, the one table of UI text.
-    def ui_strings_read(self) -> dict[str, str]:
-        script_text = self.asset_read(_ASSET_UI_STRINGS_SCRIPT_NAME)
-        block = _UI_STRINGS_BLOCK.search(script_text)
-        if block is None:
-            raise ValueError(
-                f"{_ASSET_UI_STRINGS_SCRIPT_NAME} holds no STRINGS block"
-            )
-        unread_text = _UI_STRINGS_ENTRY.sub("", block.group(1)).strip()
-        if unread_text:
-            raise ValueError(
-                f"{_ASSET_UI_STRINGS_SCRIPT_NAME} holds a STRINGS line no"
-                f" reader parses: {unread_text.splitlines()[0]}"
-            )
-        strings: dict[str, str] = {}
-        for string_id, literal in _UI_STRINGS_ENTRY.findall(block.group(1)):
-            if string_id in strings:
-                raise ValueError(
-                    f"{_ASSET_UI_STRINGS_SCRIPT_NAME} names {string_id} twice"
-                )
-            strings[string_id] = json.loads(literal)
-        return strings
-
-    def ui_text_fill(
-        self, string_id: str, replacements: dict[str, str]
-    ) -> str:
-        def marker_value(marker: re.Match[str]) -> str:
-            if marker.group(1) not in replacements:
-                raise ValueError(
-                    f"ui string {string_id} has no value for {marker.group(0)}"
-                )
-            return replacements[marker.group(1)]
-
-        return _UI_TEXT_MARKER.sub(marker_value, self.ui_text_of(string_id))
-
-    def ui_text_of(self, string_id: str) -> str:
-        if string_id not in self.ui_strings:
-            raise ValueError(f"missing ui string: {string_id}")
-        return self.ui_strings[string_id]
-
 
 _renderer = Theme()
-
-_table_renderer = TableRenderer()
 
 
 def asset_text_read(name: str) -> str:
@@ -758,14 +557,6 @@ def asset_text_read(name: str) -> str:
 
 def diff_share_of(delta: int, baseline: int | None) -> float:
     return _renderer.number_format.diff_share_of(delta, baseline)
-
-
-# Writes a heading, the page scripts showing its title as page emphasis.
-def heading_render(title_markup: str, count_key: str = "") -> str:
-    count_attributes = {"data-row-count-key-": count_key} if count_key else {}
-    return render_element(
-        "div", {"class": "page-heading-"} | count_attributes, title_markup
-    )
 
 
 def heat_of_share(percent: float) -> float:
@@ -782,6 +573,10 @@ def held_script_tags(script_markup: str) -> str:
         render_element("template", {"id": "page-held-script-"}, script_markup)
         + "\n"
     )
+
+
+def href(depth: int, name: str) -> str:
+    return "../" * depth + name
 
 
 def num_human(number: float) -> str:
@@ -847,6 +642,14 @@ def render_element(
     return f"{start_tag}{inner_markup}</{tag_name}>"
 
 
+# Writes a heading, the page scripts showing its title as page emphasis.
+def render_heading(title_markup: str, heading_id: str = "") -> str:
+    id_attributes = {"id": heading_id} if heading_id else {}
+    return render_element(
+        "div", id_attributes | {"class": "page-heading-"}, title_markup
+    )
+
+
 # Escapes text for markup, the one escape the page builders write through.
 def render_html_escape(value: object) -> str:
     return (
@@ -890,18 +693,12 @@ def script_tags(directory_href: str, names: Sequence[str]) -> str:
     )
 
 
-def href(depth: int, name: str) -> str:
-    return "../" * depth + name
-
-
-def table_render(
-    key: str,
-    columns: Sequence[Column],
-    rows: Sequence[Sequence[CellOrText]],
-    fill: bool = False,
-    column_titles: bool = True,
-) -> str:
-    return _table_renderer.table(key, columns, rows, fill, column_titles)
+# Answers rows as the JSON a page script hands the table writer.
+def table_rows_text(rows: Sequence[Sequence[CellOrText]]) -> str:
+    return json.dumps(
+        [[_renderer.cell_fields(value) for value in row] for row in rows],
+        ensure_ascii=False,
+    )
 
 
 # Fills each marker with its markup, refusing a marker the template lacks.
@@ -917,11 +714,3 @@ def template_fill(template_text: str, marker_values: dict[str, str]) -> str:
 
 def theme_assets_write(out_dir: str) -> None:
     _renderer.assets_write(out_dir)
-
-
-def ui_text_fill(string_id: str, replacements: dict[str, str]) -> str:
-    return _renderer.ui_text_fill(string_id, replacements)
-
-
-def ui_text_of(string_id: str) -> str:
-    return _renderer.ui_text_of(string_id)

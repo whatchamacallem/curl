@@ -207,6 +207,7 @@ window.try_catch_handler_(function () {
     "hashchange",
     window.try_catch_handler_(address_setting_show),
   );
+  document.title = window.ui_strings_.text_of("str_view_settings");
   window.report_ui_.view_activate({
     dark_mode_apply: null,
     forwards_input: false,

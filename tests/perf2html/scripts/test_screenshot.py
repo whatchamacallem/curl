@@ -64,7 +64,12 @@ _INDEX_DATA_PATTERN = re.compile(
 )
 _INDEX_MARKER = "__SHOT_LIST__"
 _INDEX_PAGE_NAME = "test_index.html"
-_INDEX_TEMPLATE_NAME = "test_index.html"
+_INDEX_REPORT_NAMES: tuple[str, ...] = (
+    "perf2html_baseline_report",
+    "perf2html_modified_report",
+    "perf2html_diff_report",
+)
+_INDEX_TEMPLATE_NAME = "test_template.html"
 
 _REPORT_THEME_STYLESHEET_ASSET: tuple[str, ...] = ("assets/theme.css",)
 
@@ -229,7 +234,7 @@ _WINDOWS_BROWSER_SUFFIX = ".exe"
 class Screenshots:
     def __init__(
         self,
-        browser: str,
+        browser: str | None,
         report: str,
         report_flag: int,
         out_dir: str,
@@ -243,7 +248,6 @@ class Screenshots:
         self.compare_dir = compare_dir
         self.scratch_dir = scratch_dir
         self.report_views = self.report_views_select()
-        self.written_shots: list[str] = []
 
     def browser_path_of(self, path: str) -> str:
         if not self.windows_browser_is():
@@ -406,6 +410,15 @@ class Screenshots:
         os.makedirs(self.compare_dir, exist_ok=True)
         compare_image.save(compare_path)
 
+    # Answers the address of a report's entry page relative to the index.
+    def entry_href_of(self, report_dir: str, index_path: str) -> str:
+        return urllib.parse.quote(
+            os.path.relpath(
+                os.path.join(report_dir, _ENTRY_PAGE),
+                os.path.dirname(index_path),
+            )
+        )
+
     # Names each shot that differs from its gold twin, each one missing.
     def gold_compare(
         self, gold_dir: str, prefix: str, is_verbose: bool
@@ -422,8 +435,9 @@ class Screenshots:
                     file_name.removeprefix(_COMPARE_IMAGE_PREFIX)
                 ):
                     os.remove(os.path.join(self.compare_dir, file_name))
+        shot_names = self.shot_names_of(prefix)
         is_same = True
-        for shot_name in self.written_shots:
+        for shot_name in shot_names:
             if not self.gold_compare_one(
                 shot_name + _IMAGE_SUFFIX, gold_dir, is_verbose
             ):
@@ -431,11 +445,10 @@ class Screenshots:
         for file_name in sorted(os.listdir(gold_dir)):
             if (
                 shot_pattern.fullmatch(file_name)
-                and file_name.removesuffix(_IMAGE_SUFFIX)
-                not in self.written_shots
+                and file_name.removesuffix(_IMAGE_SUFFIX) not in shot_names
             ):
                 print(
-                    f"{file_name}: in {gold_dir}, not written by this run",
+                    f"{file_name}: in {gold_dir}, not among this run's shots",
                     file=sys.stderr,
                 )
                 is_same = False
@@ -450,8 +463,11 @@ class Screenshots:
         if not os.path.isfile(gold_path):
             print(f"{file_name}: absent from {gold_dir}", file=sys.stderr)
             return False
-        new_shot = PIL.Image.open(os.path.join(self.out_dir, file_name))
-        new_shot = new_shot.convert("RGB")
+        new_path = os.path.join(self.out_dir, file_name)
+        if not os.path.isfile(new_path):
+            print(f"{file_name}: absent from {self.out_dir}", file=sys.stderr)
+            return False
+        new_shot = PIL.Image.open(new_path).convert("RGB")
         gold_shot = PIL.Image.open(gold_path).convert("RGB")
         if new_shot.size != gold_shot.size:
             print(
@@ -507,12 +523,20 @@ class Screenshots:
     def index_write(self, prefix: str, index_path: str, template: str) -> None:
         assert template.count(_INDEX_MARKER) == 1, _INDEX_MARKER
         report_name = prefix.rstrip("_")
-        report_href = urllib.parse.quote(
-            os.path.relpath(
-                os.path.join(self.report, _ENTRY_PAGE),
-                os.path.dirname(index_path),
+        report_href = self.entry_href_of(self.report, index_path)
+        index_reports: list[dict[str, str]] = []
+        for listed_report in _INDEX_REPORT_NAMES:
+            listed_dir = os.path.join(
+                os.path.dirname(index_path), listed_report
             )
-        )
+            if not os.path.isfile(os.path.join(listed_dir, _ENTRY_PAGE)):
+                raise RuntimeError(f"{listed_dir} holds no {_ENTRY_PAGE}")
+            index_reports.append(
+                {
+                    "name": listed_report,
+                    "href": self.entry_href_of(listed_dir, index_path),
+                }
+            )
         width_px, height_px = _SCREENSHOT_VIEWPORTS[0][1:]
         pages: dict[str, str] = {}
         if os.path.isfile(index_path):
@@ -544,6 +568,7 @@ class Screenshots:
                 }
                 for name in sorted(pages)
             ],
+            "reports": index_reports,
         }
         data_script = (
             '<script id="shot-list-" type="application/json">'
@@ -686,6 +711,7 @@ class Screenshots:
         out_path = os.path.join(self.out_dir, shot + _IMAGE_SUFFIX)
         if os.path.exists(out_path):
             os.remove(out_path)
+        assert self.browser is not None, "a compare only run shoots nothing"
         window = f"{width_px},{height_px}"
         result = subprocess.run(
             [
@@ -736,6 +762,16 @@ class Screenshots:
             if name_part
         )
 
+    # Names every shot of this report, the index page's too.
+    def shot_names_of(self, prefix: str) -> list[str]:
+        return [
+            self.shot_name_of(
+                view_index, variant.size_name, prefix, view, variant.dark_value
+            )
+            for view_index, view in self.report_views
+            for variant in view.shot_variants()
+        ]
+
     def view_shoot(
         self,
         page_dir: str,
@@ -748,7 +784,6 @@ class Screenshots:
             shot = self.shot_name_of(
                 view_index, variant.size_name, prefix, view, variant.dark_value
             )
-            self.written_shots.append(shot)
             self.shoot_one(
                 shot,
                 page_dir,
@@ -761,6 +796,7 @@ class Screenshots:
         return len(shot_variants)
 
     def windows_browser_is(self) -> bool:
+        assert self.browser is not None, "a compare only run shoots nothing"
         return self.browser.lower().endswith(_WINDOWS_BROWSER_SUFFIX)
 
 
@@ -785,6 +821,12 @@ def main() -> int:
         help="compare each new shot with the same named shot in DIR, naming"
         " every difference and writing a compare_ image of it; exit 1 if"
         " any shot differs or is missing",
+    )
+    parser.add_argument(
+        "--compare-only",
+        action="store_true",
+        help="shoot nothing and compare the shots already in the --out"
+        " directory; needs --compare-gold",
     )
     parser.add_argument(
         "--compare-out",
@@ -827,8 +869,12 @@ def main() -> int:
         print("error: --compare-out needs --compare-gold", file=sys.stderr)
         return 1
 
-    browser = browser_find()
-    if browser is None:
+    if namespace.compare_only and not namespace.compare_gold:
+        print("error: --compare-only needs --compare-gold", file=sys.stderr)
+        return 1
+
+    browser = None if namespace.compare_only else browser_find()
+    if browser is None and not namespace.compare_only:
         print(
             "error: no browser found. Tried: "
             + ", ".join(_SCREENSHOT_BROWSER_CANDIDATES),
@@ -847,13 +893,10 @@ def main() -> int:
         perf2html_dir, _SCREENSHOT_DIR_NAME
     )
     out_dir = os.path.abspath(out_dir)
-    os.makedirs(out_dir, exist_ok=True)
     scratch_dir = os.path.abspath(
         os.path.join(perf2html_dir, _SCREENSHOT_SCRATCH_DIR_PATH)
     )
 
-    if namespace.verbose:
-        print(f"{os.path.basename(report)} -> {out_dir}")
     report_flag = (
         _SHOOT_DIFF_REPORT if namespace.diff else _SHOOT_REGULAR_REPORT
     )
@@ -861,6 +904,15 @@ def main() -> int:
     shooter = Screenshots(
         browser, report, report_flag, out_dir, compare_dir, scratch_dir
     )
+    if namespace.compare_only:
+        is_same = shooter.gold_compare(
+            gold_dir, namespace.prefix, namespace.verbose
+        )
+        return 0 if is_same else 1
+
+    os.makedirs(out_dir, exist_ok=True)
+    if namespace.verbose:
+        print(f"{os.path.basename(report)} -> {out_dir}")
     written = shooter.shoot_all(namespace.prefix)
 
     with open(

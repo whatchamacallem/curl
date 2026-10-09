@@ -37,12 +37,13 @@ with running the tests and checking the results is recommended.
 
 ## Callers Page
 
-| File           | Purpose                                                  |
-| -------------- | -------------------------------------------------------- |
-| `callers.html` | Templates the callers page of one test with its heading  |
-|                | and function table.                                      |
-| `callers.js`   | Activates the callers page as a view that scrolls to the |
-|                | top when the address is followed again.                  |
+| File           | Purpose                                              |
+| -------------- | ---------------------------------------------------- |
+| `callers.html` | Templates the callers page of one test, holding the  |
+|                | function rows that `callers.js` draws.               |
+| `callers.js`   | Draws the callers heading and function table, then   |
+|                | activates the page as a view that scrolls to the top |
+|                | when the address is followed again.                  |
 
 ## Callgrind Parsing
 
@@ -113,24 +114,29 @@ with running the tests and checking the results is recommended.
 |                   | address and loads each view into the frame.            |
 | `overview.html`   | Templates the top page with the menu, the home panel   |
 |                   | holding each test's logs, and the view frame.          |
+| `overview.js`     | Fills the home panel's headings, raw data link and     |
+|                   | log titles, then draws its tables from the rows the    |
+|                   | page holds.                                            |
 
 ## Settings Files
 
-| File               | Purpose                                               |
-| ------------------ | ----------------------------------------------------- |
-| `settings.html`    | Templates the settings view, one pre that             |
-|                    | `settings_page.js` fills, beside its text bar.        |
-| `settings.js`      | Templates the settings every page reads, the top page |
-|                    | installing them, a framed page taking them relayed,   |
-|                    | then writes every root value a stylesheet reads.      |
-| `settings.py`      | Holds every Python and JavaScript setting with the    |
-|                    | reader and writer that load and ship them.            |
-| `settings.sh`      | Holds every shell setting, read by the shell scripts  |
-|                    | and by `settings.py`.                                 |
-| `settings_page.js` | Lists every setting over an editable JSON box with    |
-|                    | link, copy, paste and apply buttons, then applies the |
-|                    | value an address carries.                             |
-| `ui_strings.js`    | Holds every user interface string, looked up by name. |
+| File                 | Purpose                                              |
+| -------------------- | ---------------------------------------------------- |
+| `settings.js`        | Templates the settings every page reads, the top     |
+|                      | page installing them, a framed page taking them      |
+|                      | relayed, then writes every root value a stylesheet   |
+|                      | reads.                                               |
+| `settings.py`        | Holds every Python and JavaScript setting with the   |
+|                      | reader and writer that load and ship them.           |
+| `settings.sh`        | Holds every shell setting, read by the shell scripts |
+|                      | and by `settings.py`.                                |
+| `settings_page.html` | Templates the settings view, one pre that            |
+|                      | `settings_page.js` fills, beside its text bar.       |
+| `settings_page.js`   | Lists every setting over an editable JSON box with   |
+|                      | link, copy, paste and apply buttons, then applies    |
+|                      | the value an address carries.                        |
+| `ui_strings.js`      | Holds every user interface string, looked up by      |
+|                      | name.                                                |
 
 ## Test Harness
 
@@ -143,8 +149,6 @@ with running the tests and checking the results is recommended.
 | `test_expected_behavior.sh` | Formats, lints and scans the sources, runs   |
 |                             | the batch, then checks the reports and takes |
 |                             | screenshots.                                 |
-| `test_index.html`           | Holds the grid of framed report pages that   |
-|                             | `test_screenshot.py` fills in.               |
 | `test_report.py`            | Checks the pages, manifest, checksum, heat   |
 |                             | map, flame graph and timer artifacts of one  |
 |                             | report.                                      |
@@ -153,6 +157,9 @@ with running the tests and checking the results is recommended.
 | `test_source_scan.py`       | Faults long comment blocks, comment          |
 |                             | punctuation, glyphs and escapes in the given |
 |                             | sources.                                     |
+| `test_template.html`        | Templates the index of report links over a   |
+|                             | grid of framed report pages that             |
+|                             | `test_screenshot.py` fills in.               |
 | `test_utility.sh`           | Holds the functions shared by the test       |
 |                             | scripts.                                     |
 | `test_whitelist.txt`        | Lists the file globs that the format, lint   |
@@ -160,18 +167,18 @@ with running the tests and checking the results is recommended.
 
 ## Theme Library
 
-| File             | Purpose                                                 |
-| ---------------- | ------------------------------------------------------- |
-| `dark_mode.css`  | Overrides every light mode color rule with a dark mode  |
-|                  | role unless dark mode is disabled.                      |
-| `light_mode.css` | Holds every light mode color rule, linked before the    |
-|                  | dark mode sheet.                                        |
-| `theme.css`      | Holds the layout rules shared by every report page.     |
-| `theme.js`       | Holds the shared page library for addresses, strips,    |
-|                  | tables, numbers, scrollbars and layout.                 |
-| `theme.py`       | Renders tables, numbers and page heads, then writes the |
-|                  | shared assets and checks the root value names the       |
-|                  | stylesheets read.                                       |
+| File             | Purpose                                                |
+| ---------------- | ------------------------------------------------------ |
+| `dark_mode.css`  | Overrides every light mode color rule with a dark mode |
+|                  | role unless dark mode is disabled.                     |
+| `light_mode.css` | Holds every light mode color rule, linked before the   |
+|                  | dark mode sheet.                                       |
+| `theme.css`      | Holds the layout rules shared by every report page.    |
+| `theme.js`       | Holds the shared page library for addresses, strips,   |
+|                  | tables, numbers, scrollbars and layout.                |
+| `theme.py`       | Writes table rows, numbers and page heads, then writes |
+|                  | the shared assets and checks the root value names the  |
+|                  | stylesheets read.                                      |
 
 ## Tool Configuration
 

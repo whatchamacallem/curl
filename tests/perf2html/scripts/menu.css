@@ -23,7 +23,7 @@
   padding: 0 var(--menu-button-padding-inline-);
   white-space: pre;
 }
-[data-entry-name-="logo"] {
+[data-entry-name-="str_report_name"] {
   padding-inline-end: 0;
 }
 a.menu-button-,
@@ -33,12 +33,13 @@ span.menu-button- {
 summary.menu-button- {
   width: fit-content;
 }
-td > a.menu-button-:only-child {
+td.page-table-link-cell- > .menu-button- {
   display: block;
   width: fit-content;
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
+  outline-offset: calc(0px - var(--page-line-width-));
 }
 .menu-button-[tabindex],
 summary.menu-button-,

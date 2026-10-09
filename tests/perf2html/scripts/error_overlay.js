@@ -120,7 +120,6 @@ window.report_error_overlay_ = (function () {
       "",
       report.text,
       "",
-      "manifest",
       manifest_text,
     ].join("\n");
     const font_size =

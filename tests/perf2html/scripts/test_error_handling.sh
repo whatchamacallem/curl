@@ -43,7 +43,6 @@ _TEST_ERROR_DIFF_REPORT="$_DIR_PERF2HTML/perf2html_diff_report"
 _TEST_ERROR_ARTIFACTS="$_DIR_PERF2HTML/perf2html_temporary_artifacts"
 
 _TEST_ERROR_ARCHIVE_SUFFIX=.txz
-_TEST_ERROR_CALLGRIND_LOOPS=200
 _TEST_ERROR_TRUNCATED_BYTES=1024
 _TEST_ERROR_TIMER_ARTIFACTS_PREFIX=timer-artifacts-
 _TEST_ERROR_TIMING_FILE_PREFIX=perf-stat
@@ -156,7 +155,6 @@ test_error_makefile_test_names() {
 
 test_error_cache_populated_check() {
   local _tests=() _report _name _rows _recorded _test _file
-  local _loops="$_TEST_ERROR_CALLGRIND_LOOPS"
   local _prefix="$_TEST_ERROR_TIMING_FILE_PREFIX"
   mapfile -t _tests < <(test_error_makefile_test_names)
   [ "${#_tests[@]}" -gt 0 ] || test_fail cache_populated \
@@ -172,12 +170,12 @@ test_error_cache_populated_check() {
       || test_fail cache_populated "no recorded= row in $_rows"
     for _test in "${_tests[@]}"; do
       for _file in \
-        "callgrind.out.$_test.$_loops.$_recorded" \
-        "valgrind.$_test.$_loops.$_recorded.log" \
+        "callgrind.out.$_test.$_recorded" \
+        "valgrind.$_test.$_recorded.log" \
         "$_prefix.$_test.$_recorded.csv" \
         "$_prefix.$_test.$_recorded.txt" \
-        "trace.$_test.$_loops.$_recorded.log" \
-        "trace.$_test.$_loops.$_recorded.speedscope.json"; do
+        "trace.$_test.$_recorded.log" \
+        "trace.$_test.$_recorded.speedscope.json"; do
         [ -f "$_TEST_ERROR_ARTIFACTS/$_name/$_file" ] \
           || test_fail cache_populated \
             "no recording $_TEST_ERROR_ARTIFACTS/$_name/$_file"

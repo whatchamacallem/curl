@@ -8,10 +8,6 @@ window.try_catch_handler_(function () {
   "use strict";
 
   const DARK_MODE_QUERY_KEY_NAME = settings_("DARK_MODE_QUERY_KEY_NAME");
-  const DEBUG_TIP_IDLE_DELAY_MS = settings_(
-    "DEBUG_TIP_IDLE_DELAY_MS",
-  );
-  const DEBUG_TIP_IDLE_DELAY_MS = settings_("DEBUG_TIP_IDLE_DELAY_MS");
   const DEBUG_TIP_IDLE_DELAY_MS = settings_("DEBUG_TIP_IDLE_DELAY_MS");
   const SETTINGS_DEBUG_ENABLED = settings_("SETTINGS_DEBUG_ENABLED");
   const STYLE_COLOR_DARK_MODE = settings_("STYLE_COLOR_DARK_MODE");

@@ -8,6 +8,7 @@ window.try_catch_handler_(function () {
   const DARK_MODE_QUERY_KEY_NAME = settings_("DARK_MODE_QUERY_KEY_NAME");
   const DARK_MODE_QUERY_VALUES = settings_("DARK_MODE_QUERY_VALUES");
   const FLAME_GRAPH_VIEW_ENTRY = settings_("FLAME_GRAPH_VIEW_ENTRY");
+  const REPORT_TEST_SUITE_NAME = settings_("REPORT_TEST_SUITE_NAME");
   const SCREENSHOT_MENU_KEY_NUMBER = settings_("SCREENSHOT_MENU_KEY_NUMBER");
   const SETTINGS_DEBUG_ENABLED = settings_("SETTINGS_DEBUG_ENABLED");
   const SETTINGS_DEBUG_HASH_KEY_NAME = settings_(
@@ -38,6 +39,10 @@ window.try_catch_handler_(function () {
   function address_now() {
     return current_address;
   }
+  // Answers whether the report holds a flame graph for the test.
+  function flame_graph_exists(test_name) {
+    return has_flame_graph && test_name !== REPORT_TEST_SUITE_NAME;
+  }
   // Answers the query's menu entry number while the loaded address shows.
   function menu_entry_number_now() {
     return location.hash === loaded_hash ? loaded_menu_entry_number : null;
@@ -51,10 +56,13 @@ window.try_catch_handler_(function () {
         "str_error_hash_test_unknown",
         parsed_address.test,
       );
-    if (parsed_address.view === FLAME_GRAPH_VIEW_ENTRY[0] && !has_flame_graph)
+    if (
+      parsed_address.view === FLAME_GRAPH_VIEW_ENTRY[0] &&
+      !flame_graph_exists(parsed_address.test)
+    )
       window.throw_exception_(
-        "str_error_hash_view_unknown",
-        parsed_address.view,
+        "str_error_hash_flame_graph_missing",
+        parsed_address.test,
       );
     if (
       parsed_address.setting !== null &&
@@ -73,6 +81,19 @@ window.try_catch_handler_(function () {
       SETTINGS_DEBUG_QUERY_ENABLED_VALUE,
     );
     location.replace("?" + query_values + location.hash);
+  }
+  // Clears any settings debug query and values, loading the top page again.
+  function settings_debug_clear() {
+    const cleared_url = new URL(location.href);
+    if (
+      !cleared_url.searchParams.has(SETTINGS_DEBUG_QUERY_KEY_NAME) &&
+      current_address[SETTINGS_DEBUG_HASH_KEY_NAME] === null
+    )
+      return;
+    cleared_url.searchParams.delete(SETTINGS_DEBUG_QUERY_KEY_NAME);
+    cleared_url.hash =
+      window.report_ui_.address.settings_cleared_hash_of(current_address);
+    location.replace(cleared_url.href);
   }
   function view_show() {
     const shown_address = window.report_ui_.address.of_hash(location.hash);
@@ -208,8 +229,9 @@ window.try_catch_handler_(function () {
     activate,
     address_now,
     address_request,
-    has_flame_graph,
+    flame_graph_exists,
     menu_entry_number_now,
+    settings_debug_clear,
     test_names,
     view_post,
   };

@@ -34,7 +34,7 @@ settings.load_into(__name__)
 class TestReport:
     class ReportLayout(NamedTuple):
         has_flame_graph: bool
-        heading: str
+        table_diff_value: str
         header_blocks: tuple[str, ...]
         manifest_version: str
         manifest_labels: tuple[str, ...]
@@ -57,31 +57,92 @@ class TestReport:
             for href in re.findall(r'<a\s[^>]*href="([^"]*)"', page_text)
         ]
 
-    def callers_columns_check(self, path: str, page_text: str) -> None:
-        table_head = re.search(
-            rf'data-key-="{re.escape(_TEST_CALLERS_TABLE_KEY)}"><colgroup>'
-            r".*?</colgroup><thead>(.*?)</thead>",
-            page_text,
-            re.S,
+    def callers_page_check(
+        self,
+        out_dir: str,
+        test_name: str,
+        layout: TestReport.ReportLayout,
+    ) -> None:
+        label = self.callers_page_path_of(test_name)
+        path = os.path.join(out_dir, label)
+        text = self.page_check(
+            path, label, _TEST_OVERVIEW_PAGE_LEAST_BYTES, test_name
         )
-        if table_head is None:
-            self.fail(
-                f"index.html has no {_TEST_CALLERS_TABLE_KEY} table with"
-                f" column titles: {path}"
-            )
+        if not text:
             return
-        found_titles = tuple(
-            html.unescape(title)
-            for title in re.findall(
-                r"<th[^>]*>([^<]*)</th>", table_head.group(1)
-            )
+        with open(path, encoding="utf-8") as handle:
+            page_text = handle.read()
+        rows = self.callers_table_check(path, label, page_text, layout)
+        if '<nav id="menu-"' in page_text:
+            self.fail(f"{label} draws the overview's menu: {path}")
+        page_hrefs = self.table_data_hrefs(rows)
+        address_start = f"#test={test_name}&view="
+        for href in page_hrefs:
+            if not href.startswith(address_start):
+                self.fail(
+                    f"{label} links {href!r}, which is no address of"
+                    f" {test_name} ({address_start}...): {path}"
+                )
+        function_start = (
+            f"#test={test_name}&view={_HEAT_MAP_VIEW_KEY}&function="
         )
-        if found_titles != _TEST_CALLERS_COLUMN_TITLES:
+        if not any(href.startswith(function_start) for href in page_hrefs):
             self.fail(
-                f"index.html's {_TEST_CALLERS_TABLE_KEY} table has the"
-                f" columns {found_titles}, expected"
-                f" {_TEST_CALLERS_COLUMN_TITLES}: {path}"
+                f"{label} links no function into the heat map"
+                f" ({function_start}...): {path}"
             )
+        if "<details" in page_text:
+            self.fail(
+                f"{label} holds a log section, which the overview holds:"
+                f" {path}"
+            )
+        if _TEST_OVERVIEW_RAW_DATA_MARKUP in page_text:
+            self.fail(
+                f"{label} has a 'raw data' section, but it should not: {path}"
+            )
+
+    # Answers the report relative path of a test's callers page.
+    def callers_page_path_of(self, test_name: str) -> str:
+        return f"{_TEST_CALLERS_PAGE_DIR_NAME}/{test_name}.html"
+
+    # Checks the callers table data the page script draws, answering its rows.
+    def callers_table_check(
+        self,
+        path: str,
+        label: str,
+        page_text: str,
+        layout: TestReport.ReportLayout,
+    ) -> list[list[Any]]:
+        attributes = self.element_attributes(
+            page_text, _TEST_CALLERS_TABLE_DATA_ID
+        )
+        if attributes is None:
+            self.fail(
+                f"{label} has no {_TEST_CALLERS_TABLE_DATA_ID} table data:"
+                f" {path}"
+            )
+            return []
+        if attributes.get("data-diff-") != layout.table_diff_value:
+            self.fail(
+                f"{label}'s table data holds data-diff-"
+                f" {attributes.get('data-diff-')!r}, expected"
+                f" {layout.table_diff_value!r}: {path}"
+            )
+        if attributes.get("data-key-") != _TEST_CALLERS_TABLE_KEY:
+            self.fail(
+                f"{label}'s table data holds data-key-"
+                f" {attributes.get('data-key-')!r}, expected"
+                f" {_TEST_CALLERS_TABLE_KEY!r}: {path}"
+            )
+        rows = self.table_data_rows(attributes, label, path)
+        for row in rows:
+            if len(row) != _TEST_CALLERS_TABLE_CELLS:
+                self.fail(
+                    f"{label}'s table data has a row of {len(row)} cells,"
+                    f" expected {_TEST_CALLERS_TABLE_CELLS}: {path}"
+                )
+                return []
+        return rows
 
     def checksum_compute(self, out_dir: str) -> str:
         try:
@@ -101,7 +162,7 @@ class TestReport:
                 f" {done.returncode}: {done.stderr.strip()}"
             )
             return ""
-        return done.stdout.strip()
+        return done.stdout.split(" ", 1)[0]
 
     def diff_baseline_check(self, filed_model: Any, label: str) -> None:
         width = len(filed_model["heatMapTotals"]["counters"])
@@ -130,6 +191,22 @@ class TestReport:
                         f" of {count} in counter slot {slot}"
                     )
                     return
+
+    # Answers the attributes of the div the id names, none when no div has it.
+    def element_attributes(
+        self, page_text: str, element_id: str
+    ) -> dict[str, str] | None:
+        match = re.search(
+            rf'<div id="{re.escape(element_id)}"([^>]*)>', page_text
+        )
+        if match is None:
+            return None
+        return {
+            name: html.unescape(value)
+            for name, value in re.findall(
+                r'\s([\w-]+)="([^"]*)"', match.group(1)
+            )
+        }
 
     def fail(self, message: str) -> None:
         self.errors.append(message)
@@ -315,55 +392,6 @@ class TestReport:
                         f" them: {path}"
                     )
 
-    def index_check(
-        self,
-        out_dir: str,
-        test_name: str,
-        layout: TestReport.ReportLayout,
-    ) -> None:
-        path = os.path.join(out_dir, "index.html")
-        text = self.page_check(
-            path, "index.html", _TEST_OVERVIEW_PAGE_LEAST_BYTES, test_name
-        )
-        if not text:
-            return
-        with open(path, encoding="utf-8") as handle:
-            page_text = handle.read()
-        if not re.search(layout.heading, text):
-            self.fail(
-                "index.html has no 'top N functions' section matching "
-                f"{layout.heading!r}: {path}"
-            )
-        self.callers_columns_check(path, page_text)
-        if '<nav id="menu-"' in page_text:
-            self.fail(f"index.html draws the overview's menu: {path}")
-        page_hrefs = self.anchor_hrefs(page_text)
-        address_start = f"#test={test_name}&view="
-        for href in page_hrefs:
-            if not href.startswith(address_start):
-                self.fail(
-                    f"index.html links {href!r}, which is no address of"
-                    f" {test_name} ({address_start}...): {path}"
-                )
-        function_start = (
-            f"#test={test_name}&view={_HEAT_MAP_VIEW_KEY}&function="
-        )
-        if not any(href.startswith(function_start) for href in page_hrefs):
-            self.fail(
-                f"index.html links no function into the heat map"
-                f" ({function_start}...): {path}"
-            )
-        if "<details" in page_text:
-            self.fail(
-                f"index.html holds a log section, which the overview holds:"
-                f" {path}"
-            )
-        if "raw data" in page_text:
-            self.fail(
-                "index.html has a 'raw data' section, but it should"
-                f" not: {path}"
-            )
-
     def manifest_check(
         self, out_dir: str, layout: TestReport.ReportLayout
     ) -> None:
@@ -470,15 +498,30 @@ class TestReport:
     ) -> None:
         path = os.path.join(out_dir, "index.html")
         text = self.page_check(
-            path, "index.html", _TEST_OVERVIEW_PAGE_LEAST_BYTES, "overview"
+            path,
+            "index.html",
+            _TEST_OVERVIEW_PAGE_LEAST_BYTES,
+            _TEST_OVERVIEW_PAGE_TITLE,
         )
         if not text:
             return
         with open(path, encoding="utf-8") as handle:
             page_text = handle.read()
-        if ">tests</div>" not in text:
+        if _TEST_OVERVIEW_TESTS_HEADING_MARKUP not in page_text:
             self.fail(f"overview index.html has no 'tests' section: {path}")
-        page_hrefs = self.anchor_hrefs(page_text)
+        tests_attributes = self.element_attributes(
+            page_text, _TEST_OVERVIEW_TESTS_TABLE_DATA_ID
+        )
+        if (
+            tests_attributes is not None
+            and tests_attributes.get("data-diff-") != layout.table_diff_value
+        ):
+            self.fail(
+                "overview index.html's tests table data holds data-diff-"
+                f" {tests_attributes.get('data-diff-')!r}, expected"
+                f" {layout.table_diff_value!r}: {path}"
+            )
+        page_hrefs = self.overview_tests_hrefs(page_text, path)
         for test_name in tests:
             if (
                 f"#test={test_name}&view={_HEAT_MAP_VIEW_KEY}"
@@ -491,10 +534,10 @@ class TestReport:
         self.menu_check(path, page_text, tests, layout)
         self.logs_check(path, page_text, layout.test_records_runs)
         for heading in layout.header_blocks:
-            if f">{heading}</div>" not in text:
+            if heading not in page_text:
                 self.fail(
-                    f"overview index.html has no '{heading}'"
-                    f" header block: {path}"
+                    "overview index.html has no header block heading"
+                    f" {heading!r}: {path}"
                 )
         self.timer_artifacts_check(out_dir, page_text, tests, layout)
 
@@ -503,7 +546,7 @@ class TestReport:
             text = handle.read()
         names: list[str] = []
         linked_names: set[str] = set()
-        for href in self.anchor_hrefs(text):
+        for href in self.overview_tests_hrefs(text, index_path):
             match = re.fullmatch(
                 rf"#test=([\w.-]+)&view={re.escape(_HEAT_MAP_VIEW_KEY)}", href
             )
@@ -511,14 +554,30 @@ class TestReport:
                 continue
             test_name = match.group(1)
             linked_names.add(test_name)
-            if not os.path.isdir(os.path.join(out_dir, test_name)):
+            callers_page_path = self.callers_page_path_of(test_name)
+            if not os.path.isfile(os.path.join(out_dir, callers_page_path)):
                 self.fail(
                     f"overview index.html links {href}, and there is no"
-                    f" {test_name}/ directory: {index_path}"
+                    f" {callers_page_path}: {index_path}"
                 )
                 continue
             names.append(test_name)
         return names
+
+    # Answers every address the overview's tests table data links.
+    def overview_tests_hrefs(self, page_text: str, path: str) -> list[str]:
+        attributes = self.element_attributes(
+            page_text, _TEST_OVERVIEW_TESTS_TABLE_DATA_ID
+        )
+        if attributes is None:
+            self.fail(
+                "overview index.html has no"
+                f" {_TEST_OVERVIEW_TESTS_TABLE_DATA_ID} table data: {path}"
+            )
+            return []
+        return self.table_data_hrefs(
+            self.table_data_rows(attributes, "overview index.html", path)
+        )
 
     def page_check(
         self,
@@ -577,8 +636,8 @@ class TestReport:
 
     # Checks the overview's log sections, which a report recording runs has.
     def logs_check(self, path: str, page_text: str, has_logs: bool) -> None:
-        for title in ("perf log", "trace log", "valgrind log"):
-            if has_logs != (f">{title}</summary>" in page_text):
+        for title, section_id in _TEST_OVERVIEW_LOG_SECTIONS:
+            if has_logs != (f'<details id="{section_id}"' in page_text):
                 lack = "has no" if has_logs else "should not have a"
                 self.fail(
                     f"overview index.html {lack} '{title}' section: {path}"
@@ -603,29 +662,31 @@ class TestReport:
         if name is None:
             print(f"error: no <title> in {index_path}", file=sys.stderr)
             return 1
+        if name != _TEST_OVERVIEW_PAGE_TITLE:
+            print(
+                f"error: <title> {name!r}, expected"
+                f" {_TEST_OVERVIEW_PAGE_TITLE!r}: {index_path}",
+                file=sys.stderr,
+            )
+            return 1
         layout = _LAYOUT_DIFF if args.diff else _LAYOUT_FULL
 
         self.home_dir_check(out_dir)
         self.manifest_check(out_dir, layout)
-        if name == "overview":
-            tests = self.overview_test_names(index_path, out_dir)
-            self.overview_check(out_dir, tests, layout)
-            if layout.has_flame_graph:
-                self.flame_app_check(out_dir)
-            self.sources_check(out_dir)
-            self.heat_map_check(out_dir, tests, layout)
-            traced_tests = [
-                test_name
-                for test_name in tests
-                if self.runs_recorded(layout, test_name)
-            ]
-            self.flame_graph_check(out_dir, traced_tests, layout)
-            for test_name in tests:
-                self.test_report_check(
-                    os.path.join(out_dir, test_name), test_name, layout
-                )
-        else:
-            self.test_report_check(out_dir, name, layout)
+        tests = self.overview_test_names(index_path, out_dir)
+        self.overview_check(out_dir, tests, layout)
+        if layout.has_flame_graph:
+            self.flame_app_check(out_dir)
+        self.sources_check(out_dir)
+        self.heat_map_check(out_dir, tests, layout)
+        traced_tests = [
+            test_name
+            for test_name in tests
+            if self.runs_recorded(layout, test_name)
+        ]
+        self.flame_graph_check(out_dir, traced_tests, layout)
+        for test_name in tests:
+            self.test_report_check(out_dir, test_name, layout)
 
         if self.errors:
             print(
@@ -694,17 +755,48 @@ class TestReport:
         if linked and not os.path.isdir(sources_dir):
             self.fail(f"no shared source directory: {sources_dir}")
 
+    # Answers every address a table data's cells link, plain or in markup.
+    def table_data_hrefs(self, rows: Sequence[Sequence[Any]]) -> list[str]:
+        hrefs: list[str] = []
+        for row in rows:
+            for cell in row:
+                if not isinstance(cell, dict):
+                    continue
+                if "href" in cell:
+                    hrefs.append(str(cell["href"]))
+                if "html" in cell:
+                    hrefs += self.anchor_hrefs(str(cell["html"]))
+        return hrefs
+
+    # Answers the rows a table data element files, each a list of cells.
+    def table_data_rows(
+        self, attributes: dict[str, str], label: str, path: str
+    ) -> list[list[Any]]:
+        if "data-rows-" not in attributes:
+            self.fail(f"{label}'s table data holds no data-rows-: {path}")
+            return []
+        try:
+            rows = json.loads(attributes["data-rows-"])
+        except ValueError as error:
+            self.fail(f"{label}'s table data holds no JSON: {error}: {path}")
+            return []
+        if not isinstance(rows, list) or not all(
+            isinstance(row, list) for row in rows
+        ):
+            self.fail(f"{label}'s table data holds no list of rows: {path}")
+            return []
+        return rows
+
     def test_report_check(
         self, out_dir: str, name: str, layout: TestReport.ReportLayout
     ) -> None:
-        self.index_check(out_dir, name, layout)
-        for stray_name in ("raw", _HEAT_MAP_VIEW_KEY, _FLAME_GRAPH_VIEW_KEY):
-            stray_dir = os.path.join(out_dir, stray_name)
-            if os.path.exists(stray_dir):
-                self.fail(
-                    f"{stray_name}/ in a test, which no report keeps:"
-                    f" {stray_dir}"
-                )
+        self.callers_page_check(out_dir, name, layout)
+        stray_dir = os.path.join(out_dir, name)
+        if os.path.exists(stray_dir):
+            self.fail(
+                f"{name}/ at the report top, which no report keeps:"
+                f" {stray_dir}"
+            )
 
     def timer_artifacts_archive_check(
         self,
@@ -755,9 +847,7 @@ class TestReport:
             if not self.runs_recorded(layout, test_name):
                 continue
             if not any(
-                file_name.startswith(
-                    f"{_CALLGRIND_OUTPUT_FILE_PREFIX}.{test_name}."
-                )
+                file_name == f"{_CALLGRIND_OUTPUT_FILE_PREFIX}.{test_name}"
                 and "events:" in text[:4096]
                 for file_name, text in texts_by_name.items()
             ):
@@ -792,7 +882,7 @@ class TestReport:
                 f"{len(archive_names)} {archive_pattern} at the report's top,"
                 f" expected {wanted_count}: {out_dir}"
             )
-        has_raw_data_line = "raw data" in overview_text
+        has_raw_data_line = _TEST_OVERVIEW_RAW_DATA_MARKUP in overview_text
         if layout.has_timer_artifacts and not has_raw_data_line:
             self.fail(f"overview index.html has no 'raw data' line: {out_dir}")
         elif has_raw_data_line and not layout.has_timer_artifacts:
@@ -817,16 +907,15 @@ class TestReport:
 _FLAME_GRAPH_VIEW_KEY = _FLAME_GRAPH_VIEW_ENTRY[0]
 
 _HEAT_MAP_VIEW_KEY = _HEAT_MAP_VIEW_ENTRY[0]
-_HEAT_MAP_PAGE_TITLE = "heat map"
+_HEAT_MAP_PAGE_TITLE = ""
 
 _LAYOUT_DIFF = TestReport.ReportLayout(
     has_flame_graph=False,
-    heading=(
-        r'<div class="page-heading-" data-row-count-key-="callers\.rows">'
-        r'top <span class="page-heading-row-count-">\d+</span>'
-        r" functions by change in calls</div>"
+    table_diff_value="1",
+    header_blocks=(
+        '<div class="page-heading-">baseline</div>',
+        '<div class="page-heading-">modified</div>',
     ),
-    header_blocks=("baseline", "modified"),
     manifest_version=_REPORT_MANIFEST_VERSION_DIFF,
     manifest_labels=(
         "baseline",
@@ -842,12 +931,10 @@ _LAYOUT_DIFF = TestReport.ReportLayout(
 
 _LAYOUT_FULL = TestReport.ReportLayout(
     has_flame_graph=True,
-    heading=(
-        r'<div class="page-heading-" data-row-count-key-="callers\.rows">'
-        r'top <span class="page-heading-row-count-">\d+</span>'
-        r" functions by calls</div>"
+    table_diff_value="0",
+    header_blocks=(
+        '<div id="overview-manifest-heading-" class="page-heading-"></div>',
     ),
-    header_blocks=("manifest",),
     manifest_version=_REPORT_MANIFEST_VERSION_FULL,
     manifest_labels=(
         "revision",
@@ -869,14 +956,27 @@ _REPORT_CHECKSUM_COMMAND = (
     " | LC_ALL=C sort | cksum"
 )
 
-_TEST_CALLERS_COLUMN_TITLES = ("#", "symbol", "calls", "callers")
+_TEST_CALLERS_PAGE_DIR_NAME = "callers"
+_TEST_CALLERS_TABLE_CELLS = 4
+_TEST_CALLERS_TABLE_DATA_ID = "callers-functions-table-"
 _TEST_CALLERS_TABLE_KEY = "report.functions"
 _TEST_FLAME_GRAPH_PAGE_LEAST_BYTES = 300
 _TEST_FLAME_GRAPH_SCRIPT_LEAST_BYTES = 200
 _TEST_HEAT_MAP_MODEL_LEAST_BYTES = 5000
 _TEST_HEAT_MAP_PAGE_LEAST_BYTES = 1000
 _TEST_MANIFEST_LEAST_BYTES = 40
+_TEST_OVERVIEW_LOG_SECTIONS = (
+    ("perf log", "overview-collapsed-section-perf-log-"),
+    ("trace log", "overview-collapsed-section-trace-log-"),
+    ("valgrind log", "overview-collapsed-section-valgrind-log-"),
+)
 _TEST_OVERVIEW_PAGE_LEAST_BYTES = 2000
+_TEST_OVERVIEW_PAGE_TITLE = ""
+_TEST_OVERVIEW_RAW_DATA_MARKUP = '<div id="overview-raw-data-">'
+_TEST_OVERVIEW_TESTS_HEADING_MARKUP = (
+    '<div id="overview-tests-heading-" class="page-heading-"></div>'
+)
+_TEST_OVERVIEW_TESTS_TABLE_DATA_ID = "overview-tests-table-"
 _TEST_RAW_ARCHIVE_LEAST_BYTES = 100
 
 

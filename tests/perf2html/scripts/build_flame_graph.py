@@ -68,9 +68,6 @@ class BuildFlameGraph:
             {
                 "__APP_CSS__": f"{app_href}/{args.app_css}",
                 "__HELD_SCRIPTS__": held_scripts,
-                "__PAGE_TITLE__": theme.render_html_escape(
-                    theme.ui_text_of("str_flame_graph_page_title")
-                ),
                 "__SCRIPTS__": scripts,
             },
         )

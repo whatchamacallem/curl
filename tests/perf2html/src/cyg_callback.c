@@ -13,8 +13,14 @@
 #include <unistd.h>
 #include <x86intrin.h>
 
+#ifndef TEST_SAMPLES_SIZE
+#error "use -DTEST_SAMPLES_SIZE=$TEST_SAMPLES_SIZE from settings.sh"
+#endif
+
 #define CYG_CALLBACKS_MAGIC 0xABCDEF0123456789ull
-#define CYG_CALLBACKS_MAX_REC (1u << 16)
+#define CYG_CALLBACKS_RECORDS_PER_SAMPLE 2u
+#define CYG_CALLBACKS_MAX_REC                                                 \
+  (CYG_CALLBACKS_RECORDS_PER_SAMPLE * (unsigned)TEST_SAMPLES_SIZE)
 #define CYG_CALLBACKS_EXIT_BIT (1ull << 63)
 
 typedef struct {
