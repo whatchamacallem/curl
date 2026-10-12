@@ -741,7 +741,7 @@ class TestReport:
                 " -- not a report directory?",
                 file=sys.stderr,
             )
-            return 1
+            return 2
         name = self.page_title(index_path)
         if name is None:
             print(f"error: no <title> in {index_path}", file=sys.stderr)

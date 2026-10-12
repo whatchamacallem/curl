@@ -341,8 +341,8 @@ window.try_catch_handler_(function () {
     return counter.get(profile_model.heatMapTotals.totals) || 1;
   }
   const share_in_scope = (value, counter, line_number) => {
-    const scope_total = scope_total(counter, line_number);
-    return scope_total ? (100 * value) / scope_total : 0;
+    const active_scope_total = scope_total(counter, line_number);
+    return active_scope_total ? (100 * value) / active_scope_total : 0;
   };
   const share_in_scope_text = (value, counter, line_number) =>
     value ? share_text(share_in_scope(value, counter, line_number), true) : "";
@@ -852,11 +852,13 @@ window.try_catch_handler_(function () {
       HOME_SORT_DEFAULT_NAME,
       (record) => absolute(cost(record)),
       (record) => {
-        const cost = cost(record),
-          baseline_cost = baseline_cost(record);
+        const record_cost = cost(record),
+          record_baseline_cost = baseline_cost(record);
         return {
-          text: share_of_baseline_text(cost, baseline_cost),
-          style: heat_style(share_of_baseline(cost, baseline_cost)),
+          text: share_of_baseline_text(record_cost, record_baseline_cost),
+          style: heat_style(
+            share_of_baseline(record_cost, record_baseline_cost),
+          ),
         };
       },
     );
@@ -906,7 +908,8 @@ window.try_catch_handler_(function () {
         });
       }
     }
-    const location = (record) => record.file_path + ":" + record.line_number;
+    const record_location = (record) =>
+      record.file_path + ":" + record.line_number;
     const source_lines_by_file = new Map();
     // Answers a line's trimmed source, empty when the file's source is away.
     function source_snippet(record) {
@@ -938,12 +941,12 @@ window.try_catch_handler_(function () {
             clip: HEAT_MAP_HOME_LINES_LOCATION_MAX_CHARS,
           },
           "location",
-          location,
+          record_location,
           (record) =>
             line_link_cell(
               record.file_path,
               record.line_number,
-              location(record),
+              record_location(record),
             ),
         ),
         table_sort_column(
@@ -984,7 +987,7 @@ window.try_catch_handler_(function () {
       if (absolute(self_cost) > 0)
         records.push({ function_entry, function_index, self_cost });
     });
-    const location = (record) =>
+    const record_location = (record) =>
       record.function_entry.line
         ? record.function_entry.file + ":" + record.function_entry.line
         : record.function_entry.file;
@@ -1025,9 +1028,9 @@ window.try_catch_handler_(function () {
             clip: STYLE_TABLE_LOCATION_COLUMN_MAX_CHARS,
           },
           "location",
-          location,
+          record_location,
           (record) =>
-            function_link_cell(record.function_index, location(record)),
+            function_link_cell(record.function_index, record_location(record)),
         ),
         ...call_columns,
         ...home_secondary_columns(
@@ -1170,7 +1173,7 @@ window.try_catch_handler_(function () {
   // Renders the hottest lines strip of a file, or of one function in the file.
   function hottest_lines_render(file_path, function_index) {
     const file = file_table[file_path];
-    const line_share = (line_number, cost) =>
+    const file_line_share = (line_number, cost) =>
       line_share(cost, line_baseline(file_path, line_number), line_number);
     const tape_lines = Object.keys(file.lines)
       .filter(
@@ -1181,7 +1184,7 @@ window.try_catch_handler_(function () {
       .map((line_key) => [+line_key, ranking_value(file.lines[line_key][0])])
       .filter(
         ([line_number, cost]) =>
-          absolute(line_share(line_number, cost)) >=
+          absolute(file_line_share(line_number, cost)) >=
           HEAT_MAP_SOURCE_TICKER_TAPE_ENTRY_LEAST_SHARE,
       )
       .sort((entry_a, entry_b) => absolute(entry_b[1]) - absolute(entry_a[1]))
@@ -1727,9 +1730,10 @@ window.try_catch_handler_(function () {
       ".heat-map-source-information-line-",
     );
     if (!information_line) return;
-    const file_box = file_box();
+    const shown_file_box = file_box();
     const is_box_shown =
-      !!file_box && design_rect(file_box).bottom > design_rect(main_panel).top;
+      !!shown_file_box &&
+      design_rect(shown_file_box).bottom > design_rect(main_panel).top;
     information_line.classList.toggle("empty-", is_box_shown);
   }
   // Opens the file box again if closed and shows the top of the view.
@@ -2179,10 +2183,10 @@ window.try_catch_handler_(function () {
         return;
       }
       if (key_name !== WIDGET_KEY_NAMES.close) return;
-      const file_box = file_box();
-      if (file_box && file_box.contains(key_event.target)) {
+      const shown_file_box = file_box();
+      if (shown_file_box && shown_file_box.contains(key_event.target)) {
         key_event.preventDefault();
-        file_box_close(file_box);
+        file_box_close(shown_file_box);
         return;
       }
       const detail_row = main_panel.querySelector(

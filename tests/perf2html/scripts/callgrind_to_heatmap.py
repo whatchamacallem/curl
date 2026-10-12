@@ -205,7 +205,8 @@ class CallgrindToHeatmap:
         baseline_data: str,
     ) -> None:
         if not baseline_data:
-            sys.exit("error: --diff needs --baseline-data FILE")
+            print("error: --diff needs --baseline-data FILE", file=sys.stderr)
+            sys.exit(2)
         synthesized = callgrind_diff.callers_doc_load(baseline_data)
         totals = model["heatMapTotals"]
         totals["totals"] = callgrind_diff.profile_magnitudes(profile)
@@ -436,10 +437,12 @@ class CallgrindToHeatmap:
             command, check=False, stdout=subprocess.PIPE, text=True
         )
         if completed.returncode != 0:
-            sys.exit(
+            print(
                 "error: cannot list the tracked files a cold tree needs:"
-                f" exit {completed.returncode} from: {' '.join(command)}"
+                f" exit {completed.returncode} from: {' '.join(command)}",
+                file=sys.stderr,
             )
+            sys.exit(completed.returncode)
         return [
             line
             for line in completed.stdout.split("\n")

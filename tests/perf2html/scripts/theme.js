@@ -199,7 +199,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
   );
   const attached_headings = new WeakMap();
   const attached_scrollbars = new WeakMap();
-  const wheel_handlern_events = {
+  const wheel_taken_events = {
     horizontal: new WeakSet(),
     vertical: new WeakSet(),
   };
@@ -875,7 +875,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
     return `${start_tag}${inner_markup}</${tag_name}>`;
   }
   // Makes the one element a piece of markup holds.
-  function render_element(markup) {
+  function render_element_of(markup) {
     const markup_template = document.createElement("template");
     markup_template.innerHTML = markup;
     const made_nodes = markup_template.content.childNodes;
@@ -973,7 +973,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
       );
     const [label_box, search_box, entry_box] = root_element.children;
     const [entry_list, list_scrollbar] = entry_box.children;
-    const no_match_note = render_element(
+    const no_match_note = render_element_of(
       render_element(
         "span",
         {},
@@ -1596,7 +1596,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
     return output_parts.join("\n");
   }
   // Reads the column titles and the rows a table shows into a markdown table.
-  function table_markdown(table_element) {
+  function table_element_markdown(table_element) {
     const title_row = table_element.tHead ? table_element.tHead.rows[0] : null;
     const body_rows = [...table_element.tBodies[0].rows];
     const sample_cells = [...(title_row || body_rows[0]).cells];
@@ -1874,9 +1874,9 @@ window.report_ui_ = window.try_catch_handler_(function () {
     const on_pointer_move = window.try_catch_handler_((move_event) => {
       if (move_event.pointerId !== press_event.pointerId) return;
       if (!is_sliding) {
-        const drag_direction = drag_direction(press_event, move_event);
-        if (!drag_direction) return;
-        if (drag_direction === "vertical") {
+        const move_direction = drag_direction(press_event, move_event);
+        if (!move_direction) return;
+        if (move_direction === "vertical") {
           press_end();
           return;
         }
@@ -2089,8 +2089,8 @@ window.report_ui_ = window.try_catch_handler_(function () {
     const focused_element = key_event.target;
     const row_element = walked_row(focused_element, table_body, row_selector);
     if (!key_name || !row_element) return;
-    const row_links = row_links(row_element);
-    const link_index = row_links.indexOf(focused_element);
+    const focused_row_links = row_links(row_element);
+    const link_index = focused_row_links.indexOf(focused_element);
     if (link_index >= 0 && widget_key_activates(key_name)) {
       link_click_key_handler(key_event);
       return;
@@ -2098,7 +2098,9 @@ window.report_ui_ = window.try_catch_handler_(function () {
     if (focused_element !== row_element && link_index < 0) return;
     if (widget_key_activates(key_name)) {
       key_event.preventDefault();
-      const clicked_element = row_links.length ? row_links[0] : row_element;
+      const clicked_element = focused_row_links.length
+        ? focused_row_links[0]
+        : row_element;
       if (!key_event.repeat) clicked_element.click();
       return;
     }
@@ -2115,10 +2117,10 @@ window.report_ui_ = window.try_catch_handler_(function () {
         break;
       case WIDGET_KEY_NAMES.left:
         next_element =
-          link_index > 0 ? row_links[link_index - 1] : row_element;
+          link_index > 0 ? focused_row_links[link_index - 1] : row_element;
         break;
       case WIDGET_KEY_NAMES.right:
-        next_element = row_links[link_index + 1];
+        next_element = focused_row_links[link_index + 1];
         break;
       case WIDGET_KEY_NAMES.up:
         next_element = walked_row_beside(row_element, row_selector, -1);
@@ -2225,7 +2227,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
   // Makes one pulldown entry element per choice of a label and a value.
   function strip_choice_entries(choices) {
     return choices.map((choice) =>
-      render_element(
+      render_element_of(
         render_element(
           "span",
           { "data-entry-value-": choice.value },
@@ -2319,7 +2321,9 @@ window.report_ui_ = window.try_catch_handler_(function () {
       });
     }
     function table_copy() {
-      return navigator.clipboard.writeText(table_markdown(table_element));
+      return navigator.clipboard.writeText(
+        table_element_markdown(table_element),
+      );
     }
     function heading_render() {
       const count_entries = count_key === null ? [] : [count_entry()];
@@ -2502,10 +2506,10 @@ window.report_ui_ = window.try_catch_handler_(function () {
     const scroll_axis = TEXT_SCROLLBAR_AXES[axis_name];
     const gutter_text = window.ui_strings_.text("str_text_scrollbar_gutter");
     const thumb_text = window.ui_strings_.text("str_text_scrollbar_thumb");
-    const taken_wheel_events = wheel_handlern_events[axis_name];
+    const taken_wheel_events = wheel_taken_events[axis_name];
     let press_state = null;
     function cell_make() {
-      return render_element(
+      return render_element_of(
         render_element("span", {}, render_html_escape(gutter_text)),
       );
     }
@@ -2627,16 +2631,17 @@ window.report_ui_ = window.try_catch_handler_(function () {
       bar_element.classList.add("drag-");
       let grab_offset = 0;
       if (bar_geometry.is_scrolling) {
-        const pointer_cells = pointer_cells(press_event, bar_geometry);
+        const pointer_position = pointer_cells(press_event, bar_geometry);
         const [thumb_first, thumb_end] = thumb_cells(bar_geometry);
-        const pressed_cell = Math.floor(pointer_cells);
+        const pressed_cell = Math.floor(pointer_position);
         const is_thumb_press =
           pressed_cell >= thumb_first && pressed_cell < thumb_end;
-        const centred_position = pointer_cells - bar_geometry.thumb_length / 2;
+        const centred_position =
+          pointer_position - bar_geometry.thumb_length / 2;
         const thumb_position = is_thumb_press
           ? bar_geometry.thumb_position
           : thumb_place(bar_geometry, centred_position);
-        grab_offset = pointer_cells - thumb_position;
+        grab_offset = pointer_position - thumb_position;
       }
       press_state = { grab_offset, press_event };
     });
@@ -2742,7 +2747,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
 
   function drag_scroll_press(press_event, surface_element, target_element) {
     if (press_event.button || press_event.defaultPrevented) return;
-    const slide_cell = slide_cell(press_event);
+    const pressed_slide_cell = slide_cell(press_event);
     const start_scroll_left = target_element.scrollLeft,
       start_scroll_top = target_element.scrollTop;
     let is_dragging = false,
@@ -2750,17 +2755,18 @@ window.report_ui_ = window.try_catch_handler_(function () {
     const on_pointer_move = window.try_catch_handler_((move_event) => {
       if (move_event.pointerId !== press_event.pointerId) return;
       if (!is_dragging) {
-        const drag_direction = drag_direction(press_event, move_event);
-        const is_column_slide = !!slide_cell && drag_direction === "sideways";
+        const move_direction = drag_direction(press_event, move_event);
+        const is_column_slide =
+          !!pressed_slide_cell && move_direction === "sideways";
         if (!move_event.buttons || is_column_slide) {
           press_end();
           return;
         }
-        if (!drag_direction) return;
+        if (!move_direction) return;
         is_dragging = true;
         // A drag along an axis the target cannot scroll moves nothing.
         is_moving_target =
-          drag_direction === "sideways"
+          move_direction === "sideways"
             ? target_element.scrollWidth > target_element.clientWidth
             : target_element.scrollHeight > target_element.clientHeight;
         selection_drop();
@@ -2828,7 +2834,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
   }
 
   window.render_element_ = render_element;
-  window.render_element_of_ = render_element;
+  window.render_element_of_ = render_element_of;
   window.render_html_escape_ = render_html_escape;
   window.render_menu_button_ = render_menu_button;
   window.render_page_emphasis_ = render_page_emphasis;

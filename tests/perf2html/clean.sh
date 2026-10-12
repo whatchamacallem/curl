@@ -18,8 +18,8 @@ set -euo pipefail
 [ $# = 0 ] || { [[ $* =~ ^(-h|--help)$ ]] && usage_show && exit 0; } \
   || { echo "error: unknown option: $*" && usage_show && exit 2; } >&2
 
-_SCRIPT="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
-cd "$(dirname "$_SCRIPT")"
+_SCRIPT="$(readlink -f -- "$0")"
+cd -P -- "$(dirname -- "$_SCRIPT")"
 
 . ./scripts/settings.sh
 

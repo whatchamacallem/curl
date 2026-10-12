@@ -162,9 +162,11 @@ class TraceToSpeedscope:
             command, check=False, stdout=subprocess.PIPE, text=True
         )
         if completed.returncode != 0:
-            sys.exit(
-                f"error: exit {completed.returncode} from: {' '.join(command)}"
+            print(
+                f"error: {completed.returncode} returned {' '.join(command)}",
+                file=sys.stderr,
             )
+            sys.exit(completed.returncode)
         return completed.stdout
 
     def document(

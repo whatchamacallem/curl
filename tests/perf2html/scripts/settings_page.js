@@ -200,23 +200,23 @@ window.try_catch_handler_(function () {
     action_box.addEventListener(
       "click",
       window.try_catch_handler_((click_event) => {
-        const action_button = action_button(click_event);
-        if (action_button) return button_handler(action_button);
+        const activated_button = action_button(click_event);
+        if (activated_button) return button_handler(activated_button);
       }),
     );
     action_box.addEventListener(
       "keydown",
       window.try_catch_handler_((key_event) => {
-        const action_button = action_button(key_event);
+        const activated_button = action_button(key_event);
         if (
-          !action_button ||
+          !activated_button ||
           !window.report_ui_.widget_key.activates(
             window.report_ui_.widget_key.of(key_event),
           )
         )
           return;
         key_event.preventDefault();
-        return button_handler(action_button);
+        return button_handler(activated_button);
       }),
     );
   }

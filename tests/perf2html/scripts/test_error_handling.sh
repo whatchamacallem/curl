@@ -9,7 +9,7 @@ usage_show() {
   cat <<'EOF'
 test_error_handling.sh [--help]
     Runs test_expected_behavior.sh --keep-artifacts --verbose into
-    test_expected_behavior.md, checks a --regenerate run from the
+    test_verbose.md, checks a --regenerate run from the
     recordings kept, runs the failure-mode testcases on copies of its
     reports, then prettier --check over that markdown.
     --help is the only argument.
@@ -21,19 +21,19 @@ set -euo pipefail
 [ $# = 0 ] || { [[ $* =~ ^(-h|--help)$ ]] && usage_show && exit 0; } \
   || { echo "error: unknown option: $*" && usage_show && exit 2; } >&2
 
-_SCRIPT="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
-_SCRIPTS="$(dirname "$_SCRIPT")"
-_DIR_PERF2HTML="$(dirname "$_SCRIPTS")"
-_REPO="$(dirname "$(dirname "$_DIR_PERF2HTML")")"
-_TEST_EXPECTED_BEHAVIOR="$_SCRIPTS/test_expected_behavior.sh"
+_SCRIPT="$(readlink -f -- "$0")"
+_SCRIPT_DIR="$(dirname -- "$_SCRIPT")"
+_DIR_PERF2HTML="$(cd -P -- "$_SCRIPT_DIR/.." && pwd)"
+_REPO="$(cd -P -- "$_DIR_PERF2HTML/../.." && pwd)"
+_TEST_EXPECTED_BEHAVIOR="$_SCRIPT_DIR/test_expected_behavior.sh"
 
-. "$_SCRIPTS/utility.sh"
-. "$_SCRIPTS/test_utility.sh"
+. "$_SCRIPT_DIR/utility.sh"
+. "$_SCRIPT_DIR/test_utility.sh"
 
 _TEST_VERBOSE_DOCUMENT="$_DIR_PERF2HTML/test_verbose.md"
 
 _TEST_ERROR_MARKDOWN_FORMATTER=prettier
-_PRETTIER_CONFIG="$_SCRIPTS/.prettierrc.json"
+_PRETTIER_CONFIG="$_SCRIPT_DIR/.prettierrc.json"
 _TEST_ERROR_MARKDOWN_FORMATTER_INSTALL="npm install -g prettier"
 
 _TEST_ERROR_BASELINE_REPORT="$_DIR_PERF2HTML/perf2html_baseline_report"
@@ -121,7 +121,7 @@ test_error_markdown_formatter_check() {
       "$_TEST_ERROR_MARKDOWN_FORMATTER"
     echo "  $_TEST_ERROR_MARKDOWN_FORMATTER_INSTALL"
   } >&2
-  exit 1
+  exit 127
 }
 
 test_error_markdown_check_run() {
@@ -413,7 +413,7 @@ test_error_batch_tests() {
 test_error_toolchain_tests() {
   local _bin
   _bin="$(test_error_path_without_tool valgrind)"
-  test_failure_expect toolchain_missing_tool 1 -- \
+  test_failure_expect toolchain_missing_tool 127 -- \
     env PATH="$_bin" "$_DIR_PERF2HTML/perf2html.sh" \
     "--report=$_TEST_ERROR_SCRATCH/report_no_valgrind" \
     "--artifacts=$_TEST_ERROR_SCRATCH/artifacts_no_valgrind"
@@ -456,7 +456,7 @@ test_error_expected_behavior_tests() {
   local _bin
   _bin="$(test_error_path_without_tool shfmt)"
   mkdir "$_TEST_ERROR_SCRATCH/home"
-  test_failure_expect test_expected_behavior_missing_tool 1 -- \
+  test_failure_expect test_expected_behavior_missing_tool 127 -- \
     env PATH="$_bin" HOME="$_TEST_ERROR_SCRATCH/home" \
     "$_TEST_EXPECTED_BEHAVIOR" --regenerate
   test_error_relink_test

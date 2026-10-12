@@ -33,8 +33,6 @@ _CALLERS_PAGE = theme.asset_text_read(_ASSET_TEMPLATE_CALLERS_PAGE_NAME)
 
 _DEBUG_SCRIPT = theme.asset_text_read(_ASSET_DEBUG_SCRIPT_NAME)
 
-_EXIT_INPUT_UNREADABLE = 20
-
 _FLAME_GRAPH_VIEW_KEY = _FLAME_GRAPH_VIEW_ENTRY[0]
 
 _HEAT_MAP_VIEW_KEY = _HEAT_MAP_VIEW_ENTRY[0]
@@ -155,9 +153,11 @@ class BuildReport:
 
     def callers_data_load(self, path: str) -> BuildReport.CallersData:
         if not path:
-            sys.exit(
-                "error: --diff needs --callers-data, the callgrind_diff.py"
+            print(
+                "error: --diff needs --callers-data, the callgrind_diff.py",
+                file=sys.stderr,
             )
+            sys.exit(2)
         doc = callgrind_diff.callers_doc_load(path)
         return BuildReport.CallersData(
             callers=doc["callers"],
@@ -190,7 +190,9 @@ class BuildReport:
         function_links = self.function_links(
             test_name, profile, function_names
         )
-        index = {link.name: index for index, link in enumerate(function_links)}
+        index_by_name = {
+            link.name: index for index, link in enumerate(function_links)
+        }
         counter_names = callgrind.counter_names(profile.counters)
         callee_rows: list[BuildReport.CalleeRow] = []
         for callee_name, caller_counts in sorted(
@@ -198,7 +200,7 @@ class BuildReport:
         ):
             callee_rows.append(
                 BuildReport.CalleeRow(
-                    index[callee_name],
+                    index_by_name[callee_name],
                     sum(call_count for _, call_count in caller_counts),
                     self.counter_values(
                         profile.counters,
@@ -206,7 +208,9 @@ class BuildReport:
                         counter_names,
                     ),
                     [
-                        BuildReport.CallerRow(index[caller_name], call_count)
+                        BuildReport.CallerRow(
+                            index_by_name[caller_name], call_count
+                        )
                         for caller_name, call_count in caller_counts
                     ],
                 )
@@ -270,13 +274,15 @@ class BuildReport:
         function_links = self.function_links(
             test_name, profile, function_names
         )
-        index = {link.name: index for index, link in enumerate(function_links)}
+        index_by_name = {
+            link.name: index for index, link in enumerate(function_links)
+        }
         counter_names = callgrind.counter_names(profile.counters)
         callee_rows: list[BuildReport.DiffCalleeRow] = []
         for callee_name, deltas in sorted(callers_data.callers.items()):
             callee_rows.append(
                 BuildReport.DiffCalleeRow(
-                    index[callee_name],
+                    index_by_name[callee_name],
                     sum(delta.count_ for delta in deltas),
                     self.counter_values(
                         profile.counters,
@@ -285,7 +291,7 @@ class BuildReport:
                     ),
                     [
                         BuildReport.DiffCallerRow(
-                            index[delta.function],
+                            index_by_name[delta.function],
                             delta.count_,
                             delta.baseline_count,
                         )
@@ -372,12 +378,10 @@ class BuildReport:
             with open(path, encoding="utf-8", errors="replace") as handle:
                 return handle.read()
         except OSError as error:
-            print(
+            sys.exit(
                 f"error: {os.path.abspath(path)}: {error}: the page cannot"
-                " be built without it",
-                file=sys.stderr,
+                " be built without it"
             )
-            sys.exit(_EXIT_INPUT_UNREADABLE)
 
     # Answers each named function with its heat map address, the names sorted.
     def function_links(
@@ -420,23 +424,25 @@ class BuildReport:
     ) -> str:
         if not pattern:
             return ""
-        path = callgrind.named_paths(pattern)
+        log_paths = callgrind.named_paths(pattern)
         test_names = [test.name for test in tests]
-        for name in path:
+        for name in log_paths:
             if name not in test_names:
-                sys.exit(
+                print(
                     f"error: {flag} names {name}, not one of the overview's"
-                    f" tests: {' '.join(test_names)}"
+                    f" tests: {' '.join(test_names)}",
+                    file=sys.stderr,
                 )
+                sys.exit(2)
         body = "".join(
             theme.render_element(
                 "div",
                 {"class": "overview-collapsed-section-test-name-"},
                 theme.render_html_escape(name),
             )
-            + box(path[name])
+            + box(log_paths[name])
             for name in test_names
-            if name in path
+            if name in log_paths
         )
         return self.blank_line_render() + self.details_section(
             section_id, body
@@ -476,9 +482,11 @@ class BuildReport:
         out: list[BuildReport.ManifestBlock] = []
         for item in items:
             if "=" not in item:
-                sys.exit(
-                    f"error: --header-block expects LABEL=FILE, got {item!r}"
+                print(
+                    f"error: --header-block expects LABEL=FILE, got {item!r}",
+                    file=sys.stderr,
                 )
+                sys.exit(2)
             label, _, path = item.partition("=")
             out.append(
                 BuildReport.ManifestBlock(
@@ -496,7 +504,11 @@ class BuildReport:
         out: list[BuildReport.ManifestRow] = []
         for item in items:
             if "=" not in item:
-                sys.exit(f"error: --header expects LABEL=VALUE, got {item!r}")
+                print(
+                    f"error: --header expects LABEL=VALUE, got {item!r}",
+                    file=sys.stderr,
+                )
+                sys.exit(2)
             label, _, value = item.partition("=")
             out.append(BuildReport.ManifestRow(label.strip(), value))
         return out

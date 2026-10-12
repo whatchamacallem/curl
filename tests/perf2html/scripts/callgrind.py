@@ -666,7 +666,11 @@ def named_paths(pattern: str) -> dict[str, str]:
     directory, name_pattern = os.path.split(pattern)
     head, star, tail = name_pattern.partition("*")
     if not star or "*" in tail or "*" in directory:
-        sys.exit(f"error: {pattern!r} holds no single * in its file name")
+        print(
+            f"error: {pattern!r} holds no single * in its file name",
+            file=sys.stderr,
+        )
+        sys.exit(2)
     path = {
         entry[len(head) : len(entry) - len(tail)]: os.path.join(
             directory, entry
@@ -677,7 +681,8 @@ def named_paths(pattern: str) -> dict[str, str]:
         and entry.endswith(tail)
     }
     if not path:
-        sys.exit(f"error: no file matches {pattern}")
+        print(f"error: no file matches {pattern}", file=sys.stderr)
+        sys.exit(2)
     return dict(sorted(path.items()))
 
 

@@ -303,12 +303,17 @@ class Screenshots:
     def browser_path(self, path: str) -> str:
         if not self.windows_browser_is():
             return path
-        return subprocess.run(
-            ["wslpath", "-w", os.path.realpath(path)],
-            capture_output=True,
-            text=True,
-            check=True,
-        ).stdout.strip()
+        command = ["wslpath", "-w", os.path.realpath(path)]
+        completed = subprocess.run(
+            command, check=False, stdout=subprocess.PIPE, text=True
+        )
+        if completed.returncode != 0:
+            print(
+                f"error: {completed.returncode} returned {' '.join(command)}",
+                file=sys.stderr,
+            )
+            sys.exit(completed.returncode)
+        return completed.stdout.strip()
 
     def copy_shoot(
         self,
@@ -904,7 +909,7 @@ def main() -> int:
     report = os.path.abspath(namespace.report)
     if not os.path.isfile(os.path.join(report, _ENTRY_PAGE)):
         print(f"error: {report} holds no {_ENTRY_PAGE}", file=sys.stderr)
-        return 1
+        return 2
 
     gold_dir = os.path.abspath(namespace.compare_gold)
     if namespace.compare_gold and not os.path.isdir(gold_dir):
@@ -912,15 +917,15 @@ def main() -> int:
             f"error: --compare-gold {gold_dir} is no directory",
             file=sys.stderr,
         )
-        return 1
+        return 2
 
     if namespace.compare_out and not namespace.compare_gold:
         print("error: --compare-out needs --compare-gold", file=sys.stderr)
-        return 1
+        return 2
 
     if namespace.compare_only and not namespace.compare_gold:
         print("error: --compare-only needs --compare-gold", file=sys.stderr)
-        return 1
+        return 2
 
     browser = None if namespace.compare_only else browser_find()
     if browser is None and not namespace.compare_only:
@@ -933,7 +938,7 @@ def main() -> int:
             "       sudo apt-get install -y chromium-browser",
             file=sys.stderr,
         )
-        return 1
+        return 127
 
     perf2html_dir = os.path.join(
         os.path.dirname(os.path.abspath(__file__)), ".."

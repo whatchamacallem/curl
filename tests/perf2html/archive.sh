@@ -16,7 +16,7 @@ if [ "$#" -gt 1 ] || { [ "$#" -eq 1 ] && [ "${1#-}" != "$1" ]; }; then
 	echo "Will create $_ARCHIVE_ in the destination-directory if"
 	echo "provided, otherwise ~/Backups/ if it exists and in ~/ otherwise. Restores all"
 	echo "files if $_SCRIPT_NAME_ is the only file in the directory."
-	exit 1
+	exit 2
 fi
 
 # Check for the .git file.
@@ -49,7 +49,7 @@ else
 fi
 if [ ! -d "$_DEST_DIR_" ]; then
 	echo "Destination directory not found: $_DEST_DIR_" >&2
-	exit 1
+	exit 2
 fi
 
 git fsck

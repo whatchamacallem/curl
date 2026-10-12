@@ -36,14 +36,14 @@ set -euo pipefail
 
 TIMESTAMP="$(date +%s)"
 INVOKED_FROM="$PWD"
-_SCRIPT="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
-PERF2HTML_DIR_="$(dirname "$_SCRIPT")"
-cd "$PERF2HTML_DIR_"
+_SCRIPT="$(readlink -f -- "$0")"
+cd -P -- "$(dirname -- "$_SCRIPT")"
+PERF2HTML_DIR_="$PWD"
 
 . ./scripts/settings.sh
 . ./scripts/utility.sh
 
-_REPO="$(dirname "$(dirname "$PERF2HTML_DIR_")")"
+_REPO="$(cd -P -- ../.. && pwd)"
 
 args_parse() {
   options_parse "$@"
@@ -135,7 +135,7 @@ recorded_reuse() {
 }
 
 compiler_identify() {
-  command -v "$_COMPILER_COMMAND" >/dev/null || error_exit 1 \
+  command -v "$_COMPILER_COMMAND" >/dev/null || error_exit 127 \
     "error: no C compiler $_COMPILER_COMMAND on PATH"
   _COMPILER_NAME="$("$_COMPILER_COMMAND" -dM -E -x c /dev/null | awk '
     { macro[$2] = $3 }

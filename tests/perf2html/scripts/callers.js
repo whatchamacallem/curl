@@ -164,9 +164,9 @@ window.try_catch_handler_(function () {
 
   // Answers where a counter's values sit in each function's row.
   function counter_index(counter_name) {
-    const counter_index = callers_model.counterNames.indexOf(counter_name);
-    if (counter_index < 0) window.throw_exception_("str_error_internal");
-    return counter_index;
+    const found_index = callers_model.counterNames.indexOf(counter_name);
+    if (found_index < 0) window.throw_exception_("str_error_internal");
+    return found_index;
   }
   // Takes the relayed preferences: the calls and counter columns, the curve.
   function preferences_handler() {

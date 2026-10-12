@@ -34,9 +34,9 @@ set -euo pipefail
 
 TIMESTAMP="$(date +%s)"
 INVOKED_FROM="$PWD"
-_SCRIPT="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
-PERF2HTML_DIR_="$(dirname "$_SCRIPT")"
-cd "$PERF2HTML_DIR_"
+_SCRIPT="$(readlink -f -- "$0")"
+cd -P -- "$(dirname -- "$_SCRIPT")"
+PERF2HTML_DIR_="$PWD"
 
 . ./scripts/settings.sh
 . ./scripts/utility.sh

@@ -148,7 +148,7 @@ child_capture() {
   [ "${#statuses[@]}" != 0 ] || return 0
   CHILD_EXIT_CODE="${statuses[0]}"
   for status in "${statuses[@]:1}"; do
-    [ "$status" = 0 ] || error_exit 1 \
+    [ "$status" = 0 ] || error_exit "$status" \
       "error: tee or verbose_filter exited $status behind: $*"
   done
 }
@@ -490,7 +490,7 @@ revision_describe() {
   if [ "$dirty" = 1 ]; then
     revision="$revision-dirty"
   elif [ "$dirty" != 0 ]; then
-    error_exit 1 "error: git diff --quiet exited $dirty in $repository"
+    error_exit "$dirty" "error: git diff --quiet exited $dirty in $repository"
   fi
   echo "$revision"
 }
@@ -644,7 +644,7 @@ toolchain_check() {
       lines+=("$(printf '  %-12s -> %s' "$tool" \
         "$(install_command "$tool")")")
     done
-    error_exit 1 "${lines[@]}"
+    error_exit 127 "${lines[@]}"
   fi
   SPEEDSCOPE_RELEASE="$(dirname \
     "$(dirname "$(readlink -f "$(command -v speedscope)")")")/dist/release"

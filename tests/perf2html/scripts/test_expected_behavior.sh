@@ -23,14 +23,13 @@ EOF
 
 set -euo pipefail
 
-_SCRIPT="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
-_SCRIPTS="$(dirname "$_SCRIPT")"
-
 INVOKED_FROM="$PWD"
-cd "$_SCRIPTS"
+_SCRIPT="$(readlink -f -- "$0")"
+cd -P -- "$(dirname -- "$_SCRIPT")"
+_SCRIPT_DIR="$PWD"
 
 _DIR_PERF2HTML=..
-_DIR_REPO="$(cd ../../.. && pwd)"
+_DIR_REPO="$(cd -P -- ../../.. && pwd)"
 
 _COLUMNS_MAX=79
 _CLANG_FORMAT_CONFIG=../src/.clang-format
@@ -66,7 +65,7 @@ tools_resolve() {
   _CLANG_FORMAT="$(tool_find clang-format)" || _missing+=(clang-format)
   _PRETTIER="$(tool_find prettier)" || _missing+=(prettier)
   _PYRIGHT="$(tool_find pyright)" || _missing+=(pyright)
-  [ "${#_missing[@]}" = 0 ] || error_exit 1 \
+  [ "${#_missing[@]}" = 0 ] || error_exit 127 \
     "error: ${#_missing[@]} tool(s) missing, so nothing is verified:" \
     "${_missing[*]}" \
     "  sudo apt-get install -y shfmt clang-format" \
@@ -278,7 +277,7 @@ test_expected_report_check_run() {
       _args+=(--diff)
     fi
 
-    subprocess_run python3 "$_SCRIPTS/test_report.py" "${_flags[@]}" \
+    subprocess_run python3 "$_SCRIPT_DIR/test_report.py" "${_flags[@]}" \
       "${_args[@]}"
   done
 }
@@ -312,7 +311,7 @@ test_source_scan_run() {
   mapfile -t _flags < <(verbose_flags)
 
   heading_print test_source_scan.py
-  subprocess_run python3 "$_SCRIPTS/test_source_scan.py" "${_flags[@]}" \
+  subprocess_run python3 "$_SCRIPT_DIR/test_source_scan.py" "${_flags[@]}" \
     "${_WHITELISTED_FILES[@]}"
 }
 
@@ -351,7 +350,7 @@ screenshot_command_set() {
     _args+=(--diff)
   fi
 
-  _SCREENSHOT_COMMAND=(python3 "$_SCRIPTS/$_SCREENSHOT_SCRIPT_NAME"
+  _SCREENSHOT_COMMAND=(python3 "$_SCRIPT_DIR/$_SCREENSHOT_SCRIPT_NAME"
     "${_flags[@]}" "${_args[@]}" "$@")
 }
 

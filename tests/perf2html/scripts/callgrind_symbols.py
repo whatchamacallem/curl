@@ -82,12 +82,17 @@ class CallgrindSymbols:
         return self.sections_by_path[path]
 
     def listing(self, options: list[str], path: str) -> str:
-        return subprocess.run(
-            ["objdump", *options, path],
-            check=True,
-            stdout=subprocess.PIPE,
-            text=True,
-        ).stdout
+        command = ["objdump", *options, path]
+        completed = subprocess.run(
+            command, check=False, stdout=subprocess.PIPE, text=True
+        )
+        if completed.returncode != 0:
+            print(
+                f"error: {' '.join(command)} returned {completed.returncode}",
+                file=sys.stderr,
+            )
+            sys.exit(completed.returncode)
+        return completed.stdout
 
     def loaded_objects_read(self, path: str) -> list[LoadedObject]:
         loaded_objects: list[LoadedObject] = []
