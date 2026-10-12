@@ -66,9 +66,7 @@ class SourceScan:
         markup = "|".join(re.escape(mark) for mark in marks)
         return re.compile(r"```[\s\S]*?```|`[^`\n]*`|" + markup)
 
-    def comment_re_of(
-        self, syntax: SourceScan.CommentSyntax
-    ) -> re.Pattern[str]:
+    def comment_re(self, syntax: SourceScan.CommentSyntax) -> re.Pattern[str]:
         alternatives: list[str] = []
         for opening_mark, closing_mark in syntax.block_marks:
             opening = re.escape(opening_mark)
@@ -81,7 +79,7 @@ class SourceScan:
             alternatives.append(rf"^{line_pattern}(?:\n{line_pattern})*")
         return re.compile("|".join(alternatives), re.MULTILINE)
 
-    def comment_syntax_of(self, path: str) -> SourceScan.CommentSyntax:
+    def comment_syntax(self, path: str) -> SourceScan.CommentSyntax:
         for extensions, syntax in _COMMENT_SYNTAX_BY_EXTENSION:
             if path.endswith(extensions):
                 return syntax
@@ -90,7 +88,7 @@ class SourceScan:
             " file; add its extension to _COMMENT_SYNTAX_BY_EXTENSION"
         )
 
-    def comments_of(
+    def comments(
         self, text: str, syntax: SourceScan.CommentSyntax
     ) -> list[SourceScan.CommentSpan]:
         return [
@@ -98,7 +96,7 @@ class SourceScan:
                 text.count("\n", 0, match.start()) + 1,
                 text.count("\n", 0, match.end()) + 1,
             )
-            for match in self.comment_re_of(syntax).finditer(text)
+            for match in self.comment_re(syntax).finditer(text)
         ]
 
     def escape_check(self, path: str, lines: list[str]) -> None:
@@ -143,10 +141,10 @@ class SourceScan:
         comment_cut: re.Pattern[str],
         outside_punctuation: re.Pattern[str],
     ) -> None:
-        syntax = self.comment_syntax_of(path)
-        text = self.file_text_of(path)
+        syntax = self.comment_syntax(path)
+        text = self.file_text(path)
         lines = text.split("\n")
-        comments = self.comments_of(text, syntax)
+        comments = self.comments(text, syntax)
         header_end = self.header_ends_at(lines, comments)
         self.unicode_check(path, lines, non_ascii)
         self.escape_check(path, lines)
@@ -156,7 +154,7 @@ class SourceScan:
             path, lines, comments, header_end, comment_cut, outside_punctuation
         )
 
-    def file_text_of(self, path: str) -> str:
+    def file_text(self, path: str) -> str:
         try:
             with open(path, "rb") as handle:
                 raw_bytes = handle.read()

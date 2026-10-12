@@ -58,14 +58,15 @@ with running the tests and checking the results is recommended.
 
 ## Error Overlay
 
-| File               | Purpose                                                |
-| ------------------ | ------------------------------------------------------ |
-| `debug.js`         | Templates the report's debug script, the manifest      |
-|                    | table the error report shows, then the debug tip.      |
-| `error_overlay.js` | Catches the first error a page throws and replaces the |
-|                    | top page with a plain error report.                    |
-| `utility.js`       | Relays an error report up the frames, reports a failed |
-|                    | load of a link, script or image, and keeps the log.    |
+| File               | Purpose                                               |
+| ------------------ | ----------------------------------------------------- |
+| `debug.js`         | Templates the report's debug script, the manifest     |
+|                    | table the error report shows, then the debug tip.     |
+| `error_overlay.js` | Catches the first error a page throws, relays it up   |
+|                    | the frames and replaces the top page with a plain     |
+|                    | error report.                                         |
+| `utility.js`       | Reports a failed load of a link, script or image, and |
+|                    | keeps the log.                                        |
 
 ## Flame Graph
 

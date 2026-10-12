@@ -129,17 +129,17 @@ class BuildReport:
         name: str
         directory: str
 
-    def address_of(
+    def address(
         self, test_name: str, view_key: str, function_name: str = ""
     ) -> str:
-        hash_text = f"#test={self.address_value_of(test_name)}&view={view_key}"
+        hash_text = f"#test={self.address_value(test_name)}&view={view_key}"
         if function_name:
-            hash_text += f"&function={self.address_value_of(function_name)}"
+            hash_text += f"&function={self.address_value(function_name)}"
         if view_key == _FLAME_GRAPH_VIEW_KEY:
             hash_text += f"&localProfilePath={_FLAME_GRAPH_LOCAL_PROFILE_PATH}"
         return hash_text
 
-    def address_value_of(self, value: str) -> str:
+    def address_value(self, value: str) -> str:
         return urllib.parse.quote(value, safe="/-_.!~*'()")
 
     def baseline_total_load(self, path: str) -> int:
@@ -167,10 +167,10 @@ class BuildReport:
         )
 
     # Lists every called function with its calls, counters and callers.
-    def callers_model_of(
+    def callers_model(
         self, test_name: str, profile: callgrind.Profile
     ) -> BuildReport.CallersModel:
-        caller_counts_of: dict[str, list[tuple[str, int]]] = {}
+        caller_counts_by_callee: dict[str, list[tuple[str, int]]] = {}
         for callee_name, caller_tallies in profile.callers.items():
             count_by_caller: dict[str, int] = {}
             for caller, tally in caller_tallies.items():
@@ -178,44 +178,42 @@ class BuildReport:
                     count_by_caller.get(caller.function, 0) + tally.count
                 )
             if sum(count_by_caller.values()) > 0:
-                caller_counts_of[callee_name] = sorted(
+                caller_counts_by_callee[callee_name] = sorted(
                     count_by_caller.items(),
                     key=lambda pair: (-pair[1], pair[0]),
                 )
-        function_names = set(caller_counts_of)
-        for caller_counts in caller_counts_of.values():
+        function_names = set(caller_counts_by_callee)
+        for caller_counts in caller_counts_by_callee.values():
             function_names.update(
                 caller_name for caller_name, _ in caller_counts
             )
-        function_links = self.function_links_of(
+        function_links = self.function_links(
             test_name, profile, function_names
         )
-        index_of = {
-            link.name: index for index, link in enumerate(function_links)
-        }
+        index = {link.name: index for index, link in enumerate(function_links)}
         counter_names = callgrind.counter_names(profile.counters)
         callee_rows: list[BuildReport.CalleeRow] = []
-        for callee_name, caller_counts in sorted(caller_counts_of.items()):
+        for callee_name, caller_counts in sorted(
+            caller_counts_by_callee.items()
+        ):
             callee_rows.append(
                 BuildReport.CalleeRow(
-                    index_of[callee_name],
+                    index[callee_name],
                     sum(call_count for _, call_count in caller_counts),
-                    self.counter_values_of(
+                    self.counter_values(
                         profile.counters,
                         profile.function_self.get(callee_name, []),
                         counter_names,
                     ),
                     [
-                        BuildReport.CallerRow(
-                            index_of[caller_name], call_count
-                        )
+                        BuildReport.CallerRow(index[caller_name], call_count)
                         for caller_name, call_count in caller_counts
                     ],
                 )
             )
         return {
             "counterNames": counter_names,
-            "counterTotals": self.counter_values_of(
+            "counterTotals": self.counter_values(
                 profile.counters, profile.totals(), counter_names
             ),
             "functions": function_links,
@@ -223,7 +221,7 @@ class BuildReport:
         }
 
     # Answers each named counter's value in the costs.
-    def counter_values_of(
+    def counter_values(
         self,
         counters: Sequence[str],
         costs: callgrind.Costs,
@@ -260,7 +258,7 @@ class BuildReport:
         )
 
     # Lists every function with a changed caller, its changes and baselines.
-    def diff_callers_model_of(
+    def diff_callers_model(
         self,
         test_name: str,
         profile: callgrind.LineProfile,
@@ -269,34 +267,32 @@ class BuildReport:
         function_names = set(callers_data.callers)
         for deltas in callers_data.callers.values():
             function_names.update(delta.function for delta in deltas)
-        function_links = self.function_links_of(
+        function_links = self.function_links(
             test_name, profile, function_names
         )
-        index_of = {
-            link.name: index for index, link in enumerate(function_links)
-        }
+        index = {link.name: index for index, link in enumerate(function_links)}
         counter_names = callgrind.counter_names(profile.counters)
         callee_rows: list[BuildReport.DiffCalleeRow] = []
         for callee_name, deltas in sorted(callers_data.callers.items()):
             callee_rows.append(
                 BuildReport.DiffCalleeRow(
-                    index_of[callee_name],
+                    index[callee_name],
                     sum(delta.count_ for delta in deltas),
-                    self.counter_values_of(
+                    self.counter_values(
                         profile.counters,
                         profile.function_self.get(callee_name, []),
                         counter_names,
                     ),
                     [
                         BuildReport.DiffCallerRow(
-                            index_of[delta.function],
+                            index[delta.function],
                             delta.count_,
                             delta.baseline_count,
                         )
                         for delta in deltas
                     ],
                     callers_data.baseline_calls.get(callee_name),
-                    self.counter_values_of(
+                    self.counter_values(
                         callers_data.counters,
                         callers_data.baseline.get(callee_name, []),
                         counter_names,
@@ -310,10 +306,12 @@ class BuildReport:
         }
 
     def diff_overview(self, args: BuildReport.OverviewArgs) -> None:
-        profile_of = callgrind.named_paths_of(args.diff_profile)
-        tests = self.overview_tests(args, profile_of)
-        rows = self.diff_overview_rows(tests, profile_of)
-        profile = callgrind.profile_load([profile_of[_REPORT_TEST_SUITE_NAME]])
+        profile_paths = callgrind.named_paths(args.diff_profile)
+        tests = self.overview_tests(args, profile_paths)
+        rows = self.diff_overview_rows(tests, profile_paths)
+        profile = callgrind.profile_load(
+            [profile_paths[_REPORT_TEST_SUITE_NAME]]
+        )
         self.overview_page(
             args,
             tests,
@@ -326,11 +324,11 @@ class BuildReport:
     def diff_overview_rows(
         self,
         tests: Sequence[BuildReport.TestDirectory],
-        profile_of: Mapping[str, str],
+        profile_paths: Mapping[str, str],
     ) -> list[list[theme.CellOrText]]:
         rows: list[list[theme.CellOrText]] = []
         for test in tests:
-            profile_path = profile_of[test.name]
+            profile_path = profile_paths[test.name]
             callers = profile_path + _DIFF_CALLER_COUNTS_FILE_SUFFIX
             link = self.test_link_cell(test.name)
             profile = callgrind.profile_load([profile_path])
@@ -341,9 +339,7 @@ class BuildReport:
                 for costs in profile.function_self.values()
                 if profile.value(costs, _RANKING_COUNTER_NAME) != 0
             )
-            share = theme.diff_share_of(
-                delta, self.baseline_total_load(callers)
-            )
+            share = theme.diff_share(delta, self.baseline_total_load(callers))
             rows.append(
                 [
                     link,
@@ -360,7 +356,7 @@ class BuildReport:
         self.report_page(
             args,
             True,
-            self.diff_callers_model_of(args.test, profile, callers_data),
+            self.diff_callers_model(args.test, profile, callers_data),
         )
 
     def entry_link(
@@ -369,7 +365,7 @@ class BuildReport:
         entry = profile.function_entry.get(function)
         if entry is None or not entry.line:
             return ""
-        return self.address_of(test_name, _HEAT_MAP_VIEW_KEY, function)
+        return self.address(test_name, _HEAT_MAP_VIEW_KEY, function)
 
     def file_read(self, path: str) -> str:
         try:
@@ -384,7 +380,7 @@ class BuildReport:
             sys.exit(_EXIT_INPUT_UNREADABLE)
 
     # Answers each named function with its heat map address, the names sorted.
-    def function_links_of(
+    def function_links(
         self,
         test_name: str,
         profile: callgrind.LineProfile,
@@ -420,13 +416,13 @@ class BuildReport:
         tests: Sequence[BuildReport.TestDirectory],
         pattern: str,
         flag: str,
-        box_of: Callable[[str], str],
+        box: Callable[[str], str],
     ) -> str:
         if not pattern:
             return ""
-        path_of = callgrind.named_paths_of(pattern)
+        path = callgrind.named_paths(pattern)
         test_names = [test.name for test in tests]
-        for name in path_of:
+        for name in path:
             if name not in test_names:
                 sys.exit(
                     f"error: {flag} names {name}, not one of the overview's"
@@ -438,9 +434,9 @@ class BuildReport:
                 {"class": "overview-collapsed-section-test-name-"},
                 theme.render_html_escape(name),
             )
-            + box_of(path_of[name])
+            + box(path[name])
             for name in test_names
-            if name in path_of
+            if name in path
         )
         return self.blank_line_render() + self.details_section(
             section_id, body
@@ -560,13 +556,13 @@ class BuildReport:
         )
 
     def overview(self, args: BuildReport.OverviewArgs) -> None:
-        perf_log_of = callgrind.named_paths_of(args.perf_log)
-        tests = self.overview_tests(args, perf_log_of)
+        perf_log = callgrind.named_paths(args.perf_log)
+        tests = self.overview_tests(args, perf_log)
         keys: list[str] = []
         numbers: dict[str, dict[str, str]] = {}
         for test in tests:
             values: dict[str, str] = {}
-            for line in self.file_read(perf_log_of[test.name]).splitlines():
+            for line in self.file_read(perf_log[test.name]).splitlines():
                 match = re.match(r"^([A-Za-z][^:]{0,30}):\s+(.+?)\s*$", line)
                 if match:
                     values[match.group(1)] = self.value_humanize(
@@ -581,7 +577,7 @@ class BuildReport:
             for test in tests
         ]
         profile = callgrind.profile_load(
-            list(callgrind.named_paths_of(args.profile).values())
+            list(callgrind.named_paths(args.profile).values())
         )
         self.overview_page(
             args,
@@ -749,9 +745,7 @@ class BuildReport:
 
     def test(self, args: BuildReport.TestArgs) -> None:
         profile = callgrind.profile_load(args.callgrind_file)
-        self.report_page(
-            args, False, self.callers_model_of(args.test, profile)
-        )
+        self.report_page(args, False, self.callers_model(args.test, profile))
 
     # Writes the rows a page script draws as the table the key names.
     def table_data_render(
@@ -768,7 +762,7 @@ class BuildReport:
         )
 
     def test_link_cell(self, name: str) -> theme.Cell:
-        return theme.Cell(name, href=self.address_of(name, _HEAT_MAP_VIEW_KEY))
+        return theme.Cell(name, href=self.address(name, _HEAT_MAP_VIEW_KEY))
 
     def text_scrollbar_render(self, axis_name: str) -> str:
         return theme.render_element(

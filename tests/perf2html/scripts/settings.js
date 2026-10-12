@@ -62,7 +62,7 @@ window.try_catch_handler_(function () {
       document.documentElement.style.setProperty(name, value);
   }
   // Answers whether settings debugging is on, the top page's query deciding.
-  function settings_debug_enabled_of(written_object) {
+  function settings_debug_enabled(written_object) {
     const query_values = written_object.SETTINGS_DEBUG_QUERY_VALUES;
     const query_value = new URLSearchParams(location.search).get(
       written_object.SETTINGS_DEBUG_QUERY_KEY_NAME,
@@ -82,7 +82,7 @@ window.try_catch_handler_(function () {
     return query_value === query_values.enabled;
   }
   // Answers the settings the top hash applies, an empty object for none.
-  function settings_applied_values_of(written_object) {
+  function settings_applied_values(written_object) {
     const key_prefix = written_object.SETTINGS_DEBUG_HASH_KEY_NAME + "=";
     const applied_part = location.hash
       .slice(1)
@@ -114,9 +114,9 @@ window.try_catch_handler_(function () {
   // Installs the window settings object, under debug with the hash's applied.
   function settings_install(written_object) {
     if (!is_framed) {
-      const debug_enabled = settings_debug_enabled_of(written_object);
+      const debug_enabled = settings_debug_enabled(written_object);
       if (debug_enabled) {
-        applied_values = settings_applied_values_of(written_object);
+        applied_values = settings_applied_values(written_object);
         Object.assign(written_object, applied_values);
       }
       written_object.SETTINGS_DEBUG_ENABLED = debug_enabled;
@@ -151,7 +151,7 @@ window.try_catch_handler_(function () {
     }
   }
   // Answers a framed page asking for the window settings object.
-  function settings_request_take(browser_event) {
+  function settings_request_handler(browser_event) {
     const payload = browser_event.data;
     if (payload && payload.report_ui === SETTINGS_REQUEST_MESSAGE_NAME)
       browser_event.source.postMessage(
@@ -160,7 +160,7 @@ window.try_catch_handler_(function () {
       );
   }
   // Installs the relayed settings object, then loads the held scripts.
-  function settings_relay_take(browser_event) {
+  function settings_relay_handler(browser_event) {
     const payload = browser_event.data;
     if (
       browser_event.source !== window.parent ||
@@ -186,12 +186,12 @@ window.try_catch_handler_(function () {
   window.settings_names_ = settings_names_;
   window.addEventListener(
     "message",
-    window.try_catch_handler_(settings_request_take),
+    window.try_catch_handler_(settings_request_handler),
   );
   if (is_framed) {
     window.addEventListener(
       "message",
-      window.try_catch_handler_(settings_relay_take),
+      window.try_catch_handler_(settings_relay_handler),
     );
     window.parent.postMessage(
       { report_ui: SETTINGS_REQUEST_MESSAGE_NAME },

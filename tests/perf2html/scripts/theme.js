@@ -153,8 +153,8 @@ window.report_ui_ = window.try_catch_handler_(function () {
   ).length;
   const SMALLEST_PRINTED_PERCENT = 1 / 10 ** NUMBER_FRACTION_DIGITS;
   const STRIP_ENTRY_KIND_NAMES = ["action", "link", "pulldown", "text"];
-  const STRIP_GAP_TEXT = window.ui_strings_.text_of("str_strip_gap");
-  const STRIP_STATUS_SEPARATOR_TEXT = window.ui_strings_.text_of(
+  const STRIP_GAP_TEXT = window.ui_strings_.text("str_strip_gap");
+  const STRIP_STATUS_SEPARATOR_TEXT = window.ui_strings_.text(
     "str_menu_status_separator",
   );
   const TABLE_HEADING_COUNT_BOX_WIDTH_CHARS =
@@ -199,7 +199,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
   );
   const attached_headings = new WeakMap();
   const attached_scrollbars = new WeakMap();
-  const wheel_taken_events = {
+  const wheel_handlern_events = {
     horizontal: new WeakSet(),
     vertical: new WeakSet(),
   };
@@ -266,7 +266,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
     );
   }
 
-  function design_scale_half_of(is_lower_half) {
+  function design_scale_half(is_lower_half) {
     return is_lower_half
       ? {
           from_multiple: STYLE_DESIGN_SCALE_SMALLEST_MULTIPLE,
@@ -281,9 +281,9 @@ window.report_ui_ = window.try_catch_handler_(function () {
           travel_width: 1 - DESIGN_SCALE_LOWER_TRAVEL_SHARE,
         };
   }
-  function design_scale_multiple_of(scale_stop) {
+  function design_scale_multiple(scale_stop) {
     const travel_fraction = scale_stop / DESIGN_SCALE_LAST_STOP;
-    const half = design_scale_half_of(
+    const half = design_scale_half(
       travel_fraction < DESIGN_SCALE_LOWER_TRAVEL_SHARE,
     );
     const half_fraction =
@@ -307,15 +307,15 @@ window.report_ui_ = window.try_catch_handler_(function () {
     }
   }
   function design_scale_stop_nearest(wanted_multiple) {
-    const distance_of = (scale_stop) =>
-      Math.abs(design_scale_multiple_of(scale_stop) - wanted_multiple);
+    const distance = (scale_stop) =>
+      Math.abs(design_scale_multiple(scale_stop) - wanted_multiple);
     let nearest_stop = 0;
     for (
       let scale_stop = 1;
       scale_stop <= DESIGN_SCALE_LAST_STOP;
       scale_stop++
     ) {
-      if (distance_of(scale_stop) < distance_of(nearest_stop))
+      if (distance(scale_stop) < distance(nearest_stop))
         nearest_stop = scale_stop;
     }
     return nearest_stop;
@@ -341,7 +341,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
     design_scale_stop = shown_stop;
     view_storage.value_write(
       STORAGE_KEY_VIEW_SCALE,
-      scale_stop === null ? null : design_scale_multiple_of(scale_stop),
+      scale_stop === null ? null : design_scale_multiple(scale_stop),
     );
     design_scale_settle();
   }
@@ -360,7 +360,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
       String(DESIGN_CHARACTER_WIDTH_PX / measured_px),
     );
   }
-  function design_scale_root_zoom_of() {
+  function design_scale_root_zoom() {
     if (is_framed) return 1;
     const window_width_px = Math.max(
       document.documentElement.clientWidth,
@@ -370,10 +370,8 @@ window.report_ui_ = window.try_catch_handler_(function () {
   }
   function design_scale_apply() {
     const root_element = document.documentElement;
-    const root_zoom = design_scale_root_zoom_of();
-    const multiple = is_scaled
-      ? design_scale_multiple_of(design_scale_stop)
-      : 1;
+    const root_zoom = design_scale_root_zoom();
+    const multiple = is_scaled ? design_scale_multiple(design_scale_stop) : 1;
     const wanted = root_zoom * multiple;
     if (!isFinite(wanted) || !(wanted > 0)) {
       window.throw_exception_("str_error_internal");
@@ -400,7 +398,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
   function dark_mode_enabled_now_() {
     return dark_mode_is_enabled;
   }
-  function dark_mode_state_of(is_enabled) {
+  function dark_mode_state(is_enabled) {
     return is_enabled ? DARK_MODE_ENABLED_VALUE : DARK_MODE_DISABLED_VALUE;
   }
   // Shows a dark mode on the page, storing nothing.
@@ -408,14 +406,14 @@ window.report_ui_ = window.try_catch_handler_(function () {
     dark_mode_is_enabled = is_enabled;
     document.documentElement.setAttribute(
       DARK_MODE_ATTRIBUTE_NAME,
-      dark_mode_state_of(is_enabled),
+      dark_mode_state(is_enabled),
     );
   }
   // Stores the dark mode the user chose, null the default, then shows it.
   function dark_mode_set_(is_enabled) {
     view_storage.value_write(
       STORAGE_KEY_VIEW_DARK_MODE,
-      is_enabled === null ? null : dark_mode_state_of(is_enabled),
+      is_enabled === null ? null : dark_mode_state(is_enabled),
     );
     dark_mode_show(
       is_enabled === null ? DARK_MODE_ENABLED_DEFAULT : is_enabled,
@@ -475,7 +473,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
     if (!number) return "";
     return (number < 0 ? "-" : "") + human_text(Math.abs(number));
   }
-  function diff_share_of(delta, baseline) {
+  function diff_share(delta, baseline) {
     const baseline_count = baseline === null ? 0 : baseline;
     if (delta < -baseline_count) {
       window.throw_exception_("str_error_internal");
@@ -614,7 +612,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
       parsed_address.line = Number(parsed_address.line);
     return Object.freeze(parsed_address);
   }
-  function address_parts_hash_of(full_address) {
+  function address_parts_hash(full_address) {
     const hash_parts = [];
     for (const key_name of ADDRESS_KEY_NAMES) {
       if (full_address[key_name] == null) continue;
@@ -625,8 +623,8 @@ window.report_ui_ = window.try_catch_handler_(function () {
     return "#" + hash_parts.join("&");
   }
   // Writes a hash, carrying the settings the page's own hash applies.
-  function address_hash_of(partial_address) {
-    return address_parts_hash_of({
+  function address_hash(partial_address) {
+    return address_parts_hash({
       ...partial_address,
       [SETTINGS_DEBUG_HASH_KEY_NAME]:
         partial_address[SETTINGS_DEBUG_HASH_KEY_NAME] ??
@@ -634,14 +632,14 @@ window.report_ui_ = window.try_catch_handler_(function () {
     });
   }
   // Writes a hash of the address with no applied settings, carrying none.
-  function address_settings_cleared_hash_of(partial_address) {
-    return address_parts_hash_of({
+  function address_settings_cleared_hash(partial_address) {
+    return address_parts_hash({
       ...partial_address,
       [SETTINGS_DEBUG_HASH_KEY_NAME]: null,
     });
   }
-  function address_home_hash_of(test_name, view_key) {
-    return address_hash_of({
+  function address_home_hash(test_name, view_key) {
+    return address_hash({
       test: test_name,
       view: view_key,
       localProfilePath:
@@ -660,13 +658,13 @@ window.report_ui_ = window.try_catch_handler_(function () {
       !click_event.shiftKey
     );
   }
-  function address_link_hash_of(click_event) {
+  function address_link_hash(click_event) {
     const link_element = click_event.target.closest('a[href^="#"]');
     return link_element && !link_element.target && click_is_plain(click_event)
-      ? address_hash_of(address_of_hash(link_element.getAttribute("href")))
+      ? address_hash(address_of_hash(link_element.getAttribute("href")))
       : "";
   }
-  function address_page_href_of(checked_address) {
+  function address_page_href(checked_address) {
     if (checked_address.view === CALLERS_VIEW_KEY)
       return (
         CALLERS_PAGE_DIR_NAME +
@@ -683,14 +681,14 @@ window.report_ui_ = window.try_catch_handler_(function () {
     window.throw_exception_("str_error_internal");
   }
   // Answers the link to the top page at a hash, the address the menu shows.
-  function address_top_href_of(hash) {
+  function address_top_href(hash) {
     return REPORT_TOP_PAGE_HREF + hash;
   }
   function address_request_send(hash) {
-    const carried_hash = address_hash_of(address_of_hash(hash));
+    const carried_hash = address_hash(address_of_hash(hash));
     if (is_framed)
       parent_post({ report_ui: "address_request", hash: carried_hash });
-    else location.assign(address_top_href_of(carried_hash));
+    else location.assign(address_top_href(carried_hash));
   }
   function settings_apply_send(setting_name, setting_value) {
     parent_post({ report_ui: "settings_apply", setting_name, setting_value });
@@ -704,7 +702,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
     parent_post({ report_ui: "load_log_history_set", line_count });
   }
   // Answers the path of a report file from the report root, which a log names.
-  function address_path_of(file_href) {
+  function address_path(file_href) {
     const file_url = new URL(file_href);
     file_url.hash = "";
     file_url.search = "";
@@ -713,7 +711,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
     return file_url.href.slice(REPORT_ROOT_HREF.length);
   }
   // Answers the href of a report file from its path from the report root.
-  function address_file_href_of(report_path) {
+  function address_file_href(report_path) {
     return new URL(report_path, REPORT_ROOT_HREF).href;
   }
 
@@ -727,7 +725,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
   function pulldown_key_is_command(key_name) {
     return PULLDOWN_COMMAND_KEY_NAMES.includes(key_name);
   }
-  function pulldown_key_of(key_event) {
+  function pulldown_key(key_event) {
     const key_name = key_event.key;
     const is_plain =
       !key_event.defaultPrevented &&
@@ -761,7 +759,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
   function view_key_tests_pulldown_closed() {
     tests_pulldown_is_open = false;
   }
-  function widget_key_of(key_event) {
+  function widget_key(key_event) {
     const is_plain =
       !key_event.defaultPrevented &&
       !key_event.isComposing &&
@@ -778,9 +776,9 @@ window.report_ui_ = window.try_catch_handler_(function () {
       key_name === WIDGET_KEY_NAMES.click
     );
   }
-  function link_click_key_take(key_event) {
+  function link_click_key_handler(key_event) {
     if (
-      widget_key_of(key_event) !== WIDGET_KEY_NAMES.click ||
+      widget_key(key_event) !== WIDGET_KEY_NAMES.click ||
       !key_event.target.matches("a[href]")
     )
       return;
@@ -793,7 +791,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
       document.addEventListener(
         "click",
         window.try_catch_handler_((click_event) => {
-          const link_hash = address_link_hash_of(click_event);
+          const link_hash = address_link_hash(click_event);
           if (!link_hash) return;
           click_event.preventDefault();
           address_request_send(link_hash);
@@ -802,8 +800,8 @@ window.report_ui_ = window.try_catch_handler_(function () {
       document.addEventListener(
         "keydown",
         window.try_catch_handler_((key_event) => {
-          link_click_key_take(key_event);
-          const key_name = pulldown_key_of(key_event);
+          link_click_key_handler(key_event);
+          const key_name = pulldown_key(key_event);
           if (key_name && view_key_forward(key_name, key_event.repeat))
             key_event.preventDefault();
         }),
@@ -813,7 +811,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
       const message_name = message_data.report_ui;
       if (message_name === "settings_relay") return;
       // The view takes what a message carries before the message acts.
-      if (view_options.relay_take) view_options.relay_take(message_data);
+      if (view_options.relay_handler) view_options.relay_handler(message_data);
       if (message_name === "layout_reset") {
         layout_reset();
         dark_mode_show(message_data.dark_mode_enabled);
@@ -877,7 +875,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
     return `${start_tag}${inner_markup}</${tag_name}>`;
   }
   // Makes the one element a piece of markup holds.
-  function render_element_of(markup) {
+  function render_element(markup) {
     const markup_template = document.createElement("template");
     markup_template.innerHTML = markup;
     const made_nodes = markup_template.content.childNodes;
@@ -933,7 +931,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
     );
   }
 
-  function pulldown_pattern_of(search_text) {
+  function pulldown_pattern(search_text) {
     try {
       return new RegExp(search_text, "i");
     } catch (pattern_error) {
@@ -975,11 +973,11 @@ window.report_ui_ = window.try_catch_handler_(function () {
       );
     const [label_box, search_box, entry_box] = root_element.children;
     const [entry_list, list_scrollbar] = entry_box.children;
-    const no_match_note = render_element_of(
+    const no_match_note = render_element(
       render_element(
         "span",
         {},
-        render_html_escape(window.ui_strings_.text_of("str_no_match")),
+        render_html_escape(window.ui_strings_.text("str_no_match")),
       ),
     );
     let entries = [],
@@ -1010,7 +1008,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
       );
       matches[highlight_index].scrollIntoView({ block: "nearest" });
     }
-    function search_parts_of(typed_text) {
+    function search_parts(typed_text) {
       const line_match =
         pulldown_options.reads_line_number &&
         new RegExp(MENU_PULLDOWN_LINE_NUMBER_PATTERN).exec(typed_text);
@@ -1018,16 +1016,16 @@ window.report_ui_ = window.try_catch_handler_(function () {
     }
     function entries_offer(line_number) {
       entries_line_number = line_number;
-      entries = pulldown_options.entries_of(line_number);
+      entries = pulldown_options.entries(line_number);
       for (const entry_element of entries) {
         entry_element.setAttribute("role", "option");
         entry_element.tabIndex = -1;
       }
     }
     function entries_filter() {
-      const [filter_text, line_number] = search_parts_of(search_text);
+      const [filter_text, line_number] = search_parts(search_text);
       if (line_number !== entries_line_number) entries_offer(line_number);
-      const search_pattern = pulldown_pattern_of(filter_text);
+      const search_pattern = pulldown_pattern(filter_text);
       matches = entries.filter(
         (entry_element) =>
           !!search_pattern && search_pattern.test(entry_element.textContent),
@@ -1036,15 +1034,14 @@ window.report_ui_ = window.try_catch_handler_(function () {
         ...(matches.length ? matches : [no_match_note]),
       );
       search_box.textContent =
-        search_text || window.ui_strings_.text_of("str_pulldown_placeholder");
+        search_text || window.ui_strings_.text("str_pulldown_placeholder");
       entry_list.scrollTop = 0;
       highlight_set(0);
       list_scrollbar_handle.refresh();
     }
     // Writes each offered entry's label again, the list kept as it stands.
     function entries_relabel() {
-      const relabelled_entries =
-        pulldown_options.entries_of(entries_line_number);
+      const relabelled_entries = pulldown_options.entries(entries_line_number);
       if (relabelled_entries.length !== entries.length)
         window.throw_exception_("str_error_internal");
       entries.forEach((entry_element, entry_index) => {
@@ -1065,7 +1062,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
       label_box.hidden = true;
       search_box.hidden = false;
       entry_box.hidden = false;
-      entries_offer(search_parts_of(search_text)[1]);
+      entries_offer(search_parts(search_text)[1]);
       entries_filter();
       root_focus();
     }
@@ -1088,7 +1085,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
       entries_filter();
       root_focus();
     }
-    function pulldown_key_take(key_name) {
+    function pulldown_key_handler(key_name) {
       if (!is_open) {
         if (!pulldown_opening_key_is(key_name)) return false;
         pulldown_open(key_name);
@@ -1129,12 +1126,11 @@ window.report_ui_ = window.try_catch_handler_(function () {
     root_element.addEventListener(
       "keydown",
       window.try_catch_handler_((key_event) => {
-        const key_name =
-          widget_key_of(key_event) || pulldown_key_of(key_event);
+        const key_name = widget_key(key_event) || pulldown_key(key_event);
         if (!is_open && widget_key_activates(key_name)) {
           key_event.preventDefault();
           if (!key_event.repeat) pulldown_open("");
-        } else if (key_name && pulldown_key_take(key_name))
+        } else if (key_name && pulldown_key_handler(key_name))
           key_event.preventDefault();
       }),
     );
@@ -1182,7 +1178,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
     return {
       close: pulldown_close,
       is_open: () => is_open,
-      key_take: pulldown_key_take,
+      key_handler: pulldown_key_handler,
       label_set: (label_text) => {
         label_box.textContent = label_text;
       },
@@ -1190,25 +1186,25 @@ window.report_ui_ = window.try_catch_handler_(function () {
     };
   }
 
-  function strip_entry_of(entries, entry_name) {
+  function strip_entry(entries, entry_name) {
     const found_entry = entries.find(
       (candidate_entry) => candidate_entry.name === entry_name,
     );
     if (!found_entry) window.throw_exception_("str_error_internal");
     return found_entry;
   }
-  function strip_number_text_of(numbered_index) {
+  function strip_number_text(numbered_index) {
     return String((numbered_index + 1) % MENU_DIGIT_KEY_COUNT);
   }
   // Answers the text label of an entry as the strip draws it, number included.
-  function strip_label_text_of(entries, entry_name) {
-    const entry = strip_entry_of(entries, entry_name);
+  function strip_label_text(entries, entry_name) {
+    const entry = strip_entry(entries, entry_name);
     if (!entry.is_numbered) return entry.label;
     const numbered_entries = entries.filter(
       (other_entry) => other_entry.is_numbered,
     );
     return window.ui_strings_.text_fill("str_menu_button", {
-      number: strip_number_text_of(numbered_entries.indexOf(entry)),
+      number: strip_number_text(numbered_entries.indexOf(entry)),
       label: entry.label,
     });
   }
@@ -1336,7 +1332,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
         entry_cell.querySelector(":scope > a").click();
       else entry_cell.click();
     }
-    function entry_click_take(click_event) {
+    function entry_click_handler(click_event) {
       const entry_cell = click_event.target.closest("td.menu-button-");
       if (!entry_cell || entry_cell.parentElement !== strip_row) return;
       const entry = entries_by_name.get(
@@ -1348,11 +1344,11 @@ window.report_ui_ = window.try_catch_handler_(function () {
       if (!entry_link.contains(click_event.target)) entry_link.click();
       else if (entry.on_activate) entry.on_activate(click_event);
     }
-    function entry_key_take(key_event) {
+    function entry_key_handler(key_event) {
       const entry_cell = key_event.target;
       if (
         entry_cell.parentElement !== strip_row ||
-        !widget_key_activates(widget_key_of(key_event))
+        !widget_key_activates(widget_key(key_event))
       )
         return;
       const entry = entries_by_name.get(
@@ -1370,9 +1366,9 @@ window.report_ui_ = window.try_catch_handler_(function () {
         MENU_FLASH_DURATION_MS,
       );
     }
-    function strip_key_take(key_name, is_repeat) {
+    function strip_key_handler(key_name, is_repeat) {
       for (const pulldown of pulldowns_by_name.values()) {
-        if (pulldown.is_open()) return pulldown.key_take(key_name);
+        if (pulldown.is_open()) return pulldown.key_handler(key_name);
       }
       if (!digit_entries.has(key_name)) return false;
       if (!is_repeat) entry_activate(digit_entries.get(key_name));
@@ -1406,7 +1402,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
       );
       pulldowns_by_name
         .get(entry_name)
-        .label_set(strip_label_text_of(labelled_entries, entry_name));
+        .label_set(strip_label_text(labelled_entries, entry_name));
     }
     function strip_widget_text_set(entry_name, widget_text) {
       const widget_box = strip_cell_named(entry_name).querySelector(
@@ -1424,7 +1420,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
       if (!entry.is_available) continue;
       const label_markup =
         entry.label_markup === null
-          ? render_html_escape(strip_label_text_of(entries, entry.name))
+          ? render_html_escape(strip_label_text(entries, entry.name))
           : entry.label_markup;
       if (row_markups.length) row_markups.push(strip_gap_cell_render());
       row_markups.push(strip_cell_render(entry, label_markup));
@@ -1442,7 +1438,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
       : [button_row_markup];
     numbered_entries.forEach((entry, numbered_index) => {
       if (entry.is_available && !entry.is_widget)
-        digit_entries.set(strip_number_text_of(numbered_index), entry);
+        digit_entries.set(strip_number_text(numbered_index), entry);
     });
     if (strip_element.contains(document.activeElement))
       document.activeElement.blur();
@@ -1470,11 +1466,11 @@ window.report_ui_ = window.try_catch_handler_(function () {
     }
     strip_table.addEventListener(
       "click",
-      window.try_catch_handler_(entry_click_take),
+      window.try_catch_handler_(entry_click_handler),
     );
     strip_table.addEventListener(
       "keydown",
-      window.try_catch_handler_(entry_key_take),
+      window.try_catch_handler_(entry_key_handler),
     );
     for (const entry of entries) {
       if (entry.kind !== "pulldown" || !entry.is_available) continue;
@@ -1482,7 +1478,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
         cells_by_name.get(entry.name),
         entry.pulldown_options,
       );
-      pulldown.label_set(strip_label_text_of(entries, entry.name));
+      pulldown.label_set(strip_label_text(entries, entry.name));
       pulldowns_by_name.set(entry.name, pulldown);
     }
     rendered_strips.set(strip_element, {
@@ -1490,7 +1486,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
     });
     return {
       flash: strip_flash,
-      key_take: strip_key_take,
+      key_handler: strip_key_handler,
       numbered_entry_focus: strip_numbered_entry_focus,
       pulldown_label_set: strip_pulldown_label_set,
       pulldown_open: strip_pulldown_open,
@@ -1600,7 +1596,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
     return output_parts.join("\n");
   }
   // Reads the column titles and the rows a table shows into a markdown table.
-  function table_markdown_of(table_element) {
+  function table_markdown(table_element) {
     const title_row = table_element.tHead ? table_element.tHead.rows[0] : null;
     const body_rows = [...table_element.tBodies[0].rows];
     const sample_cells = [...(title_row || body_rows[0]).cells];
@@ -1746,13 +1742,13 @@ window.report_ui_ = window.try_catch_handler_(function () {
     return render_element("div", { class: "table-box-" }, table_markup);
   }
   // Pairs a table column with how its cells are written and its rows sorted.
-  function table_sort_column_of(column, sort_name, sort_value_of, cell_of) {
-    return { column, sort_name, sort_value_of, cell_of };
+  function table_sort_column(column, sort_name, sort_value, cell) {
+    return { column, sort_name, sort_value, cell };
   }
   // Answers records ordered by a column, numbers largest first, text A to Z.
-  function table_sort_records_of(records, sort_column) {
+  function table_sort_records(records, sort_column) {
     const keyed_records = records.map((record) => [
-      sort_column.sort_value_of(record),
+      sort_column.sort_value(record),
       record,
     ]);
     keyed_records.sort(
@@ -1765,7 +1761,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
     return keyed_records.map((keyed_record) => keyed_record[1]);
   }
   // Writes the title of a sorted table, its row count a span, by its sort.
-  function table_sort_heading_markup_of(
+  function table_sort_heading_markup(
     string_id,
     row_count,
     sort_column,
@@ -1815,7 +1811,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
     event_target[listener_method]("pointercancel", on_pointer_release);
     event_target[listener_method]("lostpointercapture", on_pointer_release);
   }
-  function column_elements_of(table_element) {
+  function column_elements(table_element) {
     return [...table_element.querySelectorAll(":scope > colgroup > col")];
   }
   const default_prevent = window.try_catch_handler_((any_event) => {
@@ -1837,7 +1833,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
     );
   }
   // Answers sideways or vertical once past the drag direction threshold.
-  function drag_direction_of(press_event, move_event) {
+  function drag_direction(press_event, move_event) {
     const sideways_travel_px = design_px(
       move_event.clientX - press_event.clientX,
     );
@@ -1851,7 +1847,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
       : "sideways";
   }
   // Answers the cell a column slide takes if this press moves sideways.
-  function slide_cell_of(press_event) {
+  function slide_cell(press_event) {
     const pressed_cell = press_event.target.closest("td, th");
     const is_slidable =
       !!pressed_cell &&
@@ -1860,7 +1856,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
     return is_slidable ? pressed_cell : null;
   }
   function table_slide_press(press_event, table_element) {
-    const pressed_cell = slide_cell_of(press_event);
+    const pressed_cell = slide_cell(press_event);
     if (
       press_event.button ||
       !pressed_cell ||
@@ -1868,7 +1864,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
     )
       return;
     const column_index = pressed_cell.cellIndex;
-    const left_column = column_elements_of(table_element)[column_index - 1];
+    const left_column = column_elements(table_element)[column_index - 1];
     const floor_text = left_column.getAttribute("data-min-");
     const start_width_px = design_px(
       pressed_cell.previousElementSibling.getBoundingClientRect().width,
@@ -1878,7 +1874,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
     const on_pointer_move = window.try_catch_handler_((move_event) => {
       if (move_event.pointerId !== press_event.pointerId) return;
       if (!is_sliding) {
-        const drag_direction = drag_direction_of(press_event, move_event);
+        const drag_direction = drag_direction(press_event, move_event);
         if (!drag_direction) return;
         if (drag_direction === "vertical") {
           press_end();
@@ -1916,7 +1912,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
   function table_slide_attach(table_element) {
     if (table_element.is_slide_attached) return;
     table_element.is_slide_attached = true;
-    for (const column_element of column_elements_of(table_element)) {
+    for (const column_element of column_elements(table_element)) {
       column_element.setAttribute(
         "data-start-width-",
         column_element.style.width,
@@ -2000,7 +1996,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
         bar_element.parentElement.querySelector(
           ":scope > .page-text-scroll-box-",
         ),
-        text_scrollbar_axis_of(bar_element),
+        text_scrollbar_axis(bar_element),
       );
     }
     layout_refresh(root_element);
@@ -2027,7 +2023,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
     layout_refresh(root_element);
   }
 
-  function scroller_of(focused_element) {
+  function scroller(focused_element) {
     let scrolling_box = focused_element.parentElement;
     while (!/^(auto|scroll)$/.test(getComputedStyle(scrolling_box).overflowY))
       scrolling_box = scrolling_box.parentElement;
@@ -2041,7 +2037,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
       owning_table.tHead.rows[0].cells[0].getBoundingClientRect().bottom -
       focused_element.getBoundingClientRect().top;
     if (hidden_px > 0)
-      scroller_of(focused_element).scrollTop -= design_px(hidden_px);
+      scroller(focused_element).scrollTop -= design_px(hidden_px);
   }
   function tab_stop_move(previous_stop, next_stop, takes_focus) {
     if (previous_stop && previous_stop !== next_stop)
@@ -2051,12 +2047,12 @@ window.report_ui_ = window.try_catch_handler_(function () {
     next_stop.focus({ preventScroll: true });
     focus_reveal(next_stop);
   }
-  function row_links_of(row_element) {
+  function row_links(row_element) {
     return [...row_element.querySelectorAll("a[href]")].filter(
       (row_link) => row_link.closest("tr") === row_element,
     );
   }
-  function walked_row_of(focused_element, table_body, row_selector) {
+  function walked_row(focused_element, table_body, row_selector) {
     const row_element = focused_element.closest("tr");
     const is_walked =
       !!row_element &&
@@ -2088,19 +2084,15 @@ window.report_ui_ = window.try_catch_handler_(function () {
     );
     row_walk.tab_stop_row = row_element;
   }
-  function table_row_key_take(key_event, table_body, row_selector) {
-    const key_name = widget_key_of(key_event);
+  function table_row_key_handler(key_event, table_body, row_selector) {
+    const key_name = widget_key(key_event);
     const focused_element = key_event.target;
-    const row_element = walked_row_of(
-      focused_element,
-      table_body,
-      row_selector,
-    );
+    const row_element = walked_row(focused_element, table_body, row_selector);
     if (!key_name || !row_element) return;
-    const row_links = row_links_of(row_element);
+    const row_links = row_links(row_element);
     const link_index = row_links.indexOf(focused_element);
     if (link_index >= 0 && widget_key_activates(key_name)) {
-      link_click_key_take(key_event);
+      link_click_key_handler(key_event);
       return;
     }
     if (focused_element !== row_element && link_index < 0) return;
@@ -2159,13 +2151,13 @@ window.report_ui_ = window.try_catch_handler_(function () {
     table_element.setAttribute("role", "treegrid");
     for (const walked_row of walked_rows) {
       walked_row.tabIndex = -1;
-      for (const row_link of row_links_of(walked_row)) row_link.tabIndex = -1;
+      for (const row_link of row_links(walked_row)) row_link.tabIndex = -1;
     }
     walked_rows[0].tabIndex = 0;
     table_element.addEventListener(
       "focusin",
       window.try_catch_handler_((focus_event) => {
-        const row_element = walked_row_of(
+        const row_element = walked_row(
           focus_event.target,
           table_body,
           row_selector,
@@ -2185,7 +2177,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
     table_element.addEventListener(
       "keydown",
       window.try_catch_handler_((key_event) =>
-        table_row_key_take(key_event, table_body, row_selector),
+        table_row_key_handler(key_event, table_body, row_selector),
       ),
     );
   }
@@ -2204,7 +2196,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
       : walked_rows[0];
     for (const walked_row of walked_rows) {
       walked_row.tabIndex = walked_row === stop_row ? 0 : -1;
-      for (const row_link of row_links_of(walked_row)) row_link.tabIndex = -1;
+      for (const row_link of row_links(walked_row)) row_link.tabIndex = -1;
     }
     row_walk.tab_stop_row = stop_row;
     if (!walked_rows.includes(focus_row)) row_walk.focus_row = null;
@@ -2222,8 +2214,8 @@ window.report_ui_ = window.try_catch_handler_(function () {
     if (stored_count === null) return default_count;
     return row_count_checked(count_key, stored_count);
   }
-  function row_count_entries_of() {
-    return strip_choice_entries_of(
+  function row_count_entries() {
+    return strip_choice_entries(
       TABLE_ROW_COUNT_CHOICES.map((row_count) => ({
         label: String(row_count),
         value: String(row_count),
@@ -2231,9 +2223,9 @@ window.report_ui_ = window.try_catch_handler_(function () {
     );
   }
   // Makes one pulldown entry element per choice of a label and a value.
-  function strip_choice_entries_of(choices) {
+  function strip_choice_entries(choices) {
     return choices.map((choice) =>
-      render_element_of(
+      render_element(
         render_element(
           "span",
           { "data-entry-value-": choice.value },
@@ -2268,7 +2260,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
       window.throw_exception_("str_error_internal");
     const title_markup = heading_element.innerHTML;
     const count_key = heading_element.getAttribute("data-row-count-key-");
-    const count_span_of = () =>
+    const count_span = () =>
       heading_element.querySelector(".page-heading-row-count-");
     const table_box = heading_element.nextElementSibling;
     const table_element =
@@ -2276,18 +2268,18 @@ window.report_ui_ = window.try_catch_handler_(function () {
         ? table_box.querySelector(":scope > .table-columns- > table.columns-")
         : null;
     if (!table_element) window.throw_exception_("str_error_internal");
-    if (count_key !== null && !count_span_of())
+    if (count_key !== null && !count_span())
       window.throw_exception_("str_error_internal");
     const default_count =
       count_key === null
         ? 0
-        : row_count_checked(count_key, Number(count_span_of().textContent));
+        : row_count_checked(count_key, Number(count_span().textContent));
     const table_body = table_element.tBodies[0];
     const all_rows = [...table_body.rows];
-    const copy_text = window.ui_strings_.text_of("str_table_heading_copy");
+    const copy_text = window.ui_strings_.text("str_table_heading_copy");
     const row_count_options = {
       box_width_chars: TABLE_HEADING_COUNT_BOX_WIDTH_CHARS,
-      entries_of: row_count_entries_of,
+      entries: row_count_entries,
       keeps_open: false,
       on_close: () => {},
       on_select: row_count_choose,
@@ -2298,7 +2290,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
 
     function rows_show(row_count) {
       shown_count = row_count;
-      count_span_of().textContent = String(row_count);
+      count_span().textContent = String(row_count);
       all_rows.forEach((table_row, row_index) => {
         if (row_index >= row_count) table_row.remove();
         else if (table_row.parentElement !== table_body)
@@ -2321,16 +2313,16 @@ window.report_ui_ = window.try_catch_handler_(function () {
           attached_headings.get(heading).row_count_show(chosen_count);
       }
     }
-    function count_entry_of() {
+    function count_entry() {
       return strip_entry_make("count", "pulldown", String(shown_count), {
         pulldown_options: row_count_options,
       });
     }
     function table_copy() {
-      return navigator.clipboard.writeText(table_markdown_of(table_element));
+      return navigator.clipboard.writeText(table_markdown(table_element));
     }
     function heading_render() {
-      const count_entries = count_key === null ? [] : [count_entry_of()];
+      const count_entries = count_key === null ? [] : [count_entry()];
       strip_handle = strip_render(
         heading_element,
         [
@@ -2345,8 +2337,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
         ],
         [],
       );
-      if (count_key !== null)
-        count_span_of().textContent = String(shown_count);
+      if (count_key !== null) count_span().textContent = String(shown_count);
     }
     // Shows the stored count, or the printed one, and renders the cells again.
     function heading_reset() {
@@ -2422,7 +2413,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
     widest_chars,
   ) {
     let width_chars = null;
-    const pane_width_of = (wanted_chars) =>
+    const pane_width = (wanted_chars) =>
       Math.min(widest_chars, Math.max(narrowest_chars, wanted_chars));
     const pane_width_now = () =>
       width_chars === null
@@ -2437,7 +2428,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
       );
     }
     function pane_width_set(wanted_chars) {
-      width_chars = pane_width_of(wanted_chars);
+      width_chars = pane_width(wanted_chars);
       pane_element.style.width = width_chars + "ch";
     }
     function pane_width_forget() {
@@ -2454,7 +2445,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
     splitter_values_show();
     const on_key_down = window.try_catch_handler_((key_event) => {
       let wanted_chars = 0;
-      switch (widget_key_of(key_event)) {
+      switch (widget_key(key_event)) {
         case WIDGET_KEY_NAMES.first:
           wanted_chars = narrowest_chars;
           break;
@@ -2482,7 +2473,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
     );
   }
 
-  function text_scrollbar_axis_of(bar_element) {
+  function text_scrollbar_axis(bar_element) {
     const axis_names = Object.keys(TEXT_SCROLLBAR_AXES).filter((axis_name) =>
       bar_element.classList.contains(axis_name + "-"),
     );
@@ -2490,7 +2481,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
     return axis_names[0];
   }
   // Converts a wheel delta to characters, one pixel per delta unit.
-  function wheel_chars_of(wheel_event, wheel_delta, page_size) {
+  function wheel_chars(wheel_event, wheel_delta, page_size) {
     if (wheel_event.deltaMode === WheelEvent.DOM_DELTA_PIXEL)
       return (
         (wheel_delta * TEXT_SCROLLBAR_WHEEL_NOTCH_LINES) /
@@ -2509,19 +2500,17 @@ window.report_ui_ = window.try_catch_handler_(function () {
     if (attached_scrollbars.has(bar_element))
       window.throw_exception_("str_error_internal");
     const scroll_axis = TEXT_SCROLLBAR_AXES[axis_name];
-    const gutter_text = window.ui_strings_.text_of(
-      "str_text_scrollbar_gutter",
-    );
-    const thumb_text = window.ui_strings_.text_of("str_text_scrollbar_thumb");
-    const taken_wheel_events = wheel_taken_events[axis_name];
+    const gutter_text = window.ui_strings_.text("str_text_scrollbar_gutter");
+    const thumb_text = window.ui_strings_.text("str_text_scrollbar_thumb");
+    const taken_wheel_events = wheel_handlern_events[axis_name];
     let press_state = null;
     function cell_make() {
-      return render_element_of(
+      return render_element(
         render_element("span", {}, render_html_escape(gutter_text)),
       );
     }
     // Measures in characters, null when the bar is not laid out.
-    function geometry_of() {
+    function geometry() {
       const bar_rect = bar_element.getBoundingClientRect();
       const cell_rect = bar_element.firstElementChild.getBoundingClientRect();
       const target_rect = target_element.getBoundingClientRect();
@@ -2570,21 +2559,21 @@ window.report_ui_ = window.try_catch_handler_(function () {
         units_per_char,
       };
     }
-    function thumb_cells_of(bar_geometry) {
+    function thumb_cells(bar_geometry) {
       return [
         Math.round(bar_geometry.thumb_position),
         Math.round(bar_geometry.thumb_position + bar_geometry.thumb_length),
       ];
     }
     function scrollbar_draw() {
-      const bar_geometry = geometry_of();
+      const bar_geometry = geometry();
       if (!bar_geometry) return;
       const cell_count = Math.max(bar_geometry.track_length, 1);
       while (bar_element.children.length < cell_count)
         bar_element.append(cell_make());
       while (bar_element.children.length > cell_count)
         bar_element.lastElementChild.remove();
-      const [thumb_first, thumb_end] = thumb_cells_of(bar_geometry);
+      const [thumb_first, thumb_end] = thumb_cells(bar_geometry);
       [...bar_element.children].forEach((cell_element, cell_index) => {
         const is_thumb =
           bar_geometry.is_scrolling &&
@@ -2610,7 +2599,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
       }
       return thumb_position;
     }
-    function pointer_cells_of(pointer_event, bar_geometry) {
+    function pointer_cells(pointer_event, bar_geometry) {
       return (
         (pointer_event[scroll_axis.pointer_along] - bar_geometry.bar_start) /
         bar_geometry.cell_screen_px
@@ -2629,17 +2618,17 @@ window.report_ui_ = window.try_catch_handler_(function () {
       target_element[scroll_axis.scroll_offset] +=
         step_chars * bar_geometry.units_per_char;
     }
-    const press_take = window.try_catch_handler_((press_event) => {
+    const press_handler = window.try_catch_handler_((press_event) => {
       if (press_event.button || press_state) return;
-      const bar_geometry = geometry_of();
+      const bar_geometry = geometry();
       if (!bar_geometry) return;
       press_event.preventDefault();
       bar_element.setPointerCapture(press_event.pointerId);
       bar_element.classList.add("drag-");
       let grab_offset = 0;
       if (bar_geometry.is_scrolling) {
-        const pointer_cells = pointer_cells_of(press_event, bar_geometry);
-        const [thumb_first, thumb_end] = thumb_cells_of(bar_geometry);
+        const pointer_cells = pointer_cells(press_event, bar_geometry);
+        const [thumb_first, thumb_end] = thumb_cells(bar_geometry);
         const pressed_cell = Math.floor(pointer_cells);
         const is_thumb_press =
           pressed_cell >= thumb_first && pressed_cell < thumb_end;
@@ -2651,17 +2640,17 @@ window.report_ui_ = window.try_catch_handler_(function () {
       }
       press_state = { grab_offset, press_event };
     });
-    const move_take = window.try_catch_handler_((move_event) => {
+    const move_handler = window.try_catch_handler_((move_event) => {
       if (
         !press_state ||
         move_event.pointerId !== press_state.press_event.pointerId
       )
         return;
-      const bar_geometry = geometry_of();
+      const bar_geometry = geometry();
       if (!bar_geometry || !bar_geometry.is_scrolling) return;
       thumb_place(
         bar_geometry,
-        pointer_cells_of(move_event, bar_geometry) - press_state.grab_offset,
+        pointer_cells(move_event, bar_geometry) - press_state.grab_offset,
       );
     });
     const press_finish = window.try_catch_handler_((end_event) => {
@@ -2674,7 +2663,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
       bar_element.classList.remove("drag-");
       click_swallow_next();
     });
-    const wheel_take = window.try_catch_handler_((wheel_event) => {
+    const wheel_handler = window.try_catch_handler_((wheel_event) => {
       const wheel_delta = wheel_event[scroll_axis.wheel_delta];
       if (
         !wheel_delta ||
@@ -2682,7 +2671,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
         taken_wheel_events.has(wheel_event)
       )
         return;
-      const bar_geometry = geometry_of();
+      const bar_geometry = geometry();
       if (
         !bar_geometry ||
         !bar_geometry.is_scrolling ||
@@ -2692,17 +2681,17 @@ window.report_ui_ = window.try_catch_handler_(function () {
       taken_wheel_events.add(wheel_event);
       wheel_event.preventDefault();
       scroll_step(
-        wheel_chars_of(wheel_event, wheel_delta, bar_geometry.page_size),
+        wheel_chars(wheel_event, wheel_delta, bar_geometry.page_size),
         bar_geometry,
       );
     });
-    const key_take = window.try_catch_handler_((key_event) => {
-      const key_name = widget_key_of(key_event);
+    const key_handler = window.try_catch_handler_((key_event) => {
+      const key_name = widget_key(key_event);
       let step_direction = 0;
       if (key_name === scroll_axis.backward_key) step_direction = -1;
       else if (key_name === scroll_axis.forward_key) step_direction = 1;
       else return;
-      const bar_geometry = geometry_of();
+      const bar_geometry = geometry();
       if (
         !bar_geometry ||
         !bar_geometry.is_scrolling ||
@@ -2738,11 +2727,13 @@ window.report_ui_ = window.try_catch_handler_(function () {
       "scroll",
       window.try_catch_handler_(scrollbar_draw),
     );
-    target_element.addEventListener("keydown", key_take);
+    target_element.addEventListener("keydown", key_handler);
     for (const wheel_surface of [bar_element, target_element])
-      wheel_surface.addEventListener("wheel", wheel_take, { passive: false });
-    bar_element.addEventListener("pointerdown", press_take);
-    listeners_bind(bar_element, move_take, press_finish, true);
+      wheel_surface.addEventListener("wheel", wheel_handler, {
+        passive: false,
+      });
+    bar_element.addEventListener("pointerdown", press_handler);
+    listeners_bind(bar_element, move_handler, press_finish, true);
     const attached_scrollbar = { refresh: scrollbar_draw };
     attached_scrollbars.set(bar_element, attached_scrollbar);
     scrollbar_draw();
@@ -2751,7 +2742,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
 
   function drag_scroll_press(press_event, surface_element, target_element) {
     if (press_event.button || press_event.defaultPrevented) return;
-    const slide_cell = slide_cell_of(press_event);
+    const slide_cell = slide_cell(press_event);
     const start_scroll_left = target_element.scrollLeft,
       start_scroll_top = target_element.scrollTop;
     let is_dragging = false,
@@ -2759,7 +2750,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
     const on_pointer_move = window.try_catch_handler_((move_event) => {
       if (move_event.pointerId !== press_event.pointerId) return;
       if (!is_dragging) {
-        const drag_direction = drag_direction_of(press_event, move_event);
+        const drag_direction = drag_direction(press_event, move_event);
         const is_column_slide = !!slide_cell && drag_direction === "sideways";
         if (!move_event.buttons || is_column_slide) {
           press_end();
@@ -2837,7 +2828,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
   }
 
   window.render_element_ = render_element;
-  window.render_element_of_ = render_element_of;
+  window.render_element_of_ = render_element;
   window.render_html_escape_ = render_html_escape;
   window.render_menu_button_ = render_menu_button;
   window.render_page_emphasis_ = render_page_emphasis;
@@ -2860,16 +2851,16 @@ window.report_ui_ = window.try_catch_handler_(function () {
   } else page_activate();
   return {
     address: {
-      file_href_of: address_file_href_of,
-      hash_of: address_hash_of,
-      home_hash_of: address_home_hash_of,
-      link_hash_of: address_link_hash_of,
+      file_href: address_file_href,
+      hash: address_hash,
+      home_hash: address_home_hash,
+      link_hash: address_link_hash,
       of_hash: address_of_hash,
-      page_href_of: address_page_href_of,
-      path_of: address_path_of,
+      page_href: address_page_href,
+      path: address_path,
       request: address_request_send,
-      settings_cleared_hash_of: address_settings_cleared_hash_of,
-      top_href_of: address_top_href_of,
+      settings_cleared_hash: address_settings_cleared_hash,
+      top_href: address_top_href,
     },
     dark_mode_enabled_now_,
     dark_mode_set_,
@@ -2879,7 +2870,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
     design_scale_last_stop: DESIGN_SCALE_LAST_STOP,
     design_scale_stop_now,
     design_scale_stop_set,
-    diff_share_of,
+    diff_share,
     drag_scroll: { attach: drag_scroll_attach },
     fixed_text,
     heat_cell_style,
@@ -2901,7 +2892,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
     signed_human_text,
     signed_percent_text,
     strip: {
-      choice_entries_of: strip_choice_entries_of,
+      choice_entries: strip_choice_entries,
       entry_make: strip_entry_make,
       render: strip_render,
     },
@@ -2912,23 +2903,23 @@ window.report_ui_ = window.try_catch_handler_(function () {
       tab_stop_set: table_row_tab_stop_set,
     },
     table_sort: {
-      column_of: table_sort_column_of,
-      heading_markup_of: table_sort_heading_markup_of,
-      records_of: table_sort_records_of,
+      column: table_sort_column,
+      heading_markup: table_sort_heading_markup,
+      records: table_sort_records,
     },
     template_fill,
     text_scrollbar: { attach: text_scrollbar_attach },
     view_activate,
     view_frame,
     view_key: {
-      of: pulldown_key_of,
+      of: pulldown_key,
       opens_tests_pulldown: view_key_opens_tests_pulldown,
     },
     view_storage,
     widget_key: {
       activates: widget_key_activates,
-      link_click_take: link_click_key_take,
-      of: widget_key_of,
+      link_click_handler: link_click_key_handler,
+      of: widget_key,
     },
     zero_percent_text,
   };

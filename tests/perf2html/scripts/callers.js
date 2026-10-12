@@ -14,13 +14,13 @@ window.try_catch_handler_(function () {
   );
   const TABLE_ROW_COUNT_CHOICES = settings_("TABLE_ROW_COUNT_CHOICES");
 
-  const text_of = window.ui_strings_.text_of;
+  const text = window.ui_strings_.text;
   const text_fill = window.ui_strings_.text_fill;
   const render_element = window.render_element_;
   const render_html_escape = window.render_html_escape_;
   const render_menu_button = window.render_menu_button_;
-  const table_sort_column_of = window.report_ui_.table_sort.column_of;
-  const table_sort_records_of = window.report_ui_.table_sort.records_of;
+  const table_sort_column = window.report_ui_.table_sort.column;
+  const table_sort_records = window.report_ui_.table_sort.records;
   const page_scroll_box = document.querySelector("main.page-text-scroll-box-");
   const page_element = page_scroll_box.querySelector(":scope > .page-");
   const table_data = document.getElementById("callers-functions-table-");
@@ -41,45 +41,45 @@ window.try_catch_handler_(function () {
     sort_name = SORT_DEFAULT_NAME;
 
   // Answers a function the model names, with its heat map address or none.
-  function function_of(function_index) {
+  function function_link(function_index) {
     const function_entry = callers_model.functions[function_index];
     return { name: function_entry[0], href: function_entry[1] };
   }
   // Reads one caller of a listed function, a diff's baseline calls last.
-  function caller_of(caller_row) {
+  function caller(caller_row) {
     return {
-      ...function_of(caller_row[0]),
+      ...function_link(caller_row[0]),
       calls: caller_row[1],
       baseline_calls: caller_row[2],
     };
   }
   // Reads one listed function from its row, a diff's baselines last in it.
-  function record_of(callee_row) {
+  function record(callee_row) {
     return {
-      ...function_of(callee_row[0]),
+      ...function_link(callee_row[0]),
       calls: callee_row[1],
       values: callee_row[2],
-      callers: callee_row[3].map(caller_of),
+      callers: callee_row[3].map(caller),
       baseline_calls: callee_row[4],
       baseline_values: callee_row[5],
     };
   }
-  const function_records = callers_model.callees.map(record_of);
+  const function_records = callers_model.callees.map(record);
   const calls_total = function_records.reduce(
     (running_total, record) => running_total + record.calls,
     0,
   );
 
   // Answers the share of all calls a count is, a diff's its change.
-  function calls_share_of(calls, baseline_calls) {
-    if (is_diff) return window.report_ui_.diff_share_of(calls, baseline_calls);
+  function calls_share(calls, baseline_calls) {
+    if (is_diff) return window.report_ui_.diff_share(calls, baseline_calls);
     return (100 * calls) / calls_total;
   }
   // Answers the share of a counter a function holds, a diff's its change.
-  function counter_share_of(record, counter_index) {
+  function counter_share(record, counter_index) {
     const value = record.values[counter_index];
     if (is_diff)
-      return window.report_ui_.diff_share_of(
+      return window.report_ui_.diff_share(
         value,
         record.baseline_values[counter_index],
       );
@@ -88,19 +88,19 @@ window.try_catch_handler_(function () {
       : 0;
   }
   // Writes the heat colors of a cell by its share, on the chosen curve.
-  const heat_style_of = (percent) =>
+  const heat_style = (percent) =>
     window.report_ui_.heat_cell_style(percent, heat_curve_name, is_diff);
-  const share_cell_of = (percent) => ({
+  const share_cell = (percent) => ({
     text: share_text(percent),
-    style: heat_style_of(percent),
+    style: heat_style(percent),
   });
 
   // Lists each caller of a function with its share of calls, linked.
-  function callers_cell_of(record) {
+  function callers_cell(record) {
     const caller_labels = record.callers.map((caller) =>
       text_fill("str_callers_cell_entry", {
         function: caller.name,
-        share: share_text(calls_share_of(caller.calls, caller.baseline_calls)),
+        share: share_text(calls_share(caller.calls, caller.baseline_calls)),
       }),
     );
     const caller_markups = record.callers.map((caller, caller_index) => {
@@ -118,66 +118,64 @@ window.try_catch_handler_(function () {
       ),
     };
   }
-  const RANK_COLUMN = table_sort_column_of(
-    { label: text_of("str_column_rank"), numeric: true },
+  const RANK_COLUMN = table_sort_column(
+    { label: text("str_column_rank"), numeric: true },
     "",
     null,
     (record, row_index) => String(row_index + 1),
   );
-  const SYMBOL_COLUMN = table_sort_column_of(
+  const SYMBOL_COLUMN = table_sort_column(
     {
-      label: text_of("str_column_symbol"),
+      label: text("str_column_symbol"),
       width: STYLE_TABLE_FUNCTION_NAME_WIDTH_CHARS,
     },
     "symbol",
     (record) => record.name,
     (record) => ({ text: record.name, href: record.href }),
   );
-  const CALLS_COLUMN = table_sort_column_of(
-    { label: text_of("str_column_calls"), numeric: true },
+  const CALLS_COLUMN = table_sort_column(
+    { label: text("str_column_calls"), numeric: true },
     SORT_DEFAULT_NAME,
     (record) => Math.abs(record.calls),
     (record) => ({
       text: count_text(record.calls),
-      style: heat_style_of(
-        calls_share_of(record.calls, record.baseline_calls),
-      ),
+      style: heat_style(calls_share(record.calls, record.baseline_calls)),
     }),
   );
-  const CALLERS_COLUMN = table_sort_column_of(
-    { label: text_of("str_column_callers"), grow: true },
+  const CALLERS_COLUMN = table_sort_column(
+    { label: text("str_column_callers"), grow: true },
     "callers",
-    (record) => callers_cell_of(record).text,
-    callers_cell_of,
+    (record) => callers_cell(record).text,
+    callers_cell,
   );
   // Makes the column of one chosen counter, its shares heat colored.
-  function counter_column_of(counter_index) {
+  function counter_column(counter_index) {
     const counter_name = callers_model.counterNames[counter_index];
-    return table_sort_column_of(
+    return table_sort_column(
       {
-        label: window.report_preferences_.counter_label_of(counter_name),
+        label: window.report_preferences_.counter_label(counter_name),
         numeric: true,
       },
       counter_name,
       (record) => Math.abs(record.values[counter_index]),
-      (record) => share_cell_of(counter_share_of(record, counter_index)),
+      (record) => share_cell(counter_share(record, counter_index)),
     );
   }
 
   // Answers where a counter's values sit in each function's row.
-  function counter_index_of(counter_name) {
+  function counter_index(counter_name) {
     const counter_index = callers_model.counterNames.indexOf(counter_name);
     if (counter_index < 0) window.throw_exception_("str_error_internal");
     return counter_index;
   }
   // Takes the relayed preferences: the calls and counter columns, the curve.
-  function preferences_take() {
+  function preferences_handler() {
     const view_preferences = window.report_preferences_.now();
     const counter_names = view_preferences.counter_names;
-    shown_counter_indexes = counter_names.map(counter_index_of);
+    shown_counter_indexes = counter_names.map(counter_index);
     shows_calls = view_preferences.shows_calls;
     const scale_choices =
-      window.report_preferences_.heat_scale_choices_of(is_diff);
+      window.report_preferences_.heat_scale_choices(is_diff);
     const scale_choice = scale_choices.find(
       (choice) => choice.value === view_preferences.heat_scale_value,
     );
@@ -190,7 +188,7 @@ window.try_catch_handler_(function () {
       RANK_COLUMN,
       SYMBOL_COLUMN,
       ...(shows_calls ? [CALLS_COLUMN] : []),
-      ...shown_counter_indexes.map(counter_column_of),
+      ...shown_counter_indexes.map(counter_column),
       CALLERS_COLUMN,
     ];
     const column_named = (column_sort_name) =>
@@ -205,8 +203,8 @@ window.try_catch_handler_(function () {
         ? RANKING_COUNTER_NAME
         : sort_name,
     );
-    const shown_records = table_sort_records_of(
-      table_sort_records_of(function_records, CALLS_COLUMN),
+    const shown_records = table_sort_records(
+      table_sort_records(function_records, CALLS_COLUMN),
       sorted_column,
     ).slice(0, RENDERED_ROW_COUNT);
     const heading_markup = render_element(
@@ -215,7 +213,7 @@ window.try_catch_handler_(function () {
         class: "page-heading-",
         "data-row-count-key-": STORAGE_KEY_CALLERS_ROWS,
       },
-      window.report_ui_.table_sort.heading_markup_of(
+      window.report_ui_.table_sort.heading_markup(
         "str_heading_functions_by_counter",
         CALLERS_TOP_FUNCTION_ROWS,
         sorted_column,
@@ -226,9 +224,7 @@ window.try_catch_handler_(function () {
       table_data.getAttribute("data-key-"),
       sort_columns.map((sort_column) => sort_column.column),
       shown_records.map((record, row_index) =>
-        sort_columns.map((sort_column) =>
-          sort_column.cell_of(record, row_index),
-        ),
+        sort_columns.map((sort_column) => sort_column.cell(record, row_index)),
       ),
       {
         fill: true,
@@ -241,14 +237,14 @@ window.try_catch_handler_(function () {
   }
   // Sorts the table by a column, the rank column restoring the default.
   function sort_choose(sort_column) {
-    sort_name = sort_column.sort_value_of
+    sort_name = sort_column.sort_value
       ? sort_column.sort_name
       : SORT_DEFAULT_NAME;
     table_render();
   }
   // Draws the table again when the relayed preferences change what it shows.
   function preferences_apply() {
-    preferences_take();
+    preferences_handler();
     const preferences_text = JSON.stringify([
       shown_counter_indexes,
       shows_calls,
@@ -259,8 +255,8 @@ window.try_catch_handler_(function () {
     table_render();
   }
   // Takes a relayed message, drawing again when its preferences changed.
-  function relay_take(message_data) {
-    if (window.report_preferences_.relay_take(message_data))
+  function relay_handler(message_data) {
+    if (window.report_preferences_.relay_handler(message_data))
       preferences_apply();
   }
   // Shows the page from its top when its address is followed again.
@@ -272,6 +268,6 @@ window.try_catch_handler_(function () {
     dark_mode_apply: null,
     forwards_input: true,
     recenter: page_top_show,
-    relay_take,
+    relay_handler,
   });
 })();

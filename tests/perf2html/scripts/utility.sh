@@ -42,7 +42,7 @@ archive_report_write() {
   log_verbose "$archive"
 }
 
-artifact_path_of() {
+artifact_path() {
   local kind="$1" name="$2" file
   local timer_root="$TIMER_ARTIFACTS_NAME_PREFIX$TIMESTAMP"
   case "$kind" in
@@ -246,7 +246,7 @@ heading_write() {
   printf '%s%s\n' "$marks" "$text" >&2
 }
 
-install_command_of() {
+install_command() {
   case "$1" in
     cmake | ninja | ccache | valgrind | taskset | python3 | cksum | curl | \
       tar | xz | dpkg-query)
@@ -275,7 +275,7 @@ log_verbose() {
   code_span "$*" >&2
 }
 
-manifest_fault_of() {
+manifest_fault() {
   local dir="$1"
   shift
   local manifest="$dir/MANIFEST.txt" version expected found wanted
@@ -313,7 +313,7 @@ manifest_fault_of() {
   fi
 }
 
-manifest_recorded_of() {
+manifest_recorded() {
   local dir="$1" role="$2"
   shift 2
 
@@ -340,7 +340,7 @@ manifest_verify() {
   local dir="$1" role="$2"
   shift 2
   local fault
-  fault="$(manifest_fault_of "$dir" "$@")"
+  fault="$(manifest_fault "$dir" "$@")"
   [ -z "$fault" ] || error_exit 2 "error: $role report: $fault"
 }
 
@@ -475,7 +475,7 @@ report_finish() {
   archive_report_write "$dir"
 }
 
-report_path_of() {
+report_path() {
   local report_name="$1"
   case "$report_name" in
     /* | "~/"*) absolute_path "$report_name" ;;
@@ -642,7 +642,7 @@ toolchain_check() {
     lines=("error: ${#missing[@]} tool(s) not found on PATH:")
     for tool in "${missing[@]}"; do
       lines+=("$(printf '  %-12s -> %s' "$tool" \
-        "$(install_command_of "$tool")")")
+        "$(install_command "$tool")")")
     done
     error_exit 1 "${lines[@]}"
   fi
@@ -650,7 +650,7 @@ toolchain_check() {
     "$(dirname "$(readlink -f "$(command -v speedscope)")")")/dist/release"
   local reason="error: no speedscope bundle at $SPEEDSCOPE_RELEASE/index.html"
   [ -f "$SPEEDSCOPE_RELEASE/index.html" ] || error_exit 1 \
-    "$reason -> $(install_command_of speedscope)"
+    "$reason -> $(install_command speedscope)"
 }
 
 verbose_begin() {
@@ -740,7 +740,7 @@ verbose_filter() {
   return "$status"
 }
 
-verbose_flags_of() {
+verbose_flags() {
   local flag_count
   for ((flag_count = 0; flag_count < VERBOSE; flag_count++)); do
     echo --verbose

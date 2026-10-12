@@ -59,7 +59,7 @@ class CallgrindDiff:
         out: dict[str, callgrind.Costs] = {}
         for lines in baseline.function_lines.values():
             for key, costs in lines.items():
-                display = self.display_path_of(baseline, key.file)
+                display = self.display_path(baseline, key.file)
                 total = out.get(display)
                 if total is None:
                     out[display] = list(costs)
@@ -77,7 +77,7 @@ class CallgrindDiff:
         key: callgrind.SourceLine,
     ) -> str:
         return callgrind.baseline_line_key(
-            self.display_path_of(baseline, key.file), key.line
+            self.display_path(baseline, key.file), key.line
         )
 
     def build(self, args: CallgrindDiff.DiffArgs) -> None:
@@ -180,10 +180,8 @@ class CallgrindDiff:
                 profile.counters, f"the {side} profile"
             )
 
-    def display_path_of(
-        self, profile: callgrind.LineProfile, file: str
-    ) -> str:
-        return callgrind.display_path_of(file, profile.file_ob.get(file, ""))
+    def display_path(self, profile: callgrind.LineProfile, file: str) -> str:
+        return callgrind.display_path(file, profile.file_ob.get(file, ""))
 
     def path_strip(self, name: str) -> str:
         return name.replace(callgrind.REPO_ROOT + "/", "")

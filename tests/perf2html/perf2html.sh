@@ -63,11 +63,11 @@ args_parse() {
       _OUT_DIR="$REPORT_BASELINE_DIR_NAME"
     fi
   fi
-  _OUT_DIR="$(report_path_of "$_OUT_DIR")"
+  _OUT_DIR="$(report_path "$_OUT_DIR")"
   artifacts_dir_resolve "$(dirname "$_OUT_DIR")"
   ARTIFACTS_DIR="$ARTIFACTS_DIR/$(basename "$_OUT_DIR")"
   [ "$KEEP_ARTIFACTS" = 1 ] || trap artifacts_clean EXIT
-  _HEADER_FILE="$(artifact_path_of header-rows "$(basename "$_OUT_DIR")")"
+  _HEADER_FILE="$(artifact_path header-rows "$(basename "$_OUT_DIR")")"
   local _index _seen=0 _split=0 _flag
   _COMPILER_COMMAND="${CC:-cc}"
   for _index in "${!_CMAKE_FLAGS[@]}"; do
@@ -105,7 +105,7 @@ ${_flag#-DCMAKE_C_FLAGS=}"
     "error: no TESTS_C entry in $_REPO/tests/perf/Makefile.inc"
 }
 
-header_row_of() {
+header_row() {
   sed -n "s/^$1=//p" "$_HEADER_FILE" | head -1
 }
 
@@ -115,7 +115,7 @@ recorded_reuse() {
   [ -f "$_HEADER_FILE" ] || error_exit 2 \
     "error: --regenerate: $ARTIFACTS_DIR is missing $(basename \
       "$_HEADER_FILE"), the rows of the run to reuse"
-  TIMESTAMP="$(header_row_of recorded)"
+  TIMESTAMP="$(header_row recorded)"
   TIMESTAMP="${TIMESTAMP%% *}"
   [ -n "$TIMESTAMP" ] || error_exit 2 \
     "error: --regenerate: no recorded= row in $_HEADER_FILE"
@@ -123,7 +123,7 @@ recorded_reuse() {
   for _test_name in "${_TESTS[@]}"; do
     for _kind in callgrind valgrind-log timing-csv timing-page trace-log \
       trace-speedscope; do
-      _file="$(artifact_path_of "$_kind" "$_test_name")"
+      _file="$(artifact_path "$_kind" "$_test_name")"
       [ -f "$_file" ] || _missing+=("$_file")
     done
   done
@@ -155,12 +155,12 @@ neither __clang__ nor __GNUC__"
 
 build_manifest() {
   if [ "$REGENERATE" = 1 ]; then
-    _REVISION="$(header_row_of revision)"
-    _CPU_MODEL="$(header_row_of cpu)"
-    _MEMORY_USAGE="$(header_row_of memory)"
-    _OPERATING_SYSTEM="$(header_row_of os)"
-    _COMPILER_NAME="$(header_row_of compiler)"
-    _BUILD_DESC="$(header_row_of build)"
+    _REVISION="$(header_row revision)"
+    _CPU_MODEL="$(header_row cpu)"
+    _MEMORY_USAGE="$(header_row memory)"
+    _OPERATING_SYSTEM="$(header_row os)"
+    _COMPILER_NAME="$(header_row compiler)"
+    _BUILD_DESC="$(header_row build)"
     if [ -z "$_REVISION" ] || [ -z "$_CPU_MODEL" ] \
       || [ -z "$_MEMORY_USAGE" ] || [ -z "$_OPERATING_SYSTEM" ] \
       || [ -z "$_COMPILER_NAME" ] || [ -z "$_BUILD_DESC" ]; then
@@ -310,9 +310,9 @@ flame_graph_page_write() {
 trace_render() {
   local _test="$1" _loops="$2"
   local _seen _tree_display _name _trace_file
-  _trace_file="$(artifact_path_of trace-binary "$_test")"
-  _TRACE_LOG="$(artifact_path_of trace-log "$_test")"
-  _TRACE_JSON="$(artifact_path_of trace-speedscope "$_test")"
+  _trace_file="$(artifact_path trace-binary "$_test")"
+  _TRACE_LOG="$(artifact_path trace-log "$_test")"
+  _TRACE_JSON="$(artifact_path trace-speedscope "$_test")"
 
   if [ "$REGENERATE" = 1 ]; then
     heading_print "python3 build_flame_graph.py profile $_test"
@@ -373,11 +373,11 @@ run_one() {
   local _test="$1"
   local _loops _cg_file _log _start _callgrind_duration _shown _page_words
   local _stat_file _page _summary_headers _summary_values
-  _stat_file="$(artifact_path_of timing-csv "$_test")"
-  _page="$(artifact_path_of timing-page "$_test")"
+  _stat_file="$(artifact_path timing-csv "$_test")"
+  _page="$(artifact_path timing-page "$_test")"
   _loops=$TEST_LOOPS
-  _cg_file="$(artifact_path_of callgrind "$_test")"
-  _log="$(artifact_path_of valgrind-log "$_test")"
+  _cg_file="$(artifact_path callgrind "$_test")"
+  _log="$(artifact_path valgrind-log "$_test")"
 
   if [ "$REGENERATE" = 1 ]; then
     trace_render "$_test" "$_loops"
@@ -430,7 +430,7 @@ run_one() {
 
 timer_artifacts_write() {
   local _root_directory _root_name _test_name _member _recording
-  _root_directory="$(artifact_path_of timer-artifacts "")"
+  _root_directory="$(artifact_path timer-artifacts "")"
   _root_name="$(basename "$_root_directory")"
   _TIMER_ARTIFACTS_ARCHIVE="$_OUT_DIR/$_root_name$REPORT_RAW_ARCHIVE_SUFFIX"
 
@@ -438,12 +438,12 @@ timer_artifacts_write() {
   rm -rf "$_root_directory"
   mkdir "$_root_directory"
   for _test_name in "${_TESTS[@]}"; do
-    _recording="$(artifact_path_of callgrind "$_test_name")"
-    _member="$(artifact_path_of callgrind-member "$_test_name")"
+    _recording="$(artifact_path callgrind "$_test_name")"
+    _member="$(artifact_path callgrind-member "$_test_name")"
     cp "$_recording" "$_member"
     sed -i "s#$_REPO/##g" "$_member"
-    _recording="$(artifact_path_of trace-speedscope "$_test_name")"
-    _member="$(artifact_path_of trace-speedscope-member "$_test_name")"
+    _recording="$(artifact_path trace-speedscope "$_test_name")"
+    _member="$(artifact_path trace-speedscope-member "$_test_name")"
     ln -s "$_recording" "$_member"
   done
   command_run tar --dereference --sort=name --mtime=@0 --owner=0 --group=0 \
@@ -456,12 +456,12 @@ run_all() {
   local _test_name _time_label _time_value _time_suffix _suite_suffix
   local _remaining_fields _total=0 _row _rows="" _page _test_page
   local _args _timing_lines=()
-  _page="$(artifact_path_of timing-page "$REPORT_TEST_SUITE_NAME")"
-  _CALLGRIND_FILES=("$(artifact_path_of callgrind '*')")
+  _page="$(artifact_path timing-page "$REPORT_TEST_SUITE_NAME")"
+  _CALLGRIND_FILES=("$(artifact_path callgrind '*')")
 
   heading_print "taskset -c $PROFILE_PINNED_CPU perf <test>"
   for _test_name in "${_TESTS[@]}"; do
-    _test_page="$(artifact_path_of timing-page "$_test_name")"
+    _test_page="$(artifact_path timing-page "$_test_name")"
     while read -r _time_label _time_value _time_suffix _remaining_fields; do
       [ "$_time_label" != Time: ] || break
     done <"$_test_page"
@@ -504,10 +504,10 @@ run_all() {
   printf '%s\n' "${_HEADER_ROWS[@]}" >"$_HEADER_FILE"
   _args=(-o "$_OUT_DIR/index.html" --header-file "$_HEADER_FILE"
     --raw-data "$_TIMER_ARTIFACTS_ARCHIVE"
-    --profile "$(artifact_path_of callgrind '*')"
-    --perf-log "$(artifact_path_of timing-page '*')"
-    --trace-log "$(artifact_path_of trace-log '*')"
-    --valgrind-log "$(artifact_path_of valgrind-log '*')")
+    --profile "$(artifact_path callgrind '*')"
+    --perf-log "$(artifact_path timing-page '*')"
+    --trace-log "$(artifact_path trace-log '*')"
+    --valgrind-log "$(artifact_path valgrind-log '*')")
   command_run python3 "$PERF2HTML_DIR_/scripts/build_report.py" overview \
     "${_args[@]}"
   log_verbose "$(printf '%-13s%d profiles merged: %s' \
@@ -529,7 +529,7 @@ main() {
   if [ "$REGENERATE" = 1 ]; then
     _log_kind=regenerate-log
   fi
-  _log_file="$(artifact_path_of "$_log_kind" "")"
+  _log_file="$(artifact_path "$_log_kind" "")"
   report_begin "$_OUT_DIR" "$_log_file" \
     "tests/perf2html/perf2html.sh $TIMESTAMP: ${_CMAKE_FLAGS[*]}: $_OUT_DIR"
   source_cache_fill

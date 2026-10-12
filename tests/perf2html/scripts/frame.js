@@ -42,7 +42,8 @@ window.try_catch_handler_(function () {
   const counter_names = JSON.parse(
     menu_strip.getAttribute("data-counter-names-"),
   );
-  const has_flame_graph = menu_strip.getAttribute("data-flame-graph-") === "1";
+  const report_has_flame_graph =
+    menu_strip.getAttribute("data-flame-graph-") === "1";
   const is_diff = menu_strip.getAttribute("data-diff-") === "1";
   const test_names = JSON.parse(menu_strip.getAttribute("data-test-names-"));
   const view_frame = window.report_ui_.view_frame;
@@ -55,8 +56,8 @@ window.try_catch_handler_(function () {
     return current_address;
   }
   // Answers whether the report holds a flame graph for the test.
-  function flame_graph_exists(test_name) {
-    return has_flame_graph && test_name !== REPORT_TEST_SUITE_NAME;
+  function has_flame_graph(test_name) {
+    return report_has_flame_graph && test_name !== REPORT_TEST_SUITE_NAME;
   }
   // Answers the query's menu entry number while the loaded address shows.
   function menu_entry_number_now() {
@@ -73,7 +74,7 @@ window.try_catch_handler_(function () {
       );
     if (
       parsed_address.view === FLAME_GRAPH_VIEW_ENTRY[0] &&
-      !flame_graph_exists(parsed_address.test)
+      !has_flame_graph(parsed_address.test)
     )
       window.throw_exception_(
         "str_error_hash_flame_graph_missing",
@@ -99,7 +100,7 @@ window.try_catch_handler_(function () {
     );
     if (!debug_enabled)
       loaded_url.hash =
-        window.report_ui_.address.settings_cleared_hash_of(current_address);
+        window.report_ui_.address.settings_cleared_hash(current_address);
     location.replace(loaded_url.href);
   }
   // Clears any settings debug query and values, loading the top page again.
@@ -112,7 +113,7 @@ window.try_catch_handler_(function () {
       return;
     cleared_url.searchParams.delete(SETTINGS_DEBUG_QUERY_KEY_NAME);
     cleared_url.hash =
-      window.report_ui_.address.settings_cleared_hash_of(current_address);
+      window.report_ui_.address.settings_cleared_hash(current_address);
     location.replace(cleared_url.href);
   }
   function view_show() {
@@ -146,7 +147,7 @@ window.try_catch_handler_(function () {
       return;
     }
     const view_href =
-      window.report_ui_.address.page_href_of(shown_address) + location.hash;
+      window.report_ui_.address.page_href(shown_address) + location.hash;
     if (view_href !== loaded_view_href) {
       view_frame.contentWindow.location.replace(view_href);
       loaded_view_href = view_href;
@@ -170,7 +171,7 @@ window.try_catch_handler_(function () {
     const applied_values = window.settings_applied_values_();
     applied_values[setting_name] = setting_value;
     address_request(
-      window.report_ui_.address.hash_of({
+      window.report_ui_.address.hash({
         test: current_address.test,
         view: SETTINGS_VIEW_ENTRY[0],
         setting: setting_name,
@@ -196,7 +197,7 @@ window.try_catch_handler_(function () {
       );
   }
   // Shows the stored history count when offered, else its default.
-  function load_log_history_seed() {
+  function load_log_history() {
     const stored_count = window.report_ui_.view_storage.value_read(
       STORAGE_KEY_SETTINGS_HISTORY,
     );
@@ -209,7 +210,7 @@ window.try_catch_handler_(function () {
   // Relays the newest history entries the view shows, and their count.
   function load_log_relay_post() {
     view_post("load_log_relay", {
-      load_log_entries: window.report_load_log_.newest_entries_of(
+      load_log_entries: window.report_load_log_.newest_entries(
         load_log_shown_count,
       ),
       load_log_line_count: load_log_shown_count,
@@ -226,7 +227,7 @@ window.try_catch_handler_(function () {
     load_log_shown_count = line_count;
     load_log_relay_post();
   }
-  function view_message_take(message_event) {
+  function view_message_handler(message_event) {
     const message_data = message_event.data;
     if (message_event.source !== view_frame.contentWindow || !message_data)
       return;
@@ -238,7 +239,7 @@ window.try_catch_handler_(function () {
     else if (message_tag === "load_log_request") load_log_relay_post();
     else if (message_tag === "menu_key_pressed") {
       if (
-        !window.report_menu_.menu_key_take(
+        !window.report_menu_.menu_key_handler(
           message_data.key,
           message_data.repeat,
         )
@@ -287,7 +288,7 @@ window.try_catch_handler_(function () {
     window.report_load_log_.kept_line_count_set(
       SETTINGS_LOAD_LOG_HISTORY_MAX_LINES,
     );
-    load_log_history_seed();
+    load_log_history();
     dark_mode_query_apply_();
     window.addEventListener(
       "hashchange",
@@ -295,7 +296,7 @@ window.try_catch_handler_(function () {
     );
     window.addEventListener(
       "message",
-      window.try_catch_handler_(view_message_take),
+      window.try_catch_handler_(view_message_handler),
     );
     view_show();
     window.report_load_log_.page_render_log(() => {});
@@ -306,9 +307,9 @@ window.try_catch_handler_(function () {
     address_now,
     address_request,
     counter_names,
-    flame_graph_exists,
+    has_flame_graph,
     is_diff,
-    load_log_history_seed,
+    load_log_history,
     menu_entry_number_now,
     settings_debug_clear,
     test_names,

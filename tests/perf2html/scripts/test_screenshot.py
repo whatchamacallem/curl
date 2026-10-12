@@ -300,7 +300,7 @@ class Screenshots:
         self.scratch_dir = scratch_dir
         self.report_views = self.report_views_select()
 
-    def browser_path_of(self, path: str) -> str:
+    def browser_path(self, path: str) -> str:
         if not self.windows_browser_is():
             return path
         return subprocess.run(
@@ -327,7 +327,7 @@ class Screenshots:
             shutil.rmtree(self.scratch_dir)
 
     # Groups changed pixels into boxes, a tile touching another joining it.
-    def changed_regions_of(
+    def changed_regions(
         self, changed_mask: PIL.Image.Image
     ) -> list[tuple[int, int, int, int]]:
         tile_mask = changed_mask.reduce(_COMPARE_REGION_TILE_PX)
@@ -432,7 +432,7 @@ class Screenshots:
                 if other_region != changed_region
             ):
                 continue
-            region_panel = self.region_panel_of(
+            region_panel = self.region_panel(
                 region_number, changed_region, gold_shot, new_shot, label_font
             )
             if (
@@ -462,7 +462,7 @@ class Screenshots:
         compare_image.save(compare_path)
 
     # Answers the address of a report's entry page relative to the index.
-    def entry_href_of(self, report_dir: str, index_path: str) -> str:
+    def entry_href(self, report_dir: str, index_path: str) -> str:
         return urllib.parse.quote(
             os.path.relpath(
                 os.path.join(report_dir, _ENTRY_PAGE),
@@ -486,7 +486,7 @@ class Screenshots:
                     file_name.removeprefix(_COMPARE_IMAGE_PREFIX)
                 ):
                     os.remove(os.path.join(self.compare_dir, file_name))
-        shot_names = self.shot_names_of(prefix)
+        shot_names = self.shot_names(prefix)
         is_same = True
         for shot_name in shot_names:
             if not self.gold_compare_one(
@@ -541,7 +541,7 @@ class Screenshots:
             lambda channel_value: 255 if channel_value else 0
         )
         changed_count = changed_mask.histogram()[255]
-        changed_regions = self.changed_regions_of(changed_mask)
+        changed_regions = self.changed_regions(changed_mask)
         compare_path = os.path.join(
             self.compare_dir, _COMPARE_IMAGE_PREFIX + file_name
         )
@@ -574,7 +574,7 @@ class Screenshots:
     def index_write(self, prefix: str, index_path: str, template: str) -> None:
         assert template.count(_INDEX_MARKER) == 1, _INDEX_MARKER
         report_name = prefix.rstrip("_")
-        report_href = self.entry_href_of(self.report, index_path)
+        report_href = self.entry_href(self.report, index_path)
         index_reports: list[dict[str, str]] = []
         for listed_report in _INDEX_REPORT_NAMES:
             listed_dir = os.path.join(
@@ -585,7 +585,7 @@ class Screenshots:
             index_reports.append(
                 {
                     "name": listed_report,
-                    "href": self.entry_href_of(listed_dir, index_path),
+                    "href": self.entry_href(listed_dir, index_path),
                 }
             )
         width_px, height_px = _SCREENSHOT_VIEWPORTS[0][1:]
@@ -604,8 +604,8 @@ class Screenshots:
                 variant.dark_value for variant in view.shot_variants()
             ):
                 pages[
-                    self.shot_name_of(view_index, "", prefix, view, dark_value)
-                ] = report_href + self.page_address_of(
+                    self.shot_name(view_index, "", prefix, view, dark_value)
+                ] = report_href + self.page_address(
                     view.view_hash, view.menu_entry_number, dark_value
                 )
         data = {
@@ -630,7 +630,7 @@ class Screenshots:
             index_file.write(template.replace(_INDEX_MARKER, data_script))
 
     # Answers the query and hash a page is shot at.
-    def page_address_of(
+    def page_address(
         self, view_hash: str, menu_entry_number: str, dark_value: str
     ) -> str:
         query_values = {_SCREENSHOT_DARK_URL_PARAM: dark_value}
@@ -638,21 +638,19 @@ class Screenshots:
             query_values[_SCREENSHOT_MENU_URL_PARAM] = menu_entry_number
         return "?" + urllib.parse.urlencode(query_values) + view_hash
 
-    def page_url_of(
+    def page_url(
         self,
         page_dir: str,
         view_hash: str,
         menu_entry_number: str,
         dark_value: str,
     ) -> str:
-        page = self.browser_path_of(
+        page = self.browser_path(
             page_dir
             if os.path.isfile(page_dir)
             else os.path.join(page_dir, _ENTRY_PAGE)
         )
-        address = self.page_address_of(
-            view_hash, menu_entry_number, dark_value
-        )
+        address = self.page_address(view_hash, menu_entry_number, dark_value)
         if self.windows_browser_is():
             # A share path (//host/dir) names the host, a drive needs a slash.
             slashed = page.replace("\\", "/")
@@ -674,7 +672,7 @@ class Screenshots:
         )
 
     # Sets the gold and the new cut of one region side by side under a label.
-    def region_panel_of(
+    def region_panel(
         self,
         region_number: int,
         changed_region: tuple[int, int, int, int],
@@ -775,9 +773,9 @@ class Screenshots:
                 # Draws a frame only after the page's own work for it.
                 "--run-all-compositor-stages-before-draw",
                 f"--window-size={window}",
-                f"--screenshot={self.browser_path_of(out_path)}",
+                f"--screenshot={self.browser_path(out_path)}",
                 f"--virtual-time-budget={_SCREENSHOT_RENDER_BUDGET_MS}",
-                self.page_url_of(
+                self.page_url(
                     page_dir, view_hash, menu_entry_number, dark_value
                 ),
             ],
@@ -792,7 +790,7 @@ class Screenshots:
         )
 
     # Names a shot, leaving out the resolution when the size is empty.
-    def shot_name_of(
+    def shot_name(
         self,
         view_index: int,
         size_name: str,
@@ -814,9 +812,9 @@ class Screenshots:
         )
 
     # Names every shot of this report, the index page's too.
-    def shot_names_of(self, prefix: str) -> list[str]:
+    def shot_names(self, prefix: str) -> list[str]:
         return [
-            self.shot_name_of(
+            self.shot_name(
                 view_index, variant.size_name, prefix, view, variant.dark_value
             )
             for view_index, view in self.report_views
@@ -832,7 +830,7 @@ class Screenshots:
     ) -> int:
         shot_variants = view.shot_variants()
         for variant in shot_variants:
-            shot = self.shot_name_of(
+            shot = self.shot_name(
                 view_index, variant.size_name, prefix, view, variant.dark_value
             )
             self.shoot_one(

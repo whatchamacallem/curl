@@ -61,7 +61,7 @@ class TestReport:
         test_name: str,
         layout: TestReport.ReportLayout,
     ) -> None:
-        label = self.callers_page_path_of(test_name)
+        label = self.callers_page_path(test_name)
         path = os.path.join(out_dir, label)
         text = self.page_check(
             path, label, _TEST_OVERVIEW_PAGE_LEAST_BYTES, test_name
@@ -99,7 +99,7 @@ class TestReport:
             )
 
     # Answers the report relative path of a test's callers page.
-    def callers_page_path_of(self, test_name: str) -> str:
+    def callers_page_path(self, test_name: str) -> str:
         return f"{_TEST_CALLERS_PAGE_DIR_NAME}/{test_name}.html"
 
     # Checks the callers model the page script draws, answering its addresses.
@@ -601,7 +601,7 @@ class TestReport:
             page_text,
             tests,
             layout,
-            self.suite_counter_names_of(out_dir),
+            self.suite_counter_names(out_dir),
         )
         self.logs_check(path, page_text, layout.test_records_runs)
         for heading in layout.header_blocks:
@@ -625,7 +625,7 @@ class TestReport:
                 continue
             test_name = match.group(1)
             linked_names.add(test_name)
-            callers_page_path = self.callers_page_path_of(test_name)
+            callers_page_path = self.callers_page_path(test_name)
             if not os.path.isfile(os.path.join(out_dir, callers_page_path)):
                 self.fail(
                     f"overview index.html links {href}, and there is no"
@@ -845,8 +845,8 @@ class TestReport:
                 self.fail(f"{label} names {display!r} source {path}, absent")
 
     # Answers the counters the merged test's callers page draws.
-    def suite_counter_names_of(self, out_dir: str) -> list[str]:
-        path = os.path.join(out_dir, self.callers_page_path_of("all"))
+    def suite_counter_names(self, out_dir: str) -> list[str]:
+        path = os.path.join(out_dir, self.callers_page_path("all"))
         with open(path, encoding="utf-8") as handle:
             attributes = self.element_attributes(
                 handle.read(), _TEST_CALLERS_TABLE_DATA_ID

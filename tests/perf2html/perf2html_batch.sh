@@ -93,9 +93,9 @@ args_parse() {
   if [ "$KEEP_ARTIFACTS" = 1 ] || [ -n "$ARTIFACTS_DIR" ]; then
     artifacts_dir_resolve "$TARGET_DIR"
   fi
-  _BASE_DIR="$(report_path_of "$REPORT_BASELINE_DIR_NAME")"
-  _MOD_DIR="$(report_path_of "$REPORT_MODIFIED_DIR_NAME")"
-  _DIFF_DIR="$(report_path_of "$REPORT_DIFF_DIR_NAME")"
+  _BASE_DIR="$(report_path "$REPORT_BASELINE_DIR_NAME")"
+  _MOD_DIR="$(report_path "$REPORT_MODIFIED_DIR_NAME")"
+  _DIFF_DIR="$(report_path "$REPORT_DIFF_DIR_NAME")"
 }
 
 main() {
@@ -128,7 +128,7 @@ main() {
     _artifact_flags+=(--keep-artifacts)
   fi
   local _verbose_args=()
-  mapfile -t _verbose_args < <(verbose_flags_of)
+  mapfile -t _verbose_args < <(verbose_flags)
   log_verbose "[$(elapsed_format)s] $_SCRIPT $TIMESTAMP: modified build" \
     "flags: ${_CMAKE_FLAGS[*]}"
 

@@ -122,6 +122,22 @@ window.ui_strings_ = (function () {
       "{function} by call count: self {self}, total {total}.",
     str_information_line_link: "{path} self {share} info",
     str_line_self: "line self",
+    str_load_log_asset_entry: "[{time}ms] {page} loaded {asset}",
+    str_load_log_assets_entry:
+      "[{time}ms] {page} loaded {count} assets in {span}ms, the last {asset}",
+    str_load_log_frame_entry:
+      "[{time}ms] {page} long frame {span}ms, {render}ms rendering",
+    str_load_log_input_entry:
+      "[{time}ms] {page} {event} {target}, painted after {span}ms",
+    str_load_log_load_entry: "[{time}ms] {page} load event",
+    str_load_log_parse_entry:
+      "[{time}ms] {page} parsed, {count} assets loaded while parsing",
+    str_load_log_render_entry:
+      "[{time}ms] {page} {cause}, rendered after {span}ms",
+    str_load_log_script_entry:
+      "[{time}ms] {page} script {span}ms, {invoker}, {source}",
+    str_load_log_script_function_entry:
+      "[{time}ms] {page} script {span}ms, {invoker}, {function} in {source}",
     str_menu_button: "{number} {label}",
     str_menu_counter_entry: "{mark}{label}",
     str_menu_counter_selected_mark: " ◼ ",
@@ -159,23 +175,7 @@ window.ui_strings_ = (function () {
     str_settings_apply: "apply",
     str_settings_copy: "copy",
     str_settings_debug_query: "{name}={value}",
-    str_settings_load_log_asset_entry: "[{time}ms] {page} loaded {asset}",
-    str_settings_load_log_assets_entry:
-      "[{time}ms] {page} loaded {count} assets in {span}ms, the last {asset}",
-    str_settings_load_log_frame_entry:
-      "[{time}ms] {page} long frame {span}ms, {render}ms rendering",
     str_settings_load_log_history: "history: {count}",
-    str_settings_load_log_input_entry:
-      "[{time}ms] {page} {event} {target}, painted after {span}ms",
-    str_settings_load_log_load_entry: "[{time}ms] {page} load event",
-    str_settings_load_log_parse_entry:
-      "[{time}ms] {page} parsed, {count} assets loaded while parsing",
-    str_settings_load_log_render_entry:
-      "[{time}ms] {page} {cause}, rendered after {span}ms",
-    str_settings_load_log_script_entry:
-      "[{time}ms] {page} script {span}ms, {invoker}, {source}",
-    str_settings_load_log_script_function_entry:
-      "[{time}ms] {page} script {span}ms, {invoker}, {function} in {source}",
     str_settings_paste: "paste",
     str_sort_alphabetical: "alphabetical",
     str_sort_hottest_first: "hottest first",
@@ -197,18 +197,18 @@ window.ui_strings_ = (function () {
     str_view_settings: "settings",
   };
   function text_fill(string_id, replacements) {
-    const template = text_of(string_id);
+    const template = text(string_id);
     return template.replace(/\{(\w+)\}/g, (marker, field_name) => {
       if (!Object.prototype.hasOwnProperty.call(replacements, field_name))
         return "error (and missing ui string): " + string_id + " " + marker;
       return String(replacements[field_name]);
     });
   }
-  function text_of(string_id) {
+  function text(string_id) {
     if (!Object.prototype.hasOwnProperty.call(STRINGS, string_id)) {
       return "error (and missing ui string): " + string_id;
     }
     return STRINGS[string_id];
   }
-  return { text_fill, text_of };
+  return { text_fill, text };
 })();

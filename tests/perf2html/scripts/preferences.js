@@ -30,48 +30,48 @@ window.report_preferences_ = window.try_catch_handler_(function () {
   const HEAT_SORT_CHOICES = [
     {
       value: "heat",
-      label: window.ui_strings_.text_of("str_sort_hottest_first"),
+      label: window.ui_strings_.text("str_sort_hottest_first"),
     },
     {
       value: "name",
-      label: window.ui_strings_.text_of("str_sort_alphabetical"),
+      label: window.ui_strings_.text("str_sort_alphabetical"),
     },
   ];
   const SHOWS_CALLS_VALUES = [true, false];
 
   let report_counter_names = null;
   let toggled_counter_names = null;
-  let heat_scale_choices = null;
+  let report_heat_scale_choices = null;
   let heat_scale_default_value = null;
   let shown_preferences = null;
 
   // Answers the description of a counter, the words its label leads with.
-  function counter_description_of(counter_name) {
-    return window.ui_strings_.text_of(
+  function counter_description(counter_name) {
+    return window.ui_strings_.text(
       HEAT_MAP_COUNTER_DESCRIPTION_STRING_ID_PREFIX +
         counter_name.toLowerCase(),
     );
   }
   // Answers the label of a counter, its description and then its name.
-  function counter_label_of(counter_name) {
+  function counter_label(counter_name) {
     return window.ui_strings_.text_fill("str_counter_label", {
-      description: counter_description_of(counter_name),
+      description: counter_description(counter_name),
       counter: counter_name,
     });
   }
   // Lists the heat scale choices, each curve by each scope the report has.
-  function heat_scale_choices_of(is_diff) {
-    const text_of = window.ui_strings_.text_of;
+  function heat_scale_choices(is_diff) {
+    const text = window.ui_strings_.text;
     const curve_choices = [
-      ["log", text_of("str_scale_curve_log")],
-      ["linear", text_of("str_scale_curve_linear")],
+      ["log", text("str_scale_curve_log")],
+      ["linear", text("str_scale_curve_linear")],
     ];
     const scope_choices = is_diff
       ? [["line", null]]
       : [
           ["global", null],
-          ["file", text_of("str_scope_file")],
-          ["function", text_of("str_scope_function")],
+          ["file", text("str_scope_file")],
+          ["function", text("str_scope_function")],
         ];
     return curve_choices.flatMap(([curve_name, curve_label]) =>
       scope_choices.map(([scope_name, scope_label]) => ({
@@ -109,11 +109,11 @@ window.report_preferences_ = window.try_catch_handler_(function () {
     return is_changed;
   }
   // Takes the preferences a frame message relays, answering if they changed.
-  function relay_take(message_data) {
+  function relay_handler(message_data) {
     return show(message_data.view_preferences);
   }
 
-  function choice_values_of(choices) {
+  function choice_values(choices) {
     return choices.map((choice) => choice.value);
   }
   // Refuses a setting that names a choice this report does not offer.
@@ -128,7 +128,7 @@ window.report_preferences_ = window.try_catch_handler_(function () {
     }
   }
   // Answers the counters shown: the ranking counter, then those chosen.
-  function shown_counter_names_of(chosen_names) {
+  function shown_counter_names(chosen_names) {
     return report_counter_names.filter(
       (counter_name) =>
         counter_name === RANKING_COUNTER_NAME ||
@@ -136,7 +136,7 @@ window.report_preferences_ = window.try_catch_handler_(function () {
     );
   }
   // Answers the stored choice when this report offers it, else the default.
-  function stored_choice_of(storage_key, offered_values, default_value) {
+  function stored_choice(storage_key, offered_values, default_value) {
     const stored_value =
       window.report_ui_.view_storage.value_read(storage_key);
     return offered_values.includes(stored_value)
@@ -158,18 +158,18 @@ window.report_preferences_ = window.try_catch_handler_(function () {
   // Shows the stored preferences, each one the user never chose its default.
   function seed() {
     show({
-      counter_names: shown_counter_names_of(stored_counter_names()),
-      heat_scale_value: stored_choice_of(
+      counter_names: shown_counter_names(stored_counter_names()),
+      heat_scale_value: stored_choice(
         STORAGE_KEY_HEAT_SCALE,
-        choice_values_of(heat_scale_choices),
+        choice_values(report_heat_scale_choices),
         heat_scale_default_value,
       ),
-      heat_sort_mode: stored_choice_of(
+      heat_sort_mode: stored_choice(
         STORAGE_KEY_HEAT_SORT,
-        choice_values_of(HEAT_SORT_CHOICES),
+        choice_values(HEAT_SORT_CHOICES),
         HEAT_MAP_SORT_DEFAULT_MODE,
       ),
-      shows_calls: stored_choice_of(
+      shows_calls: stored_choice(
         STORAGE_KEY_VIEW_CALLS,
         SHOWS_CALLS_VALUES,
         COUNTER_SELECTION_CALLS_SHOWN_DEFAULT,
@@ -193,12 +193,12 @@ window.report_preferences_ = window.try_catch_handler_(function () {
         ? "HEAT_MAP_SCALE_DIFF_DEFAULT_VALUE"
         : "HEAT_MAP_SCALE_DEFAULT_VALUE",
       [heat_scale_default_value],
-      choice_values_of(heat_scale_choices),
+      choice_values(report_heat_scale_choices),
     );
     setting_choices_check(
       "HEAT_MAP_SORT_DEFAULT_MODE",
       [HEAT_MAP_SORT_DEFAULT_MODE],
-      choice_values_of(HEAT_SORT_CHOICES),
+      choice_values(HEAT_SORT_CHOICES),
     );
   }
   // Takes the report's counters and kind, checks the defaults, then seeds.
@@ -207,7 +207,7 @@ window.report_preferences_ = window.try_catch_handler_(function () {
     toggled_counter_names = counter_names.filter(
       (counter_name) => counter_name !== RANKING_COUNTER_NAME,
     );
-    heat_scale_choices = heat_scale_choices_of(is_diff);
+    report_heat_scale_choices = heat_scale_choices(is_diff);
     heat_scale_default_value = is_diff
       ? HEAT_MAP_SCALE_DIFF_DEFAULT_VALUE
       : HEAT_MAP_SCALE_DEFAULT_VALUE;
@@ -235,7 +235,7 @@ window.report_preferences_ = window.try_catch_handler_(function () {
         : shown_names.includes(toggled_name),
     );
     preference_choose(
-      { counter_names: shown_counter_names_of(chosen_names) },
+      { counter_names: shown_counter_names(chosen_names) },
       STORAGE_KEY_VIEW_COUNTERS,
       chosen_names,
     );
@@ -259,15 +259,15 @@ window.report_preferences_ = window.try_catch_handler_(function () {
   return {
     activate,
     calls_toggle,
-    counter_description_of,
-    counter_label_of,
+    counter_description,
+    counter_label,
     counter_toggle,
-    heat_scale_choices_of,
+    heat_scale_choices,
     heat_scale_choose,
     heat_sort_choices: HEAT_SORT_CHOICES,
     heat_sort_choose,
     now,
-    relay_take,
+    relay_handler,
     seed,
   };
 })();

@@ -115,7 +115,7 @@ whitelist_expand() {
   log_verbose "whitelist: ${#_WHITELISTED_FILES[@]} file(s)"
 }
 
-files_of() {
+files() {
   local _file _extension
 
   for _file in "${_WHITELISTED_FILES[@]}"; do
@@ -130,7 +130,7 @@ files_of() {
 
 format_shell() {
   local _files
-  mapfile -t _files < <(files_of .sh)
+  mapfile -t _files < <(files .sh)
 
   heading_print shfmt
   if [ "${#_files[@]}" = 0 ]; then
@@ -149,7 +149,7 @@ format_shell() {
 
 format_python() {
   local _files
-  mapfile -t _files < <(files_of .py)
+  mapfile -t _files < <(files .py)
 
   heading_print ruff
   if [ "${#_files[@]}" = 0 ]; then
@@ -177,7 +177,7 @@ format_python() {
 
 format_c() {
   local _files
-  mapfile -t _files < <(files_of .c .h)
+  mapfile -t _files < <(files .c .h)
 
   heading_print clang-format
   if [ "${#_files[@]}" = 0 ]; then
@@ -196,7 +196,7 @@ format_c() {
 
 format_prettier() {
   local _files
-  mapfile -t _files < <(files_of .md .js .css .html)
+  mapfile -t _files < <(files .md .js .css .html)
 
   heading_print prettier
   if [ "${#_files[@]}" = 0 ]; then
@@ -216,7 +216,7 @@ format_prettier() {
 
 lint_run() {
   local _files
-  mapfile -t _files < <(files_of .py)
+  mapfile -t _files < <(files .py)
 
   heading_print pyright
   if [ "${#_files[@]}" = 0 ]; then
@@ -266,7 +266,7 @@ report_version() {
 
 test_expected_report_check_run() {
   local _path _args _flags=()
-  mapfile -t _flags < <(verbose_flags_of)
+  mapfile -t _flags < <(verbose_flags)
 
   heading_print test_report.py
   for _path in "${_DEFAULT_REPORTS[@]}"; do
@@ -309,7 +309,7 @@ test_expected_archive_check_run() {
 
 test_source_scan_run() {
   local _flags=()
-  mapfile -t _flags < <(verbose_flags_of)
+  mapfile -t _flags < <(verbose_flags)
 
   heading_print test_source_scan.py
   subprocess_run python3 "$_SCRIPTS/test_source_scan.py" "${_flags[@]}" \
@@ -318,7 +318,7 @@ test_source_scan_run() {
 
 batch_run() {
   local _flags=() _target _shown _exit_code=0
-  mapfile -t _flags < <(verbose_flags_of)
+  mapfile -t _flags < <(verbose_flags)
   _target="$(cd "$_DIR_PERF2HTML" && pwd)"
 
   if [ "$_REGENERATE" = 1 ]; then _flags+=(--regenerate); fi
@@ -340,7 +340,7 @@ batch_run() {
 screenshot_command_set() {
   local _name="$1" _path _prefix _args _flags=()
   shift
-  mapfile -t _flags < <(verbose_flags_of)
+  mapfile -t _flags < <(verbose_flags)
   _path="$_DIR_PERF2HTML/$_name"
 
   _prefix="${_name#perf2html_}"
@@ -396,7 +396,7 @@ regenerate_refuse() {
   error_exit 2 "error: --regenerate cannot reuse the recordings: $1"
 }
 
-header_row_of() {
+header_row() {
   sed -n "s/^$2=//p" "$1" | head -1
 }
 
@@ -420,7 +420,7 @@ regenerate_check() {
       regenerate_refuse "$_name has no recordings, $_rows is missing"
     fi
 
-    _recorded="$(header_row_of "$_rows" recorded)"
+    _recorded="$(header_row "$_rows" recorded)"
     _recorded="${_recorded%% *}"
     if [ -z "$_recorded" ]; then
       regenerate_refuse "$_name records no recorded= row in $_rows"
@@ -433,7 +433,7 @@ regenerate_check() {
     fi
     _recorded_times+=("$_recorded")
 
-    _binary="$(header_row_of "$_rows" executable)"
+    _binary="$(header_row "$_rows" executable)"
     if [ -z "$_binary" ]; then
       regenerate_refuse "$_name records no executable= row in $_rows"
     fi

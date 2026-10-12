@@ -13,7 +13,7 @@ window.try_catch_handler_(function () {
   const STYLE_COLOR_DARK_MODE = settings_("STYLE_COLOR_DARK_MODE");
   const STYLE_COLOR_LIGHT_MODE = settings_("STYLE_COLOR_LIGHT_MODE");
 
-  const NONE_TEXT = window.ui_strings_.text_of("str_debug_tip_none");
+  const NONE_TEXT = window.ui_strings_.text("str_debug_tip_none");
   const ROLE_NAMES = [STYLE_COLOR_DARK_MODE, STYLE_COLOR_LIGHT_MODE].flatMap(
     (palette) => Object.values(palette).flat(),
   );
@@ -23,7 +23,7 @@ window.try_catch_handler_(function () {
   let tip = null;
 
   // Finds the nearest element whose background is not clear.
-  function background_element_of(element) {
+  function background_element(element) {
     for (; element; element = element.parentElement) {
       const color = getComputedStyle(element).backgroundColor;
       if (color !== "rgba(0, 0, 0, 0)" && color !== "transparent")
@@ -32,7 +32,7 @@ window.try_catch_handler_(function () {
     return document.documentElement;
   }
   // Names the color roles that set a property, else gives the color shown.
-  function color_text_of(element, property_name) {
+  function color_text(element, property_name) {
     const root_style = document.documentElement.style;
     const shown_color = getComputedStyle(element)[property_name];
     const role_names = ROLE_NAMES.filter((role_name) => {
@@ -126,8 +126,8 @@ window.try_catch_handler_(function () {
       tag: element.tagName.toLowerCase(),
       class: element.className || NONE_TEXT,
       id: id_element ? id_element.id : NONE_TEXT,
-      fg: color_text_of(element, "color"),
-      bg: color_text_of(background_element_of(element), "backgroundColor"),
+      fg: color_text(element, "color"),
+      bg: color_text(background_element(element), "backgroundColor"),
     });
     tip.style.display = "block";
     const tip_rect = tip.getBoundingClientRect();

@@ -236,7 +236,7 @@ class CallgrindToHeatmap:
         info: dict[str, callgrind.PathInfo] = {}
         for raw in raw_files:
             info[raw] = callgrind.path_norm(raw)._replace(
-                display=callgrind.display_path_of(
+                display=callgrind.display_path(
                     raw, profile.file_ob.get(raw, "")
                 )
             )
@@ -488,14 +488,14 @@ class CallgrindToHeatmap:
                 "error: two source paths share one sources/ script"
                 f" name:\n{report}"
             )
-        local_of = {
+        local = {
             path_info.display: path_info.local
             for path_info in info.values()
             if path_info.local
         }
         os.makedirs(out_dir, exist_ok=True)
         for name, display in sorted(names.items()):
-            text = self.source_read(local_of[display])
+            text = self.source_read(local[display])
             if text is None:
                 raise RuntimeError(
                     f"source for {display!r} was readable earlier but"

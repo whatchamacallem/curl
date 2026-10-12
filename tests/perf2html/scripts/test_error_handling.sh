@@ -80,13 +80,13 @@ test_error_manifest_checksum_rewrite() {
   sed -i "s/^$_TEST_ERROR_MANIFEST_CHECKSUM_LABEL=.*/$_row/" "$_manifest"
 }
 
-test_error_timer_artifacts_of() {
+test_error_timer_artifacts() {
   local _found_archives=()
   local _archive_pattern="$_TEST_ERROR_TIMER_ARTIFACTS_PREFIX*"
   _archive_pattern+="$_TEST_ERROR_ARCHIVE_SUFFIX"
   mapfile -t _found_archives < <(find "$1" -mindepth 1 -maxdepth 1 -type f \
     -name "$_archive_pattern" | LC_ALL=C sort)
-  [ "${#_found_archives[@]}" = 1 ] || test_fail test_error_timer_artifacts_of \
+  [ "${#_found_archives[@]}" = 1 ] || test_fail test_error_timer_artifacts \
     "${#_found_archives[@]} $_archive_pattern at the top of $1, expected 1"
   echo "${_found_archives[0]}"
 }
@@ -186,20 +186,20 @@ test_error_cache_populated_check() {
   done
 }
 
-test_error_cache_snapshot_of() {
+test_error_cache_snapshot() {
   (cd "$_TEST_ERROR_ARTIFACTS" && find . -type f -print | LC_ALL=C sort \
     | LC_ALL=C tr '\n' '\0' | xargs -0 -r cksum -- | LC_ALL=C sort)
 }
 
 test_error_regenerate_cache_check() {
   local _before _after _gone _new _line _path _name _start=$SECONDS _code=0
-  _before="$(test_error_cache_snapshot_of)"
+  _before="$(test_error_cache_snapshot)"
   "$_DIR_PERF2HTML/perf2html_batch.sh" --regenerate \
     "--target-dir=$_DIR_PERF2HTML" </dev/null || _code=$?
   [ "$_code" = 0 ] || test_fail regenerate_from_cache \
     "perf2html_batch.sh --regenerate exited $_code"
   printf 'perf2html_batch.sh --regenerate: %ss\n' "$((SECONDS - _start))"
-  _after="$(test_error_cache_snapshot_of)"
+  _after="$(test_error_cache_snapshot)"
   _gone="$(comm -23 <(printf '%s\n' "$_before") <(printf '%s\n' "$_after"))"
   [ -z "$_gone" ] || test_fail regenerate_cache_unchanged \
     "$(grep -c . <<<"$_gone") kept file(s) changed: ${_gone%%$'\n'*}"
@@ -248,7 +248,7 @@ test_error_diff_uncached_test() {
     "--artifacts=$_TEST_ERROR_SCRATCH/artifacts_uncached" \
     "$_baseline" "$_modified" "$_diff_report"
   _manifest_fault="$(REPORT_MANIFEST_CHECKSUM_LABEL="$_checksum_label" \
-    manifest_fault_of "$_diff_report" "$_TEST_ERROR_MANIFEST_VERSION_DIFF")"
+    manifest_fault "$_diff_report" "$_TEST_ERROR_MANIFEST_VERSION_DIFF")"
   [ -z "$_manifest_fault" ] \
     || test_fail diff_uncached_manifest "$_manifest_fault"
   echo "ok diff_uncached_manifest"
@@ -320,7 +320,7 @@ test_error_diff_tests() {
 
   _copy="$(test_report_copy "$_scratch/modified_one_sided" \
     "$_modified")"
-  _archive="$(test_error_timer_artifacts_of "$_copy")"
+  _archive="$(test_error_timer_artifacts "$_copy")"
   test_error_first_profile_drop "$_archive" "$_scratch/one_sided_unpacked"
   test_error_manifest_checksum_rewrite "$_copy"
   test_failure_expect diff_one_sided_test 2 -- \
@@ -329,7 +329,7 @@ test_error_diff_tests() {
 
   _copy="$(test_report_copy "$_scratch/modified_no_timer_artifacts" \
     "$_modified")"
-  _archive="$(test_error_timer_artifacts_of "$_copy")"
+  _archive="$(test_error_timer_artifacts "$_copy")"
   rm "$_archive"
   test_error_manifest_checksum_rewrite "$_copy"
   test_failure_expect diff_no_timer_artifacts 2 -- \
@@ -338,7 +338,7 @@ test_error_diff_tests() {
 
   _copy="$(test_report_copy "$_scratch/modified_two_timer_artifacts" \
     "$_modified")"
-  _archive="$(test_error_timer_artifacts_of "$_copy")"
+  _archive="$(test_error_timer_artifacts "$_copy")"
   _second_archive="${_archive%"$_TEST_ERROR_ARCHIVE_SUFFIX"}.second"
   cp "$_archive" "$_second_archive$_TEST_ERROR_ARCHIVE_SUFFIX"
   test_error_manifest_checksum_rewrite "$_copy"

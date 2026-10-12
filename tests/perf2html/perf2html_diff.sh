@@ -113,9 +113,9 @@ args_parse() {
         "error: unknown argument: $4, at most 3 directories are taken"
       ;;
   esac
-  _BASE_DIR="$(report_path_of "$_BASE_DIR")"
-  _MOD_DIR="$(report_path_of "$_MOD_DIR")"
-  _OUT_DIR="$(report_path_of "$_OUT_DIR")"
+  _BASE_DIR="$(report_path "$_BASE_DIR")"
+  _MOD_DIR="$(report_path "$_MOD_DIR")"
+  _OUT_DIR="$(report_path "$_OUT_DIR")"
   artifacts_dir_resolve "$(dirname "$_OUT_DIR")"
   ARTIFACTS_DIR="$ARTIFACTS_DIR/$(basename "$_OUT_DIR")"
   _EXTRACTED_ROOT=""
@@ -145,14 +145,14 @@ manifest_check() {
     _reason="error: can't diff a diff: the $_role report was written by"
     error_exit 2 "$_reason perf2html_diff.sh: $_dir"
   fi
-  manifest_recorded_of "$_dir" "$_role" "$REPORT_MANIFEST_VERSION_FULL" \
+  manifest_recorded "$_dir" "$_role" "$REPORT_MANIFEST_VERSION_FULL" \
     >/dev/null
   manifest_value "$_dir" recorded
 }
 
-header_file_of() {
+header_file() {
   local _dir="$1" _role="$2" _out
-  _out="$(artifact_path_of header-block "$_role")"
+  _out="$(artifact_path header-block "$_role")"
   {
     echo "report=$(input_path_display "$_dir")"
     grep '=' "$_dir/MANIFEST.txt" \
@@ -179,7 +179,7 @@ profiles_extract() {
   local _archive="$1" _role="$2" _listing="$3"
   local _into _root_directory _file _test
   local -a _files
-  _into="$(artifact_path_of extracted-profiles "$_role")"
+  _into="$(artifact_path extracted-profiles "$_role")"
   _root_directory="$(basename "$_archive" "$REPORT_RAW_ARCHIVE_SUFFIX")"
   _root_directory="$_into/$_root_directory"
   rm -rf "$_into"
@@ -211,7 +211,7 @@ listing_row_write() {
   } >>"$_listing"
 }
 
-tests_names_of() {
+tests_names() {
   awk 'head { print; head = 0; next }
        /^$/ { head = 1 }
        BEGIN { head = 1 }' "$1" | sort -u
@@ -219,8 +219,8 @@ tests_names_of() {
 
 tests_pair() {
   local _base_tests _cur_tests _name
-  _base_tests="$(tests_names_of "$_BASE_LISTING")"
-  _cur_tests="$(tests_names_of "$_MODIFIED_LISTING")"
+  _base_tests="$(tests_names "$_BASE_LISTING")"
+  _cur_tests="$(tests_names "$_MODIFIED_LISTING")"
   local _one_sided="is in only one of the two reports, so it has no delta:"
   for _name in $(comm -3 <(echo "$_base_tests") <(echo "$_cur_tests")); do
     error_exit 2 "error: '$_name' $_one_sided $_BASE_DIR vs $_MOD_DIR"
@@ -228,7 +228,7 @@ tests_pair() {
   comm -12 <(echo "$_base_tests") <(echo "$_cur_tests")
 }
 
-profiles_of() {
+profiles() {
   awk -v want="$2" \
     'BEGIN { head = 1 }
      head { head = 0; taking = ($0 == want); next }
@@ -240,10 +240,10 @@ diff_one() {
   local _test="$1" _name="$2"
   local _diff_file _callers_file _file
   local -a _base_files _cur_files _args
-  _diff_file="$(artifact_path_of delta "$_name")"
-  _callers_file="$(artifact_path_of caller-counts "$_name")"
-  mapfile -t _base_files < <(profiles_of "$_BASE_LISTING" "$_test")
-  mapfile -t _cur_files < <(profiles_of "$_MODIFIED_LISTING" "$_test")
+  _diff_file="$(artifact_path delta "$_name")"
+  _callers_file="$(artifact_path caller-counts "$_name")"
+  mapfile -t _base_files < <(profiles "$_BASE_LISTING" "$_test")
+  mapfile -t _cur_files < <(profiles "$_MODIFIED_LISTING" "$_test")
 
   heading_print "python3 callgrind_diff.py $_name"
   _args=(python3 "$PERF2HTML_DIR_/scripts/callgrind_diff.py" -o "$_diff_file"
@@ -290,7 +290,7 @@ main() {
   if [ "$REGENERATE" = 1 ]; then
     _log_kind=regenerate-log
   fi
-  _log_file="$(artifact_path_of "$_log_kind" "")"
+  _log_file="$(artifact_path "$_log_kind" "")"
   report_begin "$_OUT_DIR" "$_log_file" \
     "tests/perf2html/perf2html_diff.sh $TIMESTAMP: $_BASE_DIR: $_MOD_DIR: \
 $_OUT_DIR"
@@ -298,8 +298,8 @@ $_OUT_DIR"
 
   local _tests _test_name
   local -a _args
-  _BASE_LISTING="$(artifact_path_of profile-listing baseline)"
-  _MODIFIED_LISTING="$(artifact_path_of profile-listing modified)"
+  _BASE_LISTING="$(artifact_path profile-listing baseline)"
+  _MODIFIED_LISTING="$(artifact_path profile-listing modified)"
   profiles_extract "$_BASELINE_TIMER_ARTIFACTS_ARCHIVE" baseline \
     "$_BASE_LISTING"
   profiles_extract "$_MODIFIED_TIMER_ARTIFACTS_ARCHIVE" modified \
@@ -308,9 +308,9 @@ $_OUT_DIR"
   log_verbose "$_SCRIPT $TIMESTAMP: $(basename "$_BASE_DIR"):" \
     "$(basename "$_MOD_DIR")"
   _args=(-o "$_OUT_DIR/index.html" --diff
-    --header-block "baseline=$(header_file_of "$_BASE_DIR" baseline)"
-    --header-block "modified=$(header_file_of "$_MOD_DIR" modified)"
-    --diff-profile "$(artifact_path_of delta '*')")
+    --header-block "baseline=$(header_file "$_BASE_DIR" baseline)"
+    --header-block "modified=$(header_file "$_MOD_DIR" modified)"
+    --diff-profile "$(artifact_path delta '*')")
   for _test_name in $_tests; do
     diff_one "$_test_name" "$_test_name"
   done

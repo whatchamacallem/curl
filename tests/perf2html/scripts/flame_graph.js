@@ -76,7 +76,7 @@ window.try_catch_handler_(function () {
   window.resource_failure_expect_(
     FLAME_GRAPH_LOCAL_PROFILE_URL_PREFIX + _FORWARDED_ADDRESS.localProfilePath,
   );
-  document.title = window.ui_strings_.text_of("str_flame_graph_page_title");
+  document.title = window.ui_strings_.text("str_flame_graph_page_title");
   window.addEventListener(
     "hashchange",
     window.try_catch_handler_(() => location.reload()),

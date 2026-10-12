@@ -2,10 +2,11 @@
 // SPDX-License-Identifier: MIT
 // This file is licensed under the terms of the LICENSE-MIT.md file.
 
-window.report_error_overlay_ = (function () {
+(function () {
   "use strict";
 
   const REPORT_MANIFEST_TABLE_GLOBAL_NAME = "report_manifest_table_";
+  const RELAY_MESSAGE_NAME = "report_error";
   const OVERLAY_BACKGROUND_COLOR = "#14171c";
   const OVERLAY_TEXT_COLOR = "#f2f4f6";
   const OVERLAY_LINK_COLOR = "#ff4427";
@@ -16,9 +17,11 @@ window.report_error_overlay_ = (function () {
   const DESIGN_COORDINATES_WIDTH_PX = 1920;
   const DESIGN_FONT_SIZE_PX = 24;
   const REPORT_ROOT_URL = new URL("..", document.currentScript.src).href;
+  const is_framed =
+    window.parent !== window &&
+    !document.documentElement.hasAttribute("data-top-page-");
 
   let shown = false;
-  let report_relay = null;
 
   function html_escape_(text) {
     return text
@@ -94,16 +97,14 @@ window.report_error_overlay_ = (function () {
   function report_render_(report, is_relayed) {
     if (shown) return;
     shown = true;
-    if (report_relay !== null && report_relay(report)) return;
+    if (is_framed) {
+      window.parent.postMessage(
+        { report_ui: RELAY_MESSAGE_NAME, report: report },
+        "*",
+      );
+      return;
+    }
     setTimeout(page_write_, 0, report, is_relayed);
-  }
-
-  function relay_set_(relay_function) {
-    report_relay = relay_function;
-  }
-
-  function relayed_report_show_(report) {
-    report_render_(report, true);
   }
 
   function page_write_(report, is_relayed) {
@@ -158,8 +159,13 @@ window.report_error_overlay_ = (function () {
   window.addEventListener("unhandledrejection", function (browser_event) {
     err_overlay_show_(browser_event.reason);
   });
+  window.addEventListener("message", function (browser_event) {
+    const payload = browser_event.data;
+    if (payload && payload.report_ui === RELAY_MESSAGE_NAME)
+      report_render_(payload.report, true);
+  });
 
+  window.is_framed_ = is_framed;
   window.throw_exception_ = throw_exception_;
   window.try_catch_handler_ = try_catch_handler_;
-  return { err_overlay_show_, relay_set_, relayed_report_show_ };
 })();

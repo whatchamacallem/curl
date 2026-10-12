@@ -251,7 +251,9 @@ class Callgrind:
 
     # Renames each function spelled as an address, through its object or None.
     def address_names_resolve(
-        self, text: str, name_of: Callable[[str | None, str], str | None]
+        self,
+        text: str,
+        address_name_resolve: Callable[[str | None, str], str | None],
     ) -> str:
         names = Callgrind.CompressedNames()
         lines = text.split("\n")
@@ -280,7 +282,7 @@ class Callgrind:
                 name = match.group(2)
                 if not Callgrind.ADDRESS_NAME_RE.fullmatch(name):
                     continue
-                resolved = name_of(
+                resolved = address_name_resolve(
                     None
                     if object_path == _CALLGRIND_UNKNOWN_NAME
                     else object_path,
@@ -302,7 +304,7 @@ class Callgrind:
                 profile.function_entry[function] = SourceLine(home, line)
 
     # Refuses a function in no object that is still named by its address.
-    def function_name_of(
+    def function_name(
         self,
         names: Callgrind.CompressedNames,
         compressed_name: str,
@@ -501,12 +503,12 @@ class Callgrind:
                     raw_line[equals_index + 1 :],
                 )
                 if key in ("fl", "fi", "fe"):
-                    current_file = file_key_of(
+                    current_file = file_key(
                         names.uncompress("fl", specification_value),
                         current_object,
                     )
                 elif key == "fn":
-                    cur_function = self.function_name_of(
+                    cur_function = self.function_name(
                         names, specification_value, current_object, path
                     )
                     profile.function_home.setdefault(
@@ -522,12 +524,12 @@ class Callgrind:
                         "ob", specification_value
                     )
                 elif key in ("cfl", "cfi"):
-                    cur_callee_file = file_key_of(
+                    cur_callee_file = file_key(
                         names.uncompress("fl", specification_value),
                         current_callee_object or current_object,
                     )
                 elif key == "cfn":
-                    cur_callee_function = self.function_name_of(
+                    cur_callee_function = self.function_name(
                         names,
                         specification_value,
                         current_callee_object or current_object,
@@ -574,16 +576,16 @@ _profile_parser = Callgrind()
 
 
 def address_names_resolve(
-    text: str, name_of: Callable[[str | None, str], str | None]
+    text: str, address_name_resolve: Callable[[str | None, str], str | None]
 ) -> str:
-    return _profile_parser.address_names_resolve(text, name_of)
+    return _profile_parser.address_names_resolve(text, address_name_resolve)
 
 
 def baseline_line_key(display: str, line: int | str) -> str:
     return f"{display}\n{line}"
 
 
-def cached_source_of(display: str) -> str | None:
+def cached_source(display: str) -> str | None:
     if display.startswith(".."):
         return None
     parts = display.split("/")
@@ -645,7 +647,7 @@ def counter_value(counters: Sequence[str], costs: Costs, name: str) -> int:
     return counter_schema(tuple(counters)).value(costs, name)
 
 
-def display_path_of(path: str, object_path: str) -> str:
+def display_path(path: str, object_path: str) -> str:
     info = path_norm(path)
     if info.group != "external":
         return info.display
@@ -653,19 +655,19 @@ def display_path_of(path: str, object_path: str) -> str:
     return f"{owner}/{info.display}"
 
 
-def file_key_of(path: str, object_path: str) -> str:
+def file_key(path: str, object_path: str) -> str:
     if path != _CALLGRIND_UNKNOWN_NAME:
         return path
     return f"{os.path.basename(object_path)}/{path}"
 
 
 # Answers each file a path names, keyed by what its one `*` stands for.
-def named_paths_of(pattern: str) -> dict[str, str]:
+def named_paths(pattern: str) -> dict[str, str]:
     directory, name_pattern = os.path.split(pattern)
     head, star, tail = name_pattern.partition("*")
     if not star or "*" in tail or "*" in directory:
         sys.exit(f"error: {pattern!r} holds no single * in its file name")
-    path_of = {
+    path = {
         entry[len(head) : len(entry) - len(tail)]: os.path.join(
             directory, entry
         )
@@ -674,9 +676,9 @@ def named_paths_of(pattern: str) -> dict[str, str]:
         and entry.startswith(head)
         and entry.endswith(tail)
     }
-    if not path_of:
+    if not path:
         sys.exit(f"error: no file matches {pattern}")
-    return dict(sorted(path_of.items()))
+    return dict(sorted(path.items()))
 
 
 def path_norm(path: str) -> PathInfo:
@@ -699,7 +701,7 @@ def path_norm(path: str) -> PathInfo:
     if os.path.isfile(candidate):
         return PathInfo(posixpath.normpath(path), candidate, "repo")
     display = posixpath.normpath(path)
-    cached = cached_source_of(display)
+    cached = cached_source(display)
     if cached is not None:
         return PathInfo(display, cached, "system")
     return PathInfo(display, None, "external")
@@ -711,7 +713,7 @@ def profile_load(paths: Sequence[str]) -> Profile:
             found
             for path in paths
             for found in (
-                named_paths_of(path).values() if "*" in path else [path]
+                named_paths(path).values() if "*" in path else [path]
             )
         ]
     )

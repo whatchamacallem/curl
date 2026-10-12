@@ -93,7 +93,7 @@ class Theme:
             self.smallest_printed_percent = 1 / 10**_NUMBER_FRACTION_DIGITS
             self.time_units = time_units
 
-        def diff_share_of(self, delta: int, baseline: int | None) -> float:
+        def diff_share(self, delta: int, baseline: int | None) -> float:
             baseline_count = 0 if baseline is None else baseline
             if delta < -baseline_count:
                 raise ValueError(
@@ -385,8 +385,8 @@ def asset_text_read(name: str) -> str:
     return _renderer.asset_read(name)
 
 
-def diff_share_of(delta: int, baseline: int | None) -> float:
-    return _renderer.number_format.diff_share_of(delta, baseline)
+def diff_share(delta: int, baseline: int | None) -> float:
+    return _renderer.number_format.diff_share(delta, baseline)
 
 
 def href(depth: int, name: str) -> str:

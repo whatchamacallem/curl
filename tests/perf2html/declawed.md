@@ -109,15 +109,15 @@ postmortem reference to a numbered item that is not itself in the postmortem.
 
 The single function/check owning each concern - never bypass or duplicate:
 
-- `manifest_verify`/`manifest_fault_of` - whether a dir is a report.
+- `manifest_verify`/`manifest_fault` - whether a dir is a report.
 - `regenerate_check` - whether `--regenerate` may proceed.
 - `counter_value()` - all counter lookups (callgrind.py).
 - `column_extents()`/`column_limits()` - table column widths (theme.py/js).
 - `checksum_compute`/`_REPORT_CHECKSUM_COMMAND` - report checksums, kept
   separate, re-verified on every open.
 - `share_in_scope()` - heat-map denominator scope; a diff divides by the
-  thing's own baseline through `diff_share_of()`.
-- `diff_share_of()` - every diff share, a fall past its baseline refused
+  thing's own baseline through `diff_share()`.
+- `diff_share()` - every diff share, a fall past its baseline refused
   (theme.py/js).
 - `fixed_text()` - every decimal a page prints; `percent_text()` every
   share, `signed_percent()`/`signed_percent_text()` every diff share,
@@ -151,12 +151,12 @@ The single function/check owning each concern - never bypass or duplicate:
   the strip for a heading title (theme.js).
 - `heat_cell_style(percent, curve, is_diff)` - every heat color, JS
   alone; Python paints nothing.
-- `table_sort.records_of()` - every table sort; `render_table`'s
+- `table_sort.records()` - every table sort; `render_table`'s
   `on_sort` the one column title click (theme.js).
 - `report_preferences_.now()` - every read of the counters, calls, heat
   scale and heat sort preferences; `preference_choose()` on the top
   page the one writer, relayed down on every message, a view taking it
-  through `report_preferences_.relay_take()` (preferences.js).
+  through `report_preferences_.relay_handler()` (preferences.js).
 - `load_log_append()` - every load log entry, on the clock the top page's
   navigation started, a framed page posting it up (utility.js);
   `report_load_log_.page_render_log()` and `.event_render_log()` every
@@ -223,7 +223,7 @@ The single function/check owning each concern - never bypass or duplicate:
 
 ### 0.4 Invariants
 
-- `manifest_verify`/`manifest_fault_of` is the one door deciding whether a dir
+- `manifest_verify`/`manifest_fault` is the one door deciding whether a dir
   is a report - never bypass or duplicate this check elsewhere.
 - Never buffer a child's output in a shipping script (`$( )` capture) - breaks
   `--verbose` streaming and hides live failures.
@@ -270,7 +270,7 @@ The single function/check owning each concern - never bypass or duplicate:
 - `test_all.sh` captures nothing and makes no temp file - refusals stream live
   to the terminal; failure checks the exit code only.
 - Plumbing (`perf2html.sh`, `perf2html_diff.sh`) and the batch (porcelain)
-  share one working-directory rule, `report_path_of`: a report name not
+  share one working-directory rule, `report_path`: a report name not
   starting with `/` or `~/` sits under `--target-dir` (default `$PWD`).
 - `tests/perf2html/scripts/test_whitelist.txt` is the one list of what source
   stages touch - no directory walk, no skip list, nothing unlisted touched.
@@ -366,7 +366,7 @@ The single function/check owning each concern - never bypass or duplicate:
   what changed, a controller edits a model, a view draws from the relayed
   copy. Every stored preference is one model on the top page, the frame
   relays it down whole, and a view keeps a mirror through the frame
-  protocol alone (`view_activate`'s `relay_take`), never a second holder
+  protocol alone (`view_activate`'s `relay_handler`), never a second holder
   in a library. `preferences.js` is that model and mirror for the four
   relayed preferences; dark mode, the scale and the row counts are still
   held in `theme.js`, the history count in `frame.js`.
@@ -416,8 +416,9 @@ Under `tests/perf2html/`:
   `<template id="heat-map-main-template-">`, `flame_graph.html` the flame
   graph page; `callers.js` the callers view; `heat_map.{js,css}`;
   `flame_graph.js` polls `window.speedscope`;
-  `ui_strings.js` (`str_*`); `error_overlay.js` first script on every page;
-  `utility.js` second, relaying an error report up the frames, reporting a
+  `ui_strings.js` (`str_*`); `error_overlay.js` first script on every page,
+  relaying an error report up the frames and setting `window.is_framed_`;
+  `utility.js` second, throwing on a
   failed `<link>`/`<script>`/`<img>` load, and holding the top page's load
   log (`window.report_load_log_`, for finding where a click stalls, in
   time order on one clock: each trusted click and key with its target and
@@ -491,7 +492,7 @@ taskset -c 3 \
 - `perf2html.sh` default `--report`: `perf2html_baseline_report`, or
   `perf2html_modified_report` with cmake_flags; after a source-only change pass
   `--report=perf2html_modified_report` yourself. `--report=DIR` is the report
-  dir itself; `report_path_of` puts a name not starting with `/` or `~/`
+  dir itself; `report_path` puts a name not starting with `/` or `~/`
   under `--target-dir` (default `$PWD`), the diff's three names too.
   `--artifacts` defaults in non-debug mode to a `mktemp -d` per
   `perf2html.sh` or `perf2html_diff.sh` run, the batch making none and
@@ -559,11 +560,11 @@ taskset -c 3 \
   `regenerate.<TIMESTAMP>.log`. No `output.txt`
   ships: the overview embeds every test's logs, one collapsed section
   per kind, reading one `--perf-log PATTERN`, one `--trace-log PATTERN`
-  and one `--valgrind-log PATTERN`, each `artifact_path_of` with `*` for
+  and one `--valgrind-log PATTERN`, each `artifact_path` with `*` for
   the test (`timing-page`, `trace-log`, `valgrind-log`), and one
   `--profile PATTERN` (`callgrind`), whose counters the menu offers,
   expanded by
-  `callgrind.named_paths_of` (one `*` in the file name, a match per test,
+  `callgrind.named_paths` (one `*` in the file name, a match per test,
   `all` included, none an error); the perf log's matches are the
   overview's tests, `--test` gone; a callers page holds no log.
 - `timer_artifacts_write` fills a transient `timer-artifacts-<recorded>/` in
@@ -609,18 +610,18 @@ taskset -c 3 \
 - `test_expected_behavior.sh` internals: `subprocess_run` =
   `command_item_print` plus plain `"$@"`, non-zero → `error_exit`
   `error: exit N from: <command>`; a Python tool = `subprocess_run python3`
-  with `verbose_flags_of`; a stage = `heading_print`; status lines
+  with `verbose_flags`; a stage = `heading_print`; status lines
   (`whitelist`, `regenerate`, `cleared`, `columns`, `screenshots`) =
   `log_verbose`;
   `batch_run` = plain child, failure `error_exit` with its code; no `RUN_LOG`;
-  own spellings `header_row_of`, `_REPORT_CHECKSUM_COMMAND`, `_SCREENSHOT_*`.
+  own spellings `header_row`, `_REPORT_CHECKSUM_COMMAND`, `_SCREENSHOT_*`.
   `tool_find` (`test_utility.sh`, the pip and npm user bins too) answers
   through `$( )`, for `tools_resolve` and `test_error_handling.sh`'s prettier.
   `lint_run` runs `pyright_filtered_run` at level 1. Only caller of
   `test_report.py`, `test_source_scan.py`, `pyright`, `ruff`,
   `test_screenshot.py`, and of `prettier` but for `test_error_handling.sh`'s
   last check.
-- Whitelist: `whitelist_expand` → `_WHITELISTED_FILES`; `files_of()` picks by
+- Whitelist: `whitelist_expand` → `_WHITELISTED_FILES`; `files()` picks by
   extension; blank/`#`/whitespace lines refused; a glob matching nothing is
   allowed (`src/*.h`), a non-regular match or empty list is an error.
   `--config`/`--project` always passed; `pyrightconfig.json` names no file.
@@ -766,7 +767,7 @@ taskset -c 3 \
   `VERBOSE_BLOCK_PRINTED=loose` puts the blank line before the next block,
   which `lastpipe` lets the filter, a pipeline's last stage, set;
   `child_capture` uses it for a child's lines, `item_output_print` for our
-  own. `verbose_flags_of` = one `--verbose` per level, one per line
+  own. `verbose_flags` = one `--verbose` per level, one per line
   (`mapfile -t`). Python tools' ok lines: stdout, `--verbose` only. Quiet
   switches `ruff --quiet` and prettier `--log-level warn`, dropped under
   `--verbose`, and curl `--silent --show-error`, dropped at level 2, recorded
@@ -777,11 +778,11 @@ taskset -c 3 \
   `command_item_print` = `$ cmd`, `table_print` one `header: value` line per
   cell, a child's lines and `item_output_print`'s straight to stderr, never
   through `verbose_filter`; level 3 (`VERBOSE_TRACE_LEVEL`) adds `xtrace`.
-- Manifest contract (`utility.sh`): `manifest_fault_of` (reader: why a dir is
+- Manifest contract (`utility.sh`): `manifest_fault` (reader: why a dir is
   not a report, or nothing; takes each acceptable version string),
-  `manifest_verify` (hard-error policy), `manifest_recorded_of` (first token,
+  `manifest_verify` (hard-error policy), `manifest_recorded` (first token,
   refuses empty), `manifest_recorded_row`, `manifest_value` (general),
-  `manifest_table_of`, `manifest_write`, `manifest_wanted_phrase`,
+  `manifest_table`, `manifest_write`, `manifest_wanted_phrase`,
   `checksum_compute`. Version strings `curl/perf2html.sh v1`,
   `curl/perf2html_diff.sh v1` and the checksum label are settings.
   `revision_describe REPO` = the one `<short>[-dirty]`.
@@ -836,7 +837,7 @@ settings/index.html
   `checksum=` = POSIX `cksum` over every file but the manifest, `LC_ALL=C`
   sorted, relative paths; `home_dir_check` fails on `$HOME`.
 - Diff report: no flame graph, no native timing, no raw data, no logs.
-  Overview reads one `--diff-profile PATTERN`, `artifact_path_of delta`
+  Overview reads one `--diff-profile PATTERN`, `artifact_path delta`
   with `*`, its matches the diff's tests; a test in one report only →
   `tests_pair` error.
 - Pages: shared assets linked, never inlined; each template writes its
@@ -876,7 +877,7 @@ settings/index.html
   `theme.render_heading()`, a page's document its template; no English UI
   text in
   Python or a template, every string written by a page script through
-  `text_of`/`text_fill`.
+  `text`/`text_fill`.
 - `settings.py`: settings first, then `SettingsReader` and `SettingsWriter`
   (constants carry `_`); cut at `_SETTING_NAMES`; `_is_setting_name()` strips
   a leading `_`. A consumer declares annotation + empty sentinel, then
@@ -917,13 +918,13 @@ settings/index.html
   spelled as an address, given its object, for `callgrind_symbols.py`; the
   parser refuses a function in no object (`???`) still so named, a recording
   from before that step. Every object names its code without debug info `???`;
-  `file_key_of()` keys each apart as `<object basename>/???`, shown
+  `file_key()` keys each apart as `<object basename>/???`, shown
   `(unknown)` by `path_norm()`.
 - `build_report.py`: `_RANKING_COUNTER_NAME`; `Profile.value()` raises
   `KeyError`; `BuildReport.test`/`.diff_test`; fills `overview.html`, each
   marker replaced by markup it renders, and `callers.html` with one JSON
-  callers model in `data-model-` (`callers_model_of`,
-  `diff_callers_model_of`), which `callers.js` draws: `counterNames`,
+  callers model in `data-model-` (`callers_model`,
+  `diff_callers_model`), which `callers.js` draws: `counterNames`,
   `counterTotals` (a regular report's), `functions` (`[name, href]`),
   `callees` (`[function, calls, values, callers]`, a diff's then
   `baseline_calls, baseline_values`), a caller `[function, calls]`, a
@@ -992,7 +993,7 @@ settings/index.html
 
 ## 8 Pages and JS
 
-- `ui_strings.js`: `str_*`; `text_of(id)` throws on unknown, `text_fill`
+- `ui_strings.js`: `str_*`; `text(id)` throws on unknown, `text_fill`
   on a marker its values lack; no boundary names
   or number notation; `str_no_caller` is the heat map's alone, the callers
   table listing only called functions; empty pulldown = `str_no_match`.
@@ -1007,7 +1008,7 @@ settings/index.html
   listeners make `error_text_of_(error)` (stack, else name and message, then
   each `cause`) in the realm that caught it; the first error of a load wins;
   a frame posts `{report_ui: "report_error", report: {page, text}}` up
-  through `utility.js`,
+  itself, its own `message` listener taking one from below, no hook,
   `page` its report-relative path and hash; the top replaces the document
   through `document.open()` one task later with one well-formed page, every
   text HTML-escaped, one `<pre>` in `white-space: pre`, no Markdown, no
@@ -1020,8 +1021,11 @@ settings/index.html
   `window.innerWidth / DESIGN_COORDINATES_WIDTH_PX`, no resize listener;
   two links, `copy` (`navigator.clipboard.writeText` of the text shown,
   unescaped) and `back` (`history.back()`); a `hashchange` or `popstate` on
-  the written page reloads it; touches the URL only via `back`, reads no
-  other script.
+  the written page reloads it; touches the URL only via `back`; reads only
+  `window.ui_strings_` and `window.report_manifest_table_` of other
+  scripts, each checked present; exports no object, only
+  `window.is_framed_`, `window.throw_exception_` and
+  `window.try_catch_handler_`.
 - JS settings: each `.js` resolves each `settings_("NAME")` once into a
   same-named `const` at the top of its IIFE, never in a render path; every
   number/color/key/bound is a setting (`MENU_PULLDOWN_KEY_NAMES`).
@@ -1055,7 +1059,7 @@ settings/index.html
   one but `__DATA__` filled through `template_fill`.
 - Frames: the overview frames one view at a time, a test's callers page,
   the heat map app or the flame graph app, the page
-  `report_ui_.address.page_href_of()` names. `frame.js`, the model, runs on
+  `report_ui_.address.page_href()` names. `frame.js`, the model, runs on
   the top page alone, which wears `data-top-page-` on `<html>` so
   `window.is_framed_` is false for it though a page outside the report
   frames it, as `window.report_frame_` (`activate()`,
@@ -1075,15 +1079,15 @@ settings/index.html
   `report_menu_.address_show()`, then loads the view by
   `location.replace(page_href + location.hash)`, never `iframe.src`, or
   shows the home panel. `menu.js`, the controller, is `window.report_menu_`
-  (`address_show()`, `menu_key_take(key)`) and starts
+  (`address_show()`, `menu_key_handler(key)`) and starts
   every navigation
   through `report_frame_.address_request`. The frame's one message listener
   hands the controller each key a view sent up. A view uses `theme.js` doors
   alone, `report_ui_.address` and
   `report_ui_.view_activate({dark_mode_apply, dark_mode_arrive,
   forwards_input, load_log_show, load_render_defer, recenter,
-  relay_take})`,
-  which meets the downward strings, handing each to `relay_take` before
+  relay_handler})`,
+  which meets the downward strings, handing each to `relay_handler` before
   it acts, and, under `forwards_input`, requests a
   clicked address link and forwards keys; under `load_render_defer` it
   hands the view its load render log, which the heat map calls once its
@@ -1099,17 +1103,17 @@ settings/index.html
   value, which the top page installs under `debug=1` and installs again,
   reloading, whenever the hash changes it, every page script and `:root`
   value reading them; the door carries the page's own `setting-values`
-  onto every hash `hash_of`, `link_hash_of` and `request` write, so every
+  onto every hash `hash`, `link_hash` and `request` write, so every
   view, link and bookmark keeps the applied settings; a settings view
   `apply` requests the settings view at that setting, its new value added;
   none = the overview's home. Query keys, the top page's own: `debug`
   (`1`, settings debugging), `screenshot-mode` (`1` dark, `0` light) and
   `screenshot-menu` (an entry number). `report_ui_.address`
-  (`file_href_of`, `of_hash`, `hash_of`, `home_hash_of`, `link_hash_of`,
-  `page_href_of`, `path_of`, `request`, `settings_cleared_hash_of`,
-  `top_href_of`) is the
+  (`file_href`, `of_hash`, `hash`, `home_hash`, `link_hash`,
+  `page_href`, `path`, `request`, `settings_cleared_hash`,
+  `top_href`) is the
   one JS door
-  and `build_report.py` `address_of` the one
+  and `build_report.py` `address` the one
   Python door, the key names string literals in those alone but
   `setting-values`, a setting `settings.js` reads too. Keys parse in
   any order and are written in that order; each fault throws its own
@@ -1154,7 +1158,7 @@ settings/index.html
   `report_ui_.load_log_history_send()`, stored), `load_log_request` (a
   view that shows the history, at activation, so its strip waits on no
   paint, after its load render entry and on `layout_reset`), `report_error`
-  (`report: {page, text}`, utility.js's
+  (`report: {page, text}`, error_overlay.js's
   own, relayed up by each frame), `settings_apply` (`setting_name`,
   `setting_value`, from `report_ui_.settings_apply_send()`),
   `settings_debug_toggle` (from `report_ui_.settings_debug_toggle_send()`),
@@ -1166,7 +1170,7 @@ settings/index.html
   mode the top page shows and the preferences it shows
   (`{counter_names, heat_scale_value, heat_sort_mode, shows_calls}`,
   written from `report_preferences_.now()`, taken by the callers and heat
-  map views' `relay_take` through `report_preferences_.relay_take()`
+  map views' `relay_handler` through `report_preferences_.relay_handler()`
   and, changed, drawn again before the message acts), which a view shows
   on
   `layout_reset` and
@@ -1186,11 +1190,11 @@ settings/index.html
   `data-flame-graph-`, `data-help-href-`, `data-test-names-`) and an empty
   `div#menu-preference-`, set in
   `overview.html` at `__MENU__`.
-  `menu_entries_of()` (`menu.js`) is the one entry list, handed with the
-  status entries (`status_entries_of()`) to `report_ui_.strip.render`:
+  `menu_entries()` (`menu.js`) is the one entry list, handed with the
+  status entries (`status_entries()`) to `report_ui_.strip.render`:
   logo, overview, test, file,
   function, heat map, callers, flame graph, reset, help, then
-  the scale widget; `preference_entries_of()` the preference strip's, all
+  the scale widget; `preference_entries()` the preference strip's, all
   unnumbered: `counters` (calls, then each counter of the report, a
   `str_menu_counter_selected_mark` on each shown, kept open through a
   choice and relabelled, its cell the one shown counter's description or
@@ -1244,7 +1248,7 @@ settings/index.html
   tests pulldown is open, until `tests_pulldown_closed`; never Tab or
   Shift+Tab); the top page gives a key to an open pulldown, then a digit
   entry, then `MENU_SCALE_KEY_STEPS`, then a letter opens the tests
-  pulldown; the pulldown's `key_take` is the one key handler and keeps
+  pulldown; the pulldown's `key_handler` is the one key handler and keeps
   focus on its cell, else `str_error_internal`.
 - Keyboard: `WIDGET_KEY_NAMES` names every key a focused widget takes,
   read through `report_ui_.widget_key` (`of`, `activates`); Space on a
@@ -1263,7 +1267,7 @@ settings/index.html
   pulldown of `TABLE_ROW_COUNT_CHOICES` when the heading names
   `data-row-count-key-`, the extras (the heat map home's table kind
   pulldown), then `copy`, the rows shown as a markdown table
-  (`theme.js` `table_markdown_of`). A heading over no table is refused;
+  (`theme.js` `table_markdown`). A heading over no table is refused;
   the overview has no title heading. A count key
   is one preference per page, `callers.rows` or `heat.rows`, shared by the
   headings naming it. Rows past the count leave the document and come back,
@@ -1277,7 +1281,7 @@ settings/index.html
   default); a callers cell lists `caller (share)`,
   the share that caller's calls over the global total of calls, a diff's
   the change in that caller's calls over its baseline calls
-  (`diff_share_of()`); a diff lists a callee whose callers changed though
+  (`diff_share()`); a diff lists a callee whose callers changed though
   its calls did not, its calls cell empty, and every caller of a listed
   callee, an unchanged one `(0.00%)`; it and the heat map home print
   `max(TABLE_ROW_COUNT_CHOICES)`
@@ -1305,7 +1309,7 @@ settings/index.html
 - Scale widget: `STYLE_DESIGN_SCALE_*`, 0.5..2 in
   `STYLE_DESIGN_SCALE_STOP_COUNT` (11) stops, the default stop
   `STYLE_DESIGN_SCALE_DEFAULT_STOP` (6) at 1, each side geometric
-  (`design_scale_multiple_of()`); `design_scale_stop_set()` is the door,
+  (`design_scale_multiple()`); `design_scale_stop_set()` is the door,
   `design_scale_stop_now()` the stop. The menu draws `scale ▒▒▒▒▒▒▓▓▓▓` at
   the default, one ▒ per stop passed; `MENU_SCALE_KEY_STEPS` (`+` or `=`
   up, `-` down) and a
@@ -1411,11 +1415,11 @@ settings/index.html
   `heat_of_share(percent, curve, is_diff)`: clamp to
   `STYLE_HEAT_COLOR_FULL_SCALE_PERCENT`, divide, curve;
   nothing measured off the data; a diff maps [-100..100%], 0% at the 5.5
-  midpoint. The heat scale pulldown (`heat_scale_choices_of(is_diff)`) =
+  midpoint. The heat scale pulldown (`heat_scale_choices(is_diff)`) =
   curve × scope, `heat_scale` in the menu's preference strip. Scope =
   denominator
   only (`global`, shown bare, `per file`, `per function`; `share_in_scope()`);
-  a diff divides by the thing's own baseline (`diff_share_of()`), one scope
+  a diff divides by the thing's own baseline (`diff_share()`), one scope
   `line`, shown bare.
 - Columns: `column_extents()` → `column_limits()` (lo the content, hi the
   longer of title and content, each + `STYLE_TABLE_COLUMN_EXTRA_WIDTH_CHARS`,
@@ -1450,7 +1454,7 @@ settings/index.html
   Source view forms: `▲  11.11%`, `▼-100.00%`; ASCII hyphen for amounts;
   `▲  ≈0.00%` under 0.01%; `▲      ∞%` on a
   rise from a zero baseline, a fall past its baseline refused
-  (`diff_share_of()`), so `▼-100.00%` is the floor; past 100% a multiple
+  (`diff_share()`), so `▼-100.00%` is the floor; past 100% a multiple
   `▲   1.30x`; at/past `NUMBER_LARGEST_PRINTED_MULTIPLE_TIMES` (999.99)
   `▲     ≈∞%`.
   `theme.js` `report_ui_` and `theme.py` `NumberFormat` match by hand; README

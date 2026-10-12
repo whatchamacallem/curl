@@ -419,7 +419,7 @@ class SettingsReader:
             expected = wanted.get(name)
             self.match_check(module_name, name)
             self.sentinel_check(module_name, name, scope[name], expected)
-            value = self.value_of(name)
+            value = self.value(name)
             self.type_check(module_name, name, value, expected)
             setattr(module, name, value)
 
@@ -613,7 +613,7 @@ class SettingsReader:
             "in settings.py."
         )
 
-    def value_of(self, name: str) -> object:
+    def value(self, name: str) -> object:
         return globals()[name.lstrip("_")]
 
 

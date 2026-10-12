@@ -28,9 +28,9 @@ window.try_catch_handler_(function () {
   );
 
   const ACTION_LABEL_TEXTS = {
-    apply: window.ui_strings_.text_of("str_settings_apply"),
-    copy: window.ui_strings_.text_of("str_settings_copy"),
-    paste: window.ui_strings_.text_of("str_settings_paste"),
+    apply: window.ui_strings_.text("str_settings_apply"),
+    copy: window.ui_strings_.text("str_settings_copy"),
+    paste: window.ui_strings_.text("str_settings_paste"),
   };
   // Names each setting's actions, none while settings debugging is off.
   const ACTION_NAMES = SETTINGS_DEBUG_ENABLED
@@ -53,53 +53,11 @@ window.try_catch_handler_(function () {
     ) + STYLE_MENU_PULLDOWN_EXTRA_WIDTH_CHARS;
   const HISTORY_ENTRY_NAME = "history";
   const INDENT_TEXT = " ".repeat(SETTINGS_DEBUG_JSON_INDENT_CHARS);
-  // Fills each kind of history line from the fields the log writes for it.
-  const LOAD_LOG_LINE_WRITERS = {
-    asset: ([asset_count, asset_href, load_span]) => [
-      asset_count === 1
-        ? "str_settings_load_log_asset_entry"
-        : "str_settings_load_log_assets_entry",
-      {
-        asset: window.report_ui_.address.path_of(asset_href),
-        count: String(asset_count),
-        span: milliseconds_text(load_span),
-      },
-    ],
-    frame: ([frame_span, render_span]) => [
-      "str_settings_load_log_frame_entry",
-      {
-        render: milliseconds_text(render_span),
-        span: milliseconds_text(frame_span),
-      },
-    ],
-    input: ([event_name, target_name, paint_span]) => [
-      "str_settings_load_log_input_entry",
-      {
-        event: event_name,
-        span: milliseconds_text(paint_span),
-        target: target_name,
-      },
-    ],
-    load: () => ["str_settings_load_log_load_entry", {}],
-    parse: ([asset_count]) => [
-      "str_settings_load_log_parse_entry",
-      { count: String(asset_count) },
-    ],
-    render: ([cause_name, paint_span]) => [
-      "str_settings_load_log_render_entry",
-      { cause: cause_name, span: milliseconds_text(paint_span) },
-    ],
-    script: ([script_span, invoker_name, source_href, function_name]) => [
-      function_name
-        ? "str_settings_load_log_script_function_entry"
-        : "str_settings_load_log_script_entry",
-      {
-        function: function_name,
-        invoker: invoker_name,
-        source: window.report_ui_.address.path_of(source_href),
-        span: milliseconds_text(script_span),
-      },
-    ],
+  // Writes each kind of line value: a file as its report path, a span in ms.
+  const LOAD_LOG_VALUE_WRITERS = {
+    files: (file_href) => window.report_ui_.address.path(file_href),
+    spans: milliseconds_text,
+    texts: (value_text) => value_text,
   };
   const SETTING_ACTIONS = {
     apply: setting_apply,
@@ -116,7 +74,7 @@ window.try_catch_handler_(function () {
   let load_log_strip = null;
 
   // Writes a value as JSON, each part that fits its line kept on one line.
-  function compact_json_of(json_value, current_indent, reserved_chars) {
+  function compact_json(json_value, current_indent, reserved_chars) {
     const spaced_text = JSON.stringify(json_value).replace(
       new RegExp(SETTINGS_DEBUG_JSON_SPACING_PATTERN, "g"),
       (match_text, string_literal) => string_literal || match_text + " ",
@@ -140,7 +98,7 @@ window.try_catch_handler_(function () {
         const key_text = is_list ? "" : JSON.stringify(item_key) + ": ";
         return (
           key_text +
-          compact_json_of(
+          compact_json(
             item_value,
             next_indent,
             key_text.length + (item_index === item_entries.length - 1 ? 0 : 1),
@@ -155,7 +113,7 @@ window.try_catch_handler_(function () {
     ].join("\n" + current_indent);
   }
   // Writes the value as an editable box under settings debugging, else text.
-  function value_markup_of(setting_name, json_text) {
+  function value_markup(setting_name, json_text) {
     if (!SETTINGS_DEBUG_ENABLED) return window.render_html_escape_(json_text);
     return window.render_element_(
       "textarea",
@@ -171,8 +129,8 @@ window.try_catch_handler_(function () {
     );
   }
   // Writes the title line, the name and its action buttons, then the value.
-  function setting_markup_of(setting_name) {
-    const json_text = compact_json_of(settings_(setting_name), "", 0);
+  function setting_markup(setting_name) {
+    const json_text = compact_json(settings_(setting_name), "", 0);
     const button_markups = ACTION_NAMES.map((action_name) =>
       window.render_menu_button_(
         "action",
@@ -198,7 +156,7 @@ window.try_catch_handler_(function () {
         ].join(" "),
       ) +
       "\n" +
-      value_markup_of(setting_name, json_text) +
+      value_markup(setting_name, json_text) +
       "\n"
     );
   }
@@ -227,10 +185,10 @@ window.try_catch_handler_(function () {
       .readText()
       .then((pasted_text) => box_text_set(setting_name, pasted_text));
   }
-  function action_button_of(browser_event) {
+  function action_button(browser_event) {
     return browser_event.target.closest(".menu-button-");
   }
-  function action_take(action_button) {
+  function action_handler(action_button) {
     return SETTING_ACTIONS[action_button.getAttribute("data-setting-action-")](
       action_button
         .closest("[data-setting-name-]")
@@ -238,18 +196,18 @@ window.try_catch_handler_(function () {
     );
   }
   // Hands the taker each button of the box that a click or key activates.
-  function box_actions_listen(action_box, button_take) {
+  function box_actions_listen(action_box, button_handler) {
     action_box.addEventListener(
       "click",
       window.try_catch_handler_((click_event) => {
-        const action_button = action_button_of(click_event);
-        if (action_button) return button_take(action_button);
+        const action_button = action_button(click_event);
+        if (action_button) return button_handler(action_button);
       }),
     );
     action_box.addEventListener(
       "keydown",
       window.try_catch_handler_((key_event) => {
-        const action_button = action_button_of(key_event);
+        const action_button = action_button(key_event);
         if (
           !action_button ||
           !window.report_ui_.widget_key.activates(
@@ -258,7 +216,7 @@ window.try_catch_handler_(function () {
         )
           return;
         key_event.preventDefault();
-        return button_take(action_button);
+        return button_handler(action_button);
       }),
     );
   }
@@ -275,20 +233,21 @@ window.try_catch_handler_(function () {
     return window.report_ui_.fixed_text(milliseconds, NUMBER_FRACTION_DIGITS);
   }
   // Writes one history line, its time on the clock the top page started.
-  function load_log_line_of(log_entry) {
-    const [entry_kind, log_milliseconds, page_href, ...entry_fields] =
-      log_entry;
-    if (!Object.hasOwn(LOAD_LOG_LINE_WRITERS, entry_kind))
-      window.throw_exception_("str_error_internal");
-    const [string_id, field_values] =
-      LOAD_LOG_LINE_WRITERS[entry_kind](entry_fields);
-    return window.ui_strings_.text_fill(string_id, {
-      page: window.report_ui_.address.path_of(page_href),
+  function load_log_line(log_entry) {
+    const [string_id, log_milliseconds, page_href, line_values] = log_entry;
+    const marker_values = {
+      page: window.report_ui_.address.path(page_href),
       time: milliseconds_text(log_milliseconds),
-      ...field_values,
-    });
+    };
+    for (const [value_kind, kind_values] of Object.entries(line_values)) {
+      if (!Object.hasOwn(LOAD_LOG_VALUE_WRITERS, value_kind))
+        window.throw_exception_("str_error_internal");
+      for (const [marker_name, value] of Object.entries(kind_values))
+        marker_values[marker_name] = LOAD_LOG_VALUE_WRITERS[value_kind](value);
+    }
+    return window.ui_strings_.text_fill(string_id, marker_values);
   }
-  function history_label_of(line_count) {
+  function history_label(line_count) {
     return window.ui_strings_.text_fill("str_settings_load_log_history", {
       count: String(line_count),
     });
@@ -301,12 +260,12 @@ window.try_catch_handler_(function () {
         window.report_ui_.strip.entry_make(
           HISTORY_ENTRY_NAME,
           "pulldown",
-          history_label_of(line_count),
+          history_label(line_count),
           {
             pulldown_options: {
               box_width_chars: HISTORY_BOX_WIDTH_CHARS,
-              entries_of: () =>
-                window.report_ui_.strip.choice_entries_of(
+              entries: () =>
+                window.report_ui_.strip.choice_entries(
                   SETTINGS_LOAD_LOG_HISTORY_LINE_CHOICES.map(
                     (choice_count) => ({
                       label: String(choice_count),
@@ -329,12 +288,11 @@ window.try_catch_handler_(function () {
   // Shows the history newest first, scrolling to the setting the first time.
   function load_log_show(log_entries, line_count) {
     load_log_box.textContent =
-      [...log_entries.toReversed().map(load_log_line_of), ""].join("\n") +
-      "\n";
+      [...log_entries.toReversed().map(load_log_line), ""].join("\n") + "\n";
     if (load_log_strip !== null) {
       load_log_strip.pulldown_label_set(
         HISTORY_ENTRY_NAME,
-        history_label_of(line_count),
+        history_label(line_count),
       );
       return;
     }
@@ -350,7 +308,7 @@ window.try_catch_handler_(function () {
     ) + "\n\n";
   settings_list.innerHTML = window
     .settings_names_()
-    .map(setting_markup_of)
+    .map(setting_markup)
     .join("");
   for (const setting_box of settings_list.querySelectorAll("textarea"))
     setting_boxes.set(
@@ -370,7 +328,7 @@ window.try_catch_handler_(function () {
       box_rows_fit(input_event.target),
     ),
   );
-  box_actions_listen(settings_list, action_take);
+  box_actions_listen(settings_list, action_handler);
   box_actions_listen(debug_box, () =>
     window.report_ui_.settings_debug_toggle_send(),
   );
@@ -378,7 +336,7 @@ window.try_catch_handler_(function () {
     "hashchange",
     window.try_catch_handler_(address_setting_show),
   );
-  document.title = window.ui_strings_.text_of("str_view_settings");
+  document.title = window.ui_strings_.text("str_view_settings");
   window.report_ui_.view_activate({
     dark_mode_apply: null,
     forwards_input: false,
