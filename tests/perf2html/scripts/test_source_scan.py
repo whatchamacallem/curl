@@ -181,7 +181,8 @@ class SourceScan:
     def header_ends_at(
         self, lines: list[str], comments: list[SourceScan.CommentSpan]
     ) -> int:
-        header_end = 1
+        # A doctype leads a page template's header as a shebang a script's.
+        header_end = 2 if lines[0].startswith("<!doctype") else 1
         for comment in comments:
             if header_end == 2 and lines[0].startswith("#!"):
                 while not lines[header_end - 1].strip():
@@ -237,8 +238,8 @@ class SourceScan:
                         path,
                         line_number,
                         f"writes the banned tag {match.group(1)!r}, which"
-                        " styles text beyond colour; use a span or div"
-                        " with a colour class: "
+                        " styles text beyond color; use a span or div"
+                        " with a color class: "
                         f"{line.strip()}",
                     )
                 )
@@ -332,10 +333,12 @@ _SOURCE_SCAN_ALLOWED_NON_ASCII_CHARS = (
     "►",
     "▼",
     "…",
-    "█",
+    " ",
     "░",
     "▒",
     "▓",
+    "█",
+    "◼",
 )
 
 _SOURCE_SCAN_BANNED_TAG_NAMES = (

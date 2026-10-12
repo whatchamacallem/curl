@@ -11,12 +11,12 @@
 .menu-strip-:has(.menu-pulldown-) {
   overflow: visible;
 }
+#menu-preference- {
+  padding-bottom: var(--menu-strip-blank-line-height-);
+}
 
 .menu-strip-table- {
   border-spacing: 0;
-}
-#menu- > .menu-strip-table- {
-  width: 100%;
 }
 
 .menu-button- {
@@ -50,9 +50,14 @@ summary.menu-button-,
   padding: 0;
   white-space: pre;
 }
-.menu-status-bar- {
-  width: 100%;
+.menu-strip-blank-line- {
+  height: var(--menu-strip-blank-line-height-);
   padding: 0;
+}
+.menu-status-bar-cell- {
+  padding: 0 0 0 var(--menu-status-bar-cell-padding-left-);
+}
+.menu-status-bar- {
   white-space: pre;
 }
 

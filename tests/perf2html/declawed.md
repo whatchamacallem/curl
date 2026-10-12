@@ -103,6 +103,7 @@ postmortem reference to a numbered item that is not itself in the postmortem.
 - `CLAUDE.md`/`declawed.md` is not user documentation and is exempt from
   formatting and validation. Ignore formatting errors it will never be added
   to thw whitelist.
+- Provide links to screenshots showing changes in all postmortems.
 
 ### 0.2 One-door glossary
 
@@ -118,8 +119,8 @@ The single function/check owning each concern - never bypass or duplicate:
   thing's own baseline through `diff_share_of()`.
 - `diff_share_of()` - every diff share, a fall past its baseline refused
   (theme.py/js).
-- `fixed_text()` - every decimal a page prints; `percent()`/`percent_text()`
-  every share, `signed_percent()`/`signed_percent_text()` every diff share,
+- `fixed_text()` - every decimal a page prints; `percent_text()` every
+  share, `signed_percent()`/`signed_percent_text()` every diff share,
   `is_line` true on the heat map source view alone (theme.py `NumberFormat`,
   theme.js `report_ui_`).
 - `design_scale_stop_set()` - every scale change; `menu.js` then posts
@@ -147,8 +148,20 @@ The single function/check owning each concern - never bypass or duplicate:
   button: a strip cell, a link, a control (theme.js/theme.py; strip
   pulldown, unavailable and widget cells JS only).
 - `window.render_page_emphasis_` - every page emphasis, called by
-  the strip for a heading title and by `report_ui_.page_heading.attach`
-  for a heading over no table (theme.js).
+  the strip for a heading title (theme.js).
+- `heat_cell_style(percent, curve, is_diff)` - every heat color, JS
+  alone; Python paints nothing.
+- `table_sort.records_of()` - every table sort; `render_table`'s
+  `on_sort` the one column title click (theme.js).
+- `report_preferences_.now()` - every read of the counters, calls, heat
+  scale and heat sort preferences; `preference_choose()` on the top
+  page the one writer, relayed down on every message, a view taking it
+  through `report_preferences_.relay_take()` (preferences.js).
+- `load_log_append()` - every load log entry, on the clock the top page's
+  navigation started, a framed page posting it up (utility.js);
+  `report_load_log_.page_render_log()` and `.event_render_log()` every
+  render entry, a view drawing after its own loads calling its load render
+  log once drawn through `view_activate`'s `load_render_defer`.
 
 ### 0.3 Working agreement
 
@@ -190,7 +203,7 @@ The single function/check owning each concern - never bypass or duplicate:
   with that, not with `test_all.sh`.
 - The full run is `test_all.sh` and only run that when asked to "test".
 - When iterating send `--verbose` output to
-  `tests/perf2html/test_expected_behavior.md` for debugging and review.
+  `tests/perf2html/test_verbose.md` for debugging and review.
 - Docs written on request go in `tests/perf2html/tmp/` only, `.md`, never
   touched by the whitelist.
 - More than one goal in a response ends with a done/not-done checklist.
@@ -269,7 +282,8 @@ The single function/check owning each concern - never bypass or duplicate:
   checking - local expected constants or a different-route recomputation only.
 - `--verbose` is additive/counted - no bare `printf` wrappers.
 - `tests/perf2html/` is bespoke tooling - one parser, one theme, no dead code
-  or duplicate systems.
+  or duplicate systems; the theme is color, notation, markup and layout
+  alone, no home for whatever two pages share (section 0.5).
 - Pages are deterministic - same input, byte-identical output.
 - New identifiers need 2+ unabbreviated English words.
 - Naming split: `_SCREAMING_SNAKE` for a script's own global, `_lowercase` for
@@ -284,8 +298,8 @@ The single function/check owning each concern - never bypass or duplicate:
   one plain English sentence. `test_source_scan.py` cuts the comment marks
   and any backtick code span, then faults the first other character on each
   comment line as `comment holds 'X' outside ENGLISH_PUNCT`.
-- ASCII plus the specific whitelisted glyphs (`© ≈ ∞ ▲◄►▼ … █ ░ ▒ ▓`),
-  written literally, never as HTML entities.
+- ASCII plus the specific whitelisted glyphs (`© ≈ ∞ ▲◄►▼ … █ ░ ▒ ▓ ◼`
+  and a no-break space), written literally, never as HTML entities.
 - No unicode escapes or runtime character constructors in source, comments
   and header included: `\u`, `\U`, `\x`, `\N{`, octal `\NNN`, CSS hex
   escapes, numeric entities (`&#65;`), `String.fromCharCode`,
@@ -310,8 +324,6 @@ The single function/check owning each concern - never bypass or duplicate:
   printing relevant variables too.
 - `test_all.sh` should print significant run times, it is not "no news is good
   news".
-- When `test_all.sh` has run links to screenshots, reports and
-  `test_expected_behavior.md`.
 - Don't change code when unable to implement a request as specified. Do not
   adjust requirements to be more reasonable and then determine they are
   satisfied. Disagreements about design indicate further refinement is
@@ -332,6 +344,43 @@ The single function/check owning each concern - never bypass or duplicate:
 - A comment never opens with the name of what it documents. Not
   `foo: the function foo finds bar.`, just `Finds bar.`
 
+### 0.5 Module ownership
+
+- The file a function lives in is decided by the one concern it serves,
+  never by how many pages call it. "Shared" is not a concern, and
+  `theme.js` is not the home of whatever two pages use: the theme is
+  color, number notation, markup composition and layout mechanics, and
+  knows no counter, preference, report fact or log.
+- `scripts/README.md` is the one list of what each file owns. Before a
+  function is added to a file, its concern is named in two words; a file
+  whose entry does not say those words is the wrong file. A concern no
+  entry names gets a new file.
+- One concern, one file, one type: a `scripts/*.js` is one IIFE exposing one
+  object, `window.report_<name>_`, whose members share one noun, the object
+  a TypeScript module would `export` as is. A `let` the IIFE holds is that
+  object's state; two members that never touch the same state are two
+  concerns, and a file holding both is a split waiting. The test is C's:
+  the file could be one `.c` with one `.h`, and the `.h` reads as one
+  noun's interface.
+- Model, controller, view (section 0.1): a model holds state and answers
+  what changed, a controller edits a model, a view draws from the relayed
+  copy. Every stored preference is one model on the top page, the frame
+  relays it down whole, and a view keeps a mirror through the frame
+  protocol alone (`view_activate`'s `relay_take`), never a second holder
+  in a library. `preferences.js` is that model and mirror for the four
+  relayed preferences; dark mode, the scale and the row counts are still
+  held in `theme.js`, the history count in `frame.js`.
+- A report fact (test names, flame graph, counter names, diff) reaches the
+  top page as a `nav#menu-` attribute written by `menu_render`, never
+  inside another asset's data.
+- Python writes data, templates hold the HTML, JS draws. A page's whole
+  document is its template, `<!doctype html>`, `<head>`, every `<link>` and
+  `<script>` in order, as `flame_graph.html` is; Python fills content
+  markers and composes no `<head>`, script list or stylesheet list.
+- A new file is added with its `scripts/README.md` entry, its
+  `ASSET_<NAME>_SCRIPT_NAME` setting, its tag in each template that loads
+  it, and its line in section 1, in the one change.
+
 ## 1 Project Structure
 
 Under `tests/perf2html/`:
@@ -351,11 +400,15 @@ Under `tests/perf2html/`:
   left as addresses; `callgrind_diff.py` delta + callers JSON;
   `callgrind_to_heatmap.py`, `build_report.py` (overview, callers),
   `build_flame_graph.py`, `trace_to_speedscope.py`; `theme.py` with
-  `theme.css`/`theme.js` the one theme (`theme.js` = utility library);
+  `theme.css`/`theme.js` the one theme (`theme.js` = the shared page
+  library, section 0.5);
   test-only: `test_report.py`, `test_source_scan.py`, `test_screenshot.py`.
 - Page assets (`scripts/`): `frame.js` the top page's model; `menu.js` the
-  menu; `menu.css` every strip and pulldown (the menu, the heat map's strip,
-  the table headings); one template per page, speedscope's aside:
+  menu and its preference strip; `preferences.js` the relayed preferences,
+  their choices and the counter labels, the top page's model and a view's
+  mirror; `menu.css` every strip and pulldown (the
+  menu, the table headings, the settings view's history strip); one
+  template per page, each a whole document, speedscope's aside:
   `overview.html` the top page (skeleton, menu slot, home panel),
   `overview.js` the home panel's headings, raw data link, log titles and
   tables, `callers.html` a test's callers page, `heat_map.html` the heat map page,
@@ -365,7 +418,19 @@ Under `tests/perf2html/`:
   `flame_graph.js` polls `window.speedscope`;
   `ui_strings.js` (`str_*`); `error_overlay.js` first script on every page;
   `utility.js` second, relaying an error report up the frames, reporting a
-  failed `<link>`/`<script>`/`<img>` load; `light_mode.css` the light mode,
+  failed `<link>`/`<script>`/`<img>` load, and holding the top page's load
+  log (`window.report_load_log_`, for finding where a click stalls, in
+  time order on one clock: each trusted click and key with its target and
+  time to the next paint, each page's render from navigation to the paint
+  after its first complete draw or from the event it follows to the next
+  paint, each page's end of parsing with the count of assets it waited
+  on, the assets it loaded after, one line per paint, each page's load
+  event, each long animation frame and the scripts Chrome names in it, a
+  framed page posting its entries up; on `file://` Chrome writes no
+  Resource Timing entry, answers one file at a time, about 2.65ms each
+  over `wsl.localhost`, and reports a framed page's long frames to the top
+  page without its scripts); `light_mode.css` the
+  light mode,
   plain rules, linked before `dark_mode.css` the dark mode, which overrides
   every light rule under `:root:not([data-dark-mode-="disabled"])`;
   `settings.js` the settings, fourth in the head of every page, the top
@@ -375,7 +440,14 @@ Under `tests/perf2html/`:
   from them; `debug.js` the debug script template, its manifest table
   filled in by `build_report.py debug`; `settings_page.html` and
   `settings_page.js` the
-  settings view, always written, a perf2html developer's tool that
+  settings view, always written: the debug query toggle (`debug=1`/`0`),
+  the load log history, newest first, under a `history:` pulldown of
+  `SETTINGS_LOAD_LOG_HISTORY_LINE_CHOICES`, the newest that many of the
+  `SETTINGS_LOAD_LOG_HISTORY_MAX_LINES` (100) the top page always keeps,
+  none until chosen (`SETTINGS_LOAD_LOG_HISTORY_DEFAULT_LINES`, 0), so
+  no shot holds a measurement, then every setting, read-only
+  until `debug=1` gives each its copy, paste and apply buttons, a
+  perf2html developer's tool that
   refuses no setting and guards no page against one only a tool reads,
   to be disabled, which `README.md`, the user contract, therefore leaves
   out.
@@ -411,7 +483,8 @@ tests/perf2html/scripts/test_all.sh [--help]
 tests/perf2html/clean.sh [--help]
 cmake -S . -B build -G Ninja -DCURL_USE_LIBPSL=OFF
 cmake --build build --target perf      # EXCLUDE_FROM_ALL, must be named
-taskset -c 3 ./build-relwithdebinfo/22_DCMAKECFLAGSO2g/tests/perf/perf \
+taskset -c 3 \
+    ./build-relwithdebinfo/gcc-16-0-1-22_DCMAKECFLAGSO2g/tests/perf/perf \
     <test> [loops]
 ```
 
@@ -439,9 +512,13 @@ taskset -c 3 ./build-relwithdebinfo/22_DCMAKECFLAGSO2g/tests/perf/perf \
 ## 3 Build trees and measuring
 
 - `build_paths` (perf2html.sh) is the one setter of `_TREE_NAME`,
-  `_BUILD_TREE`, `_TRACE_TREE`, `_BIN`, `_TRACE_BIN`. Tree name = joined flag
-  string's length, `_`, its alphanumerics (`22_DCMAKECFLAGSO2g`,
-  `27_DCMAKECFLAGSO2gOs`) under `build-relwithdebinfo/` (`BUILD_DIR`) and
+  `_BUILD_TREE`, `_TRACE_TREE`, `_BIN`, `_TRACE_BIN`. Tree name = the
+  compiler's name and version (`compiler_identify`, `_COMPILER_NAME`, from
+  `_COMPILER_COMMAND` = `-DCMAKE_C_COMPILER=`, else `$CC`, else `cc`,
+  predefining `__clang__` or `__GNUC__`, non-alphanumerics `-`), `-`, the
+  joined flag string's length, `_`, its alphanumerics
+  (`gcc-16-0-1-22_DCMAKECFLAGSO2g`, `gcc-16-0-1-27_DCMAKECFLAGSO2gOs`)
+  under `build-relwithdebinfo/` (`BUILD_DIR`) and
   `build-instr/` (`TRACE_BUILD_DIR`) at the repo root, never `/tmp`. Not unique
   across punctuation (`-DA_B=C` vs `-DA=B_C`). Each measuring run reconfigures
   its own two (~7s, recompiles nothing); `--regenerate` configures neither.
@@ -474,14 +551,21 @@ taskset -c 3 ./build-relwithdebinfo/22_DCMAKECFLAGSO2g/tests/perf/perf \
 
 - Artifacts dir holds, per report subdir, `perf-stat.<test>.<recorded>.txt`,
   `perf-stat.*.csv` (`PROFILE_TIMING_FILE_PREFIX`),
-  `trace.<test>.<loops>.<recorded>.log` and the
+  `trace.<test>.<recorded>.log`, the run log `profile.<recorded>.log`, a
+  `--regenerate`'s `regenerate.<recorded>.log`, and the
   rows file `header.overview.<report basename>.txt` (`HEADER_ROWS_NAME`;
-  `run_all` writes it, `_HEADER_FILE` set in `args_parse`). No `output.txt`
+  `run_all` writes it, `_HEADER_FILE` set in `args_parse`); the diff's
+  subdir its run log `diff.<TIMESTAMP>.log` and a `--regenerate`'s
+  `regenerate.<TIMESTAMP>.log`. No `output.txt`
   ships: the overview embeds every test's logs, one collapsed section
-  per kind, reading one `--perf-log NAME=FILE` per test, `all` included,
-  and one `--trace-log NAME=FILE` and `--valgrind-log NAME=FILE` per test
-  (`artifact_path_of timing-page`, `trace-log`, `valgrind-log`); a callers
-  page holds no log.
+  per kind, reading one `--perf-log PATTERN`, one `--trace-log PATTERN`
+  and one `--valgrind-log PATTERN`, each `artifact_path_of` with `*` for
+  the test (`timing-page`, `trace-log`, `valgrind-log`), and one
+  `--profile PATTERN` (`callgrind`), whose counters the menu offers,
+  expanded by
+  `callgrind.named_paths_of` (one `*` in the file name, a match per test,
+  `all` included, none an error); the perf log's matches are the
+  overview's tests, `--test` gone; a callers page holds no log.
 - `timer_artifacts_write` fills a transient `timer-artifacts-<recorded>/` in
   the subdir, each test's callgrind file stripped and a link to its
   speedscope JSON, packs it with `tar --dereference` into the report's
@@ -492,8 +576,13 @@ taskset -c 3 ./build-relwithdebinfo/22_DCMAKECFLAGSO2g/tests/perf/perf \
   (`test_expected_behavior.sh`): prove rows file and recordings exist.
   `recorded_reuse` restores `TIMESTAMP` from
   `recorded=`; `build_manifest` reads the rest; both before `report_delete`.
-  The diff's `--regenerate` keeps the artifacts without the flush, refusing a
-  missing cache dir before its report is deleted. `executable=` is recomputed
+  The diff's `--regenerate` keeps the artifacts without the flush; its
+  `recorded_reuse` refuses a missing cache dir and restores `TIMESTAMP` from
+  the name of the one `diff.<TIMESTAMP>.log` the subdir holds, none or
+  several refused, exit 2, before its report is deleted. A regenerate takes
+  no time from the clock: every artifact it writes lands on its first name
+  with its first bytes, which `test_error_regenerate_cache_check` holds it
+  to, the regenerate log alone added. `executable=` is recomputed
   from today's naming: after a tree-naming change run without `--regenerate`.
 - `regenerate_check` (right after `whitelist_expand`): per measured report,
   newest `perf-stat.*.csv` vs the `executable=` row's binary (first token,
@@ -555,7 +644,12 @@ taskset -c 3 ./build-relwithdebinfo/22_DCMAKECFLAGSO2g/tests/perf/perf \
   (`index_write`, filled from `scripts/test_template.html` at `__SHOT_LIST__`,
   one cell per report, view and mode, no size, none for a view that
   lacks a file, each href relative to the index, so the index opens from
-  any copy that carries the report dirs beside it); imports no settings;
+  any copy that carries the report dirs beside it, its top strip linking
+  each report and `test_verbose.md`, written in the template, which takes
+  the focus from its frames once all have loaded, as each
+  `screenshot-menu` frame focuses an entry and one tab shows one focused
+  frame, the last to load, which made the index shot vary); imports no
+  settings;
   each `_VIEWS` hash
   is a golden bookmark written out whole as one string literal, never
   formulated from a constant; error views
@@ -581,9 +675,10 @@ taskset -c 3 ./build-relwithdebinfo/22_DCMAKECFLAGSO2g/tests/perf/perf \
   `--regenerate`, the one mode that compares shots with gold. `test_all.sh` runs mode 2, then `test_error_handling.sh`, and
   prints `perf2html test_all.sh all_tests_pass` last.
   `test_error_handling.sh` re-runs mode 2 `--verbose` with stderr `2>` into
-  `tests/perf2html/test_expected_behavior.md` (gitignored), then checks the
+  `tests/perf2html/test_verbose.md` (gitignored), then checks the
   kept recordings (`test_error_cache_populated_check`) and proves a batch
-  `--regenerate` measures nothing (`test_error_regenerate_cache_check`), then
+  `--regenerate` measures nothing and leaves every kept file's bytes as
+  they were (`test_error_regenerate_cache_check`), then
   an uncached diff expected to pass (`test_error_diff_uncached_test`), and
   failure-mode tests on report copies in
   `tests/perf2html/build/test_error_handling_scratch/`
@@ -591,7 +686,7 @@ taskset -c 3 ./build-relwithdebinfo/22_DCMAKECFLAGSO2g/tests/perf/perf \
   --` checks the exit code and prints `ok <test>`; wrong code →
   `<test>: exit N, expected M, from: <command>` through `test_fail`, exit 1;
   last, `prettier --check` with `.prettierrc.json` over
-  `tests/perf2html/test_expected_behavior.md`: the markdown must be what
+  `tests/perf2html/test_verbose.md`: the markdown must be what
   prettier prints.
   `test_expected_behavior.sh` and `test_error_handling.sh` source
   `test_utility.sh`, which holds `path_shown`, `test_fail`,
@@ -649,13 +744,15 @@ taskset -c 3 ./build-relwithdebinfo/22_DCMAKECFLAGSO2g/tests/perf/perf \
   2, perf2html/diff 3, work 4), and `PERF2HTML_CLOCK_START_US`, the outermost
   script's clock, so a child's `[elapsed]` continues its parent's, and sets
   `lastpipe`. Good news is formatted, bad news is not: every line but a
-  failure's is a code span, a table cell or sits in a fence, so nothing is
+  failure's is a code span, a table cell, a heading or sits in a fence, so
+  nothing is
   escaped or wrapped and `prettier --check` passes as printed; a failure's
   lines reach stderr raw (see Failure). `code_span` = text with
   `$HOME/` as `~/`, in the shortest backtick run it lacks; `block_lead` = the
   blank line before a block (none before a hand-run script's first, none
   between two items unless the first is loose). `title_print` = script heading;
-  `heading_print` = one piece of work; `` `[elapsed] text` ``; items restart
+  `heading_print` = one piece of work, `[elapsed] text` as plain heading
+  text, `$HOME/` as `~/`, `<` as `\<` (`heading_write`); items restart
   per heading; `command_item_print` = `` N. `$ cmd` ``; `log_verbose` = a
   paragraph of one code span; `table_print` = one whole table, header words
   plain, values code spans, padded as prettier pads. `verbose_filter INDENT`
@@ -664,7 +761,7 @@ taskset -c 3 ./build-relwithdebinfo/22_DCMAKECFLAGSO2g/tests/perf/perf \
   no fence when empty, a line with as many backticks as the fence closes it and
   opens a longer one; 2+ `words: number [unit]` lines in a row are
   one single-row table (header words plain, values code spans, padded as
-  `table_print` pads), tight after a fence, else led by a blank line that makes
+  `table_print` pads), led by a blank line, which makes
   the item loose: the awk answers `loose` on stdout and
   `VERBOSE_BLOCK_PRINTED=loose` puts the blank line before the next block,
   which `lastpipe` lets the filter, a pipeline's last stage, set;
@@ -725,7 +822,9 @@ settings/index.html
   ships none. `all/` = every test merged, `REPORT_TEST_SUITE_NAME` the id in
   shell, Python and JS: no perf log, trace, flame graph.
 - `MANIFEST.txt`: line 1 version string, then LABEL=VALUE. Full: `revision`,
-  `cpu`, `build`, `executable` (repo-relative), `recorded` (`<unix> <human
+  `cpu`, `memory` (`/proc/meminfo` total and use), `os` (`/etc/os-release`
+  `PRETTY_NAME`), `compiler` (`compiler_identify`), `build` (the cmake
+  flags), `executable` (repo-relative), `recorded` (`<unix> <human
   date>`), `checksum`. Diff: `baseline`, `modified` (a `.txz` input shown
   as `$tmp/<role>/<report>`, its extraction root a `mktemp -d`, through
   `input_path_display`, which also writes the header block's `report=`),
@@ -737,15 +836,24 @@ settings/index.html
   `checksum=` = POSIX `cksum` over every file but the manifest, `LC_ALL=C`
   sorted, relative paths; `home_dir_check` fails on `$HOME`.
 - Diff report: no flame graph, no native timing, no raw data, no logs.
-  Overview reads `--diff-profile NAME=FILE` per paired
-  test; a test in one report only → `tests_pair` error.
-- Pages: shared assets linked, never inlined; hrefs from
-  `theme.href(depth, name)` (overview 0; callers, heat map and flame
-  graph 1); no stylesheet sets a `:root` value, `settings.js` writing each;
+  Overview reads one `--diff-profile PATTERN`, `artifact_path_of delta`
+  with `*`, its matches the diff's tests; a test in one report only →
+  `tests_pair` error.
+- Pages: shared assets linked, never inlined; each template writes its
+  hrefs literally (overview `assets/`; callers, heat map, flame graph and
+  settings `../assets/`), `theme.href(depth, name)` the generated ones
+  (the heat map's `sources/`, the flame graph app, the help link); every
+  page's head opens with `error_overlay.js`, `utility.js`,
+  `ui_strings.js`, `settings.js`, which `test_report.py` `page_check`
+  holds each page to; no stylesheet sets a `:root` value, `settings.js`
+  writing each;
   classic
   `<script src>`/`<link>` only, no `fetch()`, no ES modules; opens from
   `file://`. `sources/<source_name()>` (display path, non-alphanumerics → `_`,
-  plus `.js`); `FileModel.source` read via `source_text(file_path)`;
+  plus `.js`); `FileModel.source` read via `source_text(file_path)`, the
+  heat map loading a file's source script before drawing its file view
+  and every one before the `lines` table, whose source column sorts every
+  line;
   `flame_app_install` needs each glob to match one file.
   `manifest_write` runs `build_report.py debug`, which writes
   `assets/debug.js` from `scripts/debug.js`, its `__MANIFEST_TABLE__`
@@ -754,7 +862,7 @@ settings/index.html
   string, one row per source line, no `checksum=`, then the debug tip:
   under `SETTINGS_DEBUG_ENABLED`
   a box by the pointer naming the element under it, its class, id and
-  colours, the one tooltip beside the two `title=` attributes); a framed
+  colors, the one tooltip beside the two `title=` attributes); a framed
   page holds `debug.js` with its other scripts until the settings relay.
 
 ## 7 Python
@@ -763,9 +871,10 @@ settings/index.html
   only, alphabetical; `from` only for `__future__` `annotations`,
   `collections.abc`, `typing`. `pyright` 0 errors. Costs are
   `callgrind.Costs`, summed by `costs_add`. No multi-line HTML/CSS/JS
-  literal: real files via `theme.asset_text_read()`. Every tag through
-  `theme.render_element()`, `theme.render_menu_button()` or
-  `theme.render_heading()`, the doctype aside; no English UI text in
+  literal: real files via `theme.asset_text_read()`. Every tag Python
+  writes through `theme.render_element()`, `theme.render_menu_button()` or
+  `theme.render_heading()`, a page's document its template; no English UI
+  text in
   Python or a template, every string written by a page script through
   `text_of`/`text_fill`.
 - `settings.py`: settings first, then `SettingsReader` and `SettingsWriter`
@@ -776,7 +885,7 @@ settings/index.html
   `I001`/`E501` off. Names `SCREAMING_SNAKE`, broad→narrow, 2+ words, unit
   suffix (`_PX`, `_MS`, `_PERCENT`, `_SHARE`, `_CHARS`, `_BYTES`). Every
   constant that changes a pixel is a setting; `STYLE_*` = every setting
-  that changes a pixel or picks a colour, written into a style as is or
+  that changes a pixel or picks a color, written into a style as is or
   computed with first. A stylesheet keeps only zero, none, hidden and
   values with no visible effect, and the grid units `1ch`, `2ch` and `1lh`
   written literally where the maintainer authorized each use, the one
@@ -785,13 +894,17 @@ settings/index.html
   JSON-serializable; the manifest table is not among it, see `manifest_table`
   and `debug.js` in section 6), which `settings.js` freezes at
   install; `SETTINGS_DEBUG_ENABLED`, `False`, the top page's
-  `SETTINGS_DEBUG_QUERY_KEY_NAME` query (`debug=1`) sets at install, which
+  `SETTINGS_DEBUG_QUERY_KEY_NAME` query sets at install
+  (`SETTINGS_DEBUG_QUERY_VALUES`: `debug=1` on, `debug=0` off, the
+  installed `SETTINGS_DEBUG_ENABLED` the effective value), which
   then applies the hash's `SETTINGS_DEBUG_HASH_KEY_NAME`
   (`setting-values`), the relayed object carrying both; `settings.js` is
   read
   with a local `open()` (not `theme.asset_text_read()`: cycle).
-  `RANKING_COUNTER_NAME` ranks, colours and
-  divides every table but the callers table, ranked by calls.
+  `RANKING_COUNTER_NAME` ranks, colors and
+  divides every table; the callers table ranks by calls, by the ranking
+  counter while calls are hidden, and a click on any column title re-sorts
+  a callers or heat map home table (`table_sort`).
 - `callgrind.py`: `profile_load(paths)` exits unless the self-check ratio is
   1.0000; `path_norm() -> PathInfo(display, local, group)`; functions keyed by
   name; derived counters from `settings.DERIVED_COUNTER_TERMS` (`D1m`, `DLm`,
@@ -807,8 +920,15 @@ settings/index.html
   `file_key_of()` keys each apart as `<object basename>/???`, shown
   `(unknown)` by `path_norm()`.
 - `build_report.py`: `_RANKING_COUNTER_NAME`; `Profile.value()` raises
-  `KeyError`; `BuildReport.test`/`.diff_test`; fills `overview.html` and
-  `callers.html`, each marker replaced by markup it renders.
+  `KeyError`; `BuildReport.test`/`.diff_test`; fills `overview.html`, each
+  marker replaced by markup it renders, and `callers.html` with one JSON
+  callers model in `data-model-` (`callers_model_of`,
+  `diff_callers_model_of`), which `callers.js` draws: `counterNames`,
+  `counterTotals` (a regular report's), `functions` (`[name, href]`),
+  `callees` (`[function, calls, values, callers]`, a diff's then
+  `baseline_calls, baseline_values`), a caller `[function, calls]`, a
+  diff's then `baseline_calls`, each a `NamedTuple` written positionally,
+  its field order the contract `callers.js` indexes by.
 - `callgrind_diff.py`: `counters_check()` names both lists; `--callers-output`
   required (name, flags, JSON keys are contract); a `callers` row is
   `[caller, change in calls, baseline calls]`; a callee is kept when any
@@ -817,13 +937,13 @@ settings/index.html
   calls, then name.
 - `callgrind_to_heatmap.py`: `data` writes one test's
   `heat-map/data/<test>.js`, the `sources/` it shows and, for the merged test,
-  `assets/pulldown_text.js`; `page`, after the last `data`, writes the one
-  `heat-map/index.html`, `heat_map_main.html` at `__HEAT_MAP_MAIN__`, its
-  `__SCRIPTS__` in the order
-  every `sources/` file, `pulldown_text.js`, then `debug.js`,
-  `theme.js` and `heat_map.js` held in `theme.held_script_tags()`
-  until `settings.js` relays the settings; head from `theme.page_document`
-  (`theme.page_preamble_scripts()`, `extra_css`, `body_holds_scripts`);
+  `assets/pulldown_text.js` (`window.report_pulldown_text_`: `files` and
+  `functions` alone); `page`, after the last `data`, writes the one
+  `heat-map/index.html`, `heat_map_main.html` at `__HEAT_MAP_MAIN__`,
+  linking no `sources/` file, the template holding the rest in order: `pulldown_text.js`, then `debug.js`,
+  `theme.js`, `preferences.js` and `heat_map.js` held in
+  `<template id="page-held-script-">` until `settings.js` relays the
+  settings;
   `model()`/ `diff_model()`; `model()`
   refuses an unemitted `RANKING_COUNTER_NAME`; `git ls-files` lets its
   stderr through, a non-zero exit one `error:` line.
@@ -835,10 +955,13 @@ settings/index.html
   passing through, a non-zero exit one `error:` line.
 - `cyg_callback.c`: `next` a pointer, `end` a variable (11/12-instruction hot
   path); `buildid` path is `realpath`; single-threaded.
-- `test_report.py`: greps `loadFileFromBase64` in the flame graph page and
+- `test_report.py`: `menu_check` holds `data-counter-names-` to the merged
+  test's callers model and `data-diff-` to the layout's; greps
+  `loadFileFromBase64` in the flame graph page and
   its scripts and `report_ui_.layout_activate` in the heat map page's; reads
   the entry each `data/<test>.js` and `profiles/<test>.js` files under its
-  global; report dir required;
+  global, holding each source script a model names to `sources/`; report
+  dir required;
   `manifest_recorded_labels` get the unix-time check; `logs_check` reads
   the overview's `perf log`, `trace log` and `valgrind log` sections and
   a callers page holds none; `diff_baseline_check`
@@ -847,11 +970,13 @@ settings/index.html
 - `test_source_scan.py`: file paths (`nargs="+"`), read once; a block =
   consecutive whole-line comments plus a `/* */` or `<!-- -->` opened first on
   a line, file
-  header exempt from the block limit (`_COMMENT_BLOCK_MAX_LINES`, 1) and
+  header (after a `#!` or `<!doctype` line) exempt from the block limit
+  (`_COMMENT_BLOCK_MAX_LINES`, 1) and
   `ENGLISH_PUNCT`, not from the glyphs; a character outside printable ASCII
   and the allowed glyphs faults; glyphs
   `_SOURCE_SCAN_ALLOWED_NON_ASCII_CHARS`
-  (`© ≈ ∞ ▲ ◄ ► ▼ … █ ░ ▒ ▓`, literal); `escape_check` over every line,
+  (`© ≈ ∞ ▲ ◄ ► ▼ … █ ░ ▒ ▓ ◼` and a no-break space, literal);
+  `escape_check` over every line,
   `_ESCAPE_RULES` (escapes counted after an odd number of backslashes,
   `.css` adds the stylesheet escape);
   `_COMMENT_SYNTAX_BY_EXTENSION` (`.html` adds `//`, `/* */`); faults
@@ -899,13 +1024,13 @@ settings/index.html
   other script.
 - JS settings: each `.js` resolves each `settings_("NAME")` once into a
   same-named `const` at the top of its IIFE, never in a render path; every
-  number/colour/key/bound is a setting (`MENU_PULLDOWN_KEY_NAMES`).
+  number/color/key/bound is a setting (`MENU_PULLDOWN_KEY_NAMES`).
 - Names: `snake_case` ours; camelCase owned by browser/Python (DOM,
   storage/URL key, TypedDict key). A CSS class, id or value
   entry is its object path, `-` between words, singular words: the views
   it shows on (`callers`, `heat-map`, `menu`, `overview`, alphabetized, or
   `page` when the views are all of them), component, part; no word its
-  parent already gives. A colour role leads with its mode,
+  parent already gives. A color role leads with its mode,
   `dark-mode-` or `light-mode-`, then a concept: `menu-normal`,
   `menu-focus`, `page`, `page-emphasis`, `page-dim`,
   `debug-tip`, `page-link`, `panel`, `status-bar`,
@@ -921,12 +1046,12 @@ settings/index.html
   display path, read by `source_text()`. Markers `__DATA__` (the
   `settings.js` template, which the top page installs),
   `__MANIFEST_TABLE__` (the `debug.js` template),
-  `__SCRIPTS__`, `__APP_CSS__`, `__HELD_SCRIPTS__`,
-  `__PAGE_TITLE__`, `__MENU__`, `__OVERVIEW_HEADING__`, `__RAW_DATA__`,
-  `__MANIFEST__`, `__TESTS_HEADING__`, `__TESTS__`, `__VIEW_FRAME_TITLE__`,
+  `__APP_CSS__`, `__APP_SCRIPT__` (the flame graph app),
+  `__PAGE_TITLE__` (a callers page's test), `__MENU__`, `__RAW_DATA__`,
+  `__MANIFEST__`, `__TESTS_HEADING__`, `__TESTS__`,
   `__PERF_LOG__`, `__TRACE_LOG__`,
-  `__VALGRIND_LOG__`, `__HEADING__`, `__FUNCTIONS__`, `__HEAT_MAP_MAIN__`,
-  and in `heat_map.js` `__LINES_TABLE__` and `__FUNCTIONS_TABLE__`, every
+  `__VALGRIND_LOG__`, `__FUNCTIONS__`, `__HEAT_MAP_MAIN__`,
+  and in `heat_map.js` `__HOME_TABLE__`, every
   one but `__DATA__` filled through `template_fill`.
 - Frames: the overview frames one view at a time, a test's callers page,
   the heat map app or the flame graph app, the page
@@ -934,15 +1059,18 @@ settings/index.html
   the top page alone, which wears `data-top-page-` on `<html>` so
   `window.is_framed_` is false for it though a page outside the report
   frames it, as `window.report_frame_` (`activate()`,
-  `address_now()`, `address_request(hash)`, `view_post(message)`,
-  `has_flame_graph` and `test_names`, read from `#menu-`, and
+  `address_now()`, `address_request(hash)`, `view_post(name, fields)`,
+  `counter_names`, `flame_graph_exists(test)`, `is_diff` and
+  `test_names`, read from `#menu-`, and
   `menu_entry_number_now()`, the `SCREENSHOT_MENU_KEY_NUMBER`
   (`screenshot-menu`) query value while the address the page loaded at
   shows, else null).
   `view_show()` parses and checks the top's hash, records it, at a
-  settings address or one carrying `setting-values` without
+  `setting-values` address without
   `SETTINGS_DEBUG_ENABLED` loads the top page again under the `debug=1`
-  query by `location.replace`, at a `setting-values` other than the one
+  query by `location.replace` (`settings_debug_load`, which a view's
+  `settings_debug_toggle` message also calls, `debug=0` clearing the
+  applied values), at a `setting-values` other than the one
   it loaded with reloads, else calls
   `report_menu_.address_show()`, then loads the view by
   `location.replace(page_href + location.hash)`, never `iframe.src`, or
@@ -953,10 +1081,14 @@ settings/index.html
   hands the controller each key a view sent up. A view uses `theme.js` doors
   alone, `report_ui_.address` and
   `report_ui_.view_activate({dark_mode_apply, dark_mode_arrive,
-  forwards_input, preferences_apply, recenter})`,
-  which meets the downward strings and, under `forwards_input`, requests a
-  clicked address link and forwards keys. The flame graph app forwards no
-  input, and its `recenter` reloads the page.
+  forwards_input, load_log_show, load_render_defer, recenter,
+  relay_take})`,
+  which meets the downward strings, handing each to `relay_take` before
+  it acts, and, under `forwards_input`, requests a
+  clicked address link and forwards keys; under `load_render_defer` it
+  hands the view its load render log, which the heat map calls once its
+  first route has drawn, its model and sources loaded. The flame graph app
+  forwards no input, and its `recenter` reloads the page.
 - URL = whole state, one grammar on every page: `#test=<t>&view=<v>`, `view`
   one of `callers`, `heat-map`, `flame-graph`, `settings`; the heat map adds
   `&file=<f>[&line=<n>]` or `&function=<name>`; the flame graph adds
@@ -973,8 +1105,10 @@ settings/index.html
   none = the overview's home. Query keys, the top page's own: `debug`
   (`1`, settings debugging), `screenshot-mode` (`1` dark, `0` light) and
   `screenshot-menu` (an entry number). `report_ui_.address`
-  (`of_hash`, `hash_of`, `home_hash_of`, `link_hash_of`, `page_href_of`,
-  `request`, `settings_cleared_hash_of`, `top_href_of`) is the one JS door
+  (`file_href_of`, `of_hash`, `hash_of`, `home_hash_of`, `link_hash_of`,
+  `page_href_of`, `path_of`, `request`, `settings_cleared_hash_of`,
+  `top_href_of`) is the
+  one JS door
   and `build_report.py` `address_of` the one
   Python door, the key names string literals in those alone but
   `setting-values`, a setting `settings.js` reads too. Keys parse in
@@ -982,16 +1116,30 @@ settings/index.html
   `str_error_hash_*`. The top page forwards its hash to the view unmodified,
   and no page rewrites a hash it received. Regression path
   `#test=<t>&view=heat-map&file=<f>&line=<n>` reloads both levels.
-- Storage: only `callers.rows`, `heat.counter`, `heat.rows`, `heat.scale`,
-  `heat.sort`, `view.dark_mode`, `view.scale` (the scale multiple itself,
+- Storage: only `callers.rows`, `heat.rows`, `heat.scale`, `heat.sort`,
+  `settings.history` (the history count shown),
+  `view.calls`, `view.counters`, `view.dark_mode`, `view.scale` (the scale
+  multiple itself,
   0.5..2, read back to the nearest stop); layout, the tree pane's width
   among it, is never stored. A preference the user has not set holds
   JSON `null` and reads its default from a setting: dark mode
   `DARK_MODE_ENABLED_DEFAULT`, scale `STYLE_DESIGN_SCALE_DEFAULT_STOP`,
-  heat counter `RANKING_COUNTER_NAME`, heat sort
+  counters `COUNTER_SELECTION_DEFAULT_NAMES` (the ranking counter shown
+  always, unstored), calls `COUNTER_SELECTION_CALLS_SHOWN_DEFAULT`, heat
+  sort
   `HEAT_MAP_SORT_DEFAULT_MODE`, heat scale `HEAT_MAP_SCALE_DEFAULT_VALUE`
   (a diff's `HEAT_MAP_SCALE_DIFF_DEFAULT_VALUE`), a row count the count
-  its heading is written with; a page stores only what the user chose.
+  its heading is written with, the history count
+  `SETTINGS_LOAD_LOG_HISTORY_DEFAULT_LINES`; a page stores only what the
+  user chose. A
+  default setting naming a choice this report does not offer is refused
+  (`str_error_setting_choice_unknown`); a stored choice it does not offer
+  reads as unset; the top page seeds the four relayed preferences at load
+  and on reset (`report_preferences_.activate()`, `.seed()`), and the
+  history count (`report_frame_.load_log_history_seed()`). An address
+  carrying `setting-values`
+  stores `null` in every owned key and reads none
+  (`view_storage.preferences_ignored()`).
   `STORAGE_VERSION` = `perf2html v1` under
   `STORAGE_VERSION_KEY` = `perf2html.version`, bumped by the user to start
   every viewer on new preferences: a mismatch stores `null` in every
@@ -1001,31 +1149,56 @@ settings/index.html
 - Messages up `{report_ui: <name>, ...}`: `address_request` (`hash`, from
   `report_ui_.address.request()`), `menu_key_pressed` (`key`, a view's
   forwarded key), `dark_mode_request` (a view at load, answered by
-  `dark_mode_show`), `report_error` (`report: {page, text}`, utility.js's
+  `dark_mode_show`), `load_log_entry` (`entry`, utility.js's own, a framed
+  page's history entry), `load_log_history_set` (`line_count`, from
+  `report_ui_.load_log_history_send()`, stored), `load_log_request` (a
+  view that shows the history, at activation, so its strip waits on no
+  paint, after its load render entry and on `layout_reset`), `report_error`
+  (`report: {page, text}`, utility.js's
   own, relayed up by each frame), `settings_apply` (`setting_name`,
   `setting_value`, from `report_ui_.settings_apply_send()`),
+  `settings_debug_toggle` (from `report_ui_.settings_debug_toggle_send()`),
   `settings_request` (settings.js's own, a framed page asking for the
   settings, answered by an object `{report_ui: "settings_relay",
-  settings_object}`). Down, `{report_ui: <name>, dark_mode_enabled}`
-  through `report_frame_.view_post(name)`, each carrying the dark mode the
-  top page shows, which a view shows on `layout_reset` and
+  settings_object}`). Down, `{report_ui: <name>, dark_mode_enabled,
+  view_preferences}`
+  through `report_frame_.view_post(name, fields)`, each carrying the dark
+  mode the top page shows and the preferences it shows
+  (`{counter_names, heat_scale_value, heat_sort_mode, shows_calls}`,
+  written from `report_preferences_.now()`, taken by the callers and heat
+  map views' `relay_take` through `report_preferences_.relay_take()`
+  and, changed, drawn again before the message acts), which a view shows
+  on
+  `layout_reset` and
   `dark_mode_apply` in place of reading `view.dark_mode`, as a framed
   page in another process can read a stored value the top just wrote
   before that write reaches it: `dark_mode_show` (the answer to
-  `dark_mode_request`), `layout_reset`, `recenter`,
+  `dark_mode_request`), `layout_reset`, `load_log_relay`
+  (`load_log_entries`, `load_log_line_count`, the answer to
+  `load_log_request` and `load_log_history_set`), `preferences_apply`
+  (carrying nothing more), `recenter`,
   `tests_pulldown_closed`, `dark_mode_apply`.
   The reset entry and a scale change post `layout_reset`, which
   resets the home panel's columns and table headings too.
 - Menu, the overview's alone: `build_report.py` `menu_render(test_names,
-  has_flame_graph)` writes an empty `nav#menu-` holding the report's facts
-  (`data-flame-graph-`, `data-help-href-`, `data-test-names-`), set in
+  counter_names, is_diff)` writes an empty `nav#menu-` holding the
+  report's facts (`data-counter-names-`, `data-diff-`,
+  `data-flame-graph-`, `data-help-href-`, `data-test-names-`) and an empty
+  `div#menu-preference-`, set in
   `overview.html` at `__MENU__`.
   `menu_entries_of()` (`menu.js`) is the one entry list, handed with the
   status entries (`status_entries_of()`) to `report_ui_.strip.render`:
   logo, overview, test, file,
-  function, heat map, callers, flame graph, dark mode, reset, help, then
-  the scale widget. The logo, a plain link to the settings view, wears
-  page colours and no end padding, one space before entry 1, a design
+  function, heat map, callers, flame graph, reset, help, then
+  the scale widget; `preference_entries_of()` the preference strip's, all
+  unnumbered: `counters` (calls, then each counter of the report, a
+  `str_menu_counter_selected_mark` on each shown, kept open through a
+  choice and relabelled, its cell the one shown counter's description or
+  `str_menu_counters`), `heat_scale`, `heat_sort`, then dark mode, each
+  choice stored through `report_preferences_` and posted down as
+  `preferences_apply`. The logo, a
+  plain link to the settings view, wears
+  page colors and no end padding, one space before entry 1, a design
   exception. Numbered entries take 1 to 9
   then 0 by position, ▒ past the tenth; an unavailable entry keeps its
   number and its label is drawn ▒, the flame graph's on a diff and for
@@ -1034,13 +1207,17 @@ settings/index.html
   `str_menu_test_suite_name` in the test pulldown, the status bar and the
   document title; a page Python renders shows the id. Every acting cell
   but the widget's is a tab stop, Enter or Space activating it. The status
-  bar is one cell apart from the entry cells, a strip gap before it,
-  `td.menu-status-bar-`, last in the row and as wide as the room left: one
+  bar is its own row under the entry row, `td.menu-status-bar-cell-`
+  spanning every column, `div.menu-status-bar-` in it; a blank row
+  (`td.menu-strip-blank-line-`, `menu-strip-blank-line-height-`) leads the
+  entry row, parts the two and ends the table, the top one handing a click
+  to the entry under it (`blank_line_click_forward`); the status bar holds
+  one
   space, then each status entry (a label and a hash) a plain link,
   `str_menu_status_separator` (`/`) between two, unpadded: the test (its
   callers page), the view (its label), then the file and line, or the
   function; the overview's home shows its label alone. It
-  is no `.menu-button-`, never flashes and wears no menu colour. A
+  is no `.menu-button-`, never flashes and wears no menu color. A
   render is a reset, closing pulldowns and dropping strip focus, on each
   address, dark mode toggle, reset and window resize frame; an entry that
   navigates wears `flash-` for `MENU_FLASH_DURATION_MS`. Under a
@@ -1048,7 +1225,7 @@ settings/index.html
   at ends in the strip's
   `numbered_entry_focus(N)`, which opens entry N when a pulldown, else
   focuses it, an unavailable or unnumbered N refused
-  (`str_error_strip_number_unusable`). The menu-focus colours mark the
+  (`str_error_strip_number_unusable`). The menu-focus colors mark the
   focused strip cell, a flash, an open pulldown and its highlighted entry,
   and keyboard focus on a page: a link, a table row, a source table row, a
   tree node, a ticker entry, an info box control, a log box and a section
@@ -1068,7 +1245,7 @@ settings/index.html
   Shift+Tab); the top page gives a key to an open pulldown, then a digit
   entry, then `MENU_SCALE_KEY_STEPS`, then a letter opens the tests
   pulldown; the pulldown's `key_take` is the one key handler and keeps
-  focus on its cell, else `str_error_pulldown_focus_refused`.
+  focus on its cell, else `str_error_internal`.
 - Keyboard: `WIDGET_KEY_NAMES` names every key a focused widget takes,
   read through `report_ui_.widget_key` (`of`, `activates`); Space on a
   focused link clicks it. Each widget is one tab stop, moved by
@@ -1084,16 +1261,20 @@ settings/index.html
   `report_ui_.page_heading.attach(heading, extra_entries)`. One just above
   a `.table-box-` becomes a strip: the title as page emphasis, a row count
   pulldown of `TABLE_ROW_COUNT_CHOICES` when the heading names
-  `data-row-count-key-`, the extras (the heat map home's counter
+  `data-row-count-key-`, the extras (the heat map home's table kind
   pulldown), then `copy`, the rows shown as a markdown table
-  (`theme.js` `table_markdown_of`). A heading over no table, the
-  overview's title, shows its title as page emphasis alone. A count key
+  (`theme.js` `table_markdown_of`). A heading over no table is refused;
+  the overview has no title heading. A count key
   is one preference per page, `callers.rows` or `heat.rows`, shared by the
   headings naming it. Rows past the count leave the document and come back,
   never hidden, and `theme.js` `table_rows_refresh` then repairs the walk.
-  The callers page holds calls alone, no other counter, in either report
-  kind. The callers table is `#`, `symbol`, `calls`, `callers`, ranked by
-  calls, a diff's by change in calls; a callers cell lists `caller (share)`,
+  The callers page draws its table from the JSON callers model: `#`,
+  `symbol`, `calls` while the calls preference shows it, one column per
+  shown counter (its share of the counter's total, heat colored, a
+  diff's its change), `callers`, ranked by
+  calls, a diff's by change in calls, a column title click re-sorting
+  (`aria-sort` on the sorted title, the rank column restoring the
+  default); a callers cell lists `caller (share)`,
   the share that caller's calls over the global total of calls, a diff's
   the change in that caller's calls over its baseline calls
   (`diff_share_of()`); a diff lists a callee whose callers changed though
@@ -1112,8 +1293,8 @@ settings/index.html
   width, at least `STYLE_DESIGN_MINIMUM_WINDOW_WIDTH_PX` (1280), over 1920,
   the scale multiple a `zoom` on `#overview-home-` and the view frame, and
   `#overview-page-` at least 1920 design px wide; Monaco
-  `STYLE_DESIGN_FONT_SIZE_PX` 12, `STYLE_DESIGN_FONT_CHARACTER_WIDTH_PX` 7.2
-  → 266 ch; `font_fit_apply()` measures `0` via canvas `measureText`, sets
+  `STYLE_DESIGN_FONT_SIZE_PX` 24, `STYLE_DESIGN_FONT_CHARACTER_WIDTH_SHARE`
+  0.6 → 133 ch; `font_fit_apply()` measures `0` via canvas `measureText`, sets
   `--design-font-fit-` (`STYLE_DESIGN_FONT_FIT_PROPERTY`) on `:root`; the
   one font size is `body`'s
   `calc(var(--design-font-size-px-) * var(--design-font-fit-))`, inherited
@@ -1135,9 +1316,12 @@ settings/index.html
   `STYLE_HEAT_MAP_TREE_INDENT_PER_LEVEL_CHARS` in ch.
   The only `title=` attributes: `<iframe title="report page">` and `<th>`. Only
   `th` and `.band-` are sticky.
-- Heat map: the strip `#heat-map-menu-` holds three text pulldowns through
-  `strip.render`, counter, scale and sort, with no labels and no search box,
-  one blank line below. `#heat-map-layout-` is one table of one row: the
+- Heat map: no strip of its own, its counters, scale and sort being the
+  menu's preference strip, relayed; the home shows one table of a kind,
+  `lines`, `functions` or `files`, the heading's kind pulldown picking it,
+  `HEAT_MAP_HOME_TABLE_DEFAULT_KIND` first, sorted by self until a column
+  title is clicked, the sort resetting with the kind, and a calls column
+  while calls show. `#heat-map-layout-` is one table of one row: the
   tree pane (`--heat-map-tree-width-` 39ch,
   `STYLE_HEAT_MAP_TREE_PANE_NARROWEST_CHARS` 17 to `_WIDEST_CHARS` 40), the
   tree's text bar, `#heat-map-main-` taking the room left, the minimap, a
@@ -1166,27 +1350,27 @@ settings/index.html
   in the gutter centres the thumb first, no arrows; arrow keys step a cell,
   the wheel `TEXT_SCROLLBAR_WHEEL_NOTCH_LINES` (2.5) per
   `TEXT_SCROLLBAR_WHEEL_DELTA_PER_NOTCH` (100), Chrome's notch in pixel
-  mode; menu-normal colours,
+  mode; menu-normal colors,
   menu-focus while pressed. `layout_activate` attaches each
   `.page-text-scrollbar-` beside a `.page-text-scroll-box-`; the top page's
   horizontal bar scrolls the whole page, menu included.
   `report_ui_.drag_scroll.attach` scrolls a box by a drag on its text, a
   moved press swallowing its click; `report_ui_.pane_splitter.attach` sizes
   a pane in ch by keys alone.
-- Colour: `STYLE_COLOR_DARK_MODE` maps each palette colour, the link colour
+- Colour: `STYLE_COLOR_DARK_MODE` maps each palette color, the link color
   first, then lighter then dimmer per pair, to its `dark-mode-` roles;
   `STYLE_COLOR_LIGHT_MODE` maps
   the light palette to its `light-mode-` roles; `Theme.roles()` refuses a
-  colour with no role and a role lacking its palette's prefix,
+  color with no role and a role lacking its palette's prefix,
   `STYLE_COLOR_DARK_MODE_ROLE_PREFIX` or
   `STYLE_COLOR_LIGHT_MODE_ROLE_PREFIX`. A role is its mode, then a
   concept, then `fg`, `bg`, `outline` or `border`, then the
-  marker `-`. A role names a concept, not the thing coloured, so things
-  coloured alike share one role and the palettes are the one control
+  marker `-`. A role names a concept, not the thing colored, so things
+  colored alike share one role and the palettes are the one control
   surface. The light roles are the concepts: each `dark_mode.css` rule
   reads the `dark-mode-` twin of the role its `light_mode.css` rule reads,
-  and another dark role only where that twin's colour is not the one dark
-  mode shows, where the light rule reads page colours:
+  and another dark role only where that twin's color is not the one dark
+  mode shows, where the light rule reads page colors:
   `dark-mode-page-dim-fg-` dim text, `dark-mode-page-link-fg-` links,
   `dark-mode-panel-bg-` the overview's log boxes, the column titles and the
   info box, `dark-mode-page-emphasis-bg-` the focused main box, the
@@ -1196,12 +1380,12 @@ settings/index.html
   a leaf table (`table.columns-`) alternate through
   `<mode>-table-panel-odd-bg-` and `<mode>-table-panel-even-bg-`, counted
   from 1 by `col:nth-child()` in each mode sheet; layout tables wear page
-  colours. `settings.js` `settings_install` writes on `:root` every
+  colors. `settings.js` `settings_install` writes on `:root` every
   `STYLE_VALUE_ENTRIES` value, the computed design values and every role of
   both palettes, from the installed settings; `Theme.root_value_names_check()`
   holds the same names and refuses one no stylesheet reads, and a name a
   stylesheet reads that it lacks. The shared stylesheets read no role: every
-  colour
+  color
   rule sits in both mode sheets, `light_mode.css` reading only
   `light-mode-` roles and `dark_mode.css`, in the dark selector block, only
   `dark-mode-` roles. `light_mode.css` never names `data-dark-mode-`, and
@@ -1218,20 +1402,24 @@ settings/index.html
   and the minimap viewport box, menu-normal-outline; every other state is
   a background swap.
   `STYLE_HEAT_COLOR_STOPS` palette; `ramp_channels_at()` the one interpolation
-  (`cell_style()`, `logo_color_at()`); cells paint the stop opaque, their
+  (`heat_cell_style()`, `logo_color_at()`); cells paint the stop opaque,
+  their
   text `STYLE_HEAT_CELL_ON_DARK_ROLE` (`dark-mode-page-fg-`), or
   `STYLE_HEAT_CELL_ON_BRIGHT_ROLE` (`dark-mode-page-bg-`) above
   `STYLE_HEAT_CELL_ON_BRIGHT_ABOVE_LUMINANCE_SHARE`, the dark palette's
-  roles as `var(--<role>)` in either mode (`heat_style()`, `cell_style()`).
-  `heat_of_share()`: clamp to `STYLE_HEAT_COLOR_FULL_SCALE_PERCENT`, divide,
-  curve;
+  roles as `var(--<role>)` in either mode (`heat_cell_style()`).
+  `heat_of_share(percent, curve, is_diff)`: clamp to
+  `STYLE_HEAT_COLOR_FULL_SCALE_PERCENT`, divide, curve;
   nothing measured off the data; a diff maps [-100..100%], 0% at the 5.5
-  midpoint. Pulldown = curve × scope; `scale` is an entry. Scope = denominator
+  midpoint. The heat scale pulldown (`heat_scale_choices_of(is_diff)`) =
+  curve × scope, `heat_scale` in the menu's preference strip. Scope =
+  denominator
   only (`global`, shown bare, `per file`, `per function`; `share_in_scope()`);
   a diff divides by the thing's own baseline (`diff_share_of()`), one scope
   `line`, shown bare.
-- Columns: `column_extents()` → `column_limits()` (lo, hi +
-  `STYLE_TABLE_COLUMN_EXTRA_WIDTH_CHARS`) → `column_width_text()` in
+- Columns: `column_extents()` → `column_limits()` (lo the content, hi the
+  longer of title and content, each + `STYLE_TABLE_COLUMN_EXTRA_WIDTH_CHARS`,
+  so a squeezed column clips no value) → `column_width_text()` in
   `theme.js`; lo = `data-min-`. L/H = Σlo/Σhi of non-grow,
   S = H - L,
   G = grow lo: `{lo}ch` if hi = lo, else `clamp(lo, lo + (100cqw - (L+G)) *

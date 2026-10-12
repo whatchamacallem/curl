@@ -63,9 +63,7 @@ artifact_path_of() {
       file="$DIFF_PROFILE_LISTING_FILE_PREFIX.$name.$TIMESTAMP.txt"
       ;;
     profile-log) file="$PROFILE_LOG_FILE_PREFIX.$TIMESTAMP.log" ;;
-    regenerate-log)
-      file="$REGENERATE_LOG_FILE_PREFIX.$TIMESTAMP.$(date +%s).log"
-      ;;
+    regenerate-log) file="$REGENERATE_LOG_FILE_PREFIX.$TIMESTAMP.log" ;;
     timer-artifacts) file="$timer_root" ;;
     timing-csv) file="$PROFILE_TIMING_FILE_PREFIX.$name.$TIMESTAMP.csv" ;;
     timing-page) file="$PROFILE_TIMING_FILE_PREFIX.$name.$TIMESTAMP.txt" ;;
@@ -237,13 +235,15 @@ heading_write() {
   local depth="$1" text="$2" marks=''
   VERBOSE_COMMAND_NUMBER=1
   [ "$VERBOSE" -ge 1 ] || return 0
+  text="[$(elapsed_format)s] $text"
   if [ "$VERBOSE" -lt "$VERBOSE_RAW_LEVEL" ]; then
     printf -v marks '%*s' "$depth" ''
     marks="${marks// /#} "
+    text="${text//"${HOME:?}"\//\~/}"
+    text="${text//</\\<}"
   fi
   block_lead other
-  printf '%s%s\n' "$marks" \
-    "$(code_span "[$(elapsed_format)s] $text")" >&2
+  printf '%s%s\n' "$marks" "$text" >&2
 }
 
 install_command_of() {
@@ -674,7 +674,7 @@ verbose_filter() {
     fflush("/dev/stderr")
   }
   function block_open() {
-    if (blocks ? separate : lead) line_print("")
+    line_print("")
     blocks++
   }
   function fence_close() {
@@ -702,7 +702,6 @@ verbose_filter() {
       return
     }
     fence_close()
-    if (!blocks && !separate) { separate = 1; lead = 1; loose = 1 }
     block_open()
     head = indent "|"
     rule = indent "|"
@@ -735,7 +734,7 @@ verbose_filter() {
     next
   }
   { held_print(); text_print($0) }
-  END { held_print(); fence_close(); if (loose) print "loose" }
+  END { held_print(); fence_close(); if (blocks) print "loose" }
   ')" || status=$?
   [ "$loose" != loose ] || VERBOSE_BLOCK_PRINTED=loose
   return "$status"

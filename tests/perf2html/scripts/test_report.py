@@ -35,6 +35,10 @@ class TestReport:
     class ReportLayout(NamedTuple):
         has_flame_graph: bool
         table_diff_value: str
+        callers_model_keys: tuple[str, ...]
+        callers_callee_fields: int
+        callers_caller_fields: int
+        callers_value_fields: tuple[int, ...]
         header_blocks: tuple[str, ...]
         manifest_version: str
         manifest_labels: tuple[str, ...]
@@ -51,12 +55,6 @@ class TestReport:
     def __init__(self) -> None:
         self.errors: list[str] = []
 
-    def anchor_hrefs(self, page_text: str) -> list[str]:
-        return [
-            html.unescape(href)
-            for href in re.findall(r'<a\s[^>]*href="([^"]*)"', page_text)
-        ]
-
     def callers_page_check(
         self,
         out_dir: str,
@@ -72,10 +70,9 @@ class TestReport:
             return
         with open(path, encoding="utf-8") as handle:
             page_text = handle.read()
-        rows = self.callers_table_check(path, label, page_text, layout)
+        page_hrefs = self.callers_model_check(path, label, page_text, layout)
         if '<nav id="menu-"' in page_text:
             self.fail(f"{label} draws the overview's menu: {path}")
-        page_hrefs = self.table_data_hrefs(rows)
         address_start = f"#test={test_name}&view="
         for href in page_hrefs:
             if not href.startswith(address_start):
@@ -105,14 +102,14 @@ class TestReport:
     def callers_page_path_of(self, test_name: str) -> str:
         return f"{_TEST_CALLERS_PAGE_DIR_NAME}/{test_name}.html"
 
-    # Checks the callers table data the page script draws, answering its rows.
-    def callers_table_check(
+    # Checks the callers model the page script draws, answering its addresses.
+    def callers_model_check(
         self,
         path: str,
         label: str,
         page_text: str,
         layout: TestReport.ReportLayout,
-    ) -> list[list[Any]]:
+    ) -> list[str]:
         attributes = self.element_attributes(
             page_text, _TEST_CALLERS_TABLE_DATA_ID
         )
@@ -134,15 +131,75 @@ class TestReport:
                 f" {attributes.get('data-key-')!r}, expected"
                 f" {_TEST_CALLERS_TABLE_KEY!r}: {path}"
             )
-        rows = self.table_data_rows(attributes, label, path)
-        for row in rows:
-            if len(row) != _TEST_CALLERS_TABLE_CELLS:
+        if "data-model-" not in attributes:
+            self.fail(f"{label}'s table data holds no data-model-: {path}")
+            return []
+        try:
+            callers_model = json.loads(attributes["data-model-"])
+        except ValueError as error:
+            self.fail(
+                f"{label}'s table data holds no JSON model: {error}: {path}"
+            )
+            return []
+        found_keys = (
+            sorted(callers_model) if isinstance(callers_model, dict) else []
+        )
+        if found_keys != sorted(layout.callers_model_keys):
+            self.fail(
+                f"{label}'s callers model holds the keys {found_keys},"
+                f" expected {sorted(layout.callers_model_keys)}: {path}"
+            )
+            return []
+        if not self.callers_rows_check(callers_model, layout, label, path):
+            return []
+        return [
+            function_link[_TEST_CALLERS_FUNCTION_HREF_FIELD]
+            for function_link in callers_model["functions"]
+            if function_link[_TEST_CALLERS_FUNCTION_HREF_FIELD]
+        ]
+
+    # Checks each function row holds its fields and a value per counter.
+    def callers_rows_check(
+        self,
+        callers_model: dict[str, Any],
+        layout: TestReport.ReportLayout,
+        label: str,
+        path: str,
+    ) -> bool:
+        counter_count = len(callers_model["counterNames"])
+        if "counterTotals" in layout.callers_model_keys:
+            totals_count = len(callers_model["counterTotals"])
+            if totals_count != counter_count:
                 self.fail(
-                    f"{label}'s table data has a row of {len(row)} cells,"
-                    f" expected {_TEST_CALLERS_TABLE_CELLS}: {path}"
+                    f"{label}'s callers model totals {totals_count}"
+                    f" counters, expected {counter_count}: {path}"
                 )
-                return []
-        return rows
+                return False
+        for callee_row in callers_model["callees"]:
+            if len(callee_row) != layout.callers_callee_fields:
+                self.fail(
+                    f"{label}'s callers model has a function row of"
+                    f" {len(callee_row)} fields, expected"
+                    f" {layout.callers_callee_fields}: {path}"
+                )
+                return False
+            for field_index in layout.callers_value_fields:
+                if len(callee_row[field_index]) != counter_count:
+                    self.fail(
+                        f"{label}'s callers model gives a function"
+                        f" {len(callee_row[field_index])} counter values,"
+                        f" expected {counter_count}: {path}"
+                    )
+                    return False
+            for caller_row in callee_row[_TEST_CALLERS_CALLER_ROWS_FIELD]:
+                if len(caller_row) != layout.callers_caller_fields:
+                    self.fail(
+                        f"{label}'s callers model has a caller row of"
+                        f" {len(caller_row)} fields, expected"
+                        f" {layout.callers_caller_fields}: {path}"
+                    )
+                    return False
+        return True
 
     def checksum_compute(self, out_dir: str) -> str:
         try:
@@ -369,6 +426,11 @@ class TestReport:
                     f" {script_path}"
                 )
                 continue
+            self.model_sources_check(
+                out_dir,
+                filed_model,
+                f"{_HEAT_MAP_MODEL_DIR_NAME}/{test_name}.js",
+            )
             if layout.has_baselines:
                 self.diff_baseline_check(
                     filed_model, f"{_HEAT_MAP_MODEL_DIR_NAME}/{test_name}.js"
@@ -466,6 +528,7 @@ class TestReport:
         page_text: str,
         tests: Sequence[str],
         layout: TestReport.ReportLayout,
+        counter_names: Sequence[str],
     ) -> None:
         match = re.search(
             r'<nav id="menu-" class="menu-strip-"([^>]*)></nav>', page_text
@@ -480,6 +543,8 @@ class TestReport:
             )
         }
         wanted = {
+            "data-counter-names-": json.dumps(list(counter_names)),
+            "data-diff-": layout.table_diff_value,
             "data-flame-graph-": "1" if layout.has_flame_graph else "0",
             "data-help-href-": "README.md",
             "data-test-names-": json.dumps(list(tests), ensure_ascii=False),
@@ -531,7 +596,13 @@ class TestReport:
                     "overview index.html is missing its"
                     f" {test_name} heat map link: {path}"
                 )
-        self.menu_check(path, page_text, tests, layout)
+        self.menu_check(
+            path,
+            page_text,
+            tests,
+            layout,
+            self.suite_counter_names_of(out_dir),
+        )
         self.logs_check(path, page_text, layout.test_records_runs)
         for heading in layout.header_blocks:
             if heading not in page_text:
@@ -602,6 +673,19 @@ class TestReport:
         if "</html>" not in text:
             self.fail(
                 f"{label} is not a closed HTML document (no </html>): {path}"
+            )
+        head_match = re.search(r"<head>(.*?)</head>", text, re.S)
+        head_scripts = re.findall(
+            r'<script src="(?:[^"]*/)?([^"/]+)"',
+            head_match.group(1) if head_match else "",
+        )
+        preamble_count = len(_TEST_PAGE_PREAMBLE_SCRIPT_NAMES)
+        if tuple(head_scripts[:preamble_count]) != (
+            _TEST_PAGE_PREAMBLE_SCRIPT_NAMES
+        ):
+            self.fail(
+                f"{label} head opens with the scripts {head_scripts}, expected"
+                f" {list(_TEST_PAGE_PREAMBLE_SCRIPT_NAMES)}: {path}"
             )
         for marker in (
             "__DATA__",
@@ -677,7 +761,6 @@ class TestReport:
         self.overview_check(out_dir, tests, layout)
         if layout.has_flame_graph:
             self.flame_app_check(out_dir)
-        self.sources_check(out_dir)
         self.heat_map_check(out_dir, tests, layout)
         traced_tests = [
             test_name
@@ -745,17 +828,35 @@ class TestReport:
             )
         return text
 
-    def sources_check(self, out_dir: str) -> None:
-        sources_dir = os.path.join(out_dir, _REPORT_SOURCES_DIR_NAME)
-        path = os.path.join(out_dir, _HEAT_MAP_VIEW_KEY, "index.html")
-        if not os.path.isfile(path):
+    # Faults a source script a model names that the report lacks.
+    def model_sources_check(
+        self, out_dir: str, filed_model: dict[str, object], label: str
+    ) -> None:
+        files = filed_model["files"]
+        if not isinstance(files, dict):
+            self.fail(f"{label} files no file table")
             return
-        with open(path, encoding="utf-8") as handle:
-            linked = f"/{_REPORT_SOURCES_DIR_NAME}/" in handle.read()
-        if linked and not os.path.isdir(sources_dir):
-            self.fail(f"no shared source directory: {sources_dir}")
+        for display, file_entry in files.items():
+            script_name = file_entry["source"]
+            if script_name is None:
+                continue
+            path = os.path.join(out_dir, _REPORT_SOURCES_DIR_NAME, script_name)
+            if not os.path.isfile(path):
+                self.fail(f"{label} names {display!r} source {path}, absent")
 
-    # Answers every address a table data's cells link, plain or in markup.
+    # Answers the counters the merged test's callers page draws.
+    def suite_counter_names_of(self, out_dir: str) -> list[str]:
+        path = os.path.join(out_dir, self.callers_page_path_of("all"))
+        with open(path, encoding="utf-8") as handle:
+            attributes = self.element_attributes(
+                handle.read(), _TEST_CALLERS_TABLE_DATA_ID
+            )
+        if attributes is None or "data-model-" not in attributes:
+            self.fail(f"the merged test's callers page holds no model: {path}")
+            return []
+        return json.loads(attributes["data-model-"])["counterNames"]
+
+    # Answers every address a table data's cells link.
     def table_data_hrefs(self, rows: Sequence[Sequence[Any]]) -> list[str]:
         hrefs: list[str] = []
         for row in rows:
@@ -764,8 +865,6 @@ class TestReport:
                     continue
                 if "href" in cell:
                     hrefs.append(str(cell["href"]))
-                if "html" in cell:
-                    hrefs += self.anchor_hrefs(str(cell["html"]))
         return hrefs
 
     # Answers the rows a table data element files, each a list of cells.
@@ -912,6 +1011,10 @@ _HEAT_MAP_PAGE_TITLE = ""
 _LAYOUT_DIFF = TestReport.ReportLayout(
     has_flame_graph=False,
     table_diff_value="1",
+    callers_model_keys=("callees", "counterNames", "functions"),
+    callers_callee_fields=6,
+    callers_caller_fields=3,
+    callers_value_fields=(2, 5),
     header_blocks=(
         '<div class="page-heading-">baseline</div>',
         '<div class="page-heading-">modified</div>',
@@ -932,6 +1035,15 @@ _LAYOUT_DIFF = TestReport.ReportLayout(
 _LAYOUT_FULL = TestReport.ReportLayout(
     has_flame_graph=True,
     table_diff_value="0",
+    callers_model_keys=(
+        "callees",
+        "counterNames",
+        "counterTotals",
+        "functions",
+    ),
+    callers_callee_fields=4,
+    callers_caller_fields=2,
+    callers_value_fields=(2,),
     header_blocks=(
         '<div id="overview-manifest-heading-" class="page-heading-"></div>',
     ),
@@ -939,6 +1051,9 @@ _LAYOUT_FULL = TestReport.ReportLayout(
     manifest_labels=(
         "revision",
         "cpu",
+        "memory",
+        "os",
+        "compiler",
         "build",
         "executable",
         "recorded",
@@ -956,8 +1071,9 @@ _REPORT_CHECKSUM_COMMAND = (
     " | LC_ALL=C sort | cksum"
 )
 
+_TEST_CALLERS_CALLER_ROWS_FIELD = 3
+_TEST_CALLERS_FUNCTION_HREF_FIELD = 1
 _TEST_CALLERS_PAGE_DIR_NAME = "callers"
-_TEST_CALLERS_TABLE_CELLS = 4
 _TEST_CALLERS_TABLE_DATA_ID = "callers-functions-table-"
 _TEST_CALLERS_TABLE_KEY = "report.functions"
 _TEST_FLAME_GRAPH_PAGE_LEAST_BYTES = 300
@@ -977,6 +1093,12 @@ _TEST_OVERVIEW_TESTS_HEADING_MARKUP = (
     '<div id="overview-tests-heading-" class="page-heading-"></div>'
 )
 _TEST_OVERVIEW_TESTS_TABLE_DATA_ID = "overview-tests-table-"
+_TEST_PAGE_PREAMBLE_SCRIPT_NAMES = (
+    "error_overlay.js",
+    "utility.js",
+    "ui_strings.js",
+    "settings.js",
+)
 _TEST_RAW_ARCHIVE_LEAST_BYTES = 100
 
 

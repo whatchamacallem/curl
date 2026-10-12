@@ -40,7 +40,7 @@ with running the tests and checking the results is recommended.
 | File           | Purpose                                              |
 | -------------- | ---------------------------------------------------- |
 | `callers.html` | Templates the callers page of one test, holding the  |
-|                | function rows that `callers.js` draws.               |
+|                | JSON callers model that `callers.js` draws.          |
 | `callers.js`   | Draws the callers heading and function table, then   |
 |                | activates the page as a view that scrolls to the top |
 |                | when the address is followed again.                  |
@@ -64,8 +64,8 @@ with running the tests and checking the results is recommended.
 |                    | table the error report shows, then the debug tip.      |
 | `error_overlay.js` | Catches the first error a page throws and replaces the |
 |                    | top page with a plain error report.                    |
-| `utility.js`       | Relays an error report up the frames and reports a     |
-|                    | failed load of a link, script or image.                |
+| `utility.js`       | Relays an error report up the frames, reports a failed |
+|                    | load of a link, script or image, and keeps the log.    |
 
 ## Flame Graph
 
@@ -88,21 +88,24 @@ with running the tests and checking the results is recommended.
 |                           | test, then the one heat map page.            |
 | `heat_map.css`            | Lays out the heat map tree, source table,    |
 |                           | minimap and info boxes.                      |
-| `heat_map.html`           | Templates the heat map page with its strip,  |
-|                           | tree pane, main box, minimap and text bars.  |
-| `heat_map.js`             | Draws the heat map tree, home tables, source |
+| `heat_map.html`           | Templates the heat map page with its tree    |
+|                           | pane, main box, minimap and text bars.       |
+| `heat_map.js`             | Draws the heat map tree, home table, source  |
 |                           | view and info boxes for every test.          |
-| `heat_map_main.html`      | Templates the heat map home with its lines   |
-|                           | table and functions table.                   |
+| `heat_map_main.html`      | Templates the heat map home, a heading over  |
+|                           | the table of the kind its pulldown picks.    |
 
 ## Menu Strip
 
-| File       | Purpose                                                       |
-| ---------- | ------------------------------------------------------------- |
-| `menu.css` | Styles every strip and pulldown, the menu, the heat map strip |
-|            | and the table headings.                                       |
-| `menu.js`  | Holds the menu controller, which draws the strip, takes keys  |
-|            | and starts every navigation.                                  |
+| File             | Purpose                                                 |
+| ---------------- | ------------------------------------------------------- |
+| `menu.css`       | Styles every strip and pulldown, the menu, its          |
+|                  | preference strip, the table headings and the history    |
+|                  | strip of the settings view.                             |
+| `menu.js`        | Holds the menu controller, which draws the strip, takes |
+|                  | keys and starts every navigation.                       |
+| `preferences.js` | Holds the preferences the menu edits and a view draws   |
+|                  | with, their choices and their counter labels.           |
 
 ## Overview Page
 
@@ -130,11 +133,8 @@ with running the tests and checking the results is recommended.
 |                      | reader and writer that load and ship them.           |
 | `settings.sh`        | Holds every shell setting, read by the shell scripts |
 |                      | and by `settings.py`.                                |
-| `settings_page.html` | Templates the settings view, one pre that            |
-|                      | `settings_page.js` fills, beside its text bar.       |
-| `settings_page.js`   | Lists every setting over an editable JSON box with   |
-|                      | link, copy, paste and apply buttons, then applies    |
-|                      | the value an address carries.                        |
+| `settings_page.html` | Templates the settings view                          |
+| `settings_page.js`   | Draws every setting in an editable JSON box.         |
 | `ui_strings.js`      | Holds every user interface string, looked up by      |
 |                      | name.                                                |
 
@@ -176,9 +176,8 @@ with running the tests and checking the results is recommended.
 | `theme.css`      | Holds the layout rules shared by every report page.    |
 | `theme.js`       | Holds the shared page library for addresses, strips,   |
 |                  | tables, numbers, scrollbars and layout.                |
-| `theme.py`       | Writes table rows, numbers and page heads, then writes |
-|                  | the shared assets and checks the root value names the  |
-|                  | stylesheets read.                                      |
+| `theme.py`       | Writes table rows and numbers, fills the page          |
+|                  | templates, and writes the shared assets.               |
 
 ## Tool Configuration
 

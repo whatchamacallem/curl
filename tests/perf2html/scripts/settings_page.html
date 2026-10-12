@@ -1,8 +1,33 @@
+<!doctype html>
 <!-- SPDX-FileCopyrightText: © 2026 Adrian Johnston.
      SPDX-License-Identifier: MIT
      This file is licensed under the terms of the LICENSE-MIT.md file. -->
-
-<main class="page-text-scroll-box-">
-  <pre id="settings-list-"></pre>
-</main>
-<div class="page-text-scrollbar- vertical-" aria-hidden="true"></div>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <script src="../assets/error_overlay.js"></script>
+    <script src="../assets/utility.js"></script>
+    <script src="../assets/ui_strings.js"></script>
+    <script src="../assets/settings.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title></title>
+    <link rel="stylesheet" href="../assets/theme.css" />
+    <link rel="stylesheet" href="../assets/menu.css" />
+    <link rel="stylesheet" href="../assets/light_mode.css" />
+    <link rel="stylesheet" href="../assets/dark_mode.css" />
+  </head>
+  <body class="frame-">
+    <main class="page-text-scroll-box-">
+      <pre id="settings-debug-"></pre>
+      <div id="settings-load-log-menu-" class="menu-strip-"></div>
+      <pre id="settings-load-log-"></pre>
+      <pre id="settings-list-"></pre>
+    </main>
+    <div class="page-text-scrollbar- vertical-" aria-hidden="true"></div>
+    <template id="page-held-script-">
+      <script src="../assets/debug.js"></script>
+      <script src="../assets/theme.js"></script>
+      <script src="../assets/settings_page.js"></script>
+    </template>
+  </body>
+</html>

@@ -22,7 +22,6 @@ window.try_catch_handler_(function () {
   const raw_data_link = document.querySelector("#overview-raw-data- > a");
   const tests_heading = document.getElementById("overview-tests-heading-");
   const tests_table_data = document.getElementById("overview-tests-table-");
-  const title_heading = document.getElementById("overview-title-heading-");
 
   // Answers the tests table columns, a diff's naming the ranking counter.
   function tests_columns_of() {
@@ -63,7 +62,6 @@ window.try_catch_handler_(function () {
     );
   }
 
-  title_heading.textContent = text_of("str_view_overview");
   tests_heading.textContent = text_of("str_heading_tests");
   window.report_ui_.view_frame.setAttribute(
     "title",

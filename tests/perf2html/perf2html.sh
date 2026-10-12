@@ -69,6 +69,7 @@ args_parse() {
   [ "$KEEP_ARTIFACTS" = 1 ] || trap artifacts_clean EXIT
   _HEADER_FILE="$(artifact_path_of header-rows "$(basename "$_OUT_DIR")")"
   local _index _seen=0 _split=0 _flag
+  _COMPILER_COMMAND="${CC:-cc}"
   for _index in "${!_CMAKE_FLAGS[@]}"; do
     _flag="${_CMAKE_FLAGS[$_index]}"
     if [ "$_split" = 1 ]; then
@@ -76,6 +77,9 @@ args_parse() {
         CMAKE_C_FLAGS=*)
           _CMAKE_FLAGS[$_index]="CMAKE_C_FLAGS=-O2 -g ${_flag#CMAKE_C_FLAGS=}"
           _seen=1
+          ;;
+        CMAKE_C_COMPILER=* | CMAKE_C_COMPILER:*=*)
+          _COMPILER_COMMAND="${_flag#*=}"
           ;;
       esac
       _split=0
@@ -86,6 +90,9 @@ args_parse() {
         _CMAKE_FLAGS[$_index]="-DCMAKE_C_FLAGS=-O2 -g \
 ${_flag#-DCMAKE_C_FLAGS=}"
         _seen=1
+        ;;
+      -DCMAKE_C_COMPILER=* | -DCMAKE_C_COMPILER:*=*)
+        _COMPILER_COMMAND="${_flag#*=}"
         ;;
       -D) _split=1 ;;
     esac
@@ -127,15 +134,38 @@ recorded_reuse() {
   error_exit 2 "${_lines[@]}"
 }
 
+compiler_identify() {
+  command -v "$_COMPILER_COMMAND" >/dev/null || error_exit 1 \
+    "error: no C compiler $_COMPILER_COMMAND on PATH"
+  _COMPILER_NAME="$("$_COMPILER_COMMAND" -dM -E -x c /dev/null | awk '
+    { macro[$2] = $3 }
+    END {
+      if ("__clang__" in macro) {
+        printf "clang %s.%s.%s\n", macro["__clang_major__"],
+          macro["__clang_minor__"], macro["__clang_patchlevel__"]
+      } else if ("__GNUC__" in macro) {
+        printf "gcc %s.%s.%s\n", macro["__GNUC__"], macro["__GNUC_MINOR__"],
+          macro["__GNUC_PATCHLEVEL__"]
+      } else {
+        exit 1
+      }
+    }')" || error_exit 1 "error: C compiler $_COMPILER_COMMAND predefines \
+neither __clang__ nor __GNUC__"
+}
+
 build_manifest() {
   if [ "$REGENERATE" = 1 ]; then
     _REVISION="$(header_row_of revision)"
     _CPU_MODEL="$(header_row_of cpu)"
+    _MEMORY_USAGE="$(header_row_of memory)"
+    _OPERATING_SYSTEM="$(header_row_of os)"
+    _COMPILER_NAME="$(header_row_of compiler)"
     _BUILD_DESC="$(header_row_of build)"
     if [ -z "$_REVISION" ] || [ -z "$_CPU_MODEL" ] \
-      || [ -z "$_BUILD_DESC" ]; then
+      || [ -z "$_MEMORY_USAGE" ] || [ -z "$_OPERATING_SYSTEM" ] \
+      || [ -z "$_COMPILER_NAME" ] || [ -z "$_BUILD_DESC" ]; then
       error_exit 2 "error: --regenerate: $_HEADER_FILE is missing one of its \
-revision=, cpu= or build= rows"
+revision=, cpu=, memory=, os=, compiler= or build= rows"
     fi
     return
   fi
@@ -143,6 +173,20 @@ revision=, cpu= or build= rows"
   _CPU_MODEL="$(lscpu | grep -E 'Model name' | head -1 \
     | sed 's/^Model name:[[:space:]]*//' || true)"
   [ -n "$_CPU_MODEL" ] || _CPU_MODEL=unknown
+  _MEMORY_USAGE="$(awk '
+    $1 == "MemTotal:" { total = $2 }
+    $1 == "MemAvailable:" { available = $2 }
+    END {
+      if (total == 0 || available == "") exit 1
+      printf "%.2f GiB (%.0f%% use)\n", total / 1048576,
+        (total - available) * 100 / total
+    }' /proc/meminfo)" || error_exit 1 \
+    "error: no MemTotal: and MemAvailable: rows in /proc/meminfo"
+  _OPERATING_SYSTEM="$(sed -n 's/^PRETTY_NAME="*\([^"]*\)"*$/\1/p' \
+    /etc/os-release)"
+  [ -n "$_OPERATING_SYSTEM" ] || error_exit 1 \
+    "error: no PRETTY_NAME= row in /etc/os-release"
+  compiler_identify
 }
 
 tree_build() {
@@ -151,7 +195,8 @@ tree_build() {
   rm -f "$_dir/CMakeCache.txt"
   local -x CCACHE_NAMESPACE="$BUILD_CCACHE_NAMESPACE"
   local _configure_command=(cmake -S "$_REPO" -B "$_dir" -G Ninja
-    -DCURL_USE_LIBPSL=OFF -DCMAKE_C_COMPILER_LAUNCHER=ccache "$@")
+    -DCURL_USE_LIBPSL=OFF -DCMAKE_C_COMPILER_LAUNCHER=ccache "$@"
+    "-DCMAKE_C_COMPILER=$_COMPILER_COMMAND")
   local _command_line _exit_code=0
   printf -v _command_line '%q ' "${_configure_command[@]}"
   _command_line="${_command_line% }"
@@ -164,7 +209,8 @@ tree_build() {
 
 build_paths() {
   local _flag_string="${_CMAKE_FLAGS[*]}"
-  _TREE_NAME="${#_flag_string}_${_flag_string//[^[:alnum:]]/}"
+  _TREE_NAME="${_COMPILER_NAME//[^[:alnum:]]/-}-${#_flag_string}_"
+  _TREE_NAME+="${_flag_string//[^[:alnum:]]/}"
   _BUILD_TREE="$_REPO/$BUILD_DIR/$_TREE_NAME"
   _TRACE_TREE="$_REPO/$TRACE_BUILD_DIR/$_TREE_NAME"
   _BIN="$_BUILD_TREE/tests/perf/perf"
@@ -194,7 +240,7 @@ build_compile() {
     _trace_flags+=("$_flag")
   done
   mkdir -p "$_TRACE_TREE"
-  command_run cc -O2 -fcf-protection=none \
+  command_run "$_COMPILER_COMMAND" -O2 -fcf-protection=none \
     -DTEST_SAMPLES_SIZE="$TEST_SAMPLES_SIZE" \
     -c "$PERF2HTML_DIR_/src/cyg_callback.c" -o "$_TRACE_TREE/cyg_callback.o"
   rm -f "$_TRACE_BIN"
@@ -202,8 +248,7 @@ build_compile() {
   tree_build "$_TRACE_TREE" "${_trace_flags[@]}" \
     "-DCMAKE_EXE_LINKER_FLAGS=$_hook -Wl,--export-dynamic"
   log_verbose "$_line | $(duration_format "$_start")"
-  _BUILD_DESC="${_CMAKE_FLAGS[*]}
-  _BUILD_DESC="$_BUILD_DESC $(cc -dumpfullversion)"
+  _BUILD_DESC="${_CMAKE_FLAGS[*]}"
 }
 
 trace_record() {
@@ -326,8 +371,8 @@ timing_record() {
 
 run_one() {
   local _test="$1"
-  local _loops _cg_file _log _start _line _timing _shown _page_words
-  local _stat_file _page
+  local _loops _cg_file _log _start _callgrind_duration _shown _page_words
+  local _stat_file _page _summary_headers _summary_values
   _stat_file="$(artifact_path_of timing-csv "$_test")"
   _page="$(artifact_path_of timing-page "$_test")"
   _loops=$TEST_LOOPS
@@ -343,14 +388,13 @@ run_one() {
   fi
 
   heading_print "valgrind --tool=callgrind perf $_test $_loops"
-  _line="$(printf '%-13sloops=%s' "$_test" "$_loops")"
   _start="$(clock_microseconds)"
   command_run taskset -c "$PROFILE_PINNED_CPU" valgrind --tool=callgrind \
     --cache-sim=yes --branch-sim=yes --trace-redir=yes \
     --LL="$CALLGRIND_LAST_LEVEL_CACHE" \
     --callgrind-out-file="$_cg_file" --log-file="$_log" \
     "$_BIN" "$_test" "$_loops"
-  _line="$_line | $(duration_format "$_start")"
+  _callgrind_duration="$(duration_format "$_start")"
 
   heading_print "python3 callgrind_symbols.py $_test"
   command_run python3 "$PERF2HTML_DIR_/scripts/callgrind_symbols.py" \
@@ -364,18 +408,20 @@ run_one() {
   page_command_run "$_page" \
     "$_shown -c $PROFILE_PINNED_CPU $_BIN $_test $TEST_LOOPS" \
     timing_record "$_test" "$_stat_file"
-  _timing=""
+  _summary_headers=(Test Loops Callgrind)
+  _summary_values=("$_test" "$_loops" "$_callgrind_duration")
   while read -r -a _page_words; do
     case "${_page_words[0]-}" in
-      Time/*:)
-        _timing="${_page_words[1]-}${_page_words[2]-}"
-        _timing+="/${_page_words[0]:5:-1}"
+      Time/*: | Errors:)
+        _summary_headers+=("${_page_words[0]%:}")
+        _summary_values+=("${_page_words[*]:1}")
         ;;
-      Errors:*) _timing+="${_timing:+, }${_page_words[*]}" ;;
     esac
   done <"$_page"
-  [ -n "$_timing" ] || error_exit 1 "error: no Time/<unit>: line in $_page"
-  log_verbose "$_line | $_timing"
+  [[ "${_summary_headers[*]}" == *" Time/"* ]] \
+    || error_exit 1 "error: no Time/<unit>: line in $_page"
+  table_print "${#_summary_headers[@]}" "${_summary_headers[@]}" \
+    "${_summary_values[@]}"
 
   trace_render "$_test" "$_loops"
   _CALLGRIND_FILES=("$_cg_file")
@@ -408,18 +454,10 @@ timer_artifacts_write() {
 
 run_all() {
   local _test_name _time_label _time_value _time_suffix _suite_suffix
-  local _remaining_fields _total=0 _row _rows="" _page _test_page _recording
-  local _log_args=() _args _timing_lines=()
+  local _remaining_fields _total=0 _row _rows="" _page _test_page
+  local _args _timing_lines=()
   _page="$(artifact_path_of timing-page "$REPORT_TEST_SUITE_NAME")"
-  _CALLGRIND_FILES=()
-  for _test_name in "${_TESTS[@]}"; do
-    _recording="$(artifact_path_of callgrind "$_test_name")"
-    _CALLGRIND_FILES+=("$_recording")
-    _recording="$(artifact_path_of valgrind-log "$_test_name")"
-    _log_args+=(--valgrind-log "$_test_name=$_recording")
-    _recording="$(artifact_path_of trace-log "$_test_name")"
-    _log_args+=(--trace-log "$_test_name=$_recording")
-  done
+  _CALLGRIND_FILES=("$(artifact_path_of callgrind '*')")
 
   heading_print "taskset -c $PROFILE_PINNED_CPU perf <test>"
   for _test_name in "${_TESTS[@]}"; do
@@ -439,7 +477,6 @@ run_all() {
     _rows+="$_row"
     _timing_lines+=("$_test_name: $_time_value $_suite_suffix")
     _total=$((_total + _time_value))
-    _log_args+=(--perf-log "$_test_name=$_test_page")
   done
   {
     echo "\$ taskset -c $PROFILE_PINNED_CPU $_BIN_REL <test>"
@@ -450,7 +487,6 @@ run_all() {
   } >"$_page"
   command_item_print "taskset -c $PROFILE_PINNED_CPU $_BIN <test>"
   item_output_print "${_timing_lines[@]}" "Time: $_total $_suite_suffix"
-  _log_args+=(--perf-log "$REPORT_TEST_SUITE_NAME=$_page")
 
   report_render "$REPORT_TEST_SUITE_NAME"
 
@@ -458,16 +494,20 @@ run_all() {
   _HEADER_ROWS=(
     "revision=$_REVISION"
     "cpu=$_CPU_MODEL"
+    "memory=$_MEMORY_USAGE"
+    "os=$_OPERATING_SYSTEM"
+    "compiler=$_COMPILER_NAME"
     "build=$_BUILD_DESC"
     "executable=$_BIN_REL"
     "$(manifest_recorded_row)"
   )
   printf '%s\n' "${_HEADER_ROWS[@]}" >"$_HEADER_FILE"
   _args=(-o "$_OUT_DIR/index.html" --header-file "$_HEADER_FILE"
-    --raw-data "$_TIMER_ARTIFACTS_ARCHIVE" "${_log_args[@]}")
-  for _test_name in "${_TESTS[@]}" "$REPORT_TEST_SUITE_NAME"; do
-    _args+=(--test "$_test_name")
-  done
+    --raw-data "$_TIMER_ARTIFACTS_ARCHIVE"
+    --profile "$(artifact_path_of callgrind '*')"
+    --perf-log "$(artifact_path_of timing-page '*')"
+    --trace-log "$(artifact_path_of trace-log '*')"
+    --valgrind-log "$(artifact_path_of valgrind-log '*')")
   command_run python3 "$PERF2HTML_DIR_/scripts/build_report.py" overview \
     "${_args[@]}"
   log_verbose "$(printf '%-13s%d profiles merged: %s' \

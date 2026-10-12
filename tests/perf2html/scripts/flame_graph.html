@@ -6,10 +6,16 @@
     <script src="../assets/utility.js"></script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title></title>
-    __SCRIPTS__
+    <script src="../assets/ui_strings.js"></script>
+    <script src="../assets/settings.js"></script>
     <link rel="stylesheet" href="__APP_CSS__" />
   </head>
   <body>
-    __HELD_SCRIPTS__
+    <template id="page-held-script-">
+      <script src="../assets/debug.js"></script>
+      <script src="../assets/theme.js"></script>
+      <script src="../assets/flame_graph.js"></script>
+      <script src="__APP_SCRIPT__"></script>
+    </template>
   </body>
 </html>

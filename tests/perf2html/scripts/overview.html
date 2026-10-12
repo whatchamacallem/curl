@@ -1,24 +1,46 @@
+<!doctype html>
 <!-- SPDX-FileCopyrightText: © 2026 Adrian Johnston.
      SPDX-License-Identifier: MIT
      This file is licensed under the terms of the LICENSE-MIT.md file. -->
-
-<div id="overview-page-scroll-box-">
-  <div id="overview-page-">
-    __MENU__
-    <div id="overview-home-">
-      <main class="page-text-scroll-box-">
-        <div class="page-">
-          __OVERVIEW_HEADING__ __RAW_DATA__
-          <br />
-          __MANIFEST__
-          <br />
-          __TESTS_HEADING__ __TESTS__ __PERF_LOG__ __TRACE_LOG__
-          __VALGRIND_LOG__
+<html lang="en" data-top-page->
+  <head>
+    <meta charset="utf-8" />
+    <script src="assets/error_overlay.js"></script>
+    <script src="assets/utility.js"></script>
+    <script src="assets/ui_strings.js"></script>
+    <script src="assets/settings.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title></title>
+    <link rel="stylesheet" href="assets/theme.css" />
+    <link rel="stylesheet" href="assets/menu.css" />
+    <link rel="stylesheet" href="assets/light_mode.css" />
+    <link rel="stylesheet" href="assets/dark_mode.css" />
+  </head>
+  <body class="frame-">
+    <div id="overview-page-scroll-box-">
+      <div id="overview-page-">
+        __MENU__
+        <div id="overview-home-">
+          <main class="page-text-scroll-box-">
+            <div class="page-">
+              __RAW_DATA__ __MANIFEST__
+              <br />
+              __TESTS_HEADING__ __TESTS__ __PERF_LOG__ __TRACE_LOG__
+              __VALGRIND_LOG__
+            </div>
+          </main>
+          <div class="page-text-scrollbar- vertical-" aria-hidden="true"></div>
         </div>
-      </main>
-      <div class="page-text-scrollbar- vertical-" aria-hidden="true"></div>
+        <iframe id="overview-view-frame-" hidden></iframe>
+      </div>
     </div>
-    <iframe id="overview-view-frame-" hidden></iframe>
-  </div>
-</div>
-<div class="page-text-scrollbar- horizontal-" aria-hidden="true"></div>
+    <div class="page-text-scrollbar- horizontal-" aria-hidden="true"></div>
+    <script src="assets/debug.js"></script>
+    <script src="assets/theme.js"></script>
+    <script src="assets/preferences.js"></script>
+    <script src="assets/overview.js"></script>
+    <script src="assets/pulldown_text.js"></script>
+    <script src="assets/frame.js"></script>
+    <script src="assets/menu.js"></script>
+  </body>
+</html>

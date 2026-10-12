@@ -12,7 +12,6 @@ import settings
 
 _ASSET_CALLERS_SCRIPT_NAME: str = ""
 _ASSET_DARK_MODE_STYLESHEET_NAME: str = ""
-_ASSET_DEBUG_SCRIPT_NAME: str = ""
 _ASSET_ERROR_OVERLAY_SCRIPT_NAME: str = ""
 _ASSET_FLAME_GRAPH_SCRIPT_NAME: str = ""
 _ASSET_FRAME_SCRIPT_NAME: str = ""
@@ -22,6 +21,7 @@ _ASSET_LIGHT_MODE_STYLESHEET_NAME: str = ""
 _ASSET_MENU_SCRIPT_NAME: str = ""
 _ASSET_MENU_STYLESHEET_NAME: str = ""
 _ASSET_OVERVIEW_SCRIPT_NAME: str = ""
+_ASSET_PREFERENCES_SCRIPT_NAME: str = ""
 _ASSET_SETTINGS_PAGE_SCRIPT_NAME: str = ""
 _ASSET_SETTINGS_SCRIPT_NAME: str = ""
 _ASSET_THEME_SCRIPT_NAME: str = ""
@@ -32,7 +32,6 @@ _DARK_MODE_ATTRIBUTE_NAME: str = ""
 _DARK_MODE_DISABLED_VALUE: str = ""
 _NUMBER_FRACTION_DIGITS: int = 0
 _NUMBER_LARGEST_PRINTED_MULTIPLE_TIMES: float = 0.0
-_REPORT_ASSETS_DIR_NAME: str = ""
 _STYLE_COLOR_DARK_MODE: dict[str, list[str]] = {}
 _STYLE_COLOR_DARK_MODE_ROLE_PREFIX: str = ""
 _STYLE_COLOR_LIGHT_MODE: dict[str, list[str]] = {}
@@ -44,11 +43,6 @@ _STYLE_DESIGN_SCALE_DEFAULT_MULTIPLE: int = 0
 _STYLE_DESIGN_SCALE_LARGEST_MULTIPLE: int = 0
 _STYLE_DESIGN_SCALE_SMALLEST_MULTIPLE: float = 0.0
 _STYLE_DESIGN_VIEWPORT_HEIGHT_PROPERTY: str = ""
-_STYLE_HEAT_CELL_ON_BRIGHT_ABOVE_LUMINANCE_SHARE: float = 0.0
-_STYLE_HEAT_CELL_ON_BRIGHT_ROLE: str = ""
-_STYLE_HEAT_CELL_ON_DARK_ROLE: str = ""
-_STYLE_HEAT_COLOR_FULL_SCALE_PERCENT: int = 0
-_STYLE_HEAT_COLOR_STOPS: list[str] = []
 _STYLE_HEAT_MAP_SOURCE_LINE_NUMBER_MARKER_WIDTH_PROPERTY: str = ""
 _STYLE_PAGE_FONT_FAMILY_PROPERTY: str = ""
 _STYLE_VALUE_ENTRIES: dict[str, str] = {}
@@ -76,8 +70,6 @@ _MENU_BUTTON_KIND_NAMES = ("action", "link")
 
 class Cell(NamedTuple):
     text: str = ""
-    html: str | None = None
-    style: str = ""
     href: str = ""
 
 
@@ -133,14 +125,6 @@ class Theme:
             digit_count = 1 if unit and value < 9.95 else 0
             return self.fixed_text(value, digit_count) + unit
 
-        def percent(self, percent: float) -> str:
-            digit_count = _NUMBER_FRACTION_DIGITS
-            if percent >= self.smallest_printed_percent:
-                return self.fixed_text(percent, digit_count) + "%"
-            if percent > 0:
-                return "≈" + self.fixed_text(0, digit_count) + "%"
-            return ""
-
         def rounded_units(self, value: float, digit_count: int) -> int:
             scaled = abs(value) * 10.0**digit_count
             whole = math.floor(scaled)
@@ -191,11 +175,6 @@ class Theme:
                 + unit.suffix
             )
 
-    class Rgb(NamedTuple):
-        red: int
-        green: int
-        blue: int
-
     class TimeUnit(NamedTuple):
         suffix: str
         seconds: float
@@ -211,9 +190,6 @@ class Theme:
             _STYLE_COLOR_LIGHT_MODE,
             _STYLE_COLOR_LIGHT_MODE_ROLE_PREFIX,
         )
-        self.heat_stops = [
-            self.rgb(color) for color in _STYLE_HEAT_COLOR_STOPS
-        ]
         self.number_format = Theme.NumberFormat(self.time_units())
 
     def asset_read(self, name: str) -> str:
@@ -270,6 +246,10 @@ class Theme:
                 self.asset_read(_ASSET_OVERVIEW_SCRIPT_NAME),
             ),
             (
+                _ASSET_PREFERENCES_SCRIPT_NAME,
+                self.asset_read(_ASSET_PREFERENCES_SCRIPT_NAME),
+            ),
+            (
                 _ASSET_SETTINGS_PAGE_SCRIPT_NAME,
                 self.asset_read(_ASSET_SETTINGS_PAGE_SCRIPT_NAME),
             ),
@@ -302,155 +282,12 @@ class Theme:
         if isinstance(value, str):
             return value
         fields = {"text": value.text}
-        if value.html is not None:
-            fields["html"] = value.html
-        if value.style:
-            fields["style"] = value.style
         if value.href:
             fields["href"] = value.href
         return fields
 
-    def contrast_foreground(
-        self, color: Theme.Rgb, on_dark_role: str, on_bright_role: str
-    ) -> str:
-        role = (
-            on_bright_role
-            if self.luminance(color)
-            > _STYLE_HEAT_CELL_ON_BRIGHT_ABOVE_LUMINANCE_SHARE
-            else on_dark_role
-        )
-        if role not in self.color_roles:
-            raise ValueError(f"{role} is no role of the dark palette")
-        return f"var(--{role})"
-
-    def document(
-        self,
-        title: str,
-        body: str,
-        extra_js: Sequence[str] = (),
-        body_class: str = "",
-        depth: int = 0,
-        extra_css: Sequence[str] = (),
-        body_holds_scripts: bool = False,
-    ) -> str:
-        assets_href = href(depth, _REPORT_ASSETS_DIR_NAME)
-        body_attributes = {"class": body_class} if body_class else {}
-        html_attributes = {"lang": "en"}
-        head_names = page_preamble_scripts()
-        head_links = "".join(
-            render_element(
-                "link",
-                {"rel": "stylesheet", "href": f"{assets_href}/{name}"},
-                None,
-            )
-            + "\n"
-            for name in (
-                _ASSET_THEME_STYLESHEET_NAME,
-                *extra_css,
-                _ASSET_LIGHT_MODE_STYLESHEET_NAME,
-                _ASSET_DARK_MODE_STYLESHEET_NAME,
-            )
-        )
-        # A page below the report root is a framed view, its settings relayed.
-        if body_holds_scripts:
-            script = ""
-        elif depth:
-            script = held_script_tags(
-                script_tags(
-                    assets_href,
-                    (
-                        _ASSET_DEBUG_SCRIPT_NAME,
-                        _ASSET_THEME_SCRIPT_NAME,
-                        *extra_js,
-                    ),
-                )
-            )
-        else:
-            html_attributes["data-top-page-"] = ""
-            script = script_tags(
-                assets_href,
-                (
-                    _ASSET_DEBUG_SCRIPT_NAME,
-                    _ASSET_THEME_SCRIPT_NAME,
-                    *extra_js,
-                ),
-            )
-        head_scripts = script_tags(assets_href, head_names)
-        head_markup = (
-            "\n"
-            + render_element("meta", {"charset": "utf-8"}, None)
-            + "\n"
-            + head_scripts
-            + render_element(
-                "meta",
-                {
-                    "name": "viewport",
-                    "content": "width=device-width, initial-scale=1",
-                },
-                None,
-            )
-            + "\n"
-            + render_element("title", {}, render_html_escape(title))
-            + "\n"
-            + head_links
-        )
-        page_markup = render_element(
-            "html",
-            html_attributes,
-            "\n"
-            + render_element("head", {}, head_markup)
-            + "\n"
-            + render_element("body", body_attributes, f"\n{body}\n{script}")
-            + "\n",
-        )
-        return f"<!doctype html>\n{page_markup}\n"
-
-    def heat_of_share(self, percent: float) -> float:
-        sign = -1.0 if percent < 0 else 1.0
-        full_scale = float(_STYLE_HEAT_COLOR_FULL_SCALE_PERCENT)
-        magnitude = min(abs(percent), full_scale)
-        if magnitude <= 0:
-            return 0.0
-        fraction = magnitude / full_scale
-        return sign * math.log10(1 + 9 * fraction)
-
-    def heat_style(self, heat: float, signed: bool = False) -> str:
-        if abs(heat) <= 0:
-            return ""
-        stops = self.heat_stops
-        if signed:
-            position = (heat + 1) * 0.5 * (len(stops) - 1)
-        else:
-            position = heat * (len(stops) - 1)
-        index = min(max(int(position), 0), len(stops) - 2)
-        fraction = position - index
-        mixed = Theme.Rgb(
-            *(
-                round(
-                    stops[index][channel]
-                    + (stops[index + 1][channel] - stops[index][channel])
-                    * fraction
-                )
-                for channel in range(3)
-            )
-        )
-        return (
-            f"background:rgb({mixed.red},{mixed.green},{mixed.blue});"
-            "color:"
-            + self.contrast_foreground(
-                mixed,
-                _STYLE_HEAT_CELL_ON_DARK_ROLE,
-                _STYLE_HEAT_CELL_ON_BRIGHT_ROLE,
-            )
-        )
-
     def js(self) -> str:
         return self.asset_read(_ASSET_THEME_SCRIPT_NAME)
-
-    def luminance(self, color: Theme.Rgb) -> float:
-        return (
-            0.2126 * color.red + 0.7152 * color.green + 0.0722 * color.blue
-        ) / 255
 
     def mode_stylesheet_read(self, name: str, selector: str) -> str:
         stylesheet_text = self.asset_read(name)
@@ -462,13 +299,6 @@ class Theme:
         for name in re.findall(r"var\((--[\w-]+)", stylesheet_text):
             if name not in names:
                 raise ValueError(f"a stylesheet reads {name}, not set for it")
-
-    def rgb(self, hex_color: str) -> Theme.Rgb:
-        return Theme.Rgb(
-            int(hex_color[1:3], 16),
-            int(hex_color[3:5], 16),
-            int(hex_color[5:7], 16),
-        )
 
     def roles(
         self,
@@ -499,7 +329,7 @@ class Theme:
         for name in _STYLE_VALUE_ENTRIES:
             if name in self.color_roles or name in self.light_mode_roles:
                 raise ValueError(
-                    f"STYLE_VALUE_ENTRIES names --{name}, a colour role too"
+                    f"STYLE_VALUE_ENTRIES names --{name}, a color role too"
                 )
             names.add(f"--{name}")
         names |= {
@@ -559,32 +389,12 @@ def diff_share_of(delta: int, baseline: int | None) -> float:
     return _renderer.number_format.diff_share_of(delta, baseline)
 
 
-def heat_of_share(percent: float) -> float:
-    return _renderer.heat_of_share(percent)
-
-
-def heat_style(heat: float, signed: bool = False) -> str:
-    return _renderer.heat_style(heat, signed)
-
-
-# Holds a framed page's scripts until settings.js relays the settings down.
-def held_script_tags(script_markup: str) -> str:
-    return (
-        render_element("template", {"id": "page-held-script-"}, script_markup)
-        + "\n"
-    )
-
-
 def href(depth: int, name: str) -> str:
     return "../" * depth + name
 
 
 def num_human(number: float) -> str:
     return _renderer.number_format.human(number)
-
-
-def num_pct(percent: float) -> str:
-    return _renderer.number_format.percent(percent)
 
 
 def num_signed(number: float) -> str:
@@ -597,35 +407,6 @@ def num_signed_pct(percent: float, is_line: bool = False) -> str:
 
 def num_time(seconds: float) -> str:
     return _renderer.number_format.time(seconds)
-
-
-def page_document(
-    title: str,
-    body: str,
-    extra_js: Sequence[str] = (),
-    body_class: str = "",
-    depth: int = 0,
-    extra_css: Sequence[str] = (),
-    body_holds_scripts: bool = False,
-) -> str:
-    return _renderer.document(
-        title,
-        body,
-        extra_js,
-        body_class,
-        depth,
-        extra_css,
-        body_holds_scripts,
-    )
-
-
-def page_preamble_scripts() -> tuple[str, ...]:
-    return (
-        _ASSET_ERROR_OVERLAY_SCRIPT_NAME,
-        _ASSET_UTILITY_SCRIPT_NAME,
-        _ASSET_UI_STRINGS_SCRIPT_NAME,
-        _ASSET_SETTINGS_SCRIPT_NAME,
-    )
 
 
 # Writes one element, the one writer of a tag, a None inner a void tag.
@@ -661,7 +442,7 @@ def render_html_escape(value: object) -> str:
     )
 
 
-# Writes a menu button: menu colours, then a tab stop, link or role by kind.
+# Writes a menu button: menu colors, then a tab stop, link or role by kind.
 def render_menu_button(
     kind_name: str, label_markup: str, fields: MenuButtonFields
 ) -> str:
@@ -683,14 +464,6 @@ def render_menu_button(
     elif fields.tag_name != "summary":
         own_attributes |= {"role": "button", "tabindex": "0"}
     return render_element(fields.tag_name, own_attributes, inner_markup)
-
-
-def script_tags(directory_href: str, names: Sequence[str]) -> str:
-    return "".join(
-        render_element("script", {"src": f"{directory_href}/{name}"}, "")
-        + "\n"
-        for name in names
-    )
 
 
 # Answers rows as the JSON a page script hands the table writer.

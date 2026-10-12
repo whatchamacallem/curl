@@ -11,17 +11,11 @@ from typing import NamedTuple
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import settings, theme
 
-_ASSET_DEBUG_SCRIPT_NAME: str = ""
-_ASSET_FLAME_GRAPH_SCRIPT_NAME: str = ""
-_ASSET_SETTINGS_SCRIPT_NAME: str = ""
 _ASSET_TEMPLATE_FLAME_GRAPH_PAGE_NAME: str = ""
-_ASSET_THEME_SCRIPT_NAME: str = ""
-_ASSET_UI_STRINGS_SCRIPT_NAME: str = ""
 _FLAME_GRAPH_APP_DIR_NAME: str = ""
 _FLAME_GRAPH_PROFILE_DIR_NAME: str = ""
 _FLAME_GRAPH_PROFILE_GLOBAL_NAME: str = ""
 _FLAME_GRAPH_VIEW_ENTRY: tuple[str, str] = ("", "")
-_REPORT_ASSETS_DIR_NAME: str = ""
 settings.load_into(__name__)
 
 _FLAME_GRAPH_PAGE_PATH = _FLAME_GRAPH_VIEW_ENTRY[1]
@@ -42,33 +36,14 @@ class BuildFlameGraph:
         test: str
 
     def page_write(self, args: BuildFlameGraph.PageArgs) -> None:
-        assets_href = theme.href(
-            _FLAME_GRAPH_PAGE_DEPTH, _REPORT_ASSETS_DIR_NAME
-        )
         app_href = theme.href(
             _FLAME_GRAPH_PAGE_DEPTH, _FLAME_GRAPH_APP_DIR_NAME
-        )
-        scripts = theme.script_tags(
-            assets_href,
-            (_ASSET_UI_STRINGS_SCRIPT_NAME, _ASSET_SETTINGS_SCRIPT_NAME),
-        )
-        held_scripts = theme.held_script_tags(
-            theme.script_tags(
-                assets_href,
-                (
-                    _ASSET_DEBUG_SCRIPT_NAME,
-                    _ASSET_THEME_SCRIPT_NAME,
-                    _ASSET_FLAME_GRAPH_SCRIPT_NAME,
-                ),
-            )
-            + theme.script_tags(app_href, (args.app_js,))
         )
         html = theme.template_fill(
             _PAGE,
             {
                 "__APP_CSS__": f"{app_href}/{args.app_css}",
-                "__HELD_SCRIPTS__": held_scripts,
-                "__SCRIPTS__": scripts,
+                "__APP_SCRIPT__": f"{app_href}/{args.app_js}",
             },
         )
         path = os.path.join(args.report_dir, _FLAME_GRAPH_PAGE_PATH)

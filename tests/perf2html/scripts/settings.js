@@ -61,20 +61,25 @@ window.try_catch_handler_(function () {
     for (const [name, value] of Object.entries(root_values))
       document.documentElement.style.setProperty(name, value);
   }
-  // Answers whether the top page's query turns settings debugging on.
-  function settings_debug_query_enabled(written_object) {
+  // Answers whether settings debugging is on, the top page's query deciding.
+  function settings_debug_enabled_of(written_object) {
+    const query_values = written_object.SETTINGS_DEBUG_QUERY_VALUES;
     const query_value = new URLSearchParams(location.search).get(
       written_object.SETTINGS_DEBUG_QUERY_KEY_NAME,
     );
-    if (query_value === null) return false;
-    if (query_value !== written_object.SETTINGS_DEBUG_QUERY_ENABLED_VALUE)
+    if (query_value === null) return written_object.SETTINGS_DEBUG_ENABLED;
+    if (
+      query_value !== query_values.enabled &&
+      query_value !== query_values.disabled
+    )
       window.throw_exception_(
         "str_error_settings_debug_query_unusable",
         written_object.SETTINGS_DEBUG_QUERY_KEY_NAME,
         query_value,
-        written_object.SETTINGS_DEBUG_QUERY_ENABLED_VALUE,
+        query_values.disabled,
+        query_values.enabled,
       );
-    return true;
+    return query_value === query_values.enabled;
   }
   // Answers the settings the top hash applies, an empty object for none.
   function settings_applied_values_of(written_object) {
@@ -109,9 +114,7 @@ window.try_catch_handler_(function () {
   // Installs the window settings object, under debug with the hash's applied.
   function settings_install(written_object) {
     if (!is_framed) {
-      const debug_enabled =
-        settings_debug_query_enabled(written_object) ||
-        written_object.SETTINGS_DEBUG_ENABLED;
+      const debug_enabled = settings_debug_enabled_of(written_object);
       if (debug_enabled) {
         applied_values = settings_applied_values_of(written_object);
         Object.assign(written_object, applied_values);

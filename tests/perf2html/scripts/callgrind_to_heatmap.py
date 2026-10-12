@@ -12,14 +12,9 @@ from typing import NamedTuple, NotRequired, TypedDict
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import callgrind, callgrind_diff, settings, theme
 
-_ASSET_DEBUG_SCRIPT_NAME: str = ""
-_ASSET_HEAT_MAP_SCRIPT_NAME: str = ""
-_ASSET_HEAT_MAP_STYLESHEET_NAME: str = ""
-_ASSET_MENU_STYLESHEET_NAME: str = ""
 _ASSET_PULLDOWN_TEXT_SCRIPT_NAME: str = ""
 _ASSET_TEMPLATE_HEAT_MAP_MAIN_NAME: str = ""
 _ASSET_TEMPLATE_HEAT_MAP_PAGE_NAME: str = ""
-_ASSET_THEME_SCRIPT_NAME: str = ""
 _HEAT_MAP_MODEL_DIR_NAME: str = ""
 _HEAT_MAP_MODEL_GLOBAL_NAME: str = ""
 _HEAT_MAP_TREE_ALWAYS_LISTED_DIRS: tuple[str, ...] = ()
@@ -29,12 +24,11 @@ _REPORT_SOURCES_DIR_NAME: str = ""
 _REPORT_TEST_SUITE_NAME: str = ""
 settings.load_into(__name__)
 
-BODY = theme.asset_text_read(_ASSET_TEMPLATE_HEAT_MAP_PAGE_NAME)
-
 _HEAT_MAP_MAIN = theme.asset_text_read(_ASSET_TEMPLATE_HEAT_MAP_MAIN_NAME)
 
+_HEAT_MAP_PAGE = theme.asset_text_read(_ASSET_TEMPLATE_HEAT_MAP_PAGE_NAME)
+
 _HEAT_MAP_PAGE_PATH = _HEAT_MAP_VIEW_ENTRY[1]
-_HEAT_MAP_PAGE_DEPTH = _HEAT_MAP_PAGE_PATH.count("/")
 
 
 class CallgrindToHeatmap:
@@ -392,51 +386,19 @@ class CallgrindToHeatmap:
             "cold": cold,
         }, info
 
-    def page_render(self, source_names: Sequence[str]) -> str:
-        assets_href = theme.href(_HEAT_MAP_PAGE_DEPTH, _REPORT_ASSETS_DIR_NAME)
-        sources_href = theme.href(
-            _HEAT_MAP_PAGE_DEPTH, _REPORT_SOURCES_DIR_NAME
-        )
-        scripts = theme.script_tags(sources_href, source_names)
-        scripts += theme.script_tags(
-            assets_href, (_ASSET_PULLDOWN_TEXT_SCRIPT_NAME,)
-        )
-        scripts += theme.held_script_tags(
-            theme.script_tags(
-                assets_href,
-                (
-                    _ASSET_DEBUG_SCRIPT_NAME,
-                    _ASSET_THEME_SCRIPT_NAME,
-                    _ASSET_HEAT_MAP_SCRIPT_NAME,
-                ),
-            )
-        )
-        return theme.page_document(
-            "",
-            theme.template_fill(
-                BODY,
-                {"__HEAT_MAP_MAIN__": _HEAT_MAP_MAIN, "__SCRIPTS__": scripts},
-            ),
-            depth=_HEAT_MAP_PAGE_DEPTH,
-            extra_css=(
-                _ASSET_MENU_STYLESHEET_NAME,
-                _ASSET_HEAT_MAP_STYLESHEET_NAME,
-            ),
-            body_holds_scripts=True,
+    def page_render(self) -> str:
+        return theme.template_fill(
+            _HEAT_MAP_PAGE, {"__HEAT_MAP_MAIN__": _HEAT_MAP_MAIN}
         )
 
     def page_write(self, report_dir: str) -> None:
-        source_names = sorted(
-            os.listdir(os.path.join(report_dir, _REPORT_SOURCES_DIR_NAME))
-        )
-        html = self.page_render(source_names)
+        html = self.page_render()
         path = os.path.join(report_dir, _HEAT_MAP_PAGE_PATH)
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "w", encoding="utf-8") as handle:
             handle.write(html)
         print(
-            f"wrote {path} ({len(html.encode('utf-8')):,} bytes,"
-            f" {len(source_names)} sources linked)",
+            f"wrote {path} ({len(html.encode('utf-8')):,} bytes)",
             file=sys.stderr,
         )
 

@@ -30,7 +30,7 @@ _TEST_EXPECTED_BEHAVIOR="$_SCRIPTS/test_expected_behavior.sh"
 . "$_SCRIPTS/utility.sh"
 . "$_SCRIPTS/test_utility.sh"
 
-_TEST_EXPECTED_BEHAVIOR_DOCUMENT="$_DIR_PERF2HTML/test_expected_behavior.md"
+_TEST_VERBOSE_DOCUMENT="$_DIR_PERF2HTML/test_verbose.md"
 
 _TEST_ERROR_MARKDOWN_FORMATTER=prettier
 _PRETTIER_CONFIG="$_SCRIPTS/.prettierrc.json"
@@ -60,7 +60,9 @@ test_error_path_without_tool() {
   for _dir in "${_dirs[@]}"; do
     case "$_dir" in /*) ;; *) continue ;; esac
     [ -d "$_dir" ] || continue
-    cp -rs --update=none "$_dir"/. "$_bin"/
+    # Links each directory's own entries, never a subtree with its modes.
+    find "$_dir" -mindepth 1 -maxdepth 1 -not -type d \
+      -exec cp -s --update=none -t "$_bin" {} +
   done
   [ -e "$_bin/$_tool" ] \
     || test_fail test_error_path_without_tool "no $_tool on PATH"
@@ -115,7 +117,7 @@ test_error_markdown_formatter_check() {
   _PRETTIER="$(tool_find "$_TEST_ERROR_MARKDOWN_FORMATTER")" && return 0
   {
     echo "error: 1 tool(s) missing, so" \
-      "$(path_shown "$_TEST_EXPECTED_BEHAVIOR_DOCUMENT") is not checked:" \
+      "$(path_shown "$_TEST_VERBOSE_DOCUMENT") is not checked:" \
       "$_TEST_ERROR_MARKDOWN_FORMATTER"
     echo "  $_TEST_ERROR_MARKDOWN_FORMATTER_INSTALL"
   } >&2
@@ -125,11 +127,11 @@ test_error_markdown_formatter_check() {
 test_error_markdown_check_run() {
   local _code=0
   "$_PRETTIER" --config "$_PRETTIER_CONFIG" \
-    --log-level warn --check "$_TEST_EXPECTED_BEHAVIOR_DOCUMENT" || _code=$?
+    --log-level warn --check "$_TEST_VERBOSE_DOCUMENT" || _code=$?
   if [ "$_code" != 0 ]; then
     printf 'FAILED: %s --check exited %s on %s\n' \
       "$_TEST_ERROR_MARKDOWN_FORMATTER" "$_code" \
-      "$(path_shown "$_TEST_EXPECTED_BEHAVIOR_DOCUMENT")" >&2
+      "$(path_shown "$_TEST_VERBOSE_DOCUMENT")" >&2
     exit "$_code"
   fi
   echo "ok test_error_markdown_check"
@@ -138,10 +140,10 @@ test_error_markdown_check_run() {
 test_error_expected_behavior_run() {
   local _code=0 _start=$SECONDS
   "$_TEST_EXPECTED_BEHAVIOR" --keep-artifacts --verbose \
-    2>"$_TEST_EXPECTED_BEHAVIOR_DOCUMENT" </dev/null || _code=$?
+    2>"$_TEST_VERBOSE_DOCUMENT" </dev/null || _code=$?
   if [ "$_code" != 0 ]; then
     printf 'FAILED: test_expected_behavior.sh exited %s, see %s\n' "$_code" \
-      "$(path_shown "$_TEST_EXPECTED_BEHAVIOR_DOCUMENT")" >&2
+      "$(path_shown "$_TEST_VERBOSE_DOCUMENT")" >&2
     exit "$_code"
   fi
   printf 'test_expected_behavior.sh --keep-artifacts: %ss\n' \
@@ -276,6 +278,11 @@ test_error_diff_tests() {
     "$_tool" "--artifacts=$_scratch/artifacts_four" \
     "$_baseline" "$_modified" "$_scratch/out_four" \
     "$_scratch/fourth"
+
+  mkdir -p "$_scratch/artifacts_diff_no_log/out_diff_no_log"
+  test_failure_expect diff_regenerate_no_log 2 -- \
+    "$_tool" --regenerate "--artifacts=$_scratch/artifacts_diff_no_log" \
+    "$_baseline" "$_modified" "$_scratch/out_diff_no_log"
 
   _copy="$(test_report_copy "$_scratch/modified_as_output" \
     "$_modified")"

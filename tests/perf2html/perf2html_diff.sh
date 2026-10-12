@@ -123,6 +123,21 @@ args_parse() {
   input_archives_extract
 }
 
+recorded_reuse() {
+  [ -d "$ARTIFACTS_DIR" ] || error_exit 2 \
+    "error: --regenerate: no recordings at $ARTIFACTS_DIR"
+  local _log_pattern="$DIFF_LOG_FILE_PREFIX.*.log" _found_names
+  local -a _found_logs
+  mapfile -t _found_logs < <(find "$ARTIFACTS_DIR" -mindepth 1 -maxdepth 1 \
+    -type f -name "$_log_pattern" | sort)
+  _found_names="${_found_logs[*]##*/}"
+  [ "${#_found_logs[@]}" = 1 ] || error_exit 2 "error: --regenerate: \
+$ARTIFACTS_DIR holds ${#_found_logs[@]} $_log_pattern, the log of the run to \
+reuse, expected 1${_found_names:+: $_found_names}"
+  TIMESTAMP="${_found_names#"$DIFF_LOG_FILE_PREFIX".}"
+  TIMESTAMP="${TIMESTAMP%.log}"
+}
+
 manifest_check() {
   local _dir="$1" _role="$2" _manifest="$1/MANIFEST.txt" _reason
   if [ -f "$_manifest" ] \
@@ -182,7 +197,8 @@ profiles_extract() {
     _test="${_test#"$CALLGRIND_OUTPUT_FILE_PREFIX".}"
     listing_row_write "$_listing" "$_test" "$_file"
   done
-  listing_row_write "$_listing" "$REPORT_TEST_SUITE_NAME" "${_files[@]}"
+  listing_row_write "$_listing" "$REPORT_TEST_SUITE_NAME" \
+    "$_root_directory/$CALLGRIND_OUTPUT_FILE_PREFIX.*"
 }
 
 listing_row_write() {
@@ -266,20 +282,21 @@ main() {
     "$_MOD_DIR" "modified report" \
     "$ARTIFACTS_DIR" "artifacts dir"
 
-  if [ "$REGENERATE" = 1 ] && [ ! -d "$ARTIFACTS_DIR" ]; then
-    error_exit 2 "error: --regenerate: no recordings at $ARTIFACTS_DIR"
-  fi
+  if [ "$REGENERATE" = 1 ]; then recorded_reuse; fi
 
   report_delete "$_OUT_DIR"
   [ "$REGENERATE" = 1 ] || artifacts_clean
-  local _log_file
-  _log_file="$(artifact_path_of diff-log "")"
+  local _log_kind=diff-log _log_file
+  if [ "$REGENERATE" = 1 ]; then
+    _log_kind=regenerate-log
+  fi
+  _log_file="$(artifact_path_of "$_log_kind" "")"
   report_begin "$_OUT_DIR" "$_log_file" \
     "tests/perf2html/perf2html_diff.sh $TIMESTAMP: $_BASE_DIR: $_MOD_DIR: \
 $_OUT_DIR"
   source_cache_fill
 
-  local _tests _test_name _delta_file
+  local _tests _test_name
   local -a _args
   _BASE_LISTING="$(artifact_path_of profile-listing baseline)"
   _MODIFIED_LISTING="$(artifact_path_of profile-listing modified)"
@@ -292,11 +309,10 @@ $_OUT_DIR"
     "$(basename "$_MOD_DIR")"
   _args=(-o "$_OUT_DIR/index.html" --diff
     --header-block "baseline=$(header_file_of "$_BASE_DIR" baseline)"
-    --header-block "modified=$(header_file_of "$_MOD_DIR" modified)")
+    --header-block "modified=$(header_file_of "$_MOD_DIR" modified)"
+    --diff-profile "$(artifact_path_of delta '*')")
   for _test_name in $_tests; do
     diff_one "$_test_name" "$_test_name"
-    _delta_file="$(artifact_path_of delta "$_test_name")"
-    _args+=(--test "$_test_name" --diff-profile "$_test_name=$_delta_file")
   done
   heading_print "python3 callgrind_to_heatmap.py page"
   command_run python3 "$PERF2HTML_DIR_/scripts/callgrind_to_heatmap.py" page \

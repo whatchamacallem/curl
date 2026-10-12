@@ -228,7 +228,7 @@ lint_run() {
     pyright_filtered_run "$_PYRIGHT" --project "$_PYRIGHT_CONFIG" \
       "${_files[@]}"
   else
-    subprocess_run "$_PYRIGHT" --project "$_PYRIGHT_CONFIG" "${_files[@]}"
+    subprocess_run "$_PYRIGHT" --project "$_PYRIGHT_CONFIG" "${_files[@]}" >&2
   fi
 }
 

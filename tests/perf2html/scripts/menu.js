@@ -16,6 +16,7 @@ window.try_catch_handler_(function () {
     "STYLE_MENU_PULLDOWN_EXTRA_WIDTH_CHARS",
   );
 
+  const CALLS_CHOICE_VALUE = "calls";
   const FLAME_GRAPH_VIEW_KEY = FLAME_GRAPH_VIEW_ENTRY[0];
   const HEAT_MAP_VIEW_KEY = HEAT_MAP_VIEW_ENTRY[0];
   const REPORT_NAME_TEXT = window.ui_strings_.text_of("str_report_name");
@@ -40,6 +41,7 @@ window.try_catch_handler_(function () {
 
   const menu_strip = document.getElementById("menu-");
   const help_href = menu_strip.getAttribute("data-help-href-");
+  const preference_strip = document.getElementById("menu-preference-");
   const pulldown_box_width_chars =
     Math.max(
       ...window.report_frame_.test_names.map(
@@ -49,8 +51,15 @@ window.try_catch_handler_(function () {
 
   if (typeof window.report_manifest_table_ === "undefined")
     window.throw_exception_("str_error_report_incomplete");
+  if (!window.report_pulldown_text_)
+    window.throw_exception_("str_error_internal");
+  const heat_scale_choices = window.report_preferences_.heat_scale_choices_of(
+    window.report_frame_.is_diff,
+  );
+  const heat_sort_choices = window.report_preferences_.heat_sort_choices;
   let flash_entry_name = "";
   let menu_strip_handle = null;
+  let preference_strip_handle = null;
 
   function active_test_name() {
     return window.report_frame_.address_now().test ?? REPORT_TEST_SUITE_NAME;
@@ -83,10 +92,8 @@ window.try_catch_handler_(function () {
     return entry_link;
   }
   function heat_map_entries_of(names_key, entry_name, part_of) {
-    const pulldown_text = window.report_pulldown_text_;
-    if (!pulldown_text) window.throw_exception_("str_error_internal");
     const entry_test_name = active_test_name();
-    return pulldown_text[names_key].map((name) =>
+    return window.report_pulldown_text_[names_key].map((name) =>
       pulldown_link_of(
         name,
         window.report_ui_.address.hash_of({
@@ -127,6 +134,7 @@ window.try_catch_handler_(function () {
     return {
       box_width_chars: pulldown_box_width_chars,
       entries_of,
+      keeps_open: false,
       on_close,
       on_select: null,
       reads_line_number,
@@ -171,9 +179,89 @@ window.try_catch_handler_(function () {
     window.report_ui_.view_storage.preferences_clear();
     window.report_ui_.design_scale_stop_set(null);
     window.report_ui_.dark_mode_set_(null);
+    window.report_preferences_.seed();
+    window.report_frame_.load_log_history_seed();
     window.report_frame_.view_post("layout_reset");
     menu_render();
     window.report_frame_.settings_debug_clear();
+  }
+
+  function choice_label_of(choices, choice_value) {
+    return choices.find((choice) => choice.value === choice_value).label;
+  }
+  // Answers the counters label: one counter's description, else their count.
+  function counters_label_of() {
+    const shown_names = window.report_preferences_.now().counter_names;
+    return shown_names.length > 1
+      ? window.ui_strings_.text_fill("str_menu_counters", {
+          count: shown_names.length,
+        })
+      : window.report_preferences_.counter_description_of(shown_names[0]);
+  }
+  // Lists the counters pulldown's choices: calls, then each counter, marked.
+  function counter_choices_of() {
+    const shown_preferences = window.report_preferences_.now();
+    const shown_names = shown_preferences.counter_names;
+    const choice_of = (label_text, is_selected, choice_value) => ({
+      label: window.ui_strings_.text_fill("str_menu_counter_entry", {
+        mark: window.ui_strings_.text_of(
+          is_selected
+            ? "str_menu_counter_selected_mark"
+            : "str_menu_counter_unselected_mark",
+        ),
+        label: label_text,
+      }),
+      value: choice_value,
+    });
+    return [
+      choice_of(
+        window.ui_strings_.text_of("str_column_calls"),
+        shown_preferences.shows_calls,
+        CALLS_CHOICE_VALUE,
+      ),
+      ...window.report_frame_.counter_names.map((counter_name) =>
+        choice_of(
+          window.report_preferences_.counter_label_of(counter_name),
+          shown_names.includes(counter_name),
+          counter_name,
+        ),
+      ),
+    ];
+  }
+  // Shows or hides the calls columns, which the counters label never counts.
+  function calls_toggle() {
+    window.report_preferences_.calls_toggle();
+    window.report_frame_.view_post("preferences_apply");
+  }
+  // Takes a choice of the counters pulldown, calls or one counter.
+  function counter_choice_take(choice_value) {
+    if (choice_value === CALLS_CHOICE_VALUE) calls_toggle();
+    else counter_toggle(choice_value);
+  }
+  // Turns one counter on or off, the ranking counter staying shown.
+  function counter_toggle(counter_name) {
+    if (!window.report_preferences_.counter_toggle(counter_name)) return;
+    window.report_frame_.view_post("preferences_apply");
+    preference_strip_handle.pulldown_label_set(
+      "counters",
+      counters_label_of(),
+    );
+  }
+  function heat_scale_choose(scale_value) {
+    window.report_preferences_.heat_scale_choose(scale_value);
+    window.report_frame_.view_post("preferences_apply");
+    preference_strip_handle.pulldown_label_set(
+      "heat_scale",
+      choice_label_of(heat_scale_choices, scale_value),
+    );
+  }
+  function heat_sort_choose(sort_mode) {
+    window.report_preferences_.heat_sort_choose(sort_mode);
+    window.report_frame_.view_post("preferences_apply");
+    preference_strip_handle.pulldown_label_set(
+      "heat_sort",
+      choice_label_of(heat_sort_choices, sort_mode),
+    );
   }
 
   function scale_text_of(scale_stop) {
@@ -290,9 +378,6 @@ window.try_catch_handler_(function () {
         view_hash_of(FLAME_GRAPH_VIEW_KEY),
         window.report_frame_.flame_graph_exists(test_name),
       ),
-      entry_of(dark_mode_string_id(), "action", {
-        on_activate: dark_mode_toggle,
-      }),
       entry_of("str_menu_reset", "action", {
         on_activate: preferences_reset,
       }),
@@ -305,6 +390,67 @@ window.try_catch_handler_(function () {
         is_widget: true,
         widget_text: scale_text_of(window.report_ui_.design_scale_stop_now()),
         on_activate: scale_click_take,
+      }),
+    ];
+  }
+  // Builds a preference pulldown entry, its cell labelled with the choice.
+  function preference_pulldown_entry_of(
+    entry_name,
+    label_text,
+    choices_of,
+    on_select,
+    keeps_open,
+  ) {
+    return window.report_ui_.strip.entry_make(
+      entry_name,
+      "pulldown",
+      label_text,
+      {
+        pulldown_options: {
+          box_width_chars:
+            Math.max(...choices_of().map((choice) => choice.label.length)) +
+            STYLE_MENU_PULLDOWN_EXTRA_WIDTH_CHARS,
+          entries_of: () =>
+            window.report_ui_.strip.choice_entries_of(choices_of()),
+          keeps_open,
+          on_close: () => {},
+          on_select,
+          reads_line_number: false,
+        },
+      },
+    );
+  }
+  // Assembles the preference row's entries, every one of them unnumbered.
+  function preference_entries_of() {
+    const shown_preferences = window.report_preferences_.now();
+    return [
+      preference_pulldown_entry_of(
+        "counters",
+        counters_label_of(),
+        counter_choices_of,
+        counter_choice_take,
+        true,
+      ),
+      preference_pulldown_entry_of(
+        "heat_scale",
+        choice_label_of(
+          heat_scale_choices,
+          shown_preferences.heat_scale_value,
+        ),
+        () => heat_scale_choices,
+        heat_scale_choose,
+        false,
+      ),
+      preference_pulldown_entry_of(
+        "heat_sort",
+        choice_label_of(heat_sort_choices, shown_preferences.heat_sort_mode),
+        () => heat_sort_choices,
+        heat_sort_choose,
+        false,
+      ),
+      entry_of(dark_mode_string_id(), "action", {
+        is_numbered: false,
+        on_activate: dark_mode_toggle,
       }),
     ];
   }
@@ -389,6 +535,11 @@ window.try_catch_handler_(function () {
       button_entries,
       status_entries_of(address),
     );
+    preference_strip_handle = window.report_ui_.strip.render(
+      preference_strip,
+      preference_entries_of(),
+      [],
+    );
     document.title = title_text_of(address);
     const menu_entry_number = window.report_frame_.menu_entry_number_now();
     if (menu_entry_number !== null)
@@ -402,6 +553,7 @@ window.try_catch_handler_(function () {
   }
   function menu_key_take(key_name, is_repeat) {
     if (
+      preference_strip_handle.key_take(key_name, is_repeat) ||
       menu_strip_handle.key_take(key_name, is_repeat) ||
       scale_key_take(key_name)
     )
@@ -413,6 +565,10 @@ window.try_catch_handler_(function () {
   }
 
   function activate() {
+    window.report_preferences_.activate(
+      window.report_frame_.counter_names,
+      window.report_frame_.is_diff,
+    );
     document.addEventListener(
       "keydown",
       window.try_catch_handler_((key_event) => {

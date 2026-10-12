@@ -14,13 +14,23 @@ window.try_catch_handler_(function () {
   const SETTINGS_DEBUG_HASH_KEY_NAME = settings_(
     "SETTINGS_DEBUG_HASH_KEY_NAME",
   );
-  const SETTINGS_DEBUG_QUERY_ENABLED_VALUE = settings_(
-    "SETTINGS_DEBUG_QUERY_ENABLED_VALUE",
-  );
   const SETTINGS_DEBUG_QUERY_KEY_NAME = settings_(
     "SETTINGS_DEBUG_QUERY_KEY_NAME",
   );
+  const SETTINGS_DEBUG_QUERY_VALUES = settings_("SETTINGS_DEBUG_QUERY_VALUES");
+  const SETTINGS_LOAD_LOG_HISTORY_DEFAULT_LINES = settings_(
+    "SETTINGS_LOAD_LOG_HISTORY_DEFAULT_LINES",
+  );
+  const SETTINGS_LOAD_LOG_HISTORY_LINE_CHOICES = settings_(
+    "SETTINGS_LOAD_LOG_HISTORY_LINE_CHOICES",
+  );
+  const SETTINGS_LOAD_LOG_HISTORY_MAX_LINES = settings_(
+    "SETTINGS_LOAD_LOG_HISTORY_MAX_LINES",
+  );
   const SETTINGS_VIEW_ENTRY = settings_("SETTINGS_VIEW_ENTRY");
+  const STORAGE_KEY_SETTINGS_HISTORY = settings_(
+    "STORAGE_KEY_SETTINGS_HISTORY",
+  );
 
   const home_panel = window.report_ui_.home_panel;
   const loaded_hash = location.hash;
@@ -29,11 +39,16 @@ window.try_catch_handler_(function () {
     SCREENSHOT_MENU_KEY_NUMBER,
   );
   const menu_strip = document.getElementById("menu-");
+  const counter_names = JSON.parse(
+    menu_strip.getAttribute("data-counter-names-"),
+  );
   const has_flame_graph = menu_strip.getAttribute("data-flame-graph-") === "1";
+  const is_diff = menu_strip.getAttribute("data-diff-") === "1";
   const test_names = JSON.parse(menu_strip.getAttribute("data-test-names-"));
   const view_frame = window.report_ui_.view_frame;
 
   let current_address = null;
+  let load_log_shown_count = null;
   let loaded_view_href = "";
 
   function address_now() {
@@ -73,14 +88,19 @@ window.try_catch_handler_(function () {
         parsed_address.setting,
       );
   }
-  // Loads the top page again at its hash under the settings debug query.
-  function settings_debug_reload() {
-    const query_values = new URLSearchParams(location.search);
-    query_values.set(
+  // Loads the top page again under the debug query, off dropping the values.
+  function settings_debug_load(debug_enabled) {
+    const loaded_url = new URL(location.href);
+    loaded_url.searchParams.set(
       SETTINGS_DEBUG_QUERY_KEY_NAME,
-      SETTINGS_DEBUG_QUERY_ENABLED_VALUE,
+      debug_enabled
+        ? SETTINGS_DEBUG_QUERY_VALUES.enabled
+        : SETTINGS_DEBUG_QUERY_VALUES.disabled,
     );
-    location.replace("?" + query_values + location.hash);
+    if (!debug_enabled)
+      loaded_url.hash =
+        window.report_ui_.address.settings_cleared_hash_of(current_address);
+    location.replace(loaded_url.href);
   }
   // Clears any settings debug query and values, loading the top page again.
   function settings_debug_clear() {
@@ -100,10 +120,8 @@ window.try_catch_handler_(function () {
     address_check(shown_address);
     current_address = shown_address;
     const applied_text = shown_address[SETTINGS_DEBUG_HASH_KEY_NAME];
-    const needs_debug =
-      shown_address.view === SETTINGS_VIEW_ENTRY[0] || applied_text !== null;
-    if (needs_debug && !SETTINGS_DEBUG_ENABLED) {
-      settings_debug_reload();
+    if (applied_text !== null && !SETTINGS_DEBUG_ENABLED) {
+      settings_debug_load(true);
       return;
     }
     // Installs the settings again when the hash changes those it applies.
@@ -162,8 +180,8 @@ window.try_catch_handler_(function () {
       }),
     );
   }
-  // Posts a message down carrying the dark mode the top page shows.
-  function view_post(message_name) {
+  // Posts a message down carrying the dark mode and preferences shown.
+  function view_post(message_name, message_fields = {}) {
     if (message_name === "layout_reset")
       window.report_ui_.layout_reset(home_panel);
     if (loaded_view_href)
@@ -171,9 +189,42 @@ window.try_catch_handler_(function () {
         {
           report_ui: message_name,
           dark_mode_enabled: window.report_ui_.dark_mode_enabled_now_(),
+          view_preferences: window.report_preferences_.now(),
+          ...message_fields,
         },
         "*",
       );
+  }
+  // Shows the stored history count when offered, else its default.
+  function load_log_history_seed() {
+    const stored_count = window.report_ui_.view_storage.value_read(
+      STORAGE_KEY_SETTINGS_HISTORY,
+    );
+    load_log_shown_count = SETTINGS_LOAD_LOG_HISTORY_LINE_CHOICES.includes(
+      stored_count,
+    )
+      ? stored_count
+      : SETTINGS_LOAD_LOG_HISTORY_DEFAULT_LINES;
+  }
+  // Relays the newest history entries the view shows, and their count.
+  function load_log_relay_post() {
+    view_post("load_log_relay", {
+      load_log_entries: window.report_load_log_.newest_entries_of(
+        load_log_shown_count,
+      ),
+      load_log_line_count: load_log_shown_count,
+    });
+  }
+  // Stores the history count the view chose, then relays the history.
+  function load_log_history_set(line_count) {
+    if (!SETTINGS_LOAD_LOG_HISTORY_LINE_CHOICES.includes(line_count))
+      window.throw_exception_("str_error_internal");
+    window.report_ui_.view_storage.value_write(
+      STORAGE_KEY_SETTINGS_HISTORY,
+      line_count,
+    );
+    load_log_shown_count = line_count;
+    load_log_relay_post();
   }
   function view_message_take(message_event) {
     const message_data = message_event.data;
@@ -182,6 +233,9 @@ window.try_catch_handler_(function () {
     const message_tag = message_data.report_ui;
     if (message_tag === "address_request") address_request(message_data.hash);
     else if (message_tag === "dark_mode_request") view_post("dark_mode_show");
+    else if (message_tag === "load_log_history_set")
+      load_log_history_set(message_data.line_count);
+    else if (message_tag === "load_log_request") load_log_relay_post();
     else if (message_tag === "menu_key_pressed") {
       if (
         !window.report_menu_.menu_key_take(
@@ -192,8 +246,11 @@ window.try_catch_handler_(function () {
         view_post("tests_pulldown_closed");
     } else if (message_tag === "settings_apply")
       settings_apply(message_data.setting_name, message_data.setting_value);
+    else if (message_tag === "settings_debug_toggle")
+      settings_debug_load(!SETTINGS_DEBUG_ENABLED);
     else if (
       message_tag !== undefined &&
+      message_tag !== "load_log_entry" &&
       message_tag !== "report_error" &&
       message_tag !== "settings_request"
     )
@@ -205,14 +262,32 @@ window.try_catch_handler_(function () {
       DARK_MODE_QUERY_KEY_NAME,
     );
     if (query_value === null) return;
-    if (query_value === DARK_MODE_QUERY_VALUES.enabled)
-      window.report_ui_.dark_mode_show_(true);
-    else if (query_value === DARK_MODE_QUERY_VALUES.disabled)
-      window.report_ui_.dark_mode_show_(false);
-    else window.throw_exception_("str_error_dark_mode_unusable", query_value);
+    if (
+      query_value !== DARK_MODE_QUERY_VALUES.enabled &&
+      query_value !== DARK_MODE_QUERY_VALUES.disabled
+    )
+      window.throw_exception_("str_error_dark_mode_unusable", query_value);
+    if (!window.report_ui_.view_storage.preferences_ignored())
+      window.report_ui_.dark_mode_show_(
+        query_value === DARK_MODE_QUERY_VALUES.enabled,
+      );
   }
 
   function activate() {
+    if (
+      !SETTINGS_LOAD_LOG_HISTORY_LINE_CHOICES.includes(
+        SETTINGS_LOAD_LOG_HISTORY_DEFAULT_LINES,
+      )
+    )
+      window.throw_exception_(
+        "str_error_setting_choice_unknown",
+        "SETTINGS_LOAD_LOG_HISTORY_DEFAULT_LINES",
+        SETTINGS_LOAD_LOG_HISTORY_DEFAULT_LINES,
+      );
+    window.report_load_log_.kept_line_count_set(
+      SETTINGS_LOAD_LOG_HISTORY_MAX_LINES,
+    );
+    load_log_history_seed();
     dark_mode_query_apply_();
     window.addEventListener(
       "hashchange",
@@ -223,13 +298,17 @@ window.try_catch_handler_(function () {
       window.try_catch_handler_(view_message_take),
     );
     view_show();
+    window.report_load_log_.page_render_log(() => {});
   }
 
   window.report_frame_ = {
     activate,
     address_now,
     address_request,
+    counter_names,
     flame_graph_exists,
+    is_diff,
+    load_log_history_seed,
     menu_entry_number_now,
     settings_debug_clear,
     test_names,

@@ -90,8 +90,9 @@ itself.
 ## Callgrind Counters
 
 These are the raw counters `callgrind` records and the derived ones this report
-adds up from them. They show up as column headers and counter picker choices in
-the heat map, under these same names.
+adds up from them. They show up as column headers on the callers page and in
+the heat map, and as choices in the menu's counters pulldown, under these same
+names.
 
 | Counter | Meaning                             | Derived from            |
 | ------- | ----------------------------------- | ----------------------- |
@@ -127,10 +128,10 @@ Version 3, 29 June 2007.
 A regular report contains a suite of tests that can be explored using a menu.
 There is heat map data, call graph data, and a flame graph.
 
-A regular report shows you the selected counter, a total for that counter and a
-percentage of that total. In most places it is a percentage of the global
-total, however in the source view it may also be a percentage of a file or
-function if selected.
+A regular report shows you each counter selected in the menu's counters
+pulldown, a total for each and a percentage of that total. In most places it is
+a percentage of the global total, however in the source view it may also be a
+percentage of a file or function if selected.
 
 ```txt
 | example     |       % |

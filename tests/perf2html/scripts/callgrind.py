@@ -659,6 +659,26 @@ def file_key_of(path: str, object_path: str) -> str:
     return f"{os.path.basename(object_path)}/{path}"
 
 
+# Answers each file a path names, keyed by what its one `*` stands for.
+def named_paths_of(pattern: str) -> dict[str, str]:
+    directory, name_pattern = os.path.split(pattern)
+    head, star, tail = name_pattern.partition("*")
+    if not star or "*" in tail or "*" in directory:
+        sys.exit(f"error: {pattern!r} holds no single * in its file name")
+    path_of = {
+        entry[len(head) : len(entry) - len(tail)]: os.path.join(
+            directory, entry
+        )
+        for entry in os.listdir(directory)
+        if len(entry) > len(head) + len(tail)
+        and entry.startswith(head)
+        and entry.endswith(tail)
+    }
+    if not path_of:
+        sys.exit(f"error: no file matches {pattern}")
+    return dict(sorted(path_of.items()))
+
+
 def path_norm(path: str) -> PathInfo:
     if posixpath.basename(path) == _CALLGRIND_UNKNOWN_NAME:
         return PathInfo("(unknown)", None, "external")
@@ -686,7 +706,15 @@ def path_norm(path: str) -> PathInfo:
 
 
 def profile_load(paths: Sequence[str]) -> Profile:
-    return _profile_parser.load(paths)
+    return _profile_parser.load(
+        [
+            found
+            for path in paths
+            for found in (
+                named_paths_of(path).values() if "*" in path else [path]
+            )
+        ]
+    )
 
 
 def ranking_counter_check(counters: Sequence[str], source: str) -> None:

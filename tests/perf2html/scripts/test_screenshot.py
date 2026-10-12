@@ -226,6 +226,57 @@ _VIEWS: tuple[ScreenshotSet, ...] = (
     ScreenshotSet(
         _SHOOT_DIFF_REPORT | _SHOOT_INDEX_PAGE, "", "", "index", "page", ()
     ),
+    ScreenshotSet(
+        _SHOOT_REGULAR_REPORT,
+        "#test=urlparser&view=callers"
+        "&setting-values=eyJDT1VOVEVSX1NFTEVDVElPTl9ERUZBVUxUX05BTUVTIjpb"
+        "IklyIiwiTDFtIiwiTExtIiwiQm0iXX0%3D",
+        "",
+        "callers",
+        "urlparser_counters_four",
+        (),
+    ),
+    ScreenshotSet(
+        _SHOOT_DIFF_REPORT,
+        "#test=all&view=callers"
+        "&setting-values=eyJDT1VOVEVSX1NFTEVDVElPTl9ERUZBVUxUX05BTUVTIjpb"
+        "IklyIiwiTDFtIiwiTExtIiwiQm0iXX0%3D",
+        "",
+        "callers",
+        "all_counters_four",
+        (),
+    ),
+    ScreenshotSet(
+        _SHOOT_BOTH_REPORTS,
+        "#test=urlparser&view=heat-map"
+        "&setting-values=eyJDT1VOVEVSX1NFTEVDVElPTl9ERUZBVUxUX05BTUVTIjpb"
+        "XX0%3D",
+        "",
+        "heat_map",
+        "home_counters_none",
+        (),
+    ),
+    ScreenshotSet(
+        _SHOOT_BOTH_REPORTS,
+        "#test=urlparser&view=heat-map"
+        "&setting-values=eyJDT1VOVEVSX1NFTEVDVElPTl9ERUZBVUxUX05BTUVTIjpb"
+        "IklyIiwiTDFtIiwiTExtIiwiQm0iXX0%3D",
+        "",
+        "heat_map",
+        "home_counters_four",
+        (),
+    ),
+    ScreenshotSet(
+        _SHOOT_BOTH_REPORTS,
+        "#test=urlparser&view=heat-map"
+        "&file=sysdeps/x86_64/multiarch/memchr-avx2.S&line=82"
+        "&setting-values=eyJDT1VOVEVSX1NFTEVDVElPTl9ERUZBVUxUX05BTUVTIjpb"
+        "IklyIiwiTDFtIiwiTExtIiwiQm0iXX0%3D",
+        "",
+        "heat_map",
+        "line_counters_four",
+        (),
+    ),
 )
 
 _WINDOWS_BROWSER_SUFFIX = ".exe"

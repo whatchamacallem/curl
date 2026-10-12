@@ -47,10 +47,6 @@
   overflow-y: auto;
 }
 
-#heat-map-menu- {
-  padding-bottom: var(--heat-map-menu-padding-bottom-);
-}
-
 #heat-map-minimap- {
   width: var(--heat-map-minimap-width-);
   overflow: hidden;

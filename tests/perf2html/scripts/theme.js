@@ -46,8 +46,8 @@ window.report_ui_ = window.try_catch_handler_(function () {
   const STYLE_DESIGN_COORDINATES_WIDTH_PX = settings_(
     "STYLE_DESIGN_COORDINATES_WIDTH_PX",
   );
-  const STYLE_DESIGN_FONT_CHARACTER_WIDTH_PX = settings_(
-    "STYLE_DESIGN_FONT_CHARACTER_WIDTH_PX",
+  const STYLE_DESIGN_FONT_CHARACTER_WIDTH_SHARE = settings_(
+    "STYLE_DESIGN_FONT_CHARACTER_WIDTH_SHARE",
   );
   const STYLE_DESIGN_FONT_FIT_PROPERTY = settings_(
     "STYLE_DESIGN_FONT_FIT_PROPERTY",
@@ -76,6 +76,18 @@ window.report_ui_ = window.try_catch_handler_(function () {
   );
   const STYLE_DESIGN_VIEWPORT_HEIGHT_PROPERTY = settings_(
     "STYLE_DESIGN_VIEWPORT_HEIGHT_PROPERTY",
+  );
+  const STYLE_HEAT_CELL_ON_BRIGHT_ABOVE_LUMINANCE_SHARE = settings_(
+    "STYLE_HEAT_CELL_ON_BRIGHT_ABOVE_LUMINANCE_SHARE",
+  );
+  const STYLE_HEAT_CELL_ON_BRIGHT_ROLE = settings_(
+    "STYLE_HEAT_CELL_ON_BRIGHT_ROLE",
+  );
+  const STYLE_HEAT_CELL_ON_DARK_ROLE = settings_(
+    "STYLE_HEAT_CELL_ON_DARK_ROLE",
+  );
+  const STYLE_HEAT_COLOR_FULL_SCALE_PERCENT = settings_(
+    "STYLE_HEAT_COLOR_FULL_SCALE_PERCENT",
   );
   const STYLE_HEAT_COLOR_STOPS = settings_("STYLE_HEAT_COLOR_STOPS");
   const STYLE_MENU_PULLDOWN_EXTRA_WIDTH_CHARS = settings_(
@@ -123,6 +135,8 @@ window.report_ui_ = window.try_catch_handler_(function () {
     [SETTINGS_VIEW_ENTRY[0], ["setting"]],
   ]);
   const CH_UNIT_GLYPH = "0";
+  const DESIGN_CHARACTER_WIDTH_PX =
+    STYLE_DESIGN_FONT_SIZE_PX * STYLE_DESIGN_FONT_CHARACTER_WIDTH_SHARE;
   const DESIGN_SCALE_LAST_STOP = STYLE_DESIGN_SCALE_STOP_COUNT - 1;
   const DESIGN_SCALE_LOWER_TRAVEL_SHARE =
     STYLE_DESIGN_SCALE_DEFAULT_STOP / DESIGN_SCALE_LAST_STOP;
@@ -132,10 +146,8 @@ window.report_ui_ = window.try_catch_handler_(function () {
   const RAMP_CHANNEL_STOPS = STYLE_HEAT_COLOR_STOPS.map((hex) =>
     [1, 3, 5].map((index) => parseInt(hex.slice(index, index + 2), 16)),
   );
-  const REPORT_TOP_PAGE_HREF = new URL(
-    "../index.html",
-    document.currentScript.src,
-  ).href;
+  const REPORT_ROOT_HREF = new URL("..", document.currentScript.src).href;
+  const REPORT_TOP_PAGE_HREF = new URL("index.html", REPORT_ROOT_HREF).href;
   const SIGNED_PERCENT_AMOUNT_CHARS = (
     fixed_text(-100, NUMBER_FRACTION_DIGITS) + "%"
   ).length;
@@ -195,9 +207,11 @@ window.report_ui_ = window.try_catch_handler_(function () {
   const rendered_strips = new WeakMap();
   const resize_settle_callbacks = [];
   const row_walks = new WeakMap();
+  const table_sort_callbacks = new Map();
   let settle_animation_frame = 0;
   let window_resize_is_pending = false;
   let storage_is_checked = false;
+  let preferences_are_ignored = false;
   let tests_pulldown_is_open = false;
   let dark_mode_is_enabled = null;
   let design_scale = 1;
@@ -217,6 +231,39 @@ window.report_ui_ = window.try_catch_handler_(function () {
         low_channel + (high_channel - low_channel) * step_fraction,
       );
     });
+  }
+  // Answers the heat of a share: clamped to full scale, divided, then curved.
+  function heat_of_share(percent, curve_name, is_diff) {
+    const magnitude = Math.min(
+      Math.abs(percent),
+      STYLE_HEAT_COLOR_FULL_SCALE_PERCENT,
+    );
+    if (magnitude <= 0) return 0;
+    const fraction = magnitude / STYLE_HEAT_COLOR_FULL_SCALE_PERCENT;
+    const curved =
+      curve_name === "log" ? Math.log10(1 + 9 * fraction) : fraction;
+    return is_diff && percent < 0 ? -curved : curved;
+  }
+  // Writes the heat colors of a cell by its share, the one heat color door.
+  function heat_cell_style(percent, curve_name, is_diff) {
+    const heat_value = heat_of_share(percent, curve_name, is_diff);
+    if (Math.abs(heat_value) <= 0) return "";
+    const mixed_channels = ramp_channels_at(
+      is_diff ? (heat_value + 1) * 0.5 : heat_value,
+    );
+    const luminance =
+      (0.2126 * mixed_channels[0] +
+        0.7152 * mixed_channels[1] +
+        0.0722 * mixed_channels[2]) /
+      255;
+    const foreground_role =
+      luminance > STYLE_HEAT_CELL_ON_BRIGHT_ABOVE_LUMINANCE_SHARE
+        ? STYLE_HEAT_CELL_ON_BRIGHT_ROLE
+        : STYLE_HEAT_CELL_ON_DARK_ROLE;
+    return (
+      `background:rgb(${mixed_channels.join(",")});` +
+      `color:var(--${foreground_role})`
+    );
   }
 
   function design_scale_half_of(is_lower_half) {
@@ -310,7 +357,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
     const measured_px = context.measureText(CH_UNIT_GLYPH).width;
     document.documentElement.style.setProperty(
       STYLE_DESIGN_FONT_FIT_PROPERTY,
-      String(STYLE_DESIGN_FONT_CHARACTER_WIDTH_PX / measured_px),
+      String(DESIGN_CHARACTER_WIDTH_PX / measured_px),
     );
   }
   function design_scale_root_zoom_of() {
@@ -648,6 +695,27 @@ window.report_ui_ = window.try_catch_handler_(function () {
   function settings_apply_send(setting_name, setting_value) {
     parent_post({ report_ui: "settings_apply", setting_name, setting_value });
   }
+  // Asks the top page to load again with settings debugging switched over.
+  function settings_debug_toggle_send() {
+    parent_post({ report_ui: "settings_debug_toggle" });
+  }
+  // Asks the top page to keep this many history entries and relay them.
+  function load_log_history_send(line_count) {
+    parent_post({ report_ui: "load_log_history_set", line_count });
+  }
+  // Answers the path of a report file from the report root, which a log names.
+  function address_path_of(file_href) {
+    const file_url = new URL(file_href);
+    file_url.hash = "";
+    file_url.search = "";
+    if (!file_url.href.startsWith(REPORT_ROOT_HREF))
+      window.throw_exception_("str_error_internal");
+    return file_url.href.slice(REPORT_ROOT_HREF.length);
+  }
+  // Answers the href of a report file from its path from the report root.
+  function address_file_href_of(report_path) {
+    return new URL(report_path, REPORT_ROOT_HREF).href;
+  }
 
   // Answers whether the key was typed in an editable field, which keeps it.
   function field_owns_key(key_event) {
@@ -743,25 +811,48 @@ window.report_ui_ = window.try_catch_handler_(function () {
     }
     parent_listen((message_data) => {
       const message_name = message_data.report_ui;
+      if (message_name === "settings_relay") return;
+      // The view takes what a message carries before the message acts.
+      if (view_options.relay_take) view_options.relay_take(message_data);
       if (message_name === "layout_reset") {
         layout_reset();
         dark_mode_show(message_data.dark_mode_enabled);
         if (view_options.dark_mode_apply) view_options.dark_mode_apply();
-        if (view_options.preferences_apply) view_options.preferences_apply();
+        // A reset of the preferences changes the history count shown.
+        if (view_options.load_log_show)
+          parent_post({ report_ui: "load_log_request" });
       } else if (message_name === "dark_mode_show") {
         dark_mode_show(message_data.dark_mode_enabled);
         if (view_options.dark_mode_arrive) view_options.dark_mode_arrive();
       } else if (message_name === "dark_mode_apply") {
         dark_mode_show(message_data.dark_mode_enabled);
         if (view_options.dark_mode_apply) view_options.dark_mode_apply();
-      } else if (message_name === "recenter") {
+      } else if (message_name === "load_log_relay")
+        view_options.load_log_show(
+          message_data.load_log_entries,
+          message_data.load_log_line_count,
+        );
+      else if (message_name === "recenter") {
         if (view_options.recenter) view_options.recenter();
       } else if (message_name === "tests_pulldown_closed")
         view_key_tests_pulldown_closed();
-      else if (message_name !== "settings_relay")
+      else if (message_name !== "preferences_apply")
         window.throw_exception_("str_error_internal");
     });
     parent_post({ report_ui: "dark_mode_request" });
+    // Asks for the history at once, so its strip shows without a paint.
+    if (view_options.load_log_show)
+      parent_post({ report_ui: "load_log_request" });
+    // The request follows the load render entry, so the history holds it.
+    const load_render_log = () =>
+      window.report_load_log_.page_render_log(() => {
+        if (view_options.load_log_show)
+          parent_post({ report_ui: "load_log_request" });
+      });
+    // A view drawing after its own loads logs its load render once drawn.
+    if (view_options.load_render_defer)
+      view_options.load_render_defer(load_render_log);
+    else load_render_log();
   }
 
   // Escapes text for markup, the one escape the page scripts write through.
@@ -797,7 +888,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
       window.throw_exception_("str_error_internal");
     return made_nodes[0];
   }
-  // Writes a menu button: menu colours, then a tab stop, link or role by kind.
+  // Writes a menu button: menu colors, then a tab stop, link or role by kind.
   function render_menu_button(kind_name, label_markup, fields) {
     if (!MENU_BUTTON_KIND_NAMES.includes(kind_name))
       window.throw_exception_("str_error_internal");
@@ -833,7 +924,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
       inner_markup,
     );
   }
-  // Writes page emphasis: its colours and one space each side, in either mode.
+  // Writes page emphasis: its colors and one space each side, in either mode.
   function render_page_emphasis(label_markup, fields) {
     return render_element(
       fields.tag_name,
@@ -949,6 +1040,17 @@ window.report_ui_ = window.try_catch_handler_(function () {
       entry_list.scrollTop = 0;
       highlight_set(0);
       list_scrollbar_handle.refresh();
+    }
+    // Writes each offered entry's label again, the list kept as it stands.
+    function entries_relabel() {
+      const relabelled_entries =
+        pulldown_options.entries_of(entries_line_number);
+      if (relabelled_entries.length !== entries.length)
+        window.throw_exception_("str_error_internal");
+      entries.forEach((entry_element, entry_index) => {
+        entry_element.textContent =
+          relabelled_entries[entry_index].textContent;
+      });
     }
     function root_focus() {
       root_element.focus({ preventScroll: true });
@@ -1068,12 +1170,13 @@ window.report_ui_ = window.try_catch_handler_(function () {
         const entry_element = click_event.target.closest('[role="option"]');
         if (!entry_element || entry_element.parentElement !== entry_list)
           return;
-        pulldown_close();
+        if (!pulldown_options.keeps_open) pulldown_close();
         if (!pulldown_options.on_select) return;
         click_event.preventDefault();
         pulldown_options.on_select(
           entry_element.getAttribute("data-entry-value-"),
         );
+        if (pulldown_options.keeps_open) entries_relabel();
       }),
     );
     return {
@@ -1121,6 +1224,18 @@ window.report_ui_ = window.try_catch_handler_(function () {
       render_html_escape(STRIP_GAP_TEXT),
     );
   }
+  // Writes a blank line of the strip, one cell across every column.
+  function strip_blank_line_render(column_count) {
+    return render_element(
+      "tr",
+      {},
+      render_element(
+        "td",
+        { class: "menu-strip-blank-line-", colspan: column_count },
+        "",
+      ),
+    );
+  }
   // Writes an entry cell, a title as page emphasis, else a menu button.
   function strip_cell_render(entry, label_markup) {
     if (!STRIP_ENTRY_KIND_NAMES.includes(entry.kind))
@@ -1149,8 +1264,8 @@ window.report_ui_ = window.try_catch_handler_(function () {
       attributes: name_attributes,
     });
   }
-  // Writes the status bar, one cell of links apart from the entry cells.
-  function strip_status_cell_render(status_entries) {
+  // Writes the status bar row, indented, its links across every column.
+  function strip_status_row_render(status_entries, column_count) {
     const link_markups = status_entries.map((status_entry) =>
       render_element(
         "a",
@@ -1159,10 +1274,18 @@ window.report_ui_ = window.try_catch_handler_(function () {
       ),
     );
     return render_element(
-      "td",
-      { class: "menu-status-bar-" },
-      render_html_escape(STRIP_GAP_TEXT) +
-        link_markups.join(render_html_escape(STRIP_STATUS_SEPARATOR_TEXT)),
+      "tr",
+      {},
+      render_element(
+        "td",
+        { class: "menu-status-bar-cell-", colspan: column_count },
+        render_element(
+          "div",
+          { class: "menu-status-bar-" },
+          render_html_escape(STRIP_GAP_TEXT) +
+            link_markups.join(render_html_escape(STRIP_STATUS_SEPARATOR_TEXT)),
+        ),
+      ),
     );
   }
   // Renders a whole strip again from its entries, the one door for its cells.
@@ -1173,11 +1296,33 @@ window.report_ui_ = window.try_catch_handler_(function () {
     const cells_by_name = new Map();
     const digit_entries = new Map();
     const entries_by_name = new Map();
+    const has_status_bar = status_entries.length > 0;
     const previous_strip = rendered_strips.get(strip_element);
     const pulldowns_by_name = new Map();
     const row_markups = [];
     let strip_row = null;
 
+    // Hands a click above the buttons to the button at the same column.
+    function blank_line_click_forward(click_event) {
+      const row_bounds = strip_row.getBoundingClientRect();
+      const pressed_element = document
+        .elementsFromPoint(
+          click_event.clientX,
+          row_bounds.top + row_bounds.height / 2,
+        )
+        .find(
+          (found_element) =>
+            found_element !== strip_row && strip_row.contains(found_element),
+        );
+      if (!pressed_element) window.throw_exception_("str_error_internal");
+      const pressed_cell = pressed_element.closest("td");
+      const clicked_element = pressed_cell.matches(".menu-strip-gap-")
+        ? pressed_cell.previousElementSibling
+        : pressed_element;
+      clicked_element.dispatchEvent(
+        new MouseEvent(click_event.type, click_event),
+      );
+    }
     function strip_cell_named(entry_name) {
       if (!cells_by_name.has(entry_name))
         window.throw_exception_("str_error_internal");
@@ -1284,11 +1429,17 @@ window.report_ui_ = window.try_catch_handler_(function () {
       if (row_markups.length) row_markups.push(strip_gap_cell_render());
       row_markups.push(strip_cell_render(entry, label_markup));
     }
-    if (status_entries.length)
-      row_markups.push(
-        strip_gap_cell_render(),
-        strip_status_cell_render(status_entries),
-      );
+    const column_count = row_markups.length;
+    const button_row_markup = render_element("tr", {}, row_markups.join(""));
+    const table_row_markups = has_status_bar
+      ? [
+          strip_blank_line_render(column_count),
+          button_row_markup,
+          strip_blank_line_render(column_count),
+          strip_status_row_render(status_entries, column_count),
+          strip_blank_line_render(column_count),
+        ]
+      : [button_row_markup];
     numbered_entries.forEach((entry, numbered_index) => {
       if (entry.is_available && !entry.is_widget)
         digit_entries.set(strip_number_text_of(numbered_index), entry);
@@ -1298,14 +1449,18 @@ window.report_ui_ = window.try_catch_handler_(function () {
     strip_element.innerHTML = render_element(
       "table",
       { class: "menu-strip-table-" },
-      render_element(
-        "tbody",
-        {},
-        render_element("tr", {}, row_markups.join("")),
-      ),
+      render_element("tbody", {}, table_row_markups.join("")),
     );
     const strip_table = strip_element.firstElementChild;
-    strip_row = strip_table.tBodies[0].rows[0];
+    const table_rows = strip_table.tBodies[0].rows;
+    strip_row = table_rows[table_row_markups.indexOf(button_row_markup)];
+    if (has_status_bar) {
+      table_rows[0].addEventListener("mousedown", default_prevent);
+      table_rows[0].addEventListener(
+        "click",
+        window.try_catch_handler_(blank_line_click_forward),
+      );
+    }
     for (const entry_cell of strip_row.cells) {
       if (entry_cell.hasAttribute("data-entry-name-"))
         cells_by_name.set(
@@ -1368,10 +1523,11 @@ window.report_ui_ = window.try_catch_handler_(function () {
       return { heading_chars: column.label.length, content_chars };
     });
   }
+  // Answers a column's narrowest and widest widths, each holding the padding.
   function column_limits(extent) {
     const widest = Math.max(extent.heading_chars, extent.content_chars);
     return [
-      extent.content_chars,
+      extent.content_chars + STYLE_TABLE_COLUMN_EXTRA_WIDTH_CHARS,
       widest + STYLE_TABLE_COLUMN_EXTRA_WIDTH_CHARS,
     ];
   }
@@ -1479,9 +1635,26 @@ window.report_ui_ = window.try_catch_handler_(function () {
     }
     return render_element("td", cell_attributes, inner_markup);
   }
+  // Keeps the `on_sort` a click on a column title calls with its index.
+  function table_sort_register(table_key, columns, table_options) {
+    if (!table_options.on_sort) {
+      table_sort_callbacks.delete(table_key);
+      return -1;
+    }
+    const sorted_column_index = table_options.sorted_column_index;
+    if (table_options.omits_column_titles || !columns[sorted_column_index])
+      window.throw_exception_("str_error_internal");
+    table_sort_callbacks.set(table_key, table_options.on_sort);
+    return sorted_column_index;
+  }
   // Writes columns and rows as a table, the one table writer in JS.
   function render_table(table_key, columns, rows, table_options) {
     const cell_rows = rows.map((row) => row.map(cell_normalize));
+    const sorted_column_index = table_sort_register(
+      table_key,
+      columns,
+      table_options,
+    );
     const grow_index = table_options.fill
       ? columns.findIndex((column) => column.grow)
       : -1;
@@ -1513,12 +1686,19 @@ window.report_ui_ = window.try_catch_handler_(function () {
             "tr",
             {},
             columns
-              .map((column) =>
+              .map((column, column_index) =>
                 render_element(
                   "th",
                   {
                     ...(column.numeric ? { class: "numeric-" } : {}),
                     title: column.label,
+                    ...(column_index === sorted_column_index
+                      ? {
+                          "aria-sort": column.numeric
+                            ? "descending"
+                            : "ascending",
+                        }
+                      : {}),
                   },
                   render_html_escape(column.label),
                 ),
@@ -1564,6 +1744,49 @@ window.report_ui_ = window.try_catch_handler_(function () {
     );
     if (table_options.bare) return table_markup;
     return render_element("div", { class: "table-box-" }, table_markup);
+  }
+  // Pairs a table column with how its cells are written and its rows sorted.
+  function table_sort_column_of(column, sort_name, sort_value_of, cell_of) {
+    return { column, sort_name, sort_value_of, cell_of };
+  }
+  // Answers records ordered by a column, numbers largest first, text A to Z.
+  function table_sort_records_of(records, sort_column) {
+    const keyed_records = records.map((record) => [
+      sort_column.sort_value_of(record),
+      record,
+    ]);
+    keyed_records.sort(
+      sort_column.column.numeric
+        ? (keyed_record_a, keyed_record_b) =>
+            keyed_record_b[0] - keyed_record_a[0]
+        : (keyed_record_a, keyed_record_b) =>
+            keyed_record_a[0].localeCompare(keyed_record_b[0]),
+    );
+    return keyed_records.map((keyed_record) => keyed_record[1]);
+  }
+  // Writes the title of a sorted table, its row count a span, by its sort.
+  function table_sort_heading_markup_of(
+    string_id,
+    row_count,
+    sort_column,
+    is_diff,
+  ) {
+    const row_count_markup = render_element(
+      "span",
+      { class: "page-heading-row-count-" },
+      String(row_count),
+    );
+    const column_label = sort_column.column.label;
+    const measure_text =
+      is_diff && sort_column.column.numeric
+        ? window.ui_strings_.text_fill("str_heading_measure_diff", {
+            column: column_label,
+          })
+        : column_label;
+    return window.ui_strings_.text_fill(string_id, {
+      count: row_count_markup,
+      measure: render_html_escape(measure_text),
+    });
   }
   // Fills each marker with its markup, refusing a marker the template lacks.
   function template_fill(template_text, marker_values) {
@@ -1706,6 +1929,22 @@ window.report_ui_ = window.try_catch_handler_(function () {
       ),
     );
   }
+  // Hands a plain click on a column title to its table's sort callback.
+  function table_sort_attach(table_element) {
+    const on_sort = table_sort_callbacks.get(
+      table_element.getAttribute("data-key-"),
+    );
+    if (!on_sort || table_element.is_sort_attached) return;
+    table_element.is_sort_attached = true;
+    table_element.tHead.addEventListener(
+      "click",
+      window.try_catch_handler_((click_event) => {
+        const title_cell = click_event.target.closest("th");
+        if (title_cell && click_is_plain(click_event))
+          on_sort(title_cell.cellIndex);
+      }),
+    );
+  }
   function offsets_align(scroll_container) {
     let stacked_top_px = 0;
     for (const band_element of scroll_container.querySelectorAll(
@@ -1742,6 +1981,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
     );
     for (const table_element of table_elements) {
       table_slide_attach(table_element);
+      table_sort_attach(table_element);
       if (table_element.tBodies[0].querySelector("a[href]"))
         table_rows_attach(table_element, "tr");
     }
@@ -1764,6 +2004,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
       );
     }
     layout_refresh(root_element);
+    window.report_load_log_.event_render_log();
   }
   function layout_reset(root_element) {
     root_element = root_element || document.body;
@@ -2020,7 +2261,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
       ...entry_fields,
     };
   }
-  // Shows a heading title as page emphasis, over a table as the strip's title.
+  // Shows a heading over a table as a strip, its title as page emphasis.
   function page_heading_attach(heading_element, extra_entries) {
     const heading_text = heading_element.textContent;
     if (attached_headings.has(heading_element))
@@ -2034,15 +2275,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
       table_box && table_box.matches(".table-box-")
         ? table_box.querySelector(":scope > .table-columns- > table.columns-")
         : null;
-    if (!table_element && (count_key !== null || extra_entries.length))
-      window.throw_exception_("str_error_internal");
-    if (!table_element) {
-      heading_element.innerHTML = render_page_emphasis(title_markup, {
-        tag_name: "span",
-      });
-      attached_headings.set(heading_element, { reset: () => {} });
-      return;
-    }
+    if (!table_element) window.throw_exception_("str_error_internal");
     if (count_key !== null && !count_span_of())
       window.throw_exception_("str_error_internal");
     const default_count =
@@ -2055,6 +2288,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
     const row_count_options = {
       box_width_chars: TABLE_HEADING_COUNT_BOX_WIDTH_CHARS,
       entries_of: row_count_entries_of,
+      keeps_open: false,
       on_close: () => {},
       on_select: row_count_choose,
       reads_line_number: false,
@@ -2137,7 +2371,13 @@ window.report_ui_ = window.try_catch_handler_(function () {
   function storage_version_check() {
     if (storage_is_checked) return;
     storage_is_checked = true;
+    preferences_are_ignored =
+      address_of_hash(location.hash)[SETTINGS_DEBUG_HASH_KEY_NAME] !== null;
     try {
+      if (preferences_are_ignored) {
+        storage_sweep();
+        return;
+      }
       if (localStorage.getItem(STORAGE_VERSION_KEY) === STORAGE_VERSION) {
         return;
       }
@@ -2152,8 +2392,14 @@ window.report_ui_ = window.try_catch_handler_(function () {
         storage_sweep();
       } catch (storage_error) {}
     },
+    // Answers whether applied settings reset and ignore stored preferences.
+    preferences_ignored() {
+      storage_version_check();
+      return preferences_are_ignored;
+    },
     value_read(storage_key) {
       storage_version_check();
+      if (preferences_are_ignored) return null;
       try {
         return JSON.parse(localStorage.getItem(storage_key));
       } catch (storage_error) {
@@ -2162,6 +2408,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
     },
     value_write(storage_key, stored_value) {
       storage_version_check();
+      if (preferences_are_ignored) return;
       try {
         localStorage.setItem(storage_key, JSON.stringify(stored_value));
       } catch (storage_error) {}
@@ -2179,7 +2426,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
       Math.min(widest_chars, Math.max(narrowest_chars, wanted_chars));
     const pane_width_now = () =>
       width_chars === null
-        ? pane_element.offsetWidth / STYLE_DESIGN_FONT_CHARACTER_WIDTH_PX
+        ? pane_element.offsetWidth / DESIGN_CHARACTER_WIDTH_PX
         : width_chars;
     function splitter_values_show() {
       handle_bar.setAttribute("aria-valuemin", String(narrowest_chars));
@@ -2613,11 +2860,13 @@ window.report_ui_ = window.try_catch_handler_(function () {
   } else page_activate();
   return {
     address: {
+      file_href_of: address_file_href_of,
       hash_of: address_hash_of,
       home_hash_of: address_home_hash_of,
       link_hash_of: address_link_hash_of,
       of_hash: address_of_hash,
       page_href_of: address_page_href_of,
+      path_of: address_path_of,
       request: address_request_send,
       settings_cleared_hash_of: address_settings_cleared_hash_of,
       top_href_of: address_top_href_of,
@@ -2625,18 +2874,22 @@ window.report_ui_ = window.try_catch_handler_(function () {
     dark_mode_enabled_now_,
     dark_mode_set_,
     dark_mode_show_: dark_mode_show,
+    design_character_width_px: DESIGN_CHARACTER_WIDTH_PX,
     design_px,
     design_scale_last_stop: DESIGN_SCALE_LAST_STOP,
     design_scale_stop_now,
     design_scale_stop_set,
     diff_share_of,
     drag_scroll: { attach: drag_scroll_attach },
+    fixed_text,
+    heat_cell_style,
     home_panel,
     human_text,
     layout_activate,
     layout_refresh,
     layout_reset,
     listeners_bind,
+    load_log_history_send,
     page_heading: { attach: page_heading_attach },
     pane_splitter: { attach: pane_splitter_attach },
     percent_text,
@@ -2644,6 +2897,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
     render_table,
     resize_settle_register,
     settings_apply_send,
+    settings_debug_toggle_send,
     signed_human_text,
     signed_percent_text,
     strip: {
@@ -2656,6 +2910,11 @@ window.report_ui_ = window.try_catch_handler_(function () {
     table_rows: {
       attach: table_rows_attach,
       tab_stop_set: table_row_tab_stop_set,
+    },
+    table_sort: {
+      column_of: table_sort_column_of,
+      heading_markup_of: table_sort_heading_markup_of,
+      records_of: table_sort_records_of,
     },
     template_fill,
     text_scrollbar: { attach: text_scrollbar_attach },

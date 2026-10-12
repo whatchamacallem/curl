@@ -85,7 +85,6 @@ window.try_catch_handler_(function () {
     dark_mode_apply: color_scheme_hand_over,
     dark_mode_arrive: color_scheme_hand_over,
     forwards_input: false,
-    preferences_apply: null,
     recenter: () => location.reload(),
   });
   const script_name = encodeURIComponent(_FORWARDED_ADDRESS.test) + ".js";
