@@ -2,14 +2,6 @@
  * SPDX-License-Identifier: MIT
  * This file is licensed under the terms of the LICENSE-MIT.md file. */
 
-pre.overview-collapsed-section-log-box- {
-  max-height: calc(
-    var(--overview-collapsed-section-log-box-max-height-share-) *
-      var(--design-viewport-height-)
-  );
-  overflow: auto;
-}
-
 *,
 ::before,
 ::after {
@@ -168,6 +160,5 @@ table.columns- .numeric- {
   left: 0;
   bottom: 0;
   z-index: var(--screenshot-label-z-index-);
-  font-size: var(--screenshot-label-font-size-);
-  border: var(--screenshot-label-border-width-) solid;
+  user-select: none;
 }

@@ -3,16 +3,6 @@
  * This file is licensed under the terms of the LICENSE-MIT.md file. */
 
 :root:not([data-dark-mode-="disabled"]) {
-  .overview-collapsed-section-test-name- {
-    color: var(--dark-mode-page-dim-fg-);
-  }
-  pre.overview-collapsed-section-log-box- {
-    background: var(--dark-mode-panel-bg-);
-  }
-  pre.overview-collapsed-section-log-box-:focus-visible {
-    background: var(--dark-mode-menu-focus-bg-);
-    color: var(--dark-mode-menu-focus-fg-);
-  }
   a {
     color: var(--dark-mode-page-link-fg-);
   }
@@ -228,7 +218,6 @@
   .screenshot-label- {
     background: var(--dark-mode-screenshot-label-bg-);
     color: var(--dark-mode-screenshot-label-fg-);
-    border-color: var(--dark-mode-screenshot-label-border-);
   }
 
   .settings-value-box- {

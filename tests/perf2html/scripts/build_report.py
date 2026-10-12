@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 import argparse, json, os, re, sys, urllib.parse
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from typing import NamedTuple, NotRequired, TypedDict
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -22,11 +22,9 @@ _DIFF_CALLER_COUNTS_FILE_SUFFIX: str = ""
 _FLAME_GRAPH_LOCAL_PROFILE_PATH: str = ""
 _FLAME_GRAPH_VIEW_ENTRY: tuple[str, str] = ("", "")
 _HEAT_MAP_VIEW_ENTRY: tuple[str, str] = ("", "")
-_OVERVIEW_VALGRIND_LOG_FIRST_LINE_PATTERN: str = ""
 _RANKING_COUNTER_NAME: str = ""
 _REPORT_TEST_SUITE_NAME: str = ""
 _SETTINGS_VIEW_ENTRY: tuple[str, str] = ("", "")
-_VALGRIND_DEBUG_LINE_PATTERN: str = ""
 settings.load_into(__name__)
 
 _CALLERS_PAGE = theme.asset_text_read(_ASSET_TEMPLATE_CALLERS_PAGE_NAME)
@@ -36,8 +34,6 @@ _DEBUG_SCRIPT = theme.asset_text_read(_ASSET_DEBUG_SCRIPT_NAME)
 _FLAME_GRAPH_VIEW_KEY = _FLAME_GRAPH_VIEW_ENTRY[0]
 
 _HEAT_MAP_VIEW_KEY = _HEAT_MAP_VIEW_ENTRY[0]
-
-_PID_PREFIX = re.compile(r"^==\d+==\s?")
 
 _SETTINGS_PAGE = theme.asset_text_read(_ASSET_TEMPLATE_SETTINGS_PAGE_NAME)
 
@@ -113,8 +109,6 @@ class BuildReport:
         diff_profile: str
         profile: str
         perf_log: str
-        trace_log: str
-        valgrind_log: str
         raw_data: str
 
     class TestArgs(NamedTuple):
@@ -250,16 +244,6 @@ class BuildReport:
                     _DEBUG_SCRIPT, {"__MANIFEST_TABLE__": table_text}
                 )
             )
-
-    def details_section(self, section_id: str, body: str) -> str:
-        return theme.render_element(
-            "details",
-            {"id": section_id, "class": "overview-collapsed-section-"},
-            theme.render_menu_button(
-                "action", "", theme.MenuButtonFields("summary")
-            )
-            + body,
-        )
 
     # Lists every function with a changed caller, its changes and baselines.
     def diff_callers_model(
@@ -397,72 +381,6 @@ class BuildReport:
             )
             for function_name in sorted(function_names)
         ]
-
-    def log_block(self, path: str) -> str:
-        lines = [
-            _PID_PREFIX.sub("", line)
-            for line in self.file_read(path).rstrip().split("\n")
-            if not re.match(_VALGRIND_DEBUG_LINE_PATTERN, line)
-        ]
-        for index, line in enumerate(lines):
-            if re.match(_OVERVIEW_VALGRIND_LOG_FIRST_LINE_PATTERN, line):
-                return self.log_box_render("\n".join(lines[index:]))
-        sys.exit(
-            f"error: {os.path.abspath(path)}: no line matches"
-            f" {_OVERVIEW_VALGRIND_LOG_FIRST_LINE_PATTERN!r}, the line the"
-            " valgrind log section starts at"
-        )
-
-    # Writes one collapsed section holding each named test's log in turn.
-    def logs_section(
-        self,
-        section_id: str,
-        tests: Sequence[BuildReport.TestDirectory],
-        pattern: str,
-        flag: str,
-        box: Callable[[str], str],
-    ) -> str:
-        if not pattern:
-            return ""
-        log_paths = callgrind.named_paths(pattern)
-        test_names = [test.name for test in tests]
-        for name in log_paths:
-            if name not in test_names:
-                print(
-                    f"error: {flag} names {name}, not one of the overview's"
-                    f" tests: {' '.join(test_names)}",
-                    file=sys.stderr,
-                )
-                sys.exit(2)
-        body = "".join(
-            theme.render_element(
-                "div",
-                {"class": "overview-collapsed-section-test-name-"},
-                theme.render_html_escape(name),
-            )
-            + box(log_paths[name])
-            for name in test_names
-            if name in log_paths
-        )
-        return self.blank_line_render() + self.details_section(
-            section_id, body
-        )
-
-    def log_box_render(self, text: str) -> str:
-        return theme.render_element(
-            "div",
-            {"class": "table-box-"},
-            theme.render_element(
-                "pre",
-                {
-                    "class": "overview-collapsed-section-log-box-"
-                    " page-text-scroll-box-"
-                },
-                theme.render_html_escape(text),
-            )
-            + self.text_scrollbar_render("vertical")
-            + self.text_scrollbar_render("horizontal"),
-        )
 
     def manifest_blocks_render(
         self,
@@ -649,27 +567,6 @@ class BuildReport:
                     "", "overview-tests-heading-"
                 ),
                 "__TESTS__": tests_markup,
-                "__PERF_LOG__": self.logs_section(
-                    "overview-collapsed-section-perf-log-",
-                    tests,
-                    args.perf_log,
-                    "--perf-log",
-                    self.output_box_render,
-                ),
-                "__TRACE_LOG__": self.logs_section(
-                    "overview-collapsed-section-trace-log-",
-                    tests,
-                    args.trace_log,
-                    "--trace-log",
-                    self.output_box_render,
-                ),
-                "__VALGRIND_LOG__": self.logs_section(
-                    "overview-collapsed-section-valgrind-log-",
-                    tests,
-                    args.valgrind_log,
-                    "--valgrind-log",
-                    self.log_block,
-                ),
             },
         )
         self.page_write(args.output, page_content)
@@ -692,12 +589,6 @@ class BuildReport:
         print(
             f"wrote {path} ({len(page.encode('utf-8')):,} bytes)",
             file=sys.stderr,
-        )
-
-    # Writes a captured output in a log box, its times humanized.
-    def output_box_render(self, path: str) -> str:
-        return self.log_box_render(
-            self.time_humanize(self.file_read(path).rstrip())
         )
 
     def raw_data_render(self, path: str, out_dir: str) -> str:
@@ -775,16 +666,6 @@ class BuildReport:
 
     def test_link_cell(self, name: str) -> theme.Cell:
         return theme.Cell(name, href=self.address(name, _HEAT_MAP_VIEW_KEY))
-
-    def text_scrollbar_render(self, axis_name: str) -> str:
-        return theme.render_element(
-            "div",
-            {
-                "class": f"page-text-scrollbar- {axis_name}-",
-                "aria-hidden": "true",
-            },
-            "",
-        )
 
     def time_humanize(self, text: str) -> str:
         return _TIME_LINE.sub(self.time_line_rewrite, text)
@@ -901,20 +782,6 @@ def main() -> None:
         " repeatable, one per --test",
     )
     overview_parser.add_argument(
-        "--trace-log",
-        metavar="NAME=FILE",
-        default="",
-        help="without --diff, a test's native trace run output, shown in a"
-        " collapsed 'trace log' section. repeatable",
-    )
-    overview_parser.add_argument(
-        "--valgrind-log",
-        metavar="NAME=FILE",
-        default="",
-        help="without --diff, a test's valgrind log, shown in a collapsed"
-        " 'valgrind log' section. repeatable",
-    )
-    overview_parser.add_argument(
         "--raw-data",
         default="",
         metavar="FILE",
@@ -973,8 +840,6 @@ def main() -> None:
             diff_profile=namespace.diff_profile,
             profile=namespace.profile,
             perf_log=namespace.perf_log,
-            trace_log=namespace.trace_log,
-            valgrind_log=namespace.valgrind_log,
             raw_data=namespace.raw_data,
         )
         (report.diff_overview if namespace.diff else report.overview)(

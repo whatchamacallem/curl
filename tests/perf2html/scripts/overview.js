@@ -8,17 +8,12 @@ window.try_catch_handler_(function () {
   const RANKING_COUNTER_NAME = settings_("RANKING_COUNTER_NAME");
 
   const MANIFEST_TABLE_COLUMNS = [{ label: "" }, { label: "", grow: true }];
-  const OPTIONAL_SLOT_STRING_IDS = {
-    "#overview-collapsed-section-perf-log- > summary": "str_section_perf_log",
-    "#overview-collapsed-section-trace-log- > summary":
-      "str_section_trace_log",
-    "#overview-collapsed-section-valgrind-log- > summary":
-      "str_section_valgrind_log",
-    "#overview-manifest-heading-": "str_heading_manifest",
-  };
 
   const text = window.ui_strings_.text;
   const text_fill = window.ui_strings_.text_fill;
+  const manifest_heading = document.getElementById(
+    "overview-manifest-heading-",
+  );
   const raw_data_link = document.querySelector("#overview-raw-data- > a");
   const tests_heading = document.getElementById("overview-tests-heading-");
   const tests_table_data = document.getElementById("overview-tests-table-");
@@ -67,13 +62,9 @@ window.try_catch_handler_(function () {
     "title",
     text("str_view_frame_title"),
   );
-  // A diff report holds no manifest heading, raw data or log section.
-  for (const [slot_selector, string_id] of Object.entries(
-    OPTIONAL_SLOT_STRING_IDS,
-  )) {
-    const slot_element = document.querySelector(slot_selector);
-    if (slot_element) slot_element.textContent = text(string_id);
-  }
+  // A diff report holds no manifest heading or raw data.
+  if (manifest_heading)
+    manifest_heading.textContent = text("str_heading_manifest");
   if (raw_data_link)
     raw_data_link.textContent = text_fill("str_raw_data_link", {
       name: raw_data_link.getAttribute("href").split("/").pop(),

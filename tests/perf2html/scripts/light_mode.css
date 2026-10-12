@@ -2,16 +2,6 @@
  * SPDX-License-Identifier: MIT
  * This file is licensed under the terms of the LICENSE-MIT.md file. */
 
-.overview-collapsed-section-test-name- {
-  color: var(--light-mode-page-fg-);
-}
-pre.overview-collapsed-section-log-box- {
-  background: var(--light-mode-page-bg-);
-}
-pre.overview-collapsed-section-log-box-:focus-visible {
-  background: var(--light-mode-menu-focus-bg-);
-  color: var(--light-mode-menu-focus-fg-);
-}
 a {
   color: var(--light-mode-page-fg-);
 }
@@ -231,7 +221,6 @@ tr.heat-map-source-information-box-synthetic-row- > td {
 .screenshot-label- {
   background: var(--light-mode-screenshot-label-bg-);
   color: var(--light-mode-screenshot-label-fg-);
-  border-color: var(--light-mode-screenshot-label-border-);
 }
 
 .settings-value-box- {

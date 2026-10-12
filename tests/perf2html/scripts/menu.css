@@ -30,9 +30,6 @@ a.menu-button-,
 span.menu-button- {
   display: inline-block;
 }
-summary.menu-button- {
-  width: fit-content;
-}
 td.page-table-link-cell- > .menu-button- {
   display: block;
   width: fit-content;
@@ -42,7 +39,6 @@ td.page-table-link-cell- > .menu-button- {
   outline-offset: calc(0px - var(--page-line-width-));
 }
 .menu-button-[tabindex],
-summary.menu-button-,
 .menu-button-widget- {
   cursor: pointer;
 }

@@ -65,7 +65,7 @@ _DARK_MODE_ENABLED_SELECTOR = (
     f':root:not([{_DARK_MODE_ATTRIBUTE_NAME}="{_DARK_MODE_DISABLED_VALUE}"])'
 )
 
-_MENU_BUTTON_KIND_NAMES = ("action", "link")
+_MENU_BUTTON_KIND_NAMES = ("link",)
 
 
 class Cell(NamedTuple):
@@ -442,7 +442,7 @@ def render_html_escape(value: object) -> str:
     )
 
 
-# Writes a menu button: menu colors, then a tab stop, link or role by kind.
+# Writes a menu button: menu colors, then a link, a tab stop unless an anchor.
 def render_menu_button(
     kind_name: str, label_markup: str, fields: MenuButtonFields
 ) -> str:
@@ -450,19 +450,16 @@ def render_menu_button(
         raise ValueError(f"menu button kind unrecognized: {kind_name}")
     own_attributes = {"class": "menu-button-"}
     inner_markup = label_markup
-    if kind_name == "link":
-        link_attributes = {"href": fields.href}
-        if fields.opens_new_tab:
-            link_attributes["target"] = "_blank"
-        if fields.tag_name == "a":
-            own_attributes |= link_attributes
-        else:
-            own_attributes["tabindex"] = "0"
-            inner_markup = render_element(
-                "a", link_attributes | {"tabindex": "-1"}, label_markup
-            )
-    elif fields.tag_name != "summary":
-        own_attributes |= {"role": "button", "tabindex": "0"}
+    link_attributes = {"href": fields.href}
+    if fields.opens_new_tab:
+        link_attributes["target"] = "_blank"
+    if fields.tag_name == "a":
+        own_attributes |= link_attributes
+    else:
+        own_attributes["tabindex"] = "0"
+        inner_markup = render_element(
+            "a", link_attributes | {"tabindex": "-1"}, label_markup
+        )
     return render_element(fields.tag_name, own_attributes, inner_markup)
 
 

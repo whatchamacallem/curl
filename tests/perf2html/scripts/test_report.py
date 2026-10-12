@@ -88,11 +88,6 @@ class TestReport:
                 f"{label} links no function into the heat map"
                 f" ({function_start}...): {path}"
             )
-        if "<details" in page_text:
-            self.fail(
-                f"{label} holds a log section, which the overview holds:"
-                f" {path}"
-            )
         if _TEST_OVERVIEW_RAW_DATA_MARKUP in page_text:
             self.fail(
                 f"{label} has a 'raw data' section, but it should not: {path}"
@@ -603,7 +598,6 @@ class TestReport:
             layout,
             self.suite_counter_names(out_dir),
         )
-        self.logs_check(path, page_text, layout.test_records_runs)
         for heading in layout.header_blocks:
             if heading not in page_text:
                 self.fail(
@@ -717,20 +711,6 @@ class TestReport:
         with open(index_path, encoding="utf-8") as handle:
             match = re.search(r"<title>(.*?)</title>", handle.read())
         return match.group(1) if match else None
-
-    # Checks the overview's log sections, which a report recording runs has.
-    def logs_check(self, path: str, page_text: str, has_logs: bool) -> None:
-        for title, section_id in _TEST_OVERVIEW_LOG_SECTIONS:
-            if has_logs != (f'<details id="{section_id}"' in page_text):
-                lack = "has no" if has_logs else "should not have a"
-                self.fail(
-                    f"overview index.html {lack} '{title}' section: {path}"
-                )
-        if has_logs and not re.search(r"^Time(/\w+)?:\s+\d", page_text, re.M):
-            self.fail(
-                "overview index.html's 'perf log' section has no"
-                f" recognizable timing line: {path}"
-            )
 
     def run(self, args: TestReport.TestArgs) -> int:
         out_dir = os.path.abspath(args.out_dir)
@@ -1081,11 +1061,6 @@ _TEST_FLAME_GRAPH_SCRIPT_LEAST_BYTES = 200
 _TEST_HEAT_MAP_MODEL_LEAST_BYTES = 5000
 _TEST_HEAT_MAP_PAGE_LEAST_BYTES = 1000
 _TEST_MANIFEST_LEAST_BYTES = 40
-_TEST_OVERVIEW_LOG_SECTIONS = (
-    ("perf log", "overview-collapsed-section-perf-log-"),
-    ("trace log", "overview-collapsed-section-trace-log-"),
-    ("valgrind log", "overview-collapsed-section-valgrind-log-"),
-)
 _TEST_OVERVIEW_PAGE_LEAST_BYTES = 2000
 _TEST_OVERVIEW_PAGE_TITLE = ""
 _TEST_OVERVIEW_RAW_DATA_MARKUP = '<div id="overview-raw-data-">'

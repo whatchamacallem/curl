@@ -481,7 +481,6 @@ run_all() {
   {
     echo "\$ taskset -c $PROFILE_PINNED_CPU $_BIN_REL <test>"
     echo "#   for every test, one after the other"
-    echo "#   (the perf log of each test follows)"
     printf '%s' "$_rows"
     echo "Time:     $_total $_suite_suffix"
   } >"$_page"
@@ -505,9 +504,7 @@ run_all() {
   _args=(-o "$_OUT_DIR/index.html" --header-file "$_HEADER_FILE"
     --raw-data "$_TIMER_ARTIFACTS_ARCHIVE"
     --profile "$(artifact_path callgrind '*')"
-    --perf-log "$(artifact_path timing-page '*')"
-    --trace-log "$(artifact_path trace-log '*')"
-    --valgrind-log "$(artifact_path valgrind-log '*')")
+    --perf-log "$(artifact_path timing-page '*')")
   command_run python3 "$PERF2HTML_DIR_/scripts/build_report.py" overview \
     "${_args[@]}"
   log_verbose "$(printf '%-13s%d profiles merged: %s' \

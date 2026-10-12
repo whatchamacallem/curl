@@ -907,7 +907,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
           label_markup,
         );
       }
-    } else if (kind_name === "action" && fields.tag_name !== "summary") {
+    } else if (kind_name === "action") {
       own_attributes.role = "button";
       if (!fields.is_widget) own_attributes.tabindex = 0;
     }

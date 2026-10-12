@@ -9,6 +9,7 @@ window.try_catch_handler_(function () {
 
   const DARK_MODE_QUERY_KEY_NAME = settings_("DARK_MODE_QUERY_KEY_NAME");
   const DEBUG_TIP_IDLE_DELAY_MS = settings_("DEBUG_TIP_IDLE_DELAY_MS");
+  const SCREENSHOT_LABEL_TITLE_TEXT = settings_("SCREENSHOT_LABEL_TITLE_TEXT");
   const SETTINGS_DEBUG_ENABLED = settings_("SETTINGS_DEBUG_ENABLED");
   const STYLE_COLOR_DARK_MODE = settings_("STYLE_COLOR_DARK_MODE");
   const STYLE_COLOR_LIGHT_MODE = settings_("STYLE_COLOR_LIGHT_MODE");
@@ -74,6 +75,7 @@ window.try_catch_handler_(function () {
     const label = document.createElement("div");
     label.className = "screenshot-label-";
     label.textContent = page_path + location.search + location.hash;
+    label.title = SCREENSHOT_LABEL_TITLE_TEXT;
     label.addEventListener(
       "click",
       window.try_catch_handler_(() =>

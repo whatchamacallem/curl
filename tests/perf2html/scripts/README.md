@@ -117,10 +117,9 @@ with running the tests and checking the results is recommended.
 | `frame.js`        | Holds the model of the top page, which checks the      |
 |                   | address and loads each view into the frame.            |
 | `overview.html`   | Templates the top page with the menu, the home panel   |
-|                   | holding each test's logs, and the view frame.          |
-| `overview.js`     | Fills the home panel's headings, raw data link and     |
-|                   | log titles, then draws its tables from the rows the    |
-|                   | page holds.                                            |
+|                   | and the view frame.                                    |
+| `overview.js`     | Fills the home panel's headings and raw data link,     |
+|                   | then draws its tables from the rows the page holds.    |
 
 ## Settings Files
 

@@ -129,12 +129,11 @@ MENU_SCALE_KEY_STEPS: dict[str, int] = {"+": 1, "=": 1, "-": -1}
 NUMBER_FRACTION_DIGITS = 2
 NUMBER_LARGEST_PRINTED_MULTIPLE_TIMES = 999.99
 
-OVERVIEW_VALGRIND_LOG_FIRST_LINE_PATTERN = "^Events *:"
-
 RANKING_COUNTER_NAME = "CEst"
 
 REPORT_SOURCES_DIR_NAME = "sources"
 
+SCREENSHOT_LABEL_TITLE_TEXT = "click to copy"
 SCREENSHOT_MENU_KEY_NUMBER = "screenshot-menu"
 
 SETTINGS_DEBUG_ENABLED = False
@@ -195,7 +194,6 @@ STYLE_COLOR_DARK_MODE: dict[str, list[str]] = {
         "dark-mode-debug-tip-bg-",
         "dark-mode-debug-tip-border-",
         "dark-mode-screenshot-label-bg-",
-        "dark-mode-screenshot-label-border-",
     ],
 }
 STYLE_COLOR_DARK_MODE_ROLE_PREFIX = "dark-mode-"
@@ -210,7 +208,6 @@ STYLE_COLOR_LIGHT_MODE: dict[str, list[str]] = {
         "light-mode-page-emphasis-bg-",
         "light-mode-page-fg-",
         "light-mode-screenshot-label-bg-",
-        "light-mode-screenshot-label-border-",
     ],
     "#FFFFFF": [
         "light-mode-debug-tip-fg-",
@@ -306,7 +303,6 @@ STYLE_VALUE_ENTRIES: dict[str, str] = {
     "menu-pulldown-search-box-min-width-": "13ch",
     "menu-status-bar-cell-padding-left-": "2ch",
     "menu-strip-blank-line-height-": "0.5lh",
-    "overview-collapsed-section-log-box-max-height-share-": "0.6",
     "page-body-line-height-": "1.1",
     "page-emphasis-padding-inline-": "1ch",
     "page-line-width-": "0.125ch",
@@ -314,8 +310,6 @@ STYLE_VALUE_ENTRIES: dict[str, str] = {
     "page-table-column-title-z-index-": "1",
     "page-text-scrollbar-horizontal-height-": "1lh",
     "page-text-scrollbar-vertical-width-": "1ch",
-    "screenshot-label-border-width-": "1.5ch",
-    "screenshot-label-font-size-": "1.5em",
     "screenshot-label-z-index-": "3",
 }
 
