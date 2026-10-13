@@ -97,14 +97,20 @@ and raw data archive files.
 
 ### File Data Codes
 
-A `files` value is two letters, the first the file's group, the second whether
-the report holds the file's text. A recording holds `et`, `rs` and `ss`, or
-`rt` for a repo path with no file.
+In `0_file_data.<time_t>.json` each filename is assigned a two letter code or
+is listed as `tracked`. They codes are `et`, `rs` and `ss`. Inclusion in the
+`tracked` section indicates the files were present in `.git` but did not
+contribute otherwise.
+
+The first letter is the file's group:
 
 - `e`: external, a file found nowhere, `(unknown)` among them.
 - `r`: repo, a file under the repo root.
 - `s`: system, a file found elsewhere on the machine or in an external source
   tree.
+
+The second indicates whether the report holds the file's text.
+
 - `s`: source, the report holds the file's text.
 - `t`: tracked, the report holds no text for the file.
 
