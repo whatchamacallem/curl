@@ -95,24 +95,13 @@ and raw data archive files.
 - `0_file_data.<time_t>.json`: Source directory file listing with mode flags.
 - `<test>.callgrind.<time_t>.out`: a test's callgrind file, the repo root cut.
 
-### File Data Codes
+In `0_file_data.<time_t>.json` each filename is mapped to one of `repo`,
+`sys`, `git`, or `err`.
 
-In `0_file_data.<time_t>.json` each filename is assigned a two letter code or
-is listed as `tracked`. They codes are `et`, `rs` and `ss`. Inclusion in the
-`tracked` section indicates the files were present in `.git` but did not
-contribute otherwise.
-
-The first letter is the file's group:
-
-- `e`: external, a file found nowhere, `(unknown)` among them.
-- `r`: repo, a file under the repo root.
-- `s`: system, a file found elsewhere on the machine or in an external source
-  tree.
-
-The second indicates whether the report holds the file's text.
-
-- `s`: source, the report holds the file's text.
-- `t`: tracked, the report holds no text for the file.
+- `repo` : A project file with source.
+- `sys` : A system file with source.
+- `git` : A non-contributing project file with no source.
+- `err` : A file that Callgrind could not find or was deleted.
 
 ## Callers Page
 
