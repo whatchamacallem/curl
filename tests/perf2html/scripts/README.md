@@ -54,8 +54,8 @@ report generators. Start by running the tests and checking the results.
 - `localProfilePath`: Hash key, flame graph view only, that is speedscope's own
   key naming the profile to load.
 - `screenshot`: Query key whose value is shown as a label on the page.
-- `screenshot-menu`: Query key, a menu entry number, that opens or focuses
-  that entry after each menu render.
+- `screenshot-menu`: Query key, a menu entry number, that opens or focuses that
+  entry after each menu render.
 - `screenshot-mode`: Query key, `1` dark or `0` light, that sets the mode a
   screenshot is shot in.
 - `setting`: Hash key, settings view only, that names the setting scrolled to
@@ -156,8 +156,8 @@ In `0_file_data.<time_t>.json` each filename is associated with the following:
 | `callgrind_to_heatmap.py` | Writes the heat map data and sources of each |
 |                           | test, the paths document a diff derives and  |
 |                           | the one heat map page.                       |
-| `heat_map.css`            | Lays out the heat map tree, source table,    |
-|                           | minimap and info boxes.                      |
+| `heat_map.css`            | Styles the heat map tree, source table,      |
+|                           | information box, ticker tape and minimap.    |
 | `heat_map.html`           | Templates the heat map page with its tree    |
 |                           | pane, main box, minimap and text bars.       |
 | `heat_map.js`             | Draws the heat map tree, home table, source  |
@@ -169,9 +169,6 @@ In `0_file_data.<time_t>.json` each filename is associated with the following:
 
 | File             | Purpose                                                 |
 | ---------------- | ------------------------------------------------------- |
-| `menu.css`       | Styles every strip and pulldown, the menu, its          |
-|                  | preference strip, the table headings and the history    |
-|                  | strip of the settings view.                             |
 | `menu.js`        | Holds the menu controller, which draws the strip, takes |
 |                  | keys and starts every navigation.                       |
 | `preferences.js` | Holds the preferences the menu edits and a view draws   |
@@ -242,7 +239,8 @@ In `0_file_data.<time_t>.json` each filename is associated with the following:
 |                  | role unless dark mode is disabled.                     |
 | `light_mode.css` | Holds every light mode color rule, linked before the   |
 |                  | dark mode sheet.                                       |
-| `theme.css`      | Holds the layout rules shared by every report page.    |
+| `theme.css`      | Lays out every page as a grid of its regions, then     |
+|                  | styles the strips, tables and text scrollbars.         |
 | `theme.js`       | Holds the shared page library for addresses, strips,   |
 |                  | tables, numbers, scrollbars and layout.                |
 | `theme.py`       | Writes table rows and numbers, fills the page          |

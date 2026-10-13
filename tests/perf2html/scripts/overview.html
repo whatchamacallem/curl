@@ -12,28 +12,35 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title></title>
     <link rel="stylesheet" href="scripts/theme.css" />
-    <link rel="stylesheet" href="scripts/menu.css" />
     <link rel="stylesheet" href="scripts/light_mode.css" />
     <link rel="stylesheet" href="scripts/dark_mode.css" />
   </head>
-  <body class="frame-">
+  <body id="overview-">
     <div id="overview-page-scroll-box-">
       <div id="overview-page-">
         __MENU__
         <div id="overview-home-">
-          <main class="page-text-scroll-box-">
+          <main id="overview-home-text-">
             <div class="page-">
               __RAW_DATA__ __MANIFEST__
               <br />
               __TESTS_HEADING__ __TESTS__
             </div>
           </main>
-          <div class="page-text-scrollbar- vertical-" aria-hidden="true"></div>
+          <div
+            class="text-scrollbar- vertical-"
+            data-scrolls-="overview-home-text-"
+            aria-hidden="true"
+          ></div>
         </div>
         <iframe id="overview-view-frame-" hidden></iframe>
       </div>
     </div>
-    <div class="page-text-scrollbar- horizontal-" aria-hidden="true"></div>
+    <div
+      class="text-scrollbar- horizontal-"
+      data-scrolls-="overview-page-scroll-box-"
+      aria-hidden="true"
+    ></div>
     <script src="scripts/debug.js"></script>
     <script src="scripts/theme.js"></script>
     <script src="scripts/preferences.js"></script>

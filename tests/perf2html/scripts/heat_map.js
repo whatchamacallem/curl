@@ -34,6 +34,9 @@ window.try_catch_handler_(function () {
   const HEAT_MAP_SOURCE_TICKER_TAPE_ENTRY_MAX_COUNT = settings_(
     "HEAT_MAP_SOURCE_TICKER_TAPE_ENTRY_MAX_COUNT",
   );
+  const HEAT_MAP_SOURCE_TAB_SIZE_CHARS = settings_(
+    "HEAT_MAP_SOURCE_TAB_SIZE_CHARS",
+  );
   const HEAT_MAP_SOURCE_VIEW_WIDTH_CHARS = settings_(
     "HEAT_MAP_SOURCE_VIEW_WIDTH_CHARS",
   );
@@ -44,9 +47,6 @@ window.try_catch_handler_(function () {
   const RANKING_COUNTER_NAME = settings_("RANKING_COUNTER_NAME");
   const REPORT_SOURCES_DIR_NAME = settings_("REPORT_SOURCES_DIR_NAME");
   const STORAGE_KEY_HEAT_ROWS = settings_("STORAGE_KEY_HEAT_ROWS");
-  const STYLE_HEAT_MAP_SOURCE_LINE_NUMBER_MARKER_WIDTH_CHARS = settings_(
-    "STYLE_HEAT_MAP_SOURCE_LINE_NUMBER_MARKER_WIDTH_CHARS",
-  );
   const STYLE_HEAT_MAP_TREE_INDENT_PER_LEVEL_CHARS = settings_(
     "STYLE_HEAT_MAP_TREE_INDENT_PER_LEVEL_CHARS",
   );
@@ -59,8 +59,8 @@ window.try_catch_handler_(function () {
   const STYLE_MENU_PULLDOWN_EXTRA_WIDTH_CHARS = settings_(
     "STYLE_MENU_PULLDOWN_EXTRA_WIDTH_CHARS",
   );
-  const STYLE_TABLE_FUNCTION_NAME_WIDTH_CHARS = settings_(
-    "STYLE_TABLE_FUNCTION_NAME_WIDTH_CHARS",
+  const STYLE_TABLE_FUNCTION_NAME_MAX_CHARS = settings_(
+    "STYLE_TABLE_FUNCTION_NAME_MAX_CHARS",
   );
   const STYLE_TABLE_LOCATION_COLUMN_MAX_CHARS = settings_(
     "STYLE_TABLE_LOCATION_COLUMN_MAX_CHARS",
@@ -72,11 +72,9 @@ window.try_catch_handler_(function () {
     file_table = null,
     function_table = null,
     shown_test_name = null;
-  const tree_pane = document.getElementById("heat-map-tree-pane-");
   const tree_panel = document.getElementById("heat-map-tree-");
   const tree_scrollbar = document.getElementById("heat-map-tree-scrollbar-");
   const main_panel = document.getElementById("heat-map-main-");
-  const main_scrollbar = document.getElementById("heat-map-main-scrollbar-");
   const minimap_panel = document.getElementById("heat-map-minimap-");
   const minimap_box = document.getElementById("heat-map-minimap-box-");
   const minimap_viewport = document.getElementById(
@@ -452,7 +450,6 @@ window.try_catch_handler_(function () {
     Object.assign({ label: counter.key, numeric: true }, extra || {});
   const secondary_column = (secondary) =>
     counter_column(secondary, {
-      label: counter_label(secondary),
       cls: "heat-map-source-table-secondary-counter-cell-",
     });
   const secondary_columns = () => secondary_counters.map(secondary_column);
@@ -554,12 +551,12 @@ window.try_catch_handler_(function () {
     "aria-level": node_level,
     tabindex: -1,
   });
-  // Writes the caret, name and share spans that one tree node holds.
+  // Writes the indented caret, name and share spans that one tree node holds.
   const tree_node_inner_markup = (caret_text, name_text, share_shown) =>
     render_element(
       "span",
       { class: "heat-map-tree-node-caret-" },
-      render_html_escape(caret_text),
+      render_html_escape(caret_text + " "),
     ) +
     render_element(
       "span",
@@ -574,7 +571,9 @@ window.try_catch_handler_(function () {
   function tree_render() {
     function nodes_emit(tree_node, depth) {
       const output_parts = [];
-      const indent_chars = depth * STYLE_HEAT_MAP_TREE_INDENT_PER_LEVEL_CHARS;
+      const indent_text = " ".repeat(
+        depth * STYLE_HEAT_MAP_TREE_INDENT_PER_LEVEL_CHARS,
+      );
       const directories = [...tree_node.dirs.values()].sort(node_compare);
       for (const directory_node of directories) {
         const is_expanded = expanded_directories.has(directory_node.path);
@@ -590,10 +589,10 @@ window.try_catch_handler_(function () {
               ...treeitem_attributes(depth + 1),
               "aria-expanded": String(is_expanded),
               "data-dir-": directory_node.path,
-              style: `padding-left:${indent_chars}ch;${heat_style_attribute}`,
+              ...(heat_style_attribute ? { style: heat_style_attribute } : {}),
             },
             tree_node_inner_markup(
-              caret(is_expanded),
+              indent_text + caret(is_expanded),
               directory_node.name + "/",
               share_of_baseline_text(directory_node.self, directory_node.base),
             ),
@@ -629,10 +628,10 @@ window.try_catch_handler_(function () {
             ...treeitem_attributes(node_level),
             ...(is_selected ? { "aria-selected": "true" } : {}),
             "data-file-": file.path,
-            style: `padding-left:${indent_chars}ch;${heat_style_attribute}`,
+            ...(heat_style_attribute ? { style: heat_style_attribute } : {}),
           },
           tree_node_inner_markup(
-            caret(false),
+            indent_text + caret(false),
             file.name,
             share_of_baseline_text(file.self, file.base),
           ),
@@ -651,10 +650,9 @@ window.try_catch_handler_(function () {
               ...treeitem_attributes(depth + 1),
               "aria-expanded": String(is_expanded),
               "data-more-": tree_node.path,
-              style: `padding-left:${indent_chars}ch`,
             },
             tree_node_inner_markup(
-              caret(is_expanded),
+              indent_text + caret(is_expanded),
               text("str_no_samples"),
               "",
             ),
@@ -871,7 +869,7 @@ window.try_catch_handler_(function () {
     return table_sort_column(
       {
         label: text("str_column_function"),
-        width: STYLE_TABLE_FUNCTION_NAME_WIDTH_CHARS,
+        clip: STYLE_TABLE_FUNCTION_NAME_MAX_CHARS,
       },
       "function",
       name,
@@ -1110,7 +1108,7 @@ window.try_catch_handler_(function () {
     home_render(false);
     if (main_had_focus)
       main_panel
-        .querySelector(`td[data-entry-name-="${HOME_KIND_ENTRY_NAME}"]`)
+        .querySelector(`[data-entry-name-="${HOME_KIND_ENTRY_NAME}"]`)
         .focus({ preventScroll: true });
   }
   // Sorts the home table by a column, the rank column restoring the default.
@@ -1155,7 +1153,7 @@ window.try_catch_handler_(function () {
       __HOME_TABLE__: table_markup,
     });
     const heading_element = main_panel.querySelector(
-      ".heat-map-home- > .page-heading-",
+      ".page- > .page-heading-",
     );
     heading_element.innerHTML = report_ui_.table_sort.heading_markup(
       kind_choice.heading_string_id,
@@ -1278,7 +1276,7 @@ window.try_catch_handler_(function () {
     };
     const function_column = (label) => ({
       label,
-      width: STYLE_TABLE_FUNCTION_NAME_WIDTH_CHARS,
+      clip: STYLE_TABLE_FUNCTION_NAME_MAX_CHARS,
     });
     const location_column = {
       label: text("str_column_defined_at"),
@@ -1585,13 +1583,27 @@ window.try_catch_handler_(function () {
           (has_file_box ? " empty-" : ""),
         "data-information-box-line-": 0,
       },
-      render_menu_button("link", render_html_escape(link_text), {
-        tag_name: "a",
-        href: hash_for_line(file_path),
-      }) +
+      render_element(
+        "a",
+        { href: hash_for_line(file_path) },
+        render_html_escape(link_text),
+      ) +
         " " +
         box_control_markup("copy", "str_information_box_copy"),
     );
+  }
+  // Expands each tab to its stop, so a clip counts the columns shown.
+  function tabs_expand(line_text) {
+    let expanded_text = "";
+    for (const character of line_text) {
+      if (character !== "\t") expanded_text += character;
+      else
+        expanded_text += " ".repeat(
+          HEAT_MAP_SOURCE_TAB_SIZE_CHARS -
+            (expanded_text.length % HEAT_MAP_SOURCE_TAB_SIZE_CHARS),
+        );
+    }
+    return expanded_text;
   }
   const file_box = () =>
     main_panel.querySelector(
@@ -1648,7 +1660,7 @@ window.try_catch_handler_(function () {
           style: heat_style_attribute,
         },
         { text: String(line_number), style: heat_style_attribute },
-        { text, style: heat_style_attribute },
+        { text: tabs_expand(text), style: heat_style_attribute },
         ...call_cell,
         ...(line_costs
           ? secondary_cells(line_costs[0], line_number, (secondary) =>
@@ -1689,15 +1701,11 @@ window.try_catch_handler_(function () {
       {
         label: text("str_column_line"),
         numeric: true,
-        width:
-          String(line_count).length +
-          STYLE_HEAT_MAP_SOURCE_LINE_NUMBER_MARKER_WIDTH_CHARS,
         cls: "heat-map-source-table-line-number-cell-",
       },
       {
         label: text("str_column_source"),
-        width: HEAT_MAP_SOURCE_VIEW_WIDTH_CHARS,
-        grow: true,
+        clip: HEAT_MAP_SOURCE_VIEW_WIDTH_CHARS,
         cls: "heat-map-source-table-code-cell-",
       },
       ...call_column,
@@ -1705,9 +1713,7 @@ window.try_catch_handler_(function () {
     ];
     markup += report_ui_.render_table("heat.src", columns, rows, {
       row_attributes: attrs,
-      fill: 1,
       cls: "heat-map-source-table-",
-      bare: true,
     });
     main_panel.innerHTML = render_element(
       "div",
@@ -2441,12 +2447,10 @@ window.try_catch_handler_(function () {
 
   report_ui_.pane_splitter.attach(
     tree_scrollbar,
-    tree_pane,
+    tree_panel,
     STYLE_HEAT_MAP_TREE_PANE_NARROWEST_CHARS,
     STYLE_HEAT_MAP_TREE_PANE_WIDEST_CHARS,
   );
-  report_ui_.text_scrollbar.attach(tree_scrollbar, tree_panel, "vertical");
-  report_ui_.text_scrollbar.attach(main_scrollbar, main_panel, "vertical");
   report_ui_.drag_scroll.attach(tree_panel, tree_panel);
   report_ui_.drag_scroll.attach(main_panel, main_panel);
 

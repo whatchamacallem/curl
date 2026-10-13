@@ -7,8 +7,6 @@ window.try_catch_handler_(function () {
 
   const RANKING_COUNTER_NAME = settings_("RANKING_COUNTER_NAME");
 
-  const MANIFEST_TABLE_COLUMNS = [{ label: "" }, { label: "", grow: true }];
-
   const text = window.ui_strings_.text;
   const text_fill = window.ui_strings_.text_fill;
   const manifest_heading = document.getElementById(
@@ -44,14 +42,14 @@ window.try_catch_handler_(function () {
     ];
   }
   // Replaces the rows a table data element holds with the table drawn of them.
-  function table_data_replace(table_data, columns, table_options) {
+  function table_data_replace(table_data, columns) {
     table_data.replaceWith(
       window.render_element_of_(
         window.report_ui_.render_table(
           table_data.getAttribute("data-key-"),
           columns,
           JSON.parse(table_data.getAttribute("data-rows-")),
-          table_options,
+          {},
         ),
       ),
     );
@@ -69,12 +67,5 @@ window.try_catch_handler_(function () {
     raw_data_link.textContent = text_fill("str_raw_data_link", {
       name: raw_data_link.getAttribute("href").split("/").pop(),
     });
-  table_data_replace(tests_table_data, tests_columns(), {});
-  for (const table_data of document.querySelectorAll(
-    ".overview-manifest-table-",
-  ))
-    table_data_replace(table_data, MANIFEST_TABLE_COLUMNS, {
-      fill: true,
-      omits_column_titles: true,
-    });
+  table_data_replace(tests_table_data, tests_columns());
 })();

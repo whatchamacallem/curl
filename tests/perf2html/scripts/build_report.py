@@ -387,14 +387,11 @@ class BuildReport:
         ]
 
     def manifest_blocks_render(
-        self,
-        key: str,
-        blocks: Sequence[BuildReport.ManifestBlock],
+        self, blocks: Sequence[BuildReport.ManifestBlock]
     ) -> str:
         return self.blank_line_render().join(
-            block.heading_markup
-            + self.manifest_table(f"{key}.{index}", block.pairs)
-            for index, block in enumerate(blocks)
+            block.heading_markup + self.manifest_table(block.pairs)
+            for block in blocks
             if block.pairs
         )
 
@@ -443,18 +440,16 @@ class BuildReport:
         ]
         return self.manifest_parse_rows(lines)
 
-    def manifest_table(
-        self,
-        key: str,
-        pairs: Sequence[BuildReport.ManifestRow],
-    ) -> str:
-        if not pairs:
-            return ""
-        rows: list[list[theme.CellOrText]] = [
-            [pair.label, pair.value] for pair in pairs
-        ]
-        return self.table_data_render(
-            {"class": "overview-manifest-table-"}, key, rows
+    # Writes the manifest rows as the text table the error page shows too.
+    def manifest_table(self, pairs: Sequence[BuildReport.ManifestRow]) -> str:
+        return theme.render_element(
+            "pre",
+            {},
+            theme.render_html_escape(
+                settings.manifest_table(
+                    [f"{pair.label}={pair.value}" for pair in pairs]
+                )
+            ),
         )
 
     # Writes the empty menu and preference strips, the menu holding the facts.
@@ -476,7 +471,7 @@ class BuildReport:
             "nav",
             {
                 "id": "menu-",
-                "class": "menu-strip-",
+                "class": "strip-",
                 "data-counter-names-": json.dumps(list(counter_names)),
                 "data-diff-": str(int(is_diff)),
                 "data-flame-graph-": str(int(not is_diff)),
@@ -486,7 +481,7 @@ class BuildReport:
             "",
         )
         return menu_markup + theme.render_element(
-            "div", {"id": "menu-preference-", "class": "menu-strip-"}, ""
+            "div", {"id": "menu-preference-", "class": "strip-"}, ""
         )
 
     def overview(self, args: BuildReport.OverviewArgs) -> None:
@@ -555,9 +550,7 @@ class BuildReport:
             "overview.tests",
             rows,
         )
-        manifest_markup = self.manifest_blocks_render(
-            "overview.block", manifest_blocks
-        )
+        manifest_markup = self.manifest_blocks_render(manifest_blocks)
         menu_markup = self.menu_render(
             [test.name for test in tests], counter_names, is_diff
         )
@@ -601,12 +594,10 @@ class BuildReport:
         raw_data_markup = theme.render_element(
             "div",
             {"id": "overview-raw-data-"},
-            theme.render_menu_button(
-                "link",
+            theme.render_element(
+                "a",
+                {"href": os.path.relpath(path, out_dir), "target": "_blank"},
                 "",
-                theme.MenuButtonFields(
-                    "a", os.path.relpath(path, out_dir), opens_new_tab=True
-                ),
             ),
         )
         return raw_data_markup + self.blank_line_render()

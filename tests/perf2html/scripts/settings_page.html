@@ -12,18 +12,23 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title></title>
     <link rel="stylesheet" href="../scripts/theme.css" />
-    <link rel="stylesheet" href="../scripts/menu.css" />
     <link rel="stylesheet" href="../scripts/light_mode.css" />
     <link rel="stylesheet" href="../scripts/dark_mode.css" />
   </head>
-  <body class="frame-">
-    <main class="page-text-scroll-box-">
-      <pre id="settings-debug-"></pre>
-      <div id="settings-load-log-menu-" class="menu-strip-"></div>
-      <pre id="settings-load-log-"></pre>
-      <pre id="settings-list-"></pre>
+  <body class="view-">
+    <main id="settings-page-">
+      <div class="page-">
+        <pre id="settings-debug-"></pre>
+        <div id="settings-load-log-menu-"></div>
+        <pre id="settings-load-log-"></pre>
+        <pre id="settings-list-"></pre>
+      </div>
     </main>
-    <div class="page-text-scrollbar- vertical-" aria-hidden="true"></div>
+    <div
+      class="text-scrollbar- vertical-"
+      data-scrolls-="settings-page-"
+      aria-hidden="true"
+    ></div>
     <template id="page-held-script-">
       <script src="../scripts/debug.js"></script>
       <script src="../scripts/theme.js"></script>

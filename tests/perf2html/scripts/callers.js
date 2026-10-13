@@ -9,8 +9,11 @@ window.try_catch_handler_(function () {
   const CALLERS_TOP_FUNCTION_ROWS = settings_("CALLERS_TOP_FUNCTION_ROWS");
   const RANKING_COUNTER_NAME = settings_("RANKING_COUNTER_NAME");
   const STORAGE_KEY_CALLERS_ROWS = settings_("STORAGE_KEY_CALLERS_ROWS");
-  const STYLE_TABLE_FUNCTION_NAME_WIDTH_CHARS = settings_(
-    "STYLE_TABLE_FUNCTION_NAME_WIDTH_CHARS",
+  const STYLE_TABLE_CALLERS_COLUMN_MAX_CHARS = settings_(
+    "STYLE_TABLE_CALLERS_COLUMN_MAX_CHARS",
+  );
+  const STYLE_TABLE_FUNCTION_NAME_MAX_CHARS = settings_(
+    "STYLE_TABLE_FUNCTION_NAME_MAX_CHARS",
   );
   const TABLE_ROW_COUNT_CHOICES = settings_("TABLE_ROW_COUNT_CHOICES");
 
@@ -18,10 +21,10 @@ window.try_catch_handler_(function () {
   const text_fill = window.ui_strings_.text_fill;
   const render_element = window.render_element_;
   const render_html_escape = window.render_html_escape_;
-  const render_menu_button = window.render_menu_button_;
   const table_sort_column = window.report_ui_.table_sort.column;
   const table_sort_records = window.report_ui_.table_sort.records;
-  const page_scroll_box = document.querySelector("main.page-text-scroll-box-");
+  const CLIP_ELLIPSIS_TEXT = text("str_clip_ellipsis");
+  const page_scroll_box = document.getElementById("callers-page-");
   const page_element = page_scroll_box.querySelector(":scope > .page-");
   const table_data = document.getElementById("callers-functions-table-");
   const is_diff = table_data.getAttribute("data-diff-") === "1";
@@ -95,7 +98,7 @@ window.try_catch_handler_(function () {
     style: heat_style(percent),
   });
 
-  // Lists each caller of a function with its share of calls, linked.
+  // Lists each caller with its share of calls, linked, cut at the limit.
   function callers_cell(record) {
     const caller_labels = record.callers.map((caller) =>
       text_fill("str_callers_cell_entry", {
@@ -103,19 +106,32 @@ window.try_catch_handler_(function () {
         share: share_text(calls_share(caller.calls, caller.baseline_calls)),
       }),
     );
-    const caller_markups = record.callers.map((caller, caller_index) => {
-      const label_markup = render_html_escape(caller_labels[caller_index]);
-      if (!caller.href) return label_markup;
-      return render_menu_button("link", label_markup, {
-        tag_name: "a",
-        href: caller.href,
-      });
-    });
+    const separator_markup = render_html_escape(CALLERS_CELL_SEPARATOR_TEXT);
+    const shown_markups = [];
+    let shown_text = "";
+    for (const [caller_index, caller] of record.callers.entries()) {
+      const label_text = caller_labels[caller_index];
+      const next_text = shown_text
+        ? shown_text + CALLERS_CELL_SEPARATOR_TEXT + label_text
+        : label_text;
+      if (
+        shown_text &&
+        next_text.length > STYLE_TABLE_CALLERS_COLUMN_MAX_CHARS
+      )
+        break;
+      shown_text = next_text;
+      const label_markup = render_html_escape(label_text);
+      shown_markups.push(
+        caller.href
+          ? render_element("a", { href: caller.href }, label_markup)
+          : label_markup,
+      );
+    }
+    if (shown_markups.length < record.callers.length)
+      shown_markups.push(render_html_escape(CLIP_ELLIPSIS_TEXT));
     return {
       text: caller_labels.join(CALLERS_CELL_SEPARATOR_TEXT),
-      html: caller_markups.join(
-        render_html_escape(CALLERS_CELL_SEPARATOR_TEXT),
-      ),
+      html: shown_markups.join(separator_markup),
     };
   }
   const RANK_COLUMN = table_sort_column(
@@ -127,7 +143,7 @@ window.try_catch_handler_(function () {
   const SYMBOL_COLUMN = table_sort_column(
     {
       label: text("str_column_symbol"),
-      width: STYLE_TABLE_FUNCTION_NAME_WIDTH_CHARS,
+      clip: STYLE_TABLE_FUNCTION_NAME_MAX_CHARS,
     },
     "symbol",
     (record) => record.name,
@@ -143,7 +159,7 @@ window.try_catch_handler_(function () {
     }),
   );
   const CALLERS_COLUMN = table_sort_column(
-    { label: text("str_column_callers"), grow: true },
+    { label: text("str_column_callers") },
     "callers",
     (record) => callers_cell(record).text,
     callers_cell,
@@ -152,10 +168,7 @@ window.try_catch_handler_(function () {
   function counter_column(counter_index) {
     const counter_name = callers_model.counterNames[counter_index];
     return table_sort_column(
-      {
-        label: window.report_preferences_.counter_label(counter_name),
-        numeric: true,
-      },
+      { label: counter_name, numeric: true },
       counter_name,
       (record) => Math.abs(record.values[counter_index]),
       (record) => share_cell(counter_share(record, counter_index)),
@@ -227,7 +240,6 @@ window.try_catch_handler_(function () {
         sort_columns.map((sort_column) => sort_column.cell(record, row_index)),
       ),
       {
-        fill: true,
         on_sort: (column_index) => sort_choose(sort_columns[column_index]),
         sorted_column_index: sort_columns.indexOf(sorted_column),
       },

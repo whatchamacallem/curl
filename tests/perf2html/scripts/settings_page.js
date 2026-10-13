@@ -67,7 +67,7 @@ window.try_catch_handler_(function () {
   const debug_box = document.getElementById("settings-debug-");
   const load_log_box = document.getElementById("settings-load-log-");
   const load_log_menu = document.getElementById("settings-load-log-menu-");
-  const page_scroll_box = document.querySelector("main.page-text-scroll-box-");
+  const page_scroll_box = document.getElementById("settings-page-");
   const settings_list = document.getElementById("settings-list-");
   const setting_boxes = new Map();
   const setting_titles = new Map();

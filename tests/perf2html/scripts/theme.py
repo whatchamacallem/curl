@@ -19,7 +19,6 @@ _ASSET_HEAT_MAP_SCRIPT_NAME: str = ""
 _ASSET_HEAT_MAP_STYLESHEET_NAME: str = ""
 _ASSET_LIGHT_MODE_STYLESHEET_NAME: str = ""
 _ASSET_MENU_SCRIPT_NAME: str = ""
-_ASSET_MENU_STYLESHEET_NAME: str = ""
 _ASSET_OVERVIEW_SCRIPT_NAME: str = ""
 _ASSET_PREFERENCES_SCRIPT_NAME: str = ""
 _ASSET_SETTINGS_PAGE_SCRIPT_NAME: str = ""
@@ -36,7 +35,6 @@ _STYLE_COLOR_DARK_MODE: dict[str, list[str]] = {}
 _STYLE_COLOR_DARK_MODE_ROLE_PREFIX: str = ""
 _STYLE_COLOR_LIGHT_MODE: dict[str, list[str]] = {}
 _STYLE_COLOR_LIGHT_MODE_ROLE_PREFIX: str = ""
-_STYLE_DESIGN_DEVICE_PIXEL_WIDEST_PROPERTY: str = ""
 _STYLE_DESIGN_FONT_FIT_PROPERTY: str = ""
 _STYLE_DESIGN_FONT_SIZE_PROPERTY: str = ""
 _STYLE_DESIGN_SCALE_DEFAULT_MULTIPLE: int = 0
@@ -65,8 +63,6 @@ _DARK_MODE_ENABLED_SELECTOR = (
     f':root:not([{_DARK_MODE_ATTRIBUTE_NAME}="{_DARK_MODE_DISABLED_VALUE}"])'
 )
 
-_MENU_BUTTON_KIND_NAMES = ("link",)
-
 
 class Cell(NamedTuple):
     text: str = ""
@@ -74,12 +70,6 @@ class Cell(NamedTuple):
 
 
 CellOrText: TypeAlias = Cell | str
-
-
-class MenuButtonFields(NamedTuple):
-    tag_name: str
-    href: str = ""
-    opens_new_tab: bool = False
 
 
 class Theme:
@@ -238,10 +228,6 @@ class Theme:
                 self.asset_read(_ASSET_MENU_SCRIPT_NAME),
             ),
             (
-                _ASSET_MENU_STYLESHEET_NAME,
-                self.asset_read(_ASSET_MENU_STYLESHEET_NAME),
-            ),
-            (
                 _ASSET_OVERVIEW_SCRIPT_NAME,
                 self.asset_read(_ASSET_OVERVIEW_SCRIPT_NAME),
             ),
@@ -333,7 +319,6 @@ class Theme:
                 )
             names.add(f"--{name}")
         names |= {
-            _STYLE_DESIGN_DEVICE_PIXEL_WIDEST_PROPERTY,
             _STYLE_DESIGN_FONT_FIT_PROPERTY,
             _STYLE_DESIGN_FONT_SIZE_PROPERTY,
             _STYLE_DESIGN_VIEWPORT_HEIGHT_PROPERTY,
@@ -344,7 +329,6 @@ class Theme:
             self.asset_read(name)
             for name in (
                 _ASSET_HEAT_MAP_STYLESHEET_NAME,
-                _ASSET_MENU_STYLESHEET_NAME,
                 _ASSET_THEME_STYLESHEET_NAME,
             )
         )
@@ -440,27 +424,6 @@ def render_html_escape(value: object) -> str:
         .replace(">", "&gt;")
         .replace('"', "&quot;")
     )
-
-
-# Writes a menu button: menu colors, then a link, a tab stop unless an anchor.
-def render_menu_button(
-    kind_name: str, label_markup: str, fields: MenuButtonFields
-) -> str:
-    if kind_name not in _MENU_BUTTON_KIND_NAMES:
-        raise ValueError(f"menu button kind unrecognized: {kind_name}")
-    own_attributes = {"class": "menu-button-"}
-    inner_markup = label_markup
-    link_attributes = {"href": fields.href}
-    if fields.opens_new_tab:
-        link_attributes["target"] = "_blank"
-    if fields.tag_name == "a":
-        own_attributes |= link_attributes
-    else:
-        own_attributes["tabindex"] = "0"
-        inner_markup = render_element(
-            "a", link_attributes | {"tabindex": "-1"}, label_markup
-        )
-    return render_element(fields.tag_name, own_attributes, inner_markup)
 
 
 # Answers rows as the JSON a page script hands the table writer.

@@ -97,12 +97,6 @@ window.report_ui_ = window.try_catch_handler_(function () {
   const STYLE_PANE_SPLITTER_KEY_STEP_CHARS = settings_(
     "STYLE_PANE_SPLITTER_KEY_STEP_CHARS",
   );
-  const STYLE_TABLE_COLUMN_EXTRA_WIDTH_CHARS = settings_(
-    "STYLE_TABLE_COLUMN_EXTRA_WIDTH_CHARS",
-  );
-  const STYLE_TABLE_GROW_COLUMN_NARROWEST_CHARS = settings_(
-    "STYLE_TABLE_GROW_COLUMN_NARROWEST_CHARS",
-  );
   const STYLE_TEXT_SCROLLBAR_THUMB_SHORTEST_CHARS = settings_(
     "STYLE_TEXT_SCROLLBAR_THUMB_SHORTEST_CHARS",
   );
@@ -135,6 +129,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
     [SETTINGS_VIEW_ENTRY[0], ["setting"]],
   ]);
   const CH_UNIT_GLYPH = "0";
+  const CLIP_ELLIPSIS_TEXT = window.ui_strings_.text("str_clip_ellipsis");
   const DESIGN_CHARACTER_WIDTH_PX =
     STYLE_DESIGN_FONT_SIZE_PX * STYLE_DESIGN_FONT_CHARACTER_WIDTH_SHARE;
   const DESIGN_SCALE_LAST_STOP = STYLE_DESIGN_SCALE_STOP_COUNT - 1;
@@ -193,10 +188,6 @@ window.report_ui_ = window.try_catch_handler_(function () {
   const view_frame = document.getElementById("overview-view-frame-");
   const is_scaled = !is_framed && !!home_panel;
   const page_element = document.getElementById("overview-page-");
-  const page_scroll_box = document.getElementById("overview-page-scroll-box-");
-  const page_scrollbar = document.querySelector(
-    "#overview-page-scroll-box- ~ .page-text-scrollbar-",
-  );
   const attached_headings = new WeakMap();
   const attached_scrollbars = new WeakMap();
   const wheel_taken_events = {
@@ -967,7 +958,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
         ) +
           render_element(
             "span",
-            { class: "page-text-scrollbar- vertical-", "aria-hidden": "true" },
+            { class: "text-scrollbar- vertical-", "aria-hidden": "true" },
             "",
           ),
       );
@@ -1213,25 +1204,6 @@ window.report_ui_ = window.try_catch_handler_(function () {
       render_element("span", {}, render_html_escape(widget_character)),
     ).join("");
   }
-  function strip_gap_cell_render() {
-    return render_element(
-      "td",
-      { class: "menu-strip-gap-" },
-      render_html_escape(STRIP_GAP_TEXT),
-    );
-  }
-  // Writes a blank line of the strip, one cell across every column.
-  function strip_blank_line_render(column_count) {
-    return render_element(
-      "tr",
-      {},
-      render_element(
-        "td",
-        { class: "menu-strip-blank-line-", colspan: column_count },
-        "",
-      ),
-    );
-  }
   // Writes an entry cell, a title as page emphasis, else a menu button.
   function strip_cell_render(entry, label_markup) {
     if (!STRIP_ENTRY_KIND_NAMES.includes(entry.kind))
@@ -1239,7 +1211,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
     const name_attributes = { "data-entry-name-": entry.name };
     if (entry.kind === "text")
       return render_page_emphasis(label_markup, {
-        tag_name: "td",
+        tag_name: "span",
         attributes: name_attributes,
       });
     const shown_markup = entry.kind === "pulldown" ? "" : label_markup;
@@ -1252,7 +1224,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
         )
       : "";
     return render_menu_button(entry.kind, shown_markup + widget_markup, {
-      tag_name: "td",
+      tag_name: "span",
       href: entry.href,
       opens_new_tab: entry.opens_new_tab,
       withholds_tab_stop: entry.withholds_tab_stop,
@@ -1260,8 +1232,8 @@ window.report_ui_ = window.try_catch_handler_(function () {
       attributes: name_attributes,
     });
   }
-  // Writes the status bar row, indented, its links across every column.
-  function strip_status_row_render(status_entries, column_count) {
+  // Writes the status line, indented, its links separated.
+  function strip_status_line_render(status_entries) {
     const link_markups = status_entries.map((status_entry) =>
       render_element(
         "a",
@@ -1270,18 +1242,10 @@ window.report_ui_ = window.try_catch_handler_(function () {
       ),
     );
     return render_element(
-      "tr",
-      {},
-      render_element(
-        "td",
-        { class: "menu-status-bar-cell-", colspan: column_count },
-        render_element(
-          "div",
-          { class: "menu-status-bar-" },
-          render_html_escape(STRIP_GAP_TEXT) +
-            link_markups.join(render_html_escape(STRIP_STATUS_SEPARATOR_TEXT)),
-        ),
-      ),
+      "div",
+      { class: "menu-status-bar-" },
+      render_html_escape(STRIP_GAP_TEXT) +
+        link_markups.join(render_html_escape(STRIP_STATUS_SEPARATOR_TEXT)),
     );
   }
   // Renders a whole strip again from its entries, the one door for its cells.
@@ -1292,33 +1256,11 @@ window.report_ui_ = window.try_catch_handler_(function () {
     const cells_by_name = new Map();
     const digit_entries = new Map();
     const entries_by_name = new Map();
-    const has_status_bar = status_entries.length > 0;
     const previous_strip = rendered_strips.get(strip_element);
     const pulldowns_by_name = new Map();
-    const row_markups = [];
-    let strip_row = null;
+    const cell_markups = [];
+    let strip_line = null;
 
-    // Hands a click above the buttons to the button at the same column.
-    function blank_line_click_forward(click_event) {
-      const row_bounds = strip_row.getBoundingClientRect();
-      const pressed_element = document
-        .elementsFromPoint(
-          click_event.clientX,
-          row_bounds.top + row_bounds.height / 2,
-        )
-        .find(
-          (found_element) =>
-            found_element !== strip_row && strip_row.contains(found_element),
-        );
-      if (!pressed_element) window.throw_exception_("str_error_internal");
-      const pressed_cell = pressed_element.closest("td");
-      const clicked_element = pressed_cell.matches(".menu-strip-gap-")
-        ? pressed_cell.previousElementSibling
-        : pressed_element;
-      clicked_element.dispatchEvent(
-        new MouseEvent(click_event.type, click_event),
-      );
-    }
     function strip_cell_named(entry_name) {
       if (!cells_by_name.has(entry_name))
         window.throw_exception_("str_error_internal");
@@ -1333,8 +1275,8 @@ window.report_ui_ = window.try_catch_handler_(function () {
       else entry_cell.click();
     }
     function entry_click_handler(click_event) {
-      const entry_cell = click_event.target.closest("td.menu-button-");
-      if (!entry_cell || entry_cell.parentElement !== strip_row) return;
+      const entry_cell = click_event.target.closest(".menu-button-");
+      if (!entry_cell || entry_cell.parentElement !== strip_line) return;
       const entry = entries_by_name.get(
         entry_cell.getAttribute("data-entry-name-"),
       );
@@ -1347,7 +1289,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
     function entry_key_handler(key_event) {
       const entry_cell = key_event.target;
       if (
-        entry_cell.parentElement !== strip_row ||
+        entry_cell.parentElement !== strip_line ||
         !widget_key_activates(widget_key(key_event))
       )
         return;
@@ -1422,53 +1364,33 @@ window.report_ui_ = window.try_catch_handler_(function () {
         entry.label_markup === null
           ? render_html_escape(strip_label_text(entries, entry.name))
           : entry.label_markup;
-      if (row_markups.length) row_markups.push(strip_gap_cell_render());
-      row_markups.push(strip_cell_render(entry, label_markup));
+      if (cell_markups.length)
+        cell_markups.push(render_html_escape(STRIP_GAP_TEXT));
+      cell_markups.push(strip_cell_render(entry, label_markup));
     }
-    const column_count = row_markups.length;
-    const button_row_markup = render_element("tr", {}, row_markups.join(""));
-    const table_row_markups = has_status_bar
-      ? [
-          strip_blank_line_render(column_count),
-          button_row_markup,
-          strip_blank_line_render(column_count),
-          strip_status_row_render(status_entries, column_count),
-          strip_blank_line_render(column_count),
-        ]
-      : [button_row_markup];
     numbered_entries.forEach((entry, numbered_index) => {
       if (entry.is_available && !entry.is_widget)
         digit_entries.set(strip_number_text(numbered_index), entry);
     });
     if (strip_element.contains(document.activeElement))
       document.activeElement.blur();
-    strip_element.innerHTML = render_element(
-      "table",
-      { class: "menu-strip-table-" },
-      render_element("tbody", {}, table_row_markups.join("")),
-    );
-    const strip_table = strip_element.firstElementChild;
-    const table_rows = strip_table.tBodies[0].rows;
-    strip_row = table_rows[table_row_markups.indexOf(button_row_markup)];
-    if (has_status_bar) {
-      table_rows[0].addEventListener("mousedown", default_prevent);
-      table_rows[0].addEventListener(
-        "click",
-        window.try_catch_handler_(blank_line_click_forward),
-      );
-    }
-    for (const entry_cell of strip_row.cells) {
+    strip_element.classList.add("strip-");
+    strip_element.innerHTML =
+      render_element("div", { class: "strip-line-" }, cell_markups.join("")) +
+      (status_entries.length ? strip_status_line_render(status_entries) : "");
+    strip_line = strip_element.firstElementChild;
+    for (const entry_cell of strip_line.children) {
       if (entry_cell.hasAttribute("data-entry-name-"))
         cells_by_name.set(
           entry_cell.getAttribute("data-entry-name-"),
           entry_cell,
         );
     }
-    strip_table.addEventListener(
+    strip_line.addEventListener(
       "click",
       window.try_catch_handler_(entry_click_handler),
     );
-    strip_table.addEventListener(
+    strip_line.addEventListener(
       "keydown",
       window.try_catch_handler_(entry_key_handler),
     );
@@ -1494,9 +1416,6 @@ window.report_ui_ = window.try_catch_handler_(function () {
     };
   }
 
-  function width_total(widths) {
-    return widths.reduce((total, width) => total + width, 0);
-  }
   function column_longest(cell_rows, column_index) {
     let longest = 0;
     for (const row of cell_rows) {
@@ -1504,49 +1423,10 @@ window.report_ui_ = window.try_catch_handler_(function () {
     }
     return longest;
   }
-  function column_extents(columns, cell_rows, grow_index) {
-    return columns.map((column, column_index) => {
-      let content_chars;
-      if (column.width != null) content_chars = column.width;
-      else if (column_index === grow_index) {
-        content_chars = STYLE_TABLE_GROW_COLUMN_NARROWEST_CHARS;
-      } else {
-        content_chars = column_longest(cell_rows, column_index);
-        if (column.clip != null) {
-          content_chars = Math.min(content_chars, column.clip);
-        }
-      }
-      return { heading_chars: column.label.length, content_chars };
-    });
-  }
-  // Answers a column's narrowest and widest widths, each holding the padding.
-  function column_limits(extent) {
-    const widest = Math.max(extent.heading_chars, extent.content_chars);
-    return [
-      extent.content_chars + STYLE_TABLE_COLUMN_EXTRA_WIDTH_CHARS,
-      widest + STYLE_TABLE_COLUMN_EXTRA_WIDTH_CHARS,
-    ];
-  }
-  function column_width_text(limits, column_index, grow_index) {
-    const [narrowest, widest] = limits[column_index];
-    const shared = limits.filter(
-      (limit, other_index) => other_index !== grow_index,
-    );
-    const low_total = width_total(shared.map((limit) => limit[0]));
-    const high_total = width_total(shared.map((limit) => limit[1]));
-    if (column_index === grow_index) {
-      return (
-        `max(${narrowest}ch, 100cqw - clamp(${low_total}ch, ` +
-        `100cqw - ${narrowest}ch, ${high_total}ch))`
-      );
-    }
-    if (narrowest === widest) return narrowest + "ch";
-    const grow_narrowest = grow_index >= 0 ? limits[grow_index][0] : 0;
-    return (
-      `clamp(${narrowest}ch, ${narrowest}ch + (100cqw - ` +
-      `${low_total + grow_narrowest}ch) * ${widest - narrowest} / ` +
-      `${high_total - low_total}, ${widest}ch)`
-    );
+  // Cuts text past a column's limit, the last character kept the ellipsis.
+  function text_clip(text, clip_chars) {
+    if (text.length <= clip_chars) return text;
+    return text.slice(0, clip_chars - 1) + CLIP_ELLIPSIS_TEXT;
   }
 
   const cell_normalize = (value) =>
@@ -1609,25 +1489,21 @@ window.report_ui_ = window.try_catch_handler_(function () {
     );
     return table_markdown(markdown_columns, markdown_rows);
   }
+  // Writes a cell, its text clipped at the column's limit, a link plain.
   function table_cell_render(cell, column) {
     const cell_attributes = {};
-    const class_names = [
-      column.numeric ? "numeric-" : "",
-      column.cls || "",
-      cell.href ? "page-table-link-cell-" : "",
-    ]
+    const class_names = [column.numeric ? "numeric-" : "", column.cls || ""]
       .filter(Boolean)
       .join(" ");
     if (class_names) cell_attributes.class = class_names;
     if (cell.style) cell_attributes.style = cell.style;
+    const shown_text =
+      column.clip != null ? text_clip(cell.text, column.clip) : cell.text;
     let inner_markup =
-      cell.html != null ? cell.html : render_html_escape(cell.text);
+      cell.html != null ? cell.html : render_html_escape(shown_text);
     if (cell.href) {
       if (cell.html != null) window.throw_exception_("str_error_internal");
-      inner_markup = render_menu_button("link", inner_markup, {
-        tag_name: "a",
-        href: cell.href,
-      });
+      inner_markup = render_element("a", { href: cell.href }, inner_markup);
     }
     return render_element("td", cell_attributes, inner_markup);
   }
@@ -1638,7 +1514,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
       return -1;
     }
     const sorted_column_index = table_options.sorted_column_index;
-    if (table_options.omits_column_titles || !columns[sorted_column_index])
+    if (!columns[sorted_column_index])
       window.throw_exception_("str_error_internal");
     table_sort_callbacks.set(table_key, table_options.on_sort);
     return sorted_column_index;
@@ -1651,57 +1527,30 @@ window.report_ui_ = window.try_catch_handler_(function () {
       columns,
       table_options,
     );
-    const grow_index = table_options.fill
-      ? columns.findIndex((column) => column.grow)
-      : -1;
-    const column_limit_list = column_extents(
-      columns,
-      cell_rows,
-      grow_index,
-    ).map(column_limits);
-    const column_markup = column_limit_list
-      .map((limit, column_index) => {
-        const width_text = column_width_text(
-          column_limit_list,
-          column_index,
-          grow_index,
-        );
-        return render_element(
-          "col",
-          { "data-min-": `${limit[0]}ch`, style: `width:${width_text}` },
-          null,
-        );
-      })
-      .join("");
-    const title_markup = table_options.omits_column_titles
-      ? ""
-      : render_element(
-          "thead",
-          {},
-          render_element(
-            "tr",
-            {},
-            columns
-              .map((column, column_index) =>
-                render_element(
-                  "th",
-                  {
-                    ...(column.numeric ? { class: "numeric-" } : {}),
-                    title: column.label,
-                    ...(column_index === sorted_column_index
-                      ? {
-                          "aria-sort": column.numeric
-                            ? "descending"
-                            : "ascending",
-                        }
-                      : {}),
-                  },
-                  render_html_escape(column.label),
-                ),
-              )
-              .join(""),
-          ),
-        );
+    const title_markup = render_element(
+      "thead",
+      {},
+      render_element(
+        "tr",
+        {},
+        columns
+          .map((column, column_index) =>
+            render_element(
+              "th",
+              {
+                ...(column.numeric ? { class: "numeric-" } : {}),
+                ...(column_index === sorted_column_index
+                  ? {
+                      "aria-sort": column.numeric ? "descending" : "ascending",
+                    }
+                  : {}),
+              },
+              render_html_escape(column.label),
+            ),
+          )
+          .join(""),
+      ),
+    );
     const body_markup = cell_rows
       .map((row, row_index) => {
         const row_href =
@@ -1722,24 +1571,14 @@ window.report_ui_ = window.try_catch_handler_(function () {
         );
       })
       .join("");
-    const table_markup = render_element(
-      "div",
-      { class: "table-columns-" },
-      render_element(
-        "table",
-        {
-          class: ["columns-", table_options.cls || ""]
-            .filter(Boolean)
-            .join(" "),
-          "data-key-": table_key,
-        },
-        render_element("colgroup", {}, column_markup) +
-          title_markup +
-          render_element("tbody", {}, body_markup),
-      ),
+    return render_element(
+      "table",
+      {
+        class: ["table-", table_options.cls || ""].filter(Boolean).join(" "),
+        "data-key-": table_key,
+      },
+      title_markup + render_element("tbody", {}, body_markup),
     );
-    if (table_options.bare) return table_markup;
-    return render_element("div", { class: "table-box-" }, table_markup);
   }
   // Pairs a table column with how its cells are written and its rows sorted.
   function table_sort_column(column, sort_name, sort_value, cell) {
@@ -1811,9 +1650,6 @@ window.report_ui_ = window.try_catch_handler_(function () {
     event_target[listener_method]("pointercancel", on_pointer_release);
     event_target[listener_method]("lostpointercapture", on_pointer_release);
   }
-  function column_elements(table_element) {
-    return [...table_element.querySelectorAll(":scope > colgroup > col")];
-  }
   const default_prevent = window.try_catch_handler_((any_event) => {
     any_event.preventDefault();
   });
@@ -1846,85 +1682,6 @@ window.report_ui_ = window.try_catch_handler_(function () {
       ? "vertical"
       : "sideways";
   }
-  // Answers the cell a column slide takes if this press moves sideways.
-  function slide_cell(press_event) {
-    const pressed_cell = press_event.target.closest("td, th");
-    const is_slidable =
-      !!pressed_cell &&
-      pressed_cell.cellIndex >= 1 &&
-      !!pressed_cell.closest("table").is_slide_attached;
-    return is_slidable ? pressed_cell : null;
-  }
-  function table_slide_press(press_event, table_element) {
-    const pressed_cell = slide_cell(press_event);
-    if (
-      press_event.button ||
-      !pressed_cell ||
-      pressed_cell.closest("table") !== table_element
-    )
-      return;
-    const column_index = pressed_cell.cellIndex;
-    const left_column = column_elements(table_element)[column_index - 1];
-    const floor_text = left_column.getAttribute("data-min-");
-    const start_width_px = design_px(
-      pressed_cell.previousElementSibling.getBoundingClientRect().width,
-    );
-    let animation_frame = 0,
-      is_sliding = false;
-    const on_pointer_move = window.try_catch_handler_((move_event) => {
-      if (move_event.pointerId !== press_event.pointerId) return;
-      if (!is_sliding) {
-        const move_direction = drag_direction(press_event, move_event);
-        if (!move_direction) return;
-        if (move_direction === "vertical") {
-          press_end();
-          return;
-        }
-        is_sliding = true;
-        selection_drop();
-        document.addEventListener("selectionchange", selection_drop);
-      }
-      const wanted_width_px =
-        start_width_px + design_px(move_event.clientX - press_event.clientX);
-      left_column.style.width = `max(${floor_text}, ${wanted_width_px}px)`;
-      if (animation_frame) return;
-      animation_frame = requestAnimationFrame(
-        window.try_catch_handler_(() => {
-          animation_frame = 0;
-          layout_refresh();
-        }),
-      );
-    });
-    const on_pointer_release = window.try_catch_handler_((release_event) => {
-      if (release_event.pointerId !== press_event.pointerId) return;
-      press_end();
-      if (!is_sliding) return;
-      document.removeEventListener("selectionchange", selection_drop);
-      if (release_event.type === "pointerup") click_swallow_next();
-    });
-    function press_end() {
-      listeners_bind(window, on_pointer_move, on_pointer_release, false);
-      window.removeEventListener("dragstart", default_prevent, true);
-    }
-    listeners_bind(window, on_pointer_move, on_pointer_release, true);
-    window.addEventListener("dragstart", default_prevent, true);
-  }
-  function table_slide_attach(table_element) {
-    if (table_element.is_slide_attached) return;
-    table_element.is_slide_attached = true;
-    for (const column_element of column_elements(table_element)) {
-      column_element.setAttribute(
-        "data-start-width-",
-        column_element.style.width,
-      );
-    }
-    table_element.addEventListener(
-      "pointerdown",
-      window.try_catch_handler_((press_event) =>
-        table_slide_press(press_event, table_element),
-      ),
-    );
-  }
   // Hands a plain click on a column title to its table's sort callback.
   function table_sort_attach(table_element) {
     const on_sort = table_sort_callbacks.get(
@@ -1941,61 +1698,42 @@ window.report_ui_ = window.try_catch_handler_(function () {
       }),
     );
   }
-  function offsets_align(scroll_container) {
-    let stacked_top_px = 0;
-    for (const band_element of scroll_container.querySelectorAll(
-      ":scope > .band-",
-    )) {
-      band_element.style.top = stacked_top_px + "px";
-      stacked_top_px += design_px(band_element.getBoundingClientRect().height);
-    }
-    for (const header_cell of scroll_container.querySelectorAll("th")) {
-      const owning_table =
-        header_cell.closest(".table-box-") || scroll_container;
-      if (owning_table === scroll_container) {
-        header_cell.style.top = stacked_top_px + "px";
-      }
-    }
-  }
   function layout_refresh(root_element) {
     root_element = root_element || document.body;
-    const band_elements = [...root_element.querySelectorAll(".band-")];
-    new Set(
-      band_elements.map((band_element) => band_element.parentElement),
-    ).forEach(offsets_align);
     for (const bar_element of root_element.querySelectorAll(
-      ".page-text-scrollbar-",
+      ".text-scrollbar-",
     )) {
       const attached_scrollbar = attached_scrollbars.get(bar_element);
       if (attached_scrollbar) attached_scrollbar.refresh();
     }
   }
+  // Attaches each table, heading and bar under the root, a bar by its name.
   function layout_activate(root_element) {
     root_element = root_element || document.body;
-    const table_elements = root_element.querySelectorAll(
-      ".table-columns- > table.columns-",
-    );
-    for (const table_element of table_elements) {
-      table_slide_attach(table_element);
+    for (const table_element of root_element.querySelectorAll(
+      "table.table-",
+    )) {
       table_sort_attach(table_element);
       if (table_element.tBodies[0].querySelector("a[href]"))
         table_rows_attach(table_element, "tr");
     }
-    const heading_elements = root_element.querySelectorAll(".page-heading-");
-    for (const heading_element of heading_elements) {
+    for (const heading_element of root_element.querySelectorAll(
+      ".page-heading-",
+    )) {
       if (!attached_headings.has(heading_element))
         page_heading_attach(heading_element, []);
     }
-    const bar_elements = root_element.querySelectorAll(
-      ":has(> .page-text-scroll-box-) > .page-text-scrollbar-",
-    );
-    for (const bar_element of bar_elements) {
+    for (const bar_element of root_element.querySelectorAll(
+      ".text-scrollbar-[data-scrolls-]",
+    )) {
       if (attached_scrollbars.has(bar_element)) continue;
+      const scrolled_element = document.getElementById(
+        bar_element.getAttribute("data-scrolls-"),
+      );
+      if (!scrolled_element) window.throw_exception_("str_error_internal");
       text_scrollbar_attach(
         bar_element,
-        bar_element.parentElement.querySelector(
-          ":scope > .page-text-scroll-box-",
-        ),
+        scrolled_element,
         text_scrollbar_axis(bar_element),
       );
     }
@@ -2004,13 +1742,6 @@ window.report_ui_ = window.try_catch_handler_(function () {
   }
   function layout_reset(root_element) {
     root_element = root_element || document.body;
-    const column_elements = root_element.querySelectorAll(
-      "col[data-start-width-]",
-    );
-    for (const column_element of column_elements) {
-      column_element.style.width =
-        column_element.getAttribute("data-start-width-");
-    }
     for (const pane_entry of registered_panes) {
       if (!root_element.contains(pane_entry.pane_element)) continue;
       pane_entry.pane_width_forget();
@@ -2264,20 +1995,19 @@ window.report_ui_ = window.try_catch_handler_(function () {
     const count_key = heading_element.getAttribute("data-row-count-key-");
     const count_span = () =>
       heading_element.querySelector(".page-heading-row-count-");
-    const table_box = heading_element.nextElementSibling;
-    const table_element =
-      table_box && table_box.matches(".table-box-")
-        ? table_box.querySelector(":scope > .table-columns- > table.columns-")
-        : null;
-    if (!table_element) window.throw_exception_("str_error_internal");
-    if (count_key !== null && !count_span())
+    const shown_element = heading_element.nextElementSibling;
+    if (!shown_element) window.throw_exception_("str_error_internal");
+    const table_element = shown_element.matches("table.table-")
+      ? shown_element
+      : null;
+    if (count_key !== null && (!table_element || !count_span()))
       window.throw_exception_("str_error_internal");
     const default_count =
       count_key === null
         ? 0
         : row_count_checked(count_key, Number(count_span().textContent));
-    const table_body = table_element.tBodies[0];
-    const all_rows = [...table_body.rows];
+    const table_body = table_element ? table_element.tBodies[0] : null;
+    const all_rows = table_body ? [...table_body.rows] : [];
     const copy_text = window.ui_strings_.text("str_table_heading_copy");
     const row_count_options = {
       box_width_chars: TABLE_HEADING_COUNT_BOX_WIDTH_CHARS,
@@ -2320,9 +2050,12 @@ window.report_ui_ = window.try_catch_handler_(function () {
         pulldown_options: row_count_options,
       });
     }
+    // Copies a table as markdown, any other shown element as its text.
     function table_copy() {
       return navigator.clipboard.writeText(
-        table_element_markdown(table_element),
+        table_element
+          ? table_element_markdown(table_element)
+          : shown_element.textContent,
       );
     }
     function heading_render() {
@@ -2747,7 +2480,6 @@ window.report_ui_ = window.try_catch_handler_(function () {
 
   function drag_scroll_press(press_event, surface_element, target_element) {
     if (press_event.button || press_event.defaultPrevented) return;
-    const pressed_slide_cell = slide_cell(press_event);
     const start_scroll_left = target_element.scrollLeft,
       start_scroll_top = target_element.scrollTop;
     let is_dragging = false,
@@ -2756,9 +2488,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
       if (move_event.pointerId !== press_event.pointerId) return;
       if (!is_dragging) {
         const move_direction = drag_direction(press_event, move_event);
-        const is_column_slide =
-          !!pressed_slide_cell && move_direction === "sideways";
-        if (!move_event.buttons || is_column_slide) {
+        if (!move_event.buttons) {
           press_end();
           return;
         }
@@ -2824,8 +2554,6 @@ window.report_ui_ = window.try_catch_handler_(function () {
     for (const settle_callback of resize_settle_callbacks) settle_callback();
   }
   function page_activate() {
-    if (is_scaled)
-      text_scrollbar_attach(page_scrollbar, page_scroll_box, "horizontal");
     layout_activate();
   }
   // Runs the callback after the layout refresh in each window resize frame.

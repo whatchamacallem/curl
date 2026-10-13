@@ -4,17 +4,23 @@
 
 a {
   color: var(--light-mode-page-fg-);
+  text-decoration: underline;
 }
 a:focus-visible {
   background: var(--light-mode-menu-focus-bg-);
   color: var(--light-mode-menu-focus-fg-);
 }
-table.columns- th {
+.menu-button-,
+.menu-button- a,
+.menu-status-bar- a {
+  text-decoration: none;
+}
+.table- th {
   color: var(--light-mode-page-fg-);
   background: var(--light-mode-page-bg-);
 }
-table.columns- > tbody > tr:focus-visible > td,
-table.columns- > tbody > tr:focus-visible .menu-button- {
+.table- > tbody > tr:focus-visible > td,
+.table- > tbody > tr:focus-visible a {
   background: var(--light-mode-menu-focus-bg-) !important;
   color: var(--light-mode-menu-focus-fg-) !important;
 }
@@ -44,7 +50,7 @@ table.columns- > tbody > tr:focus-visible .menu-button- {
 .heat-map-source-information-box-note- {
   color: var(--light-mode-page-fg-);
 }
-.heat-map-source-information-box- .table-box- {
+.heat-map-source-information-box- .table- {
   background: var(--light-mode-page-bg-);
 }
 table.heat-map-source-table- > thead > tr > th {
@@ -81,8 +87,8 @@ table.heat-map-source-table- > tbody > tr:focus-visible > td {
   color: var(--light-mode-page-fg-);
 }
 .heat-map-tree-node-.selected- {
-  background: var(--light-mode-page-bg-);
-  color: var(--light-mode-page-fg-);
+  background: var(--light-mode-page-emphasis-bg-);
+  color: var(--light-mode-page-emphasis-fg-);
 }
 .heat-map-tree-node-:focus-visible {
   background: var(--light-mode-menu-focus-bg-) !important;
@@ -117,47 +123,6 @@ body {
   color: var(--light-mode-page-emphasis-fg-);
 }
 
-.menu-button-:not([data-entry-name-="str_report_name"], .columns- td > *) {
-  border: var(--page-line-width-) solid;
-  border-color: var(--light-mode-menu-normal-outline-);
-}
-td.page-table-link-cell- > .menu-button- {
-  outline: var(--page-line-width-) solid;
-  outline-color: var(--light-mode-menu-normal-outline-);
-}
-
-.columns-:not(.heat-map-source-table-) {
-  border-collapse: collapse;
-  border: var(--page-line-width-) solid var(--light-mode-page-fg-);
-}
-.columns-:not(.heat-map-source-table-) th,
-.columns-:not(.heat-map-source-table-) td {
-  border-inline: var(--page-line-width-) solid var(--light-mode-page-fg-);
-}
-.columns-:not(.heat-map-source-table-) th,
-.columns-:not(.heat-map-source-table-) td,
-td.page-table-link-cell- > .menu-button- {
-  padding-inline: calc(
-    var(--page-table-cell-padding-inline-) -
-      max(var(--page-line-width-), var(--design-device-pixel-widest-px-)) / 2
-  );
-}
-.columns-:not(.heat-map-source-table-) td.page-table-link-cell- {
-  padding-inline: 0;
-}
-table.columns- col:nth-child(odd) {
-  background: var(--light-mode-table-panel-odd-bg-);
-}
-table.columns- col:nth-child(even) {
-  background: var(--light-mode-table-panel-even-bg-);
-}
-
-.menu-strip-,
-.page-heading-:has(> .menu-strip-table-) {
-  background: var(--light-mode-page-bg-);
-  color: var(--light-mode-page-fg-);
-  padding-top: calc(var(--page-line-width-) / 2);
-}
 .menu-button-,
 .menu-pulldown-entry-box- {
   background: var(--light-mode-menu-normal-bg-);
@@ -186,28 +151,26 @@ table.columns- col:nth-child(even) {
   background: var(--light-mode-page-bg-);
 }
 #heat-map-minimap-viewport- {
-  border: var(--page-line-width-) solid;
   border-color: var(--light-mode-menu-normal-outline-);
 }
 .heat-map-source-information-line- {
   background: var(--light-mode-page-emphasis-bg-);
   color: var(--light-mode-page-emphasis-fg-);
 }
+.heat-map-source-information-line- a:not(:focus-visible) {
+  color: inherit;
+}
 tr.heat-map-source-information-box-synthetic-row- > td {
   background: var(--light-mode-status-bar-bg-);
   color: var(--light-mode-status-bar-fg-);
 }
-.heat-map-tree-node-.selected- {
-  outline: var(--page-line-width-) solid;
-  outline-color: var(--light-mode-menu-normal-outline-);
-}
 
-.page-text-scrollbar- {
+.text-scrollbar- {
   background: var(--light-mode-menu-normal-bg-);
   color: var(--light-mode-menu-normal-fg-);
 }
 #heat-map-tree-scrollbar-:focus-visible,
-.page-text-scrollbar-.drag- {
+.text-scrollbar-.drag- {
   background: var(--light-mode-menu-focus-bg-);
   color: var(--light-mode-menu-focus-fg-);
 }

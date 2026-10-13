@@ -2,52 +2,99 @@
  * SPDX-License-Identifier: MIT
  * This file is licensed under the terms of the LICENSE-MIT.md file. */
 
-.heat-map-home-,
-.heat-map-source-,
-.heat-map-source-information-box- {
-  container-type: inline-size;
+/* A tree node: the caret after its indent, the name, the share. */
+.heat-map-tree-node- {
+  display: flex;
+  padding-right: var(--heat-map-tree-node-padding-right-);
+  cursor: pointer;
+  white-space: pre;
 }
-.heat-map-home-,
-.heat-map-source- {
-  overflow-x: clip;
+.heat-map-tree-node-caret- {
+  flex: none;
 }
-.heat-map-home- {
-  padding: var(--heat-map-overview-home-border-block-)
-    var(--heat-map-overview-home-border-inline-);
+/* A file shows its caret only when selected, as the pointer to it. */
+.heat-map-tree-node-.file-:not(.selected-) .heat-map-tree-node-caret- {
+  visibility: hidden;
+}
+.heat-map-tree-node-name- {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.heat-map-tree-node-share-percent- {
+  flex: none;
+  width: var(--heat-map-tree-node-share-percent-width-);
+  text-align: right;
+}
+.heat-map-tree-node-.cold- .heat-map-tree-node-share-percent- {
+  visibility: hidden;
+}
+.heat-map-tree-node-child-group- {
+  display: none;
+}
+.heat-map-tree-node-child-group-.open- {
+  display: block;
 }
 
-#heat-map-layout- {
-  flex: 1;
-  min-height: 0;
-  overflow: clip;
+tr.row-link- {
+  cursor: pointer;
 }
-#heat-map-layout- > table {
-  table-layout: fixed;
-  border-collapse: collapse;
-  width: 100%;
-  height: 100%;
+
+/* The information line stays over the source, the column titles under. */
+.band- {
+  position: sticky;
+  top: 0;
+  z-index: var(--heat-map-band-z-index-);
 }
-#heat-map-layout- > table > tbody > tr > td {
+.heat-map-source- th {
+  top: var(--heat-map-source-band-height-);
+}
+.heat-map-source-information-line- {
+  white-space: pre;
+}
+.heat-map-source-information-line-.empty- {
+  visibility: hidden;
+}
+.heat-map-source-information-box- {
   position: relative;
+}
+.heat-map-source-information-box-close-symbol- {
+  position: absolute;
+  top: 0;
+  right: 0;
+}
+.heat-map-source-information-box-heading- {
+  white-space: pre;
+}
+tr.heat-map-source-line-detail-row- > td {
+  white-space: normal;
   padding: 0;
 }
-#heat-map-layout- > table > tbody > tr > td:has(> .page-text-scrollbar-) {
-  width: var(--page-text-scrollbar-vertical-width-);
+td.heat-map-source-table-line-number-cell- {
+  user-select: none;
+}
+tr.has-callee- td.heat-map-source-table-line-number-cell-::before {
+  content: var(--heat-map-source-table-line-number-cell-callee-marker-text-);
+  display: inline-block;
+  width: var(--heat-map-source-table-line-number-cell-callee-marker-width-);
+}
+tr.clickable- {
+  cursor: pointer;
+}
+.heat-map-source-ticker-tape- {
+  display: flex;
+  gap: var(--heat-map-source-ticker-tape-gap-);
+  flex-wrap: nowrap;
+  overflow: hidden;
+}
+.heat-map-source-ticker-tape- > * {
+  flex: none;
 }
 
-#heat-map-main-,
-#heat-map-main-scrollbar-,
-#heat-map-tree-,
-#heat-map-tree-scrollbar- {
-  position: absolute;
-  inset: 0;
-}
-#heat-map-main- {
-  overflow-x: hidden;
-  overflow-y: auto;
-}
-
+/* The minimap: the source scaled into its column, the shown part boxed. */
 #heat-map-minimap- {
+  position: relative;
   width: var(--heat-map-minimap-width-);
   overflow: hidden;
   cursor: pointer;
@@ -60,138 +107,22 @@
   top: 0;
   left: 0;
 }
-#heat-map-minimap-box- table.heat-map-source-table- {
+#heat-map-minimap-box- table {
   border-collapse: collapse;
   table-layout: fixed;
   width: 100%;
 }
-#heat-map-minimap-box- table.heat-map-source-table- td {
+#heat-map-minimap-box- td {
   padding: 0;
   white-space: pre;
-  overflow: visible;
 }
 #heat-map-minimap-viewport- {
   position: absolute;
   left: 0;
   right: 0;
+  border: var(--page-line-width-) solid;
   cursor: grab;
 }
 #heat-map-minimap-viewport-.drag- {
   cursor: grabbing;
-}
-
-.heat-map-source-information-box- {
-  position: relative;
-}
-.heat-map-source-information-box-close-symbol- {
-  position: absolute;
-  top: 0;
-  right: 0;
-}
-.heat-map-source-information-box-heading- {
-  white-space: pre;
-}
-table.heat-map-source-table- tr.heat-map-source-line-detail-row- > td {
-  white-space: normal;
-  overflow: visible;
-  padding: 0;
-}
-
-.heat-map-source-information-line- {
-  white-space: pre;
-}
-.heat-map-source-information-line-.empty- {
-  visibility: hidden;
-}
-
-table.heat-map-source-table- td.heat-map-source-table-code-cell- {
-  text-overflow: clip;
-  white-space: pre;
-  tab-size: var(--heat-map-source-table-code-cell-tab-size-);
-}
-table.heat-map-source-table- td.heat-map-source-table-line-number-cell- {
-  user-select: none;
-}
-tr.has-callee- td.heat-map-source-table-line-number-cell-::before {
-  content: var(--heat-map-source-table-line-number-cell-callee-marker-text-);
-  display: inline-block;
-  width: var(--heat-map-source-table-line-number-cell-callee-marker-width-);
-}
-table.heat-map-source-table- tr.clickable- {
-  cursor: pointer;
-}
-
-.heat-map-source-ticker-tape- {
-  display: flex;
-  gap: var(--heat-map-source-ticker-tape-gap-);
-  flex-wrap: nowrap;
-  overflow: hidden;
-}
-.heat-map-source-ticker-tape-entry- {
-  flex: none;
-}
-.heat-map-source-ticker-tape- .heat-map-source-ticker-tape-label- {
-  align-self: center;
-  flex: none;
-}
-
-#heat-map-tree- {
-  overflow-x: hidden;
-  overflow-y: scroll;
-}
-
-.heat-map-tree-node- {
-  display: flex;
-  align-items: center;
-  gap: var(--heat-map-tree-node-gap-);
-  padding-right: var(--heat-map-tree-node-padding-right-);
-  cursor: pointer;
-  white-space: nowrap;
-  overflow-x: clip;
-}
-.heat-map-tree-node- .heat-map-tree-node-caret- {
-  width: var(--heat-map-tree-node-caret-width-);
-  flex: none;
-}
-.heat-map-tree-node-.file- .heat-map-tree-node-caret- {
-  visibility: hidden;
-}
-.heat-map-tree-node- .heat-map-tree-node-name- {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.heat-map-tree-node- .heat-map-tree-node-share-percent- {
-  flex: none;
-  width: var(--heat-map-tree-node-share-percent-width-);
-  text-align: right;
-  white-space: pre;
-}
-.heat-map-tree-node-.cold- .heat-map-tree-node-share-percent- {
-  visibility: hidden;
-}
-.heat-map-tree-node-.selected- {
-  outline-offset: calc(0px - var(--page-line-width-));
-}
-
-.heat-map-tree-node-child-group- {
-  display: none;
-}
-.heat-map-tree-node-child-group-.open- {
-  display: block;
-}
-
-#heat-map-tree-pane- {
-  width: var(--heat-map-tree-width-);
-}
-
-body {
-  display: flex;
-  flex-direction: column;
-  height: var(--design-viewport-height-);
-}
-
-tr.row-link- {
-  cursor: pointer;
 }

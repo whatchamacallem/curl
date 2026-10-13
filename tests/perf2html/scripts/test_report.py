@@ -528,7 +528,7 @@ class TestReport:
         counter_names: Sequence[str],
     ) -> None:
         match = re.search(
-            r'<nav id="menu-" class="menu-strip-"([^>]*)></nav>', page_text
+            r'<nav id="menu-" class="strip-"([^>]*)></nav>', page_text
         )
         if not match:
             self.fail(f"overview index.html has no empty menu strip: {path}")

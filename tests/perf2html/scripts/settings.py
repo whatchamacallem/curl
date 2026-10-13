@@ -18,7 +18,6 @@ ASSET_HEAT_MAP_SCRIPT_NAME = "heat_map.js"
 ASSET_HEAT_MAP_STYLESHEET_NAME = "heat_map.css"
 ASSET_LIGHT_MODE_STYLESHEET_NAME = "light_mode.css"
 ASSET_MENU_SCRIPT_NAME = "menu.js"
-ASSET_MENU_STYLESHEET_NAME = "menu.css"
 ASSET_OVERVIEW_SCRIPT_NAME = "overview.js"
 ASSET_PREFERENCES_SCRIPT_NAME = "preferences.js"
 ASSET_PULLDOWN_TEXT_SCRIPT_NAME = "pulldown_text.js"
@@ -110,6 +109,7 @@ HEAT_MAP_SCALE_DIFF_DEFAULT_VALUE = "log/line"
 HEAT_MAP_SORT_DEFAULT_MODE = "heat"
 HEAT_MAP_SOURCE_TICKER_TAPE_ENTRY_LEAST_SHARE = 0.01
 HEAT_MAP_SOURCE_TICKER_TAPE_ENTRY_MAX_COUNT = 10
+HEAT_MAP_SOURCE_TAB_SIZE_CHARS = 4
 HEAT_MAP_SOURCE_VIEW_WIDTH_CHARS = 80
 HEAT_MAP_TREE_ALWAYS_LISTED_DIRS = ("lib", "include", "src", "tests/perf")
 HEAT_MAP_TREE_AUTO_EXPAND_ABOVE_SHARE = 0.05
@@ -191,8 +191,7 @@ STYLE_COLOR_DARK_MODE: dict[str, list[str]] = {
     "#DCDDE1": ["dark-mode-page-dim-fg-"],
     "#273C75": ["dark-mode-page-emphasis-bg-"],
     "#192A56": ["dark-mode-menu-focus-fg-", "dark-mode-panel-bg-"],
-    "#353B48": ["dark-mode-table-panel-even-bg-"],
-    "#2F3640": ["dark-mode-page-bg-", "dark-mode-table-panel-odd-bg-"],
+    "#2F3640": ["dark-mode-page-bg-"],
     "#FFFFFF": ["dark-mode-debug-tip-fg-", "dark-mode-screenshot-label-fg-"],
     "#000000": [
         "dark-mode-debug-tip-bg-",
@@ -220,8 +219,6 @@ STYLE_COLOR_LIGHT_MODE: dict[str, list[str]] = {
         "light-mode-page-bg-",
         "light-mode-screenshot-label-fg-",
         "light-mode-status-bar-fg-",
-        "light-mode-table-panel-even-bg-",
-        "light-mode-table-panel-odd-bg-",
     ],
     "#AAAAAA": [
         "light-mode-menu-normal-bg-",
@@ -232,7 +229,6 @@ STYLE_COLOR_LIGHT_MODE: dict[str, list[str]] = {
 }
 STYLE_COLOR_LIGHT_MODE_ROLE_PREFIX = "light-mode-"
 STYLE_DESIGN_COORDINATES_WIDTH_PX = 1920
-STYLE_DESIGN_DEVICE_PIXEL_WIDEST_PROPERTY = "--design-device-pixel-widest-px-"
 STYLE_DESIGN_FONT_CHARACTER_WIDTH_SHARE = 0.6
 STYLE_DESIGN_FONT_FIT_PROPERTY = "--design-font-fit-"
 STYLE_DESIGN_FONT_FIT_START_MULTIPLE = 1
@@ -279,9 +275,8 @@ STYLE_PAGE_FONT_FAMILY = (
 )
 STYLE_PAGE_FONT_FAMILY_PROPERTY = "--page-font-family-"
 STYLE_PANE_SPLITTER_KEY_STEP_CHARS = 5
-STYLE_TABLE_COLUMN_EXTRA_WIDTH_CHARS = 2
-STYLE_TABLE_FUNCTION_NAME_WIDTH_CHARS = 20
-STYLE_TABLE_GROW_COLUMN_NARROWEST_CHARS = 20
+STYLE_TABLE_CALLERS_COLUMN_MAX_CHARS = 48
+STYLE_TABLE_FUNCTION_NAME_MAX_CHARS = 20
 STYLE_TABLE_LOCATION_COLUMN_MAX_CHARS = 48
 STYLE_TEXT_SCROLLBAR_THUMB_SHORTEST_CHARS = 4
 STYLE_VALUE_ENTRIES: dict[str, str] = {
@@ -290,13 +285,9 @@ STYLE_VALUE_ENTRIES: dict[str, str] = {
     "debug-tip-z-index-": "2147483647",
     "heat-map-band-z-index-": "2",
     "heat-map-minimap-width-": "110px",
-    "heat-map-overview-home-border-block-": "1lh",
-    "heat-map-overview-home-border-inline-": "2ch",
-    "heat-map-source-table-code-cell-tab-size-": "4",
+    "heat-map-source-band-height-": "1lh",
     "heat-map-source-table-line-number-cell-callee-marker-text-": '"►"',
     "heat-map-source-ticker-tape-gap-": "1ch",
-    "heat-map-tree-node-caret-width-": "2ch",
-    "heat-map-tree-node-gap-": "1ch",
     "heat-map-tree-node-padding-right-": "1ch",
     "heat-map-tree-node-share-percent-width-": "10ch",
     "heat-map-tree-width-": "39ch",
@@ -305,13 +296,14 @@ STYLE_VALUE_ENTRIES: dict[str, str] = {
     "menu-pulldown-entry-list-z-index-": "3",
     "menu-pulldown-entry-padding-inline-": "1ch",
     "menu-pulldown-search-box-min-width-": "13ch",
-    "menu-status-bar-cell-padding-left-": "2ch",
+    "menu-status-bar-padding-left-": "2ch",
     "menu-strip-blank-line-height-": "0.5lh",
     "page-body-line-height-": "1.1",
     "page-emphasis-padding-inline-": "1ch",
+    "page-inset-block-": "1lh",
+    "page-inset-inline-": "2ch",
     "page-line-width-": "0.125ch",
     "page-table-cell-padding-inline-": "1ch",
-    "page-table-column-title-z-index-": "1",
     "page-text-scrollbar-horizontal-height-": "1lh",
     "page-text-scrollbar-vertical-width-": "1ch",
     "screenshot-label-z-index-": "3",

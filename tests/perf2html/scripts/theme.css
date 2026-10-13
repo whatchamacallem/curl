@@ -14,32 +14,32 @@
 [hidden] {
   display: none !important;
 }
-pre {
-  margin: 0;
-  white-space: pre;
-  overflow-x: auto;
+* {
+  scrollbar-width: none;
 }
-
+::-webkit-scrollbar {
+  display: none;
+}
 html,
 body {
   height: 100%;
   margin: 0;
+  overflow: hidden;
 }
 body {
   font-family: var(--page-font-family-);
   font-size: calc(var(--design-font-size-px-) * var(--design-font-fit-));
   line-height: var(--page-body-line-height-);
-}
-html:has(body.frame-) {
-  overflow: hidden;
-}
-body.frame- {
   height: var(--design-viewport-height-);
 }
-body.frame-,
-:has(> .page-text-scroll-box-) {
+pre {
+  margin: 0;
+  white-space: pre;
+}
+
+/* The top page: the page column, scrolled sideways, over its bar. */
+#overview- {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
   grid-template-rows: minmax(0, 1fr) auto;
 }
 #overview-page-scroll-box- {
@@ -47,103 +47,152 @@ body.frame-,
   overflow-y: hidden;
 }
 #overview-page- {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
   height: 100%;
 }
-#overview-home-,
-#overview-view-frame- {
-  flex: 1;
-  min-height: 0;
+#overview-home- {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+#overview-home-text- {
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 #overview-view-frame- {
   width: 100%;
+  height: 100%;
 }
 
-* {
-  scrollbar-width: none;
+/* A view: the scrolled page beside its bar. */
+.view- {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
 }
-::-webkit-scrollbar {
-  display: none;
-}
-
-#overview-page-scroll-box-,
-.page-text-scroll-box- {
-  grid-column: 1;
-  grid-row: 1;
-}
-.page-text-scroll-box- {
-  overflow: auto;
-}
-main.page-text-scroll-box- {
+.view- > main {
   overflow-x: hidden;
+  overflow-y: auto;
 }
-.page-text-scrollbar- {
+
+/* The heat map: the tree and its bar, the main box, the minimap, its bar. */
+#heat-map- {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr) auto auto;
+  grid-template-rows: minmax(0, 1fr);
+}
+#heat-map-tree- {
+  width: var(--heat-map-tree-width-);
+  overflow-x: hidden;
+  overflow-y: scroll;
+}
+#heat-map-main- {
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.page- {
+  padding: var(--page-inset-block-) var(--page-inset-inline-);
+}
+.page-emphasis- {
+  display: inline-block;
+  padding: 0 var(--page-emphasis-padding-inline-);
+  white-space: pre;
+}
+
+/* A strip: a line of buttons, a status line under the menu's. */
+.strip-line- {
+  white-space: pre;
+}
+#menu- {
+  padding-top: var(--menu-strip-blank-line-height-);
+}
+#menu- .menu-status-bar- {
+  margin-block: var(--menu-strip-blank-line-height-);
+}
+#menu-preference- {
+  padding-bottom: var(--menu-strip-blank-line-height-);
+}
+.menu-button- {
+  display: inline-block;
+  padding: 0 var(--menu-button-padding-inline-);
+  white-space: pre;
+}
+[data-entry-name-="str_report_name"] {
+  padding-inline-end: 0;
+}
+.menu-button-[tabindex],
+.menu-button-widget- {
+  cursor: pointer;
+}
+.menu-status-bar- {
+  margin-left: var(--menu-status-bar-padding-left-);
+  white-space: pre;
+}
+.menu-pulldown- {
+  position: relative;
+}
+.menu-pulldown-search-box- {
+  display: inline-block;
+  min-width: var(--menu-pulldown-search-box-min-width-);
+}
+.menu-pulldown-entry-box- {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: var(--menu-pulldown-entry-list-z-index-);
+  display: flex;
+  min-width: 100%;
+  max-height: calc(
+    var(--menu-pulldown-entry-list-max-height-share-) *
+      var(--design-viewport-height-)
+  );
+}
+.menu-pulldown-entry-list- {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  overflow-y: auto;
+}
+.menu-pulldown-entry-list- > * {
+  flex: none;
+  padding: 0 var(--menu-pulldown-entry-padding-inline-);
+}
+
+/* A table: each column as wide as its text, the titles staying in view. */
+table.table- {
+  border-collapse: collapse;
+}
+.table- th,
+.table- td {
+  padding: 0 var(--page-table-cell-padding-inline-);
+  white-space: pre;
+  text-align: left;
+  vertical-align: top;
+}
+.table- th {
+  position: sticky;
+  top: 0;
+}
+.table- .numeric- {
+  text-align: right;
+}
+
+/* A text scrollbar: one cell per character of its track. */
+.text-scrollbar- {
   contain: size;
   overflow: hidden;
   white-space: pre;
   user-select: none;
   touch-action: none;
 }
-.page-text-scrollbar-.horizontal- {
-  grid-column: 1;
-  grid-row: 2;
+.text-scrollbar-.horizontal- {
   height: var(--page-text-scrollbar-horizontal-height-);
 }
-.page-text-scrollbar-.vertical- {
-  grid-column: 2;
-  grid-row: 1;
+.text-scrollbar-.vertical- {
   width: var(--page-text-scrollbar-vertical-width-);
 }
-.page-text-scrollbar-.vertical- > span {
+.text-scrollbar-.vertical- > span {
   display: block;
-}
-
-.page- {
-  container-type: inline-size;
-}
-.page-emphasis- {
-  padding: 0 var(--page-emphasis-padding-inline-);
-  white-space: pre;
-}
-#overview-home- .page- {
-  padding: var(--heat-map-overview-home-border-block-)
-    var(--heat-map-overview-home-border-inline-);
-}
-.table-box- {
-  position: relative;
-  width: fit-content;
-}
-.band- {
-  position: sticky;
-  top: 0;
-  z-index: var(--heat-map-band-z-index-);
-}
-.table-columns- {
-  width: fit-content;
-}
-table.columns- {
-  table-layout: fixed;
-  border-collapse: separate;
-  border-spacing: 0;
-  width: 0;
-}
-table.columns- th,
-table.columns- td {
-  padding: 0 var(--page-table-cell-padding-inline-);
-  white-space: pre;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  vertical-align: top;
-}
-table.columns- th {
-  position: sticky;
-  top: 0;
-  z-index: var(--page-table-column-title-z-index-);
-  text-align: left;
-}
-table.columns- .numeric- {
-  text-align: right;
 }
 
 .debug-tip- {
@@ -154,7 +203,6 @@ table.columns- .numeric- {
   font-size: var(--debug-tip-font-size-);
   border: var(--debug-tip-border-width-) solid;
 }
-
 .screenshot-label- {
   position: fixed;
   left: 0;

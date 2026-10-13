@@ -19,25 +19,11 @@ window.try_catch_handler_(function () {
   }
   // Writes each root value a stylesheet reads, from the window settings.
   function root_values_write() {
-    const STYLE_DESIGN_COORDINATES_WIDTH_PX = settings_(
-      "STYLE_DESIGN_COORDINATES_WIDTH_PX",
-    );
-    const STYLE_DESIGN_MINIMUM_WINDOW_WIDTH_PX = settings_(
-      "STYLE_DESIGN_MINIMUM_WINDOW_WIDTH_PX",
-    );
-    const STYLE_DESIGN_SCALE_SMALLEST_MULTIPLE = settings_(
-      "STYLE_DESIGN_SCALE_SMALLEST_MULTIPLE",
-    );
     const root_values = {};
     for (const [name, value] of Object.entries(
       settings_("STYLE_VALUE_ENTRIES"),
     ))
       root_values["--" + name] = value;
-    root_values[settings_("STYLE_DESIGN_DEVICE_PIXEL_WIDEST_PROPERTY")] =
-      STYLE_DESIGN_COORDINATES_WIDTH_PX /
-        (STYLE_DESIGN_MINIMUM_WINDOW_WIDTH_PX *
-          STYLE_DESIGN_SCALE_SMALLEST_MULTIPLE) +
-      "px";
     root_values[settings_("STYLE_DESIGN_FONT_FIT_PROPERTY")] = String(
       settings_("STYLE_DESIGN_FONT_FIT_START_MULTIPLE"),
     );
