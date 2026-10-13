@@ -67,8 +67,8 @@ report generators. Start by running the tests and checking the results.
 
 ## Report Contents
 
-Reading a report requires opening `index.html`. The rest of the report is of
-no interest to users, except perhaps automated processing of `MANIFEST.txt`.
+Reading a report requires opening `index.html`. The rest of the report is of no
+interest to users, except perhaps automated processing of `MANIFEST.txt`.
 
 Otherwise, if you are an interested developer, these are the rest of the files
 in the directory. A diff report lacks the `flame-graph/`, `flame-graph-app/`
@@ -92,7 +92,7 @@ and raw data archive files.
 
 ## Raw Data Archive Contents
 
-- `all.callgrind_to_heatmap.<time_t>.json`: the paths document a diff harvests.
+- `callgrind_file_data.<time_t>.json`: Data about the files in the report.
 - `<test>.callgrind.<time_t>.out`: a test's callgrind file, the repo root cut.
 
 ## Callers Page
@@ -238,7 +238,7 @@ and raw data archive files.
 | `theme.js`       | Holds the shared page library for addresses, strips,   |
 |                  | tables, numbers, scrollbars and layout.                |
 | `theme.py`       | Writes table rows and numbers, fills the page          |
-|                  | templates, and writes the shared scripts.               |
+|                  | templates, and writes the shared scripts.              |
 
 ## Tool Configuration
 
