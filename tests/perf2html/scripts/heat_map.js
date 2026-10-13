@@ -5,6 +5,9 @@
 window.try_catch_handler_(function () {
   "use strict";
 
+  const CALLGRIND_FILE_DATA_ERROR_CODE = settings_(
+    "CALLGRIND_FILE_DATA_ERROR_CODE",
+  );
   const HEAT_MAP_HOME_LINES_LOCATION_MAX_CHARS = settings_(
     "HEAT_MAP_HOME_LINES_LOCATION_MAX_CHARS",
   );
@@ -1360,7 +1363,7 @@ window.try_catch_handler_(function () {
       ? `${file_path}:${line_number}${in_function_note}`
       : file_path;
     const note_texts = [];
-    if (!line_number && file.group === "external")
+    if (!line_number && file.group === CALLGRIND_FILE_DATA_ERROR_CODE)
       note_texts.push(text_fill("str_not_in_repo", { path: file.raw }));
     if (!line_number && source_text(file_path) == null)
       note_texts.push(text("str_source_unavailable"));

@@ -15,6 +15,8 @@ import callgrind, callgrind_diff, settings, theme
 _ASSET_PULLDOWN_TEXT_SCRIPT_NAME: str = ""
 _ASSET_TEMPLATE_HEAT_MAP_MAIN_NAME: str = ""
 _ASSET_TEMPLATE_HEAT_MAP_PAGE_NAME: str = ""
+_CALLGRIND_FILE_DATA_ERROR_CODE: str = ""
+_CALLGRIND_FILE_DATA_GIT_CODE: str = ""
 _CALLGRIND_FILE_DATA_INDENT_CHARS: int = 0
 _HEAT_MAP_MODEL_DIR_NAME: str = ""
 _HEAT_MAP_MODEL_GLOBAL_NAME: str = ""
@@ -59,12 +61,12 @@ class CallgrindToHeatmap:
         lineFunction: dict[str, int]
         baseline: NotRequired[dict[str, callgrind.Costs]]
         callees: dict[str, list[CallgrindToHeatmap.CallRow]]
-        group: callgrind.Group
+        group: str
         raw: str
 
     @dataclasses.dataclass
     class FileTally:
-        group: callgrind.Group
+        group: str
         raw: str
         self_cost: callgrind.Costs
         calls_cost: callgrind.Costs
@@ -192,7 +194,7 @@ class CallgrindToHeatmap:
         if args.diff:
             self.diff_model(model, profile, args.baseline_data)
         if args.paths_output:
-            self.paths_write(args.paths_output, info, model, tracked)
+            self.paths_write(args.paths_output, info, model)
         self.sources_write(
             os.path.join(args.report_dir, _REPORT_SOURCES_DIR_NAME),
             info,
@@ -306,7 +308,7 @@ class CallgrindToHeatmap:
                     CallgrindToHeatmap.FileTally(
                         group=path_info.group,
                         raw=raw
-                        if path_info.group == "external"
+                        if path_info.group == _CALLGRIND_FILE_DATA_ERROR_CODE
                         else path_info.display,
                         self_cost=[0] * counter_count,
                         calls_cost=[0] * counter_count,
@@ -451,21 +453,16 @@ class CallgrindToHeatmap:
             file=sys.stderr,
         )
 
-    # Writes the code of each canonical path this report shows, for a diff.
+    # Writes the code of each path this report shows or keeps cold, for a diff.
     def paths_write(
         self,
         path: str,
         info: dict[str, callgrind.PathInfo],
         model: CallgrindToHeatmap.HeatModel,
-        tracked: Sequence[str],
     ) -> None:
-        files = model["files"]
         coded: dict[str, tuple[str, str]] = {}
         for raw, path_info in info.items():
-            code = callgrind.file_data_code(
-                path_info.group,
-                files[path_info.display]["source"] is not None,
-            )
+            code = path_info.group
             canonical = callgrind.path_canonical(raw)
             first_raw, first_code = coded.setdefault(canonical, (raw, code))
             if first_code != code:
@@ -473,12 +470,9 @@ class CallgrindToHeatmap:
                     f"error: {first_raw} and {raw} share the canonical path"
                     f" {canonical} but not the code: {first_code} vs {code}"
                 )
-        document: callgrind.PathsDocument = {
-            "files": {
-                canonical: code for canonical, (_, code) in coded.items()
-            },
-            "tracked": list(tracked),
-        }
+        document = {canonical: code for canonical, (_, code) in coded.items()}
+        for cold in model["cold"]:
+            document.setdefault(cold, _CALLGRIND_FILE_DATA_GIT_CODE)
         text = json.dumps(
             document,
             sort_keys=True,

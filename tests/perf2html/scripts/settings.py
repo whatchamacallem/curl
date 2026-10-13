@@ -41,15 +41,11 @@ CALLERS_TIME_SUFFIX_SECONDS: dict[str, float] = {"ns": 1e-9, "usecs": 1e-6}
 CALLERS_TOP_FUNCTION_ROWS = 50
 CALLERS_VIEW_KEY = "callers"
 
-CALLGRIND_FILE_DATA_CODES: dict[str, str] = {
-    "external_source": "es",
-    "external_tracked": "et",
-    "repo_source": "rs",
-    "repo_tracked": "rt",
-    "system_source": "ss",
-    "system_tracked": "st",
-}
+CALLGRIND_FILE_DATA_ERROR_CODE = "err"
+CALLGRIND_FILE_DATA_GIT_CODE = "git"
 CALLGRIND_FILE_DATA_INDENT_CHARS = 2
+CALLGRIND_FILE_DATA_REPO_CODE = "repo"
+CALLGRIND_FILE_DATA_SYSTEM_CODE = "sys"
 
 COUNTER_SELECTION_CALLS_SHOWN_DEFAULT = True
 COUNTER_SELECTION_DEFAULT_NAMES: tuple[str, ...] = ("D1m", "DLm", "Bcm")

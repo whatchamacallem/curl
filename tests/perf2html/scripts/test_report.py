@@ -726,13 +726,10 @@ class TestReport:
         except ValueError as error:
             self.fail(f"{paths_name} holds no JSON: {error}: {path}")
             return
-        if not isinstance(document, dict) or sorted(document) != list(
-            _TEST_PATHS_DOCUMENT_KEYS
-        ):
-            keys = " and ".join(_TEST_PATHS_DOCUMENT_KEYS)
-            self.fail(f"{paths_name} holds no {keys} keys alone: {path}")
+        if not isinstance(document, dict):
+            self.fail(f"{paths_name} holds no path to code map: {path}")
             return
-        for file_path, code in sorted(document["files"].items()):
+        for file_path, code in sorted(document.items()):
             if code not in _TEST_PATHS_DOCUMENT_CODES:
                 self.fail(
                     f"{paths_name} codes {file_path} as {code!r}, not one of"
@@ -1124,9 +1121,8 @@ _TEST_PAGE_PREAMBLE_SCRIPT_NAMES = (
     "ui_strings.js",
     "settings.js",
 )
-_TEST_PATHS_DOCUMENT_CODES = ("es", "et", "rs", "rt", "ss", "st")
+_TEST_PATHS_DOCUMENT_CODES = ("err", "git", "repo", "sys")
 _TEST_PATHS_DOCUMENT_EXTENSION = "json"
-_TEST_PATHS_DOCUMENT_KEYS = ("files", "tracked")
 _TEST_RAW_ARCHIVE_LEAST_BYTES = 100
 
 

@@ -6,26 +6,21 @@ from __future__ import annotations
 
 import collections, dataclasses, functools, json, os, posixpath, re, sys
 from collections.abc import Callable, Sequence
-from typing import (
-    Literal,
-    NamedTuple,
-    TypeAlias,
-    TypedDict,
-    TypeVar,
-    get_args,
-)
+from typing import NamedTuple, TypeAlias, TypeVar
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import settings
 
 _CACHE_ROOT_DIR: str = ""
-_CALLGRIND_FILE_DATA_CODES: dict[str, str] = {}
+_CALLGRIND_FILE_DATA_ERROR_CODE: str = ""
+_CALLGRIND_FILE_DATA_GIT_CODE: str = ""
+_CALLGRIND_FILE_DATA_REPO_CODE: str = ""
+_CALLGRIND_FILE_DATA_SYSTEM_CODE: str = ""
 _DERIVED_COUNTER_TERMS: dict[str, dict[str, int]] = {}
 _RANKING_COUNTER_NAME: str = ""
 settings.load_into(__name__)
 
 Costs: TypeAlias = list[int]
-Group = Literal["repo", "system", "external"]
 
 REPO_ROOT = os.path.abspath(
     os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..")
@@ -111,7 +106,7 @@ class CounterSchema:
 
 class DerivedPath(NamedTuple):
     canonical: str
-    group: Group
+    group: str
     has_source: bool
 
 
@@ -119,25 +114,33 @@ class DerivedPath(NamedTuple):
 class DerivedPaths:
     def __init__(self, baseline_document: str, modified_document: str) -> None:
         baseline = self.document_read(baseline_document)
-        self.tracked = baseline["tracked"]
+        self.tracked = [
+            path
+            for path, code in baseline.items()
+            if code == _CALLGRIND_FILE_DATA_GIT_CODE
+        ]
         self.files: dict[str, DerivedPath] = {}
-        categories = {
-            file_data_code(group, has_source): (group, has_source)
-            for group in get_args(Group)
-            for has_source in (False, True)
-        }
+        codes = (
+            _CALLGRIND_FILE_DATA_ERROR_CODE,
+            _CALLGRIND_FILE_DATA_GIT_CODE,
+            _CALLGRIND_FILE_DATA_REPO_CODE,
+            _CALLGRIND_FILE_DATA_SYSTEM_CODE,
+        )
         for document, read in (
             (baseline_document, baseline),
             (modified_document, self.document_read(modified_document)),
         ):
-            for path, code in read["files"].items():
-                category = categories.get(code)
-                if category is None:
+            for path, code in read.items():
+                if code not in codes:
                     sys.exit(
                         f"error: {document} codes {path} as {code!r},"
-                        " which no category has"
+                        f" which is none of {' '.join(codes)}"
                     )
-                shown = DerivedPath(path, *category)
+                if code == _CALLGRIND_FILE_DATA_GIT_CODE:
+                    continue
+                shown = DerivedPath(
+                    path, code, code != _CALLGRIND_FILE_DATA_ERROR_CODE
+                )
                 known = self.files.setdefault(path, shown)
                 if known != shown:
                     sys.exit(
@@ -146,7 +149,7 @@ class DerivedPaths:
                         f" {document}"
                     )
 
-    def document_read(self, path: str) -> PathsDocument:
+    def document_read(self, path: str) -> dict[str, str]:
         try:
             with open(path, encoding="utf-8") as handle:
                 return json.load(handle)
@@ -208,12 +211,7 @@ class LineProfile:
 class PathInfo(NamedTuple):
     display: str
     local: str | None
-    group: Group
-
-
-class PathsDocument(TypedDict):
-    files: dict[str, str]
-    tracked: list[str]
+    group: str
 
 
 @dataclasses.dataclass
@@ -716,17 +714,11 @@ def counter_value(counters: Sequence[str], costs: Costs, name: str) -> int:
 
 
 # Answers the path a page shows, an external one under its object's name.
-def display_path(canonical: str, group: Group, object_path: str) -> str:
-    if group != "external":
+def display_path(canonical: str, group: str, object_path: str) -> str:
+    if group != _CALLGRIND_FILE_DATA_ERROR_CODE:
         return canonical
     owner = os.path.basename(object_path) or "(unknown object)"
     return f"{owner}/{canonical}"
-
-
-# Answers the file data code of a file's category.
-def file_data_code(group: Group, has_source: bool) -> str:
-    kind = "source" if has_source else "tracked"
-    return _CALLGRIND_FILE_DATA_CODES[f"{group}_{kind}"]
 
 
 def file_key(path: str, object_path: str) -> str:
@@ -770,26 +762,26 @@ def path_canonical(path: str) -> str:
 def path_norm(path: str) -> PathInfo:
     display = path_canonical(path)
     if posixpath.basename(path) == _CALLGRIND_UNKNOWN_NAME:
-        return PathInfo(display, None, "external")
+        return PathInfo(display, None, _CALLGRIND_FILE_DATA_ERROR_CODE)
     root = REPO_ROOT + "/"
     if os.path.isabs(path):
         path = posixpath.normpath(path)
     if path.startswith(root):
         local = os.path.join(REPO_ROOT, path[len(root) :])
-        return PathInfo(
-            display, local if os.path.isfile(local) else None, "repo"
-        )
+        if os.path.isfile(local):
+            return PathInfo(display, local, _CALLGRIND_FILE_DATA_REPO_CODE)
+        return PathInfo(display, None, _CALLGRIND_FILE_DATA_ERROR_CODE)
     if os.path.isabs(path):
         if os.path.isfile(path):
-            return PathInfo(display, path, "system")
-        return PathInfo(display, None, "external")
+            return PathInfo(display, path, _CALLGRIND_FILE_DATA_SYSTEM_CODE)
+        return PathInfo(display, None, _CALLGRIND_FILE_DATA_ERROR_CODE)
     candidate = os.path.join(REPO_ROOT, path)
     if os.path.isfile(candidate):
-        return PathInfo(display, candidate, "repo")
+        return PathInfo(display, candidate, _CALLGRIND_FILE_DATA_REPO_CODE)
     cached = cached_source(display)
     if cached is not None:
-        return PathInfo(display, cached, "system")
-    return PathInfo(display, None, "external")
+        return PathInfo(display, cached, _CALLGRIND_FILE_DATA_SYSTEM_CODE)
+    return PathInfo(display, None, _CALLGRIND_FILE_DATA_ERROR_CODE)
 
 
 def profile_load(paths: Sequence[str]) -> Profile:
