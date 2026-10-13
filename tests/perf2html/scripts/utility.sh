@@ -43,43 +43,30 @@ archive_report_write() {
 }
 
 artifact_path() {
-  local kind="$1" name="$2" file
-  local timer_root="$TIMER_ARTIFACTS_NAME_PREFIX$TIMESTAMP"
+  local kind="$1" name="$2" time="${3:-$TIMESTAMP}" file
+  local profile=".$CALLGRIND_OUTPUT_FILE_EXTENSION"
   case "$kind" in
-    callgrind) file="$CALLGRIND_OUTPUT_FILE_PREFIX.$name.$TIMESTAMP" ;;
-    callgrind-member)
-      file="$timer_root/$CALLGRIND_OUTPUT_FILE_PREFIX.$name"
-      ;;
+    callgrind) file="$name.$CALLGRIND_OUTPUT_TOOL_NAME.$time$profile" ;;
+    callgrind-file-data) file="$CALLGRIND_FILE_DATA_NAME.$time.json" ;;
     caller-counts)
-      file="$DIFF_DELTA_FILE_PREFIX.$name.$TIMESTAMP"
-      file="$file$DIFF_CALLER_COUNTS_FILE_SUFFIX"
+      file="$name.$DIFF_DELTA_TOOL_NAME.$time"
+      file="$file.$DIFF_CALLER_COUNTS_FILE_EXTENSION"
       ;;
-    delta) file="$DIFF_DELTA_FILE_PREFIX.$name.$TIMESTAMP" ;;
-    diff-log) file="$DIFF_LOG_FILE_PREFIX.$TIMESTAMP.log" ;;
-    extracted-profiles) file="$name.$TIMESTAMP" ;;
-    header-block) file="$DIFF_HEADER_BLOCK_FILE_PREFIX.$name.$TIMESTAMP.txt" ;;
-    header-rows) file="$HEADER_ROWS_NAME.$name.txt" ;;
-    profile-listing)
-      file="$DIFF_PROFILE_LISTING_FILE_PREFIX.$name.$TIMESTAMP.txt"
-      ;;
-    profile-log) file="$PROFILE_LOG_FILE_PREFIX.$TIMESTAMP.log" ;;
-    regenerate-log) file="$REGENERATE_LOG_FILE_PREFIX.$TIMESTAMP.log" ;;
-    timer-artifacts) file="$timer_root" ;;
-    timing-csv) file="$PROFILE_TIMING_FILE_PREFIX.$name.$TIMESTAMP.csv" ;;
-    timing-page) file="$PROFILE_TIMING_FILE_PREFIX.$name.$TIMESTAMP.txt" ;;
-    trace-binary) file="$TRACE_FILE_PREFIX.$name.$TIMESTAMP.bin" ;;
-    trace-log) file="$TRACE_FILE_PREFIX.$name.$TIMESTAMP.log" ;;
-    trace-speedscope)
-      file="$TRACE_FILE_PREFIX.$name.$TIMESTAMP"
-      file="$file$TRACE_SPEEDSCOPE_FILE_SUFFIX"
-      ;;
-    trace-speedscope-member)
-      file="$timer_root/$TRACE_FILE_PREFIX.$name"
-      file="$file$TRACE_SPEEDSCOPE_FILE_SUFFIX"
-      ;;
-    valgrind-log)
-      file="$VALGRIND_LOG_FILE_PREFIX.$name.$TIMESTAMP.log"
-      ;;
+    delta) file="$name.$DIFF_DELTA_TOOL_NAME.$time$profile" ;;
+    diff-log) file="$DIFF_TOOL_NAME.$time.log" ;;
+    diff-regenerate-log) file="$DIFF_TOOL_NAME.log" ;;
+    extracted-profiles) file="$name" ;;
+    header-block) file="$name/$DIFF_TOOL_NAME.$time.txt" ;;
+    header-rows) file="$PROFILE_TOOL_NAME.txt" ;;
+    profile-log) file="$PROFILE_TOOL_NAME.$time.log" ;;
+    profile-regenerate-log) file="$PROFILE_TOOL_NAME.log" ;;
+    timer-artifacts) file="$TIMER_ARTIFACTS_NAME_PREFIX$time" ;;
+    timing-csv) file="$name.$PROFILE_TIMING_TOOL_NAME.$time.csv" ;;
+    timing-page) file="$name.$PROFILE_TIMING_TOOL_NAME.$time.txt" ;;
+    trace-binary) file="$name.$TRACE_TOOL_NAME.$time.bin" ;;
+    trace-log) file="$name.$TRACE_TOOL_NAME.$time.log" ;;
+    trace-speedscope) file="$name.$TRACE_SPEEDSCOPE_TOOL_NAME.$time.json" ;;
+    valgrind-log) file="$name.$VALGRIND_LOG_TOOL_NAME.$time.log" ;;
     *) error_exit 1 "error: unknown artifact kind $kind, named $name" ;;
   esac
   echo "$ARTIFACTS_DIR/$file"
@@ -358,12 +345,12 @@ manifest_write() {
   local version="$1" dir="$2"
   shift 2
   local manifest="$dir/MANIFEST.txt" checksum
-  command_run python3 "$PERF2HTML_DIR_/scripts/build_report.py" assets \
-    -o "$dir/$REPORT_ASSETS_DIR_NAME"
+  command_run python3 "$PERF2HTML_DIR_/scripts/build_report.py" scripts \
+    -o "$dir/$REPORT_SCRIPTS_DIR_NAME"
   command_run python3 "$PERF2HTML_DIR_/scripts/build_report.py" settings \
     -o "$dir"
   command_run python3 "$PERF2HTML_DIR_/scripts/build_report.py" debug \
-    -o "$dir/$REPORT_ASSETS_DIR_NAME" \
+    -o "$dir/$REPORT_SCRIPTS_DIR_NAME" \
     -- "$REPORT_MANIFEST_VERSION_LABEL=$version" "$@"
   checksum="$(checksum_compute "$dir")"
   {
@@ -434,7 +421,7 @@ quiet_switch_set() {
 
 report_begin() {
   local dir="$1" log_file="$2" opening_line="$3"
-  mkdir -p "$dir" "$dir/$REPORT_ASSETS_DIR_NAME" "$ARTIFACTS_DIR"
+  mkdir -p "$dir" "$dir/$REPORT_SCRIPTS_DIR_NAME" "$ARTIFACTS_DIR"
   RUN_LOG="$log_file"
   echo "$opening_line" >"$RUN_LOG"
   cp README.md "$dir/README.md"

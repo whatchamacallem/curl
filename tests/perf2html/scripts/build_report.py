@@ -18,7 +18,8 @@ _ASSET_TEMPLATE_OVERVIEW_PAGE_NAME: str = ""
 _ASSET_TEMPLATE_SETTINGS_PAGE_NAME: str = ""
 _CALLERS_PAGE_DIR_NAME: str = ""
 _CALLERS_TIME_SUFFIX_SECONDS: dict[str, float] = {}
-_DIFF_CALLER_COUNTS_FILE_SUFFIX: str = ""
+_CALLGRIND_OUTPUT_FILE_EXTENSION: str = ""
+_DIFF_CALLER_COUNTS_FILE_EXTENSION: str = ""
 _FLAME_GRAPH_LOCAL_PROFILE_PATH: str = ""
 _FLAME_GRAPH_VIEW_ENTRY: tuple[str, str] = ("", "")
 _HEAT_MAP_VIEW_ENTRY: tuple[str, str] = ("", "")
@@ -37,7 +38,7 @@ _HEAT_MAP_VIEW_KEY = _HEAT_MAP_VIEW_ENTRY[0]
 
 _SETTINGS_PAGE = theme.asset_text_read(_ASSET_TEMPLATE_SETTINGS_PAGE_NAME)
 
-_OVERVIEW_PAGE_ASSETS_DEPTH = 0
+_OVERVIEW_PAGE_SCRIPTS_DEPTH = 0
 
 _OVERVIEW_PAGE = theme.asset_text_read(_ASSET_TEMPLATE_OVERVIEW_PAGE_NAME)
 
@@ -232,12 +233,12 @@ class BuildReport:
 
     # Writes the report's debug script, its manifest table filled in.
     def debug_script_write(
-        self, assets_dir: str, manifest_lines: Sequence[str]
+        self, scripts_dir: str, manifest_lines: Sequence[str]
     ) -> None:
         table_text = json.dumps(
             settings.manifest_table(manifest_lines), ensure_ascii=False
         )
-        path = os.path.join(assets_dir, _ASSET_DEBUG_SCRIPT_NAME)
+        path = os.path.join(scripts_dir, _ASSET_DEBUG_SCRIPT_NAME)
         with open(path, "w", encoding="utf-8") as handle:
             handle.write(
                 theme.template_fill(
@@ -319,7 +320,10 @@ class BuildReport:
         rows: list[list[theme.CellOrText]] = []
         for test in tests:
             profile_path = profile_paths[test.name]
-            callers = profile_path + _DIFF_CALLER_COUNTS_FILE_SUFFIX
+            callers = profile_path.removesuffix(
+                f".{_CALLGRIND_OUTPUT_FILE_EXTENSION}"
+            )
+            callers = f"{callers}.{_DIFF_CALLER_COUNTS_FILE_EXTENSION}"
             link = self.test_link_cell(test.name)
             profile = callgrind.profile_load([profile_path])
             callgrind.ranking_counter_check(profile.counters, profile_path)
@@ -466,7 +470,7 @@ class BuildReport:
                 f" {_REPORT_TEST_SUITE_NAME!r}, the merged test,"
                 f" which is not one of its tests: {' '.join(test_names)}"
             )
-        help_href = theme.href(_OVERVIEW_PAGE_ASSETS_DEPTH, "README.md")
+        help_href = theme.href(_OVERVIEW_PAGE_SCRIPTS_DEPTH, "README.md")
         names_text = json.dumps(list(test_names), ensure_ascii=False)
         menu_markup = theme.render_element(
             "nav",
@@ -716,10 +720,10 @@ def main() -> None:
         " file, for the summary table's calls/callers columns",
     )
 
-    assets_parser = subparsers.add_parser(
-        "assets", help="the report's one shared copy of the theme"
+    scripts_parser = subparsers.add_parser(
+        "scripts", help="the report's one shared copy of the theme"
     )
-    assets_parser.add_argument(
+    scripts_parser.add_argument(
         "-o",
         "--output",
         required=True,
@@ -760,11 +764,12 @@ def main() -> None:
     overview_parser.add_argument("-o", "--output", required=True)
     overview_parser.add_argument(
         "--diff-profile",
-        metavar="NAME=FILE",
+        metavar="PATTERN",
         default="",
-        help="with --diff, a test's subtracted profile as callgrind_diff.py"
-        " wrote it, to read its row from (its synthesized callers diff is"
-        f" that name plus {_DIFF_CALLER_COUNTS_FILE_SUFFIX}). repeatable",
+        help="with --diff, every test's subtracted profile as"
+        " callgrind_diff.py wrote it, one * for the test, each read for its"
+        " row (its synthesized callers diff is that name with the extension"
+        f" .{_DIFF_CALLER_COUNTS_FILE_EXTENSION})",
     )
     overview_parser.add_argument(
         "--profile",
@@ -775,11 +780,10 @@ def main() -> None:
     )
     overview_parser.add_argument(
         "--perf-log",
-        metavar="NAME=FILE",
+        metavar="PATTERN",
         default="",
-        help="without --diff, a test's perf log as the timing run wrote it,"
-        " to read its row from and show in a collapsed 'perf log' section."
-        " repeatable, one per --test",
+        help="without --diff, every test's perf log as the timing run wrote"
+        " it, one * for the test, each read for its row in the tests table",
     )
     overview_parser.add_argument(
         "--raw-data",
@@ -817,8 +821,8 @@ def main() -> None:
 
     namespace = parser.parse_args()
     report = BuildReport()
-    if namespace.cmd == "assets":
-        theme.theme_assets_write(namespace.output)
+    if namespace.cmd == "scripts":
+        theme.theme_scripts_write(namespace.output)
     elif namespace.cmd == "debug":
         report.debug_script_write(namespace.output, namespace.manifest_line)
     elif namespace.cmd == "settings":

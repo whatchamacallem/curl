@@ -43,9 +43,13 @@ _TEST_ERROR_DIFF_REPORT="$_DIR_PERF2HTML/perf2html_diff_report"
 _TEST_ERROR_ARTIFACTS="$_DIR_PERF2HTML/perf2html_temporary_artifacts"
 
 _TEST_ERROR_ARCHIVE_SUFFIX=.txz
+_TEST_ERROR_HEAT_MAP_DIR_NAME=heat-map
+_TEST_ERROR_PROFILE_TOOL_NAME=callgrind
+_TEST_ERROR_ROWS_FILE_NAME=perf2html.txt
+_TEST_ERROR_SOURCES_DIR_NAME=sources
 _TEST_ERROR_TRUNCATED_BYTES=1024
 _TEST_ERROR_TIMER_ARTIFACTS_PREFIX=timer-artifacts-
-_TEST_ERROR_TIMING_FILE_PREFIX=perf-stat
+_TEST_ERROR_TIMING_TOOL_NAME=perf-stat
 
 _TEST_ERROR_MANIFEST_CHECKSUM_LABEL=checksum
 
@@ -96,10 +100,11 @@ test_error_first_profile_drop() {
   _root_name="$(basename "$_archive" "$_TEST_ERROR_ARCHIVE_SUFFIX")"
   mkdir "$_extracted_directory"
   tar -xJf "$_archive" -C "$_extracted_directory"
+  local _profiles="*.$_TEST_ERROR_PROFILE_TOOL_NAME.*"
   _first_profile="$(find "$_extracted_directory/$_root_name" -maxdepth 1 \
-    -type f -name 'callgrind.out.*' | LC_ALL=C sort | head -n 1)"
+    -type f -name "$_profiles" | LC_ALL=C sort | head -n 1)"
   [ -n "$_first_profile" ] || test_fail test_error_first_profile_drop \
-    "no callgrind.out.* in $(path_shown "$_archive")"
+    "no $_profiles in $(path_shown "$_archive")"
   rm "$_first_profile"
   tar -cJf "$_archive" -C "$_extracted_directory" "$_root_name"
 }
@@ -157,14 +162,14 @@ test_error_makefile_test_names() {
 
 test_error_cache_populated_check() {
   local _tests=() _report _name _rows _recorded _test _file
-  local _prefix="$_TEST_ERROR_TIMING_FILE_PREFIX"
+  local _timing="$_TEST_ERROR_TIMING_TOOL_NAME"
   mapfile -t _tests < <(test_error_makefile_test_names)
   [ "${#_tests[@]}" -gt 0 ] || test_fail cache_populated \
     "no TESTS_C entry in $_REPO/tests/perf/Makefile.inc"
   for _report in "$_TEST_ERROR_BASELINE_REPORT" \
     "$_TEST_ERROR_MODIFIED_REPORT"; do
     _name="$(basename "$_report")"
-    _rows="$_TEST_ERROR_ARTIFACTS/$_name/header.overview.$_name.txt"
+    _rows="$_TEST_ERROR_ARTIFACTS/$_name/$_TEST_ERROR_ROWS_FILE_NAME"
     [ -f "$_rows" ] || test_fail cache_populated "no rows file $_rows"
     _recorded="$(sed -n 's/^recorded=//p' "$_rows" | head -n 1)"
     _recorded="${_recorded%% *}"
@@ -172,12 +177,12 @@ test_error_cache_populated_check() {
       || test_fail cache_populated "no recorded= row in $_rows"
     for _test in "${_tests[@]}"; do
       for _file in \
-        "callgrind.out.$_test.$_recorded" \
-        "valgrind.$_test.$_recorded.log" \
-        "$_prefix.$_test.$_recorded.csv" \
-        "$_prefix.$_test.$_recorded.txt" \
-        "trace.$_test.$_recorded.log" \
-        "trace.$_test.$_recorded.speedscope.json"; do
+        "$_test.$_TEST_ERROR_PROFILE_TOOL_NAME.$_recorded.out" \
+        "$_test.valgrind.$_recorded.log" \
+        "$_test.$_timing.$_recorded.csv" \
+        "$_test.$_timing.$_recorded.txt" \
+        "$_test.cyg_callback.$_recorded.log" \
+        "$_test.trace_to_speedscope.$_recorded.json"; do
         [ -f "$_TEST_ERROR_ARTIFACTS/$_name/$_file" ] \
           || test_fail cache_populated \
             "no recording $_TEST_ERROR_ARTIFACTS/$_name/$_file"
@@ -210,9 +215,10 @@ test_error_regenerate_cache_check() {
     for _name in "$(basename "$_TEST_ERROR_BASELINE_REPORT")" \
       "$(basename "$_TEST_ERROR_MODIFIED_REPORT")"; do
       case "$_path" in
-        "./$_name/callgrind.out."* | "./$_name/valgrind."* | \
-          "./$_name/trace."* | \
-          "./$_name/$_TEST_ERROR_TIMING_FILE_PREFIX".*)
+        "./$_name/"*".$_TEST_ERROR_PROFILE_TOOL_NAME."* | \
+          "./$_name/"*.valgrind.* | "./$_name/"*.cyg_callback.* | \
+          "./$_name/"*.trace_to_speedscope.* | \
+          "./$_name/"*".$_TEST_ERROR_TIMING_TOOL_NAME."*)
           test_fail regenerate_no_new_recordings \
             "--regenerate recorded a new file: $_path"
           ;;
@@ -259,9 +265,34 @@ test_error_diff_uncached_test() {
   echo "ok diff_uncached_no_raw_data"
 }
 
+test_error_diff_remote_test() {
+  local _baseline="$1" _modified="$2" _report _part _archives=()
+  local _remote="$_TEST_ERROR_SCRATCH/remote"
+  local _tool_dir="$_remote/tests/perf2html"
+  mkdir -p "$_tool_dir" "$_remote/home"
+  cp -a "$_DIR_PERF2HTML/perf2html_diff.sh" "$_DIR_PERF2HTML/README.md" \
+    "$_SCRIPT_DIR" "$_tool_dir/"
+  for _report in "$_baseline" "$_modified"; do
+    _archives+=("$_remote/$(basename "$_report")$_TEST_ERROR_ARCHIVE_SUFFIX")
+    tar -cJf "${_archives[-1]}" -C "$(dirname "$_report")" \
+      "$(basename "$_report")"
+  done
+  test_failure_expect diff_remote 0 -- \
+    env HOME="$_remote/home" GIT_CEILING_DIRECTORIES="$_remote" \
+    "$_tool_dir/perf2html_diff.sh" "--artifacts=$_remote/artifacts" \
+    "${_archives[@]}" "$_remote/out"
+  for _part in "$_TEST_ERROR_HEAT_MAP_DIR_NAME" \
+    "$_TEST_ERROR_SOURCES_DIR_NAME"; do
+    diff -r "$_TEST_ERROR_SCRATCH/out_uncached/$_part" "$_remote/out/$_part" \
+      || test_fail diff_remote_same "a diff made outside the repository \
+writes another $_part/ than one made inside it"
+  done
+  echo "ok diff_remote_same"
+}
+
 test_error_diff_tests() {
   local _baseline="$1" _modified="$2" _diff="$3" _copy _archive
-  local _second_archive
+  local _second_archive _source
   local _tool="$_DIR_PERF2HTML/perf2html_diff.sh"
   local _scratch="$_TEST_ERROR_SCRATCH"
 
@@ -317,6 +348,16 @@ test_error_diff_tests() {
   test_failure_expect diff_checksum_edited_page 2 -- \
     "$_tool" "--artifacts=$_scratch/artifacts_edited_page" \
     "$_baseline" "$_copy" "$_scratch/out_edited_page"
+
+  _copy="$(test_report_copy "$_scratch/modified_other_source" \
+    "$_modified")"
+  _source="$(find "$_copy/$_TEST_ERROR_SOURCES_DIR_NAME" -type f \
+    | LC_ALL=C sort | head -n 1)"
+  echo '// edited by test_error_handling.sh' >>"$_source"
+  test_error_manifest_checksum_rewrite "$_copy"
+  test_failure_expect diff_sources_mismatch 2 -- \
+    "$_tool" "--artifacts=$_scratch/artifacts_other_source" \
+    "$_baseline" "$_copy" "$_scratch/out_other_source"
 
   _copy="$(test_report_copy "$_scratch/modified_one_sided" \
     "$_modified")"
@@ -466,8 +507,7 @@ test_error_relink_test() {
   local _row _rows _binary
   local _reference="$_TEST_ERROR_SCRATCH/mtime_reference"
   _rows="$_TEST_ERROR_ARTIFACTS/$(basename "$_TEST_ERROR_BASELINE_REPORT")"
-  _rows="$_rows/header.overview"
-  _rows="$_rows.$(basename "$_TEST_ERROR_BASELINE_REPORT").txt"
+  _rows="$_rows/$_TEST_ERROR_ROWS_FILE_NAME"
   [ -f "$_rows" ] || test_fail regenerate_after_relink "no $_rows"
   _row="$(sed -n 's/^executable=//p' "$_rows" | head -n 1)"
   [ -n "$_row" ] || test_fail regenerate_after_relink \
@@ -498,6 +538,7 @@ test_error_failure_tests_run() {
     "$_TEST_ERROR_DIFF_REPORT")"
 
   test_error_diff_uncached_test "$_baseline" "$_modified"
+  test_error_diff_remote_test "$_baseline" "$_modified"
   test_error_diff_tests "$_baseline" "$_modified" "$_diff"
   test_error_txz_tests "$_baseline"
   test_error_batch_tests "$_target"

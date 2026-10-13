@@ -11,7 +11,8 @@ perf2html_diff.sh [debug-flags] [--target-dir=DIR] [baseline] [modified] [diff]
     Measures nothing: Compares the counters in two profiling reports and
     generates a diff. Report names default to
     ./perf2html_{baseline,modified,diff}_report. Both baseline and modified
-    must be a perf2html.sh report. And a diff can't be re-diffed.
+    must be a perf2html.sh report, and both must show the same source code.
+    And a diff can't be re-diffed. Reads nothing but the two reports.
     --target-dir=DIR  Default directory for reports (default $PWD).
     --txz             Create .txz archives of all reports generated.
                       .txz files may also be used as inputs.
@@ -126,7 +127,7 @@ args_parse() {
 recorded_reuse() {
   [ -d "$ARTIFACTS_DIR" ] || error_exit 2 \
     "error: --regenerate: no recordings at $ARTIFACTS_DIR"
-  local _log_pattern="$DIFF_LOG_FILE_PREFIX.*.log" _found_names
+  local _log_pattern="$DIFF_TOOL_NAME.*.log" _found_names
   local -a _found_logs
   mapfile -t _found_logs < <(find "$ARTIFACTS_DIR" -mindepth 1 -maxdepth 1 \
     -type f -name "$_log_pattern" | sort)
@@ -134,7 +135,7 @@ recorded_reuse() {
   [ "${#_found_logs[@]}" = 1 ] || error_exit 2 "error: --regenerate: \
 $ARTIFACTS_DIR holds ${#_found_logs[@]} $_log_pattern, the log of the run to \
 reuse, expected 1${_found_names:+: $_found_names}"
-  TIMESTAMP="${_found_names#"$DIFF_LOG_FILE_PREFIX".}"
+  TIMESTAMP="${_found_names#"$DIFF_TOOL_NAME".}"
   TIMESTAMP="${TIMESTAMP%.log}"
 }
 
@@ -148,6 +149,21 @@ manifest_check() {
   manifest_recorded "$_dir" "$_role" "$REPORT_MANIFEST_VERSION_FULL" \
     >/dev/null
   manifest_value "$_dir" recorded
+}
+
+sources_match_check() {
+  local _baseline_sources="$_BASE_DIR/$REPORT_SOURCES_DIR_NAME"
+  local _modified_sources="$_MOD_DIR/$REPORT_SOURCES_DIR_NAME"
+  local _sources _baseline_checksum _modified_checksum _reason
+  for _sources in "$_baseline_sources" "$_modified_sources"; do
+    [ -d "$_sources" ] || error_exit 2 "error: no source directory: $_sources"
+  done
+  _baseline_checksum="$(checksum_compute "$_baseline_sources")"
+  _modified_checksum="$(checksum_compute "$_modified_sources")"
+  _reason="error: the two reports show different source code: checksum"
+  _reason+=" $_baseline_checksum of $_baseline_sources vs $_modified_checksum"
+  [ "$_baseline_checksum" = "$_modified_checksum" ] || error_exit 2 \
+    "$_reason of $_modified_sources"
 }
 
 header_file() {
@@ -176,51 +192,43 @@ timer_artifacts_find() {
 }
 
 profiles_extract() {
-  local _archive="$1" _role="$2" _listing="$3"
-  local _into _root_directory _file _test
+  local _archive="$1" _role="$2" _into _root_name _recorded _profiles
   local -a _files
   _into="$(artifact_path extracted-profiles "$_role")"
-  _root_directory="$(basename "$_archive" "$REPORT_RAW_ARCHIVE_SUFFIX")"
-  _root_directory="$_into/$_root_directory"
+  _root_name="$(basename "$_archive" "$REPORT_RAW_ARCHIVE_SUFFIX")"
+  _recorded="${_root_name#"$TIMER_ARTIFACTS_NAME_PREFIX"}"
   rm -rf "$_into"
   mkdir -p "$_into"
   command_run tar xJf "$_archive" -C "$_into"
-  [ -d "$_root_directory" ] || error_exit 2 \
-    "error: $_archive holds no $(basename "$_root_directory") directory"
-  mapfile -t _files < <(find "$_root_directory" -maxdepth 1 -type f \
-    -name "$CALLGRIND_OUTPUT_FILE_PREFIX.*" | sort)
+  [ -d "$_into/$_root_name" ] || error_exit 2 \
+    "error: $_archive holds no $_root_name directory"
+  _profiles="$(basename "$(artifact_path callgrind '*' "$_recorded")")"
+  mapfile -t _files < <(find "$_into/$_root_name" -maxdepth 1 -type f \
+    -name "$_profiles")
   [ "${#_files[@]}" != 0 ] || error_exit 2 \
-    "error: no $CALLGRIND_OUTPUT_FILE_PREFIX.* file in $_archive"
-  : >"$_listing"
-  for _file in "${_files[@]}"; do
-    _test="$(basename "$_file")"
-    _test="${_test#"$CALLGRIND_OUTPUT_FILE_PREFIX".}"
-    listing_row_write "$_listing" "$_test" "$_file"
-  done
-  listing_row_write "$_listing" "$REPORT_TEST_SUITE_NAME" \
-    "$_root_directory/$CALLGRIND_OUTPUT_FILE_PREFIX.*"
-}
-
-listing_row_write() {
-  local _listing="$1" _test="$2" _file
-  shift 2
-  {
-    echo "$_test"
-    for _file in "$@"; do echo "$_file"; done
-    echo
-  } >>"$_listing"
+    "error: no $_profiles file in $_archive"
+  printf -v "$3" '%s' "$_into/$_root_name/$_profiles"
+  printf -v "$4" '%s' "$_into/$_root_name/$(basename "$(artifact_path \
+    callgrind-file-data "" "$_recorded")")"
 }
 
 tests_names() {
-  awk 'head { print; head = 0; next }
-       /^$/ { head = 1 }
-       BEGIN { head = 1 }' "$1" | sort -u
+  local _profiles _tail _file
+  _profiles="$(basename "$1")"
+  _tail="${_profiles#*\*}"
+  {
+    echo "$REPORT_TEST_SUITE_NAME"
+    find "$(dirname "$1")" -maxdepth 1 -type f -name "$_profiles" \
+      -printf '%f\n' | while IFS= read -r _file; do
+      echo "${_file%"$_tail"}"
+    done
+  } | sort
 }
 
 tests_pair() {
   local _base_tests _cur_tests _name
-  _base_tests="$(tests_names "$_BASE_LISTING")"
-  _cur_tests="$(tests_names "$_MODIFIED_LISTING")"
+  _base_tests="$(tests_names "$_BASELINE_PROFILES")"
+  _cur_tests="$(tests_names "$_MODIFIED_PROFILES")"
   local _one_sided="is in only one of the two reports, so it has no delta:"
   for _name in $(comm -3 <(echo "$_base_tests") <(echo "$_cur_tests")); do
     error_exit 2 "error: '$_name' $_one_sided $_BASE_DIR vs $_MOD_DIR"
@@ -228,34 +236,31 @@ tests_pair() {
   comm -12 <(echo "$_base_tests") <(echo "$_cur_tests")
 }
 
-profiles() {
-  awk -v want="$2" \
-    'BEGIN { head = 1 }
-     head { head = 0; taking = ($0 == want); next }
-     /^$/ { head = 1; if(taking) { exit }; next }
-     taking { print }' "$1"
-}
-
 diff_one() {
-  local _test="$1" _name="$2"
-  local _diff_file _callers_file _file
-  local -a _base_files _cur_files _args
+  local _name="$1" _diff_file _callers_file
+  local _baseline_profiles="$_BASELINE_PROFILES"
+  local _modified_profiles="$_MODIFIED_PROFILES"
+  local -a _derive
   _diff_file="$(artifact_path delta "$_name")"
   _callers_file="$(artifact_path caller-counts "$_name")"
-  mapfile -t _base_files < <(profiles "$_BASE_LISTING" "$_test")
-  mapfile -t _cur_files < <(profiles "$_MODIFIED_LISTING" "$_test")
+  if [ "$_name" != "$REPORT_TEST_SUITE_NAME" ]; then
+    _baseline_profiles="${_baseline_profiles/\*/$_name}"
+    _modified_profiles="${_modified_profiles/\*/$_name}"
+  fi
+  _derive=(--baseline-paths "$_BASELINE_PATHS"
+    --modified-paths "$_MODIFIED_PATHS")
 
   heading_print "python3 callgrind_diff.py $_name"
-  _args=(python3 "$PERF2HTML_DIR_/scripts/callgrind_diff.py" -o "$_diff_file"
-    --callers-output "$_callers_file")
-  for _file in "${_base_files[@]}"; do _args+=(--baseline "$_file"); done
-  for _file in "${_cur_files[@]}"; do _args+=(--current "$_file"); done
-  command_run "${_args[@]}"
+  command_run python3 "$PERF2HTML_DIR_/scripts/callgrind_diff.py" \
+    -o "$_diff_file" --callers-output "$_callers_file" \
+    --baseline "$_baseline_profiles" --current "$_modified_profiles" \
+    "${_derive[@]}"
 
   heading_print "python3 callgrind_to_heatmap.py data $_name --diff"
   command_run python3 "$PERF2HTML_DIR_/scripts/callgrind_to_heatmap.py" data \
     "$_diff_file" --report-dir "$_OUT_DIR" --test "$_name" --diff \
-    --baseline-data "$_callers_file"
+    --baseline-data "$_callers_file" "${_derive[@]}" \
+    --sources-dir "$_BASE_DIR/$REPORT_SOURCES_DIR_NAME"
 
   heading_print "python3 build_report.py test $_name"
   command_run python3 "$PERF2HTML_DIR_/scripts/build_report.py" test \
@@ -269,11 +274,10 @@ main() {
   verbose_begin
   title_print "$_SCRIPT" "$@"
 
-  source_cache_sync
-
   local _base_recorded _mod_recorded
   _base_recorded="$(manifest_check "$_BASE_DIR" baseline)"
   _mod_recorded="$(manifest_check "$_MOD_DIR" modified)"
+  sources_match_check
   timer_artifacts_find "$_BASE_DIR" baseline _BASELINE_TIMER_ARTIFACTS_ARCHIVE
   timer_artifacts_find "$_MOD_DIR" modified _MODIFIED_TIMER_ARTIFACTS_ARCHIVE
 
@@ -288,22 +292,19 @@ main() {
   [ "$REGENERATE" = 1 ] || artifacts_clean
   local _log_kind=diff-log _log_file
   if [ "$REGENERATE" = 1 ]; then
-    _log_kind=regenerate-log
+    _log_kind=diff-regenerate-log
   fi
   _log_file="$(artifact_path "$_log_kind" "")"
   report_begin "$_OUT_DIR" "$_log_file" \
     "tests/perf2html/perf2html_diff.sh $TIMESTAMP: $_BASE_DIR: $_MOD_DIR: \
 $_OUT_DIR"
-  source_cache_fill
 
   local _tests _test_name
   local -a _args
-  _BASE_LISTING="$(artifact_path profile-listing baseline)"
-  _MODIFIED_LISTING="$(artifact_path profile-listing modified)"
   profiles_extract "$_BASELINE_TIMER_ARTIFACTS_ARCHIVE" baseline \
-    "$_BASE_LISTING"
+    _BASELINE_PROFILES _BASELINE_PATHS
   profiles_extract "$_MODIFIED_TIMER_ARTIFACTS_ARCHIVE" modified \
-    "$_MODIFIED_LISTING"
+    _MODIFIED_PROFILES _MODIFIED_PATHS
   _tests="$(tests_pair)"
   log_verbose "$_SCRIPT $TIMESTAMP: $(basename "$_BASE_DIR"):" \
     "$(basename "$_MOD_DIR")"
@@ -312,7 +313,7 @@ $_OUT_DIR"
     --header-block "modified=$(header_file "$_MOD_DIR" modified)"
     --diff-profile "$(artifact_path delta '*')")
   for _test_name in $_tests; do
-    diff_one "$_test_name" "$_test_name"
+    diff_one "$_test_name"
   done
   heading_print "python3 callgrind_to_heatmap.py page"
   command_run python3 "$PERF2HTML_DIR_/scripts/callgrind_to_heatmap.py" page \

@@ -1,14 +1,13 @@
-# Agent Interaction Guide
+# CLAUDE.md is a symlink to declawed.md
 
-Do not modify CLAUDE.md or the README.md without approval. CLAUDE.md may be a
-symbolic link to this document and in that case make editing this document
-part of the same request. This is an exclusive control surface for the project
-maintainer. Mention discrepancies when observed. The maintainer is the final
+## Project Rules
+
+The Project Rules section is set by the project maintainer and must not be
+modified without request. The Lookup Accelerator is maintained by the agents
+using declawed.md and not the project maintainer. The maintainer is the final
 authority and decides correctness and requirements, however discrepancies are
-worth fixing.
-
-Do not use the AskUserQuestion tool and use numbered number sub-lists per ISO
-2145.
+worth fixing. Do not use the AskUserQuestion tool and use numbered number
+sub-lists per ISO 2145.
 
 Maintain an engineering log for each session in `tests/perf2html/tmp`
 following this format:
@@ -26,9 +25,7 @@ conversation as well as providing a link to the task doc. Provide a single
 sentence bug, task or other description alongside every in-conversation
 postmortem reference to a numbered item that is not itself in the postmortem.
 
-## 0 Design Principles
-
-### 0.1 Top of mind
+### Top of mind
 
 - Overconstrained goals introduce failure modes that are best resolved by
   conversations with the user that identify the contradictory requirements.
@@ -108,7 +105,7 @@ postmortem reference to a numbered item that is not itself in the postmortem.
 only two `.txz` compressed reports as inputs. It has to work without access
 to any source code or repository involved in the report.
 
-### 0.2 One-door glossary
+### One-door glossary
 
 The single function/check owning each concern - never bypass or duplicate:
 
@@ -116,7 +113,7 @@ The single function/check owning each concern - never bypass or duplicate:
 - `regenerate_check` - whether `--regenerate` may proceed.
 - `sources_match_check` - whether a diff's two reports show the same source
   code (perf2html_diff.sh).
-- `HarvestedPaths` - every path a diff shows, as its two reports' paths
+- `DerivedPaths` - every path a diff shows, as its two reports' paths
   documents show it (callgrind.py).
 - `artifact_path` - every artifacts dir and archive file name,
   `<test>.<tool>.<time>.<extension>` (utility.sh).
@@ -172,7 +169,7 @@ The single function/check owning each concern - never bypass or duplicate:
   render entry, a view drawing after its own loads calling its load render
   log once drawn through `view_activate`'s `load_render_defer`.
 
-### 0.3 Working agreement
+### Working agreement
 
 - This is a test driven development shop. Routine iteration on HTML generation
   can be tested while working (unless otherwise asked) with:
@@ -215,7 +212,7 @@ The single function/check owning each concern - never bypass or duplicate:
   `perf2html_batch.sh` is just a convenience wrapper and will likely evolve.
   This is a closed discussion.
 
-### 0.4 Invariants
+### Invariants
 
 - `manifest_verify`/`manifest_fault` is the one door deciding whether a dir
   is a report - never bypass or duplicate this check elsewhere.
@@ -338,4 +335,9 @@ The single function/check owning each concern - never bypass or duplicate:
 - A comment never opens with the name of what it documents. Not
   `foo: the function foo finds bar.`, just `Finds bar.`
 
+## Lookup Accelerator
 
+The Lookup Accelerator section is automatically injected into the context of
+every conversation about this project. Update it automatically as a low
+priority when it falls behind using the file locking scheme. Do not mention
+discrepancies as this is a low priority self healing mechanism.

@@ -414,7 +414,7 @@ regenerate_check() {
     if [ ! -d "$_report_artifacts" ]; then
       regenerate_refuse "$_name has no recordings at $_report_artifacts"
     fi
-    _rows="$_report_artifacts/$HEADER_ROWS_NAME.$_name.txt"
+    _rows="$_report_artifacts/$PROFILE_TOOL_NAME.txt"
     if [ ! -f "$_rows" ]; then
       regenerate_refuse "$_name has no recordings, $_rows is missing"
     fi
@@ -426,7 +426,7 @@ regenerate_check() {
     fi
 
     mapfile -t _timing_files < <(find "$_report_artifacts" -maxdepth 1 \
-      -type f -name "$PROFILE_TIMING_FILE_PREFIX.*.$_recorded.csv" | sort)
+      -type f -name "*.$PROFILE_TIMING_TOOL_NAME.$_recorded.csv" | sort)
     if [ "${#_timing_files[@]}" = 0 ]; then
       regenerate_refuse "$_name has no recordings left from $_recorded"
     fi
@@ -442,7 +442,7 @@ regenerate_check() {
     fi
 
     _newest="$(find "$_report_artifacts" -maxdepth 1 -type f \
-      -name "$PROFILE_TIMING_FILE_PREFIX.*.$_recorded.csv" \
+      -name "*.$PROFILE_TIMING_TOOL_NAME.$_recorded.csv" \
       -printf '%T@ %p\n' | sort -rn | head -1)"
     _newest="${_newest#* }"
     if [ -n "$(find "$_binary" -newer "$_newest" -print -quit)" ]; then

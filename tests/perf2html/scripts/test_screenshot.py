@@ -50,7 +50,7 @@ _COMPARE_LISTED_REGION_COUNT = 4
 _COMPARE_PANELS_MAX_HEIGHT_SHARE = 2
 _COMPARE_REGION_TILE_PX = 16
 
-_DEBUG_SCRIPT_ASSET: tuple[str, ...] = ("assets/debug.js",)
+_DEBUG_SCRIPT_ASSET: tuple[str, ...] = ("scripts/debug.js",)
 
 _ENTRY_PAGE = "index.html"
 
@@ -71,7 +71,7 @@ _INDEX_REPORT_NAMES: tuple[str, ...] = (
 )
 _INDEX_TEMPLATE_NAME = "test_template.html"
 
-_REPORT_THEME_STYLESHEET_ASSET: tuple[str, ...] = ("assets/theme.css",)
+_REPORT_THEME_STYLESHEET_ASSET: tuple[str, ...] = ("scripts/theme.css",)
 
 _SCREENSHOT_BROWSER_CANDIDATES: tuple[str, ...] = (
     "chromium",

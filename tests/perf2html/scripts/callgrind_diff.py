@@ -35,8 +35,11 @@ class CallgrindDiff:
         output: str
         callers_output: str
 
+    def __init__(self, derived: callgrind.DerivedPaths) -> None:
+        self.derived = derived
+
     def baseline_costs(
-        self, baseline: callgrind.LineProfile
+        self, baseline: callgrind.LineProfile, objects: dict[str, str]
     ) -> dict[str, callgrind.Costs]:
         out: dict[str, callgrind.Costs] = {}
         width = len(baseline.counters)
@@ -46,7 +49,7 @@ class CallgrindDiff:
         lines: dict[str, callgrind.Costs] = {}
         for key, costs in baseline.line_self.items():
             callgrind.costs_accumulate(
-                lines, self.baseline_key(baseline, key), costs
+                lines, self.baseline_key(key, objects), costs
             )
         for line_key, costs in lines.items():
             if any(costs):
@@ -54,12 +57,12 @@ class CallgrindDiff:
         return out
 
     def baseline_files(
-        self, baseline: callgrind.LineProfile
+        self, baseline: callgrind.LineProfile, objects: dict[str, str]
     ) -> dict[str, callgrind.Costs]:
         out: dict[str, callgrind.Costs] = {}
         for lines in baseline.function_lines.values():
             for key, costs in lines.items():
-                display = self.display_path(baseline, key.file)
+                display = self.display_path(key.file, objects)
                 total = out.get(display)
                 if total is None:
                     out[display] = list(costs)
@@ -72,12 +75,10 @@ class CallgrindDiff:
         }
 
     def baseline_key(
-        self,
-        baseline: callgrind.LineProfile,
-        key: callgrind.SourceLine,
+        self, key: callgrind.SourceLine, objects: dict[str, str]
     ) -> str:
         return callgrind.baseline_line_key(
-            self.display_path(baseline, key.file), key.line
+            self.display_path(key.file, objects), key.line
         )
 
     def build(self, args: CallgrindDiff.DiffArgs) -> None:
@@ -103,7 +104,9 @@ class CallgrindDiff:
             file=sys.stderr,
         )
         callers = self.callers_subtract(baseline, modified)
-        self.callers_write(callers, args.callers_output, baseline)
+        self.callers_write(
+            callers, args.callers_output, baseline, diff.file_ob
+        )
         print(
             f"wrote {args.callers_output} "
             f"({os.path.getsize(args.callers_output):,} bytes): "
@@ -146,11 +149,12 @@ class CallgrindDiff:
         callers: dict[str, list[CallerDelta]],
         path: str,
         baseline: callgrind.Profile,
+        objects: dict[str, str],
     ) -> None:
         doc: CallersDoc = {
             "counters": list(baseline.counters),
             "callers": callers,
-            "baseline": self.baseline_costs(baseline),
+            "baseline": self.baseline_costs(baseline, objects),
             "baselineTotal": callgrind.costs_fit(
                 baseline.totals(), len(baseline.counters)
             ),
@@ -158,7 +162,7 @@ class CallgrindDiff:
                 callee: sum(tally.count for tally in tallies.values())
                 for callee, tallies in baseline.callers.items()
             },
-            "fileBaseline": self.baseline_files(baseline),
+            "fileBaseline": self.baseline_files(baseline, objects),
         }
         os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
         with open(path, "w", encoding="utf-8") as handle:
@@ -180,11 +184,12 @@ class CallgrindDiff:
                 profile.counters, f"the {side} profile"
             )
 
-    def display_path(self, profile: callgrind.LineProfile, file: str) -> str:
-        return callgrind.display_path(file, profile.file_ob.get(file, ""))
-
-    def path_strip(self, name: str) -> str:
-        return name.replace(callgrind.REPO_ROOT + "/", "")
+    # Answers the path the diff heat map shows, from the delta's objects.
+    def display_path(self, file: str, objects: dict[str, str]) -> str:
+        entry = self.derived.path_entry(file)
+        return callgrind.display_path(
+            entry.canonical, entry.group, objects.get(file, "")
+        )
 
     def subtract(
         self,
@@ -236,7 +241,9 @@ class CallgrindDiff:
                 "# callgrind format\nversion: 1\ncreator: callgrind_diff.py\n"
             )
             for description in descriptions:
-                handle.write(f"desc: {self.path_strip(description)}\n")
+                handle.write(
+                    f"desc: {callgrind.repo_root_strip(description)}\n"
+                )
             handle.write(
                 f"cmd: {profile.command}\npositions: line\n"
                 f"events: {' '.join(profile.counters)}\n"
@@ -280,10 +287,11 @@ class CallgrindDiff:
         for file in [home] + sorted(name for name in by_file if name != home):
             ob = profile.file_ob.get(file, "")
             if ob and ob != current_ob:
-                handle.write(f"ob={self.path_strip(ob)}\n")
+                handle.write(f"ob={callgrind.repo_root_strip(ob)}\n")
                 current_ob = ob
             handle.write(
-                f"{'fl' if file == home else 'fi'}={self.path_strip(file)}\n"
+                f"{'fl' if file == home else 'fi'}="
+                f"{callgrind.repo_root_strip(file)}\n"
             )
             ordered = sorted(by_file[file])
             if file == home:
@@ -365,8 +373,24 @@ def main() -> None:
         metavar="FILE",
         help="the JSON file of per-function caller deltas to write",
     )
+    parser.add_argument(
+        "--baseline-paths",
+        required=True,
+        metavar="FILE",
+        help="the baseline report's paths document, each recorded path as"
+        " that report showed it",
+    )
+    parser.add_argument(
+        "--modified-paths",
+        required=True,
+        metavar="FILE",
+        help="the modified report's paths document",
+    )
     namespace = parser.parse_args()
-    CallgrindDiff().build(
+    derived = callgrind.DerivedPaths(
+        namespace.baseline_paths, namespace.modified_paths
+    )
+    CallgrindDiff(derived).build(
         CallgrindDiff.DiffArgs(
             baseline=namespace.baseline,
             modified=namespace.modified,

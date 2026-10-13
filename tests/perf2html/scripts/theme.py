@@ -198,7 +198,7 @@ class Theme:
         ) as handle:
             return handle.read()
 
-    def assets_write(self, out_dir: str) -> None:
+    def scripts_write(self, out_dir: str) -> None:
         self.root_value_names_check()
         os.makedirs(out_dir, exist_ok=True)
         heat_map_script = _ASSET_HEAT_MAP_SCRIPT_NAME
@@ -482,5 +482,5 @@ def template_fill(template_text: str, marker_values: dict[str, str]) -> str:
     return filled_text
 
 
-def theme_assets_write(out_dir: str) -> None:
-    _renderer.assets_write(out_dir)
+def theme_scripts_write(out_dir: str) -> None:
+    _renderer.scripts_write(out_dir)

@@ -87,7 +87,7 @@ window.ui_strings_ = (function () {
       "a view page opened outside the overview gets no settings to run under",
     str_error_internal: "internal error: halted and caught fire",
     str_error_report_incomplete:
-      "report incomplete, assets/debug.js not written.",
+      "report incomplete, scripts/debug.js not written.",
     str_error_setting_choice_unknown:
       "setting {0} names a choice this report does not offer: {1}",
     str_error_setting_unknown: "no such setting: {0}",
@@ -122,16 +122,16 @@ window.ui_strings_ = (function () {
       "{function} by call count: self {self}, total {total}.",
     str_information_line_link: "{path} self {share} info",
     str_line_self: "line self",
-    str_load_log_asset_entry: "[{time}ms] {page} loaded {asset}",
-    str_load_log_assets_entry:
-      "[{time}ms] {page} loaded {count} assets in {span}ms, the last {asset}",
+    str_load_log_script_entry: "[{time}ms] {page} loaded {asset}",
+    str_load_log_scripts_entry:
+      "[{time}ms] {page} loaded {count} scripts in {span}ms, the last {asset}",
     str_load_log_frame_entry:
       "[{time}ms] {page} long frame {span}ms, {render}ms rendering",
     str_load_log_input_entry:
       "[{time}ms] {page} {event} {target}, painted after {span}ms",
     str_load_log_load_entry: "[{time}ms] {page} load event",
     str_load_log_parse_entry:
-      "[{time}ms] {page} parsed, {count} assets loaded while parsing",
+      "[{time}ms] {page} parsed, {count} scripts loaded while parsing",
     str_load_log_render_entry:
       "[{time}ms] {page} {cause}, rendered after {span}ms",
     str_load_log_script_entry:

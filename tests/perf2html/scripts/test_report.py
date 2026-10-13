@@ -12,7 +12,9 @@ from typing import Any, NamedTuple
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import callgrind, settings
 
-_CALLGRIND_OUTPUT_FILE_PREFIX: str = ""
+_CALLGRIND_FILE_DATA_NAME: str = ""
+_CALLGRIND_OUTPUT_FILE_EXTENSION: str = ""
+_CALLGRIND_OUTPUT_TOOL_NAME: str = ""
 _FLAME_GRAPH_APP_DIR_NAME: str = ""
 _FLAME_GRAPH_APP_FILE_GLOBS: tuple[str, ...] = ()
 _FLAME_GRAPH_EXPORTER_NAME: str = ""
@@ -712,6 +714,38 @@ class TestReport:
             match = re.search(r"<title>(.*?)</title>", handle.read())
         return match.group(1) if match else None
 
+    # Checks the paths document a diff derives from the archive.
+    def paths_document_check(
+        self, text: str | None, archive_name: str, paths_name: str, path: str
+    ) -> None:
+        if text is None:
+            self.fail(f"{archive_name} holds no {paths_name}: {path}")
+            return
+        try:
+            document = json.loads(text)
+        except ValueError as error:
+            self.fail(f"{paths_name} holds no JSON: {error}: {path}")
+            return
+        if not isinstance(document, dict) or sorted(document) != list(
+            _TEST_PATHS_DOCUMENT_KEYS
+        ):
+            keys = " and ".join(_TEST_PATHS_DOCUMENT_KEYS)
+            self.fail(f"{paths_name} holds no {keys} keys alone: {path}")
+            return
+        for file_path, code in sorted(document["files"].items()):
+            if code not in _TEST_PATHS_DOCUMENT_CODES:
+                self.fail(
+                    f"{paths_name} codes {file_path} as {code!r}, not one of"
+                    f" {' '.join(_TEST_PATHS_DOCUMENT_CODES)}: {path}"
+                )
+                return
+            if file_path != os.path.normpath(file_path).lstrip("/"):
+                self.fail(
+                    f"{paths_name} keys {file_path}, which is no canonical"
+                    f" path: {path}"
+                )
+                return
+
     def run(self, args: TestReport.TestArgs) -> int:
         out_dir = os.path.abspath(args.out_dir)
         index_path = os.path.join(out_dir, "index.html")
@@ -922,17 +956,33 @@ class TestReport:
             os.path.basename(member_name): text
             for member_name, text in texts.items()
         }
-        for test_name in tests:
-            if not self.runs_recorded(layout, test_name):
-                continue
-            if not any(
-                file_name == f"{_CALLGRIND_OUTPUT_FILE_PREFIX}.{test_name}"
-                and "events:" in text[:4096]
-                for file_name, text in texts_by_name.items()
+        recorded = root_name.removeprefix(_TIMER_ARTIFACTS_NAME_PREFIX)
+        profile_names = {
+            test_name: f"{test_name}.{_CALLGRIND_OUTPUT_TOOL_NAME}.{recorded}"
+            f".{_CALLGRIND_OUTPUT_FILE_EXTENSION}"
+            for test_name in tests
+            if self.runs_recorded(layout, test_name)
+        }
+        paths_name = (
+            f"{_CALLGRIND_FILE_DATA_NAME}.{recorded}"
+            f".{_TEST_PATHS_DOCUMENT_EXTENSION}"
+        )
+        for test_name, file_name in profile_names.items():
+            if "events:" not in texts_by_name.get(file_name, "")[:4096]:
+                self.fail(
+                    f"{archive_name} holds no {file_name} of {test_name}"
+                    f" with an 'events:' line near its top: {path}"
+                )
+        self.paths_document_check(
+            texts_by_name.get(paths_name), archive_name, paths_name, path
+        )
+        for file_name in texts_by_name:
+            if file_name != paths_name and file_name not in (
+                profile_names.values()
             ):
                 self.fail(
-                    f"{archive_name} holds no callgrind file of {test_name}"
-                    f" with an 'events:' line near its top: {path}"
+                    f"{archive_name} holds {file_name}, which no diff"
+                    f" reads: {path}"
                 )
         for member_name, text in texts.items():
             if callgrind.REPO_ROOT in text:
@@ -1074,6 +1124,9 @@ _TEST_PAGE_PREAMBLE_SCRIPT_NAMES = (
     "ui_strings.js",
     "settings.js",
 )
+_TEST_PATHS_DOCUMENT_CODES = ("es", "et", "rs", "rt", "ss", "st")
+_TEST_PATHS_DOCUMENT_EXTENSION = "json"
+_TEST_PATHS_DOCUMENT_KEYS = ("files", "tracked")
 _TEST_RAW_ARCHIVE_LEAST_BYTES = 100
 
 

@@ -1230,7 +1230,7 @@ window.try_catch_handler_(function () {
     };
   }
 
-  // Builds a control that only calls JavaScript, copy or close.
+  // Builds a control that only calls JS, copy or close.
   const box_control_markup = (action_name, string_id, extra_class_name) =>
     render_menu_button("action", render_html_escape(text(string_id)), {
       tag_name: "span",

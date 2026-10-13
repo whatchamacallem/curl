@@ -92,8 +92,21 @@ and raw data archive files.
 
 ## Raw Data Archive Contents
 
-- `callgrind_file_data.<time_t>.json`: Data about the files in the report.
+- `0_file_data.<time_t>.json`: Source directory file listing with mode flags.
 - `<test>.callgrind.<time_t>.out`: a test's callgrind file, the repo root cut.
+
+### File Data Codes
+
+A `files` value is two letters, the first the file's group, the second whether
+the report holds the file's text. A recording holds `et`, `rs` and `ss`, or
+`rt` for a repo path with no file.
+
+- `e`: external, a file found nowhere, `(unknown)` among them.
+- `r`: repo, a file under the repo root.
+- `s`: system, a file found elsewhere on the machine or in an external source
+  tree.
+- `s`: source, the report holds the file's text.
+- `t`: tracked, the report holds no text for the file.
 
 ## Callers Page
 
@@ -146,7 +159,7 @@ and raw data archive files.
 | File                      | Purpose                                      |
 | ------------------------- | -------------------------------------------- |
 | `callgrind_to_heatmap.py` | Writes the heat map data and sources of each |
-|                           | test, the paths document a diff harvests and |
+|                           | test, the paths document a diff derives and  |
 |                           | the one heat map page.                       |
 | `heat_map.css`            | Lays out the heat map tree, source table,    |
 |                           | minimap and info boxes.                      |

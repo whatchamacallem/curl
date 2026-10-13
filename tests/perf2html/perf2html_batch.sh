@@ -13,8 +13,8 @@ perf2html_batch.sh [debug-flags] [--target-dir=DIR] [cmake-flags...]
                       batch cannot rename them.
     --txz             Create .txz archives of all reports generated.
                       .txz files may also be used as inputs.
-    cmake-flags:      Every argument not one of its own options, applied to the
-                      modified build (default -D CMAKE_C_FLAGS=-Os).
+    cmake-flags       Everything else is passed directly to cmake in the
+                      modified build (default is -D CMAKE_C_FLAGS=-Os).
 
     The debug-flags are the same as the README.md documents.
     --artifacts=TMP   The profiler artifacts directory. Defaults to

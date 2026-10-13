@@ -13,7 +13,7 @@
   const OVERLAY_TITLE_TEXT = "perf2html error";
   const OVERLAY_COPY_LINK_TEXT = "copy";
   const OVERLAY_BACK_LINK_TEXT = "back";
-  const OVERLAY_NO_MANIFEST_TEXT = "Report has no assets/debug.js";
+  const OVERLAY_NO_MANIFEST_TEXT = "Report has no scripts/debug.js";
   const DESIGN_COORDINATES_WIDTH_PX = 1920;
   const DESIGN_FONT_SIZE_PX = 24;
   const REPORT_ROOT_URL = new URL("..", document.currentScript.src).href;

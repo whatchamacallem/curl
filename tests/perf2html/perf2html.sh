@@ -16,7 +16,7 @@ perf2html.sh [debug-flags] [--report=DIR] [cmake-flags...]
     --target-dir=DIR  Default directory for reports (default $PWD).
     --txz             Create .txz archives of all reports generated.
                       .txz files may also be used as inputs.
-    cmake-flags       Everything else, e.g. -D CMAKE_C_FLAGS=-Os.
+    cmake-flags       Everything else is passed directly to cmake.
 
     The debug-flags are the same as the README.md documents.
     --artifacts=TMP   The profiler artifacts directory. Defaults to
@@ -67,7 +67,7 @@ args_parse() {
   artifacts_dir_resolve "$(dirname "$_OUT_DIR")"
   ARTIFACTS_DIR="$ARTIFACTS_DIR/$(basename "$_OUT_DIR")"
   [ "$KEEP_ARTIFACTS" = 1 ] || trap artifacts_clean EXIT
-  _HEADER_FILE="$(artifact_path header-rows "$(basename "$_OUT_DIR")")"
+  _HEADER_FILE="$(artifact_path header-rows "")"
   local _index _seen=0 _split=0 _flag
   _COMPILER_COMMAND="${CC:-cc}"
   for _index in "${!_CMAKE_FLAGS[@]}"; do
@@ -346,10 +346,11 @@ trace_render() {
 
 report_render() {
   local _name="$1"
+  shift
 
   heading_print "python3 callgrind_to_heatmap.py data $_name"
   command_run python3 "$PERF2HTML_DIR_/scripts/callgrind_to_heatmap.py" data \
-    "${_CALLGRIND_FILES[@]}" --report-dir "$_OUT_DIR" --test "$_name"
+    "${_CALLGRIND_FILES[@]}" --report-dir "$_OUT_DIR" --test "$_name" "$@"
 
   heading_print "python3 build_report.py test $_name"
   command_run python3 "$PERF2HTML_DIR_/scripts/build_report.py" test \
@@ -439,14 +440,12 @@ timer_artifacts_write() {
   mkdir "$_root_directory"
   for _test_name in "${_TESTS[@]}"; do
     _recording="$(artifact_path callgrind "$_test_name")"
-    _member="$(artifact_path callgrind-member "$_test_name")"
+    _member="$_root_directory/$(basename "$_recording")"
     cp "$_recording" "$_member"
     sed -i "s#$_REPO/##g" "$_member"
-    _recording="$(artifact_path trace-speedscope "$_test_name")"
-    _member="$(artifact_path trace-speedscope-member "$_test_name")"
-    ln -s "$_recording" "$_member"
   done
-  command_run tar --dereference --sort=name --mtime=@0 --owner=0 --group=0 \
+  cp "$(artifact_path callgrind-file-data "")" "$_root_directory/"
+  command_run tar --sort=name --mtime=@0 --owner=0 --group=0 \
     --numeric-owner -cJf "$_TIMER_ARTIFACTS_ARCHIVE" -C "$ARTIFACTS_DIR" \
     "$_root_name"
   rm -r "$_root_directory"
@@ -487,7 +486,9 @@ run_all() {
   command_item_print "taskset -c $PROFILE_PINNED_CPU $_BIN <test>"
   item_output_print "${_timing_lines[@]}" "Time: $_total $_suite_suffix"
 
-  report_render "$REPORT_TEST_SUITE_NAME"
+  report_render "$REPORT_TEST_SUITE_NAME" --paths-output \
+    "$(artifact_path callgrind-file-data "")"
+  timer_artifacts_write
 
   heading_print "python3 build_report.py overview"
   _HEADER_ROWS=(
@@ -524,7 +525,7 @@ main() {
   _HEADER_ROWS=()
   local _log_kind=profile-log _log_file
   if [ "$REGENERATE" = 1 ]; then
-    _log_kind=regenerate-log
+    _log_kind=profile-regenerate-log
   fi
   _log_file="$(artifact_path "$_log_kind" "")"
   report_begin "$_OUT_DIR" "$_log_file" \
@@ -538,7 +539,6 @@ main() {
   for _test_name in "${_TESTS[@]}"; do
     run_one "$_test_name"
   done
-  timer_artifacts_write
   run_all
   heading_print "python3 callgrind_to_heatmap.py page"
   command_run python3 "$PERF2HTML_DIR_/scripts/callgrind_to_heatmap.py" page \

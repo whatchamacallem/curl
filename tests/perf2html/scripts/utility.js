@@ -20,8 +20,8 @@ window.try_catch_handler_(function () {
   );
   let load_log_kept_line_count = null;
   let page_render_is_logged = false;
-  let parsed_asset_count = 0;
-  let pending_assets = null;
+  let parsed_script_count = 0;
+  let pending_scripts = null;
   let pending_render = null;
 
   function load_log_message_handler_(browser_event) {
@@ -215,41 +215,41 @@ window.try_catch_handler_(function () {
     const target = browser_event.target;
     if (!RESOURCE_TAG_NAMES.includes(target.tagName)) return;
     if (document.readyState === "loading") {
-      parsed_asset_count++;
+      parsed_script_count++;
       return;
     }
-    if (pending_assets === null) {
-      pending_assets = {
+    if (pending_scripts === null) {
+      pending_scripts = {
         asset_count: 0,
         start_milliseconds: browser_event.timeStamp,
       };
       after_paint_run(() => {
         load_log_append(
-          pending_assets.asset_count === 1
-            ? "str_load_log_asset_entry"
-            : "str_load_log_assets_entry",
-          pending_assets.start_milliseconds,
+          pending_scripts.asset_count === 1
+            ? "str_load_log_script_entry"
+            : "str_load_log_scripts_entry",
+          pending_scripts.start_milliseconds,
           {
-            files: { asset: pending_assets.last_href },
+            files: { asset: pending_scripts.last_href },
             spans: {
               span:
-                pending_assets.end_milliseconds -
-                pending_assets.start_milliseconds,
+                pending_scripts.end_milliseconds -
+                pending_scripts.start_milliseconds,
             },
-            texts: { count: String(pending_assets.asset_count) },
+            texts: { count: String(pending_scripts.asset_count) },
           },
         );
-        pending_assets = null;
+        pending_scripts = null;
       });
     }
-    pending_assets.asset_count++;
-    pending_assets.last_href = target.href || target.src;
-    pending_assets.end_milliseconds = browser_event.timeStamp;
+    pending_scripts.asset_count++;
+    pending_scripts.last_href = target.href || target.src;
+    pending_scripts.end_milliseconds = browser_event.timeStamp;
   }
-  // Logs the end of parsing with the count of assets it waited on.
+  // Logs the end of parsing with the count of scripts it waited on.
   function page_parse_handler_(browser_event) {
     load_log_append("str_load_log_parse_entry", browser_event.timeStamp, {
-      texts: { count: String(parsed_asset_count) },
+      texts: { count: String(parsed_script_count) },
     });
   }
 

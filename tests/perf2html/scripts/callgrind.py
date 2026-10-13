@@ -4,14 +4,22 @@
 
 from __future__ import annotations
 
-import collections, dataclasses, functools, os, posixpath, re, sys
+import collections, dataclasses, functools, json, os, posixpath, re, sys
 from collections.abc import Callable, Sequence
-from typing import Literal, NamedTuple, TypeAlias, TypeVar
+from typing import (
+    Literal,
+    NamedTuple,
+    TypeAlias,
+    TypedDict,
+    TypeVar,
+    get_args,
+)
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import settings
 
 _CACHE_ROOT_DIR: str = ""
+_CALLGRIND_FILE_DATA_CODES: dict[str, str] = {}
 _DERIVED_COUNTER_TERMS: dict[str, dict[str, int]] = {}
 _RANKING_COUNTER_NAME: str = ""
 settings.load_into(__name__)
@@ -101,6 +109,61 @@ class CounterSchema:
         )
 
 
+class DerivedPath(NamedTuple):
+    canonical: str
+    group: Group
+    has_source: bool
+
+
+# Answers each recorded path's category as a diff's two reports coded it.
+class DerivedPaths:
+    def __init__(self, baseline_document: str, modified_document: str) -> None:
+        baseline = self.document_read(baseline_document)
+        self.tracked = baseline["tracked"]
+        self.files: dict[str, DerivedPath] = {}
+        categories = {
+            file_data_code(group, has_source): (group, has_source)
+            for group in get_args(Group)
+            for has_source in (False, True)
+        }
+        for document, read in (
+            (baseline_document, baseline),
+            (modified_document, self.document_read(modified_document)),
+        ):
+            for path, code in read["files"].items():
+                category = categories.get(code)
+                if category is None:
+                    sys.exit(
+                        f"error: {document} codes {path} as {code!r},"
+                        " which no category has"
+                    )
+                shown = DerivedPath(path, *category)
+                known = self.files.setdefault(path, shown)
+                if known != shown:
+                    sys.exit(
+                        f"error: the two reports code {path} apart:"
+                        f" {known} in {baseline_document}, {shown} in"
+                        f" {document}"
+                    )
+
+    def document_read(self, path: str) -> PathsDocument:
+        try:
+            with open(path, encoding="utf-8") as handle:
+                return json.load(handle)
+        except OSError as error:
+            sys.exit(f"error: {path}: {error}: no file data to derive")
+
+    def path_entry(self, path: str) -> DerivedPath:
+        canonical = path_canonical(path)
+        entry = self.files.get(canonical)
+        if entry is None:
+            sys.exit(
+                f"error: neither report's file data names {canonical},"
+                f" recorded as {path}"
+            )
+        return entry
+
+
 @dataclasses.dataclass
 class LineProfile:
     counters: list[str] = dataclasses.field(default_factory=list)
@@ -146,6 +209,11 @@ class PathInfo(NamedTuple):
     display: str
     local: str | None
     group: Group
+
+
+class PathsDocument(TypedDict):
+    files: dict[str, str]
+    tracked: list[str]
 
 
 @dataclasses.dataclass
@@ -647,12 +715,18 @@ def counter_value(counters: Sequence[str], costs: Costs, name: str) -> int:
     return counter_schema(tuple(counters)).value(costs, name)
 
 
-def display_path(path: str, object_path: str) -> str:
-    info = path_norm(path)
-    if info.group != "external":
-        return info.display
+# Answers the path a page shows, an external one under its object's name.
+def display_path(canonical: str, group: Group, object_path: str) -> str:
+    if group != "external":
+        return canonical
     owner = os.path.basename(object_path) or "(unknown object)"
-    return f"{owner}/{info.display}"
+    return f"{owner}/{canonical}"
+
+
+# Answers the file data code of a file's category.
+def file_data_code(group: Group, has_source: bool) -> str:
+    kind = "source" if has_source else "tracked"
+    return _CALLGRIND_FILE_DATA_CODES[f"{group}_{kind}"]
 
 
 def file_key(path: str, object_path: str) -> str:
@@ -686,26 +760,32 @@ def named_paths(pattern: str) -> dict[str, str]:
     return dict(sorted(path.items()))
 
 
-def path_norm(path: str) -> PathInfo:
+# Answers the one path a recorded path is known by, the repo root cut.
+def path_canonical(path: str) -> str:
     if posixpath.basename(path) == _CALLGRIND_UNKNOWN_NAME:
-        return PathInfo("(unknown)", None, "external")
+        return "(unknown)"
+    return posixpath.normpath(repo_root_strip(path)).lstrip("/")
+
+
+def path_norm(path: str) -> PathInfo:
+    display = path_canonical(path)
+    if posixpath.basename(path) == _CALLGRIND_UNKNOWN_NAME:
+        return PathInfo(display, None, "external")
     root = REPO_ROOT + "/"
     if os.path.isabs(path):
         path = posixpath.normpath(path)
     if path.startswith(root):
-        relative = path[len(root) :]
-        local = os.path.join(REPO_ROOT, relative)
+        local = os.path.join(REPO_ROOT, path[len(root) :])
         return PathInfo(
-            relative, local if os.path.isfile(local) else None, "repo"
+            display, local if os.path.isfile(local) else None, "repo"
         )
     if os.path.isabs(path):
         if os.path.isfile(path):
-            return PathInfo(path.lstrip("/"), path, "system")
-        return PathInfo(path.lstrip("/"), None, "external")
+            return PathInfo(display, path, "system")
+        return PathInfo(display, None, "external")
     candidate = os.path.join(REPO_ROOT, path)
     if os.path.isfile(candidate):
-        return PathInfo(posixpath.normpath(path), candidate, "repo")
-    display = posixpath.normpath(path)
+        return PathInfo(display, candidate, "repo")
     cached = cached_source(display)
     if cached is not None:
         return PathInfo(display, cached, "system")
@@ -732,6 +812,11 @@ def ranking_counter_check(counters: Sequence[str], source: str) -> None:
         f" counter every page ranks and divides by: it records"
         f" {' '.join(counters)}"
     )
+
+
+# Cuts the repository root as the archived recordings have it cut.
+def repo_root_strip(text: str) -> str:
+    return text.replace(REPO_ROOT + "/", "")
 
 
 def tally_accumulate(
