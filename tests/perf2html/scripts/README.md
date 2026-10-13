@@ -44,25 +44,26 @@ report generators. Start by running the tests and checking the results.
 
 ## URL Components
 
-- `debug`: query key, value `1`, that unfreezes the settings so the settings
+- `debug`: Query key, value `1`, that unfreezes the settings so the settings
   view can apply a setting.
-- `file`: hash key, heat map view only, that names the source file to open.
-- `function`: hash key, heat map view only, that names the function to open and
+- `file`: Hash key, heat map view only, that names the source file to open.
+- `function`: Hash key, heat map view only, that names the function to open and
   excludes `file` and `line`.
-- `line`: hash key, heat map view only, that names the line within `file` to
+- `line`: Hash key, heat map view only, that names the line within `file` to
   scroll to.
-- `localProfilePath`: hash key, flame graph view only, that is speedscope's own
+- `localProfilePath`: Hash key, flame graph view only, that is speedscope's own
   key naming the profile to load.
-- `screenshot`: query key whose value is shown as a label on the page.
-- `screenshot-menu`: query key, a menu entry number, that opens or focuses
-- `screenshot-mode`: query key, `1` dark or `0` light, that sets the mode a
-  screenshot is shot in. that entry after each menu render.
-- `setting`: hash key, settings view only, that names the setting scrolled to
+- `screenshot`: Query key whose value is shown as a label on the page.
+- `screenshot-menu`: Query key, a menu entry number, that opens or focuses
+  that entry after each menu render.
+- `screenshot-mode`: Query key, `1` dark or `0` light, that sets the mode a
+  screenshot is shot in.
+- `setting`: Hash key, settings view only, that names the setting scrolled to
   the top.
-- `setting-val`: hash key, settings view only, that carries the base64 JSON of
+- `setting-val`: Hash key, settings view only, that carries the base64 JSON of
   the new value for `setting`, applied on load.
-- `test`: hash key that names the test shown, `all` being the merged test.
-- `view`: hash key, one of `callers`, `heat-map`, `flame-graph` or `settings`,
+- `test`: Hash key that names the test shown, `all` being the merged test.
+- `view`: Hash key, one of `callers`, `heat-map`, `flame-graph` or `settings`,
   that names the page framed, required whenever `test` is present.
 
 ## Report Contents
@@ -75,33 +76,32 @@ in the directory. A diff report lacks the `flame-graph/`, `flame-graph-app/`
 and raw data archive files.
 
 - `scripts/*.js`: Files copied whole or modified, from the scripts/ dir.
-- `callers/<test>.html`: a test's callers page holding its JSON callers model.
-- `flame-graph-app/SourceCodePro-Regular.ttf-*.woff2`: the speedscope font.
-- `flame-graph-app/speedscope-*.css`: the speedscope app's stylesheet.
-- `flame-graph-app/speedscope-*.js`: the speedscope app.
-- `flame-graph/index.html`: the flame graph page loading the speedscope app.
-- `flame-graph/profiles/<test>.js`: a test's speedscope profile, no `all`.
-- `heat-map/data/<test>.js`: a test's heat map model.
-- `heat-map/index.html`: the one heat map page for every test.
-- `index.html`: the overview, the top page with the menu, home panel and frame.
-- `MANIFEST.txt`: the version line, then the `LABEL=VALUE` rows, written last.
-- `README.md`: a copy of the user contract.
-- `settings/index.html`: the settings view page.
-- `sources/<path>.js`: a source file's text, the path's non-alphanumerics `_`.
-- `timer-artifacts-c.txz`: the raw data archive, recorded at `<time_t>`.
+- `callers/<test>.html`: A test's callers page holding its JSON callers model.
+- `flame-graph-app/SourceCodePro-Regular.ttf-*.woff2`: The speedscope font.
+- `flame-graph-app/speedscope-*.css`: The speedscope app's stylesheet.
+- `flame-graph-app/speedscope-*.js`: The speedscope app.
+- `flame-graph/index.html`: The flame graph page loading the speedscope app.
+- `flame-graph/profiles/<test>.js`: A test's speedscope profile, no `all`.
+- `heat-map/data/<test>.js`: A test's heat map model.
+- `heat-map/index.html`: The one heat map page for every test.
+- `index.html`: The overview, the top page with the menu, home panel and frame.
+- `MANIFEST.txt`: The version line, then the `LABEL=VALUE` rows, written last.
+- `README.md`: A copy of the user contract.
+- `settings/index.html`: The settings view page.
+- `sources/<path>.js`: A source file's text, the path's non-alphanumerics `_`.
+- `timer-artifacts-c.txz`: The raw data archive, recorded at `<time_t>`.
 
 ## Raw Data Archive Contents
 
 - `0_file_data.<time_t>.json`: Source directory file listing with mode flags.
-- `<test>.callgrind.<time_t>.out`: a test's callgrind file, the repo root cut.
+- `<test>.callgrind.<time_t>.out`: A test's callgrind file, the repo root cut.
 
-In `0_file_data.<time_t>.json` each filename is mapped to one of `repo`,
-`sys`, `git`, or `err`.
+In `0_file_data.<time_t>.json` each filename is associated with the following:
 
 - `repo` : A project file with source.
-- `sys` : A system file with source.
 - `git` : A non-contributing project file with no source.
-- `err` : A file that Callgrind could not find or was deleted.
+- `sys` : A system file with source.
+- `err` : A file that `callgrind` could not find or was deleted.
 
 ## Callers Page
 

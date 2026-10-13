@@ -752,7 +752,7 @@ def named_paths(pattern: str) -> dict[str, str]:
     return dict(sorted(path.items()))
 
 
-# Answers the one path a recorded path is known by, the repo root cut.
+# There is no i18n path for Python yet. Just don't name your file "(unknown)".
 def path_canonical(path: str) -> str:
     if posixpath.basename(path) == _CALLGRIND_UNKNOWN_NAME:
         return "(unknown)"
