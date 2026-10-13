@@ -5,9 +5,16 @@ profile and generate reports.
 
 - [HTML Report Generators](#html-report-generators)
 
-The remainder of these sections describe the source code implementing the
-`perf2html` report generators as a guide for interested developers. Starting
-with running the tests and checking the results is recommended.
+The rest of these sections are provided as a guide for interested developers.
+
+These are the data formats.
+
+- [URL Components](#url-components)
+- [Report Contents](#report-contents)
+- [Raw Data Archive Contents](#raw-data-archive-contents)
+
+The remaining sections describe the source code implementing the `perf2html`
+report generators. Start by running the tests and checking the results.
 
 - [Callers Page](#callers-page)
 - [Callgrind Parsing](#callgrind-parsing)
@@ -34,6 +41,59 @@ with running the tests and checking the results is recommended.
 | `../perf2html_diff.sh`  | Subtracts a baseline report from a modified       |
 |                         | report and writes a diff report, measuring        |
 |                         | nothing.                                          |
+
+## URL Components
+
+- `debug`: query key, value `1`, that unfreezes the settings so the settings
+  view can apply a setting.
+- `file`: hash key, heat map view only, that names the source file to open.
+- `function`: hash key, heat map view only, that names the function to open and
+  excludes `file` and `line`.
+- `line`: hash key, heat map view only, that names the line within `file` to
+  scroll to.
+- `localProfilePath`: hash key, flame graph view only, that is speedscope's own
+  key naming the profile to load.
+- `screenshot`: query key whose value is shown as a label on the page.
+- `screenshot-menu`: query key, a menu entry number, that opens or focuses
+- `screenshot-mode`: query key, `1` dark or `0` light, that sets the mode a
+  screenshot is shot in. that entry after each menu render.
+- `setting`: hash key, settings view only, that names the setting scrolled to
+  the top.
+- `setting-val`: hash key, settings view only, that carries the base64 JSON of
+  the new value for `setting`, applied on load.
+- `test`: hash key that names the test shown, `all` being the merged test.
+- `view`: hash key, one of `callers`, `heat-map`, `flame-graph` or `settings`,
+  that names the page framed, required whenever `test` is present.
+
+## Report Contents
+
+Reading a report requires opening `index.html`. The rest of the report is of
+no interest to users, except perhaps automated processing of `MANIFEST.txt`.
+
+Otherwise, if you are an interested developer, these are the rest of the files
+in the directory. A diff report lacks the `flame-graph/`, `flame-graph-app/`
+and raw data archive files.
+
+- `scripts/*.js`: Files copied whole or modified, from the scripts/ dir.
+- `callers/<test>.html`: a test's callers page holding its JSON callers model.
+- `flame-graph-app/SourceCodePro-Regular.ttf-*.woff2`: the speedscope font.
+- `flame-graph-app/speedscope-*.css`: the speedscope app's stylesheet.
+- `flame-graph-app/speedscope-*.js`: the speedscope app.
+- `flame-graph/index.html`: the flame graph page loading the speedscope app.
+- `flame-graph/profiles/<test>.js`: a test's speedscope profile, no `all`.
+- `heat-map/data/<test>.js`: a test's heat map model.
+- `heat-map/index.html`: the one heat map page for every test.
+- `index.html`: the overview, the top page with the menu, home panel and frame.
+- `MANIFEST.txt`: the version line, then the `LABEL=VALUE` rows, written last.
+- `README.md`: a copy of the user contract.
+- `settings/index.html`: the settings view page.
+- `sources/<path>.js`: a source file's text, the path's non-alphanumerics `_`.
+- `timer-artifacts-c.txz`: the raw data archive, recorded at `<time_t>`.
+
+## Raw Data Archive Contents
+
+- `all.callgrind_to_heatmap.<time_t>.json`: the paths document a diff harvests.
+- `<test>.callgrind.<time_t>.out`: a test's callgrind file, the repo root cut.
 
 ## Callers Page
 
@@ -86,7 +146,8 @@ with running the tests and checking the results is recommended.
 | File                      | Purpose                                      |
 | ------------------------- | -------------------------------------------- |
 | `callgrind_to_heatmap.py` | Writes the heat map data and sources of each |
-|                           | test, then the one heat map page.            |
+|                           | test, the paths document a diff harvests and |
+|                           | the one heat map page.                       |
 | `heat_map.css`            | Lays out the heat map tree, source table,    |
 |                           | minimap and info boxes.                      |
 | `heat_map.html`           | Templates the heat map page with its tree    |
@@ -129,8 +190,8 @@ with running the tests and checking the results is recommended.
 |                      | page installing them, a framed page taking them      |
 |                      | relayed, then writes every root value a stylesheet   |
 |                      | reads.                                               |
-| `settings.py`        | Holds every Python and JavaScript setting with the   |
-|                      | reader and writer that load and ship them.           |
+| `settings.py`        | Holds every PY and JS setting with the reader and    |
+|                      | writer that load and ship them.                      |
 | `settings.sh`        | Holds every shell setting, read by the shell scripts |
 |                      | and by `settings.py`.                                |
 | `settings_page.html` | Templates the settings view                          |
@@ -177,7 +238,7 @@ with running the tests and checking the results is recommended.
 | `theme.js`       | Holds the shared page library for addresses, strips,   |
 |                  | tables, numbers, scrollbars and layout.                |
 | `theme.py`       | Writes table rows and numbers, fills the page          |
-|                  | templates, and writes the shared assets.               |
+|                  | templates, and writes the shared scripts.               |
 
 ## Tool Configuration
 

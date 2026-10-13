@@ -54,7 +54,8 @@ perf2html_diff.sh [debug-flags] [--target-dir=DIR] [baseline] [modified] [diff]
     Measures nothing: Compares the counters in two profiling reports and
     generates a diff. Report names default to
     ./perf2html_{baseline,modified,diff}_report. Both baseline and modified
-    must be a perf2html.sh report. And a diff can't be re-diffed.
+    must be a perf2html.sh report, and both must show the same source code.
+    And a diff can't be re-diffed. Reads nothing but the two reports.
     --target-dir=DIR  Default directory for reports (default $PWD).
     --txz             Create .txz archives of all reports generated.
                       .txz files may also be used as inputs.
@@ -175,15 +176,6 @@ happened, as wide as it took. The test runs in a build with
 `-finstrument-functions`, where a hook (`tests/perf2html/src/cyg_callback.c`)
 reads the CPU's time stamp counter at every function entry and exit. "Time
 Order" is the order the calls were made in.
-
-It shows up to 200 top-level calls in a row, taken from the middle of the run,
-when caches are warm. Times are nanoseconds since the start of the run. Both
-hooks cost time too and that time is in the boxes, so a function of a few
-instructions looks slower than it is, and the traced run is slower than the
-perf log's native one. Use the perf log for speed and the flame graph for
-shape: what calls what, in which order, and which call was the slow one. The
-overview's "trace log" has the commands and the traced run's own output, and
-its "raw data" archive holds the same profile as a speedscope JSON file.
 
 The merged "all" report and a diff have no flame graph: a trace neither adds up
 nor subtracts.
