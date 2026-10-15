@@ -36,12 +36,12 @@ report generators. Start by running the tests and checking the results.
 | `../perf2html.sh`       | Builds RelWithDebInfo, profiles every test under  |
 |                         | callgrind, perf stat and a function trace, then   |
 |                         | writes one report.                                |
-| `../perf2html_batch.sh` | Writes a baseline report, a modified report built |
-|                         | with the cmake flags given, then the diff of the  |
-|                         | two.                                              |
 | `../perf2html_diff.sh`  | Subtracts a baseline report from a modified       |
 |                         | report and writes a diff report, measuring        |
 |                         | nothing.                                          |
+| `../perf2html_batch.sh` | Writes a baseline report, a modified report built |
+|                         | with the cmake flags given, then the diff of the  |
+|                         | two.                                              |
 
 ## URL Components
 
@@ -59,10 +59,9 @@ report generators. Start by running the tests and checking the results.
   entry after each menu render.
 - `screenshot-mode`: Query key, `1` dark or `0` light, that sets the mode a
   screenshot is shot in.
-- `setting`: Hash key, settings view only, that names the setting scrolled to
-  the top.
+- `setting`: Hash key, settings view only, that focuses a setting.
 - `setting-val`: Hash key, settings view only, that carries the base64 JSON of
-  the new value for `setting`, applied on load.
+  the new value for focused `setting`, applied on load.
 - `test`: Hash key that names the test shown, `all` being the merged test.
 - `view`: Hash key, one of `callers`, `heat-map`, `flame-graph` or `settings`,
   that names the page framed, required whenever `test` is present.
