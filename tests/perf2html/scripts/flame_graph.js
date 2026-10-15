@@ -39,11 +39,14 @@ window.try_catch_handler_(function () {
   }
   // Hands the shown dark mode to speedscope, reloading when it differs.
   function color_scheme_hand_over() {
+    const view_storage = window.report_ui_.view_storage;
     const scheme = color_scheme_of_dark_mode();
-    if (localStorage.getItem(FLAME_GRAPH_COLOR_SCHEME_KEY_NAME) === scheme)
+    if (view_storage.text_read(FLAME_GRAPH_COLOR_SCHEME_KEY_NAME) === scheme)
       return;
-    localStorage.setItem(FLAME_GRAPH_COLOR_SCHEME_KEY_NAME, scheme);
-    location.reload();
+    view_storage.text_write(FLAME_GRAPH_COLOR_SCHEME_KEY_NAME, scheme);
+    // An address applying settings stores nothing, so no reload follows.
+    if (view_storage.text_read(FLAME_GRAPH_COLOR_SCHEME_KEY_NAME) === scheme)
+      location.reload();
   }
   function profile_hand_over() {
     const filed_profiles = window[FLAME_GRAPH_PROFILE_GLOBAL_NAME];

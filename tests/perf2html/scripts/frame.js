@@ -28,8 +28,8 @@ window.try_catch_handler_(function () {
     "SETTINGS_LOAD_LOG_HISTORY_MAX_LINES",
   );
   const SETTINGS_VIEW_ENTRY = settings_("SETTINGS_VIEW_ENTRY");
-  const STORAGE_KEY_SETTINGS_HISTORY = settings_(
-    "STORAGE_KEY_SETTINGS_HISTORY",
+  const STORAGE_KEY_LOG_DISPLAY_LENGTH = settings_(
+    "STORAGE_KEY_LOG_DISPLAY_LENGTH",
   );
 
   const home_panel = window.report_ui_.home_panel;
@@ -199,7 +199,7 @@ window.try_catch_handler_(function () {
   // Shows the stored history count when offered, else its default.
   function load_log_history() {
     const stored_count = window.report_ui_.view_storage.value_read(
-      STORAGE_KEY_SETTINGS_HISTORY,
+      STORAGE_KEY_LOG_DISPLAY_LENGTH,
     );
     load_log_shown_count = SETTINGS_LOAD_LOG_HISTORY_LINE_CHOICES.includes(
       stored_count,
@@ -221,7 +221,7 @@ window.try_catch_handler_(function () {
     if (!SETTINGS_LOAD_LOG_HISTORY_LINE_CHOICES.includes(line_count))
       window.throw_exception_("str_error_internal");
     window.report_ui_.view_storage.value_write(
-      STORAGE_KEY_SETTINGS_HISTORY,
+      STORAGE_KEY_LOG_DISPLAY_LENGTH,
       line_count,
     );
     load_log_shown_count = line_count;
@@ -258,6 +258,7 @@ window.try_catch_handler_(function () {
       window.throw_exception_("str_error_internal");
   }
 
+  // Shows the query's dark mode unless the applied settings set the default.
   function dark_mode_query_apply_() {
     const query_value = new URLSearchParams(location.search).get(
       DARK_MODE_QUERY_KEY_NAME,
@@ -268,7 +269,12 @@ window.try_catch_handler_(function () {
       query_value !== DARK_MODE_QUERY_VALUES.disabled
     )
       window.throw_exception_("str_error_dark_mode_unusable", query_value);
-    if (!window.report_ui_.view_storage.preferences_ignored())
+    if (
+      !Object.hasOwn(
+        window.settings_applied_values_(),
+        "DARK_MODE_ENABLED_DEFAULT",
+      )
+    )
       window.report_ui_.dark_mode_show_(
         query_value === DARK_MODE_QUERY_VALUES.enabled,
       );

@@ -153,26 +153,27 @@ SETTINGS_LOAD_LOG_HISTORY_MAX_LINES = 100
 SETTINGS_VIEW_ENTRY: tuple[str, str] = ("settings", "settings/index.html")
 
 STORAGE_KEY_CALLERS_ROWS = "callers.rows"
-STORAGE_KEY_HEAT_ROWS = "heat.rows"
-STORAGE_KEY_HEAT_SCALE = "heat.scale"
-STORAGE_KEY_HEAT_SORT = "heat.sort"
-STORAGE_KEY_SETTINGS_HISTORY = "settings.history"
-STORAGE_KEY_VIEW_CALLS = "view.calls"
-STORAGE_KEY_VIEW_COUNTERS = "view.counters"
+STORAGE_KEY_HEATMAP_ROWS = "heatmap.rows"
+STORAGE_KEY_HEATMAP_SCALE = "heatmap.scale"
+STORAGE_KEY_HEATMAP_SORT = "heatmap.sort"
+STORAGE_KEY_LOG_DISPLAY_LENGTH = "log.display_length"
+STORAGE_KEY_VIEW_CALLS_COLUMN = "view.calls_column"
+STORAGE_KEY_VIEW_COUNTER_COLUMNS = "view.counter_columns"
 STORAGE_KEY_VIEW_DARK_MODE = "view.dark_mode"
 STORAGE_KEY_VIEW_SCALE = "view.scale"
 STORAGE_OWNED_KEYS: tuple[str, ...] = (
+    FLAME_GRAPH_COLOR_SCHEME_KEY_NAME,
     STORAGE_KEY_CALLERS_ROWS,
-    STORAGE_KEY_HEAT_ROWS,
-    STORAGE_KEY_HEAT_SCALE,
-    STORAGE_KEY_HEAT_SORT,
-    STORAGE_KEY_SETTINGS_HISTORY,
-    STORAGE_KEY_VIEW_CALLS,
-    STORAGE_KEY_VIEW_COUNTERS,
+    STORAGE_KEY_HEATMAP_ROWS,
+    STORAGE_KEY_HEATMAP_SCALE,
+    STORAGE_KEY_HEATMAP_SORT,
+    STORAGE_KEY_LOG_DISPLAY_LENGTH,
+    STORAGE_KEY_VIEW_CALLS_COLUMN,
+    STORAGE_KEY_VIEW_COUNTER_COLUMNS,
     STORAGE_KEY_VIEW_DARK_MODE,
     STORAGE_KEY_VIEW_SCALE,
 )
-STORAGE_VERSION = "perf2html v1"
+STORAGE_VERSION = "perf2html v0"
 STORAGE_VERSION_KEY = "perf2html.version"
 
 STYLE_COLOR_DARK_MODE: dict[str, list[str]] = {
@@ -233,7 +234,7 @@ STYLE_DESIGN_FONT_CHARACTER_WIDTH_SHARE = 0.6
 STYLE_DESIGN_FONT_FIT_PROPERTY = "--design-font-fit-"
 STYLE_DESIGN_FONT_FIT_START_MULTIPLE = 1
 STYLE_DESIGN_FONT_SIZE_PROPERTY = "--design-font-size-px-"
-STYLE_DESIGN_FONT_SIZE_PX = 24
+STYLE_DESIGN_FONT_SIZE_PX = 20
 STYLE_DESIGN_MINIMUM_WINDOW_WIDTH_PX = 1280
 STYLE_DESIGN_SCALE_DEFAULT_MULTIPLE = 1
 STYLE_DESIGN_SCALE_DEFAULT_STOP = 6
@@ -296,14 +297,17 @@ STYLE_VALUE_ENTRIES: dict[str, str] = {
     "menu-pulldown-entry-list-z-index-": "3",
     "menu-pulldown-entry-padding-inline-": "1ch",
     "menu-pulldown-search-box-min-width-": "13ch",
-    "menu-status-bar-padding-left-": "2ch",
+    "menu-status-bar-padding-left-": "1ch",
+    "menu-status-bar-padding-right-": "1ch",
     "menu-strip-blank-line-height-": "0.5lh",
+    "menu-strip-padding-right-": "1ch",
     "page-body-line-height-": "1.1",
     "page-emphasis-padding-inline-": "1ch",
     "page-inset-block-": "1lh",
     "page-inset-inline-": "2ch",
-    "page-line-width-": "0.125ch",
+    "page-line-width-": "0.1em",
     "page-table-cell-padding-inline-": "1ch",
+    "page-table-title-z-index-": "1",
     "page-text-scrollbar-horizontal-height-": "1lh",
     "page-text-scrollbar-vertical-width-": "1ch",
     "screenshot-label-z-index-": "3",

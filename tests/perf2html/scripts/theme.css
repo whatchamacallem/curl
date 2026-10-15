@@ -46,13 +46,16 @@ pre {
   overflow-x: auto;
   overflow-y: hidden;
 }
+/* The menu's two lines, the preference strip beside the status line. */
 #overview-page- {
   display: grid;
+  grid-template-columns: 1fr auto;
   grid-template-rows: auto auto minmax(0, 1fr);
   height: 100%;
 }
 #overview-home- {
   display: grid;
+  grid-column: 1 / -1;
   grid-template-columns: minmax(0, 1fr) auto;
 }
 #overview-home-text- {
@@ -60,6 +63,7 @@ pre {
   overflow-y: auto;
 }
 #overview-view-frame- {
+  grid-column: 1 / -1;
   width: 100%;
   height: 100%;
 }
@@ -104,32 +108,52 @@ pre {
   white-space: pre;
 }
 #menu- {
-  padding-top: var(--menu-strip-blank-line-height-);
+  display: contents;
 }
-#menu- .menu-status-bar- {
+/* The menu line: the logo at the left, the other buttons at the right. */
+#menu- > .strip-line- {
+  grid-column: 1 / -1;
+  margin-top: var(--menu-strip-blank-line-height-);
+  padding-right: var(--menu-strip-padding-right-);
+  text-align: right;
+}
+/* Its buttons keep their own text, pulldowns among them, left aligned. */
+#menu- > .strip-line- > .menu-button- {
+  text-align: left;
+}
+#menu- .menu-status-bar-,
+#menu-preference- {
   margin-block: var(--menu-strip-blank-line-height-);
 }
 #menu-preference- {
-  padding-bottom: var(--menu-strip-blank-line-height-);
+  padding-right: var(--menu-strip-padding-right-);
 }
+/* A button: its pulldown hung from the box, side line room inside. */
 .menu-button- {
-  display: inline-block;
+  position: relative;
+  border-inline: var(--page-line-width-) solid transparent;
   padding: 0 var(--menu-button-padding-inline-);
   white-space: pre;
 }
 [data-entry-name-="str_report_name"] {
+  float: left;
   padding-inline-end: 0;
 }
 .menu-button-[tabindex],
 .menu-button-widget- {
   cursor: pointer;
 }
+/* A widget's glyphs, taller than a line, clipped to its button. */
+.menu-button-widget- {
+  display: inline-block;
+  vertical-align: top;
+  height: inherit;
+  overflow: clip;
+}
 .menu-status-bar- {
   margin-left: var(--menu-status-bar-padding-left-);
+  margin-right: var(--menu-status-bar-padding-right-);
   white-space: pre;
-}
-.menu-pulldown- {
-  position: relative;
 }
 .menu-pulldown-search-box- {
   display: inline-block;
@@ -158,7 +182,7 @@ pre {
   padding: 0 var(--menu-pulldown-entry-padding-inline-);
 }
 
-/* A table: each column as wide as its text, the titles staying in view. */
+/* A table: each column as wide as its text or a drag, titles in view. */
 table.table- {
   border-collapse: collapse;
 }
@@ -172,9 +196,19 @@ table.table- {
 .table- th {
   position: sticky;
   top: 0;
+  z-index: var(--page-table-title-z-index-);
 }
 .table- .numeric- {
   text-align: right;
+}
+
+/* A link or button is one line high, its text set on the box bottom. */
+.page- a,
+.heat-map-source- a,
+.menu-button- {
+  display: inline-block;
+  height: 1lh;
+  align-content: unsafe end;
 }
 
 /* A text scrollbar: one cell per character of its track. */

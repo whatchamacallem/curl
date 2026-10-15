@@ -472,8 +472,8 @@ window.report_ui_ = window.try_catch_handler_(function () {
     if (!delta) return 0;
     return baseline_count ? (100 * delta) / baseline_count : Infinity;
   }
-  function signed_percent_text(percent, is_line = false) {
-    if (!percent) return is_line ? "" : zero_percent_text();
+  function signed_percent_text(percent, is_caller = false) {
+    if (!percent) return zero_percent_text();
     const arrow = percent < 0 ? "▼" : "▲";
     const times = percent / 100;
     let amount_text;
@@ -488,7 +488,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
     } else {
       amount_text = fixed_text(times, NUMBER_FRACTION_DIGITS) + "x";
     }
-    if (!is_line) return arrow + amount_text;
+    if (is_caller) return arrow + amount_text;
     return arrow + amount_text.padStart(SIGNED_PERCENT_AMOUNT_CHARS);
   }
   function zero_percent_text() {
@@ -1104,7 +1104,6 @@ window.report_ui_ = window.try_catch_handler_(function () {
       return true;
     }
 
-    root_element.classList.add("menu-pulldown-");
     root_element.setAttribute("role", "combobox");
     root_element.setAttribute("aria-haspopup", "listbox");
     root_element.tabIndex = 0;
@@ -1599,7 +1598,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
     );
     return keyed_records.map((keyed_record) => keyed_record[1]);
   }
-  // Writes the title of a sorted table, its row count a span, by its sort.
+  // Writes the title of a sorted table by its sort, a column's measure if set.
   function table_sort_heading_markup(
     string_id,
     row_count,
@@ -1611,7 +1610,8 @@ window.report_ui_ = window.try_catch_handler_(function () {
       { class: "page-heading-row-count-" },
       String(row_count),
     );
-    const column_label = sort_column.column.label;
+    const column_label =
+      sort_column.column.measure ?? sort_column.column.label;
     const measure_text =
       is_diff && sort_column.column.numeric
         ? window.ui_strings_.text_fill("str_heading_measure_diff", {
@@ -1682,6 +1682,74 @@ window.report_ui_ = window.try_catch_handler_(function () {
       ? "vertical"
       : "sideways";
   }
+  // Answers the title of the column left of a pressed cell, null for none.
+  function slide_title_cell(press_event) {
+    const pressed_cell = press_event.target.closest("td, th");
+    if (!pressed_cell || pressed_cell.cellIndex < 1) return null;
+    const table_element = pressed_cell.closest("table");
+    if (!table_element.matches("table.table-")) return null;
+    return table_element.tHead.rows[0].cells[pressed_cell.cellIndex - 1];
+  }
+  // Widens the column left of the pressed cell while the press moves sideways.
+  function table_slide_press(press_event, title_cell) {
+    const start_width_px = design_px(title_cell.getBoundingClientRect().width);
+    let animation_frame = 0,
+      is_sliding = false;
+    const on_pointer_move = window.try_catch_handler_((move_event) => {
+      if (move_event.pointerId !== press_event.pointerId) return;
+      if (!is_sliding) {
+        const move_direction = drag_direction(press_event, move_event);
+        if (!move_direction) return;
+        if (move_direction === "vertical") {
+          press_end();
+          return;
+        }
+        is_sliding = true;
+        selection_drop();
+        document.addEventListener("selectionchange", selection_drop);
+      }
+      const wanted_width_px =
+        start_width_px + design_px(move_event.clientX - press_event.clientX);
+      title_cell.style.minWidth = Math.max(0, wanted_width_px) + "px";
+      if (animation_frame) return;
+      animation_frame = requestAnimationFrame(
+        window.try_catch_handler_(() => {
+          animation_frame = 0;
+          layout_refresh();
+        }),
+      );
+    });
+    const on_pointer_release = window.try_catch_handler_((release_event) => {
+      if (release_event.pointerId !== press_event.pointerId) return;
+      press_end();
+      if (!is_sliding) return;
+      document.removeEventListener("selectionchange", selection_drop);
+      if (release_event.type === "pointerup") click_swallow_next();
+    });
+    function press_end() {
+      listeners_bind(window, on_pointer_move, on_pointer_release, false);
+      window.removeEventListener("dragstart", default_prevent, true);
+    }
+    listeners_bind(window, on_pointer_move, on_pointer_release, true);
+    window.addEventListener("dragstart", default_prevent, true);
+  }
+  // Hands a press in the table's own cells to the column slide.
+  function table_slide_attach(table_element) {
+    if (table_element.is_slide_attached) return;
+    table_element.is_slide_attached = true;
+    table_element.addEventListener(
+      "pointerdown",
+      window.try_catch_handler_((press_event) => {
+        const title_cell = slide_title_cell(press_event);
+        if (
+          !press_event.button &&
+          title_cell &&
+          title_cell.closest("table") === table_element
+        )
+          table_slide_press(press_event, title_cell);
+      }),
+    );
+  }
   // Hands a plain click on a column title to its table's sort callback.
   function table_sort_attach(table_element) {
     const on_sort = table_sort_callbacks.get(
@@ -1713,6 +1781,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
     for (const table_element of root_element.querySelectorAll(
       "table.table-",
     )) {
+      table_slide_attach(table_element);
       table_sort_attach(table_element);
       if (table_element.tBodies[0].querySelector("a[href]"))
         table_rows_attach(table_element, "tr");
@@ -1742,6 +1811,10 @@ window.report_ui_ = window.try_catch_handler_(function () {
   }
   function layout_reset(root_element) {
     root_element = root_element || document.body;
+    for (const title_cell of root_element.querySelectorAll(
+      "table.table- > thead > tr > th",
+    ))
+      title_cell.style.minWidth = "";
     for (const pane_entry of registered_panes) {
       if (!root_element.contains(pane_entry.pane_element)) continue;
       pane_entry.pane_width_forget();
@@ -2120,10 +2193,16 @@ window.report_ui_ = window.try_catch_handler_(function () {
         storage_sweep();
       } catch (storage_error) {}
     },
-    // Answers whether applied settings reset and ignore stored preferences.
-    preferences_ignored() {
+    // Reads and writes plain text, not JSON, for a key an outside app reads.
+    text_read(storage_key) {
       storage_version_check();
-      return preferences_are_ignored;
+      if (preferences_are_ignored) return null;
+      return localStorage.getItem(storage_key);
+    },
+    text_write(storage_key, stored_text) {
+      storage_version_check();
+      if (preferences_are_ignored) return;
+      localStorage.setItem(storage_key, stored_text);
     },
     value_read(storage_key) {
       storage_version_check();
@@ -2480,6 +2559,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
 
   function drag_scroll_press(press_event, surface_element, target_element) {
     if (press_event.button || press_event.defaultPrevented) return;
+    const pressed_title_cell = slide_title_cell(press_event);
     const start_scroll_left = target_element.scrollLeft,
       start_scroll_top = target_element.scrollTop;
     let is_dragging = false,
@@ -2488,7 +2568,9 @@ window.report_ui_ = window.try_catch_handler_(function () {
       if (move_event.pointerId !== press_event.pointerId) return;
       if (!is_dragging) {
         const move_direction = drag_direction(press_event, move_event);
-        if (!move_event.buttons) {
+        const is_column_slide =
+          !!pressed_title_cell && move_direction === "sideways";
+        if (!move_event.buttons || is_column_slide) {
           press_end();
           return;
         }

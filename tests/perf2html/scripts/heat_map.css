@@ -2,9 +2,11 @@
  * SPDX-License-Identifier: MIT
  * This file is licensed under the terms of the LICENSE-MIT.md file. */
 
-/* A tree node: the caret after its indent, the name, the share. */
+/* A tree node, one line high: the caret after its indent, name, share. */
 .heat-map-tree-node- {
   display: flex;
+  height: 1lh;
+  align-items: unsafe end;
   padding-right: var(--heat-map-tree-node-padding-right-);
   cursor: pointer;
   white-space: pre;
@@ -70,6 +72,15 @@ tr.row-link- {
 tr.heat-map-source-line-detail-row- > td {
   white-space: normal;
   padding: 0;
+}
+/* A line detail's table and first control take the source line as left. */
+tr.heat-map-source-line-detail-row- .table-,
+tr.heat-map-source-line-detail-row- .table- :is(th, td):first-child,
+tr.heat-map-source-line-detail-row-
+  .heat-map-source-information-box-
+  > div
+  > .menu-button-:first-child {
+  border-left: 0;
 }
 td.heat-map-source-table-line-number-cell- {
   user-select: none;

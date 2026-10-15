@@ -118,7 +118,9 @@ The single function/check owning each concern - never bypass or duplicate:
 - `artifact_path` - every artifacts dir and archive file name,
   `<test>.<tool>.<time>.<extension>` (utility.sh).
 - `counter_value()` - all counter lookups (callgrind.py).
-- `column_extents()`/`column_limits()` - table column widths (theme.py/js).
+- `text_clip()` - every cell text cut at its column's `clip`;
+  `table_slide_press()` every column width, a drag setting its title
+  cell's `min-width` (theme.js).
 - `checksum_compute`/`_REPORT_CHECKSUM_COMMAND` - report checksums, kept
   separate, re-verified on every open.
 - `share_in_scope()` - heat-map denominator scope; a diff divides by the
@@ -130,7 +132,8 @@ The single function/check owning each concern - never bypass or duplicate:
   `is_line` true on the heat map source view alone (theme.py `NumberFormat`,
   theme.js `report_ui_`).
 - `design_scale_stop_set()` - every scale change; `menu.js` then posts
-  `layout_reset`, which resets column widths.
+  `layout_reset`, which resets column widths, pane widths and heading row
+  counts.
 - `information_box_render(file_path, line_number)` - every file, function
   and line info box, answering `{markup, copy_text}`, line 0 the file's
   (heat_map.js).
@@ -151,8 +154,8 @@ The single function/check owning each concern - never bypass or duplicate:
   `report_ui_.render_table` every table (theme.js),
   `window.render_element_of_` every element made from markup.
 - `window.render_menu_button_`/`render_menu_button()` - every menu
-  button: a strip cell, a link, a control (theme.js/theme.py; theme.py
-  the link alone).
+  button: a strip cell, a control, a ticker tape entry (theme.js); a link
+  in a table or a page is a plain anchor from `render_element()`.
 - `window.render_page_emphasis_` - every page emphasis, called by
   the strip for a heading title (theme.js).
 - `heat_cell_style(percent, curve, is_diff)` - every heat color, JS

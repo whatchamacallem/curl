@@ -5,7 +5,6 @@
 :root:not([data-dark-mode-="disabled"]) {
   a {
     color: var(--dark-mode-page-link-fg-);
-    text-decoration: none;
   }
   a:focus-visible {
     background: var(--dark-mode-menu-focus-bg-);
@@ -13,7 +12,7 @@
   }
   .table- th {
     color: var(--dark-mode-page-dim-fg-);
-    background: var(--dark-mode-panel-bg-);
+    background: var(--dark-mode-menu-normal-bg-);
   }
   .table- > tbody > tr:focus-visible > td,
   .table- > tbody > tr:focus-visible a {
@@ -50,7 +49,6 @@
     background: var(--dark-mode-page-bg-);
   }
   table.heat-map-source-table- > thead > tr > th {
-    background: var(--dark-mode-page-emphasis-bg-);
     color: var(--dark-mode-page-fg-);
   }
   td.heat-map-source-table-self-cell-,

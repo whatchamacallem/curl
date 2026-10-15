@@ -4,20 +4,14 @@
 
 a {
   color: var(--light-mode-page-fg-);
-  text-decoration: underline;
 }
 a:focus-visible {
   background: var(--light-mode-menu-focus-bg-);
   color: var(--light-mode-menu-focus-fg-);
 }
-.menu-button-,
-.menu-button- a,
-.menu-status-bar- a {
-  text-decoration: none;
-}
 .table- th {
   color: var(--light-mode-page-fg-);
-  background: var(--light-mode-page-bg-);
+  background: var(--light-mode-menu-normal-bg-);
 }
 .table- > tbody > tr:focus-visible > td,
 .table- > tbody > tr:focus-visible a {
@@ -53,10 +47,6 @@ a:focus-visible {
 .heat-map-source-information-box- .table- {
   background: var(--light-mode-page-bg-);
 }
-table.heat-map-source-table- > thead > tr > th {
-  background: var(--light-mode-page-bg-);
-  color: var(--light-mode-page-fg-);
-}
 td.heat-map-source-table-self-cell-,
 td.heat-map-source-table-calls-cell-,
 td.heat-map-source-table-secondary-counter-cell- {
@@ -87,8 +77,8 @@ table.heat-map-source-table- > tbody > tr:focus-visible > td {
   color: var(--light-mode-page-fg-);
 }
 .heat-map-tree-node-.selected- {
-  background: var(--light-mode-page-emphasis-bg-);
-  color: var(--light-mode-page-emphasis-fg-);
+  background: var(--light-mode-page-bg-);
+  color: var(--light-mode-page-fg-);
 }
 .heat-map-tree-node-:focus-visible {
   background: var(--light-mode-menu-focus-bg-) !important;
@@ -184,6 +174,69 @@ tr.heat-map-source-information-box-synthetic-row- > td {
 .screenshot-label- {
   background: var(--light-mode-screenshot-label-bg-);
   color: var(--light-mode-screenshot-label-fg-);
+}
+
+/* Light mode alone draws lines, each on the top of the slot below its own. */
+:where(:root[data-dark-mode-="disabled"]) {
+  /* A framed box: its top line in the room of a clear top border. */
+  .page- a,
+  .heat-map-source- a,
+  .heat-map-tree-node- {
+    position: relative;
+  }
+  .page- a,
+  .heat-map-source- a,
+  .menu-button-,
+  .heat-map-tree-node- {
+    border-top: var(--page-line-width-) solid transparent;
+  }
+  /* The frame, over its box, passing each press to what lies under it. */
+  .page- a::after,
+  .heat-map-source- a::after,
+  .menu-button-:not([data-entry-name-="str_report_name"])::after,
+  .heat-map-tree-node-.selected-::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    outline: var(--page-line-width-) solid
+      var(--light-mode-menu-normal-outline-);
+  }
+  /* A node frame keeps its sides inside the tree, which cuts what crosses. */
+  .heat-map-tree-node-.selected-::after {
+    inset: 0 var(--page-line-width-);
+  }
+  /* A table's lines: its sides, the titles' top and bottom, its own bottom. */
+  table.table- {
+    position: relative;
+    overflow-x: clip;
+    overflow-clip-margin: border-box;
+  }
+  table.table-,
+  .table- th,
+  .table- td {
+    border-inline: var(--page-line-width-) solid var(--light-mode-page-fg-);
+  }
+  table.table-::after,
+  .table- th::before,
+  .table- th::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    border-top: var(--page-line-width-) solid var(--light-mode-page-fg-);
+  }
+  .table- th::before {
+    top: 0;
+  }
+  .table- th::after {
+    top: 100%;
+  }
+  table.table-::after {
+    top: 100%;
+    left: calc(-1 * var(--page-line-width-));
+    right: calc(-1 * var(--page-line-width-));
+  }
 }
 
 .settings-value-box- {

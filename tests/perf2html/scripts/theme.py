@@ -125,10 +125,10 @@ class Theme:
                 return ""
             return ("-" if number < 0 else "") + self.human(abs(number))
 
-        def signed_percent(self, percent: float, is_line: bool = False) -> str:
+        def signed_percent(self, percent: float) -> str:
             digit_count = _NUMBER_FRACTION_DIGITS
             if percent == 0:
-                return "" if is_line else self.fixed_text(0, digit_count) + "%"
+                return self.fixed_text(0, digit_count) + "%"
             arrow = "▼" if percent < 0 else "▲"
             times = percent / 100
             if percent == math.inf:
@@ -141,8 +141,6 @@ class Theme:
                 amount_text = "≈∞%"
             else:
                 amount_text = self.fixed_text(times, digit_count) + "x"
-            if not is_line:
-                return arrow + amount_text
             return arrow + amount_text.rjust(self.signed_percent_amount_chars)
 
         def time(self, seconds: float) -> str:
@@ -385,8 +383,8 @@ def num_signed(number: float) -> str:
     return _renderer.number_format.signed(number)
 
 
-def num_signed_pct(percent: float, is_line: bool = False) -> str:
-    return _renderer.number_format.signed_percent(percent, is_line)
+def num_signed_pct(percent: float) -> str:
+    return _renderer.number_format.signed_percent(percent)
 
 
 def num_time(seconds: float) -> str:

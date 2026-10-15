@@ -46,7 +46,7 @@ window.try_catch_handler_(function () {
   const HEAT_MAP_VIEW_ENTRY = settings_("HEAT_MAP_VIEW_ENTRY");
   const RANKING_COUNTER_NAME = settings_("RANKING_COUNTER_NAME");
   const REPORT_SOURCES_DIR_NAME = settings_("REPORT_SOURCES_DIR_NAME");
-  const STORAGE_KEY_HEAT_ROWS = settings_("STORAGE_KEY_HEAT_ROWS");
+  const STORAGE_KEY_HEATMAP_ROWS = settings_("STORAGE_KEY_HEATMAP_ROWS");
   const STYLE_HEAT_MAP_TREE_INDENT_PER_LEVEL_CHARS = settings_(
     "STYLE_HEAT_MAP_TREE_INDENT_PER_LEVEL_CHARS",
   );
@@ -167,8 +167,8 @@ window.try_catch_handler_(function () {
 
   const share_of_total = (value) => (100 * value) / total_cost;
   let share_text = report_ui_.percent_text;
-  const share_of_total_text = (value, is_line) =>
-    share_text(share_of_total(value), is_line);
+  const share_of_total_text = (value) =>
+    value ? share_text(share_of_total(value)) : "";
 
   let human_text = report_ui_.human_text;
   const cell_number = (value) => ({
@@ -267,7 +267,7 @@ window.try_catch_handler_(function () {
       line_share = (value, baseline_cost) =>
         share_of_baseline(value, baseline_cost);
       line_share_text = (value, baseline_cost) =>
-        share_of_baseline_text(value, baseline_cost, true);
+        value ? share_of_baseline_text(value, baseline_cost) : "";
       file_counter_share = (value, counter, file_path) =>
         share_of_baseline(value, file_counter_baseline(file_path, counter));
       file_counter_scope = "line";
@@ -285,8 +285,8 @@ window.try_catch_handler_(function () {
   }
   const baseline = (cost_vector) =>
     counter_baseline(cost_vector, ranking_counter);
-  const share_of_baseline_text = (value, baseline_cost, is_line) =>
-    share_text(share_of_baseline(value, baseline_cost), is_line);
+  const share_of_baseline_text = (value, baseline_cost) =>
+    share_text(share_of_baseline(value, baseline_cost));
   const line_baseline_vector = (file_path, line_number) => {
     const baseline_table =
       file_table[file_path] && file_table[file_path].baseline;
@@ -346,7 +346,7 @@ window.try_catch_handler_(function () {
     return active_scope_total ? (100 * value) / active_scope_total : 0;
   };
   const share_in_scope_text = (value, counter, line_number) =>
-    value ? share_text(share_in_scope(value, counter, line_number), true) : "";
+    value ? share_text(share_in_scope(value, counter, line_number)) : "";
   const scope_share_label = () =>
     text(SCOPE_SHARE_STRING_IDS[active_scale.scope]);
   // Writes the heat colors of a cell by its share, on the chosen curve.
@@ -447,7 +447,10 @@ window.try_catch_handler_(function () {
   }
 
   const counter_column = (counter, extra) =>
-    Object.assign({ label: counter.key, numeric: true }, extra || {});
+    Object.assign(
+      { label: counter.key, measure: counter_label(counter), numeric: true },
+      extra || {},
+    );
   const secondary_column = (secondary) =>
     counter_column(secondary, {
       cls: "heat-map-source-table-secondary-counter-cell-",
@@ -467,7 +470,7 @@ window.try_catch_handler_(function () {
       baseline_lookup,
     );
     return {
-      text: share_text(percent, line_number != null),
+      text: percent || line_number == null ? share_text(percent) : "",
       style: heat_style(percent),
     };
   }
@@ -1161,7 +1164,10 @@ window.try_catch_handler_(function () {
       sorted_column,
       IS_DIFF,
     );
-    heading_element.setAttribute("data-row-count-key-", STORAGE_KEY_HEAT_ROWS);
+    heading_element.setAttribute(
+      "data-row-count-key-",
+      STORAGE_KEY_HEATMAP_ROWS,
+    );
     report_ui_.page_heading.attach(heading_element, [
       home_kind_entry(kind_choice),
     ]);
@@ -1271,7 +1277,6 @@ window.try_catch_handler_(function () {
               line_number,
             )
           : file_counter_share(value, counter, file_path),
-        true,
       );
     };
     const function_column = (label) => ({
@@ -1424,7 +1429,7 @@ window.try_catch_handler_(function () {
             ? call_file + ":" + call_line
             : call_file;
           return [
-            share_of_total_text(ranking_value(cost_vector), true),
+            share_of_total_text(ranking_value(cost_vector)),
             cell_number(ranking_value(cost_vector)),
             call_count_cell(call_count),
             {
@@ -1499,7 +1504,7 @@ window.try_catch_handler_(function () {
               : call_file;
             return [
               call_count_cell(call_count),
-              share_of_total_text(ranking_value(cost_vector), true),
+              share_of_total_text(ranking_value(cost_vector)),
               cell_number(ranking_value(cost_vector)),
               {
                 text: function_name(caller_index),

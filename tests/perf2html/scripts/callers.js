@@ -103,7 +103,10 @@ window.try_catch_handler_(function () {
     const caller_labels = record.callers.map((caller) =>
       text_fill("str_callers_cell_entry", {
         function: caller.name,
-        share: share_text(calls_share(caller.calls, caller.baseline_calls)),
+        share: share_text(
+          calls_share(caller.calls, caller.baseline_calls),
+          true,
+        ),
       }),
     );
     const separator_markup = render_html_escape(CALLERS_CELL_SEPARATOR_TEXT);
@@ -168,7 +171,11 @@ window.try_catch_handler_(function () {
   function counter_column(counter_index) {
     const counter_name = callers_model.counterNames[counter_index];
     return table_sort_column(
-      { label: counter_name, numeric: true },
+      {
+        label: counter_name,
+        measure: window.report_preferences_.counter_label(counter_name),
+        numeric: true,
+      },
       counter_name,
       (record) => Math.abs(record.values[counter_index]),
       (record) => share_cell(counter_share(record, counter_index)),

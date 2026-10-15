@@ -22,10 +22,14 @@ window.report_preferences_ = window.try_catch_handler_(function () {
   );
   const HEAT_MAP_SORT_DEFAULT_MODE = settings_("HEAT_MAP_SORT_DEFAULT_MODE");
   const RANKING_COUNTER_NAME = settings_("RANKING_COUNTER_NAME");
-  const STORAGE_KEY_HEAT_SCALE = settings_("STORAGE_KEY_HEAT_SCALE");
-  const STORAGE_KEY_HEAT_SORT = settings_("STORAGE_KEY_HEAT_SORT");
-  const STORAGE_KEY_VIEW_CALLS = settings_("STORAGE_KEY_VIEW_CALLS");
-  const STORAGE_KEY_VIEW_COUNTERS = settings_("STORAGE_KEY_VIEW_COUNTERS");
+  const STORAGE_KEY_HEATMAP_SCALE = settings_("STORAGE_KEY_HEATMAP_SCALE");
+  const STORAGE_KEY_HEATMAP_SORT = settings_("STORAGE_KEY_HEATMAP_SORT");
+  const STORAGE_KEY_VIEW_CALLS_COLUMN = settings_(
+    "STORAGE_KEY_VIEW_CALLS_COLUMN",
+  );
+  const STORAGE_KEY_VIEW_COUNTER_COLUMNS = settings_(
+    "STORAGE_KEY_VIEW_COUNTER_COLUMNS",
+  );
 
   const HEAT_SORT_CHOICES = [
     {
@@ -146,7 +150,7 @@ window.report_preferences_ = window.try_catch_handler_(function () {
   // Answers the counters stored as chosen when this report offers each one.
   function stored_counter_names() {
     const stored_names = window.report_ui_.view_storage.value_read(
-      STORAGE_KEY_VIEW_COUNTERS,
+      STORAGE_KEY_VIEW_COUNTER_COLUMNS,
     );
     const is_offered =
       Array.isArray(stored_names) &&
@@ -160,17 +164,17 @@ window.report_preferences_ = window.try_catch_handler_(function () {
     show({
       counter_names: shown_counter_names(stored_counter_names()),
       heat_scale_value: stored_choice(
-        STORAGE_KEY_HEAT_SCALE,
+        STORAGE_KEY_HEATMAP_SCALE,
         choice_values(report_heat_scale_choices),
         heat_scale_default_value,
       ),
       heat_sort_mode: stored_choice(
-        STORAGE_KEY_HEAT_SORT,
+        STORAGE_KEY_HEATMAP_SORT,
         choice_values(HEAT_SORT_CHOICES),
         HEAT_MAP_SORT_DEFAULT_MODE,
       ),
       shows_calls: stored_choice(
-        STORAGE_KEY_VIEW_CALLS,
+        STORAGE_KEY_VIEW_CALLS_COLUMN,
         SHOWS_CALLS_VALUES,
         COUNTER_SELECTION_CALLS_SHOWN_DEFAULT,
       ),
@@ -223,7 +227,11 @@ window.report_preferences_ = window.try_catch_handler_(function () {
   // Shows or hides the calls columns, storing the choice.
   function calls_toggle() {
     const shows_calls = !now().shows_calls;
-    preference_choose({ shows_calls }, STORAGE_KEY_VIEW_CALLS, shows_calls);
+    preference_choose(
+      { shows_calls },
+      STORAGE_KEY_VIEW_CALLS_COLUMN,
+      shows_calls,
+    );
   }
   // Turns one counter on or off, answering false for the ranking counter.
   function counter_toggle(counter_name) {
@@ -236,7 +244,7 @@ window.report_preferences_ = window.try_catch_handler_(function () {
     );
     preference_choose(
       { counter_names: shown_counter_names(chosen_names) },
-      STORAGE_KEY_VIEW_COUNTERS,
+      STORAGE_KEY_VIEW_COUNTER_COLUMNS,
       chosen_names,
     );
     return true;
@@ -244,14 +252,14 @@ window.report_preferences_ = window.try_catch_handler_(function () {
   function heat_scale_choose(scale_value) {
     preference_choose(
       { heat_scale_value: scale_value },
-      STORAGE_KEY_HEAT_SCALE,
+      STORAGE_KEY_HEATMAP_SCALE,
       scale_value,
     );
   }
   function heat_sort_choose(sort_mode) {
     preference_choose(
       { heat_sort_mode: sort_mode },
-      STORAGE_KEY_HEAT_SORT,
+      STORAGE_KEY_HEATMAP_SORT,
       sort_mode,
     );
   }

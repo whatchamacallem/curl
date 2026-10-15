@@ -189,13 +189,11 @@ window.try_catch_handler_(function () {
   function choice_label(choices, choice_value) {
     return choices.find((choice) => choice.value === choice_value).label;
   }
-  // Answers the counters label: one counter's description, else their count.
+  // Answers the counters label: one counter's description, else the word.
   function counters_label() {
     const shown_names = window.report_preferences_.now().counter_names;
     return shown_names.length > 1
-      ? window.ui_strings_.text_fill("str_menu_counters", {
-          count: shown_names.length,
-        })
+      ? window.ui_strings_.text("str_menu_counters")
       : window.report_preferences_.counter_description(shown_names[0]);
   }
   // Lists the counters pulldown's choices: calls, then each counter, marked.

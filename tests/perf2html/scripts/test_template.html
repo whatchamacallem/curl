@@ -145,8 +145,11 @@
             frame.src = page.href;
             frame.width = data.width;
             frame.height = data.height;
+            // Opens the page as a user loads it, without the shot's query.
+            const page_address = new URL(page.href, document.baseURI);
+            page_address.search = "";
             const link = document.createElement("a");
-            link.href = page.href;
+            link.href = page_address.href;
             link.setAttribute("aria-label", page.name);
             box.appendChild(frame);
             box.appendChild(link);

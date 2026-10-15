@@ -10,6 +10,7 @@ The rest of these sections are provided as a guide for interested developers.
 These are the data formats.
 
 - [URL Components](#url-components)
+- [Browser Preferences](#browser-preferences)
 - [Report Contents](#report-contents)
 - [Raw Data Archive Contents](#raw-data-archive-contents)
 
@@ -65,6 +66,27 @@ report generators. Start by running the tests and checking the results.
 - `test`: Hash key that names the test shown, `all` being the merged test.
 - `view`: Hash key, one of `callers`, `heat-map`, `flame-graph` or `settings`,
   that names the page framed, required whenever `test` is present.
+
+## Browser Preferences
+
+Reports keep user preferences in in the browser's `localStorage`, shared by
+every report opened from the same origin. Each value is JSON, `null` meaning
+the user never chose one and the default in `settings.py` applies.
+
+If the `perf2html.version` does not match `STORAGE_VERSION` then all
+preferences are reset at startup.
+
+- `callers.rows`: The callers row count, one of `TABLE_ROW_COUNT_CHOICES`.
+- `heatmap.rows`: The heat map row count, one of `TABLE_ROW_COUNT_CHOICES`.
+- `heatmap.scale`: The heat map scale, `<curve>/<scope>`, shown if offered.
+- `heatmap.sort`: The heat map sort order, `heat` or `name`.
+- `log.display_length`: The load log line count the settings view shows.
+- `perf2html.version`: The `STORAGE_VERSION` the other keys were written under.
+- `speedscope-color-scheme`: Speedscope's scheme, plain text `DARK` or `LIGHT`.
+- `view.calls_column`: Whether the calls columns are shown, `true` or `false`.
+- `view.counter_columns`: The counter columns shown, never the ranking counter.
+- `view.dark_mode`: The dark mode chosen, `enabled` or `disabled`.
+- `view.scale`: The design scale multiple chosen, shown at the nearest stop.
 
 ## Report Contents
 
