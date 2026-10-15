@@ -261,7 +261,7 @@ class Theme:
             ) as handle:
                 handle.write(text)
 
-    # Answers a cell as the JS table writer's fields, defaults left out.
+    # Returns a cell as the JS table writer's fields, defaults left out.
     def cell_fields(self, value: CellOrText) -> str | dict[str, str]:
         if isinstance(value, str):
             return value
@@ -424,7 +424,7 @@ def render_html_escape(value: object) -> str:
     )
 
 
-# Answers rows as the JSON a page script hands the table writer.
+# Returns rows as the JSON a page script hands the table writer.
 def table_rows_text(rows: Sequence[Sequence[CellOrText]]) -> str:
     return json.dumps(
         [[_renderer.cell_fields(value) for value in row] for row in rows],

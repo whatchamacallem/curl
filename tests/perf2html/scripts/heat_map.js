@@ -390,7 +390,7 @@ window.try_catch_handler_(function () {
       window.throw_exception_("str_error_internal");
     return sources[file_path];
   }
-  // Answers whether the files' sources ran, loading the rest, then routing.
+  // Returns whether the files' sources ran, loading the rest, then routing.
   function sources_ready(file_paths) {
     const missing_names = file_paths
       .map((file_path) => file_table[file_path].source)
@@ -419,7 +419,7 @@ window.try_catch_handler_(function () {
     }
     return missing_names.length === 0;
   }
-  // Answers the files whose sources the chosen home table reads.
+  // Returns the files whose sources the chosen home table reads.
   function home_source_paths() {
     const kind_choice = HOME_TABLE_KIND_CHOICES.find(
       (choice) => choice.value === home_table_kind,
@@ -915,7 +915,7 @@ window.try_catch_handler_(function () {
     const record_location = (record) =>
       record.file_path + ":" + record.line_number;
     const source_lines_by_file = new Map();
-    // Answers a line's trimmed source, empty when the file's source is away.
+    // Returns a line's trimmed source, empty when the file's source is away.
     function source_snippet(record) {
       if (!source_lines_by_file.has(record.file_path)) {
         const file_source = source_text(record.file_path);

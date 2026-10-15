@@ -219,7 +219,7 @@ class BuildReport:
             "callees": callee_rows,
         }
 
-    # Answers each named counter's value in the costs.
+    # Returns each named counter's value in the costs.
     def counter_values(
         self,
         counters: Sequence[str],
@@ -371,7 +371,7 @@ class BuildReport:
                 " be built without it"
             )
 
-    # Answers each named function with its heat map address, the names sorted.
+    # Returns each named function with its heat map address, the names sorted.
     def function_links(
         self,
         test_name: str,

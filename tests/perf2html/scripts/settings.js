@@ -47,7 +47,7 @@ window.try_catch_handler_(function () {
     for (const [name, value] of Object.entries(root_values))
       document.documentElement.style.setProperty(name, value);
   }
-  // Answers whether settings debugging is on, the top page's query deciding.
+  // Returns whether settings debugging is on, the top page's query deciding.
   function settings_debug_enabled(written_object) {
     const query_values = written_object.SETTINGS_DEBUG_QUERY_VALUES;
     const query_value = new URLSearchParams(location.search).get(
@@ -67,7 +67,7 @@ window.try_catch_handler_(function () {
       );
     return query_value === query_values.enabled;
   }
-  // Answers the settings the top hash applies, an empty object for none.
+  // Returns the settings the top hash applies, an empty object for none.
   function settings_applied_values(written_object) {
     const key_prefix = written_object.SETTINGS_DEBUG_HASH_KEY_NAME + "=";
     const applied_part = location.hash
@@ -119,7 +119,7 @@ window.try_catch_handler_(function () {
   function settings_names_() {
     return Object.keys(settings_object);
   }
-  // Answers a copy of the settings the top page's hash applied.
+  // Returns a copy of the settings the top page's hash applied.
   function settings_applied_values_() {
     return { ...applied_values };
   }
@@ -136,7 +136,7 @@ window.try_catch_handler_(function () {
       held_template.before(loaded_script);
     }
   }
-  // Answers a framed page asking for the window settings object.
+  // Relays the window settings object to a framed page asking for it.
   function settings_request_handler(browser_event) {
     const payload = browser_event.data;
     if (payload && payload.report_ui === SETTINGS_REQUEST_MESSAGE_NAME)

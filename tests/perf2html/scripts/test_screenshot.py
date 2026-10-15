@@ -466,7 +466,7 @@ class Screenshots:
         os.makedirs(self.compare_dir, exist_ok=True)
         compare_image.save(compare_path)
 
-    # Answers the address of a report's entry page relative to the index.
+    # Returns the address of a report's entry page relative to the index.
     def entry_href(self, report_dir: str, index_path: str) -> str:
         return urllib.parse.quote(
             os.path.relpath(
@@ -634,7 +634,7 @@ class Screenshots:
         with open(index_path, "w") as index_file:
             index_file.write(template.replace(_INDEX_MARKER, data_script))
 
-    # Answers the query and hash a page is shot at.
+    # Returns the query and hash a page is shot at.
     def page_address(
         self, view_hash: str, menu_entry_number: str, dark_value: str
     ) -> str:
@@ -663,7 +663,7 @@ class Screenshots:
             return lead + slashed + address
         return "file://" + page + address
 
-    # Answers whether the outer region holds the whole inner region.
+    # Returns whether the outer region holds the whole inner region.
     def region_holds(
         self,
         outer_region: tuple[int, int, int, int],

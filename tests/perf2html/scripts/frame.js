@@ -55,11 +55,11 @@ window.try_catch_handler_(function () {
   function address_now() {
     return current_address;
   }
-  // Answers whether the report holds a flame graph for the test.
+  // Returns whether the report holds a flame graph for the test.
   function has_flame_graph(test_name) {
     return report_has_flame_graph && test_name !== REPORT_TEST_SUITE_NAME;
   }
-  // Answers the query's menu entry number while the loaded address shows.
+  // Returns the query's menu entry number while the loaded address shows.
   function menu_entry_number_now() {
     return location.hash === loaded_hash ? loaded_menu_entry_number : null;
   }

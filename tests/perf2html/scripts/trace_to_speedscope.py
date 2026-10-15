@@ -156,7 +156,7 @@ class TraceToSpeedscope:
             key=lambda run: sum(call.last - call.first + 1 for call in run),
         )
 
-    # Answers the stdout of a command whose stderr passes through.
+    # Returns the stdout of a command whose stderr passes through.
     def command_output(self, command: list[str]) -> str:
         completed = subprocess.run(
             command, check=False, stdout=subprocess.PIPE, text=True

@@ -16,7 +16,7 @@ window.try_catch_handler_(function () {
   const tests_heading = document.getElementById("overview-tests-heading-");
   const tests_table_data = document.getElementById("overview-tests-table-");
 
-  // Answers the tests table columns, a diff's naming the ranking counter.
+  // Returns the tests table columns, a diff's naming the ranking counter.
   function tests_columns() {
     if (tests_table_data.getAttribute("data-diff-") === "1")
       return [

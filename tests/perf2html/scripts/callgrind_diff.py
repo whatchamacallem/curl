@@ -184,7 +184,7 @@ class CallgrindDiff:
                 profile.counters, f"the {side} profile"
             )
 
-    # Answers the path the diff heat map shows, from the delta's objects.
+    # Returns the path the diff heat map shows, from the delta's objects.
     def display_path(self, file: str, objects: dict[str, str]) -> str:
         entry = self.derived.path_entry(file)
         return callgrind.display_path(

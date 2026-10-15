@@ -95,7 +95,7 @@ class TestReport:
                 f"{label} has a 'raw data' section, but it should not: {path}"
             )
 
-    # Answers the report relative path of a test's callers page.
+    # Returns the report relative path of a test's callers page.
     def callers_page_path(self, test_name: str) -> str:
         return f"{_TEST_CALLERS_PAGE_DIR_NAME}/{test_name}.html"
 
@@ -246,7 +246,7 @@ class TestReport:
                     )
                     return
 
-    # Answers the attributes of the div the id names, none when no div has it.
+    # Returns the attributes of the div the id names, none when no div has it.
     def element_attributes(
         self, page_text: str, element_id: str
     ) -> dict[str, str] | None:
@@ -631,7 +631,7 @@ class TestReport:
             names.append(test_name)
         return names
 
-    # Answers every address the overview's tests table data links.
+    # Returns every address the overview's tests table data links.
     def overview_tests_hrefs(self, page_text: str, path: str) -> list[str]:
         attributes = self.element_attributes(
             page_text, _TEST_OVERVIEW_TESTS_TABLE_DATA_ID
@@ -855,7 +855,7 @@ class TestReport:
             if not os.path.isfile(path):
                 self.fail(f"{label} names {display!r} source {path}, absent")
 
-    # Answers the counters the merged test's callers page draws.
+    # Returns the counters the merged test's callers page draws.
     def suite_counter_names(self, out_dir: str) -> list[str]:
         path = os.path.join(out_dir, self.callers_page_path("all"))
         with open(path, encoding="utf-8") as handle:
@@ -867,7 +867,7 @@ class TestReport:
             return []
         return json.loads(attributes["data-model-"])["counterNames"]
 
-    # Answers every address a table data's cells link.
+    # Returns every address a table data's cells link.
     def table_data_hrefs(self, rows: Sequence[Sequence[Any]]) -> list[str]:
         hrefs: list[str] = []
         for row in rows:
@@ -878,7 +878,7 @@ class TestReport:
                     hrefs.append(str(cell["href"]))
         return hrefs
 
-    # Answers the rows a table data element files, each a list of cells.
+    # Returns the rows a table data element files, each a list of cells.
     def table_data_rows(
         self, attributes: dict[str, str], label: str, path: str
     ) -> list[list[Any]]:

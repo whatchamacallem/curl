@@ -110,7 +110,7 @@ class DerivedPath(NamedTuple):
     has_source: bool
 
 
-# Answers each recorded path's category as a diff's two reports coded it.
+# Holds each recorded path's category as a diff's two reports coded it.
 class DerivedPaths:
     def __init__(self, baseline_document: str, modified_document: str) -> None:
         baseline = self.document_read(baseline_document)
@@ -713,7 +713,7 @@ def counter_value(counters: Sequence[str], costs: Costs, name: str) -> int:
     return counter_schema(tuple(counters)).value(costs, name)
 
 
-# Answers the path a page shows, an external one under its object's name.
+# Returns the path a page shows, an external one under its object's name.
 def display_path(canonical: str, group: str, object_path: str) -> str:
     if group != _CALLGRIND_FILE_DATA_ERROR_CODE:
         return canonical
@@ -727,7 +727,7 @@ def file_key(path: str, object_path: str) -> str:
     return f"{os.path.basename(object_path)}/{path}"
 
 
-# Answers each file a path names, keyed by what its one `*` stands for.
+# Returns each file a path names, keyed by what its one `*` stands for.
 def named_paths(pattern: str) -> dict[str, str]:
     directory, name_pattern = os.path.split(pattern)
     head, star, tail = name_pattern.partition("*")

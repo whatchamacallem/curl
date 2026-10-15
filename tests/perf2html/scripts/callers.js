@@ -43,7 +43,7 @@ window.try_catch_handler_(function () {
     rendered_preferences_text = null,
     sort_name = SORT_DEFAULT_NAME;
 
-  // Answers a function the model names, with its heat map address or none.
+  // Returns a function the model names, with its heat map address or none.
   function function_link(function_index) {
     const function_entry = callers_model.functions[function_index];
     return { name: function_entry[0], href: function_entry[1] };
@@ -73,12 +73,12 @@ window.try_catch_handler_(function () {
     0,
   );
 
-  // Answers the share of all calls a count is, a diff's its change.
+  // Returns the share of all calls a count is, a diff's its change.
   function calls_share(calls, baseline_calls) {
     if (is_diff) return window.report_ui_.diff_share(calls, baseline_calls);
     return (100 * calls) / calls_total;
   }
-  // Answers the share of a counter a function holds, a diff's its change.
+  // Returns the share of a counter a function holds, a diff's its change.
   function counter_share(record, counter_index) {
     const value = record.values[counter_index];
     if (is_diff)
@@ -182,7 +182,7 @@ window.try_catch_handler_(function () {
     );
   }
 
-  // Answers where a counter's values sit in each function's row.
+  // Returns where a counter's values sit in each function's row.
   function counter_index(counter_name) {
     const found_index = callers_model.counterNames.indexOf(counter_name);
     if (found_index < 0) window.throw_exception_("str_error_internal");

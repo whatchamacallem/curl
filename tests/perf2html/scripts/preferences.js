@@ -49,14 +49,14 @@ window.report_preferences_ = window.try_catch_handler_(function () {
   let heat_scale_default_value = null;
   let shown_preferences = null;
 
-  // Answers the description of a counter, the words its label leads with.
+  // Returns the description of a counter, the words its label leads with.
   function counter_description(counter_name) {
     return window.ui_strings_.text(
       HEAT_MAP_COUNTER_DESCRIPTION_STRING_ID_PREFIX +
         counter_name.toLowerCase(),
     );
   }
-  // Answers the label of a counter, its description and then its name.
+  // Returns the label of a counter, its description and then its name.
   function counter_label(counter_name) {
     return window.ui_strings_.text_fill("str_counter_label", {
       description: counter_description(counter_name),
@@ -93,7 +93,7 @@ window.report_preferences_ = window.try_catch_handler_(function () {
     );
   }
 
-  // Answers the preferences the page shows, a view's those last relayed.
+  // Returns the preferences the page shows, a view's those last relayed.
   function now() {
     if (shown_preferences === null)
       window.throw_exception_("str_error_internal");
@@ -131,7 +131,7 @@ window.report_preferences_ = window.try_catch_handler_(function () {
         );
     }
   }
-  // Answers the counters shown: the ranking counter, then those chosen.
+  // Returns the counters shown: the ranking counter, then those chosen.
   function shown_counter_names(chosen_names) {
     return report_counter_names.filter(
       (counter_name) =>
@@ -139,7 +139,7 @@ window.report_preferences_ = window.try_catch_handler_(function () {
         chosen_names.includes(counter_name),
     );
   }
-  // Answers the stored choice when this report offers it, else the default.
+  // Returns the stored choice when this report offers it, else the default.
   function stored_choice(storage_key, offered_values, default_value) {
     const stored_value =
       window.report_ui_.view_storage.value_read(storage_key);
@@ -147,7 +147,7 @@ window.report_preferences_ = window.try_catch_handler_(function () {
       ? stored_value
       : default_value;
   }
-  // Answers the counters stored as chosen when this report offers each one.
+  // Returns the counters stored as chosen when this report offers each one.
   function stored_counter_names() {
     const stored_names = window.report_ui_.view_storage.value_read(
       STORAGE_KEY_VIEW_COUNTER_COLUMNS,

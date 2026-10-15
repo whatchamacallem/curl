@@ -62,9 +62,13 @@ class SourceScan:
                 )
 
     def comment_cut_re(self) -> re.Pattern[str]:
+        return re.compile(
+            r"```[\s\S]*?```|`[^`\n]*`|" + self.comment_markup_pattern()
+        )
+
+    def comment_markup_pattern(self) -> str:
         marks = sorted(_SOURCE_SCAN_COMMENT_MARKUP, key=len, reverse=True)
-        markup = "|".join(re.escape(mark) for mark in marks)
-        return re.compile(r"```[\s\S]*?```|`[^`\n]*`|" + markup)
+        return "|".join(re.escape(mark) for mark in marks)
 
     def comment_re(self, syntax: SourceScan.CommentSyntax) -> re.Pattern[str]:
         alternatives: list[str] = []
@@ -122,7 +126,7 @@ class SourceScan:
                     f"{file_count} file(s): no comment block over"
                     f" {_COMMENT_BLOCK_MAX_LINES} lines, no stray non-ASCII,"
                     " no unicode escape, no banned tag, no comment outside"
-                    " ENGLISH_PUNCT"
+                    " ENGLISH_PUNCT, no comment opening with a banned word"
                 )
             return 0
         for fault in sorted(self.faults):
@@ -140,6 +144,7 @@ class SourceScan:
         banned_tag: re.Pattern[str],
         comment_cut: re.Pattern[str],
         outside_punctuation: re.Pattern[str],
+        first_word: re.Pattern[str],
     ) -> None:
         syntax = self.comment_syntax(path)
         text = self.file_text(path)
@@ -150,6 +155,7 @@ class SourceScan:
         self.escape_check(path, lines)
         self.tag_check(path, lines, banned_tag)
         self.comment_check(path, comments, header_end)
+        self.first_word_check(path, lines, comments, header_end, first_word)
         self.punctuation_check(
             path, lines, comments, header_end, comment_cut, outside_punctuation
         )
@@ -171,10 +177,49 @@ class SourceScan:
         banned_tag = self.banned_tag_re()
         comment_cut = self.comment_cut_re()
         outside_punctuation = self.outside_punctuation_re()
+        first_word = self.first_word_re()
         for path in paths:
             self.file_scan(
-                path, non_ascii, banned_tag, comment_cut, outside_punctuation
+                path,
+                non_ascii,
+                banned_tag,
+                comment_cut,
+                outside_punctuation,
+                first_word,
             )
+
+    def first_word_check(
+        self,
+        path: str,
+        lines: list[str],
+        comments: list[SourceScan.CommentSpan],
+        header_end: int,
+        first_word: re.Pattern[str],
+    ) -> None:
+        for comment in comments:
+            if comment.first_line < header_end:
+                continue
+            text = "\n".join(lines[comment.first_line - 1 : comment.last_line])
+            match = first_word.match(text)
+            if (
+                not match
+                or match.group(1) not in _COMMENT_FIRST_WORD_REPLACEMENTS
+            ):
+                continue
+            word = match.group(1)
+            self.faults.append(
+                SourceScan.SourceFault(
+                    path,
+                    comment.first_line + text.count("\n", 0, match.start(1)),
+                    f"comment opens with the banned word {word!r}, use"
+                    f" {_COMMENT_FIRST_WORD_REPLACEMENTS[word]!r}",
+                )
+            )
+
+    def first_word_re(self) -> re.Pattern[str]:
+        return re.compile(
+            r"(?:\s*(?:" + self.comment_markup_pattern() + r"))+\s*(\w+)"
+        )
 
     def header_ends_at(
         self, lines: list[str], comments: list[SourceScan.CommentSpan]
@@ -260,6 +305,8 @@ class SourceScan:
 
 
 _COMMENT_BLOCK_MAX_LINES = 1
+
+_COMMENT_FIRST_WORD_REPLACEMENTS = {"Answers": "Returns"}
 
 _COMMENT_SYNTAX_BY_EXTENSION = (
     ((".py", ".sh"), SourceScan.CommentSyntax(("#",), ())),

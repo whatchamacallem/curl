@@ -31,7 +31,7 @@ window.try_catch_handler_(function () {
   const _FORWARDED_ADDRESS = window.report_ui_.address.of_hash(location.hash);
   const _profile_script = document.createElement("script");
 
-  // Answers the scheme speedscope reads at start for the dark mode shown.
+  // Returns the scheme speedscope reads at start for the dark mode shown.
   function color_scheme_of_dark_mode() {
     return window.report_ui_.dark_mode_enabled_now_()
       ? FLAME_GRAPH_COLOR_SCHEME_VALUES.enabled

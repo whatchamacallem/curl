@@ -223,7 +223,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
       );
     });
   }
-  // Answers the heat of a share: clamped to full scale, divided, then curved.
+  // Returns the heat of a share: clamped to full scale, divided, then curved.
   function heat_of_share(percent, curve_name, is_diff) {
     const magnitude = Math.min(
       Math.abs(percent),
@@ -649,7 +649,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
       !click_event.shiftKey
     );
   }
-  // Answers the hash a plain press on a hash link or a link row asks for.
+  // Returns the hash a plain press on a hash link or a link row asks for.
   function address_link_hash(click_event) {
     const link_element = click_event.target.closest("a[href]");
     const link_row = click_event.target.closest("tr.row-link-");
@@ -677,7 +677,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
       return SETTINGS_VIEW_ENTRY[1];
     window.throw_exception_("str_error_internal");
   }
-  // Answers the link to the top page at a hash, the address the menu shows.
+  // Returns the link to the top page at a hash, the address the menu shows.
   function address_top_href(hash) {
     return REPORT_TOP_PAGE_HREF + hash;
   }
@@ -698,7 +698,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
   function load_log_history_send(line_count) {
     parent_post({ report_ui: "load_log_history_set", line_count });
   }
-  // Answers the path of a report file from the report root, which a log names.
+  // Returns the path of a report file from the report root, which a log names.
   function address_path(file_href) {
     const file_url = new URL(file_href);
     file_url.hash = "";
@@ -707,12 +707,12 @@ window.report_ui_ = window.try_catch_handler_(function () {
       window.throw_exception_("str_error_internal");
     return file_url.href.slice(REPORT_ROOT_HREF.length);
   }
-  // Answers the href of a report file from its path from the report root.
+  // Returns the href of a report file from its path from the report root.
   function address_file_href(report_path) {
     return new URL(report_path, REPORT_ROOT_HREF).href;
   }
 
-  // Answers whether the key was typed in an editable field, which keeps it.
+  // Returns whether the key was typed in an editable field, which keeps it.
   function field_owns_key(key_event) {
     return (
       key_event.target.matches("input, textarea") ||
@@ -1192,7 +1192,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
   function strip_number_text(numbered_index) {
     return String((numbered_index + 1) % MENU_DIGIT_KEY_COUNT);
   }
-  // Answers the text label of an entry as the strip draws it, number included.
+  // Returns the text label of an entry as the strip draws it, number included.
   function strip_label_text(entries, entry_name) {
     const entry = strip_entry(entries, entry_name);
     if (!entry.is_numbered) return entry.label;
@@ -1589,7 +1589,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
   function table_sort_column(column, sort_name, sort_value, cell) {
     return { column, sort_name, sort_value, cell };
   }
-  // Answers records ordered by a column, numbers largest first, text A to Z.
+  // Returns records ordered by a column, numbers largest first, text A to Z.
   function table_sort_records(records, sort_column) {
     const keyed_records = records.map((record) => [
       sort_column.sort_value(record),
@@ -1674,7 +1674,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
       }),
     );
   }
-  // Answers sideways or vertical once past the drag direction threshold.
+  // Returns sideways or vertical once past the drag direction threshold.
   function drag_direction(press_event, move_event) {
     const sideways_travel_px = design_px(
       move_event.clientX - press_event.clientX,
@@ -1688,7 +1688,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
       ? "vertical"
       : "sideways";
   }
-  // Answers the title of the column left of a pressed cell, null for none.
+  // Returns the title of the column left of a pressed cell, null for none.
   function slide_title_cell(press_event) {
     const pressed_cell = press_event.target.closest("td, th");
     if (!pressed_cell || pressed_cell.cellIndex < 1) return null;
