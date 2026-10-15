@@ -109,6 +109,9 @@
     background: var(--dark-mode-page-bg-);
     color: var(--dark-mode-page-fg-);
   }
+  #overview-raw-data- > a:not(:focus-visible) {
+    background: none;
+  }
   #overview-view-frame- {
     background: var(--dark-mode-page-bg-);
   }

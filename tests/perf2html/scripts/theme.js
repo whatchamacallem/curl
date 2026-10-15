@@ -649,10 +649,16 @@ window.report_ui_ = window.try_catch_handler_(function () {
       !click_event.shiftKey
     );
   }
+  // Answers the hash a plain press on a hash link or a link row asks for.
   function address_link_hash(click_event) {
-    const link_element = click_event.target.closest('a[href^="#"]');
-    return link_element && !link_element.target && click_is_plain(click_event)
-      ? address_hash(address_of_hash(link_element.getAttribute("href")))
+    const link_element = click_event.target.closest("a[href]");
+    const link_row = click_event.target.closest("tr.row-link-");
+    const link_href = link_element
+      ? !link_element.target && link_element.getAttribute("href")
+      : link_row && link_row.getAttribute("data-href-");
+    if (!link_href || !link_href.startsWith("#")) return "";
+    return click_is_plain(click_event)
+      ? address_hash(address_of_hash(link_href))
       : "";
   }
   function address_page_href(checked_address) {

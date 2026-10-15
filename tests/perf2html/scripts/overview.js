@@ -41,15 +41,16 @@ window.try_catch_handler_(function () {
       })),
     ];
   }
-  // Replaces the rows a table data element holds with the table drawn of them.
+  // Replaces table data with its table, each row leading to its first link.
   function table_data_replace(table_data, columns) {
+    const table_rows = JSON.parse(table_data.getAttribute("data-rows-"));
     table_data.replaceWith(
       window.render_element_of_(
         window.report_ui_.render_table(
           table_data.getAttribute("data-key-"),
           columns,
-          JSON.parse(table_data.getAttribute("data-rows-")),
-          {},
+          table_rows,
+          { row_href: table_rows.map((table_row) => table_row[0].href) },
         ),
       ),
     );

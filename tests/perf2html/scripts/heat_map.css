@@ -39,10 +39,6 @@
   display: block;
 }
 
-tr.row-link- {
-  cursor: pointer;
-}
-
 /* The information line stays over the source, the column titles under. */
 .band- {
   position: sticky;

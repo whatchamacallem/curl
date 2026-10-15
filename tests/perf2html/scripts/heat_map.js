@@ -2104,11 +2104,6 @@ window.try_catch_handler_(function () {
       );
       if (box_control) return information_box_control_handler(box_control);
       if (click_event.target.closest("a")) return;
-      const link_row = click_event.target.closest("tr.row-link-");
-      if (link_row) {
-        report_ui_.address.request(link_row.getAttribute("data-href-"));
-        return;
-      }
       const row = click_event.target.closest("tr.clickable-");
       if (row && current_file_path) {
         const line_number = +row.getAttribute("data-line-number-");

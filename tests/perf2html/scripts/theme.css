@@ -201,6 +201,9 @@ table.table- {
 .table- .numeric- {
   text-align: right;
 }
+tr.row-link- {
+  cursor: pointer;
+}
 
 /* A link or button is one line high, its text set on the box bottom. */
 .page- a,
