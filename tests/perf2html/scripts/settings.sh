@@ -4,6 +4,66 @@
 
 ARTIFACTS_NAME=perf2html_temporary_artifacts
 
+ARTIFACT_ARCHIVE_KINDS=(callgrind)
+
+ARTIFACT_DIFFED_KINDS=(caller-counts delta)
+
+declare -A ARTIFACT_FILE_PURPOSES=(
+  ["baseline-header"]="the baseline report's header block"
+  ["baseline-profiles"]="the baseline report's raw data archive, extracted"
+  [callgrind]="the callgrind recording"
+  ["caller-counts"]="the callers diff with the baseline costs"
+  [delta]="the callgrind delta, modified minus baseline"
+  ["diff-log"]="the diff run's log"
+  ["diff-regenerate-log"]="the last diff --regenerate run's log"
+  ["file-data"]="the paths document, each path's code"
+  ["header-rows"]="the manifest rows of the measuring run"
+  ["modified-header"]="the modified report's header block"
+  ["modified-profiles"]="the modified report's raw data archive, extracted"
+  ["profile-log"]="the measuring run's log"
+  ["profile-regenerate-log"]="the last --regenerate run's log"
+  ["test-list"]="the test names, one per line, sorted"
+  ["timing-csv"]="the perf stat counters"
+  ["timing-page"]="the timing page, command and counters"
+  ["trace-binary"]="the function trace of the sampled run"
+  ["trace-log"]="the trace page, both runs and the conversion"
+  ["trace-maps"]="the traced process's mappings"
+  ["trace-seen"]="the event count of the counting run"
+  ["trace-speedscope"]="the speedscope profile of the sampled run"
+  ["valgrind-log"]="the valgrind log with the objects loaded"
+)
+
+ARTIFACT_RECORDED_KINDS=(callgrind timing-csv timing-page trace-log
+  trace-speedscope valgrind-log)
+
+declare -A ARTIFACT_RUN_FILE_FORMATS=(
+  ["baseline-header"]='%s/baseline.txt'
+  ["baseline-profiles"]='%s/baseline'
+  ["diff-log"]='%s/perf2html_diff.log'
+  ["diff-regenerate-log"]='%s/perf2html_diff.regenerate.log'
+  ["file-data"]='%s/0_file_data.json'
+  ["header-rows"]='%s/perf2html.txt'
+  ["modified-header"]='%s/modified.txt'
+  ["modified-profiles"]='%s/modified'
+  ["profile-log"]='%s/perf2html.log'
+  ["profile-regenerate-log"]='%s/perf2html.regenerate.log'
+  ["test-list"]='%s/test_list.txt'
+)
+
+declare -A ARTIFACT_TEST_FILE_FORMATS=(
+  [callgrind]='%s/%s.callgrind.out'
+  ["caller-counts"]='%s/%s.callgrind_diff.json'
+  [delta]='%s/%s.callgrind_diff.out'
+  ["timing-csv"]='%s/%s.perf-stat.csv'
+  ["timing-page"]='%s/%s.perf-stat.txt'
+  ["trace-binary"]='%s/%s.cyg_callback.bin'
+  ["trace-log"]='%s/%s.cyg_callback.log'
+  ["trace-maps"]='%s/%s.cyg_callback.bin.maps'
+  ["trace-seen"]='%s/%s.cyg_callback.seen'
+  ["trace-speedscope"]='%s/%s.trace_to_speedscope.json'
+  ["valgrind-log"]='%s/%s.valgrind.log'
+)
+
 ASSET_DEBUG_SCRIPT_NAME=debug.js
 
 BUILD_CCACHE_NAMESPACE=perf2html
@@ -16,13 +76,7 @@ CACHE_EXTERNAL_PACKAGE=libc6
 
 CACHE_ROOT_DIR=~/.cache/perf2html
 
-CALLGRIND_FILE_DATA_NAME=0_file_data
-
 CALLGRIND_LAST_LEVEL_CACHE=16777216,16,64
-
-CALLGRIND_OUTPUT_FILE_EXTENSION=out
-
-CALLGRIND_OUTPUT_TOOL_NAME=callgrind
 
 declare -A CONTAINING_PACKAGES=(
   [cmake]=cmake
@@ -40,27 +94,23 @@ declare -A CONTAINING_PACKAGES=(
 
 DEFAULT_FLAGS=(-D CMAKE_C_FLAGS=-Os)
 
-DIFF_CALLER_COUNTS_FILE_EXTENSION=json
-
-DIFF_DELTA_TOOL_NAME=callgrind_diff
-
 DIFF_EXTRACTED_ROOT_DISPLAY_NAME='$tmp'
-
-DIFF_TOOL_NAME=perf2html_diff
 
 FLAME_GRAPH_APP_DIR_NAME=flame-graph-app
 
-FLAME_GRAPH_APP_FILE_GLOBS=('speedscope-*.js' 'speedscope-*.css' '*.woff2')
+declare -A FLAME_GRAPH_APP_NAME_PATTERNS=(
+  [font]='url\("\./([^"]+\.woff2)"\)'
+  [script]='<script src="([^"]+)"'
+  [stylesheet]='<link rel="stylesheet" href="([^"]+)"'
+)
 
 LOG_FAILURE_TAIL_LINES=40
 
+OVERVIEW_PAGE_PATH=index.html
+
 PROFILE_PINNED_CPU=3
 
-PROFILE_TIMING_TOOL_NAME=perf-stat
-
-PROFILE_TOOL_NAME=perf2html
-
-REPORT_SCRIPTS_DIR_NAME=scripts
+REPORT_ARTIFACTS_DIR_FORMAT='%s/%s'
 
 REPORT_BASELINE_DIR_NAME=perf2html_baseline_report
 
@@ -69,32 +119,26 @@ REPORT_DIFF_DIR_NAME=perf2html_diff_report
 REPORT_MANIFEST_CHECKSUM_LABEL=checksum
 
 REPORT_MANIFEST_VERSION_DIFF='curl/perf2html_diff.sh v1'
-REPORT_MANIFEST_VERSION_FULL='curl/perf2html.sh v1'
+REPORT_MANIFEST_VERSION_FULL='curl/perf2html.sh v2'
 REPORT_MANIFEST_VERSION_LABEL=manifest
 
 REPORT_MODIFIED_DIR_NAME=perf2html_modified_report
 
 REPORT_RAW_ARCHIVE_SUFFIX=.txz
 
-REPORT_SOURCES_DIR_NAME=sources
+REPORT_SCRIPTS_DIR_NAME=scripts
 
-REPORT_TEST_SUITE_NAME=all
+REPORT_SOURCES_DIR_NAME=sources
 
 TEST_LOOPS=100
 
 TEST_SAMPLES_SIZE=$((TEST_LOOPS * 4 * 1024))
 
-TIMER_ARTIFACTS_NAME_PREFIX=timer-artifacts-
+TIMER_ARTIFACTS_ROOT_FORMAT='%s/timer-artifacts-%s'
 
 TRACE_BUILD_DIR=build-instr
 
 TRACE_SKIP_ALL=18446744073709551615
-
-TRACE_SPEEDSCOPE_TOOL_NAME=trace_to_speedscope
-
-TRACE_TOOL_NAME=cyg_callback
-
-VALGRIND_LOG_TOOL_NAME=valgrind
 
 VERBOSE=0
 

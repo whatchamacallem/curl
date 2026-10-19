@@ -6,13 +6,14 @@
 from __future__ import annotations
 
 import argparse, array, json, os, subprocess, sys
-from typing import NamedTuple, NotRequired, TextIO, TypedDict
+from typing import NamedTuple, NotRequired, TypedDict
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import callgrind, settings
+import artifacts, callgrind, settings
 
 _FLAME_GRAPH_EXPORTER_NAME: str = ""
 _FLAME_GRAPH_MAX_RECORDED_CALLS: int = 0
+_FLAME_GRAPH_PROFILE_NAME_FORMAT: str = ""
 settings.load_into(__name__)
 
 _BUILDID_KEYWORD = "buildid"
@@ -86,9 +87,9 @@ class TraceToSpeedscope:
         address: int
 
     class TraceArgs(NamedTuple):
-        trace_file: str
-        output: str
-        name: str
+        artifacts: str
+        report: str
+        test: str
 
     class TraceRecording(NamedTuple):
         seen: int
@@ -123,9 +124,13 @@ class TraceToSpeedscope:
                 f" recorded against {want}. Re-record the trace"
             )
 
-    def buildids_read(self, maps_file: str) -> dict[str, str]:
+    def buildids_read(
+        self, artifacts_dir: str, test_name: str
+    ) -> dict[str, str]:
         out: dict[str, str] = {}
-        with self.text_open(maps_file) as handle:
+        with artifacts.artifact_open(
+            artifacts_dir, "trace-maps", test_name
+        ) as handle:
             for line in handle:
                 fields = line.split(None, 2)
                 if len(fields) == 3 and fields[0] == _BUILDID_KEYWORD:
@@ -168,6 +173,24 @@ class TraceToSpeedscope:
             )
             sys.exit(completed.returncode)
         return completed.stdout
+
+    # Writes the speedscope profile of the busiest run's first calls.
+    def convert(self, args: TraceToSpeedscope.TraceArgs, loops: int) -> None:
+        artifacts_dir = artifacts.report_artifacts_dir(
+            args.artifacts, args.report
+        )
+        trace = self.load(artifacts_dir, args.test)
+        calls = self.kept_calls(artifacts_dir, args.test, trace)
+        frames = self.frames(artifacts_dir, args.test, trace, calls)
+        name = _FLAME_GRAPH_PROFILE_NAME_FORMAT % (args.test, loops)
+        document = self.document(trace, calls, frames, name)
+        self.document_write(
+            artifacts.artifact_path(
+                artifacts_dir, "trace-speedscope", args.test
+            ),
+            document,
+            calls,
+        )
 
     def document(
         self,
@@ -215,12 +238,41 @@ class TraceToSpeedscope:
             "exporter": _FLAME_GRAPH_EXPORTER_NAME,
         }
 
+    # Writes the speedscope document, printing its size and span.
+    def document_write(
+        self,
+        path: str,
+        document: SpeedscopeDoc,
+        calls: list[TraceToSpeedscope.CallSpan],
+    ) -> None:
+        text = json.dumps(document, separators=(",", ":"))
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write(text)
+        profile = document["profiles"][0]
+        print(
+            f"wrote {path} ({len(text):,} bytes, {len(calls):,} calls,"
+            f" {profile['endValue'] - profile['startValue']:,} ns)",
+            file=sys.stderr,
+        )
+
     def frames(
-        self, trace_file: str, functions: list[int]
+        self,
+        artifacts_dir: str,
+        test_name: str,
+        trace: TraceToSpeedscope.TraceRecording,
+        calls: list[TraceToSpeedscope.CallSpan],
     ) -> dict[int, Frame]:
-        maps_file = trace_file + ".maps"
-        mappings = self.mappings_read(maps_file)
-        recorded = self.buildids_read(maps_file)
+        functions = sorted(
+            {
+                trace.functions[record]
+                for record in range(calls[0].first, calls[-1].last + 1)
+            }
+        )
+        maps_file = artifacts.artifact_path(
+            artifacts_dir, "trace-maps", test_name
+        )
+        mappings = self.mappings_read(artifacts_dir, test_name)
+        recorded = self.buildids_read(artifacts_dir, test_name)
         segments: dict[str, list[TraceToSpeedscope.LoadSegment]] = {}
         by_object: dict[str, dict[int, int]] = {}
         for function in functions:
@@ -259,17 +311,41 @@ class TraceToSpeedscope:
                 frames[address] = frame
         return frames
 
-    def load(self, trace_file: str) -> TraceToSpeedscope.TraceRecording:
-        words = array.array("Q")
-        try:
-            with open(trace_file, "rb") as handle:
-                raw = handle.read()
-        except OSError as error:
+    # Returns the busiest run's first calls, printing what the trace holds.
+    def kept_calls(
+        self,
+        artifacts_dir: str,
+        test_name: str,
+        trace: TraceToSpeedscope.TraceRecording,
+    ) -> list[TraceToSpeedscope.CallSpan]:
+        trace_file = artifacts.artifact_path(
+            artifacts_dir, "trace-binary", test_name
+        )
+        print(
+            f"{trace_file}: {trace.seen:,} events in the run,"
+            f" {trace.skip:,} skipped, {len(trace.functions):,} kept,"
+            f" {trace.tsc_per_ns:.6f} tsc/ns",
+            file=sys.stderr,
+        )
+        calls = self.calls(trace)[:_FLAME_GRAPH_MAX_RECORDED_CALLS]
+        if not calls:
             sys.exit(
-                f"error: {trace_file}: {error.strerror or error}: the trace"
-                " cyg_callback.c writes at exit. Check the traced run's own"
-                " output for the error it printed"
+                f"error: {trace_file}: no call both starts and ends"
+                " inside the kept events"
             )
+        return calls
+
+    def load(
+        self, artifacts_dir: str, test_name: str
+    ) -> TraceToSpeedscope.TraceRecording:
+        words = array.array("Q")
+        with artifacts.artifact_open(
+            artifacts_dir, "trace-binary", test_name, "rb"
+        ) as handle:
+            raw = handle.read()
+        trace_file = artifacts.artifact_path(
+            artifacts_dir, "trace-binary", test_name
+        )
         if len(raw) % words.itemsize:
             sys.exit(
                 f"error: {trace_file}: {len(raw):,} bytes is not a whole"
@@ -298,10 +374,12 @@ class TraceToSpeedscope:
         )
 
     def mappings_read(
-        self, maps_file: str
+        self, artifacts_dir: str, test_name: str
     ) -> list[TraceToSpeedscope.ExecutableMapping]:
         mappings: list[TraceToSpeedscope.ExecutableMapping] = []
-        with self.text_open(maps_file) as handle:
+        with artifacts.artifact_open(
+            artifacts_dir, "trace-maps", test_name
+        ) as handle:
             for line in handle:
                 fields = line.split(None, 5)
                 if (
@@ -320,42 +398,16 @@ class TraceToSpeedscope:
                     )
         return mappings
 
-    def run(self, args: TraceToSpeedscope.TraceArgs) -> None:
-        trace = self.load(args.trace_file)
-        print(
-            f"{args.trace_file}: {trace.seen:,} events in the run,"
-            f" {trace.skip:,} skipped, {len(trace.functions):,} kept,"
-            f" {trace.tsc_per_ns:.6f} tsc/ns",
-            file=sys.stderr,
+    # Writes how many events the counting run saw into the test's seen file.
+    def seen(self, args: TraceToSpeedscope.TraceArgs) -> None:
+        artifacts_dir = artifacts.report_artifacts_dir(
+            args.artifacts, args.report
         )
-        calls = self.calls(trace)[:_FLAME_GRAPH_MAX_RECORDED_CALLS]
-        if not calls:
-            sys.exit(
-                f"error: {args.trace_file}: no call both starts and ends"
-                " inside the kept events"
-            )
-        frames = self.frames(
-            args.trace_file,
-            sorted(
-                {
-                    trace.functions[record]
-                    for record in range(calls[0].first, calls[-1].last + 1)
-                }
-            ),
-        )
-        document = self.document(trace, calls, frames, args.name)
-        text = json.dumps(document, separators=(",", ":"))
-        with open(args.output, "w", encoding="utf-8") as handle:
-            handle.write(text)
-        profile = document["profiles"][0]
-        print(
-            f"wrote {args.output} ({len(text):,} bytes, {len(calls):,} calls,"
-            f" {profile['endValue'] - profile['startValue']:,} ns)",
-            file=sys.stderr,
-        )
-
-    def seen(self, trace_file: str) -> int:
-        return self.load(trace_file).seen
+        seen = self.load(artifacts_dir, args.test).seen
+        path = artifacts.artifact_path(artifacts_dir, "trace-seen", args.test)
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write(f"{seen}\n")
+        print(f"wrote {path} ({seen:,} events)", file=sys.stderr)
 
     def segments_read(self, path: str) -> list[TraceToSpeedscope.LoadSegment]:
         listing = self.command_output(["readelf", "-lW", path])
@@ -371,15 +423,6 @@ class TraceToSpeedscope:
                     )
                 )
         return segments
-
-    def text_open(self, path: str) -> TextIO:
-        try:
-            return open(path, encoding="utf-8")
-        except OSError as error:
-            sys.exit(
-                f"error: {path}: {error.strerror or error}: cyg_callback.c"
-                " writes it beside the trace at exit"
-            )
 
     def virtual_address(
         self,
@@ -399,32 +442,46 @@ class TraceToSpeedscope:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "trace_file",
-        help="a cyg_callback.c trace. its .maps file sits beside it",
+    subparsers = parser.add_subparsers(dest="cmd", required=True)
+    seen_parser = subparsers.add_parser(
+        "seen", help="the seen file, how many events the counting run saw"
     )
-    parser.add_argument(
-        "-o", "--output", default="", help="output .speedscope.json path"
+    convert_parser = subparsers.add_parser(
+        "convert", help="the speedscope profile of the busiest run's calls"
     )
-    parser.add_argument("--name", default="", help="document name")
-    parser.add_argument(
-        "--seen",
-        action="store_true",
-        help="print how many events the run counted and write nothing",
+    convert_parser.add_argument(
+        "--loops",
+        required=True,
+        type=int,
+        help="the loop count the traced run took, shown in the profile name",
     )
-    namespace = parser.parse_args()
-    if namespace.seen:
-        print(TraceToSpeedscope().seen(namespace.trace_file))
-        return
-    if not namespace.output:
-        parser.error("-o is required without --seen")
-    TraceToSpeedscope().run(
-        TraceToSpeedscope.TraceArgs(
-            trace_file=namespace.trace_file,
-            output=namespace.output,
-            name=namespace.name or os.path.basename(namespace.trace_file),
+    for trace_parser in (seen_parser, convert_parser):
+        trace_parser.add_argument(
+            "--artifacts",
+            required=True,
+            metavar="DIR",
+            help="the profiler artifacts directory, holding the report's own,"
+            " where the test's trace sits",
         )
+        trace_parser.add_argument(
+            "--report",
+            required=True,
+            metavar="DIR",
+            help="the report directory, naming its artifacts directory",
+        )
+        trace_parser.add_argument(
+            "--test", required=True, help="the test whose trace is read"
+        )
+    namespace = parser.parse_args()
+    trace_args = TraceToSpeedscope.TraceArgs(
+        artifacts=namespace.artifacts,
+        report=namespace.report,
+        test=namespace.test,
     )
+    if namespace.cmd == "seen":
+        TraceToSpeedscope().seen(trace_args)
+    else:
+        TraceToSpeedscope().convert(trace_args, namespace.loops)
 
 
 if __name__ == "__main__":

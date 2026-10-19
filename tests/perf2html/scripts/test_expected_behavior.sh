@@ -48,9 +48,12 @@ _WHITELIST_FILE=test_whitelist.txt
 . ./test_utility.sh
 
 _BATCH_SCRIPT_NAME=perf2html_batch.sh
+_ROWS_FILE_NAME=perf2html.txt
 _SCREENSHOT_DIFF_DIR="$_DIR_PERF2HTML/screenshots-diff"
 _SCREENSHOT_GOLD_DIR="$_DIR_PERF2HTML/screenshots-gold"
 _SCREENSHOT_SCRIPT_NAME=test_screenshot.py
+_TEST_LIST_FILE_NAME=test_list.txt
+_TIMING_FILE_SUFFIX=.perf-stat.csv
 
 _DEFAULT_REPORTS=(
   "$_DIR_PERF2HTML/$REPORT_BASELINE_DIR_NAME"
@@ -407,14 +410,14 @@ regenerate_check() {
     regenerate_refuse "no recordings at $_artifacts"
   fi
 
-  local _name _report_artifacts _rows _recorded _binary _newest
-  local _timing_files=() _recorded_times=()
+  local _name _report_artifacts _rows _recorded _binary _newest _test_list
+  local _test _timing _tests=() _recorded_times=()
   for _name in "$REPORT_BASELINE_DIR_NAME" "$REPORT_MODIFIED_DIR_NAME"; do
     _report_artifacts="$_artifacts/$_name"
     if [ ! -d "$_report_artifacts" ]; then
       regenerate_refuse "$_name has no recordings at $_report_artifacts"
     fi
-    _rows="$_report_artifacts/$PROFILE_TOOL_NAME.txt"
+    _rows="$_report_artifacts/$_ROWS_FILE_NAME"
     if [ ! -f "$_rows" ]; then
       regenerate_refuse "$_name has no recordings, $_rows is missing"
     fi
@@ -425,11 +428,21 @@ regenerate_check() {
       regenerate_refuse "$_name records no recorded= row in $_rows"
     fi
 
-    mapfile -t _timing_files < <(find "$_report_artifacts" -maxdepth 1 \
-      -type f -name "*.$PROFILE_TIMING_TOOL_NAME.$_recorded.csv" | sort)
-    if [ "${#_timing_files[@]}" = 0 ]; then
-      regenerate_refuse "$_name has no recordings left from $_recorded"
+    _test_list="$_report_artifacts/$_TEST_LIST_FILE_NAME"
+    if [ ! -s "$_test_list" ]; then
+      regenerate_refuse "$_name lists no test in $_test_list"
     fi
+    mapfile -t _tests <"$_test_list"
+    _newest="$_report_artifacts/${_tests[0]}$_TIMING_FILE_SUFFIX"
+    for _test in "${_tests[@]}"; do
+      _timing="$_report_artifacts/$_test$_TIMING_FILE_SUFFIX"
+      if [ ! -f "$_timing" ]; then
+        regenerate_refuse "$_name has no recording $_timing"
+      fi
+      if [ "$_timing" -nt "$_newest" ]; then
+        _newest="$_timing"
+      fi
+    done
     _recorded_times+=("$_recorded")
 
     _binary="$(header_row "$_rows" executable)"
@@ -441,11 +454,7 @@ regenerate_check() {
       regenerate_refuse "$_name has no executable at $_binary"
     fi
 
-    _newest="$(find "$_report_artifacts" -maxdepth 1 -type f \
-      -name "*.$PROFILE_TIMING_TOOL_NAME.$_recorded.csv" \
-      -printf '%T@ %p\n' | sort -rn | head -1)"
-    _newest="${_newest#* }"
-    if [ -n "$(find "$_binary" -newer "$_newest" -print -quit)" ]; then
+    if [ "$_binary" -nt "$_newest" ]; then
       regenerate_refuse "$_name: perf was re-linked after its recordings"
     fi
   done

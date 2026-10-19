@@ -5,6 +5,8 @@
 window.report_ui_ = window.try_catch_handler_(function () {
   "use strict";
 
+  const CALL_GRAPH_PAGE_DIR_NAME = settings_("CALL_GRAPH_PAGE_DIR_NAME");
+  const CALL_GRAPH_VIEW_KEY = settings_("CALL_GRAPH_VIEW_KEY");
   const CALLERS_PAGE_DIR_NAME = settings_("CALLERS_PAGE_DIR_NAME");
   const CALLERS_VIEW_KEY = settings_("CALLERS_VIEW_KEY");
   const DARK_MODE_ATTRIBUTE_NAME = settings_("DARK_MODE_ATTRIBUTE_NAME");
@@ -34,6 +36,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
   const NUMBER_LARGEST_PRINTED_MULTIPLE_TIMES = settings_(
     "NUMBER_LARGEST_PRINTED_MULTIPLE_TIMES",
   );
+  const OVERVIEW_PAGE_PATH = settings_("OVERVIEW_PAGE_PATH");
   const SETTINGS_DEBUG_HASH_KEY_NAME = settings_(
     "SETTINGS_DEBUG_HASH_KEY_NAME",
   );
@@ -123,10 +126,23 @@ window.report_ui_ = window.try_catch_handler_(function () {
     SETTINGS_DEBUG_HASH_KEY_NAME,
   ];
   const ADDRESS_VIEW_KEY_NAMES = new Map([
+    [CALL_GRAPH_VIEW_KEY, []],
     [CALLERS_VIEW_KEY, []],
     [FLAME_GRAPH_VIEW_ENTRY[0], ["localProfilePath"]],
     [HEAT_MAP_VIEW_ENTRY[0], ["file", "line", "function"]],
     [SETTINGS_VIEW_ENTRY[0], ["setting"]],
+  ]);
+  // Tells per view whether an address of the view needs a test.
+  const ADDRESS_VIEW_NEEDS_TEST = new Map([
+    [CALL_GRAPH_VIEW_KEY, () => true],
+    [CALLERS_VIEW_KEY, () => true],
+    [FLAME_GRAPH_VIEW_ENTRY[0], () => true],
+    [
+      HEAT_MAP_VIEW_ENTRY[0],
+      (view_address) =>
+        view_address.file == null && view_address.function == null,
+    ],
+    [SETTINGS_VIEW_ENTRY[0], () => false],
   ]);
   const CH_UNIT_GLYPH = "0";
   const CLIP_ELLIPSIS_TEXT = window.ui_strings_.text("str_clip_ellipsis");
@@ -142,7 +158,8 @@ window.report_ui_ = window.try_catch_handler_(function () {
     [1, 3, 5].map((index) => parseInt(hex.slice(index, index + 2), 16)),
   );
   const REPORT_ROOT_HREF = new URL("..", document.currentScript.src).href;
-  const REPORT_TOP_PAGE_HREF = new URL("index.html", REPORT_ROOT_HREF).href;
+  const REPORT_TOP_PAGE_HREF = new URL(OVERVIEW_PAGE_PATH, REPORT_ROOT_HREF)
+    .href;
   const SIGNED_PERCENT_AMOUNT_CHARS = (
     fixed_text(-100, NUMBER_FRACTION_DIGITS) + "%"
   ).length;
@@ -472,7 +489,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
     if (!delta) return 0;
     return baseline_count ? (100 * delta) / baseline_count : Infinity;
   }
-  function signed_percent_text(percent, is_caller = false) {
+  function signed_percent_text(percent, uses_whitespace = true) {
     if (!percent) return zero_percent_text();
     const arrow = percent < 0 ? "▼" : "▲";
     const times = percent / 100;
@@ -488,7 +505,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
     } else {
       amount_text = fixed_text(times, NUMBER_FRACTION_DIGITS) + "x";
     }
-    if (is_caller) return arrow + amount_text;
+    if (!uses_whitespace) return arrow + amount_text;
     return arrow + amount_text.padStart(SIGNED_PERCENT_AMOUNT_CHARS);
   }
   function zero_percent_text() {
@@ -534,14 +551,16 @@ window.report_ui_ = window.try_catch_handler_(function () {
         parsed_address[key_name] === null ||
         key_name === SETTINGS_DEBUG_HASH_KEY_NAME,
     );
-    if (parsed_address.test === null && !is_home)
-      window.throw_exception_("str_error_hash_test_missing");
-    if (parsed_address.test !== null && parsed_address.view === null)
+    if (is_home) return;
+    if (parsed_address.view === null)
       window.throw_exception_(
         "str_error_hash_view_missing",
-        parsed_address.test,
+        parsed_address.test === null
+          ? ADDRESS_KEY_NAMES.find(
+              (key_name) => parsed_address[key_name] !== null,
+            )
+          : parsed_address.test,
       );
-    if (is_home) return;
     if (!ADDRESS_VIEW_KEY_NAMES.has(parsed_address.view))
       window.throw_exception_(
         "str_error_hash_view_unknown",
@@ -580,6 +599,12 @@ window.report_ui_ = window.try_catch_handler_(function () {
         "str_error_hash_line_unusable",
         parsed_address.line,
       );
+    if (parsed_address.test === null && address_needs_test(parsed_address))
+      window.throw_exception_("str_error_hash_test_missing");
+  }
+  // Returns whether an address needs a test, an absent part read as null.
+  function address_needs_test(view_address) {
+    return ADDRESS_VIEW_NEEDS_TEST.get(view_address.view)(view_address);
   }
   function address_of_hash(hash) {
     const parsed_address = Object.fromEntries(
@@ -661,13 +686,20 @@ window.report_ui_ = window.try_catch_handler_(function () {
       ? address_hash(address_of_hash(link_href))
       : "";
   }
+  // Returns the page of a test in a directory holding one page per test.
+  function address_test_page_href(page_dir_name, test_name) {
+    return page_dir_name + "/" + encodeURIComponent(test_name) + ".html";
+  }
   function address_page_href(checked_address) {
+    if (checked_address.view === CALL_GRAPH_VIEW_KEY)
+      return address_test_page_href(
+        CALL_GRAPH_PAGE_DIR_NAME,
+        checked_address.test,
+      );
     if (checked_address.view === CALLERS_VIEW_KEY)
-      return (
-        CALLERS_PAGE_DIR_NAME +
-        "/" +
-        encodeURIComponent(checked_address.test) +
-        ".html"
+      return address_test_page_href(
+        CALLERS_PAGE_DIR_NAME,
+        checked_address.test,
       );
     if (checked_address.view === HEAT_MAP_VIEW_ENTRY[0])
       return HEAT_MAP_VIEW_ENTRY[1];
@@ -2065,7 +2097,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
       ...entry_fields,
     };
   }
-  // Shows a heading over a table as a strip, its title as page emphasis.
+  // Shows a heading as a strip, any title text as page emphasis.
   function page_heading_attach(heading_element, extra_entries) {
     const heading_text = heading_element.textContent;
     if (attached_headings.has(heading_element))
@@ -2138,13 +2170,18 @@ window.report_ui_ = window.try_catch_handler_(function () {
       );
     }
     function heading_render() {
+      const title_entries = heading_text
+        ? [
+            strip_entry_make("title", "text", heading_text, {
+              label_markup: title_markup,
+            }),
+          ]
+        : [];
       const count_entries = count_key === null ? [] : [count_entry()];
       strip_handle = strip_render(
         heading_element,
         [
-          strip_entry_make("title", "text", heading_text, {
-            label_markup: title_markup,
-          }),
+          ...title_entries,
           ...count_entries,
           ...extra_entries,
           strip_entry_make("copy", "action", copy_text, {
@@ -2677,6 +2714,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
       hash: address_hash,
       home_hash: address_home_hash,
       link_hash: address_link_hash,
+      needs_test: address_needs_test,
       of_hash: address_of_hash,
       page_href: address_page_href,
       path: address_path,

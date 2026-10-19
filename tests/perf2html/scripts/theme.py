@@ -10,8 +10,10 @@ from typing import NamedTuple, TypeAlias
 
 import settings
 
+_ASSET_CALL_GRAPH_SCRIPT_NAME: str = ""
 _ASSET_CALLERS_SCRIPT_NAME: str = ""
 _ASSET_DARK_MODE_STYLESHEET_NAME: str = ""
+_ASSET_DEBUG_SCRIPT_NAME: str = ""
 _ASSET_ERROR_OVERLAY_SCRIPT_NAME: str = ""
 _ASSET_FLAME_GRAPH_SCRIPT_NAME: str = ""
 _ASSET_FRAME_SCRIPT_NAME: str = ""
@@ -23,6 +25,7 @@ _ASSET_OVERVIEW_SCRIPT_NAME: str = ""
 _ASSET_PREFERENCES_SCRIPT_NAME: str = ""
 _ASSET_SETTINGS_PAGE_SCRIPT_NAME: str = ""
 _ASSET_SETTINGS_SCRIPT_NAME: str = ""
+_ASSET_SOURCE_DATABASE_SCRIPT_NAME: str = ""
 _ASSET_THEME_SCRIPT_NAME: str = ""
 _ASSET_THEME_STYLESHEET_NAME: str = ""
 _ASSET_UI_STRINGS_SCRIPT_NAME: str = ""
@@ -189,77 +192,47 @@ class Theme:
     def scripts_write(self, out_dir: str) -> None:
         self.root_value_names_check()
         os.makedirs(out_dir, exist_ok=True)
-        heat_map_script = _ASSET_HEAT_MAP_SCRIPT_NAME
-        heat_map_stylesheet = _ASSET_HEAT_MAP_STYLESHEET_NAME
-        shared = (
-            (
-                _ASSET_CALLERS_SCRIPT_NAME,
-                self.asset_read(_ASSET_CALLERS_SCRIPT_NAME),
-            ),
-            (
-                _ASSET_LIGHT_MODE_STYLESHEET_NAME,
-                self.asset_read(_ASSET_LIGHT_MODE_STYLESHEET_NAME),
-            ),
-            (
-                _ASSET_DARK_MODE_STYLESHEET_NAME,
-                self.mode_stylesheet_read(
-                    _ASSET_DARK_MODE_STYLESHEET_NAME,
-                    _DARK_MODE_ENABLED_SELECTOR,
-                ),
-            ),
-            (
-                _ASSET_ERROR_OVERLAY_SCRIPT_NAME,
-                self.asset_read(_ASSET_ERROR_OVERLAY_SCRIPT_NAME),
-            ),
-            (
-                _ASSET_FLAME_GRAPH_SCRIPT_NAME,
-                self.asset_read(_ASSET_FLAME_GRAPH_SCRIPT_NAME),
-            ),
-            (
-                _ASSET_FRAME_SCRIPT_NAME,
-                self.asset_read(_ASSET_FRAME_SCRIPT_NAME),
-            ),
-            (heat_map_stylesheet, self.asset_read(heat_map_stylesheet)),
-            (heat_map_script, self.asset_read(heat_map_script)),
-            (
-                _ASSET_MENU_SCRIPT_NAME,
-                self.asset_read(_ASSET_MENU_SCRIPT_NAME),
-            ),
-            (
-                _ASSET_OVERVIEW_SCRIPT_NAME,
-                self.asset_read(_ASSET_OVERVIEW_SCRIPT_NAME),
-            ),
-            (
-                _ASSET_PREFERENCES_SCRIPT_NAME,
-                self.asset_read(_ASSET_PREFERENCES_SCRIPT_NAME),
-            ),
-            (
-                _ASSET_SETTINGS_PAGE_SCRIPT_NAME,
-                self.asset_read(_ASSET_SETTINGS_PAGE_SCRIPT_NAME),
-            ),
-            (
-                _ASSET_SETTINGS_SCRIPT_NAME,
-                settings.settings_script_write(),
-            ),
-            (
-                _ASSET_THEME_STYLESHEET_NAME,
-                self.asset_read(_ASSET_THEME_STYLESHEET_NAME),
-            ),
-            (_ASSET_THEME_SCRIPT_NAME, self.js()),
-            (
-                _ASSET_UI_STRINGS_SCRIPT_NAME,
-                self.asset_read(_ASSET_UI_STRINGS_SCRIPT_NAME),
-            ),
-            (
-                _ASSET_UTILITY_SCRIPT_NAME,
-                self.asset_read(_ASSET_UTILITY_SCRIPT_NAME),
-            ),
-        )
+        shared = [
+            (name, self.shared_text(name)) for name in self.shared_names()
+        ]
         for name, text in shared:
             with open(
                 os.path.join(out_dir, name), "w", encoding="utf-8"
             ) as handle:
                 handle.write(text)
+
+    # Returns each stylesheet and script the theme ships, in the order written.
+    def shared_names(self) -> tuple[str, ...]:
+        return (
+            _ASSET_CALL_GRAPH_SCRIPT_NAME,
+            _ASSET_CALLERS_SCRIPT_NAME,
+            _ASSET_LIGHT_MODE_STYLESHEET_NAME,
+            _ASSET_DARK_MODE_STYLESHEET_NAME,
+            _ASSET_ERROR_OVERLAY_SCRIPT_NAME,
+            _ASSET_FLAME_GRAPH_SCRIPT_NAME,
+            _ASSET_FRAME_SCRIPT_NAME,
+            _ASSET_HEAT_MAP_STYLESHEET_NAME,
+            _ASSET_HEAT_MAP_SCRIPT_NAME,
+            _ASSET_MENU_SCRIPT_NAME,
+            _ASSET_OVERVIEW_SCRIPT_NAME,
+            _ASSET_PREFERENCES_SCRIPT_NAME,
+            _ASSET_SETTINGS_PAGE_SCRIPT_NAME,
+            _ASSET_SETTINGS_SCRIPT_NAME,
+            _ASSET_THEME_STYLESHEET_NAME,
+            _ASSET_THEME_SCRIPT_NAME,
+            _ASSET_UI_STRINGS_SCRIPT_NAME,
+            _ASSET_UTILITY_SCRIPT_NAME,
+        )
+
+    # Returns the text a shipped file holds, the generated ones made here.
+    def shared_text(self, name: str) -> str:
+        if name == _ASSET_DARK_MODE_STYLESHEET_NAME:
+            return self.mode_stylesheet_read(name, _DARK_MODE_ENABLED_SELECTOR)
+        if name == _ASSET_SETTINGS_SCRIPT_NAME:
+            return settings.settings_script_write()
+        if name == _ASSET_THEME_SCRIPT_NAME:
+            return self.js()
+        return self.asset_read(name)
 
     # Returns a cell as the JS table writer's fields, defaults left out.
     def cell_fields(self, value: CellOrText) -> str | dict[str, str]:
@@ -421,6 +394,14 @@ def render_html_escape(value: object) -> str:
         .replace("<", "&lt;")
         .replace(">", "&gt;")
         .replace('"', "&quot;")
+    )
+
+
+# Returns every file name the report's scripts directory holds.
+def shipped_script_names() -> tuple[str, ...]:
+    return _renderer.shared_names() + (
+        _ASSET_DEBUG_SCRIPT_NAME,
+        _ASSET_SOURCE_DATABASE_SCRIPT_NAME,
     )
 
 

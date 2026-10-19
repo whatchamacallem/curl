@@ -9,7 +9,7 @@ import argparse, os, re, subprocess, sys
 from typing import NamedTuple
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import callgrind, settings
+import artifacts, callgrind, settings
 
 _VALGRIND_DEBUG_LINE_PATTERN: str = ""
 settings.load_into(__name__)
@@ -39,25 +39,39 @@ class LoadedObject(NamedTuple):
 
 
 class CallgrindSymbols:
-    class SymbolsArgs(NamedTuple):
+    class RecordingPaths(NamedTuple):
         valgrind_log: str
         callgrind_file: str
+
+    class SymbolsArgs(NamedTuple):
+        artifacts: str
+        report: str
+        test: str
 
     def __init__(self) -> None:
         self.labels_by_path: dict[str, dict[int, str]] = {}
         self.sections_by_path: dict[str, list[CodeSection]] = {}
 
     def build(self, args: CallgrindSymbols.SymbolsArgs) -> None:
-        loaded_objects = self.loaded_objects_read(args.valgrind_log)
-        with open(args.callgrind_file, encoding="utf-8") as handle:
+        artifacts_dir = artifacts.report_artifacts_dir(
+            args.artifacts, args.report
+        )
+        paths = CallgrindSymbols.RecordingPaths(
+            artifacts.artifact_path(artifacts_dir, "valgrind-log", args.test),
+            artifacts.artifact_path(artifacts_dir, "callgrind", args.test),
+        )
+        loaded_objects = self.loaded_objects_read(artifacts_dir, args.test)
+        with artifacts.artifact_open(
+            artifacts_dir, "callgrind", args.test
+        ) as handle:
             recorded_text = handle.read()
         resolved_text = callgrind.address_names_resolve(
             recorded_text,
             lambda object_path, name: self.name(
-                args, loaded_objects, object_path, name
+                paths, loaded_objects, object_path, name
             ),
         )
-        with open(args.callgrind_file, "w", encoding="utf-8") as handle:
+        with open(paths.callgrind_file, "w", encoding="utf-8") as handle:
             handle.write(resolved_text)
 
     # Reads the code sections of an object, once.
@@ -94,10 +108,14 @@ class CallgrindSymbols:
             sys.exit(completed.returncode)
         return completed.stdout
 
-    def loaded_objects_read(self, path: str) -> list[LoadedObject]:
+    def loaded_objects_read(
+        self, artifacts_dir: str, test_name: str
+    ) -> list[LoadedObject]:
         loaded_objects: list[LoadedObject] = []
         reading_path: str | None = None
-        with open(path, encoding="utf-8") as handle:
+        with artifacts.artifact_open(
+            artifacts_dir, "valgrind-log", test_name
+        ) as handle:
             for line in handle.read().splitlines():
                 match = _VALGRIND_READING_SYMBOLS_RE.match(line)
                 if match:
@@ -113,6 +131,9 @@ class CallgrindSymbols:
                     )
                     reading_path = None
         if not loaded_objects:
+            path = artifacts.artifact_path(
+                artifacts_dir, "valgrind-log", test_name
+            )
             sys.exit(
                 f"error: no load address in {path}: valgrind needs"
                 " --trace-redir=yes"
@@ -122,7 +143,7 @@ class CallgrindSymbols:
     # Names an address in its object, or keeps callgrind's name there.
     def name(
         self,
-        args: CallgrindSymbols.SymbolsArgs,
+        paths: CallgrindSymbols.RecordingPaths,
         loaded_objects: list[LoadedObject],
         object_path: str | None,
         name: str,
@@ -142,8 +163,8 @@ class CallgrindSymbols:
         ]
         if len(owner_objects) != 1:
             sys.exit(
-                f"error: {args.callgrind_file}: function {name} lies in"
-                f" {len(owner_objects)} objects {args.valgrind_log} loads,"
+                f"error: {paths.callgrind_file}: function {name} lies in"
+                f" {len(owner_objects)} objects {paths.valgrind_log} loads,"
                 " expected 1"
             )
         object_offset = name_address - owner_objects[0].load_bias
@@ -152,7 +173,7 @@ class CallgrindSymbols:
         )
         if label_name is None:
             sys.exit(
-                f"error: {args.callgrind_file}: function {name} lies at"
+                f"error: {paths.callgrind_file}: function {name} lies at"
                 f" {object_offset:#x} in {owner_objects[0].path}, where no"
                 " symbol starts"
             )
@@ -197,22 +218,27 @@ def main() -> None:
         )
     )
     parser.add_argument(
-        "--valgrind-log",
+        "--artifacts",
         required=True,
-        metavar="FILE",
-        help="the log of the valgrind run, written with --trace-redir=yes",
+        metavar="DIR",
+        help="the profiler artifacts directory, holding the report's own,"
+        " where the test's valgrind log and callgrind file sit",
     )
     parser.add_argument(
-        "--callgrind-file",
+        "--report",
         required=True,
-        metavar="FILE",
-        help="the callgrind file that run wrote",
+        metavar="DIR",
+        help="the report directory, naming its artifacts directory",
+    )
+    parser.add_argument(
+        "--test", required=True, help="the test whose valgrind run is named"
     )
     namespace = parser.parse_args()
     CallgrindSymbols().build(
         CallgrindSymbols.SymbolsArgs(
-            valgrind_log=namespace.valgrind_log,
-            callgrind_file=namespace.callgrind_file,
+            artifacts=namespace.artifacts,
+            report=namespace.report,
+            test=namespace.test,
         )
     )
 

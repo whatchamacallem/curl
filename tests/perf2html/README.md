@@ -177,8 +177,7 @@ happened, as wide as it took. The test runs in a build with
 reads the CPU's time stamp counter at every function entry and exit. "Time
 Order" is the order the calls were made in.
 
-The merged "all" report and a diff have no flame graph: a trace neither adds up
-nor subtracts.
+A diff has no flame graph: a trace neither adds up nor subtracts.
 
 Scroll to pan and pinch or Cmd/Ctrl+scroll to zoom, on both the minimap and the
 main view. Click a frame for its stats.

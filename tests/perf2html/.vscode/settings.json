@@ -2,5 +2,6 @@
   "cSpell.words": [
     "callgrind",
     "Overconstrained"
-  ]
+  ],
+  "editor.rulers": [79]
 }

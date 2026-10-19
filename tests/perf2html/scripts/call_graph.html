@@ -1,0 +1,42 @@
+<!doctype html>
+<!-- SPDX-FileCopyrightText: © 2026 Adrian Johnston.
+     SPDX-License-Identifier: MIT
+     This file is licensed under the terms of the LICENSE-MIT.md file. -->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <script src="../scripts/error_overlay.js"></script>
+    <script src="../scripts/utility.js"></script>
+    <script src="../scripts/ui_strings.js"></script>
+    <script src="../scripts/settings.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>__PAGE_TITLE__</title>
+    <link rel="stylesheet" href="../scripts/theme.css" />
+    <link rel="stylesheet" href="../scripts/light_mode.css" />
+    <link rel="stylesheet" href="../scripts/dark_mode.css" />
+  </head>
+  <body id="call-graph-" class="view-">
+    <main id="call-graph-page-">
+      <div class="page-">
+        <div class="page-heading-"></div>
+        __CALL_GRAPH__
+      </div>
+    </main>
+    <div
+      class="text-scrollbar- vertical-"
+      data-scrolls-="call-graph-page-"
+      aria-hidden="true"
+    ></div>
+    <div
+      class="text-scrollbar- horizontal-"
+      data-scrolls-="call-graph-page-"
+      aria-hidden="true"
+    ></div>
+    <template id="page-held-script-">
+      <script src="../scripts/debug.js"></script>
+      <script src="../scripts/theme.js"></script>
+      <script src="../scripts/preferences.js"></script>
+      <script src="../scripts/call_graph.js"></script>
+    </template>
+  </body>
+</html>

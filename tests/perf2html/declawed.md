@@ -65,8 +65,16 @@ postmortem reference to a numbered item that is not itself in the postmortem.
   sharing one tree corrupts comparisons.
 - No fake data - every value is a measurement or plain arithmetic on one. If a
   tool can't supply a view's data, the view isn't built.
+- No combined test data: every number is one test's, or one diff's of one test.
+  Nothing sums, merges or averages tests, and no page shows test data in a
+  combined form where each test's own contribution is not explicit. The merged
+  `all` suite went for this reason.
 - A value written twice and "kept in step" is banned - one setting in
   `settings.sh`/`settings.py`, read everywhere.
+- Nothing searches, harvests, derives, resolves or finds a file, and nothing
+  lists an artifacts dir: a tool takes the perf2html*.sh scripts' own canonical
+  paths under the scripts' own flag names, reads `test_list.txt`, and composes
+  every name from a settings format.
 - Any urge to add decorative comments, "helpful" extra logging, or stylistic
   polish not asked for anywhere above is banned. Adding borders, tooltips,
   using alpha, adjusting shade, using gradients, adding requested style or
@@ -105,6 +113,110 @@ postmortem reference to a numbered item that is not itself in the postmortem.
 only two `.txz` compressed reports as inputs. It has to work without access
 to any source code or repository involved in the report.
 
+### Accidental-Requirements, Requirements-Data-Loss, and Requirements-Refusal
+
+Accidental-Requirements, Requirements-Data-Loss, and Requirements-Refusal are
+a set of processes observed in multiple case studies that can chain together
+to make it impossible to specify requirements to an agent at all.
+
+Accidental-Requirements starts when an agent writes code because that code is
+handy, illustrative or already lying around, not because the design called for
+it. Nothing in the plan motivates the code, so nothing in the plan constrains
+it. Then the next session reads the tree before the plan, sees working code,
+and treats that code as a decision somebody made: the shape is preserved, the
+interfaces built on, the code quoted as prior art. An example nobody chose
+becomes architecture by seniority.
+
+The case studies showed three forms of it:
+
+- One planning session surveyed the existing code before writing the plan, and
+  the plan carried an older tool's command loop and commands into the new
+  design. A decision made for a different problem rode in on the strength of
+  its mere existence, and a later round of questions had to remove it.
+- Another test plan proposed reusing an existing test driver, the stated
+  reason being that the driver existed. That is reuse chosen by availability,
+  not by the test plan.
+- The injected project context and the memory notes described the old code in
+  detail, so every session started with that code in mind before opening the
+  plan. The precedent was renewed even in sessions that never read the files.
+
+The Requirements-Data-Loss process has been observed as a compounding input
+step to the Accidental-Requirements process. Accidental-Requirements can
+operate independently; the pair is simply noted here because it is a wild
+ride.
+
+Requirements-Data-Loss happens when a planner reasons its way to a good API,
+decides it is too much for the moment, writes down the smaller one, and leaves
+at most a clause saying the larger one is for later.
+
+- The reasoning that produced the discarded good API is gone: not in the plan,
+  not in the questions, not in the code. The maintainer is left holding the
+  wrong interface with no record of the right one to judge it against, and the
+  next session cannot tell a better design was ever on the table.
+- In the case studies, requirements were both dropped without a trace from the
+  planning process, and then incorrect requirements were copied into the next
+  plan and from there into the code as if settled.
+- The only recovery is for the maintainer to rediscover the design, by keeping
+  engineering logs and doing case studies on all planning.
+
+This mode is worse than the first because it destroys information rather than
+adding some. A deferred feature with its full design written beside the
+deferral costs the maintainer one question. A deferred feature with its design
+discarded costs the design.
+
+Put more simply, first Requirements-Data-Loss knowingly produces the wrong
+API. Then the Accidental-Requirements process ossifies it, because once the
+reduced API is in the tree, that is the thing later sessions preserve.
+
+Requirements-Refusal is when the agent decides not to follow instructions and
+silently carries out unrequested (and thereby easily incorrect) work instead.
+This behavior may be the result of the agent trying to make a better choice
+for the user. However, the end point is a breakdown in communication as
+unsatisfied requests accumulate and the user becomes frustrated and confused.
+
+- The pull for an agent is hard to resist because agents are trained not to
+  break what exists, and code is more concrete than a sentence in a plan, so a
+  conflict between the two is settled in the code's favor without anyone
+  noticing a choice was made.
+- Clear instructions to work from first principles are ignored and users may
+  simply not be informed, so problems remain unaddressed.
+
+Please consider the effects of Requirements-Data-Loss,
+Accidental-Requirements, and Requirements-Refusal at the same time. It is like
+requesting a new skyscraper and never getting a call back because they didn't
+think you knew how deep a hole they had to dig.
+
+Here are ways to avoid these.
+
+- Nothing concrete exists ahead of the prose that describes it, so there are
+  no Accidental-Requirements if nothing is added to the design without being
+  motivated by a requirement.
+- Injected context and memory notes describe current state, not design. A
+  design decision found there is checked against the plan before anything is
+  built on it.
+- Prevent Requirements-Data-Loss by writing APIs and architecture for as much
+  of the system as possible, from the top down, before ever writing any code.
+- Write software from the bottom up using unit tests first, and integration
+  tests second. Once the APIs are done, the unit tests begin.
+- Reuse is chosen by the plan, never by availability. "It exists" is not a
+  reason. Code is cheaper than negotiating requirements, and so requirements
+  alignment needs to be prioritized over the cost of rewrites.
+
+When asked to write a planning doc, read all the engineering notes related to
+the conversation to understand the evolution of the users requirements while
+responding to questions. Analyze the users requirements throughout the process
+in those planning docs. Separate the requirements into:
+
+- `A`: Request unsatisfied or modified without cause.
+- `B`: Request unsatisfied or modified with cause but without confirmation.
+- `C`: Request confirmed withdrawn or modified.
+- `D`: Request satisfied without modification or withdrawal.
+
+Add both `A` and `B` class requirements in a section to the planning doc at the
+end explaining whether you were able to satisfy the requirements in the new
+plan, as is preferable, or if multiple choice questions have to be answered to
+try to solve for all the requirements simultaneously.
+
 ### One-door glossary
 
 The single function/check owning each concern - never bypass or duplicate:
@@ -112,31 +224,61 @@ The single function/check owning each concern - never bypass or duplicate:
 - `manifest_verify`/`manifest_fault` - whether a dir is a report.
 - `regenerate_check` - whether `--regenerate` may proceed.
 - `sources_match_check` - whether a diff's two reports show the same source
-  code (perf2html_diff.sh).
+  code: every source file both reports show is byte identical, a file one
+  shows alone is that report's (perf2html_diff.sh).
 - `DerivedPaths` - every path a diff shows, as its two reports' paths
-  documents show it (callgrind.py).
-- `artifact_path` - every artifacts dir and archive file name,
-  `<test>.<tool>.<time>.<extension>` (utility.sh).
+  documents show it, `in_baseline` naming the report its source is copied
+  from (callgrind.py).
+- `artifact_path` - every temporary artifact path, a printf format of
+  `ARTIFACT_RUN_FILE_FORMATS` or `ARTIFACT_TEST_FILE_FORMATS` applied to a
+  directory and a test name (utility.sh, artifacts.py).
+- `report_artifacts_dir` - a report's own artifacts dir,
+  `REPORT_ARTIFACTS_DIR_FORMAT` of `--artifacts` and the report's name
+  (utility.sh, artifacts.py).
+- `artifacts_verify` - whether a temporary artifacts dir holds every file the
+  contract names, first miss exit 2 (utility.sh).
+- `test_list.txt` - the one list of a run's tests, born from `TESTS_C` in
+  `perf2html.sh`, read everywhere.
 - `counter_value()` - all counter lookups (callgrind.py).
+- `root_reach()` - every recording cut at `CALLGRIND_ROOT_FUNCTION_NAME`:
+  the root and what the calls reach from it kept, the root's calls into
+  `root_call_count`, the summary the kept lines' sum; a delta is not cut
+  (callgrind.py); `caller_calls()` every calls per caller aggregation.
+- `function_line()` - the one line a function is addressed at: the line before
+  its callgrind entry line when that line carries no counter and the
+  function's counters span more than one line, else the entry line
+  (callgrind_to_heatmap.py).
+- `report_source_database_` - the one list of the files and functions a report
+  names, every test's union, no counter (scripts/source_database.js).
 - `text_clip()` - every cell text cut at its column's `clip`;
   `table_slide_press()` every column width, a drag setting its title
   cell's `min-width` (theme.js).
 - `checksum_compute`/`_REPORT_CHECKSUM_COMMAND` - report checksums, kept
   separate, re-verified on every open.
-- `share_in_scope()` - heat-map denominator scope; a diff divides by the
-  thing's own baseline through `diff_share()`.
+- `share_of_test()` and `share_of_function()` - every regular heat map share,
+  a file's or a function's of the test, a line's of the summed self of the
+  functions costing it, `lineFunctions` of the model; a diff divides by the
+  thing's own baseline through `diff_share()` (heat_map.js).
 - `diff_share()` - every diff share, a fall past its baseline refused
   (theme.py/js).
 - `fixed_text()` - every decimal a page prints; `percent_text()` every
-  share, `signed_percent()`/`signed_percent_text()` every diff share,
-  `is_line` true on the heat map source view alone (theme.py `NumberFormat`,
-  theme.js `report_ui_`).
+  share, `signed_percent()`/`signed_percent_text()` every diff share
+  (theme.py `NumberFormat`, theme.js `report_ui_`); theme.js's
+  `uses_whitespace` false where nothing aligns: a callers cell, a call
+  graph share no sibling's shown share lines up with; the call graph
+  prints no zero share.
+- `edge_share()` - every call graph share, a callee's calls per call of its
+  caller, the root's calls from its row, a diff's the change of that through
+  `diff_share()` (call_graph.js); `call_graph_roots()` the one root a call
+  graph starts from, any other uncalled function refused (build_report.py).
 - `design_scale_stop_set()` - every scale change; `menu.js` then posts
   `layout_reset`, which resets column widths, pane widths and heading row
   counts.
 - `information_box_render(file_path, line_number)` - every file, function
   and line info box, answering `{markup, copy_text}`, line 0 the file's
   (heat_map.js).
+- `hash_for_location()` - every heat map link into a file at a line, a
+  function's line written as the function's hash (heat_map.js).
 - `report_ui_.strip.render(strip_element, entries, status_entries)` - every
   strip cell: the menu and its status bar, the heat map strip, each table
   heading (theme.js).
@@ -208,7 +350,7 @@ The single function/check owning each concern - never bypass or duplicate:
 - Don't update usage text, tell the user to do that.
 - Advice to change a setting gives the change as a settings view URL, from
   `index.html` on, to open in a report:
-  `index.html#test=all&view=settings&setting=<NAME>&setting-values=<value>`,
+  `index.html#view=settings&setting=<NAME>&setting-values=<value>`,
   the value a JSON object of each setting's whole new value, base64.
   - The default directories for temp and output files for perf2html.sh and
   perf2html_diff.sh are intentionally "pinned" to the invocation directory.
@@ -292,8 +434,9 @@ The single function/check owning each concern - never bypass or duplicate:
   one plain English sentence. `test_source_scan.py` cuts the comment marks
   and any backtick code span, then faults the first other character on each
   comment line as `comment holds 'X' outside ENGLISH_PUNCT`.
-- ASCII plus the specific whitelisted glyphs (`© ≈ ∞ ▲◄►▼ … █ ░ ▒ ▓ ◼`
-  and a no-break space), written literally, never as HTML entities.
+- ASCII plus the specific whitelisted glyphs (`© ≈ ∞ ▲◄►▼ … █ ░ ▒ ▓ ◼`,
+  the call graph's `─ │ └ ├ ┬` and a no-break space), written literally,
+  never as HTML entities.
 - No unicode escapes or runtime character constructors in source, comments
   and header included: `\u`, `\U`, `\x`, `\N{`, octal `\NNN`, CSS hex
   escapes, numeric entities (`&#65;`), `String.fromCharCode`,
@@ -338,9 +481,3 @@ The single function/check owning each concern - never bypass or duplicate:
 - A comment never opens with the name of what it documents. Not
   `foo: the function foo finds bar.`, just `Finds bar.`
 
-## Lookup Accelerator
-
-The Lookup Accelerator section is automatically injected into the context of
-every conversation about this project. Update it automatically as a low
-priority when it falls behind using the file locking scheme. Do not mention
-discrepancies as this is a low priority self healing mechanism.

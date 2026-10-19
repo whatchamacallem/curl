@@ -5,6 +5,14 @@
 window.ui_strings_ = (function () {
   "use strict";
   const STRINGS = {
+    str_call_graph_branch_first: "┬─",
+    str_call_graph_branch_last: "└",
+    str_call_graph_branch_middle: "├",
+    str_call_graph_branch_only: "──",
+    str_call_graph_branch_pass: "│",
+    str_call_graph_definition: "#{number}",
+    str_call_graph_line: "─",
+    str_call_graph_reference: "─@{number}",
     str_callers_cell_entry: "{function} ({share})",
     str_caret_down: "▼",
     str_caret_right: "►",
@@ -21,20 +29,18 @@ window.ui_strings_ = (function () {
     str_column_counter: "counter",
     str_column_defined_at: "defined at",
     str_column_file: "file",
-    str_column_file_share: "file %",
     str_column_function: "function",
     str_column_function_share: "function %",
     str_column_functions_changed: "functions changed in {counter}",
-    str_column_global_share: "global %",
     str_column_inclusive: "incl",
     str_column_line: "line",
     str_column_rank: "#",
     str_column_report: "report",
     str_column_report_per_test: "one report per test",
     str_column_self: "self",
-    str_column_share_of_total: "% of total",
     str_column_source: "source",
     str_column_symbol: "symbol",
+    str_column_test_share: "test %",
     str_counter_bc: "conditional branches executed",
     str_counter_bcm: "conditional branches mispredicted",
     str_counter_bi: "indirect branches executed",
@@ -77,11 +83,11 @@ window.ui_strings_ = (function () {
       "url names no local profile path, which the flame graph needs to start",
     str_error_hash_setting_unknown:
       "url encodes a setting this report does not have: {0}",
-    str_error_hash_test_missing: "url names no test",
+    str_error_hash_test_missing: "No test selected.",
     str_error_hash_test_unknown:
       "url encodes a test this report does not have: {0}",
     str_error_hash_value_empty: "url part {0} holds no value",
-    str_error_hash_view_missing: "url names test {0} but no view",
+    str_error_hash_view_missing: "url names {0} but no view",
     str_error_hash_view_unknown:
       "url encodes a view this report does not have: {0}",
     str_error_held_script_unframed:
@@ -99,6 +105,8 @@ window.ui_strings_ = (function () {
     str_error_strip_number_unusable:
       "no available strip entry is numbered {0}",
     str_flame_graph_page_title: "speedscope",
+    str_function_locations:
+      "{function} is at {count} locations in this report.",
     str_function_name_unknown: "?",
     str_heading_files_by_counter: "top {count} files by {measure}",
     str_heading_functions_by_counter: "top {count} functions by {measure}",
@@ -123,9 +131,7 @@ window.ui_strings_ = (function () {
       "{function} by call count: self {self}, total {total}.",
     str_information_line_link: "{path} self {share} info",
     str_line_self: "line self",
-    str_load_log_script_entry: "[{time}ms] {page} loaded {asset}",
-    str_load_log_scripts_entry:
-      "[{time}ms] {page} loaded {count} scripts in {span}ms, the last {asset}",
+    str_load_log_asset_entry: "[{time}ms] {page} loaded {asset}",
     str_load_log_frame_entry:
       "[{time}ms] {page} long frame {span}ms, {render}ms rendering",
     str_load_log_input_entry:
@@ -139,6 +145,8 @@ window.ui_strings_ = (function () {
       "[{time}ms] {page} script {span}ms, {invoker}, {source}",
     str_load_log_script_function_entry:
       "[{time}ms] {page} script {span}ms, {invoker}, {function} in {source}",
+    str_load_log_scripts_entry:
+      "[{time}ms] {page} loaded {count} scripts in {span}ms, the last {asset}",
     str_menu_button: "{number} {label}",
     str_menu_counter_entry: "{mark}{label}",
     str_menu_counter_selected_mark: " ◼ ",
@@ -156,7 +164,6 @@ window.ui_strings_ = (function () {
     str_menu_status_line: "line {line}",
     str_menu_status_separator: "/",
     str_menu_test: "test",
-    str_menu_test_suite_name: "all",
     str_no_caller: "(no recorded caller)",
     str_no_match: "(no match)",
     str_no_samples: "no samples",
@@ -167,9 +174,6 @@ window.ui_strings_ = (function () {
     str_report_name: "perf2html",
     str_scale_curve_linear: "linear scale",
     str_scale_curve_log: "log scale",
-    str_scale_entry: "{curve}, {scope}",
-    str_scope_file: "per file",
-    str_scope_function: "per function",
     str_settings_apply: "apply",
     str_settings_copy: "copy",
     str_settings_debug_query: "{name}={value}",
@@ -183,10 +187,11 @@ window.ui_strings_ = (function () {
     str_table_heading_copy: "copy",
     str_text_scrollbar_gutter: "▒",
     str_text_scrollbar_thumb: "▓",
-    str_ticker_tape_entry: "{line}{share}",
+    str_ticker_tape_entry: "{line} {share}",
     str_ticker_tape_heading_diff: "most changed lines",
     str_ticker_tape_heading_self: "hottest lines",
     str_title_part_separator: " / ",
+    str_view_call_graph: "call graph",
     str_view_callers: "callers",
     str_view_flame_graph: "flame graph",
     str_view_frame_title: "report page",

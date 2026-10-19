@@ -7,5 +7,4 @@ scripts/*.py
 scripts/*.js
 scripts/*.css
 scripts/*.html
-scripts/NOTES.md
 scripts/README.md

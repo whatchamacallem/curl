@@ -5,6 +5,7 @@
 window.try_catch_handler_(function () {
   "use strict";
 
+  const CALLERS_CELL_SEPARATOR_TEXT = settings_("CALLERS_CELL_SEPARATOR_TEXT");
   const CALLGRIND_FILE_DATA_ERROR_CODE = settings_(
     "CALLGRIND_FILE_DATA_ERROR_CODE",
   );
@@ -68,7 +69,11 @@ window.try_catch_handler_(function () {
   const TABLE_ROW_COUNT_CHOICES = settings_("TABLE_ROW_COUNT_CHOICES");
   const WIDGET_KEY_NAMES = settings_("WIDGET_KEY_NAMES");
   const HOME_TABLE_RENDERED_ROW_COUNT = Math.max(...TABLE_ROW_COUNT_CHOICES);
+  if (!window.report_source_database_)
+    window.throw_exception_("str_error_internal");
+  const source_database = window.report_source_database_;
   let profile_model = null,
+    shown_model = null,
     file_table = null,
     function_table = null,
     shown_test_name = null;
@@ -136,10 +141,7 @@ window.try_catch_handler_(function () {
       });
     }
     ranking_counter = counter_find(RANKING_COUNTER_NAME);
-    total_cost = ranking_counter.get(profile_model.heatMapTotals.totals) || 1;
   }
-  let total_cost = 1,
-    secondary_totals = {};
   const ranking_value = (cost_vector) => ranking_counter.get(cost_vector);
   const absolute = Math.abs;
 
@@ -152,12 +154,7 @@ window.try_catch_handler_(function () {
       .map(counter_find);
     if (secondary_counters.includes(undefined))
       window.throw_exception_("str_error_internal");
-    secondary_totals = {};
-    for (const secondary of secondary_counters) {
-      secondary_totals[secondary.key] =
-        secondary.get(profile_model.heatMapTotals.totals) || 1;
-    }
-    const scale_choices = report_preferences_.heat_scale_choices(IS_DIFF);
+    const scale_choices = report_preferences_.heat_scale_choices();
     active_scale = scale_choices.find(
       (choice) => choice.value === view_preferences.heat_scale_value,
     );
@@ -165,10 +162,37 @@ window.try_catch_handler_(function () {
     sort_mode = view_preferences.heat_sort_mode;
   }
 
-  const share_of_total = (value) => (100 * value) / total_cost;
+  // Returns a value as a percent of a whole, refusing a share of nothing.
+  function percent_of(value, whole) {
+    if (!value) return 0;
+    if (!whole) window.throw_exception_("str_error_internal");
+    return (100 * value) / whole;
+  }
+  // Returns a value as a share of the test's total of the counter.
+  const share_of_test = (value, counter) =>
+    percent_of(value, counter.get(profile_model.heatMapTotals.totals));
+  // Returns the functions costing a line, refusing a line none costs.
+  function line_functions(file_path, line_number) {
+    const function_indexes = file_table[file_path].lineFunctions[line_number];
+    if (!function_indexes || !function_indexes.length)
+      window.throw_exception_("str_error_internal");
+    return function_indexes;
+  }
+  // Returns a line's value as a share of the self counts of its functions.
+  function share_of_function(value, counter, file_path, line_number) {
+    if (!value) return 0;
+    return percent_of(
+      value,
+      line_functions(file_path, line_number).reduce(
+        (running_total, function_index) =>
+          running_total + counter.get(function_table[function_index].self),
+        0,
+      ),
+    );
+  }
   let share_text = report_ui_.percent_text;
-  const share_of_total_text = (value) =>
-    value ? share_text(share_of_total(value)) : "";
+  const share_of_test_text = (value, counter) =>
+    value ? share_text(share_of_test(value, counter)) : "";
 
   let human_text = report_ui_.human_text;
   const cell_number = (value) => ({
@@ -231,62 +255,55 @@ window.try_catch_handler_(function () {
   let function_baselines = null,
     file_baselines = null;
   let counter_baseline = () => null;
-  let share_of_baseline = (value, baseline_cost) => share_of_total(value);
-  let line_counter_share = (value, counter, baseline_cost, line_number) =>
-    share_in_scope(value, counter, line_number);
-  let line_share = (value, baseline_cost, line_number) =>
-    share_in_scope(value, ranking_counter, line_number);
-  let line_share_text = (value, baseline_cost, line_number) =>
-    share_in_scope_text(value, ranking_counter, line_number);
-  let file_counter_share = (value, counter, file_path) =>
-    (100 * value) / counter.get(profile_model.heatMapTotals.totals);
-  let file_counter_scope = "global";
-  let secondary_percent_of_cell = (
-    self_cost,
-    secondary,
+  let FUNCTION_SHARE_LABEL = text("str_column_function_share"),
+    TEST_SHARE_LABEL = text("str_column_test_share");
+  let share_of_baseline = (value, baseline_cost) =>
+    share_of_test(value, ranking_counter);
+  let counter_share = (value, counter, baseline_cost) =>
+    share_of_test(value, counter);
+  let line_counter_share = (
+    value,
+    counter,
+    baseline_cost,
+    file_path,
     line_number,
-    baseline_lookup,
-  ) =>
-    line_number != null
-      ? share_in_scope(self_cost, secondary, line_number)
-      : (100 * self_cost) / secondary_totals[secondary.key];
+  ) => share_of_function(value, counter, file_path, line_number);
   function report_kind_set(first_model) {
     IS_DIFF = !!first_model.heatMapTotals.diff;
     if (IS_DIFF) {
       share_text = report_ui_.signed_percent_text;
       human_text = report_ui_.signed_human_text;
       TICKER_TAPE_HEADING = text("str_ticker_tape_heading_diff");
+      FUNCTION_SHARE_LABEL = text("str_column_baseline_share");
+      TEST_SHARE_LABEL = text("str_column_baseline_share");
       counter_baseline = (cost_vector, counter) => {
         if (!cost_vector) return null;
         const baseline_cost = absolute(counter.get(cost_vector));
         return baseline_cost ? baseline_cost : null;
       };
       share_of_baseline = report_ui_.diff_share;
+      counter_share = (value, counter, baseline_cost) =>
+        share_of_baseline(value, baseline_cost);
       line_counter_share = (value, counter, baseline_cost) =>
         share_of_baseline(value, baseline_cost);
-      line_share = (value, baseline_cost) =>
-        share_of_baseline(value, baseline_cost);
-      line_share_text = (value, baseline_cost) =>
-        value ? share_of_baseline_text(value, baseline_cost) : "";
-      file_counter_share = (value, counter, file_path) =>
-        share_of_baseline(value, file_counter_baseline(file_path, counter));
-      file_counter_scope = "line";
-      secondary_percent_of_cell = (
-        self_cost,
-        secondary,
-        line_number,
-        baseline_lookup,
-      ) =>
-        share_of_baseline(
-          self_cost,
-          baseline_lookup ? baseline_lookup(secondary) : null,
-        );
     }
   }
   const baseline = (cost_vector) =>
     counter_baseline(cost_vector, ranking_counter);
   const share_of_baseline_text = (value, baseline_cost) =>
     share_text(share_of_baseline(value, baseline_cost));
+  const line_share = (value, baseline_cost, file_path, line_number) =>
+    line_counter_share(
+      value,
+      ranking_counter,
+      baseline_cost,
+      file_path,
+      line_number,
+    );
+  const line_share_text = (value, baseline_cost, file_path, line_number) =>
+    value
+      ? share_text(line_share(value, baseline_cost, file_path, line_number))
+      : "";
   const line_baseline_vector = (file_path, line_number) => {
     const baseline_table =
       file_table[file_path] && file_table[file_path].baseline;
@@ -304,51 +321,9 @@ window.try_catch_handler_(function () {
     counter_baseline(file_baselines[file_path], counter);
   const file_baseline = (file_path) =>
     file_counter_baseline(file_path, ranking_counter);
+  const file_counter_share = (value, counter, file_path) =>
+    counter_share(value, counter, file_counter_baseline(file_path, counter));
 
-  let scope_totals = null;
-  const SCOPE_SHARE_STRING_IDS = {
-    global: "str_column_global_share",
-    file: "str_column_file_share",
-    function: "str_column_function_share",
-    line: "str_column_baseline_share",
-  };
-  function scope_totals_build(file_path) {
-    const file = file_table[file_path];
-    const totals = { file: {}, function: {} };
-    for (const [line_number, line_costs] of Object.entries(file.lines)) {
-      const owner = file.lineFunction[line_number];
-      for (const counter of counter_list) {
-        const self_cost = absolute(counter.get(line_costs[0]));
-        if (!self_cost) continue;
-        totals.file[counter.key] = (totals.file[counter.key] || 0) + self_cost;
-        if (owner == null) continue;
-        const owner_key = owner + "\n" + counter.key;
-        totals.function[owner_key] =
-          (totals.function[owner_key] || 0) + self_cost;
-      }
-    }
-    return totals;
-  }
-  function scope_total(counter, line_number) {
-    const scope = active_scale.scope;
-    if (scope === "file" && scope_totals) {
-      return scope_totals.file[counter.key] || 0;
-    }
-    if (scope === "function" && scope_totals && current_file_path) {
-      const owner = file_table[current_file_path].lineFunction[line_number];
-      if (owner == null) return 0;
-      return scope_totals.function[owner + "\n" + counter.key] || 0;
-    }
-    return counter.get(profile_model.heatMapTotals.totals) || 1;
-  }
-  const share_in_scope = (value, counter, line_number) => {
-    const active_scope_total = scope_total(counter, line_number);
-    return active_scope_total ? (100 * value) / active_scope_total : 0;
-  };
-  const share_in_scope_text = (value, counter, line_number) =>
-    value ? share_text(share_in_scope(value, counter, line_number)) : "";
-  const scope_share_label = () =>
-    text(SCOPE_SHARE_STRING_IDS[active_scale.scope]);
   // Writes the heat colors of a cell by its share, on the chosen curve.
   const heat_style = (percent) =>
     report_ui_.heat_cell_style(percent, active_scale.curve, IS_DIFF);
@@ -359,7 +334,7 @@ window.try_catch_handler_(function () {
     call_count
       ? {
           text: human_text(call_count),
-          style: heat_style((100 * call_count) / CALLS_TOTAL),
+          style: heat_style(percent_of(call_count, CALLS_TOTAL)),
         }
       : "";
 
@@ -376,10 +351,66 @@ window.try_catch_handler_(function () {
       view: HEAT_MAP_VIEW_ENTRY[0],
       function: name,
     });
+  // Returns the indexes of the functions a line declares, in name order.
+  function declared_functions(file_path, line_number) {
+    const file_lines = entry_line_index[file_path];
+    return (file_lines && file_lines[line_number]) || [];
+  }
+  // Lists the lines of a file with a cost or a function, in line order.
+  function known_lines(file_path) {
+    const line_keys = new Set([
+      ...Object.keys(file_table[file_path].lines),
+      ...Object.keys(entry_line_index[file_path] || {}),
+    ]);
+    return [...line_keys]
+      .map(Number)
+      .sort((line_a, line_b) => line_a - line_b);
+  }
+  // Returns the hash of a line, the function's when the line declares one.
+  function hash_for_location(file_path, line_number) {
+    const function_indexes = declared_functions(file_path, line_number);
+    return function_indexes.length === 1
+      ? hash_for_function(function_table[function_indexes[0]].name)
+      : hash_for_line(file_path, line_number);
+  }
+  // Adds cost vectors counter by counter.
+  function cost_vectors_add(cost_vectors) {
+    const vector_length = Math.max(
+      ...cost_vectors.map((cost_vector) => cost_vector.length),
+    );
+    const summed_vector = [];
+    for (let counter_index = 0; counter_index < vector_length; counter_index++)
+      summed_vector.push(
+        cost_vectors.reduce(
+          (running_total, cost_vector) =>
+            running_total + vector_at(cost_vector, counter_index),
+          0,
+        ),
+      );
+    return summed_vector;
+  }
+  // Sums the functions a line declares: self, calls and a diff's baselines.
+  function declared_costs(function_indexes) {
+    const vector_sum = (cost_vector_of) =>
+      cost_vectors_add(function_indexes.map(cost_vector_of));
+    return {
+      self: vector_sum((index) => function_table[index].self),
+      calls: vector_sum((index) => function_table[index].calls),
+      baseline: IS_DIFF
+        ? vector_sum((index) => function_baselines[index])
+        : null,
+    };
+  }
   function function_name(index) {
     return index != null && function_table[index]
       ? function_table[index].name
       : text("str_function_name_unknown");
+  }
+  // Names the functions costing a line, one for most lines.
+  function function_names(function_indexes) {
+    return function_indexes
+      .map(function_name)
+      .join(CALLERS_CELL_SEPARATOR_TEXT);
   }
 
   function source_text(file_path) {
@@ -430,7 +461,7 @@ window.try_catch_handler_(function () {
 
   function line_link_cell(file_path, line, text) {
     if (!file_table[file_path] || !line) return { text };
-    return { text, href: hash_for_line(file_path, line) };
+    return { text, href: hash_for_location(file_path, line) };
   }
 
   const function_is_linkable = (function_index) =>
@@ -451,36 +482,25 @@ window.try_catch_handler_(function () {
       { label: counter.key, measure: counter_label(counter), numeric: true },
       extra || {},
     );
+  const function_column = (label) => ({
+    label,
+    clip: STYLE_TABLE_FUNCTION_NAME_MAX_CHARS,
+  });
   const secondary_column = (secondary) =>
     counter_column(secondary, {
       cls: "heat-map-source-table-secondary-counter-cell-",
     });
   const secondary_columns = () => secondary_counters.map(secondary_column);
   // Writes the cell of one selected counter, its share heat colored.
-  function secondary_cell(
-    secondary,
-    cost_vector,
-    line_number,
-    baseline_lookup,
-  ) {
-    const percent = secondary_percent_of_cell(
-      secondary.get(cost_vector),
-      secondary,
-      line_number,
-      baseline_lookup,
-    );
-    return {
-      text: percent || line_number == null ? share_text(percent) : "",
-      style: heat_style(percent),
-    };
-  }
-  const secondary_cells = (cost_vector, line_number, baseline_lookup) =>
-    secondary_counters.map((secondary) =>
-      secondary_cell(secondary, cost_vector, line_number, baseline_lookup),
-    );
+  const secondary_cell = (percent, shows_zero) => ({
+    text: percent || shows_zero ? share_text(percent) : "",
+    style: heat_style(percent),
+  });
 
   let tree_root = null;
+  // Builds the tree, with no test selected every file costing nothing.
   function tree_build() {
+    const has_counters = shown_test_name !== null;
     const root = { name: "", path: "", dirs: new Map(), files: [], self: 0 };
     function node_insert(file_path, self_cost, baseline_cost, cold) {
       const path_parts = file_path.split("/");
@@ -509,18 +529,20 @@ window.try_catch_handler_(function () {
         self: self_cost,
         base: baseline_cost,
         cold,
-        zero: self_cost === 0,
+        zero: has_counters && self_cost === 0,
       });
     }
     for (const file_path of Object.keys(file_table)) {
-      node_insert(
-        file_path,
-        ranking_value(file_table[file_path].self),
-        file_baseline(file_path) || 0,
-        false,
-      );
+      if (!has_counters) node_insert(file_path, 0, 0, false);
+      else
+        node_insert(
+          file_path,
+          ranking_value(file_table[file_path].self),
+          file_baseline(file_path) || 0,
+          false,
+        );
     }
-    for (const file_path of profile_model.cold) {
+    for (const file_path of shown_model.cold) {
       node_insert(file_path, 0, 0, true);
     }
     (function subtree_sum(tree_node) {
@@ -542,9 +564,12 @@ window.try_catch_handler_(function () {
   }
   const expanded_directories = new Set(),
     expanded_cold_groups = new Set();
+  // Orders tree nodes by the sort chosen, by name with no test selected.
   function node_compare(node_a, node_b) {
     const by_heat =
-      sort_mode === "heat" ? absolute(node_b.self) - absolute(node_a.self) : 0;
+      sort_mode === "heat" && shown_test_name !== null
+        ? absolute(node_b.self) - absolute(node_a.self)
+        : 0;
     return by_heat || node_a.name.localeCompare(node_b.name);
   }
   const caret = (is_expanded) =>
@@ -572,6 +597,17 @@ window.try_catch_handler_(function () {
       render_html_escape(share_shown),
     );
   function tree_render() {
+    const has_counters = shown_test_name !== null;
+    // Writes the heat colors of a node, none with no test selected.
+    const node_heat_style = (tree_node) =>
+      has_counters
+        ? heat_style(share_of_baseline(tree_node.self, tree_node.base))
+        : "";
+    // Writes the share of a node, none with no test selected.
+    const node_share_text = (tree_node) =>
+      has_counters
+        ? share_of_baseline_text(tree_node.self, tree_node.base)
+        : "";
     function nodes_emit(tree_node, depth) {
       const output_parts = [];
       const indent_text = " ".repeat(
@@ -580,9 +616,7 @@ window.try_catch_handler_(function () {
       const directories = [...tree_node.dirs.values()].sort(node_compare);
       for (const directory_node of directories) {
         const is_expanded = expanded_directories.has(directory_node.path);
-        const heat_style_attribute = heat_style(
-          share_of_baseline(directory_node.self, directory_node.base),
-        );
+        const heat_style_attribute = node_heat_style(directory_node);
         output_parts.push(
           render_element(
             "div",
@@ -597,7 +631,7 @@ window.try_catch_handler_(function () {
             tree_node_inner_markup(
               indent_text + caret(is_expanded),
               directory_node.name + "/",
-              share_of_baseline_text(directory_node.self, directory_node.base),
+              node_share_text(directory_node),
             ),
           ),
         );
@@ -617,9 +651,7 @@ window.try_catch_handler_(function () {
       const file_list = [...tree_node.files].sort(node_compare);
       const file_row_emit = (file, node_level) => {
         const is_selected = file.path === current_file_path;
-        const heat_style_attribute = file.cold
-          ? ""
-          : heat_style(share_of_baseline(file.self, file.base));
+        const heat_style_attribute = file.cold ? "" : node_heat_style(file);
         return render_element(
           "div",
           {
@@ -636,7 +668,7 @@ window.try_catch_handler_(function () {
           tree_node_inner_markup(
             indent_text + caret(false),
             file.name,
-            share_of_baseline_text(file.self, file.base),
+            node_share_text(file),
           ),
         );
       };
@@ -850,19 +882,16 @@ window.try_catch_handler_(function () {
   let entry_line_index = null;
 
   // Makes the self column, the ranking counter's share heat colored.
-  function home_self_column(cost, baseline_cost) {
+  function home_self_column(cost, record_share) {
     return table_sort_column(
       SELF_COLUMN,
       HOME_SORT_DEFAULT_NAME,
       (record) => absolute(cost(record)),
       (record) => {
-        const record_cost = cost(record),
-          record_baseline_cost = baseline_cost(record);
+        const record_percent = record_share(record);
         return {
-          text: share_of_baseline_text(record_cost, record_baseline_cost),
-          style: heat_style(
-            share_of_baseline(record_cost, record_baseline_cost),
-          ),
+          text: share_text(record_percent),
+          style: heat_style(record_percent),
         };
       },
     );
@@ -880,19 +909,19 @@ window.try_catch_handler_(function () {
     );
   }
   // Makes one column per selected counter, each sorted by its count.
-  function home_secondary_columns(cost_vector, baseline_lookup) {
+  function home_secondary_columns(cost_vector, counter_percent) {
     return secondary_counters.map((secondary) =>
       table_sort_column(
         secondary_column(secondary),
         secondary.key,
         (record) => absolute(secondary.get(cost_vector(record))),
-        (record) =>
-          secondary_cell(
-            secondary,
-            cost_vector(record),
-            null,
-            baseline_lookup(record),
-          ),
+        (record) => {
+          const counter_value = secondary.get(cost_vector(record));
+          return secondary_cell(
+            counter_percent(record, counter_value, secondary),
+            true,
+          );
+        },
       ),
     );
   }
@@ -906,7 +935,7 @@ window.try_catch_handler_(function () {
         records.push({
           cost,
           file_path,
-          function_index: file.lineFunction[line_key],
+          function_indexes: line_functions(file_path, line_key),
           line_costs,
           line_number: +line_key,
         });
@@ -936,9 +965,17 @@ window.try_catch_handler_(function () {
         HOME_RANK_COLUMN,
         home_self_column(
           (record) => record.cost,
-          (record) => line_baseline(record.file_path, record.line_number),
+          (record) =>
+            line_share(
+              record.cost,
+              line_baseline(record.file_path, record.line_number),
+              record.file_path,
+              record.line_number,
+            ),
         ),
-        home_function_column((record) => function_name(record.function_index)),
+        home_function_column((record) =>
+          function_names(record.function_indexes),
+        ),
         table_sort_column(
           {
             label: text("str_column_defined_at"),
@@ -970,17 +1007,23 @@ window.try_catch_handler_(function () {
         ),
         ...home_secondary_columns(
           (record) => record.line_costs[0],
-          (record) => (counter) =>
-            line_counter_baseline(
+          (record, value, counter) =>
+            line_counter_share(
+              value,
+              counter,
+              line_counter_baseline(
+                record.file_path,
+                record.line_number,
+                counter,
+              ),
               record.file_path,
               record.line_number,
-              counter,
             ),
         ),
       ],
       records,
       row_href: (record) =>
-        hash_for_line(record.file_path, record.line_number),
+        hash_for_location(record.file_path, record.line_number),
     };
   }
   // Lists every function with a ranking count and the functions table columns.
@@ -1023,7 +1066,11 @@ window.try_catch_handler_(function () {
         HOME_RANK_COLUMN,
         home_self_column(
           (record) => record.self_cost,
-          (record) => function_baseline(record.function_index),
+          (record) =>
+            share_of_baseline(
+              record.self_cost,
+              function_baseline(record.function_index),
+            ),
         ),
         home_function_column((record) => record.function_entry.name),
         table_sort_column(
@@ -1039,8 +1086,12 @@ window.try_catch_handler_(function () {
         ...call_columns,
         ...home_secondary_columns(
           (record) => record.function_entry.self,
-          (record) => (counter) =>
-            function_counter_baseline(record.function_index, counter),
+          (record, value, counter) =>
+            counter_share(
+              value,
+              counter,
+              function_counter_baseline(record.function_index, counter),
+            ),
         ),
       ],
       records,
@@ -1063,7 +1114,7 @@ window.try_catch_handler_(function () {
         HOME_RANK_COLUMN,
         home_self_column(
           (file) => file.self,
-          (file) => file.base,
+          (file) => share_of_baseline(file.self, file.base),
         ),
         table_sort_column(
           {
@@ -1076,7 +1127,8 @@ window.try_catch_handler_(function () {
         ),
         ...home_secondary_columns(
           (file) => file_table[file.path].self,
-          (file) => (counter) => file_counter_baseline(file.path, counter),
+          (file, value, counter) =>
+            file_counter_share(value, counter, file.path),
         ),
       ],
       records,
@@ -1124,7 +1176,6 @@ window.try_catch_handler_(function () {
   function home_render(is_new_address) {
     const kept_scroll_top = is_new_address ? 0 : main_panel.scrollTop;
     current_file_path = null;
-    scope_totals = null;
     const kind_choice = HOME_TABLE_KIND_CHOICES.find(
       (choice) => choice.value === home_table_kind,
     );
@@ -1181,12 +1232,17 @@ window.try_catch_handler_(function () {
   function hottest_lines_render(file_path, function_index) {
     const file = file_table[file_path];
     const file_line_share = (line_number, cost) =>
-      line_share(cost, line_baseline(file_path, line_number), line_number);
+      line_share(
+        cost,
+        line_baseline(file_path, line_number),
+        file_path,
+        line_number,
+      );
     const tape_lines = Object.keys(file.lines)
       .filter(
         (line_key) =>
           function_index == null ||
-          file.lineFunction[line_key] === function_index,
+          line_functions(file_path, line_key).includes(function_index),
       )
       .map((line_key) => [+line_key, ranking_value(file.lines[line_key][0])])
       .filter(
@@ -1202,18 +1258,18 @@ window.try_catch_handler_(function () {
       const baseline_cost = line_baseline(file_path, line_number);
       const entry_text = text_fill("str_ticker_tape_entry", {
         line: line_number,
-        share: line_share_text(cost, baseline_cost, line_number),
+        share: line_share_text(cost, baseline_cost, file_path, line_number),
       });
       entries_markup += render_menu_button(
         "link",
         render_html_escape(entry_text),
         {
           tag_name: "a",
-          href: hash_for_line(file_path, line_number),
+          href: hash_for_location(file_path, line_number),
           class_names: ["heat-map-source-ticker-tape-entry-"],
           attributes: {
             tabindex: entry_index ? -1 : 0,
-            style: heat_style(line_share(cost, baseline_cost, line_number)),
+            style: heat_style(file_line_share(line_number, cost)),
           },
         },
       );
@@ -1253,53 +1309,63 @@ window.try_catch_handler_(function () {
     render_html_escape(text("str_information_box_action_bar_separator")),
   );
 
-  // Renders the information box of a file, or of a line when one is given.
-  function information_box_render(file_path, line_number) {
-    const file = file_table[file_path];
-    const function_index = line_number
-      ? (entry_line_index[file_path] || {})[line_number]
-      : null;
-    const line_function_index = line_number
-      ? file.lineFunction[line_number]
-      : null;
-    const line_costs = line_number
-      ? file.lines[line_number] || [[], [], 0]
-      : null;
-    const cost_vector = line_number ? line_costs[0] : file.self;
-    const counter_share_text = (value, counter) => {
-      if (!value) return "";
-      return share_text(
-        line_number
-          ? line_counter_share(
-              value,
-              counter,
-              line_counter_baseline(file_path, line_number, counter),
-              line_number,
-            )
-          : file_counter_share(value, counter, file_path),
-      );
+  // Returns what a box's counter rows read: a line, its functions or a file.
+  function box_counter_source(
+    file_path,
+    line_number,
+    line_costs,
+    function_costs,
+  ) {
+    if (line_costs)
+      return {
+        cost_vector: line_costs[0],
+        self_label: text("str_line_self"),
+        share_label: FUNCTION_SHARE_LABEL,
+        percent: (value, counter) =>
+          line_counter_share(
+            value,
+            counter,
+            line_counter_baseline(file_path, line_number, counter),
+            file_path,
+            line_number,
+          ),
+      };
+    if (function_costs)
+      return {
+        cost_vector: function_costs.self,
+        self_label: text("str_column_self"),
+        share_label: TEST_SHARE_LABEL,
+        percent: (value, counter) =>
+          counter_share(
+            value,
+            counter,
+            counter_baseline(function_costs.baseline, counter),
+          ),
+      };
+    return {
+      cost_vector: file_table[file_path].self,
+      self_label: text("str_column_self"),
+      share_label: TEST_SHARE_LABEL,
+      percent: (value, counter) =>
+        file_counter_share(value, counter, file_path),
     };
-    const function_column = (label) => ({
-      label,
-      clip: STYLE_TABLE_FUNCTION_NAME_MAX_CHARS,
-    });
-    const location_column = {
-      label: text("str_column_defined_at"),
-      clip: STYLE_TABLE_LOCATION_COLUMN_MAX_CHARS,
-    };
-    const self_label = text(
-      line_number && function_index == null
-        ? "str_line_self"
-        : "str_column_self",
+  }
+  // Lists the counter table of a box, a line's calls rows after its counters.
+  function box_counter_table(
+    file_path,
+    line_number,
+    line_costs,
+    function_costs,
+  ) {
+    const counter_source = box_counter_source(
+      file_path,
+      line_number,
+      line_costs,
+      function_costs,
     );
-    const counter_columns = [
+    const columns = [
       { label: text("str_column_counter") },
-      {
-        label: line_number
-          ? scope_share_label()
-          : text(SCOPE_SHARE_STRING_IDS[file_counter_scope]),
-        numeric: true,
-      },
+      { label: counter_source.share_label, numeric: true },
       { label: text("str_column_count"), numeric: true },
     ];
     const listed_counters = [
@@ -1309,70 +1375,185 @@ window.try_catch_handler_(function () {
           (counter) =>
             !counter.derived &&
             counter !== ranking_counter &&
-            counter.get(cost_vector),
+            counter.get(counter_source.cost_vector),
         )
         .sort((counter_a, counter_b) =>
           counter_a.key.localeCompare(counter_b.key),
         ),
     ];
-    const counter_rows = listed_counters.map((counter, row_index) => {
-      const counter_value = counter.get(cost_vector);
+    const rows = listed_counters.map((counter, row_index) => {
+      const counter_value = counter.get(counter_source.cost_vector);
       return [
         {
-          text: (row_index ? "" : self_label + " ") + counter_label(counter),
+          text:
+            (row_index ? "" : counter_source.self_label + " ") +
+            counter_label(counter),
         },
-        counter_share_text(counter_value, counter),
+        counter_value
+          ? share_text(counter_source.percent(counter_value, counter))
+          : "",
         counter_value ? cell_number(counter_value) : "",
       ];
     });
-    const counter_row_attributes = listed_counters.map((counter) =>
+    const row_attributes = listed_counters.map((counter) =>
       counter.derived
         ? { class: "heat-map-source-information-box-synthetic-row-" }
         : {},
     );
-    if (line_number) {
-      const call_cost = ranking_value(line_costs[1]);
-      const line_baseline_cost = line_baseline(file_path, line_number);
-      if (call_cost) {
-        counter_rows.push([
-          { text: text("str_column_calls") },
-          line_share_text(call_cost, line_baseline_cost, line_number),
-          cell_number(call_cost),
-        ]);
-        counter_rows.push([
-          { text: text("str_column_call_count") },
-          "",
-          call_count_cell(line_costs[2]),
-        ]);
-      }
+    const call_cost = line_costs ? ranking_value(line_costs[1]) : 0;
+    if (call_cost) {
+      rows.push([
+        { text: text("str_column_calls") },
+        line_share_text(
+          call_cost,
+          line_baseline(file_path, line_number),
+          file_path,
+          line_number,
+        ),
+        cell_number(call_cost),
+      ]);
+      rows.push([
+        { text: text("str_column_call_count") },
+        "",
+        call_count_cell(line_costs[2]),
+      ]);
     }
-    const in_function_note =
-      line_function_index != null
-        ? text_fill("str_in_function", {
-            function: function_name(line_function_index),
-          })
-        : "";
-    const in_function_html =
-      line_function_index != null
-        ? text_fill("str_in_function", {
-            function: render_element(
-              "span",
-              { class: "heat-map-source-information-box-function-name-" },
-              render_html_escape(function_name(line_function_index)),
-            ),
-          })
-        : "";
+    return { columns, rows, row_attributes };
+  }
+  // Renders a function's part of a box: its totals, hottest lines and callers.
+  function function_part_render(file_path, function_index) {
+    const function_entry = function_table[function_index];
+    const callers = function_entry.callers
+      .slice()
+      .sort((caller_a, caller_b) => caller_b[4] - caller_a[4]);
+    const function_baseline_cost = function_baseline(function_index);
+    const function_self_text =
+      share_of_baseline_text(
+        ranking_value(function_entry.self),
+        function_baseline_cost,
+      ) || report_ui_.zero_percent_text();
+    const function_total_text =
+      share_of_baseline_text(
+        ranking_value(function_entry.self) +
+          ranking_value(function_entry.calls),
+        function_baseline_cost,
+      ) || report_ui_.zero_percent_text();
+    const heading = HAS_CALL_GRAPH
+      ? text_fill("str_information_box_function_totals", {
+          function: function_entry.name,
+          self: function_self_text,
+          total: function_total_text,
+        })
+      : text_fill("str_information_box_function_self", {
+          function: function_entry.name,
+          self: function_self_text,
+        });
+    const hottest_lines = hottest_lines_render(file_path, function_index);
+    let markup =
+      render_element(
+        "div",
+        { class: "heat-map-source-information-box-heading-" },
+        render_html_escape(heading),
+      ) + hottest_lines.markup;
+    const text_parts = [heading];
+    if (hottest_lines.copy_text) text_parts.push(hottest_lines.copy_text);
+    if (callers.length) {
+      const columns = [
+        { label: text("str_column_call_count"), numeric: true },
+        { label: text("str_column_test_share"), numeric: true },
+        counter_column(ranking_counter),
+        function_column(text("str_column_caller")),
+        {
+          label: text("str_column_called_at"),
+          clip: STYLE_TABLE_LOCATION_COLUMN_MAX_CHARS,
+        },
+      ];
+      const rows = callers.map(
+        ([caller_index, call_file, call_line, cost_vector, call_count]) => {
+          const location_text = call_line
+            ? call_file + ":" + call_line
+            : call_file;
+          return [
+            call_count_cell(call_count),
+            share_of_test_text(ranking_value(cost_vector), ranking_counter),
+            cell_number(ranking_value(cost_vector)),
+            {
+              text: function_name(caller_index),
+            },
+            line_link_cell(call_file, call_line, location_text),
+          ];
+        },
+      );
+      markup += report_ui_.render_table(
+        "heat.detail.callers",
+        columns,
+        rows,
+        {},
+      );
+      text_parts.push(report_ui_.table_markdown(columns, rows));
+    } else if (HAS_CALL_GRAPH) {
+      const none = text("str_no_caller");
+      markup += render_element("div", {}, render_html_escape(none));
+      text_parts.push(none);
+    }
+    return { markup, copy_text: text_parts.join("\n\n") };
+  }
+
+  // Renders the information box of a file, or of a line when one is given.
+  function information_box_render(file_path, line_number) {
+    const file = file_table[file_path];
+    const has_counters = shown_test_name !== null;
+    const function_indexes = line_number
+      ? declared_functions(file_path, line_number)
+      : [];
+    // A line declaring functions with no cost of its own shows their costs.
+    const function_costs =
+      function_indexes.length && !file.lines[line_number]
+        ? declared_costs(function_indexes)
+        : null;
+    const line_costs =
+      line_number && !function_costs
+        ? file.lines[line_number] || [[], [], 0]
+        : null;
+    const line_function_indexes =
+      (line_number && file.lineFunctions[line_number]) || [];
+    const location_column = {
+      label: text("str_column_defined_at"),
+      clip: STYLE_TABLE_LOCATION_COLUMN_MAX_CHARS,
+    };
+    const counter_table = has_counters
+      ? box_counter_table(file_path, line_number, line_costs, function_costs)
+      : null;
+    const in_function_note = line_function_indexes.length
+      ? text_fill("str_in_function", {
+          function: function_names(line_function_indexes),
+        })
+      : "";
+    const in_function_html = line_function_indexes.length
+      ? text_fill("str_in_function", {
+          function: render_element(
+            "span",
+            { class: "heat-map-source-information-box-function-name-" },
+            render_html_escape(function_names(line_function_indexes)),
+          ),
+        })
+      : "";
     const heading_line = line_number
       ? `${file_path}:${line_number}${in_function_note}`
       : file_path;
     const note_texts = [];
+    // The source database names a file by its shown path alone.
     if (!line_number && file.group === CALLGRIND_FILE_DATA_ERROR_CODE)
-      note_texts.push(text_fill("str_not_in_repo", { path: file.raw }));
+      note_texts.push(
+        text_fill("str_not_in_repo", {
+          path: has_counters ? file.raw : file_path,
+        }),
+      );
     if (!line_number && source_text(file_path) == null)
       note_texts.push(text("str_source_unavailable"));
     const hottest_lines =
-      !line_number || function_index != null
-        ? hottest_lines_render(file_path, function_index)
+      has_counters && !line_number
+        ? hottest_lines_render(file_path, null)
         : { markup: "", copy_text: "" };
     let markup = box_control_markup(
       "close",
@@ -1386,12 +1567,13 @@ window.try_catch_handler_(function () {
         (line_number ? ":" + line_number : "") +
         in_function_html,
     );
-    markup += report_ui_.render_table(
-      "heat.detail.stats",
-      counter_columns,
-      counter_rows,
-      { row_attributes: counter_row_attributes },
-    );
+    if (counter_table)
+      markup += report_ui_.render_table(
+        "heat.detail.stats",
+        counter_table.columns,
+        counter_table.rows,
+        { row_attributes: counter_table.row_attributes },
+      );
     for (const note_text of note_texts) {
       markup += render_element(
         "div",
@@ -1401,9 +1583,11 @@ window.try_catch_handler_(function () {
     }
     markup += hottest_lines.markup;
     const text_parts = [
-      heading_line +
-        "\n" +
-        report_ui_.table_markdown(counter_columns, counter_rows),
+      counter_table
+        ? heading_line +
+          "\n" +
+          report_ui_.table_markdown(counter_table.columns, counter_table.rows)
+        : heading_line,
       ...note_texts,
     ];
     if (hottest_lines.copy_text) text_parts.push(hottest_lines.copy_text);
@@ -1417,7 +1601,7 @@ window.try_catch_handler_(function () {
       : [];
     if (callees.length) {
       const columns = [
-        { label: text("str_column_share_of_total"), numeric: true },
+        { label: text("str_column_test_share"), numeric: true },
         counter_column(ranking_counter),
         { label: text("str_column_call_count"), numeric: true },
         function_column(text("str_column_callee")),
@@ -1429,7 +1613,7 @@ window.try_catch_handler_(function () {
             ? call_file + ":" + call_line
             : call_file;
           return [
-            share_of_total_text(ranking_value(cost_vector)),
+            share_of_test_text(ranking_value(cost_vector), ranking_counter),
             cell_number(ranking_value(cost_vector)),
             call_count_cell(call_count),
             {
@@ -1452,100 +1636,33 @@ window.try_catch_handler_(function () {
         heading + "\n" + report_ui_.table_markdown(columns, rows),
       );
     }
-    if (function_index != null) {
-      const function_entry = function_table[function_index];
-      const callers = function_entry.callers
-        .slice()
-        .sort((caller_a, caller_b) => caller_b[4] - caller_a[4]);
-      const function_baseline_cost = function_baseline(function_index);
-      const function_self_text =
-        share_of_baseline_text(
-          ranking_value(function_entry.self),
-          function_baseline_cost,
-          true,
-        ) || report_ui_.zero_percent_text();
-      const function_total_text =
-        share_of_baseline_text(
-          ranking_value(function_entry.self) +
-            ranking_value(function_entry.calls),
-          function_baseline_cost,
-          true,
-        ) || report_ui_.zero_percent_text();
-      const heading = HAS_CALL_GRAPH
-        ? text_fill("str_information_box_function_totals", {
-            function: function_entry.name,
-            self: function_self_text,
-            total: function_total_text,
-          })
-        : text_fill("str_information_box_function_self", {
-            function: function_entry.name,
-            self: function_self_text,
-          });
-      markup += render_element(
-        "div",
-        { class: "heat-map-source-information-box-heading-" },
-        render_html_escape(heading),
-      );
-      if (callers.length) {
-        const columns = [
-          { label: text("str_column_call_count"), numeric: true },
-          { label: text("str_column_share_of_total"), numeric: true },
-          counter_column(ranking_counter),
-          function_column(text("str_column_caller")),
-          {
-            label: text("str_column_called_at"),
-            clip: STYLE_TABLE_LOCATION_COLUMN_MAX_CHARS,
-          },
-        ];
-        const rows = callers.map(
-          ([caller_index, call_file, call_line, cost_vector, call_count]) => {
-            const location_text = call_line
-              ? call_file + ":" + call_line
-              : call_file;
-            return [
-              call_count_cell(call_count),
-              share_of_total_text(ranking_value(cost_vector)),
-              cell_number(ranking_value(cost_vector)),
-              {
-                text: function_name(caller_index),
-              },
-              line_link_cell(call_file, call_line, location_text),
-            ];
-          },
-        );
-        markup += report_ui_.render_table(
-          "heat.detail.callers",
-          columns,
-          rows,
-          {},
-        );
-        text_parts.push(
-          heading + "\n" + report_ui_.table_markdown(columns, rows),
-        );
-      } else if (HAS_CALL_GRAPH) {
-        const none = text("str_no_caller");
-        markup += render_element("div", {}, render_html_escape(none));
-        text_parts.push(heading + "\n" + none);
-      } else {
-        text_parts.push(heading);
-      }
+    for (const function_index of function_indexes) {
+      const function_part = function_part_render(file_path, function_index);
+      markup += function_part.markup;
+      text_parts.push(function_part.copy_text);
     }
-    const owner_link_markup =
-      line_number &&
-      function_index == null &&
-      function_is_linkable(line_function_index)
-        ? render_menu_button(
+    // A line in one function links it as "function", in several by name.
+    const linked_indexes = function_indexes.length
+      ? []
+      : line_function_indexes.filter(function_is_linkable);
+    const owner_link_markup = linked_indexes
+      .map(
+        (function_index) =>
+          render_menu_button(
             "link",
-            render_html_escape(text("str_information_box_function")),
+            render_html_escape(
+              line_function_indexes.length === 1
+                ? text("str_information_box_function")
+                : function_name(function_index),
+            ),
             {
               tag_name: "a",
-              href: hash_for_function(
-                function_table[line_function_index].name,
-              ),
+              href: hash_for_function(function_table[function_index].name),
               class_names: ["heat-map-source-information-box-control-"],
             },
-          ) + box_separator_markup
-        : "";
+          ) + box_separator_markup,
+      )
+      .join("");
     markup += render_element(
       "div",
       {},
@@ -1567,19 +1684,26 @@ window.try_catch_handler_(function () {
     };
   }
 
-  // Renders the line that stands in for the file box while that box is away.
-  function information_line_render(file_path, has_file_box) {
+  // Returns the self share of a file as the information line shows it.
+  function information_line_share_text(file_path) {
     const self_cost = ranking_value(file_table[file_path].self);
-    const share_shown = self_cost
+    return self_cost
       ? share_text(
           file_counter_share(self_cost, ranking_counter, file_path),
-          true,
+          false,
         )
       : report_ui_.zero_percent_text();
-    const link_text = text_fill("str_information_line_link", {
-      path: file_path,
-      share: share_shown,
-    });
+  }
+  // Renders the line that stands in for the file box while that box is away.
+  function information_line_render(file_path, has_file_box) {
+    // With no test selected the line shows the path alone.
+    const link_text =
+      shown_test_name === null
+        ? file_path
+        : text_fill("str_information_line_link", {
+            path: file_path,
+            share: information_line_share_text(file_path),
+          });
     return render_element(
       "div",
       {
@@ -1622,26 +1746,53 @@ window.try_catch_handler_(function () {
       kept_scroll_top = is_first_view ? 0 : main_panel.scrollTop,
       has_file_box = is_first_view || !!file_box();
     current_file_path = file_path;
-    const lines = file.lines;
-    scope_totals = scope_totals_build(file_path);
+    const has_counters = shown_test_name !== null;
     let markup =
       (has_file_box ? information_box_render(file_path, 0).markup : "") +
       information_line_render(file_path, has_file_box);
     const file_source = source_text(file_path);
-    const has_calls_column = HAS_CALL_GRAPH && shows_calls;
+    const has_calls_column = has_counters && HAS_CALL_GRAPH && shows_calls;
 
     const rows = [],
       attrs = [];
+    // Emits a row of the line number and source alone, no test selected.
+    const source_only_row_emit = (line_number, text) => {
+      attrs.push({ id: `L${line_number}-`, "data-line-number-": line_number });
+      rows.push([{ text: String(line_number) }, { text: tabs_expand(text) }]);
+    };
     const source_row_emit = (line_number, text) => {
-      const line_costs = lines[line_number];
-      const self_cost = line_costs ? ranking_value(line_costs[0]) : 0,
-        calls = line_costs ? ranking_value(line_costs[1]) : 0;
-      const baseline_cost = line_baseline(file_path, line_number);
-      const heat_style_attribute = heat_style(
-        line_share(self_cost, baseline_cost, line_number),
-      );
+      if (!has_counters) return source_only_row_emit(line_number, text);
+      const line_costs = file.lines[line_number];
+      const function_indexes = line_costs
+        ? []
+        : declared_functions(file_path, line_number);
+      // A function line with no cost of its own shows its functions' costs.
+      const function_costs = function_indexes.length
+        ? declared_costs(function_indexes)
+        : null;
+      const row_costs = function_costs
+        ? [function_costs.self, function_costs.calls]
+        : line_costs;
+      const row_share = (value, counter) =>
+        function_costs
+          ? counter_share(
+              value,
+              counter,
+              counter_baseline(function_costs.baseline, counter),
+            )
+          : line_counter_share(
+              value,
+              counter,
+              line_counter_baseline(file_path, line_number, counter),
+              file_path,
+              line_number,
+            );
+      const self_cost = row_costs ? ranking_value(row_costs[0]) : 0,
+        calls = row_costs ? ranking_value(row_costs[1]) : 0;
+      const self_percent = row_share(self_cost, ranking_counter);
+      const heat_style_attribute = heat_style(self_percent);
       const class_names = [
-        line_costs && line_number ? "clickable-" : "",
+        row_costs && line_number ? "clickable-" : "",
         file.callees[line_number] ? "has-callee-" : "",
       ]
         .filter(Boolean)
@@ -1654,40 +1805,41 @@ window.try_catch_handler_(function () {
       const call_cell = has_calls_column
         ? [
             {
-              text: line_share_text(calls, baseline_cost, line_number),
-              style: heat_style(line_share(calls, baseline_cost, line_number)),
+              text: calls ? share_text(row_share(calls, ranking_counter)) : "",
+              style: heat_style(row_share(calls, ranking_counter)),
             },
           ]
         : [];
       rows.push([
         {
-          text: line_share_text(self_cost, baseline_cost, line_number),
+          text: self_cost ? share_text(self_percent) : "",
           style: heat_style_attribute,
         },
         { text: String(line_number), style: heat_style_attribute },
         { text: tabs_expand(text), style: heat_style_attribute },
         ...call_cell,
-        ...(line_costs
-          ? secondary_cells(line_costs[0], line_number, (secondary) =>
-              line_counter_baseline(file_path, line_number, secondary),
-            )
-          : secondary_counters.map(() => "")),
+        ...secondary_counters.map((secondary) =>
+          row_costs
+            ? secondary_cell(
+                row_share(secondary.get(row_costs[0]), secondary),
+                false,
+              )
+            : "",
+        ),
       ]);
     };
     const source_lines = file_source == null ? [] : file_source.split("\n");
     if (source_lines.length && source_lines[source_lines.length - 1] === "") {
       source_lines.pop();
     }
-    let line_count = source_lines.length;
     for (let line_index = 0; line_index < source_lines.length; line_index++) {
       source_row_emit(line_index + 1, source_lines[line_index]);
     }
     const beyond_end_text =
       file_source == null ? "" : text("str_source_beyond_end");
-    for (const line_key of Object.keys(lines)) {
-      if (file_source != null && +line_key <= source_lines.length) continue;
-      line_count = Math.max(line_count, +line_key);
-      source_row_emit(+line_key, beyond_end_text);
+    for (const line_number of has_counters ? known_lines(file_path) : []) {
+      if (file_source != null && line_number <= source_lines.length) continue;
+      source_row_emit(line_number, beyond_end_text);
     }
 
     const call_column = has_calls_column
@@ -1699,23 +1851,27 @@ window.try_catch_handler_(function () {
           },
         ]
       : [];
-    const columns = [
-      counter_column(ranking_counter, {
-        cls: "heat-map-source-table-self-cell-",
-      }),
-      {
-        label: text("str_column_line"),
-        numeric: true,
-        cls: "heat-map-source-table-line-number-cell-",
-      },
-      {
-        label: text("str_column_source"),
-        clip: HEAT_MAP_SOURCE_VIEW_WIDTH_CHARS,
-        cls: "heat-map-source-table-code-cell-",
-      },
-      ...call_column,
-      ...secondary_columns(),
-    ];
+    const line_column = {
+      label: text("str_column_line"),
+      numeric: true,
+      cls: "heat-map-source-table-line-number-cell-",
+    };
+    const source_column = {
+      label: text("str_column_source"),
+      clip: HEAT_MAP_SOURCE_VIEW_WIDTH_CHARS,
+      cls: "heat-map-source-table-code-cell-",
+    };
+    const columns = has_counters
+      ? [
+          counter_column(ranking_counter, {
+            cls: "heat-map-source-table-self-cell-",
+          }),
+          line_column,
+          source_column,
+          ...call_column,
+          ...secondary_columns(),
+        ]
+      : [line_column, source_column];
     markup += report_ui_.render_table("heat.src", columns, rows, {
       row_attributes: attrs,
       cls: "heat-map-source-table-",
@@ -2043,6 +2199,7 @@ window.try_catch_handler_(function () {
     );
   }
 
+  // Shows a line, its box open below it unless no test is selected.
   function detail_set(line) {
     if (line === detail_line()) return;
     for (const detail_row of main_panel.querySelectorAll(
@@ -2052,7 +2209,7 @@ window.try_catch_handler_(function () {
     }
     const row = line ? document.getElementById("L" + line + "-") : null;
     if (row) {
-      detail_open(current_file_path, line, row);
+      if (shown_test_name !== null) detail_open(current_file_path, line, row);
       report_ui_.table_rows.tab_stop_set(row, false);
       if (!row_is_visible(row)) row_center(row);
     }
@@ -2111,7 +2268,7 @@ window.try_catch_handler_(function () {
           detail_close(row.nextElementSibling);
         else
           report_ui_.address.request(
-            hash_for_line(current_file_path, line_number),
+            hash_for_location(current_file_path, line_number),
           );
       }
     }),
@@ -2223,7 +2380,7 @@ window.try_catch_handler_(function () {
     tree_root = tree_build();
     for (const directory_node of tree_root.dirs.values()) {
       if (
-        absolute(directory_node.self) / total_cost >
+        share_of_test(absolute(directory_node.self), ranking_counter) / 100 >
         HEAT_MAP_TREE_AUTO_EXPAND_ABOVE_SHARE
       ) {
         expanded_directories.add(directory_node.path);
@@ -2241,7 +2398,15 @@ window.try_catch_handler_(function () {
       route_render();
       return;
     }
-    if (shown_test_name === null) return;
+    if (shown_model === null) return;
+    // With no test selected only a sort change routes again.
+    if (shown_test_name === null) {
+      const relayed_sort_mode = report_preferences_.now().heat_sort_mode;
+      if (relayed_sort_mode === sort_mode) return;
+      sort_mode = relayed_sort_mode;
+      route_render();
+      return;
+    }
     const tree_sort_mode = sort_mode,
       kept_key = rendered_key;
     preferences_handler();
@@ -2253,19 +2418,53 @@ window.try_catch_handler_(function () {
   function relay_handler(message_data) {
     if (report_preferences_.relay_handler(message_data)) preferences_apply();
   }
-  function pulldown_text_lists(names_key, entry_name) {
-    if (!window.report_pulldown_text_)
-      window.throw_exception_("str_error_internal");
-    return window.report_pulldown_text_[names_key].includes(entry_name);
+  // Returns the source database's entry of a function, undefined if absent.
+  const database_function_find = (function_name) =>
+    source_database.functions.find(
+      (function_entry) => function_entry.name === function_name,
+    );
+  // Writes the note of a file or function the test recorded no samples for.
+  const no_samples_note_markup = (unsampled_name) =>
+    render_html_escape(
+      text_fill("str_no_samples_in_test", { name: unsampled_name }),
+    );
+  // Writes the note of a function at several locations, one link each.
+  function locations_note_markup(database_entry) {
+    const note_text = text_fill("str_function_locations", {
+      function: database_entry.name,
+      count: database_entry.locations.length,
+    });
+    return (
+      render_element("div", {}, render_html_escape(note_text)) +
+      database_entry.locations
+        .map((function_location) =>
+          render_element(
+            "div",
+            {},
+            render_element(
+              "a",
+              {
+                href: hash_for_line(
+                  function_location.file,
+                  function_location.line,
+                ),
+              },
+              render_html_escape(
+                function_location.file + ":" + function_location.line,
+              ),
+            ),
+          ),
+        )
+        .join("")
+    );
   }
-  function no_samples_note_render(unsampled_name) {
+  // Shows a note in place of a file, the tree kept.
+  function unavailable_note_render(note_markup) {
     current_file_path = null;
-    scope_totals = null;
-    const note = text_fill("str_no_samples_in_test", { name: unsampled_name });
     main_panel.innerHTML = render_element(
       "div",
       { class: "heat-map-source-unavailable-note-" },
-      render_html_escape(note),
+      note_markup,
     );
     main_panel.scrollTop = 0;
     tree_render();
@@ -2295,9 +2494,12 @@ window.try_catch_handler_(function () {
     const page_address = report_ui_.address.of_hash(location.hash);
     if (page_address.view !== HEAT_MAP_VIEW_ENTRY[0])
       window.throw_exception_("str_error_internal");
-    if (page_address.test !== shown_test_name) {
-      model_load(page_address.test);
-      return;
+    if (shown_model === null || page_address.test !== shown_test_name) {
+      if (page_address.test !== null) {
+        model_load(page_address.test);
+        return;
+      }
+      none_switch();
     }
     const is_new_address = location.hash !== routed_hash,
       is_detail_closed = !is_new_address && !detail_line(),
@@ -2305,47 +2507,65 @@ window.try_catch_handler_(function () {
     let file = page_address.file,
       line = page_address.line === null ? 0 : page_address.line,
       fn = page_address.function;
-    let unsampled_name = null;
+    let note_markup = "";
     if (fn) {
       const function_entry = function_table.find(
         (candidate) => candidate.name === fn,
       );
-      if (
+      // With no test selected the entry is the source database's.
+      if (shown_test_name === null) {
+        if (!function_entry)
+          window.throw_exception_("str_error_hash_function_unknown", fn);
+        if (function_entry.locations.length > 1)
+          note_markup = locations_note_markup(function_entry);
+        else {
+          file = function_entry.locations[0].file;
+          line = function_entry.locations[0].line;
+        }
+      } else if (
         function_entry &&
         function_entry.line &&
         file_table[function_entry.file]
       ) {
         file = function_entry.file;
         line = function_entry.line;
-      } else if (pulldown_text_lists("functions", fn)) {
-        unsampled_name = fn;
+      } else if (database_function_find(fn)) {
+        note_markup = no_samples_note_markup(fn);
       } else {
         window.throw_exception_("str_error_hash_function_unknown", fn);
       }
     } else if (file && !file_table[file]) {
-      if (!pulldown_text_lists("files", file)) {
+      if (
+        shown_test_name === null ||
+        !Object.hasOwn(source_database.files, file)
+      ) {
         window.throw_exception_("str_error_hash_file_unknown", file);
       }
-      unsampled_name = file;
+      note_markup = no_samples_note_markup(file);
     }
-    if (!unsampled_name && !sources_ready(file ? [file] : home_source_paths()))
+    if (!note_markup && !sources_ready(file ? [file] : home_source_paths()))
       return;
     routed_hash = location.hash;
-    if (unsampled_name) {
+    if (note_markup) {
       rendered_key = "";
-      no_samples_note_render(unsampled_name);
+      unavailable_note_render(note_markup);
       rendered_line = line;
       main_focus_restore(main_had_focus);
       load_render_finish();
       return;
     }
 
-    const key = [
-      file ? "file\n" + file : "home",
-      active_scale.value,
-      String(shows_calls),
-      ...secondary_counters.map((secondary_counter) => secondary_counter.key),
-    ].join("\n");
+    const key =
+      shown_test_name === null
+        ? "file\n" + file
+        : [
+            file ? "file\n" + file : "home",
+            active_scale.value,
+            String(shows_calls),
+            ...secondary_counters.map(
+              (secondary_counter) => secondary_counter.key,
+            ),
+          ].join("\n");
     if (key !== rendered_key) {
       rendered_key = key;
       if (file) file_render(file);
@@ -2394,9 +2614,25 @@ window.try_catch_handler_(function () {
     );
     document.head.append(model_script);
   }
+  // Shows every file and function the report names, no test, no counter.
+  function none_switch() {
+    shown_test_name = null;
+    shown_model = source_database;
+    profile_model = null;
+    file_table = source_database.files;
+    function_table = source_database.functions;
+    entry_line_index = null;
+    expanded_directories.clear();
+    expanded_cold_groups.clear();
+    current_file_path = null;
+    rendered_key = "";
+    sort_mode = report_preferences_.now().heat_sort_mode;
+    tree_root = tree_build();
+  }
   function model_switch(test_name, test_model) {
-    if (shown_test_name === null) report_kind_set(test_model);
+    if (IS_DIFF === null) report_kind_set(test_model);
     shown_test_name = test_name;
+    shown_model = test_model;
     profile_model = test_model;
     file_table = test_model.files;
     function_table = test_model.functions;
@@ -2411,23 +2647,23 @@ window.try_catch_handler_(function () {
         0,
       ),
     );
-    CALLS_TOTAL =
-      per_function_calls.reduce(
-        (running_total, call_count) => running_total + call_count,
-        0,
-      ) || 1;
+    CALLS_TOTAL = per_function_calls.reduce(
+      (running_total, call_count) => running_total + call_count,
+      0,
+    );
     entry_line_index = {};
     function_table.forEach((function_entry, index) => {
       if (!function_entry.line) return;
       entry_line_index[function_entry.file] =
         entry_line_index[function_entry.file] || {};
-      entry_line_index[function_entry.file][function_entry.line] = index;
+      const file_lines = entry_line_index[function_entry.file];
+      file_lines[function_entry.line] = file_lines[function_entry.line] || [];
+      file_lines[function_entry.line].push(index);
     });
     counters_build();
     expanded_directories.clear();
     expanded_cold_groups.clear();
     current_file_path = null;
-    scope_totals = null;
     rendered_key = "";
     preferences_handler();
     ranking_tree_build();

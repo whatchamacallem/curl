@@ -26,6 +26,25 @@ test_failure_expect() {
   echo "ok $_name"
 }
 
+# Expects an exit code and one whole output line, the output shown as it runs.
+test_failure_message_expect() {
+  local _name="$1" _wanted_code="$2" _wanted_line="$3" _statuses=(0 0 0)
+  shift 3
+  [ "${1:-}" = -- ] || test_fail "$_name" \
+    "test_failure_message_expect wants -- first"
+  shift
+  "$@" </dev/null 2>&1 | tee -a /dev/stderr \
+    | grep -c -x -F -e "$_wanted_line" >/dev/null \
+    || _statuses=("${PIPESTATUS[@]}")
+  [ "${_statuses[0]}" = "$_wanted_code" ] || test_fail "$_name" \
+    "exit ${_statuses[0]}, expected $_wanted_code, from: $*"
+  [ "${_statuses[1]}" = 0 ] || test_fail "$_name" \
+    "tee exited ${_statuses[1]} behind: $*"
+  [ "${_statuses[2]}" = 0 ] || test_fail "$_name" \
+    "no line '$_wanted_line' from: $*"
+  echo "ok $_name"
+}
+
 test_report_copy() {
   cp -a "$2" "$1"
   echo "$1"

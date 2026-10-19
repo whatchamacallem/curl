@@ -226,7 +226,7 @@ window.try_catch_handler_(function () {
       after_paint_run(() => {
         load_log_append(
           pending_scripts.asset_count === 1
-            ? "str_load_log_script_entry"
+            ? "str_load_log_asset_entry"
             : "str_load_log_scripts_entry",
           pending_scripts.start_milliseconds,
           {

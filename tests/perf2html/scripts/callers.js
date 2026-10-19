@@ -105,7 +105,7 @@ window.try_catch_handler_(function () {
         function: caller.name,
         share: share_text(
           calls_share(caller.calls, caller.baseline_calls),
-          true,
+          false,
         ),
       }),
     );
@@ -194,8 +194,7 @@ window.try_catch_handler_(function () {
     const counter_names = view_preferences.counter_names;
     shown_counter_indexes = counter_names.map(counter_index);
     shows_calls = view_preferences.shows_calls;
-    const scale_choices =
-      window.report_preferences_.heat_scale_choices(is_diff);
+    const scale_choices = window.report_preferences_.heat_scale_choices();
     const scale_choice = scale_choices.find(
       (choice) => choice.value === view_preferences.heat_scale_value,
     );

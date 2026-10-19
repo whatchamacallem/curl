@@ -45,39 +45,28 @@ PERF2HTML_DIR_="$PWD"
 input_archives_extract() {
   case "$_BASE_DIR$_MOD_DIR" in
     *"$REPORT_RAW_ARCHIVE_SUFFIX"*)
-      _EXTRACTED_ROOT="$(mktemp -d)" || error_exit 1 \
+      EXTRACTED_ROOT="$(mktemp -d)" || error_exit 1 \
         "error: mktemp could not make the extraction directory"
       ;;
     *) return 0 ;;
   esac
   case "$_BASE_DIR" in
     *"$REPORT_RAW_ARCHIVE_SUFFIX")
-      _BASE_DIR="$(archive_extract "$_BASE_DIR" baseline "$_EXTRACTED_ROOT")"
+      _BASE_DIR="$(archive_extract "$_BASE_DIR" baseline "$EXTRACTED_ROOT")"
       log_verbose "baseline archive: $_BASE_DIR"
       ;;
   esac
   case "$_MOD_DIR" in
     *"$REPORT_RAW_ARCHIVE_SUFFIX")
-      _MOD_DIR="$(archive_extract "$_MOD_DIR" modified "$_EXTRACTED_ROOT")"
+      _MOD_DIR="$(archive_extract "$_MOD_DIR" modified "$EXTRACTED_ROOT")"
       log_verbose "modified archive: $_MOD_DIR"
       ;;
   esac
 }
 
-input_archives_clean() {
-  [ -n "$_EXTRACTED_ROOT" ] || return 0
-  rm -rf "$_EXTRACTED_ROOT" || error_exit 1 \
-    "error: could not remove the extracted input at $_EXTRACTED_ROOT"
-}
-
-temporary_directories_clean() {
-  [ "$KEEP_ARTIFACTS" = 1 ] || artifacts_clean
-  input_archives_clean
-}
-
 input_path_display() {
-  local _dir="$1" _inside="${1#"$_EXTRACTED_ROOT/"}"
-  if [ -z "$_EXTRACTED_ROOT" ] || [ "$_inside" = "$_dir" ]; then
+  local _dir="$1" _inside="${1#"$EXTRACTED_ROOT/"}"
+  if [ -z "$EXTRACTED_ROOT" ] || [ "$_inside" = "$_dir" ]; then
     path_display "$_dir"
   else
     echo "$DIFF_EXTRACTED_ROOT_DISPLAY_NAME/$_inside"
@@ -118,25 +107,8 @@ args_parse() {
   _MOD_DIR="$(report_path "$_MOD_DIR")"
   _OUT_DIR="$(report_path "$_OUT_DIR")"
   artifacts_dir_resolve "$(dirname "$_OUT_DIR")"
-  ARTIFACTS_DIR="$ARTIFACTS_DIR/$(basename "$_OUT_DIR")"
-  _EXTRACTED_ROOT=""
-  trap temporary_directories_clean EXIT
+  report_artifacts_dir REPORT_ARTIFACTS_DIR "$_OUT_DIR"
   input_archives_extract
-}
-
-recorded_reuse() {
-  [ -d "$ARTIFACTS_DIR" ] || error_exit 2 \
-    "error: --regenerate: no recordings at $ARTIFACTS_DIR"
-  local _log_pattern="$DIFF_TOOL_NAME.*.log" _found_names
-  local -a _found_logs
-  mapfile -t _found_logs < <(find "$ARTIFACTS_DIR" -mindepth 1 -maxdepth 1 \
-    -type f -name "$_log_pattern" | sort)
-  _found_names="${_found_logs[*]##*/}"
-  [ "${#_found_logs[@]}" = 1 ] || error_exit 2 "error: --regenerate: \
-$ARTIFACTS_DIR holds ${#_found_logs[@]} $_log_pattern, the log of the run to \
-reuse, expected 1${_found_names:+: $_found_names}"
-  TIMESTAMP="${_found_names#"$DIFF_TOOL_NAME".}"
-  TIMESTAMP="${TIMESTAMP%.log}"
 }
 
 manifest_check() {
@@ -146,188 +118,156 @@ manifest_check() {
     _reason="error: can't diff a diff: the $_role report was written by"
     error_exit 2 "$_reason perf2html_diff.sh: $_dir"
   fi
-  manifest_recorded "$_dir" "$_role" "$REPORT_MANIFEST_VERSION_FULL" \
-    >/dev/null
-  manifest_value "$_dir" recorded
+  manifest_verify "$_dir" "$_role" "$REPORT_MANIFEST_VERSION_FULL"
+  recorded_time_read "$3" "$_manifest"
+  printf -v "$4" '%s' "$(manifest_value "$_manifest" recorded)"
 }
 
 sources_match_check() {
   local _baseline_sources="$_BASE_DIR/$REPORT_SOURCES_DIR_NAME"
   local _modified_sources="$_MOD_DIR/$REPORT_SOURCES_DIR_NAME"
-  local _sources _baseline_checksum _modified_checksum _reason
+  local _sources _source _twin
   for _sources in "$_baseline_sources" "$_modified_sources"; do
     [ -d "$_sources" ] || error_exit 2 "error: no source directory: $_sources"
   done
-  _baseline_checksum="$(checksum_compute "$_baseline_sources")"
-  _modified_checksum="$(checksum_compute "$_modified_sources")"
-  _reason="error: the two reports show different source code: checksum"
-  _reason+=" $_baseline_checksum of $_baseline_sources vs $_modified_checksum"
-  [ "$_baseline_checksum" = "$_modified_checksum" ] || error_exit 2 \
-    "$_reason of $_modified_sources"
-}
-
-header_file() {
-  local _dir="$1" _role="$2" _out
-  _out="$(artifact_path header-block "$_role")"
-  {
-    echo "report=$(input_path_display "$_dir")"
-    grep '=' "$_dir/MANIFEST.txt" \
-      || error_exit 2 "error: no LABEL=VALUE row in $_dir/MANIFEST.txt"
-  } >"$_out"
-  echo "$_out"
-}
-
-timer_artifacts_find() {
-  local _dir="$1" _role="$2" _archive_pattern _found_names _reason
-  local -a _found_archives
-  _archive_pattern="$TIMER_ARTIFACTS_NAME_PREFIX*$REPORT_RAW_ARCHIVE_SUFFIX"
-  mapfile -t _found_archives < <(find "$_dir" -mindepth 1 -maxdepth 1 -type f \
-    -name "$_archive_pattern" | sort)
-  _found_names="${_found_archives[*]##*/}"
-  _reason="error: the $_role report holds ${#_found_archives[@]}"
-  _reason+=" $_archive_pattern at its top, expected 1: $_dir"
-  [ "${#_found_archives[@]}" = 1 ] || error_exit 2 \
-    "$_reason${_found_names:+: $_found_names}"
-  printf -v "$3" '%s' "${_found_archives[0]}"
-}
-
-profiles_extract() {
-  local _archive="$1" _role="$2" _into _root_name _recorded _profiles
-  local -a _files
-  _into="$(artifact_path extracted-profiles "$_role")"
-  _root_name="$(basename "$_archive" "$REPORT_RAW_ARCHIVE_SUFFIX")"
-  _recorded="${_root_name#"$TIMER_ARTIFACTS_NAME_PREFIX"}"
-  rm -rf "$_into"
-  mkdir -p "$_into"
-  command_run tar xJf "$_archive" -C "$_into"
-  [ -d "$_into/$_root_name" ] || error_exit 2 \
-    "error: $_archive holds no $_root_name directory"
-  _profiles="$(basename "$(artifact_path callgrind '*' "$_recorded")")"
-  mapfile -t _files < <(find "$_into/$_root_name" -maxdepth 1 -type f \
-    -name "$_profiles")
-  [ "${#_files[@]}" != 0 ] || error_exit 2 \
-    "error: no $_profiles file in $_archive"
-  printf -v "$3" '%s' "$_into/$_root_name/$_profiles"
-  printf -v "$4" '%s' "$_into/$_root_name/$(basename "$(artifact_path \
-    callgrind-file-data "" "$_recorded")")"
-}
-
-tests_names() {
-  local _profiles _tail _file
-  _profiles="$(basename "$1")"
-  _tail="${_profiles#*\*}"
-  {
-    echo "$REPORT_TEST_SUITE_NAME"
-    find "$(dirname "$1")" -maxdepth 1 -type f -name "$_profiles" \
-      -printf '%f\n' | while IFS= read -r _file; do
-      echo "${_file%"$_tail"}"
-    done
-  } | sort
-}
-
-tests_pair() {
-  local _base_tests _cur_tests _name
-  _base_tests="$(tests_names "$_BASELINE_PROFILES")"
-  _cur_tests="$(tests_names "$_MODIFIED_PROFILES")"
-  local _one_sided="is in only one of the two reports, so it has no delta:"
-  for _name in $(comm -3 <(echo "$_base_tests") <(echo "$_cur_tests")); do
-    error_exit 2 "error: '$_name' $_one_sided $_BASE_DIR vs $_MOD_DIR"
+  for _source in "$_baseline_sources"/*; do
+    _twin="$_modified_sources/${_source##*/}"
+    [ ! -f "$_twin" ] || cmp -s "$_source" "$_twin" || error_exit 2 \
+      "error: the two reports show different source code: $_source vs $_twin"
   done
-  comm -12 <(echo "$_base_tests") <(echo "$_cur_tests")
 }
 
-diff_one() {
-  local _name="$1" _diff_file _callers_file
-  local _baseline_profiles="$_BASELINE_PROFILES"
-  local _modified_profiles="$_MODIFIED_PROFILES"
-  local -a _derive
-  _diff_file="$(artifact_path delta "$_name")"
-  _callers_file="$(artifact_path caller-counts "$_name")"
-  if [ "$_name" != "$REPORT_TEST_SUITE_NAME" ]; then
-    _baseline_profiles="${_baseline_profiles/\*/$_name}"
-    _modified_profiles="${_modified_profiles/\*/$_name}"
-  fi
-  _derive=(--baseline-paths "$_BASELINE_PATHS"
-    --modified-paths "$_MODIFIED_PATHS")
-
-  heading_print "python3 callgrind_diff.py $_name"
-  command_run python3 "$PERF2HTML_DIR_/scripts/callgrind_diff.py" \
-    -o "$_diff_file" --callers-output "$_callers_file" \
-    --baseline "$_baseline_profiles" --current "$_modified_profiles" \
-    "${_derive[@]}"
-
-  heading_print "python3 callgrind_to_heatmap.py data $_name --diff"
-  command_run python3 "$PERF2HTML_DIR_/scripts/callgrind_to_heatmap.py" data \
-    "$_diff_file" --report-dir "$_OUT_DIR" --test "$_name" --diff \
-    --baseline-data "$_callers_file" "${_derive[@]}" \
-    --sources-dir "$_BASE_DIR/$REPORT_SOURCES_DIR_NAME"
-
-  heading_print "python3 build_report.py test $_name"
-  command_run python3 "$PERF2HTML_DIR_/scripts/build_report.py" test \
-    "$_diff_file" -o "$_OUT_DIR" --test "$_name" --diff \
-    --callers-data "$_callers_file"
-  log_verbose "$(printf '%-13sdiff: %s' "$_name" "$_OUT_DIR")"
+timer_artifacts_check() {
+  local _dir="$1" _role="$2" _recorded_time="$3" _archive
+  raw_data_archive_path _archive "$_dir" "$_recorded_time"
+  [ -f "$_archive" ] || error_exit 2 \
+    "error: the $_role report holds no raw data archive: $_archive"
+  printf -v "$4" '%s' "$_archive"
 }
 
-main() {
-  args_parse "$@"
-  verbose_begin
-  title_print "$_SCRIPT" "$@"
-
-  local _base_recorded _mod_recorded
-  _base_recorded="$(manifest_check "$_BASE_DIR" baseline)"
-  _mod_recorded="$(manifest_check "$_MOD_DIR" modified)"
+inputs_check() {
+  manifest_check "$_BASE_DIR" baseline _BASELINE_RECORDED_TIME \
+    _BASELINE_RECORDED
+  manifest_check "$_MOD_DIR" modified _MODIFIED_RECORDED_TIME \
+    _MODIFIED_RECORDED
   sources_match_check
-  timer_artifacts_find "$_BASE_DIR" baseline _BASELINE_TIMER_ARTIFACTS_ARCHIVE
-  timer_artifacts_find "$_MOD_DIR" modified _MODIFIED_TIMER_ARTIFACTS_ARCHIVE
-
+  timer_artifacts_check "$_BASE_DIR" baseline "$_BASELINE_RECORDED_TIME" \
+    _BASELINE_TIMER_ARTIFACTS_ARCHIVE
+  timer_artifacts_check "$_MOD_DIR" modified "$_MODIFIED_RECORDED_TIME" \
+    _MODIFIED_TIMER_ARTIFACTS_ARCHIVE
   path_overlap_check "$_OUT_DIR" "diff report" \
     "$_BASE_DIR" "baseline report" \
     "$_MOD_DIR" "modified report" \
-    "$ARTIFACTS_DIR" "artifacts dir"
+    "$REPORT_ARTIFACTS_DIR" "artifacts dir"
+}
 
-  if [ "$REGENERATE" = 1 ]; then recorded_reuse; fi
-
+report_prepare() {
+  if [ "$REGENERATE" = 1 ]; then
+    [ -d "$REPORT_ARTIFACTS_DIR" ] || error_exit 2 \
+      "error: --regenerate: no recordings at $REPORT_ARTIFACTS_DIR"
+  fi
   report_delete "$_OUT_DIR"
   [ "$REGENERATE" = 1 ] || artifacts_clean
   local _log_kind=diff-log _log_file
   if [ "$REGENERATE" = 1 ]; then
     _log_kind=diff-regenerate-log
   fi
-  _log_file="$(artifact_path "$_log_kind" "")"
+  artifact_path _log_file "$REPORT_ARTIFACTS_DIR" "$_log_kind"
   report_begin "$_OUT_DIR" "$_log_file" \
     "tests/perf2html/perf2html_diff.sh $TIMESTAMP: $_BASE_DIR: $_MOD_DIR: \
 $_OUT_DIR"
+}
 
-  local _tests _test_name
-  local -a _args
-  profiles_extract "$_BASELINE_TIMER_ARTIFACTS_ARCHIVE" baseline \
-    _BASELINE_PROFILES _BASELINE_PATHS
-  profiles_extract "$_MODIFIED_TIMER_ARTIFACTS_ARCHIVE" modified \
-    _MODIFIED_PROFILES _MODIFIED_PATHS
-  _tests="$(tests_pair)"
+profiles_extract() {
+  local _archive="$1" _kind="$2" _into
+  artifact_path _into "$REPORT_ARTIFACTS_DIR" "$_kind"
+  rm -rf "$_into"
+  mkdir "$_into"
+  command_run tar xJf "$_archive" --strip-components=1 -C "$_into"
+  artifacts_verify archive "$_into"
+}
+
+header_block_write() {
+  local _dir="$1" _kind="$2" _header_block
+  artifact_path _header_block "$REPORT_ARTIFACTS_DIR" "$_kind"
+  {
+    echo "report=$(input_path_display "$_dir")"
+    grep '=' "$_dir/MANIFEST.txt" \
+      || error_exit 2 "error: no LABEL=VALUE row in $_dir/MANIFEST.txt"
+  } >"$_header_block"
+}
+
+inputs_extract() {
+  profiles_extract "$_BASELINE_TIMER_ARTIFACTS_ARCHIVE" baseline-profiles
+  profiles_extract "$_MODIFIED_TIMER_ARTIFACTS_ARCHIVE" modified-profiles
+  header_block_write "$_BASE_DIR" baseline-header
+  header_block_write "$_MOD_DIR" modified-header
+}
+
+tests_pair() {
+  local _profiles _kept_list _name
+  local -a _paired_tests _modified_tests
+  local -A _baseline_named=() _modified_named=()
+  local _one_sided="is in only one of the two reports, so it has no delta:"
+  artifact_path _profiles "$REPORT_ARTIFACTS_DIR" baseline-profiles
+  test_list_read "$_profiles"
+  _paired_tests=("${TEST_LIST[@]}")
+  artifact_path _profiles "$REPORT_ARTIFACTS_DIR" modified-profiles
+  test_list_read "$_profiles"
+  _modified_tests=("${TEST_LIST[@]}")
+  for _name in "${_paired_tests[@]}"; do _baseline_named[$_name]=1; done
+  for _name in "${_modified_tests[@]}"; do _modified_named[$_name]=1; done
+  for _name in "${_paired_tests[@]}" "${_modified_tests[@]}"; do
+    [[ -v _baseline_named[$_name] && -v _modified_named[$_name] ]] \
+      || error_exit 2 "error: '$_name' $_one_sided $_BASE_DIR vs $_MOD_DIR"
+  done
+  if [ "$REGENERATE" = 1 ]; then
+    test_list_read "$REPORT_ARTIFACTS_DIR"
+    artifact_path _kept_list "$REPORT_ARTIFACTS_DIR" test-list
+    [ "${TEST_LIST[*]}" = "${_paired_tests[*]}" ] || error_exit 2 "error: \
+--regenerate: $_kept_list names ${TEST_LIST[*]}, the two reports pair \
+${_paired_tests[*]}"
+  fi
+  test_list_write "$REPORT_ARTIFACTS_DIR" "${_paired_tests[@]}"
+}
+
+deltas_write() {
   log_verbose "$_SCRIPT $TIMESTAMP: $(basename "$_BASE_DIR"):" \
     "$(basename "$_MOD_DIR")"
-  _args=(-o "$_OUT_DIR/index.html" --diff
-    --header-block "baseline=$(header_file "$_BASE_DIR" baseline)"
-    --header-block "modified=$(header_file "$_MOD_DIR" modified)"
-    --diff-profile "$(artifact_path delta '*')")
-  for _test_name in $_tests; do
-    diff_one "$_test_name"
-  done
-  heading_print "python3 callgrind_to_heatmap.py page"
-  command_run python3 "$PERF2HTML_DIR_/scripts/callgrind_to_heatmap.py" page \
-    --report-dir "$_OUT_DIR"
-  heading_print "python3 build_report.py overview --diff"
-  command_run python3 "$PERF2HTML_DIR_/scripts/build_report.py" overview \
-    "${_args[@]}"
-  log_verbose "$(printf '%-13s%s' overview "$_OUT_DIR/index.html")"
+  heading_print "python3 callgrind_diff.py"
+  command_run python3 "$PERF2HTML_DIR_/scripts/callgrind_diff.py" \
+    "--artifacts=$ARTIFACTS_DIR" "--report=$_OUT_DIR"
+  artifacts_verify diffed
+}
 
+pages_write() {
+  local _flags=("--artifacts=$ARTIFACTS_DIR" "--report=$_OUT_DIR" --diff)
+  page_tool_run callgrind_to_heatmap.py data "${_flags[@]}" \
+    "--baseline=$_BASE_DIR" "--modified=$_MOD_DIR"
+  page_tool_run build_report.py callers "${_flags[@]}"
+  page_tool_run build_report.py call-graph "${_flags[@]}"
+  page_tool_run callgrind_to_heatmap.py page "--report=$_OUT_DIR"
+  page_tool_run build_report.py overview "${_flags[@]}"
+  log_verbose "$(printf '%-13s%s' overview "$_OUT_DIR/$OVERVIEW_PAGE_PATH")"
   report_finish "$_OUT_DIR" "$REPORT_MANIFEST_VERSION_DIFF" \
     "baseline=$(input_path_display "$_BASE_DIR")" \
     "modified=$(input_path_display "$_MOD_DIR")" \
-    "baseline_recorded=$_base_recorded" \
-    "modified_recorded=$_mod_recorded"
+    "baseline_recorded=$_BASELINE_RECORDED" \
+    "modified_recorded=$_MODIFIED_RECORDED"
+}
+
+main() {
+  args_parse "$@"
+  verbose_begin
+  title_print "$_SCRIPT" "$@"
+  step_run 1 inputs inputs_check
+  step_run 2 report report_prepare
+  step_run 3 extract inputs_extract
+  step_run 4 pair tests_pair
+  step_run 5 deltas deltas_write
+  step_run 6 pages pages_write
+  heading_print "$_SCRIPT, after the six steps"
+  table_print "${#STEP_NAMES[@]}" "${STEP_NAMES[@]}" "${STEP_SECONDS[@]}"
 }
 
 main "$@"

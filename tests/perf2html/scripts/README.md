@@ -13,12 +13,15 @@ These are the data formats.
 - [Browser Preferences](#browser-preferences)
 - [Report Contents](#report-contents)
 - [Raw Data Archive Contents](#raw-data-archive-contents)
+- [Temporary Artifacts Contents](#temporary-artifacts-contents)
 
 The remaining sections describe the source code implementing the `perf2html`
 report generators. Start by running the tests and checking the results.
 
+- [Call Graph Page](#call-graph-page)
 - [Callers Page](#callers-page)
 - [Callgrind Parsing](#callgrind-parsing)
+- [Developer Scripts](#developer-scripts)
 - [Error Overlay](#error-overlay)
 - [Flame Graph](#flame-graph)
 - [Heat Map](#heat-map)
@@ -62,9 +65,9 @@ report generators. Start by running the tests and checking the results.
 - `setting`: Hash key, settings view only, that focuses a setting.
 - `setting-val`: Hash key, settings view only, that carries the base64 JSON of
   the new value for focused `setting`, applied on load.
-- `test`: Hash key that names the test shown, `all` being the merged test.
-- `view`: Hash key, one of `callers`, `heat-map`, `flame-graph` or `settings`,
-  that names the page framed, required whenever `test` is present.
+- `test`: Hash key that names the test shown, absent when no test is selected.
+- `view`: Hash key, one of `call-graph`, `callers`, `heat-map`, `flame-graph`
+  or `settings`.
 
 ## Browser Preferences
 
@@ -77,7 +80,7 @@ preferences are reset at startup.
 
 - `callers.rows`: The callers row count, one of `TABLE_ROW_COUNT_CHOICES`.
 - `heatmap.rows`: The heat map row count, one of `TABLE_ROW_COUNT_CHOICES`.
-- `heatmap.scale`: The heat map scale, `<curve>/<scope>`, shown if offered.
+- `heatmap.scale`: The heat map scale curve, `log` or `linear`.
 - `heatmap.sort`: The heat map sort order, `heat` or `name`.
 - `log.display_length`: The load log line count the settings view shows.
 - `perf2html.version`: The `STORAGE_VERSION` the other keys were written under.
@@ -97,32 +100,84 @@ in the directory. A diff report lacks the `flame-graph/`, `flame-graph-app/`
 and raw data archive files.
 
 - `scripts/*.js`: Files copied whole or modified, from the scripts/ dir.
+- `call-graph/<test>.html`: A test's call graph page.
 - `callers/<test>.html`: A test's callers page holding its JSON callers model.
 - `flame-graph-app/SourceCodePro-Regular.ttf-*.woff2`: The speedscope font.
 - `flame-graph-app/speedscope-*.css`: The speedscope app's stylesheet.
 - `flame-graph-app/speedscope-*.js`: The speedscope app.
 - `flame-graph/index.html`: The flame graph page loading the speedscope app.
-- `flame-graph/profiles/<test>.js`: A test's speedscope profile, no `all`.
+- `flame-graph/profiles/<test>.js`: A test's speedscope profile.
 - `heat-map/data/<test>.js`: A test's heat map model.
 - `heat-map/index.html`: The one heat map page for every test.
 - `index.html`: The overview, the top page with the menu, home panel and frame.
 - `MANIFEST.txt`: The version line, then the `LABEL=VALUE` rows, written last.
 - `README.md`: A copy of the user contract.
+- `scripts/source_database.js`: The report's files and functions, no counter.
 - `settings/index.html`: The settings view page.
 - `sources/<path>.js`: A source file's text, the path's non-alphanumerics `_`.
-- `timer-artifacts-c.txz`: The raw data archive, recorded at `<time_t>`.
+- `timer-artifacts-<time_t>.txz`: The raw data archive, recorded at `<time_t>`.
 
 ## Raw Data Archive Contents
 
-- `0_file_data.<time_t>.json`: Source directory file listing with mode flags.
-- `<test>.callgrind.<time_t>.out`: A test's callgrind file, the repo root cut.
+Every file sits in the archive's one root directory,
+`timer-artifacts-<time_t>/`.
 
-In `0_file_data.<time_t>.json` each filename is associated with the following:
+- `0_file_data.json`: Source directory file listing with mode flags.
+- `<test>.callgrind.out`: A test's callgrind file, the repo root cut.
+- `test_list.txt`: The test names, one per line, sorted.
+
+In `0_file_data.json` each filename is associated with the following:
 
 - `repo` : A project file with source.
 - `git` : A non-contributing project file with no source.
 - `sys` : A system file with source.
 - `err` : A file that `callgrind` could not find or was deleted.
+
+## Temporary Artifacts Contents
+
+An HTML generation run keeps its temporary files in a directory under
+`--artifacts`.
+
+A regular report's run keeps these.
+
+- `0_file_data.json`: The paths document, each path's code.
+- `<test>.callgrind.out`: The callgrind recording.
+- `<test>.cyg_callback.bin`: The function trace of the sampled run.
+- `<test>.cyg_callback.bin.maps`: The traced process's mappings.
+- `<test>.cyg_callback.log`: The trace page, both runs and the conversion.
+- `<test>.cyg_callback.seen`: The event count of the counting run.
+- `<test>.perf-stat.csv`: The perf stat counters.
+- `<test>.perf-stat.txt`: The timing page, command and counters.
+- `<test>.trace_to_speedscope.json`: The speedscope profile of the sampled run.
+- `<test>.valgrind.log`: The valgrind log with the objects loaded.
+- `perf2html.log`: The measuring run's log.
+- `perf2html.regenerate.log`: The last `--regenerate` run's log, that run's
+  alone.
+- `perf2html.txt`: The manifest rows of the measuring run.
+- `test_list.txt`: The test names, one per line, sorted.
+- `timer-artifacts-<time_t>/`: The archive staging dir, the tar step's alone.
+
+A diff report's run keeps these.
+
+- `<test>.callgrind_diff.json`: The callers diff with the baseline costs.
+- `<test>.callgrind_diff.out`: The callgrind delta, modified minus baseline.
+- `baseline.txt`: The baseline report's header block.
+- `baseline/`: The baseline report's raw data archive, extracted.
+- `modified.txt`: The modified report's header block.
+- `modified/`: The modified report's raw data archive, extracted.
+- `perf2html_diff.log`: The diff run's log.
+- `perf2html_diff.regenerate.log`: The last diff `--regenerate` run's log, that
+  run's alone.
+- `test_list.txt`: The test names, one per line, sorted.
+
+## Call Graph Page
+
+| File              | Purpose                                                |
+| ----------------- | ------------------------------------------------------ |
+| `call_graph.html` | Templates the call graph page of one test, holding the |
+|                   | JSON call graph model that `call_graph.js` lays out.   |
+| `call_graph.js`   | Lays out the call graph as text, each callee's share   |
+|                   | heat colored, a reference scrolling to its expansion.  |
 
 ## Callers Page
 
@@ -138,12 +193,25 @@ In `0_file_data.<time_t>.json` each filename is associated with the following:
 
 | File                   | Purpose                                            |
 | ---------------------- | -------------------------------------------------- |
-| `callgrind.py`         | Parses callgrind files into the one profile model  |
-|                        | with costs, derived counters and display paths.    |
+| `artifacts.py`         | Holds the artifacts contract: every temporary      |
+|                        | file's path, the test list, and the missing file   |
+|                        | error.                                             |
+| `callgrind.py`         | Parses callgrind files into the one profile model, |
+|                        | cut at `main`, with costs, derived counters and    |
+|                        | display paths.                                     |
 | `callgrind_diff.py`    | Subtracts the baseline profile from the modified   |
 |                        | profile and writes the delta and the callers JSON. |
 | `callgrind_symbols.py` | Names the functions that callgrind left as         |
 |                        | addresses in one recording.                        |
+
+## Developer Scripts
+
+| File            | Purpose                                               |
+| --------------- | ----------------------------------------------------- |
+| `../archive.sh` | Packs the repository's `.git` into a dated `.git.txz` |
+|                 | backup, or restores the checkout from one beside it.  |
+| `../clean.sh`   | Deletes every generated file under `tests/perf2html/` |
+|                 | and the ccache entries the builds made.               |
 
 ## Error Overlay
 
@@ -197,16 +265,16 @@ In `0_file_data.<time_t>.json` each filename is associated with the following:
 
 ## Overview Page
 
-| File              | Purpose                                                |
-| ----------------- | ------------------------------------------------------ |
-| `build_report.py` | Writes the overview page with its menu and the callers |
-|                   | page of each test.                                     |
-| `frame.js`        | Holds the model of the top page, which checks the      |
-|                   | address and loads each view into the frame.            |
-| `overview.html`   | Templates the top page with the menu, the home panel   |
-|                   | and the view frame.                                    |
-| `overview.js`     | Fills the home panel's headings and raw data link,     |
-|                   | then draws its tables from the rows the page holds.    |
+| File              | Purpose                                              |
+| ----------------- | ---------------------------------------------------- |
+| `build_report.py` | Writes the overview page with its menu, and the      |
+|                   | callers and call graph pages of each test.           |
+| `frame.js`        | Holds the model of the top page, which checks the    |
+|                   | address and loads each view into the frame.          |
+| `overview.html`   | Templates the top page with the menu, the home panel |
+|                   | and the view frame.                                  |
+| `overview.js`     | Fills the home panel's headings and raw data link,   |
+|                   | then draws its tables from the rows the page holds.  |
 
 ## Settings Files
 

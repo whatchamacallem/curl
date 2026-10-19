@@ -43,26 +43,6 @@ PERF2HTML_DIR_="$PWD"
 
 _REPO="$(cd -P -- ../.. && pwd)"
 
-step_run() {
-  local _number="$1" _name="$2"
-  shift 2
-  local _exit_code=0 _start
-  _start="$(clock_microseconds)"
-  log_verbose "Starting: $_number $_name..."
-  "$@" || _exit_code=$?
-  _STEP_NAMES+=("$_name")
-  _STEP_SECONDS+=("$((($(clock_microseconds) - _start) / 1000000))s")
-  if [ "$_exit_code" = 0 ]; then
-    log_verbose "[$(elapsed_format)s] Done: step $_number $_name in" \
-      "$(duration_format "$_start")."
-    return 0
-  fi
-  printf '\n[%ss] FAILED: step %s %s, exit %s, after %s\n\n' \
-    "$(elapsed_format)" "$_number" "$_name" "$_exit_code" \
-    "$(duration_format "$_start")" >&2
-  exit "$_exit_code"
-}
-
 header_table_print() {
   local _revision _cmake_version _cc_version _curl_version
   _revision="$(revision_describe "$_REPO")"
@@ -113,7 +93,7 @@ main() {
   fi
   if [ "$REGENERATE" = 1 ]; then
     for _dir in "$_BASE_DIR" "$_MOD_DIR" "$_DIFF_DIR"; do
-      _cache="$ARTIFACTS_DIR/$(basename "$_dir")"
+      report_artifacts_dir _cache "$_dir"
       [ -d "$_cache" ] || error_exit 2 \
         "error: --regenerate: no recordings at $_cache"
     done
@@ -137,8 +117,6 @@ main() {
     report_delete "$_dir"
   done
 
-  _STEP_NAMES=()
-  _STEP_SECONDS=()
   step_run 1 baseline ./perf2html.sh "${_verbose_args[@]}" \
     "${_child_args[@]}" "${_artifact_flags[@]}"
   step_run 2 modified ./perf2html.sh "${_verbose_args[@]}" \
@@ -147,12 +125,12 @@ main() {
     "${_child_args[@]}" "${_artifact_flags[@]}"
 
   heading_print "$_SCRIPT, after the three steps"
-  table_print "${#_STEP_NAMES[@]}" "${_STEP_NAMES[@]}" "${_STEP_SECONDS[@]}"
+  table_print "${#STEP_NAMES[@]}" "${STEP_NAMES[@]}" "${STEP_SECONDS[@]}"
 
   if [ "$KEEP_ARTIFACTS" = 1 ]; then
     log_verbose "[$(elapsed_format)s] keeping $ARTIFACTS_DIR/"
   fi
-  log_verbose "[$(elapsed_format)s] $_DIFF_DIR/index.html"
+  log_verbose "[$(elapsed_format)s] $_DIFF_DIR/$OVERVIEW_PAGE_PATH"
 }
 
 main "$@"

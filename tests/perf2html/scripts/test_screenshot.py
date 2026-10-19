@@ -133,11 +133,11 @@ _VIEWS: tuple[ScreenshotSet, ...] = (
         (),
     ),
     ScreenshotSet(
-        _SHOOT_DIFF_REPORT,
-        "#test=all&view=callers",
+        _SHOOT_BOTH_REPORTS | _SHOOT_ONE_VARIANT,
+        "#view=heat-map&function=parseurl_and_replace",
         "",
-        "callers",
-        "all",
+        "heat_map",
+        "none_function",
         (),
     ),
     ScreenshotSet(
@@ -184,7 +184,7 @@ _VIEWS: tuple[ScreenshotSet, ...] = (
     ),
     ScreenshotSet(
         _SHOOT_BOTH_REPORTS | _SHOOT_ONE_VARIANT,
-        "#test=all&view=settings",
+        "#view=settings",
         "",
         "settings",
         "list",
@@ -192,7 +192,7 @@ _VIEWS: tuple[ScreenshotSet, ...] = (
     ),
     ScreenshotSet(
         _SHOOT_BOTH_REPORTS | _SHOOT_ONE_VARIANT,
-        "#test=all&view=settings&setting=DARK_MODE_ENABLED_DEFAULT"
+        "#view=settings&setting=DARK_MODE_ENABLED_DEFAULT"
         "&setting-values=eyJEQVJLX01PREVfRU5BQkxFRF9ERUZBVUxUIjpmYWxzZX0%3D",
         "",
         "settings",
@@ -237,13 +237,11 @@ _VIEWS: tuple[ScreenshotSet, ...] = (
         (),
     ),
     ScreenshotSet(
-        _SHOOT_DIFF_REPORT,
-        "#test=all&view=callers"
-        "&setting-values=eyJDT1VOVEVSX1NFTEVDVElPTl9ERUZBVUxUX05BTUVTIjpb"
-        "IklyIiwiTDFtIiwiTExtIiwiQm0iXX0%3D",
+        _SHOOT_REGULAR_REPORT | _SHOOT_ONE_VARIANT,
+        "#view=heat-map",
         "",
-        "callers",
-        "all_counters_four",
+        "error",
+        "no_test_heat_map",
         (),
     ),
     ScreenshotSet(
@@ -275,6 +273,38 @@ _VIEWS: tuple[ScreenshotSet, ...] = (
         "",
         "heat_map",
         "line_counters_four",
+        (),
+    ),
+    ScreenshotSet(
+        _SHOOT_REGULAR_REPORT | _SHOOT_ONE_VARIANT,
+        "#view=callers",
+        "",
+        "error",
+        "no_test_callers",
+        (),
+    ),
+    ScreenshotSet(
+        _SHOOT_REGULAR_REPORT | _SHOOT_ONE_VARIANT,
+        "#view=flame-graph",
+        "",
+        "error",
+        "no_test_flame_graph",
+        (),
+    ),
+    ScreenshotSet(
+        _SHOOT_BOTH_REPORTS,
+        "#test=urlparser&view=call-graph",
+        "8",
+        "call_graph",
+        "urlparser",
+        (),
+    ),
+    ScreenshotSet(
+        _SHOOT_REGULAR_REPORT | _SHOOT_ONE_VARIANT,
+        "#view=call-graph",
+        "",
+        "error",
+        "no_test_call_graph",
         (),
     ),
 )

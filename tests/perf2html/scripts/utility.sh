@@ -42,40 +42,36 @@ archive_report_write() {
   log_verbose "$archive"
 }
 
+artifact_exists_check() {
+  local directory="$1" kind="$2" required_file missing
+  artifact_path required_file "$@"
+  [ ! -f "$required_file" ] || return 0
+  missing="error: $directory is missing ${required_file##*/},"
+  missing+=" ${ARTIFACT_FILE_PURPOSES[$kind]}"
+  [ "$#" = 2 ] || missing+=" of $3"
+  error_exit 2 "$missing"
+}
+
 artifact_path() {
-  local kind="$1" name="$2" time="${3:-$TIMESTAMP}" file
-  local profile=".$CALLGRIND_OUTPUT_FILE_EXTENSION"
-  case "$kind" in
-    callgrind) file="$name.$CALLGRIND_OUTPUT_TOOL_NAME.$time$profile" ;;
-    callgrind-file-data) file="$CALLGRIND_FILE_DATA_NAME.$time.json" ;;
-    caller-counts)
-      file="$name.$DIFF_DELTA_TOOL_NAME.$time"
-      file="$file.$DIFF_CALLER_COUNTS_FILE_EXTENSION"
-      ;;
-    delta) file="$name.$DIFF_DELTA_TOOL_NAME.$time$profile" ;;
-    diff-log) file="$DIFF_TOOL_NAME.$time.log" ;;
-    diff-regenerate-log) file="$DIFF_TOOL_NAME.log" ;;
-    extracted-profiles) file="$name" ;;
-    header-block) file="$name/$DIFF_TOOL_NAME.$time.txt" ;;
-    header-rows) file="$PROFILE_TOOL_NAME.txt" ;;
-    profile-log) file="$PROFILE_TOOL_NAME.$time.log" ;;
-    profile-regenerate-log) file="$PROFILE_TOOL_NAME.log" ;;
-    timer-artifacts) file="$TIMER_ARTIFACTS_NAME_PREFIX$time" ;;
-    timing-csv) file="$name.$PROFILE_TIMING_TOOL_NAME.$time.csv" ;;
-    timing-page) file="$name.$PROFILE_TIMING_TOOL_NAME.$time.txt" ;;
-    trace-binary) file="$name.$TRACE_TOOL_NAME.$time.bin" ;;
-    trace-log) file="$name.$TRACE_TOOL_NAME.$time.log" ;;
-    trace-speedscope) file="$name.$TRACE_SPEEDSCOPE_TOOL_NAME.$time.json" ;;
-    valgrind-log) file="$name.$VALGRIND_LOG_TOOL_NAME.$time.log" ;;
-    *) error_exit 1 "error: unknown artifact kind $kind, named $name" ;;
-  esac
-  echo "$ARTIFACTS_DIR/$file"
+  local variable="$1" directory="$2" kind="$3"
+  if [ -n "${ARTIFACT_TEST_FILE_FORMATS[$kind]+set}" ]; then
+    [ "$#" = 4 ] && [ -n "$4" ] || error_exit 1 \
+      "error: artifact kind $kind takes a directory and a test: ${*:2}"
+    printf -v "$variable" "${ARTIFACT_TEST_FILE_FORMATS[$kind]}" \
+      "$directory" "$4"
+  elif [ -n "${ARTIFACT_RUN_FILE_FORMATS[$kind]+set}" ]; then
+    [ "$#" = 3 ] || error_exit 1 \
+      "error: artifact kind $kind takes a directory alone: ${*:2}"
+    printf -v "$variable" "${ARTIFACT_RUN_FILE_FORMATS[$kind]}" "$directory"
+  else
+    error_exit 1 "error: unknown artifact kind $kind"
+  fi
 }
 
 artifacts_clean() {
-  [ ! -d "$ARTIFACTS_DIR" ] || rm -r "$ARTIFACTS_DIR"
-  [ ! -d "$(dirname "$ARTIFACTS_DIR")" ] \
-    || rmdir --ignore-fail-on-non-empty "$(dirname "$ARTIFACTS_DIR")"
+  [ ! -d "$REPORT_ARTIFACTS_DIR" ] || rm -r "$REPORT_ARTIFACTS_DIR"
+  [ ! -d "$ARTIFACTS_DIR" ] \
+    || rmdir --ignore-fail-on-non-empty "$ARTIFACTS_DIR"
 }
 
 artifacts_dir_resolve() {
@@ -88,6 +84,39 @@ artifacts_dir_resolve() {
     fi
   fi
   ARTIFACTS_DIR="$(absolute_path "$ARTIFACTS_DIR")"
+}
+
+artifacts_verify() {
+  local directory="$REPORT_ARTIFACTS_DIR" kind test_name
+  local -a run_kinds test_kinds
+  case "$1:$#" in
+    archive:2)
+      directory="$2"
+      run_kinds=(file-data)
+      test_kinds=("${ARTIFACT_ARCHIVE_KINDS[@]}")
+      ;;
+    diffed:1)
+      run_kinds=(baseline-header modified-header)
+      test_kinds=("${ARTIFACT_DIFFED_KINDS[@]}")
+      ;;
+    recorded:1)
+      run_kinds=(header-rows)
+      test_kinds=("${ARTIFACT_RECORDED_KINDS[@]}")
+      ;;
+    *)
+      error_exit 1 \
+        "error: artifacts_verify takes archive DIR, diffed or recorded: $*"
+      ;;
+  esac
+  test_list_read "$directory"
+  for kind in "${run_kinds[@]}"; do
+    artifact_exists_check "$directory" "$kind"
+  done
+  for test_name in "${TEST_LIST[@]}"; do
+    for kind in "${test_kinds[@]}"; do
+      artifact_exists_check "$directory" "$kind" "$test_name"
+    done
+  done
 }
 
 block_lead() {
@@ -233,6 +262,12 @@ heading_write() {
   printf '%s%s\n' "$marks" "$text" >&2
 }
 
+input_archives_clean() {
+  [ -n "$EXTRACTED_ROOT" ] || return 0
+  rm -rf "$EXTRACTED_ROOT" || error_exit 1 \
+    "error: could not remove the extracted input at $EXTRACTED_ROOT"
+}
+
 install_command() {
   case "$1" in
     cmake | ninja | ccache | valgrind | taskset | python3 | cksum | curl | \
@@ -245,15 +280,6 @@ install_command() {
     speedscope) echo "npm install -g speedscope" ;;
     *) error_exit 1 "error: no install command is recorded for $1" ;;
   esac
-}
-
-item_output_print() {
-  [ "$VERBOSE" -ge 1 ] || return 0
-  if [ "$VERBOSE" -ge "$VERBOSE_RAW_LEVEL" ]; then
-    printf '%s\n' "$@" >&2
-    return 0
-  fi
-  printf '%s\n' "$@" | verbose_filter "$VERBOSE_ITEM_INDENT"
 }
 
 log_verbose() {
@@ -287,7 +313,7 @@ manifest_fault() {
       "expected $wanted"
     return 0
   fi
-  expected="$(manifest_value "$dir" "$checksum_label")"
+  expected="$(manifest_value "$dir/MANIFEST.txt" "$checksum_label")"
   if [ -z "$expected" ]; then
     echo "$dir has no $checksum_label= row in its MANIFEST.txt, expected" \
       "one beside the version line $version"
@@ -300,27 +326,12 @@ manifest_fault() {
   fi
 }
 
-manifest_recorded() {
-  local dir="$1" role="$2"
-  shift 2
-
-  manifest_verify "$dir" "$role" "$@"
-
-  local recorded
-  recorded="$(manifest_value "$dir" recorded)"
-  recorded="${recorded%% *}"
-
-  [ -n "$recorded" ] || error_exit 2 \
-    "error: $role report $(basename "$dir") records no recorded= row"
-  echo "$recorded"
-}
-
 manifest_recorded_row() {
   echo "recorded=$TIMESTAMP $(date -d "@$TIMESTAMP" +'%F %I:%M:%S %p %Z')"
 }
 
 manifest_value() {
-  sed -n "s/^$2=//p" "$1/MANIFEST.txt" | head -1
+  sed -n "s/^$2=//p" "$1" | head -1
 }
 
 manifest_verify() {
@@ -346,12 +357,11 @@ manifest_write() {
   shift 2
   local manifest="$dir/MANIFEST.txt" checksum
   command_run python3 "$PERF2HTML_DIR_/scripts/build_report.py" scripts \
-    -o "$dir/$REPORT_SCRIPTS_DIR_NAME"
+    "--report=$dir"
   command_run python3 "$PERF2HTML_DIR_/scripts/build_report.py" settings \
-    -o "$dir"
+    "--report=$dir"
   command_run python3 "$PERF2HTML_DIR_/scripts/build_report.py" debug \
-    -o "$dir/$REPORT_SCRIPTS_DIR_NAME" \
-    -- "$REPORT_MANIFEST_VERSION_LABEL=$version" "$@"
+    "--report=$dir" -- "$REPORT_MANIFEST_VERSION_LABEL=$version" "$@"
   checksum="$(checksum_compute "$dir")"
   {
     printf '%s\n' "$version"
@@ -369,6 +379,13 @@ page_command_run() {
     failure_print_log_tail "$CHILD_EXIT_CODE" "$shown"
     exit "$CHILD_EXIT_CODE"
   }
+}
+
+page_tool_run() {
+  local script="$1" subcommand="$2"
+  shift 2
+  heading_print "python3 $script $subcommand"
+  command_run python3 "$PERF2HTML_DIR_/scripts/$script" "$subcommand" "$@"
 }
 
 path_display() {
@@ -419,9 +436,28 @@ quiet_switch_set() {
   esac
 }
 
+raw_data_archive_path() {
+  local root
+  printf -v root "$TIMER_ARTIFACTS_ROOT_FORMAT" "$2" "$3"
+  printf -v "$1" '%s%s' "$root" "$REPORT_RAW_ARCHIVE_SUFFIX"
+}
+
+recorded_time_read() {
+  local recorded_time
+  recorded_time="$(manifest_value "$2" recorded)"
+  recorded_time="${recorded_time%% *}"
+  [ -n "$recorded_time" ] || error_exit 2 \
+    "error: $2 holds no recorded= row with a time first"
+  printf -v "$1" '%s' "$recorded_time"
+}
+
+report_artifacts_dir() {
+  printf -v "$1" "$REPORT_ARTIFACTS_DIR_FORMAT" "$ARTIFACTS_DIR" "${2##*/}"
+}
+
 report_begin() {
   local dir="$1" log_file="$2" opening_line="$3"
-  mkdir -p "$dir" "$dir/$REPORT_SCRIPTS_DIR_NAME" "$ARTIFACTS_DIR"
+  mkdir -p "$dir" "$dir/$REPORT_SCRIPTS_DIR_NAME" "$REPORT_ARTIFACTS_DIR"
   RUN_LOG="$log_file"
   echo "$opening_line" >"$RUN_LOG"
   cp README.md "$dir/README.md"
@@ -430,7 +466,8 @@ report_begin() {
 report_delete() {
   local dir="$1" answer present=0
   local archive="$dir$REPORT_RAW_ARCHIVE_SUFFIX" checked_paths=("$dir" report)
-  [ -z "$ARTIFACTS_DIR" ] || checked_paths+=("$ARTIFACTS_DIR" "artifacts dir")
+  [ -z "$REPORT_ARTIFACTS_DIR" ] \
+    || checked_paths+=("$REPORT_ARTIFACTS_DIR" "artifacts dir")
   path_overlap_check "${checked_paths[@]}"
   [ ! -e "$dir" ] || present=1
   if [ "$present" = 1 ] \
@@ -454,9 +491,9 @@ report_finish() {
   shift 2
   log_verbose "== manifest -> $dir/MANIFEST.txt =="
   manifest_write "$version" "$dir" "$@"
-  log_verbose "manifest $(manifest_value "$dir" \
+  log_verbose "manifest $(manifest_value "$dir/MANIFEST.txt" \
     "$REPORT_MANIFEST_CHECKSUM_LABEL")"
-  log_verbose "$dir/index.html"
+  log_verbose "$dir/$OVERVIEW_PAGE_PATH"
   [ "$WRITE_REPORT_ARCHIVE" = 1 ] || return 0
   heading_print "tar $(basename "$dir")$REPORT_RAW_ARCHIVE_SUFFIX"
   archive_report_write "$dir"
@@ -488,6 +525,8 @@ options_parse() {
   REMAINING_ARGUMENTS=()
   TARGET_DIR="$INVOKED_FROM"
   ARTIFACTS_DIR=""
+  REPORT_ARTIFACTS_DIR=""
+  EXTRACTED_ROOT=""
   WRITE_REPORT_ARCHIVE=0
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -528,6 +567,10 @@ options_parse() {
   done
   [ "$VERBOSE" -lt "$VERBOSE_TRACE_LEVEL" ] || set -o xtrace
   TARGET_DIR="$(absolute_path "$TARGET_DIR")"
+  [ -z "$ARTIFACTS_DIR" ] || ARTIFACTS_DIR="$(absolute_path "$ARTIFACTS_DIR")"
+  trap 'step_failure_print "$?"
+    [ "$KEEP_ARTIFACTS" = 1 ] || artifacts_clean
+    input_archives_clean' EXIT
 }
 
 source_cache_fetch() {
@@ -574,6 +617,37 @@ source_cache_sync() {
   SOURCE_CACHE_DIR="$(absolute_path "$CACHE_ROOT_DIR")/$package/$version"
 }
 
+step_failure_print() {
+  local exit_code="$1"
+  [ "$exit_code" != 0 ] && [ -n "${STEP_RUNNING_NAME-}" ] || return 0
+  printf '\n[%ss] FAILED: step %s %s, exit %s, after %s\n\n' \
+    "$(elapsed_format)" "$PERF2HTML_STEP_NUMBER" "$STEP_RUNNING_NAME" \
+    "$exit_code" "$(duration_format "$STEP_RUNNING_START")" >&2
+}
+
+step_run() {
+  local number="$1" name="$2"
+  shift 2
+  local outer_number="$PERF2HTML_STEP_NUMBER" outer_name="$STEP_RUNNING_NAME"
+  local outer_start="$STEP_RUNNING_START" start seconds
+  number="${outer_number:+$outer_number.}$number"
+  start="$(clock_microseconds)"
+  PERF2HTML_STEP_NUMBER="$number"
+  STEP_RUNNING_NAME="$name"
+  STEP_RUNNING_START="$start"
+  log_verbose "Starting: $number $name..."
+  "$@"
+  seconds=$((($(clock_microseconds) - start) / 1000000))
+  log_verbose "[$(elapsed_format)s] Done: step $number $name in" \
+    "$(duration_format "$start")."
+  PERF2HTML_STEP_NUMBER="$outer_number"
+  STEP_RUNNING_NAME="$outer_name"
+  STEP_RUNNING_START="$outer_start"
+  [ -z "$outer_name" ] || return 0
+  STEP_NAMES+=("$name")
+  STEP_SECONDS+=("${seconds}s")
+}
+
 table_print() {
   [ "$VERBOSE" -ge 1 ] || return 0
   local columns="$1" cells=() widths=() rule=() cell line row column
@@ -615,6 +689,24 @@ table_print() {
   done
 }
 
+test_list_read() {
+  local list_file purpose="${ARTIFACT_FILE_PURPOSES["test-list"]}"
+  artifact_exists_check "$1" test-list
+  artifact_path list_file "$1" test-list
+  mapfile -t TEST_LIST <"$list_file"
+  [ "${#TEST_LIST[@]}" != 0 ] || error_exit 2 \
+    "error: $list_file is empty, expected $purpose"
+  LC_ALL=C sort -C "$list_file" || error_exit 2 \
+    "error: $list_file is not LC_ALL=C sorted, expected $purpose"
+}
+
+test_list_write() {
+  local list_file
+  artifact_path list_file "$1" test-list
+  shift
+  printf '%s\n' "$@" >"$list_file"
+}
+
 title_print() {
   heading_write "$PERF2HTML_HEADER_DEPTH" "$*"
 }
@@ -644,10 +736,15 @@ verbose_begin() {
   export PERF2HTML_HEADER_DEPTH=$((${PERF2HTML_HEADER_DEPTH:-0} + 1))
   PERF2HTML_CLOCK_START_US="${PERF2HTML_CLOCK_START_US:-$(clock_microseconds)}"
   export PERF2HTML_CLOCK_START_US
+  export PERF2HTML_STEP_NUMBER="${PERF2HTML_STEP_NUMBER-}"
   shopt -s lastpipe
   VERBOSE_COMMAND_NUMBER=1
   VERBOSE_ITEM_INDENT=0
   VERBOSE_BLOCK_PRINTED=other
+  STEP_NAMES=()
+  STEP_RUNNING_NAME=""
+  STEP_RUNNING_START=""
+  STEP_SECONDS=()
   if [ "$PERF2HTML_HEADER_DEPTH" = 1 ] && [ "$VERBOSE" -ge 1 ]; then
     VERBOSE_BLOCK_PRINTED=none
   fi

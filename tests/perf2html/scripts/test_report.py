@@ -5,18 +5,14 @@
 
 from __future__ import annotations
 
-import argparse, base64, glob, html, json, os, re, subprocess, sys, tarfile
+import argparse, base64, html, json, os, re, subprocess, sys, tarfile
 from collections.abc import Sequence
 from typing import Any, NamedTuple
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import callgrind, settings
 
-_CALLGRIND_FILE_DATA_NAME: str = ""
-_CALLGRIND_OUTPUT_FILE_EXTENSION: str = ""
-_CALLGRIND_OUTPUT_TOOL_NAME: str = ""
 _FLAME_GRAPH_APP_DIR_NAME: str = ""
-_FLAME_GRAPH_APP_FILE_GLOBS: tuple[str, ...] = ()
 _FLAME_GRAPH_EXPORTER_NAME: str = ""
 _FLAME_GRAPH_PROFILE_DIR_NAME: str = ""
 _FLAME_GRAPH_PROFILE_GLOBAL_NAME: str = ""
@@ -29,7 +25,6 @@ _REPORT_MANIFEST_VERSION_DIFF: str = ""
 _REPORT_MANIFEST_VERSION_FULL: str = ""
 _REPORT_RAW_ARCHIVE_SUFFIX: str = ""
 _REPORT_SOURCES_DIR_NAME: str = ""
-_TIMER_ARTIFACTS_NAME_PREFIX: str = ""
 settings.load_into(__name__)
 
 
@@ -41,6 +36,8 @@ class TestReport:
         callers_callee_fields: int
         callers_caller_fields: int
         callers_value_fields: tuple[int, ...]
+        call_graph_edge_fields: int
+        call_graph_root_fields: int
         header_blocks: tuple[str, ...]
         manifest_version: str
         manifest_labels: tuple[str, ...]
@@ -56,6 +53,130 @@ class TestReport:
 
     def __init__(self) -> None:
         self.errors: list[str] = []
+
+    # Checks the edges, roots and function addresses of a call graph model.
+    def call_graph_model_check(
+        self,
+        call_graph_model: dict[str, Any],
+        test_name: str,
+        layout: TestReport.ReportLayout,
+        label: str,
+        path: str,
+    ) -> None:
+        function_count = len(call_graph_model["functions"])
+        called_indexes: set[int] = set()
+        for edge_row in call_graph_model["edges"]:
+            if len(edge_row) != layout.call_graph_edge_fields:
+                self.fail(
+                    f"{label}'s call graph has an edge of {len(edge_row)}"
+                    f" fields, expected {layout.call_graph_edge_fields}:"
+                    f" {path}"
+                )
+                return
+            if not all(
+                0 <= edge_row[field] < function_count
+                for field in _TEST_CALL_GRAPH_EDGE_FUNCTION_FIELDS
+            ):
+                self.fail(
+                    f"{label}'s call graph edge {edge_row} names a function"
+                    f" past its {function_count} functions: {path}"
+                )
+                return
+            called_indexes.add(edge_row[_TEST_CALL_GRAPH_EDGE_CALLEE_FIELD])
+        root_rows = call_graph_model["roots"]
+        for root_row in root_rows:
+            if len(root_row) != layout.call_graph_root_fields:
+                self.fail(
+                    f"{label}'s call graph has a root of {len(root_row)}"
+                    f" fields, expected {layout.call_graph_root_fields}:"
+                    f" {path}"
+                )
+                return
+        root_names = [
+            call_graph_model["functions"][
+                root_row[_TEST_CALL_GRAPH_ROOT_FUNCTION_FIELD]
+            ][_TEST_CALLERS_FUNCTION_NAME_FIELD]
+            for root_row in root_rows
+        ]
+        if root_names != [_TEST_CALL_GRAPH_ROOT_FUNCTION_NAME] or (
+            called_indexes.intersection(
+                root_row[_TEST_CALL_GRAPH_ROOT_FUNCTION_FIELD]
+                for root_row in root_rows
+            )
+        ):
+            self.fail(
+                f"{label}'s call graph roots {root_names} are not the"
+                f" uncalled {_TEST_CALL_GRAPH_ROOT_FUNCTION_NAME} alone:"
+                f" {path}"
+            )
+        function_start = (
+            f"#test={test_name}&view={_HEAT_MAP_VIEW_KEY}&function="
+        )
+        page_hrefs = [
+            function_link[_TEST_CALLERS_FUNCTION_HREF_FIELD]
+            for function_link in call_graph_model["functions"]
+            if function_link[_TEST_CALLERS_FUNCTION_HREF_FIELD]
+        ]
+        if not page_hrefs:
+            self.fail(
+                f"{label} links no function into the heat map"
+                f" ({function_start}...): {path}"
+            )
+        for href in page_hrefs:
+            if not href.startswith(function_start):
+                self.fail(
+                    f"{label} links {href!r}, which is no function address"
+                    f" of {test_name} ({function_start}...): {path}"
+                )
+                return
+
+    # Checks a test's call graph page and the model its script lays out.
+    def call_graph_page_check(
+        self,
+        out_dir: str,
+        test_name: str,
+        layout: TestReport.ReportLayout,
+    ) -> None:
+        label = f"{_TEST_CALL_GRAPH_PAGE_DIR_NAME}/{test_name}.html"
+        path = os.path.join(out_dir, label)
+        text = self.page_check(
+            path, label, _TEST_CALL_GRAPH_PAGE_LEAST_BYTES, test_name
+        )
+        if not text:
+            return
+        with open(path, encoding="utf-8") as handle:
+            page_text = handle.read()
+        attributes = self.element_attributes(
+            page_text, _TEST_CALL_GRAPH_TEXT_ID
+        )
+        if attributes is None:
+            self.fail(f"{label} has no {_TEST_CALL_GRAPH_TEXT_ID}: {path}")
+            return
+        if attributes.get("data-diff-") != layout.table_diff_value:
+            self.fail(
+                f"{label}'s call graph holds data-diff-"
+                f" {attributes.get('data-diff-')!r}, expected"
+                f" {layout.table_diff_value!r}: {path}"
+            )
+        try:
+            call_graph_model = json.loads(attributes.get("data-model-", ""))
+        except ValueError as error:
+            self.fail(f"{label} holds no JSON call graph: {error}: {path}")
+            return
+        found_keys = (
+            sorted(call_graph_model)
+            if isinstance(call_graph_model, dict)
+            else []
+        )
+        if found_keys != sorted(_TEST_CALL_GRAPH_MODEL_KEYS):
+            self.fail(
+                f"{label}'s call graph holds the keys {found_keys},"
+                f" expected {sorted(_TEST_CALL_GRAPH_MODEL_KEYS)}: {path}"
+            )
+            return
+        self.call_graph_model_check(
+            call_graph_model, test_name, layout, label, path
+        )
 
     def callers_page_check(
         self,
@@ -246,12 +367,12 @@ class TestReport:
                     )
                     return
 
-    # Returns the attributes of the div the id names, none when no div has it.
+    # Returns the attributes of the element the id names, none without one.
     def element_attributes(
         self, page_text: str, element_id: str
     ) -> dict[str, str] | None:
         match = re.search(
-            rf'<div id="{re.escape(element_id)}"([^>]*)>', page_text
+            rf'<[a-z]+ id="{re.escape(element_id)}"([^>]*)>', page_text
         )
         if match is None:
             return None
@@ -265,18 +386,56 @@ class TestReport:
     def fail(self, message: str) -> None:
         self.errors.append(message)
 
+    # Checks the speedscope bundle holds the files its page links, no other.
     def flame_app_check(self, out_dir: str) -> None:
         app_dir = os.path.join(out_dir, _FLAME_GRAPH_APP_DIR_NAME)
         if not os.path.isdir(app_dir):
             self.fail(f"no shared speedscope bundle: {app_dir}")
             return
-        for pattern in _FLAME_GRAPH_APP_FILE_GLOBS:
-            found = sorted(glob.glob(os.path.join(app_dir, pattern)))
-            if len(found) != 1:
-                self.fail(
-                    f"{_FLAME_GRAPH_APP_DIR_NAME}/ holds {len(found)} files"
-                    f" matching {pattern}, expected exactly 1: {app_dir}"
-                )
+        page_label = f"{_FLAME_GRAPH_VIEW_KEY}/index.html"
+        page_path = os.path.join(out_dir, page_label)
+        page_text = self.size_check(
+            page_path, _TEST_FLAME_GRAPH_PAGE_LEAST_BYTES, page_label
+        )
+        if not page_text:
+            return
+        app_href = re.escape(f"../{_FLAME_GRAPH_APP_DIR_NAME}/")
+        script_names = re.findall(
+            rf'<script[^>]*\ssrc="{app_href}([^"/]+)"', page_text
+        )
+        stylesheet_names = re.findall(
+            rf'<link[^>]*\shref="{app_href}([^"/]+)"', page_text
+        )
+        if len(script_names) != 1 or len(stylesheet_names) != 1:
+            self.fail(
+                f"{page_label} links the scripts {script_names} and the"
+                f" stylesheets {stylesheet_names} of"
+                f" {_FLAME_GRAPH_APP_DIR_NAME}/, expected one of each:"
+                f" {page_path}"
+            )
+            return
+        stylesheet_label = f"{_FLAME_GRAPH_APP_DIR_NAME}/{stylesheet_names[0]}"
+        stylesheet_path = os.path.join(out_dir, stylesheet_label)
+        try:
+            with open(stylesheet_path, encoding="utf-8") as handle:
+                stylesheet = handle.read()
+        except OSError as error:
+            self.fail(f"{stylesheet_label}: {stylesheet_path}: {error}")
+            return
+        font_names = re.findall(r'url\("\./([^"/]+\.woff2)"\)', stylesheet)
+        if len(font_names) != 1:
+            self.fail(
+                f"{stylesheet_label} loads the fonts {font_names}, expected"
+                f" one: {stylesheet_path}"
+            )
+            return
+        wanted_names = sorted([*script_names, *stylesheet_names, *font_names])
+        found_names = sorted(os.listdir(app_dir))
+        if found_names != wanted_names:
+            self.fail(
+                f"{_FLAME_GRAPH_APP_DIR_NAME}/ holds {found_names}, expected"
+                f" the files its page links {wanted_names}: {app_dir}"
+            )
 
     def flame_graph_check(
         self,
@@ -541,7 +700,6 @@ class TestReport:
         }
         wanted = {
             "data-counter-names-": json.dumps(list(counter_names)),
-            "data-diff-": layout.table_diff_value,
             "data-flame-graph-": "1" if layout.has_flame_graph else "0",
             "data-help-href-": "README.md",
             "data-test-names-": json.dumps(list(tests), ensure_ascii=False),
@@ -598,7 +756,7 @@ class TestReport:
             page_text,
             tests,
             layout,
-            self.suite_counter_names(out_dir),
+            self.report_counter_names(out_dir, tests),
         )
         for heading in layout.header_blocks:
             if heading not in page_text:
@@ -743,6 +901,33 @@ class TestReport:
                 )
                 return
 
+    # Returns the counters the callers pages draw, faulting any that differ.
+    def report_counter_names(
+        self, out_dir: str, tests: Sequence[str]
+    ) -> list[str]:
+        first_names: list[str] = []
+        for test_name in tests:
+            label = self.callers_page_path(test_name)
+            path = os.path.join(out_dir, label)
+            with open(path, encoding="utf-8") as handle:
+                attributes = self.element_attributes(
+                    handle.read(), _TEST_CALLERS_TABLE_DATA_ID
+                )
+            if attributes is None or "data-model-" not in attributes:
+                self.fail(f"{label} holds no callers model: {path}")
+                break
+            callers_model = json.loads(attributes["data-model-"])
+            counter_names = callers_model["counterNames"]
+            if test_name == tests[0]:
+                first_names = counter_names
+            elif counter_names != first_names:
+                self.fail(
+                    f"{label} draws the counters {counter_names}, expected"
+                    f" {tests[0]}'s {first_names}: {path}"
+                )
+                break
+        return first_names
+
     def run(self, args: TestReport.TestArgs) -> int:
         out_dir = os.path.abspath(args.out_dir)
         index_path = os.path.join(out_dir, "index.html")
@@ -773,11 +958,8 @@ class TestReport:
         if layout.has_flame_graph:
             self.flame_app_check(out_dir)
         self.heat_map_check(out_dir, tests, layout)
-        traced_tests = [
-            test_name
-            for test_name in tests
-            if self.runs_recorded(layout, test_name)
-        ]
+        self.source_database_check(out_dir)
+        traced_tests = tests if layout.test_records_runs else []
         self.flame_graph_check(out_dir, traced_tests, layout)
         for test_name in tests:
             self.test_report_check(out_dir, test_name, layout)
@@ -794,15 +976,14 @@ class TestReport:
             print(f"test_report: ok ({out_dir})")
         return 0
 
-    def runs_recorded(
-        self, layout: TestReport.ReportLayout, test_name: str
-    ) -> bool:
-        return layout.test_records_runs and test_name != "all"
-
+    # Returns the object a script assigns, a test's entry when a test is named.
     def script_value(
-        self, script: str, global_name: str, test_name: str, path: str
+        self, script: str, global_name: str, test_name: str | None, path: str
     ) -> dict[str, object] | None:
-        assignment_prefix = f'window.{global_name}["{test_name}"] = '
+        assignment_target = f"window.{global_name}"
+        if test_name is not None:
+            assignment_target += f'["{test_name}"]'
+        assignment_prefix = f"{assignment_target} = "
         for line in script.splitlines():
             if not line.startswith(assignment_prefix):
                 continue
@@ -855,17 +1036,42 @@ class TestReport:
             if not os.path.isfile(path):
                 self.fail(f"{label} names {display!r} source {path}, absent")
 
-    # Returns the counters the merged test's callers page draws.
-    def suite_counter_names(self, out_dir: str) -> list[str]:
-        path = os.path.join(out_dir, self.callers_page_path("all"))
-        with open(path, encoding="utf-8") as handle:
-            attributes = self.element_attributes(
-                handle.read(), _TEST_CALLERS_TABLE_DATA_ID
+    # Checks the list of every file and function the report's tests name.
+    def source_database_check(self, out_dir: str) -> None:
+        label = _TEST_SOURCE_DATABASE_SCRIPT_PATH
+        path = os.path.join(out_dir, label)
+        script = self.size_check(
+            path, _TEST_SOURCE_DATABASE_LEAST_BYTES, label
+        )
+        if not script:
+            return
+        database = self.script_value(
+            script, _TEST_SOURCE_DATABASE_GLOBAL_NAME, None, path
+        )
+        if database is None:
+            return
+        found_keys = sorted(database)
+        if found_keys != sorted(_TEST_SOURCE_DATABASE_KEYS):
+            self.fail(
+                f"{label} holds the keys {found_keys}, expected"
+                f" {sorted(_TEST_SOURCE_DATABASE_KEYS)}: {path}"
             )
-        if attributes is None or "data-model-" not in attributes:
-            self.fail(f"the merged test's callers page holds no model: {path}")
-            return []
-        return json.loads(attributes["data-model-"])["counterNames"]
+            return
+        files = database["files"]
+        functions = database["functions"]
+        if not isinstance(files, dict) or not isinstance(functions, list):
+            self.fail(f"{label} holds no file table and function list: {path}")
+            return
+        self.model_sources_check(out_dir, database, label)
+        for function_entry in functions:
+            for location in function_entry["locations"]:
+                if location["file"] not in files or location["line"] < 1:
+                    self.fail(
+                        f"{label} places {function_entry['name']} at"
+                        f" {location['file']}:{location['line']}, expected a"
+                        f" file it lists and a line of 1 or more: {path}"
+                    )
+                    return
 
     # Returns every address a table data's cells link.
     def table_data_hrefs(self, rows: Sequence[Sequence[Any]]) -> list[str]:
@@ -897,10 +1103,31 @@ class TestReport:
             return []
         return rows
 
+    # Checks the archive's test list holds the overview's tests, sorted.
+    def test_list_check(
+        self,
+        text: str | None,
+        archive_name: str,
+        tests: Sequence[str],
+        path: str,
+    ) -> None:
+        if text is None:
+            self.fail(
+                f"{archive_name} holds no {_TEST_LIST_FILE_NAME}: {path}"
+            )
+            return
+        if text.split("\n") != [*sorted(tests), ""]:
+            self.fail(
+                f"{archive_name}'s {_TEST_LIST_FILE_NAME} lists"
+                f" {text.splitlines()}, expected the overview's tests"
+                f" {sorted(tests)}, one per line, sorted: {path}"
+            )
+
     def test_report_check(
         self, out_dir: str, name: str, layout: TestReport.ReportLayout
     ) -> None:
         self.callers_page_check(out_dir, name, layout)
+        self.call_graph_page_check(out_dir, name, layout)
         stray_dir = os.path.join(out_dir, name)
         if os.path.exists(stray_dir):
             self.fail(
@@ -953,30 +1180,33 @@ class TestReport:
             os.path.basename(member_name): text
             for member_name, text in texts.items()
         }
-        recorded = root_name.removeprefix(_TIMER_ARTIFACTS_NAME_PREFIX)
         profile_names = {
-            test_name: f"{test_name}.{_CALLGRIND_OUTPUT_TOOL_NAME}.{recorded}"
-            f".{_CALLGRIND_OUTPUT_FILE_EXTENSION}"
+            test_name: f"{test_name}{_TEST_PROFILE_FILE_SUFFIX}"
             for test_name in tests
-            if self.runs_recorded(layout, test_name)
+            if layout.test_records_runs
         }
-        paths_name = (
-            f"{_CALLGRIND_FILE_DATA_NAME}.{recorded}"
-            f".{_TEST_PATHS_DOCUMENT_EXTENSION}"
-        )
         for test_name, file_name in profile_names.items():
             if "events:" not in texts_by_name.get(file_name, "")[:4096]:
                 self.fail(
                     f"{archive_name} holds no {file_name} of {test_name}"
                     f" with an 'events:' line near its top: {path}"
                 )
-        self.paths_document_check(
-            texts_by_name.get(paths_name), archive_name, paths_name, path
+        self.test_list_check(
+            texts_by_name.get(_TEST_LIST_FILE_NAME), archive_name, tests, path
         )
+        self.paths_document_check(
+            texts_by_name.get(_TEST_PATHS_DOCUMENT_NAME),
+            archive_name,
+            _TEST_PATHS_DOCUMENT_NAME,
+            path,
+        )
+        wanted_names = {
+            _TEST_LIST_FILE_NAME,
+            _TEST_PATHS_DOCUMENT_NAME,
+            *profile_names.values(),
+        }
         for file_name in texts_by_name:
-            if file_name != paths_name and file_name not in (
-                profile_names.values()
-            ):
+            if file_name not in wanted_names:
                 self.fail(
                     f"{archive_name} holds {file_name}, which no diff"
                     f" reads: {path}"
@@ -995,19 +1225,6 @@ class TestReport:
         tests: Sequence[str],
         layout: TestReport.ReportLayout,
     ) -> None:
-        archive_pattern = (
-            f"{_TIMER_ARTIFACTS_NAME_PREFIX}*{_REPORT_RAW_ARCHIVE_SUFFIX}"
-        )
-        archive_names = sorted(
-            os.path.basename(path)
-            for path in glob.glob(os.path.join(out_dir, archive_pattern))
-        )
-        wanted_count = 1 if layout.has_timer_artifacts else 0
-        if len(archive_names) != wanted_count:
-            self.fail(
-                f"{len(archive_names)} {archive_pattern} at the report's top,"
-                f" expected {wanted_count}: {out_dir}"
-            )
         has_raw_data_line = _TEST_OVERVIEW_RAW_DATA_MARKUP in overview_text
         if layout.has_timer_artifacts and not has_raw_data_line:
             self.fail(f"overview index.html has no 'raw data' line: {out_dir}")
@@ -1016,17 +1233,44 @@ class TestReport:
                 "overview index.html has a 'raw data' line, but it should"
                 f" not: {out_dir}"
             )
-        for archive_name in archive_names:
+        manifest_path = os.path.join(out_dir, "MANIFEST.txt")
+        try:
+            with open(manifest_path, encoding="utf-8") as handle:
+                manifest_text = handle.read()
+        except OSError as error:
+            self.fail(
+                f"MANIFEST.txt names no raw data archive: {error}:"
+                f" {manifest_path}"
+            )
+            return
+        for label in layout.manifest_recorded_labels:
+            archive_name = (
+                f"{_TEST_TIMER_ARTIFACTS_PREFIX}"
+                f"{self.manifest_recorded_value(manifest_text, label)}"
+                f"{_REPORT_RAW_ARCHIVE_SUFFIX}"
+            )
+            path = os.path.join(out_dir, archive_name)
+            if not layout.has_timer_artifacts:
+                if os.path.lexists(path):
+                    self.fail(
+                        f"{archive_name}, the raw data archive MANIFEST.txt's"
+                        f" {label}= row names, in a report that keeps none:"
+                        f" {path}"
+                    )
+                continue
+            if not os.path.isfile(path):
+                self.fail(
+                    f"no {archive_name}, the raw data archive MANIFEST.txt's"
+                    f" {label}= row names, at the report's top: {path}"
+                )
+                continue
             if f'href="{archive_name}"' not in overview_text:
                 self.fail(
                     f"overview index.html does not link {archive_name}:"
                     f" {out_dir}"
                 )
             self.timer_artifacts_archive_check(
-                os.path.join(out_dir, archive_name),
-                archive_name,
-                tests,
-                layout,
+                path, archive_name, tests, layout
             )
 
 
@@ -1042,6 +1286,8 @@ _LAYOUT_DIFF = TestReport.ReportLayout(
     callers_callee_fields=6,
     callers_caller_fields=3,
     callers_value_fields=(2, 5),
+    call_graph_edge_fields=5,
+    call_graph_root_fields=3,
     header_blocks=(
         '<div class="page-heading-">baseline</div>',
         '<div class="page-heading-">modified</div>',
@@ -1071,6 +1317,8 @@ _LAYOUT_FULL = TestReport.ReportLayout(
     callers_callee_fields=4,
     callers_caller_fields=2,
     callers_value_fields=(2,),
+    call_graph_edge_fields=4,
+    call_graph_root_fields=2,
     header_blocks=(
         '<div id="overview-manifest-heading-" class="page-heading-"></div>',
     ),
@@ -1098,8 +1346,17 @@ _REPORT_CHECKSUM_COMMAND = (
     " | LC_ALL=C sort | cksum"
 )
 
+_TEST_CALL_GRAPH_EDGE_CALLEE_FIELD = 1
+_TEST_CALL_GRAPH_EDGE_FUNCTION_FIELDS = (0, 1)
+_TEST_CALL_GRAPH_MODEL_KEYS = ("edges", "functions", "roots")
+_TEST_CALL_GRAPH_PAGE_DIR_NAME = "call-graph"
+_TEST_CALL_GRAPH_ROOT_FUNCTION_FIELD = 0
+_TEST_CALL_GRAPH_ROOT_FUNCTION_NAME = "main"
+_TEST_CALL_GRAPH_PAGE_LEAST_BYTES = 2000
+_TEST_CALL_GRAPH_TEXT_ID = "call-graph-text-"
 _TEST_CALLERS_CALLER_ROWS_FIELD = 3
 _TEST_CALLERS_FUNCTION_HREF_FIELD = 1
+_TEST_CALLERS_FUNCTION_NAME_FIELD = 0
 _TEST_CALLERS_PAGE_DIR_NAME = "callers"
 _TEST_CALLERS_TABLE_DATA_ID = "callers-functions-table-"
 _TEST_CALLERS_TABLE_KEY = "report.functions"
@@ -1107,6 +1364,7 @@ _TEST_FLAME_GRAPH_PAGE_LEAST_BYTES = 300
 _TEST_FLAME_GRAPH_SCRIPT_LEAST_BYTES = 200
 _TEST_HEAT_MAP_MODEL_LEAST_BYTES = 5000
 _TEST_HEAT_MAP_PAGE_LEAST_BYTES = 1000
+_TEST_LIST_FILE_NAME = "test_list.txt"
 _TEST_MANIFEST_LEAST_BYTES = 40
 _TEST_OVERVIEW_PAGE_LEAST_BYTES = 2000
 _TEST_OVERVIEW_PAGE_TITLE = ""
@@ -1122,8 +1380,14 @@ _TEST_PAGE_PREAMBLE_SCRIPT_NAMES = (
     "settings.js",
 )
 _TEST_PATHS_DOCUMENT_CODES = ("err", "git", "repo", "sys")
-_TEST_PATHS_DOCUMENT_EXTENSION = "json"
+_TEST_PATHS_DOCUMENT_NAME = "0_file_data.json"
+_TEST_PROFILE_FILE_SUFFIX = ".callgrind.out"
 _TEST_RAW_ARCHIVE_LEAST_BYTES = 100
+_TEST_SOURCE_DATABASE_GLOBAL_NAME = "report_source_database_"
+_TEST_SOURCE_DATABASE_KEYS = ("cold", "files", "functions")
+_TEST_SOURCE_DATABASE_LEAST_BYTES = 1000
+_TEST_SOURCE_DATABASE_SCRIPT_PATH = "scripts/source_database.js"
+_TEST_TIMER_ARTIFACTS_PREFIX = "timer-artifacts-"
 
 
 def main() -> int:

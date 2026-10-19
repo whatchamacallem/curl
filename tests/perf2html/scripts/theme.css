@@ -78,6 +78,16 @@ pre {
   overflow-y: auto;
 }
 
+/* The call graph: its page beside its bar, over its sideways bar. */
+#call-graph- {
+  grid-template-rows: minmax(0, 1fr) auto;
+}
+/* The call graph text, as wide as its longest line, in its clear border. */
+#call-graph-text- {
+  width: max-content;
+  border: var(--call-graph-border-width-) solid transparent;
+}
+
 /* The heat map: the tree and its bar, the main box, the minimap, its bar. */
 #heat-map- {
   display: grid;

@@ -384,6 +384,11 @@ _SOURCE_SCAN_ALLOWED_NON_ASCII_CHARS = (
     "▓",
     "█",
     "◼",
+    "─",
+    "│",
+    "└",
+    "├",
+    "┬",
 )
 
 _SOURCE_SCAN_BANNED_TAG_NAMES = (

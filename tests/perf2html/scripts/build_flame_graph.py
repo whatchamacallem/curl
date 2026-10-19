@@ -9,7 +9,7 @@ import argparse, base64, json, os, sys
 from typing import NamedTuple
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import settings, theme
+import artifacts, settings, theme
 
 _ASSET_TEMPLATE_FLAME_GRAPH_PAGE_NAME: str = ""
 _FLAME_GRAPH_APP_DIR_NAME: str = ""
@@ -28,12 +28,11 @@ class BuildFlameGraph:
     class PageArgs(NamedTuple):
         app_css: str
         app_js: str
-        report_dir: str
+        report: str
 
-    class ProfileArgs(NamedTuple):
-        profile_json: str
-        report_dir: str
-        test: str
+    class ProfilesArgs(NamedTuple):
+        artifacts: str
+        report: str
 
     def page_write(self, args: BuildFlameGraph.PageArgs) -> None:
         app_href = theme.href(
@@ -46,14 +45,19 @@ class BuildFlameGraph:
                 "__APP_SCRIPT__": f"{app_href}/{args.app_js}",
             },
         )
-        path = os.path.join(args.report_dir, _FLAME_GRAPH_PAGE_PATH)
+        path = os.path.join(args.report, _FLAME_GRAPH_PAGE_PATH)
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "w", encoding="utf-8") as handle:
             handle.write(html)
         print(f"wrote {path}", file=sys.stderr)
 
-    def profile_write(self, args: BuildFlameGraph.ProfileArgs) -> None:
-        with open(args.profile_json, "rb") as handle:
+    # Writes one test's profile script, its speedscope profile embedded.
+    def profile_write(
+        self, report_dir: str, artifacts_dir: str, test_name: str
+    ) -> None:
+        with artifacts.artifact_open(
+            artifacts_dir, "trace-speedscope", test_name, "rb"
+        ) as handle:
             raw = handle.read()
         test_profile = {
             "name": json.loads(raw.decode("utf-8"))["name"],
@@ -61,40 +65,48 @@ class BuildFlameGraph:
         }
         profiles_global = f"window.{_FLAME_GRAPH_PROFILE_GLOBAL_NAME}"
         profile_dir = os.path.join(
-            args.report_dir,
+            report_dir,
             os.path.dirname(_FLAME_GRAPH_PAGE_PATH),
             _FLAME_GRAPH_PROFILE_DIR_NAME,
         )
         os.makedirs(profile_dir, exist_ok=True)
-        path = os.path.join(profile_dir, f"{args.test}.js")
+        path = os.path.join(profile_dir, f"{test_name}.js")
         with open(path, "w", encoding="utf-8") as handle:
             handle.write(
                 f"{profiles_global} = {profiles_global} || {{}};\n"
-                f"{profiles_global}[{json.dumps(args.test)}] ="
+                f"{profiles_global}[{json.dumps(test_name)}] ="
                 f" {json.dumps(test_profile)};\n"
             )
         print(f"wrote {path} ({len(raw):,} bytes of profile)", file=sys.stderr)
+
+    # Writes every listed test's profile script.
+    def profiles_write(self, args: BuildFlameGraph.ProfilesArgs) -> None:
+        artifacts_dir = artifacts.report_artifacts_dir(
+            args.artifacts, args.report
+        )
+        for test_name in artifacts.test_list_read(artifacts_dir):
+            self.profile_write(args.report, artifacts_dir, test_name)
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
     subparsers = parser.add_subparsers(dest="cmd", required=True)
 
-    profile_parser = subparsers.add_parser(
-        "profile", help="one test's profile script"
+    profiles_parser = subparsers.add_parser(
+        "profiles", help="every listed test's profile script"
     )
-    profile_parser.add_argument(
-        "--profile-json", required=True, help="the .speedscope.json to embed"
-    )
-    profile_parser.add_argument(
-        "--report-dir",
+    profiles_parser.add_argument(
+        "--artifacts",
         required=True,
-        help="the report directory the script is written in",
+        metavar="DIR",
+        help="the profiler artifacts directory, holding the report's own,"
+        " whose test list names every profile embedded",
     )
-    profile_parser.add_argument(
-        "--test",
+    profiles_parser.add_argument(
+        "--report",
         required=True,
-        help="the test the profile is filed under and its script named after",
+        metavar="DIR",
+        help="the report directory the scripts are written in",
     )
 
     page_parser = subparsers.add_parser(
@@ -111,8 +123,9 @@ def main() -> None:
         help="the shared bundle's engine, a bare file name",
     )
     page_parser.add_argument(
-        "--report-dir",
+        "--report",
         required=True,
+        metavar="DIR",
         help="the report directory the page is written in",
     )
 
@@ -123,15 +136,13 @@ def main() -> None:
             BuildFlameGraph.PageArgs(
                 app_css=namespace.app_css,
                 app_js=namespace.app_js,
-                report_dir=namespace.report_dir,
+                report=namespace.report,
             )
         )
     else:
-        flame_graph.profile_write(
-            BuildFlameGraph.ProfileArgs(
-                profile_json=namespace.profile_json,
-                report_dir=namespace.report_dir,
-                test=namespace.test,
+        flame_graph.profiles_write(
+            BuildFlameGraph.ProfilesArgs(
+                artifacts=namespace.artifacts, report=namespace.report
             )
         )
 

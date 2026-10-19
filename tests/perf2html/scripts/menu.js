@@ -5,11 +5,12 @@
 window.try_catch_handler_(function () {
   "use strict";
 
+  const CALL_GRAPH_VIEW_KEY = settings_("CALL_GRAPH_VIEW_KEY");
   const CALLERS_VIEW_KEY = settings_("CALLERS_VIEW_KEY");
   const FLAME_GRAPH_VIEW_ENTRY = settings_("FLAME_GRAPH_VIEW_ENTRY");
   const HEAT_MAP_VIEW_ENTRY = settings_("HEAT_MAP_VIEW_ENTRY");
   const MENU_SCALE_KEY_STEPS = settings_("MENU_SCALE_KEY_STEPS");
-  const REPORT_TEST_SUITE_NAME = settings_("REPORT_TEST_SUITE_NAME");
+  const MENU_TEST_NONE_NAME = settings_("MENU_TEST_NONE_NAME");
   const SETTINGS_VIEW_ENTRY = settings_("SETTINGS_VIEW_ENTRY");
   const STYLE_MENU_LOGO_START_SHARE = settings_("STYLE_MENU_LOGO_START_SHARE");
   const STYLE_MENU_PULLDOWN_EXTRA_WIDTH_CHARS = settings_(
@@ -26,13 +27,11 @@ window.try_catch_handler_(function () {
   };
   const SCALE_LAST_STOP = window.report_ui_.design_scale_last_stop;
   const SETTINGS_VIEW_KEY = SETTINGS_VIEW_ENTRY[0];
-  const TEST_SUITE_NAME_TEXT = window.ui_strings_.text(
-    "str_menu_test_suite_name",
-  );
   const TITLE_PART_SEPARATOR = window.ui_strings_.text(
     "str_title_part_separator",
   );
   const VIEW_STRING_IDS = {
+    [CALL_GRAPH_VIEW_KEY]: "str_view_call_graph",
     [CALLERS_VIEW_KEY]: "str_view_callers",
     [FLAME_GRAPH_VIEW_KEY]: "str_view_flame_graph",
     [HEAT_MAP_VIEW_KEY]: "str_view_heat_map",
@@ -44,30 +43,23 @@ window.try_catch_handler_(function () {
   const preference_strip = document.getElementById("menu-preference-");
   const pulldown_box_width_chars =
     Math.max(
-      ...window.report_frame_.test_names.map(
-        (test_name) => test_name_text(test_name).length,
-      ),
+      MENU_TEST_NONE_NAME.length,
+      ...window.report_frame_.test_names.map((test_name) => test_name.length),
     ) + STYLE_MENU_PULLDOWN_EXTRA_WIDTH_CHARS;
 
   if (typeof window.report_manifest_table_ === "undefined")
     window.throw_exception_("str_error_report_incomplete");
-  if (!window.report_pulldown_text_)
+  if (!window.report_source_database_)
     window.throw_exception_("str_error_internal");
-  const heat_scale_choices = window.report_preferences_.heat_scale_choices(
-    window.report_frame_.is_diff,
-  );
+  const heat_scale_choices = window.report_preferences_.heat_scale_choices();
   const heat_sort_choices = window.report_preferences_.heat_sort_choices;
   let flash_entry_name = "";
   let menu_strip_handle = null;
   let preference_strip_handle = null;
 
+  // Returns the test the address shows, null for none.
   function active_test_name() {
-    return window.report_frame_.address_now().test ?? REPORT_TEST_SUITE_NAME;
-  }
-  function test_name_text(test_name) {
-    return test_name === REPORT_TEST_SUITE_NAME
-      ? TEST_SUITE_NAME_TEXT
-      : test_name;
+    return window.report_frame_.address_now().test;
   }
   function flash_request(entry_name) {
     return () => {
@@ -91,9 +83,9 @@ window.try_catch_handler_(function () {
     );
     return entry_link;
   }
-  function heat_map_entries(names_key, entry_name, part) {
+  function heat_map_entries(names, entry_name, part) {
     const entry_test_name = active_test_name();
-    return window.report_pulldown_text_[names_key].map((name) =>
+    return names.map((name) =>
       pulldown_link(
         name,
         window.report_ui_.address.hash({
@@ -106,23 +98,49 @@ window.try_catch_handler_(function () {
     );
   }
   function files_entries(line_number) {
-    return heat_map_entries("files", "str_menu_file", (file_name) => ({
-      file: file_name,
-      line: line_number || null,
-    }));
+    return heat_map_entries(
+      Object.keys(window.report_source_database_.files),
+      "str_menu_file",
+      (file_name) => ({ file: file_name, line: line_number || null }),
+    );
   }
   function functions_entries() {
     return heat_map_entries(
-      "functions",
+      window.report_source_database_.functions.map(
+        (function_entry) => function_entry.name,
+      ),
       "str_menu_function",
       (function_name) => ({ function: function_name }),
     );
   }
+  // Returns a view's home hash, the overview's when the view lacks its test.
+  function view_home_hash(test_name, view_key) {
+    const lacks_test =
+      test_name === null &&
+      window.report_ui_.address.needs_test({ view: view_key });
+    return lacks_test
+      ? window.report_ui_.address.hash({})
+      : window.report_ui_.address.home_hash(test_name, view_key);
+  }
+  // Returns the address shown under another test, or the overview's.
+  function test_entry_hash(test_name) {
+    const address = window.report_frame_.address_now();
+    if (address.view === null)
+      return view_home_hash(test_name, HEAT_MAP_VIEW_KEY);
+    const entry_address = { ...address, test: test_name };
+    const lacks_test =
+      test_name === null &&
+      window.report_ui_.address.needs_test(entry_address);
+    return lacks_test
+      ? window.report_ui_.address.hash({})
+      : window.report_ui_.address.hash(entry_address);
+  }
+  // Lists none, then each test, each keeping the address shown.
   function tests_entries() {
-    return window.report_frame_.test_names.map((test_name) =>
+    return [null, ...window.report_frame_.test_names].map((test_name) =>
       pulldown_link(
-        test_name_text(test_name),
-        window.report_ui_.address.home_hash(test_name, HEAT_MAP_VIEW_KEY),
+        test_name === null ? MENU_TEST_NONE_NAME : test_name,
+        test_entry_hash(test_name),
         "str_menu_test",
       ),
     );
@@ -319,9 +337,8 @@ window.try_catch_handler_(function () {
   }
   // Assembles every menu entry in strip order, the one place the menu changes.
   function menu_entries(address) {
-    const test_name = address.test ?? REPORT_TEST_SUITE_NAME;
     const view_hash = (view_key) =>
-      window.report_ui_.address.home_hash(test_name, view_key);
+      window.report_ui_.address.home_hash(address.test, view_key);
     return [
       entry("str_report_name", "link", {
         is_numbered: false,
@@ -353,17 +370,22 @@ window.try_catch_handler_(function () {
       view_entry(
         VIEW_STRING_IDS[HEAT_MAP_VIEW_KEY],
         view_hash(HEAT_MAP_VIEW_KEY),
-        true,
+        address.test !== null,
       ),
       view_entry(
         VIEW_STRING_IDS[CALLERS_VIEW_KEY],
         view_hash(CALLERS_VIEW_KEY),
-        true,
+        address.test !== null,
       ),
       view_entry(
         VIEW_STRING_IDS[FLAME_GRAPH_VIEW_KEY],
         view_hash(FLAME_GRAPH_VIEW_KEY),
-        window.report_frame_.has_flame_graph(test_name),
+        window.report_frame_.has_flame_graph(address.test),
+      ),
+      view_entry(
+        VIEW_STRING_IDS[CALL_GRAPH_VIEW_KEY],
+        view_hash(CALL_GRAPH_VIEW_KEY),
+        address.test !== null,
       ),
       entry("str_menu_reset", "action", {
         on_activate: preferences_reset,
@@ -477,7 +499,7 @@ window.try_catch_handler_(function () {
       ),
     ];
   }
-  // Lists the status components: the test, the view, the heat map parts.
+  // Lists the status components: any test, the view, the heat map parts.
   function status_entries(address) {
     const view_entry =
       address.view === null
@@ -487,12 +509,13 @@ window.try_catch_handler_(function () {
           )
         : status_entry(
             window.ui_strings_.text(VIEW_STRING_IDS[address.view]),
-            window.report_ui_.address.home_hash(address.test, address.view),
+            view_home_hash(address.test, address.view),
           );
-    if (address.test === null) return [view_entry];
+    if (address.test === null)
+      return [view_entry, ...heat_map_status_entries(address)];
     return [
       status_entry(
-        test_name_text(address.test),
+        address.test,
         window.report_ui_.address.home_hash(address.test, CALLERS_VIEW_KEY),
       ),
       view_entry,
@@ -500,10 +523,10 @@ window.try_catch_handler_(function () {
     ];
   }
   function title_text(address) {
-    if (address.test === null)
+    if (address.view === null)
       return window.ui_strings_.text("str_view_overview");
     return [
-      test_name_text(address.test),
+      address.test,
       window.ui_strings_.text(VIEW_STRING_IDS[address.view]),
       heat_map_part_text(address),
     ]
@@ -548,10 +571,7 @@ window.try_catch_handler_(function () {
   }
 
   function activate() {
-    window.report_preferences_.activate(
-      window.report_frame_.counter_names,
-      window.report_frame_.is_diff,
-    );
+    window.report_preferences_.activate(window.report_frame_.counter_names);
     document.addEventListener(
       "keydown",
       window.try_catch_handler_((key_event) => {

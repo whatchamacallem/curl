@@ -17,9 +17,6 @@ window.report_preferences_ = window.try_catch_handler_(function () {
   const HEAT_MAP_SCALE_DEFAULT_VALUE = settings_(
     "HEAT_MAP_SCALE_DEFAULT_VALUE",
   );
-  const HEAT_MAP_SCALE_DIFF_DEFAULT_VALUE = settings_(
-    "HEAT_MAP_SCALE_DIFF_DEFAULT_VALUE",
-  );
   const HEAT_MAP_SORT_DEFAULT_MODE = settings_("HEAT_MAP_SORT_DEFAULT_MODE");
   const RANKING_COUNTER_NAME = settings_("RANKING_COUNTER_NAME");
   const STORAGE_KEY_HEATMAP_SCALE = settings_("STORAGE_KEY_HEATMAP_SCALE");
@@ -45,8 +42,6 @@ window.report_preferences_ = window.try_catch_handler_(function () {
 
   let report_counter_names = null;
   let toggled_counter_names = null;
-  let report_heat_scale_choices = null;
-  let heat_scale_default_value = null;
   let shown_preferences = null;
 
   // Returns the description of a counter, the words its label leads with.
@@ -63,34 +58,18 @@ window.report_preferences_ = window.try_catch_handler_(function () {
       counter: counter_name,
     });
   }
-  // Lists the heat scale choices, each curve by each scope the report has.
-  function heat_scale_choices(is_diff) {
+  // Lists the heat scale choices, one per curve.
+  function heat_scale_choices() {
     const text = window.ui_strings_.text;
     const curve_choices = [
       ["log", text("str_scale_curve_log")],
       ["linear", text("str_scale_curve_linear")],
     ];
-    const scope_choices = is_diff
-      ? [["line", null]]
-      : [
-          ["global", null],
-          ["file", text("str_scope_file")],
-          ["function", text("str_scope_function")],
-        ];
-    return curve_choices.flatMap(([curve_name, curve_label]) =>
-      scope_choices.map(([scope_name, scope_label]) => ({
-        value: curve_name + "/" + scope_name,
-        curve: curve_name,
-        scope: scope_name,
-        label:
-          scope_label === null
-            ? curve_label
-            : window.ui_strings_.text_fill("str_scale_entry", {
-                curve: curve_label,
-                scope: scope_label,
-              }),
-      })),
-    );
+    return curve_choices.map(([curve_name, curve_label]) => ({
+      value: curve_name,
+      curve: curve_name,
+      label: curve_label,
+    }));
   }
 
   // Returns the preferences the page shows, a view's those last relayed.
@@ -165,8 +144,8 @@ window.report_preferences_ = window.try_catch_handler_(function () {
       counter_names: shown_counter_names(stored_counter_names()),
       heat_scale_value: stored_choice(
         STORAGE_KEY_HEATMAP_SCALE,
-        choice_values(report_heat_scale_choices),
-        heat_scale_default_value,
+        choice_values(heat_scale_choices()),
+        HEAT_MAP_SCALE_DEFAULT_VALUE,
       ),
       heat_sort_mode: stored_choice(
         STORAGE_KEY_HEATMAP_SORT,
@@ -181,7 +160,7 @@ window.report_preferences_ = window.try_catch_handler_(function () {
     });
   }
   // Refuses default preferences naming choices this report does not offer.
-  function preference_settings_check(is_diff) {
+  function preference_settings_check() {
     setting_choices_check(
       "COUNTER_SELECTION_CALLS_SHOWN_DEFAULT",
       [COUNTER_SELECTION_CALLS_SHOWN_DEFAULT],
@@ -193,11 +172,9 @@ window.report_preferences_ = window.try_catch_handler_(function () {
       toggled_counter_names,
     );
     setting_choices_check(
-      is_diff
-        ? "HEAT_MAP_SCALE_DIFF_DEFAULT_VALUE"
-        : "HEAT_MAP_SCALE_DEFAULT_VALUE",
-      [heat_scale_default_value],
-      choice_values(report_heat_scale_choices),
+      "HEAT_MAP_SCALE_DEFAULT_VALUE",
+      [HEAT_MAP_SCALE_DEFAULT_VALUE],
+      choice_values(heat_scale_choices()),
     );
     setting_choices_check(
       "HEAT_MAP_SORT_DEFAULT_MODE",
@@ -205,17 +182,13 @@ window.report_preferences_ = window.try_catch_handler_(function () {
       choice_values(HEAT_SORT_CHOICES),
     );
   }
-  // Takes the report's counters and kind, checks the defaults, then seeds.
-  function activate(counter_names, is_diff) {
+  // Takes the report's counters, checks the defaults, then seeds.
+  function activate(counter_names) {
     report_counter_names = counter_names;
     toggled_counter_names = counter_names.filter(
       (counter_name) => counter_name !== RANKING_COUNTER_NAME,
     );
-    report_heat_scale_choices = heat_scale_choices(is_diff);
-    heat_scale_default_value = is_diff
-      ? HEAT_MAP_SCALE_DIFF_DEFAULT_VALUE
-      : HEAT_MAP_SCALE_DEFAULT_VALUE;
-    preference_settings_check(is_diff);
+    preference_settings_check();
     seed();
   }
 

@@ -8,7 +8,6 @@ window.try_catch_handler_(function () {
   const DARK_MODE_QUERY_KEY_NAME = settings_("DARK_MODE_QUERY_KEY_NAME");
   const DARK_MODE_QUERY_VALUES = settings_("DARK_MODE_QUERY_VALUES");
   const FLAME_GRAPH_VIEW_ENTRY = settings_("FLAME_GRAPH_VIEW_ENTRY");
-  const REPORT_TEST_SUITE_NAME = settings_("REPORT_TEST_SUITE_NAME");
   const SCREENSHOT_MENU_KEY_NUMBER = settings_("SCREENSHOT_MENU_KEY_NUMBER");
   const SETTINGS_DEBUG_ENABLED = settings_("SETTINGS_DEBUG_ENABLED");
   const SETTINGS_DEBUG_HASH_KEY_NAME = settings_(
@@ -44,7 +43,6 @@ window.try_catch_handler_(function () {
   );
   const report_has_flame_graph =
     menu_strip.getAttribute("data-flame-graph-") === "1";
-  const is_diff = menu_strip.getAttribute("data-diff-") === "1";
   const test_names = JSON.parse(menu_strip.getAttribute("data-test-names-"));
   const view_frame = window.report_ui_.view_frame;
 
@@ -57,7 +55,7 @@ window.try_catch_handler_(function () {
   }
   // Returns whether the report holds a flame graph for the test.
   function has_flame_graph(test_name) {
-    return report_has_flame_graph && test_name !== REPORT_TEST_SUITE_NAME;
+    return report_has_flame_graph && test_name !== null;
   }
   // Returns the query's menu entry number while the loaded address shows.
   function menu_entry_number_now() {
@@ -314,7 +312,6 @@ window.try_catch_handler_(function () {
     address_request,
     counter_names,
     has_flame_graph,
-    is_diff,
     load_log_history,
     menu_entry_number_now,
     settings_debug_clear,
