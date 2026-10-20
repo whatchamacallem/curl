@@ -49,6 +49,7 @@ class TestReport:
     class TestArgs(NamedTuple):
         out_dir: str
         diff: bool
+        readme_html: bool
         verbose: bool
 
     def __init__(self) -> None:
@@ -685,6 +686,7 @@ class TestReport:
         tests: Sequence[str],
         layout: TestReport.ReportLayout,
         counter_names: Sequence[str],
+        help_name: str,
     ) -> None:
         match = re.search(
             r'<nav id="menu-" class="strip-"([^>]*)></nav>', page_text
@@ -701,7 +703,7 @@ class TestReport:
         wanted = {
             "data-counter-names-": json.dumps(list(counter_names)),
             "data-flame-graph-": "1" if layout.has_flame_graph else "0",
-            "data-help-href-": "README.md",
+            "data-help-href-": help_name,
             "data-test-names-": json.dumps(list(tests), ensure_ascii=False),
         }
         if found != wanted:
@@ -715,6 +717,7 @@ class TestReport:
         out_dir: str,
         tests: Sequence[str],
         layout: TestReport.ReportLayout,
+        help_name: str,
     ) -> None:
         path = os.path.join(out_dir, "index.html")
         text = self.page_check(
@@ -757,6 +760,7 @@ class TestReport:
             tests,
             layout,
             self.report_counter_names(out_dir, tests),
+            help_name,
         )
         for heading in layout.header_blocks:
             if heading not in page_text:
@@ -901,6 +905,23 @@ class TestReport:
                 )
                 return
 
+    # Faults a README page missing or unasked for, returning the help link.
+    def readme_check(self, out_dir: str, has_readme_html: bool) -> str:
+        for name, is_wanted in (
+            (_TEST_README_MARKDOWN_NAME, True),
+            (_TEST_README_HTML_NAME, has_readme_html),
+        ):
+            if os.path.isfile(os.path.join(out_dir, name)) != is_wanted:
+                self.fail(
+                    f"{name} is {'missing' if is_wanted else 'unasked for'}:"
+                    f" {out_dir}"
+                )
+        return (
+            _TEST_README_HTML_NAME
+            if has_readme_html
+            else _TEST_README_MARKDOWN_NAME
+        )
+
     # Returns the counters the callers pages draw, faulting any that differ.
     def report_counter_names(
         self, out_dir: str, tests: Sequence[str]
@@ -954,7 +975,8 @@ class TestReport:
         self.home_dir_check(out_dir)
         self.manifest_check(out_dir, layout)
         tests = self.overview_test_names(index_path, out_dir)
-        self.overview_check(out_dir, tests, layout)
+        help_name = self.readme_check(out_dir, args.readme_html)
+        self.overview_check(out_dir, tests, layout, help_name)
         if layout.has_flame_graph:
             self.flame_app_check(out_dir)
         self.heat_map_check(out_dir, tests, layout)
@@ -1383,6 +1405,8 @@ _TEST_PATHS_DOCUMENT_CODES = ("err", "git", "repo", "sys")
 _TEST_PATHS_DOCUMENT_NAME = "0_file_data.json"
 _TEST_PROFILE_FILE_SUFFIX = ".callgrind.out"
 _TEST_RAW_ARCHIVE_LEAST_BYTES = 100
+_TEST_README_HTML_NAME = "README.html"
+_TEST_README_MARKDOWN_NAME = "README.md"
 _TEST_SOURCE_DATABASE_GLOBAL_NAME = "report_source_database_"
 _TEST_SOURCE_DATABASE_KEYS = ("cold", "files", "functions")
 _TEST_SOURCE_DATABASE_LEAST_BYTES = 1000
@@ -1399,6 +1423,12 @@ def main() -> int:
         help="a perf2html_diff.sh report: heat map only",
     )
     parser.add_argument(
+        "--readme-html",
+        action="store_true",
+        help=f"the report holds {_TEST_README_HTML_NAME}, which its help link"
+        " opens",
+    )
+    parser.add_argument(
         "--verbose",
         action="store_true",
         help="print the ok line; a quiet run prints nothing on success",
@@ -1409,6 +1439,7 @@ def main() -> int:
         TestReport.TestArgs(
             out_dir=namespace.out_dir,
             diff=namespace.diff,
+            readme_html=namespace.readme_html,
             verbose=namespace.verbose,
         )
     )

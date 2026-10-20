@@ -368,6 +368,12 @@ The single function/check owning each concern - never bypass or duplicate:
   one exception is `test_screenshot.py`: screenshots are to be made from
   string literal golden bookmarks, and changing the url format must require
   changing those string literals.
+- Screenshot code runs only in the shots `test_screenshot.py` takes and in
+  the frames of `test_index.html`, so that no screenshot code can hide a bug
+  in a page a user opens. The query keys `screenshot` and
+  `screenshot-menu` gate all of it, a click through from `test_index.html`
+  drops both, and the label shows the address without them. `toggle-dark`
+  is not screenshot code: it takes the dark button's path and stays.
 - Every `tests/perf2html/*.sh` makes paths absolute at startup; `$PWD` is
   never read again below `args_parse`. Getting this wrong breaks every
   relative invocation silently.

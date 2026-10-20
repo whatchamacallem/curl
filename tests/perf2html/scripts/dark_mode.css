@@ -4,14 +4,14 @@
 
 :root:not([data-dark-mode-="disabled"]) {
   a {
-    color: var(--dark-mode-page-link-fg-);
+    color: var(--dark-mode-menu-normal-fg-);
   }
   a:focus-visible {
     background: var(--dark-mode-menu-focus-bg-);
     color: var(--dark-mode-menu-focus-fg-);
   }
   .table- th {
-    color: var(--dark-mode-page-dim-fg-);
+    color: var(--dark-mode-page-fg-);
     background: var(--dark-mode-menu-normal-bg-);
   }
   .table- > tbody > tr:focus-visible > td,
@@ -34,16 +34,16 @@
     background: var(--dark-mode-panel-bg-);
   }
   .heat-map-source-information-box-action-bar-separator- {
-    color: var(--dark-mode-page-dim-fg-);
+    color: var(--dark-mode-page-fg-);
   }
   .heat-map-source-information-box-function-name- {
     color: var(--dark-mode-page-fg-);
   }
   .heat-map-source-information-box-heading- {
-    color: var(--dark-mode-page-dim-fg-);
+    color: var(--dark-mode-page-fg-);
   }
   .heat-map-source-information-box-note- {
-    color: var(--dark-mode-page-dim-fg-);
+    color: var(--dark-mode-page-fg-);
   }
   .heat-map-source-information-box- .table- {
     background: var(--dark-mode-page-bg-);
@@ -54,13 +54,13 @@
   td.heat-map-source-table-self-cell-,
   td.heat-map-source-table-calls-cell-,
   td.heat-map-source-table-secondary-counter-cell- {
-    color: var(--dark-mode-page-dim-fg-);
+    color: var(--dark-mode-page-fg-);
   }
   table.heat-map-source-table- td.heat-map-source-table-line-number-cell- {
-    color: var(--dark-mode-page-dim-fg-);
+    color: var(--dark-mode-page-fg-);
   }
   tr.has-callee- td.heat-map-source-table-line-number-cell-::before {
-    color: var(--dark-mode-page-link-fg-);
+    color: var(--dark-mode-menu-normal-fg-);
   }
   table.heat-map-source-table- > tbody > tr:focus-visible > td {
     background: var(--dark-mode-menu-focus-bg-) !important;
@@ -75,10 +75,10 @@
     color: var(--dark-mode-menu-focus-fg-) !important;
   }
   .heat-map-source-ticker-tape- .heat-map-source-ticker-tape-label- {
-    color: var(--dark-mode-page-dim-fg-);
+    color: var(--dark-mode-page-fg-);
   }
   .heat-map-source-unavailable-note- {
-    color: var(--dark-mode-page-dim-fg-);
+    color: var(--dark-mode-page-fg-);
   }
   .heat-map-tree-node-.selected- {
     background: var(--dark-mode-page-emphasis-bg-);
@@ -89,16 +89,16 @@
     color: var(--dark-mode-menu-focus-fg-) !important;
   }
   .heat-map-tree-node- .heat-map-tree-node-caret- {
-    color: var(--dark-mode-page-dim-fg-);
+    color: var(--dark-mode-page-fg-);
   }
   .heat-map-tree-node-.cold- .heat-map-tree-node-name- {
-    color: var(--dark-mode-page-dim-fg-);
+    color: var(--dark-mode-page-fg-);
   }
   .heat-map-tree-node-.more- .heat-map-tree-node-name- {
-    color: var(--dark-mode-page-dim-fg-);
+    color: var(--dark-mode-page-fg-);
   }
   .heat-map-tree-node- .heat-map-tree-node-share-percent- {
-    color: var(--dark-mode-page-dim-fg-);
+    color: var(--dark-mode-page-fg-);
   }
   .heat-map-tree-node-.heat- .heat-map-tree-node-share-percent-,
   .heat-map-tree-node-.heat- .heat-map-tree-node-caret- {
@@ -114,6 +114,7 @@
   }
   #overview-view-frame- {
     background: var(--dark-mode-page-bg-);
+    color-scheme: dark;
   }
   .page-emphasis- {
     background: var(--dark-mode-page-emphasis-bg-);
@@ -149,6 +150,20 @@
     color: var(--dark-mode-page-fg-);
   }
   #heat-map-minimap-viewport- {
+    border-width: var(--dark-mode-menu-normal-outline-width-);
+    border-color: var(--dark-mode-menu-normal-outline-);
+  }
+  table.table-::before {
+    left: anchor(left);
+    right: anchor(right);
+    bottom: calc(anchor(bottom) - var(--dark-mode-menu-normal-outline-width-));
+    border-width: var(--dark-mode-menu-normal-outline-width-);
+    border-color: var(--dark-mode-menu-normal-outline-);
+  }
+  .heat-map-tree-node-:not(.cold-):hover::before {
+    inset: 0 0 calc(-1 * var(--dark-mode-menu-normal-outline-width-));
+    border-style: solid;
+    border-width: var(--dark-mode-menu-normal-outline-width-);
     border-color: var(--dark-mode-menu-normal-outline-);
   }
   .heat-map-source-information-line- {
@@ -176,12 +191,12 @@
   .debug-tip- {
     background: var(--dark-mode-debug-tip-bg-);
     color: var(--dark-mode-debug-tip-fg-);
-    border-color: var(--dark-mode-debug-tip-border-);
+    border-color: var(--dark-mode-debug-tip-bg-);
   }
 
-  .screenshot-label- {
-    background: var(--dark-mode-screenshot-label-bg-);
-    color: var(--dark-mode-screenshot-label-fg-);
+  .screenshot- {
+    background: var(--dark-mode-screenshot-bg-);
+    color: var(--dark-mode-screenshot-fg-);
   }
 
   .settings-value-box- {

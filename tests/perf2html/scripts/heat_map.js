@@ -2691,7 +2691,6 @@ window.try_catch_handler_(function () {
   report_ui_.drag_scroll.attach(main_panel, main_panel);
 
   report_ui_.view_activate({
-    dark_mode_apply: null,
     forwards_input: true,
     load_render_defer: (render_log) => {
       load_render_log = render_log;

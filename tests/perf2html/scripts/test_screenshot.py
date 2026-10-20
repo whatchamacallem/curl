@@ -17,7 +17,7 @@ class ShotVariant(NamedTuple):
     size_name: str
     width_px: int
     height_px: int
-    dark_value: str
+    toggle_dark_value: str
 
 
 class ScreenshotSet(NamedTuple):
@@ -82,16 +82,20 @@ _SCREENSHOT_BROWSER_CANDIDATES: tuple[str, ...] = (
     "/mnt/c/Program Files (x86)/Microsoft/Edge/Application/msedge.exe",
 )
 
-_SCREENSHOT_DARK_URL_PARAM = "screenshot-mode"
-_SCREENSHOT_DARK_VALUES: tuple[str, ...] = ("1", "0")
-
 _SCREENSHOT_DIR_NAME = "screenshots"
+
+_SCREENSHOT_LABEL_URL_PARAM = "screenshot"
+_SCREENSHOT_LABEL_URL_VALUE = "1"
 
 _SCREENSHOT_MENU_URL_PARAM = "screenshot-menu"
 
 _SCREENSHOT_RENDER_BUDGET_MS = 8000
 
 _SCREENSHOT_SCRATCH_DIR_PATH = "build/screenshots_scratch"
+
+_SCREENSHOT_TOGGLE_DARK_URL_PARAM = "toggle-dark"
+# The default dark mode first, then that toggled to light.
+_SCREENSHOT_TOGGLE_DARK_VALUES: tuple[str, ...] = ("0", "1")
 
 _SCREENSHOT_VIEWPORTS: tuple[tuple[str, int, int], ...] = (
     ("720p", 1280, 720),
@@ -107,23 +111,32 @@ _SHOOT_REGULAR_REPORT = 1 << 2
 _SHOOT_BOTH_REPORTS = _SHOOT_DIFF_REPORT | _SHOOT_REGULAR_REPORT
 
 _SHOT_INDEX_PAGE: tuple[ShotVariant, ...] = (
-    ShotVariant(*_SCREENSHOT_VIEWPORTS[1], _SCREENSHOT_DARK_VALUES[0]),
+    ShotVariant(*_SCREENSHOT_VIEWPORTS[1], _SCREENSHOT_TOGGLE_DARK_VALUES[0]),
 )
 _SHOT_ONE_VARIANT: tuple[ShotVariant, ...] = (
-    ShotVariant(*_SCREENSHOT_VIEWPORTS[0], _SCREENSHOT_DARK_VALUES[0]),
+    ShotVariant(*_SCREENSHOT_VIEWPORTS[0], _SCREENSHOT_TOGGLE_DARK_VALUES[0]),
 )
 _SHOT_REPORT_PERMUTATIONS: tuple[ShotVariant, ...] = tuple(
-    ShotVariant(*viewport, dark_value)
+    ShotVariant(*viewport, toggle_dark_value)
     for viewport in _SCREENSHOT_VIEWPORTS
-    for dark_value in _SCREENSHOT_DARK_VALUES
+    for toggle_dark_value in _SCREENSHOT_TOGGLE_DARK_VALUES
 )
 
-_SHOT_MODE_NAME_PARTS: dict[str, str] = {"1": "dark", "0": "light"}
+_SHOT_MODE_NAME_PARTS: dict[str, str] = {"0": "dark", "1": "light"}
 _SHOT_NAME_SEPARATOR = "-"
 _SHOT_NUMBER_DIGITS = 2
 
 _VIEWS: tuple[ScreenshotSet, ...] = (
-    ScreenshotSet(_SHOOT_BOTH_REPORTS, "", "4", "overview", "home", ()),
+    ScreenshotSet(
+        _SHOOT_REGULAR_REPORT,
+        "#test=urlparser&view=flame-graph&localProfilePath=profile",
+        "",
+        "flame_graph",
+        "profile",
+        (),
+    ),
+    ScreenshotSet(_SHOOT_DIFF_REPORT, "", "2", "overview", "home", ()),
+    ScreenshotSet(_SHOOT_REGULAR_REPORT, "", "4", "overview", "home", ()),
     ScreenshotSet(
         _SHOOT_REGULAR_REPORT,
         "#test=urlparser&view=callers",
@@ -172,14 +185,6 @@ _VIEWS: tuple[ScreenshotSet, ...] = (
         "",
         "heat_map",
         "function",
-        (),
-    ),
-    ScreenshotSet(
-        _SHOOT_REGULAR_REPORT,
-        "#test=urlparser&view=flame-graph&localProfilePath=profile",
-        "",
-        "flame_graph",
-        "profile",
         (),
     ),
     ScreenshotSet(
@@ -635,17 +640,23 @@ class Screenshots:
         for view_index, view in self.report_views:
             if view.absent_files or view.shot_flags & _SHOOT_INDEX_PAGE:
                 continue
-            for dark_value in dict.fromkeys(
-                variant.dark_value for variant in view.shot_variants()
+            for toggle_dark_value in dict.fromkeys(
+                variant.toggle_dark_value for variant in view.shot_variants()
             ):
                 pages[
-                    self.shot_name(view_index, "", prefix, view, dark_value)
+                    self.shot_name(
+                        view_index, "", prefix, view, toggle_dark_value
+                    )
                 ] = report_href + self.page_address(
-                    view.view_hash, view.menu_entry_number, dark_value
+                    view.view_hash, view.menu_entry_number, toggle_dark_value
                 )
         data = {
             "width": width_px,
             "height": height_px,
+            "screenshot_keys": [
+                _SCREENSHOT_LABEL_URL_PARAM,
+                _SCREENSHOT_MENU_URL_PARAM,
+            ],
             "pages": [
                 {
                     "name": name,
@@ -666,9 +677,12 @@ class Screenshots:
 
     # Returns the query and hash a page is shot at.
     def page_address(
-        self, view_hash: str, menu_entry_number: str, dark_value: str
+        self, view_hash: str, menu_entry_number: str, toggle_dark_value: str
     ) -> str:
-        query_values = {_SCREENSHOT_DARK_URL_PARAM: dark_value}
+        query_values = {
+            _SCREENSHOT_TOGGLE_DARK_URL_PARAM: toggle_dark_value,
+            _SCREENSHOT_LABEL_URL_PARAM: _SCREENSHOT_LABEL_URL_VALUE,
+        }
         if menu_entry_number:
             query_values[_SCREENSHOT_MENU_URL_PARAM] = menu_entry_number
         return "?" + urllib.parse.urlencode(query_values) + view_hash
@@ -678,14 +692,16 @@ class Screenshots:
         page_dir: str,
         view_hash: str,
         menu_entry_number: str,
-        dark_value: str,
+        toggle_dark_value: str,
     ) -> str:
         page = self.browser_path(
             page_dir
             if os.path.isfile(page_dir)
             else os.path.join(page_dir, _ENTRY_PAGE)
         )
-        address = self.page_address(view_hash, menu_entry_number, dark_value)
+        address = self.page_address(
+            view_hash, menu_entry_number, toggle_dark_value
+        )
         if self.windows_browser_is():
             # A share path (//host/dir) names the host, a drive needs a slash.
             slashed = page.replace("\\", "/")
@@ -788,7 +804,7 @@ class Screenshots:
         page_dir: str,
         view_hash: str,
         menu_entry_number: str,
-        dark_value: str,
+        toggle_dark_value: str,
         width_px: int,
         height_px: int,
     ) -> None:
@@ -811,7 +827,7 @@ class Screenshots:
                 f"--screenshot={self.browser_path(out_path)}",
                 f"--virtual-time-budget={_SCREENSHOT_RENDER_BUDGET_MS}",
                 self.page_url(
-                    page_dir, view_hash, menu_entry_number, dark_value
+                    page_dir, view_hash, menu_entry_number, toggle_dark_value
                 ),
             ],
             capture_output=True,
@@ -831,7 +847,7 @@ class Screenshots:
         size_name: str,
         prefix: str,
         view: ScreenshotSet,
-        dark_value: str,
+        toggle_dark_value: str,
     ) -> str:
         return _SHOT_NAME_SEPARATOR.join(
             name_part
@@ -841,7 +857,7 @@ class Screenshots:
                 view.view_name,
                 view.subview_name,
                 prefix.rstrip("_"),
-                _SHOT_MODE_NAME_PARTS[dark_value],
+                _SHOT_MODE_NAME_PARTS[toggle_dark_value],
             )
             if name_part
         )
@@ -850,7 +866,11 @@ class Screenshots:
     def shot_names(self, prefix: str) -> list[str]:
         return [
             self.shot_name(
-                view_index, variant.size_name, prefix, view, variant.dark_value
+                view_index,
+                variant.size_name,
+                prefix,
+                view,
+                variant.toggle_dark_value,
             )
             for view_index, view in self.report_views
             for variant in view.shot_variants()
@@ -866,14 +886,18 @@ class Screenshots:
         shot_variants = view.shot_variants()
         for variant in shot_variants:
             shot = self.shot_name(
-                view_index, variant.size_name, prefix, view, variant.dark_value
+                view_index,
+                variant.size_name,
+                prefix,
+                view,
+                variant.toggle_dark_value,
             )
             self.shoot_one(
                 shot,
                 page_dir,
                 view.view_hash,
                 view.menu_entry_number,
-                variant.dark_value,
+                variant.toggle_dark_value,
                 variant.width_px,
                 variant.height_px,
             )

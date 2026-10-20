@@ -5,8 +5,6 @@
 window.try_catch_handler_(function () {
   "use strict";
 
-  const DARK_MODE_QUERY_KEY_NAME = settings_("DARK_MODE_QUERY_KEY_NAME");
-  const DARK_MODE_QUERY_VALUES = settings_("DARK_MODE_QUERY_VALUES");
   const FLAME_GRAPH_VIEW_ENTRY = settings_("FLAME_GRAPH_VIEW_ENTRY");
   const SCREENSHOT_MENU_KEY_NUMBER = settings_("SCREENSHOT_MENU_KEY_NUMBER");
   const SETTINGS_DEBUG_ENABLED = settings_("SETTINGS_DEBUG_ENABLED");
@@ -256,28 +254,6 @@ window.try_catch_handler_(function () {
       window.throw_exception_("str_error_internal");
   }
 
-  // Shows the query's dark mode unless the applied settings set the default.
-  function dark_mode_query_apply_() {
-    const query_value = new URLSearchParams(location.search).get(
-      DARK_MODE_QUERY_KEY_NAME,
-    );
-    if (query_value === null) return;
-    if (
-      query_value !== DARK_MODE_QUERY_VALUES.enabled &&
-      query_value !== DARK_MODE_QUERY_VALUES.disabled
-    )
-      window.throw_exception_("str_error_dark_mode_unusable", query_value);
-    if (
-      !Object.hasOwn(
-        window.settings_applied_values_(),
-        "DARK_MODE_ENABLED_DEFAULT",
-      )
-    )
-      window.report_ui_.dark_mode_show_(
-        query_value === DARK_MODE_QUERY_VALUES.enabled,
-      );
-  }
-
   function activate() {
     if (
       !SETTINGS_LOAD_LOG_HISTORY_LINE_CHOICES.includes(
@@ -293,7 +269,6 @@ window.try_catch_handler_(function () {
       SETTINGS_LOAD_LOG_HISTORY_MAX_LINES,
     );
     load_log_history();
-    dark_mode_query_apply_();
     window.addEventListener(
       "hashchange",
       window.try_catch_handler_(view_show),

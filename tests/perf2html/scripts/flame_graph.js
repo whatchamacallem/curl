@@ -8,9 +8,6 @@ window.try_catch_handler_(function () {
   const FLAME_GRAPH_COLOR_SCHEME_KEY_NAME = settings_(
     "FLAME_GRAPH_COLOR_SCHEME_KEY_NAME",
   );
-  const FLAME_GRAPH_COLOR_SCHEME_VALUES = settings_(
-    "FLAME_GRAPH_COLOR_SCHEME_VALUES",
-  );
   const FLAME_GRAPH_LOCAL_PROFILE_URL_PREFIX = settings_(
     "FLAME_GRAPH_LOCAL_PROFILE_URL_PREFIX",
   );
@@ -31,23 +28,6 @@ window.try_catch_handler_(function () {
   const _FORWARDED_ADDRESS = window.report_ui_.address.of_hash(location.hash);
   const _profile_script = document.createElement("script");
 
-  // Returns the scheme speedscope reads at start for the dark mode shown.
-  function color_scheme_of_dark_mode() {
-    return window.report_ui_.dark_mode_enabled_now_()
-      ? FLAME_GRAPH_COLOR_SCHEME_VALUES.enabled
-      : FLAME_GRAPH_COLOR_SCHEME_VALUES.disabled;
-  }
-  // Hands the shown dark mode to speedscope, reloading when it differs.
-  function color_scheme_hand_over() {
-    const view_storage = window.report_ui_.view_storage;
-    const scheme = color_scheme_of_dark_mode();
-    if (view_storage.text_read(FLAME_GRAPH_COLOR_SCHEME_KEY_NAME) === scheme)
-      return;
-    view_storage.text_write(FLAME_GRAPH_COLOR_SCHEME_KEY_NAME, scheme);
-    // An address applying settings stores nothing, so no reload follows.
-    if (view_storage.text_read(FLAME_GRAPH_COLOR_SCHEME_KEY_NAME) === scheme)
-      location.reload();
-  }
   function profile_hand_over() {
     const filed_profiles = window[FLAME_GRAPH_PROFILE_GLOBAL_NAME];
     if (!filed_profiles || !filed_profiles[_FORWARDED_ADDRESS.test])
@@ -80,13 +60,16 @@ window.try_catch_handler_(function () {
     FLAME_GRAPH_LOCAL_PROFILE_URL_PREFIX + _FORWARDED_ADDRESS.localProfilePath,
   );
   document.title = window.ui_strings_.text("str_flame_graph_page_title");
+  // Keeps speedscope on its system scheme, which the frame's scheme sets.
+  window.report_ui_.view_storage.value_write(
+    FLAME_GRAPH_COLOR_SCHEME_KEY_NAME,
+    null,
+  );
   window.addEventListener(
     "hashchange",
     window.try_catch_handler_(() => location.reload()),
   );
   window.report_ui_.view_activate({
-    dark_mode_apply: color_scheme_hand_over,
-    dark_mode_arrive: color_scheme_hand_over,
     forwards_input: false,
     recenter: () => location.reload(),
   });

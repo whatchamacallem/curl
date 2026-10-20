@@ -460,7 +460,14 @@ report_begin() {
   mkdir -p "$dir" "$dir/$REPORT_SCRIPTS_DIR_NAME" "$REPORT_ARTIFACTS_DIR"
   RUN_LOG="$log_file"
   echo "$opening_line" >"$RUN_LOG"
-  cp README.md "$dir/README.md"
+  local markdown="$PERF2HTML_DIR_/$README_MARKDOWN_NAME"
+  local html="$PERF2HTML_DIR_/$README_HTML_BUILD_PATH"
+  cp "$markdown" "$dir/$README_MARKDOWN_NAME"
+  README_HTML_FLAGS=()
+  # The HTML is copied only when built from the README as it stands now.
+  [ "$html" -nt "$markdown" ] || return 0
+  cp "$html" "$dir/$README_HTML_NAME"
+  README_HTML_FLAGS=(--readme-html)
 }
 
 report_delete() {

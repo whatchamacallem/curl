@@ -3,6 +3,12 @@
 `perf2html` is a collection of scripts that profile `perf` and generate html
 reports about the results.
 
+- [Using A Report](#using-a-report)
+- [Running the Generator Scripts](#running-the-generator-scripts)
+- [Callgrind Counters](#callgrind-counters)
+- [Reading A Diff Report](#reading-a-diff-report)
+- [Flame Graph (speedscope)](#flame-graph-speedscope)
+
 ## Using A Report
 
 The main menu can be operated with the keyboard using the numbers each button

@@ -63,8 +63,8 @@ window.ui_strings_ = (function () {
     str_counter_llm: "last level cache misses, all",
     str_debug_tip_none: "(none)",
     str_debug_tip_text: "<{tag}> class={class}\nid={id}\nfg={fg}\nbg={bg}",
-    str_error_dark_mode_unusable:
-      "the dark mode choice came out as {0}, naming neither state",
+    str_error_dark_mode_toggle_unusable:
+      "the dark mode toggle came out as {0}, naming neither choice",
     str_error_hash_file_missing: "url names line {0} but no file",
     str_error_hash_file_unknown:
       "url encodes a file this report never profiled: {0}",
@@ -95,6 +95,8 @@ window.ui_strings_ = (function () {
     str_error_internal: "internal error: halted and caught fire",
     str_error_report_incomplete:
       "report incomplete, scripts/debug.js not written.",
+    str_error_screenshot_label_query_unusable:
+      "the {0} query value came out as {1}, expected {2}",
     str_error_setting_choice_unknown:
       "setting {0} names a choice this report does not offer: {1}",
     str_error_setting_unknown: "no such setting: {0}",

@@ -194,6 +194,7 @@ pre {
 
 /* A table: each column as wide as its text or a drag, titles in view. */
 table.table- {
+  position: relative;
   border-collapse: collapse;
 }
 .table- th,
@@ -213,6 +214,18 @@ table.table- {
 }
 tr.row-link- {
   cursor: pointer;
+}
+/* A hovered row a click acts on anchors the frame its table draws over it. */
+.table- > tbody > :is(tr.row-link-, tr.clickable-):hover {
+  anchor-name: --table-hover-row-;
+}
+table.table-:has(> tbody > :is(tr.row-link-, tr.clickable-):hover)::before {
+  content: "";
+  position: absolute;
+  position-anchor: --table-hover-row-;
+  top: anchor(top);
+  pointer-events: none;
+  border-style: solid;
 }
 
 /* A link or button is one line high, its text set on the box bottom. */
@@ -250,10 +263,13 @@ tr.row-link- {
   font-size: var(--debug-tip-font-size-);
   border: var(--debug-tip-border-width-) solid;
 }
-.screenshot-label- {
+.screenshot- {
   position: fixed;
   left: 0;
   bottom: 0;
-  z-index: var(--screenshot-label-z-index-);
+  z-index: var(--screenshot-z-index-);
   user-select: none;
+  max-width: 100%;
+  overflow: hidden;
+  white-space: pre;
 }

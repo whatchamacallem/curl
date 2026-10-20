@@ -283,7 +283,6 @@ window.try_catch_handler_(function () {
   }
 
   window.report_ui_.view_activate({
-    dark_mode_apply: null,
     forwards_input: true,
     recenter: page_top_show,
     relay_handler,

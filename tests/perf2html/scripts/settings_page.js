@@ -338,7 +338,6 @@ window.try_catch_handler_(function () {
   );
   document.title = window.ui_strings_.text("str_view_settings");
   window.report_ui_.view_activate({
-    dark_mode_apply: null,
     forwards_input: false,
     load_log_show,
     recenter: address_setting_show,

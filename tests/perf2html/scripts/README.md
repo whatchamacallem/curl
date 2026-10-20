@@ -27,6 +27,7 @@ report generators. Start by running the tests and checking the results.
 - [Heat Map](#heat-map)
 - [Menu Strip](#menu-strip)
 - [Overview Page](#overview-page)
+- [README Page](#readme-page)
 - [Settings Files](#settings-files)
 - [Test Harness](#test-harness)
 - [Theme Library](#theme-library)
@@ -57,15 +58,15 @@ report generators. Start by running the tests and checking the results.
   scroll to.
 - `localProfilePath`: Hash key, flame graph view only, that is speedscope's own
   key naming the profile to load.
-- `screenshot`: Query key whose value is shown as a label on the page.
-- `screenshot-menu`: Query key, a menu entry number, that opens or focuses that
-  entry after each menu render.
-- `screenshot-mode`: Query key, `1` dark or `0` light, that sets the mode a
-  screenshot is shot in.
+- `screenshot=1`:  Shows the page address in a corner label, without the  
+  two screenshot keys.
+- `screenshot-menu`: Query key, focuses that number menu button.
 - `setting`: Hash key, settings view only, that focuses a setting.
-- `setting-val`: Hash key, settings view only, that carries the base64 JSON of
-  the new value for focused `setting`, applied on load.
+- `setting-values`: Hash key that carries the base64 JSON object of the setting
+  values to apply, loading the top page again under `debug`.
 - `test`: Hash key that names the test shown, absent when no test is selected.
+- `toggle-dark`: Query key, `0` or `1`, that resets the browser preferences as
+  the top page loads, `1` then toggling the dark mode as the dark button does.
 - `view`: Hash key, one of `call-graph`, `callers`, `heat-map`, `flame-graph`
   or `settings`.
 
@@ -84,7 +85,8 @@ preferences are reset at startup.
 - `heatmap.sort`: The heat map sort order, `heat` or `name`.
 - `log.display_length`: The load log line count the settings view shows.
 - `perf2html.version`: The `STORAGE_VERSION` the other keys were written under.
-- `speedscope-color-scheme`: Speedscope's scheme, plain text `DARK` or `LIGHT`.
+- `speedscope-color-scheme`: Speedscope's scheme, `null` so that speedscope
+  follows the color scheme its frame takes from the dark mode shown.
 - `view.calls_column`: Whether the calls columns are shown, `true` or `false`.
 - `view.counter_columns`: The counter columns shown, never the ranking counter.
 - `view.dark_mode`: The dark mode chosen, `enabled` or `disabled`.
@@ -111,6 +113,8 @@ and raw data archive files.
 - `heat-map/index.html`: The one heat map page for every test.
 - `index.html`: The overview, the top page with the menu, home panel and frame.
 - `MANIFEST.txt`: The version line, then the `LABEL=VALUE` rows, written last.
+- `README.html`: The user contract as HTML, copied when `build/README.html` is
+  newer than `README.md`, which the help link then opens.
 - `README.md`: A copy of the user contract.
 - `scripts/source_database.js`: The report's files and functions, no counter.
 - `settings/index.html`: The settings view page.
@@ -276,14 +280,19 @@ A diff report's run keeps these.
 | `overview.js`     | Fills the home panel's headings and raw data link,   |
 |                   | then draws its tables from the rows the page holds.  |
 
+## README Page
+
+| File                   | Purpose                                          |
+| ---------------------- | ------------------------------------------------ |
+| `build_readme_page.py` | Uses `cmark-gfm`, unless the page is newer than  |
+|                        | every file it is built from.                     |
+| `readme_page.html`     | Templates the README page.                       |
+
 ## Settings Files
 
 | File                 | Purpose                                              |
 | -------------------- | ---------------------------------------------------- |
-| `settings.js`        | Templates the settings every page reads, the top     |
-|                      | page installing them, a framed page taking them      |
-|                      | relayed, then writes every root value a stylesheet   |
-|                      | reads.                                               |
+| `settings.js`        | Written from Python.                                 |
 | `settings.py`        | Holds every PY and JS setting with the reader and    |
 |                      | writer that load and ship them.                      |
 | `settings.sh`        | Holds every shell setting, read by the shell scripts |
@@ -302,8 +311,8 @@ A diff report's run keeps these.
 | `test_error_handling.sh`    | Proves the cached and regenerated runs, then |
 |                             | checks the exit code of each failure mode.   |
 | `test_expected_behavior.sh` | Formats, lints and scans the sources, runs   |
-|                             | the batch, then checks the reports and takes |
-|                             | screenshots.                                 |
+|                             | the batch, checks the reports, takes         |
+|                             | screenshots, then builds `README.html`.      |
 | `test_report.py`            | Checks the pages, manifest, checksum, heat   |
 |                             | map, flame graph and timer artifacts of one  |
 |                             | report.                                      |

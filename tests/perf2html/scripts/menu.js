@@ -7,6 +7,12 @@ window.try_catch_handler_(function () {
 
   const CALL_GRAPH_VIEW_KEY = settings_("CALL_GRAPH_VIEW_KEY");
   const CALLERS_VIEW_KEY = settings_("CALLERS_VIEW_KEY");
+  const DARK_MODE_TOGGLE_QUERY_KEY_NAME = settings_(
+    "DARK_MODE_TOGGLE_QUERY_KEY_NAME",
+  );
+  const DARK_MODE_TOGGLE_QUERY_VALUES = settings_(
+    "DARK_MODE_TOGGLE_QUERY_VALUES",
+  );
   const FLAME_GRAPH_VIEW_ENTRY = settings_("FLAME_GRAPH_VIEW_ENTRY");
   const HEAT_MAP_VIEW_ENTRY = settings_("HEAT_MAP_VIEW_ENTRY");
   const MENU_SCALE_KEY_STEPS = settings_("MENU_SCALE_KEY_STEPS");
@@ -190,10 +196,11 @@ window.try_catch_handler_(function () {
     window.report_ui_.dark_mode_set_(
       !window.report_ui_.dark_mode_enabled_now_(),
     );
-    window.report_frame_.view_post("dark_mode_apply");
+    window.report_frame_.view_post("dark_mode_show");
     menu_render();
   }
-  function preferences_reset() {
+  // Resets every browser preference to its default, as the reset entry does.
+  function user_preferences_reset() {
     window.report_ui_.view_storage.preferences_clear();
     window.report_ui_.design_scale_stop_set(null);
     window.report_ui_.dark_mode_set_(null);
@@ -201,7 +208,28 @@ window.try_catch_handler_(function () {
     window.report_frame_.load_log_history();
     window.report_frame_.view_post("layout_reset");
     menu_render();
+  }
+  function preferences_reset() {
+    user_preferences_reset();
     window.report_frame_.settings_debug_clear();
+  }
+  // Resets the preferences when the toggle query is given, toggling on 1.
+  function dark_mode_toggle_query_apply() {
+    const query_value = new URLSearchParams(location.search).get(
+      DARK_MODE_TOGGLE_QUERY_KEY_NAME,
+    );
+    if (query_value === null) return;
+    if (
+      query_value !== DARK_MODE_TOGGLE_QUERY_VALUES.enabled &&
+      query_value !== DARK_MODE_TOGGLE_QUERY_VALUES.disabled
+    )
+      window.throw_exception_(
+        "str_error_dark_mode_toggle_unusable",
+        query_value,
+      );
+    user_preferences_reset();
+    if (query_value === DARK_MODE_TOGGLE_QUERY_VALUES.enabled)
+      dark_mode_toggle();
   }
 
   function choice_label(choices, choice_value) {
@@ -600,4 +628,5 @@ window.try_catch_handler_(function () {
 
   activate();
   window.report_frame_.activate();
+  dark_mode_toggle_query_apply();
 })();

@@ -30,6 +30,7 @@ ASSET_TEMPLATE_FLAME_GRAPH_PAGE_NAME = "flame_graph.html"
 ASSET_TEMPLATE_HEAT_MAP_MAIN_NAME = "heat_map_main.html"
 ASSET_TEMPLATE_HEAT_MAP_PAGE_NAME = "heat_map.html"
 ASSET_TEMPLATE_OVERVIEW_PAGE_NAME = "overview.html"
+ASSET_TEMPLATE_README_PAGE_NAME = "readme_page.html"
 ASSET_TEMPLATE_SETTINGS_PAGE_NAME = "settings_page.html"
 ASSET_THEME_SCRIPT_NAME = "theme.js"
 ASSET_THEME_STYLESHEET_NAME = "theme.css"
@@ -59,8 +60,11 @@ DARK_MODE_ATTRIBUTE_NAME = "data-dark-mode-"
 DARK_MODE_DISABLED_VALUE = "disabled"
 DARK_MODE_ENABLED_DEFAULT = True
 DARK_MODE_ENABLED_VALUE = "enabled"
-DARK_MODE_QUERY_KEY_NAME = "screenshot-mode"
-DARK_MODE_QUERY_VALUES: dict[str, str] = {"disabled": "0", "enabled": "1"}
+DARK_MODE_TOGGLE_QUERY_KEY_NAME = "toggle-dark"
+DARK_MODE_TOGGLE_QUERY_VALUES: dict[str, str] = {
+    "disabled": "0",
+    "enabled": "1",
+}
 
 DEBUG_TIP_IDLE_DELAY_MS = 2000
 
@@ -84,10 +88,6 @@ DERIVED_COUNTER_TERMS: dict[str, dict[str, int]] = {
 DRAG_DIRECTION_THRESHOLD_PX = 5
 
 FLAME_GRAPH_COLOR_SCHEME_KEY_NAME = "speedscope-color-scheme"
-FLAME_GRAPH_COLOR_SCHEME_VALUES: dict[str, str] = {
-    "disabled": "LIGHT",
-    "enabled": "DARK",
-}
 FLAME_GRAPH_EXPORTER_NAME = "tests/perf2html/scripts/trace_to_speedscope.py"
 FLAME_GRAPH_LOCAL_PROFILE_PATH = "profile"
 FLAME_GRAPH_LOCAL_PROFILE_URL_PREFIX = "file:///"
@@ -144,6 +144,8 @@ NUMBER_LARGEST_PRINTED_MULTIPLE_TIMES = 999.99
 
 RANKING_COUNTER_NAME = "CEst"
 
+SCREENSHOT_LABEL_QUERY_KEY_NAME = "screenshot"
+SCREENSHOT_LABEL_QUERY_VALUE = "1"
 SCREENSHOT_LABEL_TITLE_TEXT = "click to copy"
 SCREENSHOT_MENU_KEY_NUMBER = "screenshot-menu"
 
@@ -184,48 +186,51 @@ STORAGE_VERSION = "perf2html v1"
 STORAGE_VERSION_KEY = "perf2html.version"
 
 STYLE_COLOR_DARK_MODE: dict[str, list[str]] = {
-    "#1AB6FF": [
+    "#effdff": [
         "dark-mode-menu-normal-fg-",
+        "dark-mode-menu-focus-fg-",
         "dark-mode-menu-normal-outline-",
-        "dark-mode-page-link-fg-",
     ],
-    "#0E4F6E": ["dark-mode-menu-normal-bg-", "dark-mode-status-bar-bg-"],
-    "#F5F6FA": [
+    "#20354a": [
+        "dark-mode-menu-normal-bg-",
+        "dark-mode-status-bar-bg-",
+    ],
+    "#295987": [
         "dark-mode-menu-focus-bg-",
-        "dark-mode-page-emphasis-fg-",
         "dark-mode-page-fg-",
         "dark-mode-status-bar-fg-",
+        "dark-mode-page-emphasis-bg-",
     ],
-    "#DCDDE1": ["dark-mode-page-dim-fg-"],
-    "#273C75": ["dark-mode-page-emphasis-bg-"],
-    "#192A56": ["dark-mode-menu-focus-fg-", "dark-mode-panel-bg-"],
-    "#2F3640": ["dark-mode-page-bg-"],
-    "#FFFFFF": ["dark-mode-debug-tip-fg-", "dark-mode-screenshot-label-fg-"],
+    "#0e171e": [
+        "dark-mode-page-bg-",
+        "dark-mode-page-emphasis-fg-",
+    ],
+    "#FFFFFF": ["dark-mode-debug-tip-fg-", "dark-mode-screenshot-fg-"],
     "#000000": [
         "dark-mode-debug-tip-bg-",
-        "dark-mode-debug-tip-border-",
-        "dark-mode-screenshot-label-bg-",
+        "dark-mode-screenshot-bg-",
     ],
+    "#00ff00": ["dark-mode-panel-bg-"],
+    "var(--page-line-width-)": ["dark-mode-menu-normal-outline-width-"],
 }
 STYLE_COLOR_DARK_MODE_ROLE_PREFIX = "dark-mode-"
 
 STYLE_COLOR_LIGHT_MODE: dict[str, list[str]] = {
     "#000000": [
         "light-mode-debug-tip-bg-",
-        "light-mode-debug-tip-border-",
         "light-mode-menu-focus-bg-",
         "light-mode-menu-normal-fg-",
         "light-mode-menu-normal-outline-",
         "light-mode-page-emphasis-bg-",
         "light-mode-page-fg-",
-        "light-mode-screenshot-label-bg-",
+        "light-mode-screenshot-bg-",
     ],
     "#FFFFFF": [
         "light-mode-debug-tip-fg-",
         "light-mode-menu-focus-fg-",
         "light-mode-page-emphasis-fg-",
         "light-mode-page-bg-",
-        "light-mode-screenshot-label-fg-",
+        "light-mode-screenshot-fg-",
         "light-mode-status-bar-fg-",
     ],
     "#AAAAAA": [
@@ -234,6 +239,7 @@ STYLE_COLOR_LIGHT_MODE: dict[str, list[str]] = {
     "#00AAAA": [
         "light-mode-status-bar-bg-",
     ],
+    "var(--page-line-width-)": ["light-mode-menu-normal-outline-width-"],
 }
 STYLE_COLOR_LIGHT_MODE_ROLE_PREFIX = "light-mode-"
 STYLE_DESIGN_COORDINATES_WIDTH_PX = 1920
@@ -283,6 +289,11 @@ STYLE_PAGE_FONT_FAMILY = (
 )
 STYLE_PAGE_FONT_FAMILY_PROPERTY = "--page-font-family-"
 STYLE_PANE_SPLITTER_KEY_STEP_CHARS = 5
+STYLE_README_PAGE_VALUE_ENTRIES: dict[str, str] = {
+    "readme-page-bg-": "#D8C9A3",
+    "readme-page-fg-": "#3A2A14",
+    "readme-page-font-family-": "Arial",
+}
 STYLE_TABLE_CALLERS_COLUMN_MAX_CHARS = 48
 STYLE_TABLE_FUNCTION_NAME_MAX_CHARS = 20
 STYLE_TABLE_LOCATION_COLUMN_MAX_CHARS = 48
@@ -297,6 +308,7 @@ STYLE_VALUE_ENTRIES: dict[str, str] = {
     "heat-map-source-band-height-": "1lh",
     "heat-map-source-table-line-number-cell-callee-marker-text-": '"►"',
     "heat-map-source-ticker-tape-gap-": "1ch",
+    "heat-map-tree-node-hover-z-index-": "1",
     "heat-map-tree-node-padding-right-": "1ch",
     "heat-map-tree-node-share-percent-width-": "10ch",
     "heat-map-tree-width-": "39ch",
@@ -318,7 +330,7 @@ STYLE_VALUE_ENTRIES: dict[str, str] = {
     "page-table-title-z-index-": "1",
     "page-text-scrollbar-horizontal-height-": "1lh",
     "page-text-scrollbar-vertical-width-": "1ch",
-    "screenshot-label-z-index-": "3",
+    "screenshot-z-index-": "3",
 }
 
 TABLE_MARKDOWN_COLUMN_NARROWEST_CHARS = 3

@@ -32,6 +32,16 @@
 .heat-map-tree-node-.cold- .heat-map-tree-node-share-percent- {
   visibility: hidden;
 }
+/* A hovered node a click acts on, lifted so its frame lies over the next. */
+.heat-map-tree-node-:not(.cold-):hover {
+  position: relative;
+  z-index: var(--heat-map-tree-node-hover-z-index-);
+}
+.heat-map-tree-node-:not(.cold-):hover::before {
+  content: "";
+  position: absolute;
+  pointer-events: none;
+}
 .heat-map-tree-node-child-group- {
   display: none;
 }
@@ -127,7 +137,7 @@ tr.clickable- {
   position: absolute;
   left: 0;
   right: 0;
-  border: var(--page-line-width-) solid;
+  border-style: solid;
   cursor: grab;
 }
 #heat-map-minimap-viewport-.drag- {

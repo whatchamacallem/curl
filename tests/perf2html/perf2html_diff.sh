@@ -247,7 +247,8 @@ pages_write() {
   page_tool_run build_report.py callers "${_flags[@]}"
   page_tool_run build_report.py call-graph "${_flags[@]}"
   page_tool_run callgrind_to_heatmap.py page "--report=$_OUT_DIR"
-  page_tool_run build_report.py overview "${_flags[@]}"
+  page_tool_run build_report.py overview "${_flags[@]}" \
+    "${README_HTML_FLAGS[@]}"
   log_verbose "$(printf '%-13s%s' overview "$_OUT_DIR/$OVERVIEW_PAGE_PATH")"
   report_finish "$_OUT_DIR" "$REPORT_MANIFEST_VERSION_DIFF" \
     "baseline=$(input_path_display "$_BASE_DIR")" \

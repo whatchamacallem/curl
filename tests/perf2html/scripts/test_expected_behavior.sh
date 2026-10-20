@@ -48,6 +48,7 @@ _WHITELIST_FILE=test_whitelist.txt
 . ./test_utility.sh
 
 _BATCH_SCRIPT_NAME=perf2html_batch.sh
+_README_PAGE_SCRIPT_NAME=build_readme_page.py
 _ROWS_FILE_NAME=perf2html.txt
 _SCREENSHOT_DIFF_DIR="$_DIR_PERF2HTML/screenshots-diff"
 _SCREENSHOT_GOLD_DIR="$_DIR_PERF2HTML/screenshots-gold"
@@ -68,10 +69,11 @@ tools_resolve() {
   _CLANG_FORMAT="$(tool_find clang-format)" || _missing+=(clang-format)
   _PRETTIER="$(tool_find prettier)" || _missing+=(prettier)
   _PYRIGHT="$(tool_find pyright)" || _missing+=(pyright)
+  _CMARK_GFM="$(tool_find cmark-gfm)" || _missing+=(cmark-gfm)
   [ "${#_missing[@]}" = 0 ] || error_exit 127 \
     "error: ${#_missing[@]} tool(s) missing, so nothing is verified:" \
     "${_missing[*]}" \
-    "  sudo apt-get install -y shfmt clang-format" \
+    "  sudo apt-get install -y shfmt clang-format cmark-gfm" \
     "  pip3 install --user --break-system-packages ruff" \
     "  npm install -g prettier pyright"
 }
@@ -269,6 +271,7 @@ report_version() {
 test_expected_report_check_run() {
   local _path _args _flags=()
   mapfile -t _flags < <(verbose_flags)
+  _flags+=("${_README_HTML_FLAGS[@]}")
 
   heading_print test_report.py
   for _path in "${_DEFAULT_REPORTS[@]}"; do
@@ -392,6 +395,27 @@ screenshots_run() {
   else
     log_verbose "screenshots: no $_SCREENSHOT_GOLD_DIR, not compared"
   fi
+}
+
+# Sets `_README_HTML_FLAGS` to what the batch's reports show of the README.
+readme_html_flags_set() {
+  _README_HTML_FLAGS=()
+  if [ "$_DIR_PERF2HTML/$README_HTML_BUILD_PATH" \
+    -nt "$_DIR_PERF2HTML/$README_MARKDOWN_NAME" ]; then
+    _README_HTML_FLAGS=(--readme-html)
+  fi
+}
+
+readme_html_build() {
+  local _converter _flags=()
+  mapfile -t _flags < <(verbose_flags)
+  _converter="$(command -v "$_CMARK_GFM")"
+
+  heading_print "$_README_PAGE_SCRIPT_NAME"
+  subprocess_run python3 "$_SCRIPT_DIR/$_README_PAGE_SCRIPT_NAME" \
+    "${_flags[@]}" "--converter=$_converter" \
+    "--markdown=$_DIR_PERF2HTML/$README_MARKDOWN_NAME" \
+    "--out=$_DIR_PERF2HTML/$README_HTML_BUILD_PATH"
 }
 
 regenerate_refuse() {
@@ -529,10 +553,12 @@ main() {
   long_lines_report
   test_source_scan_run
   lint_run
+  readme_html_flags_set
   batch_run
   test_expected_report_check_run
   test_expected_archive_check_run
   screenshots_run
+  readme_html_build
 }
 
 main "$@"

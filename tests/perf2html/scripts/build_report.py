@@ -26,6 +26,8 @@ _FLAME_GRAPH_VIEW_ENTRY: tuple[str, str] = ("", "")
 _HEAT_MAP_VIEW_ENTRY: tuple[str, str] = ("", "")
 _OVERVIEW_PAGE_PATH: str = ""
 _RANKING_COUNTER_NAME: str = ""
+_README_HTML_NAME: str = ""
+_README_MARKDOWN_NAME: str = ""
 _REPORT_SCRIPTS_DIR_NAME: str = ""
 _SETTINGS_VIEW_ENTRY: tuple[str, str] = ("", "")
 settings.load_into(__name__)
@@ -481,7 +483,9 @@ class BuildReport:
         }
 
     # Writes the diff's overview page, a row of each test's change.
-    def diff_overview(self, args: BuildReport.ReportArgs) -> None:
+    def diff_overview(
+        self, args: BuildReport.ReportArgs, has_readme_html: bool
+    ) -> None:
         artifacts_dir = artifacts.report_artifacts_dir(
             args.artifacts, args.report
         )
@@ -499,6 +503,7 @@ class BuildReport:
             "",
             callgrind.counter_names(counters),
             True,
+            has_readme_html,
         )
 
     def diff_overview_rows(
@@ -630,8 +635,12 @@ class BuildReport:
         test_names: Sequence[str],
         counter_names: Sequence[str],
         is_diff: bool,
+        has_readme_html: bool,
     ) -> str:
-        help_href = theme.href(_OVERVIEW_PAGE_SCRIPTS_DEPTH, "README.md")
+        help_href = theme.href(
+            _OVERVIEW_PAGE_SCRIPTS_DEPTH,
+            _README_HTML_NAME if has_readme_html else _README_MARKDOWN_NAME,
+        )
         names_text = json.dumps(list(test_names), ensure_ascii=False)
         menu_markup = theme.render_element(
             "nav",
@@ -650,7 +659,9 @@ class BuildReport:
         )
 
     # Writes the overview page, a row of each test's timing page.
-    def overview(self, args: BuildReport.ReportArgs) -> None:
+    def overview(
+        self, args: BuildReport.ReportArgs, has_readme_html: bool
+    ) -> None:
         artifacts_dir = artifacts.report_artifacts_dir(
             args.artifacts, args.report
         )
@@ -671,6 +682,7 @@ class BuildReport:
             os.path.basename(raw_data_path),
             callgrind.counter_names(counters),
             False,
+            has_readme_html,
         )
 
     def overview_page(
@@ -683,6 +695,7 @@ class BuildReport:
         raw_data_name: str,
         counter_names: Sequence[str],
         is_diff: bool,
+        has_readme_html: bool,
     ) -> None:
         raw_data_markup = self.raw_data_render(raw_data_name)
         tests_markup = self.table_data_render(
@@ -697,7 +710,9 @@ class BuildReport:
             rows,
         )
         manifest_markup = self.manifest_blocks_render(manifest_blocks)
-        menu_markup = self.menu_render(test_names, counter_names, is_diff)
+        menu_markup = self.menu_render(
+            test_names, counter_names, is_diff, has_readme_html
+        )
         page_content = theme.template_fill(
             _OVERVIEW_PAGE,
             {
@@ -901,6 +916,12 @@ def main() -> None:
         " test's change instead of its native timing, which a diff does"
         " not have",
     )
+    overview_parser.add_argument(
+        "--readme-html",
+        action="store_true",
+        help=f"the report holds {_README_HTML_NAME}, which the help link"
+        f" opens instead of {_README_MARKDOWN_NAME}",
+    )
 
     for report_parser in (
         call_graph_parser,
@@ -959,7 +980,8 @@ def main() -> None:
                 artifacts=namespace.artifacts,
                 report=namespace.report,
                 diff=namespace.diff,
-            )
+            ),
+            namespace.readme_html,
         )
 
 

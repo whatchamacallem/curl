@@ -844,17 +844,12 @@ window.report_ui_ = window.try_catch_handler_(function () {
       if (message_name === "layout_reset") {
         layout_reset();
         dark_mode_show(message_data.dark_mode_enabled);
-        if (view_options.dark_mode_apply) view_options.dark_mode_apply();
         // A reset of the preferences changes the history count shown.
         if (view_options.load_log_show)
           parent_post({ report_ui: "load_log_request" });
-      } else if (message_name === "dark_mode_show") {
+      } else if (message_name === "dark_mode_show")
         dark_mode_show(message_data.dark_mode_enabled);
-        if (view_options.dark_mode_arrive) view_options.dark_mode_arrive();
-      } else if (message_name === "dark_mode_apply") {
-        dark_mode_show(message_data.dark_mode_enabled);
-        if (view_options.dark_mode_apply) view_options.dark_mode_apply();
-      } else if (message_name === "load_log_relay")
+      else if (message_name === "load_log_relay")
         view_options.load_log_show(
           message_data.load_log_entries,
           message_data.load_log_line_count,
@@ -1107,6 +1102,8 @@ window.report_ui_ = window.try_catch_handler_(function () {
     function pulldown_close() {
       if (!is_open) return;
       closed_show();
+      // Every close leaves the cell unfocused, an Escape or a press away too.
+      root_element.blur();
       pulldown_options.on_close();
     }
     function search_text_set(typed_text) {
@@ -2236,17 +2233,6 @@ window.report_ui_ = window.try_catch_handler_(function () {
         storage_sweep();
       } catch (storage_error) {}
     },
-    // Reads and writes plain text, not JSON, for a key an outside app reads.
-    text_read(storage_key) {
-      storage_version_check();
-      if (preferences_are_ignored) return null;
-      return localStorage.getItem(storage_key);
-    },
-    text_write(storage_key, stored_text) {
-      storage_version_check();
-      if (preferences_are_ignored) return;
-      localStorage.setItem(storage_key, stored_text);
-    },
     value_read(storage_key) {
       storage_version_check();
       if (preferences_are_ignored) return null;
@@ -2724,7 +2710,6 @@ window.report_ui_ = window.try_catch_handler_(function () {
     },
     dark_mode_enabled_now_,
     dark_mode_set_,
-    dark_mode_show_: dark_mode_show,
     design_character_width_px: DESIGN_CHARACTER_WIDTH_PX,
     design_px,
     design_scale_last_stop: DESIGN_SCALE_LAST_STOP,

@@ -478,7 +478,8 @@ pages_write() {
   step_run 6 "call graph" page_tool_run build_report.py call-graph \
     "${_flags[@]}"
   step_run 7 "timer artifacts" timer_artifacts_write
-  step_run 8 overview page_tool_run build_report.py overview "${_flags[@]}"
+  step_run 8 overview page_tool_run build_report.py overview "${_flags[@]}" \
+    "${README_HTML_FLAGS[@]}"
   step_run 9 "heat map page" page_tool_run callgrind_to_heatmap.py page \
     "--report=$_OUT_DIR"
   step_run 10 finish report_finish "$_OUT_DIR" \

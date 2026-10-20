@@ -108,8 +108,10 @@ body {
 #overview-raw-data- > a:not(:focus-visible) {
   background: var(--light-mode-menu-normal-bg-);
 }
+/* Sets the view's preferred color scheme, which speedscope follows. */
 #overview-view-frame- {
   background: var(--light-mode-page-bg-);
+  color-scheme: light;
 }
 .page-emphasis- {
   background: var(--light-mode-page-emphasis-bg-);
@@ -144,6 +146,7 @@ body {
   background: var(--light-mode-page-bg-);
 }
 #heat-map-minimap-viewport- {
+  border-width: var(--light-mode-menu-normal-outline-width-);
   border-color: var(--light-mode-menu-normal-outline-);
 }
 .heat-map-source-information-line- {
@@ -171,12 +174,12 @@ tr.heat-map-source-information-box-synthetic-row- > td {
 .debug-tip- {
   background: var(--light-mode-debug-tip-bg-);
   color: var(--light-mode-debug-tip-fg-);
-  border-color: var(--light-mode-debug-tip-border-);
+  border-color: var(--light-mode-debug-tip-bg-);
 }
 
-.screenshot-label- {
-  background: var(--light-mode-screenshot-label-bg-);
-  color: var(--light-mode-screenshot-label-fg-);
+.screenshot- {
+  background: var(--light-mode-screenshot-bg-);
+  color: var(--light-mode-screenshot-fg-);
 }
 
 /* Light mode alone draws lines, each on the top of the slot below its own. */
@@ -211,7 +214,6 @@ tr.heat-map-source-information-box-synthetic-row- > td {
   }
   /* A table's lines: its sides, the titles' top and bottom, its own bottom. */
   table.table- {
-    position: relative;
     overflow-x: clip;
     overflow-clip-margin: border-box;
   }
@@ -239,6 +241,26 @@ tr.heat-map-source-information-box-synthetic-row- > td {
     top: 100%;
     left: calc(-1 * var(--page-line-width-));
     right: calc(-1 * var(--page-line-width-));
+  }
+  /* A hovered row's frame, its sides on the side lines, its bottom below. */
+  table.table-::before {
+    left: calc(
+      anchor(left) - var(--light-mode-menu-normal-outline-width-) / 2
+    );
+    right: calc(
+      anchor(right) - var(--light-mode-menu-normal-outline-width-) / 2
+    );
+    bottom: calc(
+      anchor(bottom) - var(--light-mode-menu-normal-outline-width-)
+    );
+    border-width: var(--light-mode-menu-normal-outline-width-);
+    border-color: var(--light-mode-menu-normal-outline-);
+  }
+  /* A hovered node's frame, drawn the way the selected node's frame is. */
+  .heat-map-tree-node-:not(.cold-):hover::before {
+    inset: 0 var(--light-mode-menu-normal-outline-width-);
+    outline: var(--light-mode-menu-normal-outline-width-) solid
+      var(--light-mode-menu-normal-outline-);
   }
 }
 
