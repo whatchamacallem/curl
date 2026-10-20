@@ -10,7 +10,6 @@ a:focus-visible {
   color: var(--light-mode-menu-focus-fg-);
 }
 .table- th {
-  color: var(--light-mode-page-fg-);
   background: var(--light-mode-menu-normal-bg-);
 }
 .table- > tbody > tr:focus-visible > td,
@@ -32,28 +31,8 @@ a:focus-visible {
 .heat-map-source-information-box- {
   background: var(--light-mode-page-bg-);
 }
-.heat-map-source-information-box-action-bar-separator- {
-  color: var(--light-mode-page-fg-);
-}
-.heat-map-source-information-box-function-name- {
-  color: var(--light-mode-page-fg-);
-}
-.heat-map-source-information-box-heading- {
-  color: var(--light-mode-page-fg-);
-}
-.heat-map-source-information-box-note- {
-  color: var(--light-mode-page-fg-);
-}
 .heat-map-source-information-box- .table- {
   background: var(--light-mode-page-bg-);
-}
-td.heat-map-source-table-self-cell-,
-td.heat-map-source-table-calls-cell-,
-td.heat-map-source-table-secondary-counter-cell- {
-  color: var(--light-mode-page-fg-);
-}
-table.heat-map-source-table- td.heat-map-source-table-line-number-cell- {
-  color: var(--light-mode-page-fg-);
 }
 tr.has-callee- td.heat-map-source-table-line-number-cell-::before {
   color: var(--light-mode-page-fg-);
@@ -64,41 +43,17 @@ table.heat-map-source-table- > tbody > tr:focus-visible > td {
 }
 .heat-map-source-ticker-tape- {
   background: var(--light-mode-page-bg-);
-  color: var(--light-mode-page-fg-);
 }
 .heat-map-source-ticker-tape-entry-:focus-visible {
   background: var(--light-mode-menu-focus-bg-) !important;
   color: var(--light-mode-menu-focus-fg-) !important;
 }
-.heat-map-source-ticker-tape- .heat-map-source-ticker-tape-label- {
-  color: var(--light-mode-page-fg-);
-}
-.heat-map-source-unavailable-note- {
-  color: var(--light-mode-page-fg-);
-}
 .heat-map-tree-node-.selected- {
   background: var(--light-mode-page-bg-);
-  color: var(--light-mode-page-fg-);
 }
 .heat-map-tree-node-:focus-visible {
   background: var(--light-mode-menu-focus-bg-) !important;
   color: var(--light-mode-menu-focus-fg-) !important;
-}
-.heat-map-tree-node- .heat-map-tree-node-caret- {
-  color: var(--light-mode-page-fg-);
-}
-.heat-map-tree-node-.cold- .heat-map-tree-node-name- {
-  color: var(--light-mode-page-fg-);
-}
-.heat-map-tree-node-.more- .heat-map-tree-node-name- {
-  color: var(--light-mode-page-fg-);
-}
-.heat-map-tree-node- .heat-map-tree-node-share-percent- {
-  color: var(--light-mode-page-fg-);
-}
-.heat-map-tree-node-.heat- .heat-map-tree-node-share-percent-,
-.heat-map-tree-node-.heat- .heat-map-tree-node-caret- {
-  color: inherit;
 }
 
 body {
@@ -174,7 +129,6 @@ tr.heat-map-source-information-box-synthetic-row- > td {
 .debug-tip- {
   background: var(--light-mode-debug-tip-bg-);
   color: var(--light-mode-debug-tip-fg-);
-  border-color: var(--light-mode-debug-tip-bg-);
 }
 
 .screenshot- {

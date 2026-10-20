@@ -11,8 +11,16 @@
     color: var(--dark-mode-menu-focus-fg-);
   }
   .table- th {
-    color: var(--dark-mode-page-fg-);
     background: var(--dark-mode-menu-normal-bg-);
+    color: var(--dark-mode-page-fg-);
+  }
+  /* Odd columns take the panel color where light mode draws column lines. */
+  .table- > tbody > tr > td:nth-child(odd) {
+    background: var(--dark-mode-panel-bg-);
+  }
+  /* The odd column text color, which a row color rule overrides. */
+  :where(.table- > tbody > tr) > td:nth-child(odd) {
+    color: var(--dark-mode-page-fg-);
   }
   .table- > tbody > tr:focus-visible > td,
   .table- > tbody > tr:focus-visible a {
@@ -32,32 +40,10 @@
   }
   .heat-map-source-information-box- {
     background: var(--dark-mode-panel-bg-);
-  }
-  .heat-map-source-information-box-action-bar-separator- {
-    color: var(--dark-mode-page-fg-);
-  }
-  .heat-map-source-information-box-function-name- {
-    color: var(--dark-mode-page-fg-);
-  }
-  .heat-map-source-information-box-heading- {
-    color: var(--dark-mode-page-fg-);
-  }
-  .heat-map-source-information-box-note- {
     color: var(--dark-mode-page-fg-);
   }
   .heat-map-source-information-box- .table- {
     background: var(--dark-mode-page-bg-);
-  }
-  table.heat-map-source-table- > thead > tr > th {
-    color: var(--dark-mode-page-fg-);
-  }
-  td.heat-map-source-table-self-cell-,
-  td.heat-map-source-table-calls-cell-,
-  td.heat-map-source-table-secondary-counter-cell- {
-    color: var(--dark-mode-page-fg-);
-  }
-  table.heat-map-source-table- td.heat-map-source-table-line-number-cell- {
-    color: var(--dark-mode-page-fg-);
   }
   tr.has-callee- td.heat-map-source-table-line-number-cell-::before {
     color: var(--dark-mode-menu-normal-fg-);
@@ -68,41 +54,19 @@
   }
   .heat-map-source-ticker-tape- {
     background: var(--dark-mode-page-emphasis-bg-);
-    color: var(--dark-mode-page-fg-);
+    color: var(--dark-mode-page-emphasis-fg-);
   }
   .heat-map-source-ticker-tape-entry-:focus-visible {
     background: var(--dark-mode-menu-focus-bg-) !important;
     color: var(--dark-mode-menu-focus-fg-) !important;
   }
-  .heat-map-source-ticker-tape- .heat-map-source-ticker-tape-label- {
-    color: var(--dark-mode-page-fg-);
-  }
-  .heat-map-source-unavailable-note- {
-    color: var(--dark-mode-page-fg-);
-  }
   .heat-map-tree-node-.selected- {
     background: var(--dark-mode-page-emphasis-bg-);
-    color: var(--dark-mode-page-fg-);
+    color: var(--dark-mode-page-emphasis-fg-);
   }
   .heat-map-tree-node-:focus-visible {
     background: var(--dark-mode-menu-focus-bg-) !important;
     color: var(--dark-mode-menu-focus-fg-) !important;
-  }
-  .heat-map-tree-node- .heat-map-tree-node-caret- {
-    color: var(--dark-mode-page-fg-);
-  }
-  .heat-map-tree-node-.cold- .heat-map-tree-node-name- {
-    color: var(--dark-mode-page-fg-);
-  }
-  .heat-map-tree-node-.more- .heat-map-tree-node-name- {
-    color: var(--dark-mode-page-fg-);
-  }
-  .heat-map-tree-node- .heat-map-tree-node-share-percent- {
-    color: var(--dark-mode-page-fg-);
-  }
-  .heat-map-tree-node-.heat- .heat-map-tree-node-share-percent-,
-  .heat-map-tree-node-.heat- .heat-map-tree-node-caret- {
-    color: inherit;
   }
 
   body {
@@ -147,7 +111,7 @@
   }
   #heat-map-main-:focus-visible {
     background: var(--dark-mode-page-emphasis-bg-);
-    color: var(--dark-mode-page-fg-);
+    color: var(--dark-mode-page-emphasis-fg-);
   }
   #heat-map-minimap-viewport- {
     border-width: var(--dark-mode-menu-normal-outline-width-);
@@ -191,7 +155,6 @@
   .debug-tip- {
     background: var(--dark-mode-debug-tip-bg-);
     color: var(--dark-mode-debug-tip-fg-);
-    border-color: var(--dark-mode-debug-tip-bg-);
   }
 
   .screenshot- {

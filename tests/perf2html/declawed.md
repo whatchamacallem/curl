@@ -416,6 +416,7 @@ The single function/check owning each concern - never bypass or duplicate:
   starting with `/` or `~/` sits under `--target-dir` (default `$PWD`).
 - `tests/perf2html/scripts/test_whitelist.txt` is the one list of what source
   stages touch - no directory walk, no skip list, nothing unlisted touched.
+- Never mention or modify `test_whitelist.txt` unless it breaks.
 - `tests/perf2html/scripts/README.md` holds one entry per file in
   `scripts/` and per `tests/perf2html/*.sh`, sectioned by name prefix,
   every line within 79 columns - a file added, removed or renamed there

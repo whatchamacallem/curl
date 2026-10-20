@@ -58,7 +58,7 @@ report generators. Start by running the tests and checking the results.
   scroll to.
 - `localProfilePath`: Hash key, flame graph view only, that is speedscope's own
   key naming the profile to load.
-- `screenshot=1`:  Shows the page address in a corner label, without the  
+- `screenshot=1`: Shows the page address in a corner label, without the  
   two screenshot keys.
 - `screenshot-menu`: Query key, focuses that number menu button.
 - `setting`: Hash key, settings view only, that focuses a setting.
@@ -282,11 +282,11 @@ A diff report's run keeps these.
 
 ## README Page
 
-| File                   | Purpose                                          |
-| ---------------------- | ------------------------------------------------ |
-| `build_readme_page.py` | Uses `cmark-gfm`, unless the page is newer than  |
-|                        | every file it is built from.                     |
-| `readme_page.html`     | Templates the README page.                       |
+| File                   | Purpose                                         |
+| ---------------------- | ----------------------------------------------- |
+| `build_readme_page.py` | Uses `cmark-gfm`, unless the page is newer than |
+|                        | every file it is built from.                    |
+| `readme_page.html`     | Templates the README page.                      |
 
 ## Settings Files
 

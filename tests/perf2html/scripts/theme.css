@@ -261,7 +261,7 @@ table.table-:has(> tbody > :is(tr.row-link-, tr.clickable-):hover)::before {
   white-space: pre;
   display: none;
   font-size: var(--debug-tip-font-size-);
-  border: var(--debug-tip-border-width-) solid;
+  padding: var(--debug-tip-padding-);
 }
 .screenshot- {
   position: fixed;

@@ -80,14 +80,26 @@ window.report_ui_ = window.try_catch_handler_(function () {
   const STYLE_DESIGN_VIEWPORT_HEIGHT_PROPERTY = settings_(
     "STYLE_DESIGN_VIEWPORT_HEIGHT_PROPERTY",
   );
-  const STYLE_HEAT_CELL_ON_BRIGHT_ABOVE_LUMINANCE_SHARE = settings_(
-    "STYLE_HEAT_CELL_ON_BRIGHT_ABOVE_LUMINANCE_SHARE",
+  const STYLE_HEAT_CELL_CHANNEL_FULL_SCALE = settings_(
+    "STYLE_HEAT_CELL_CHANNEL_FULL_SCALE",
   );
-  const STYLE_HEAT_CELL_ON_BRIGHT_ROLE = settings_(
-    "STYLE_HEAT_CELL_ON_BRIGHT_ROLE",
+  const STYLE_HEAT_CELL_CONTRAST_FLARE = settings_(
+    "STYLE_HEAT_CELL_CONTRAST_FLARE",
   );
-  const STYLE_HEAT_CELL_ON_DARK_ROLE = settings_(
-    "STYLE_HEAT_CELL_ON_DARK_ROLE",
+  const STYLE_HEAT_CELL_LUMINANCE_WEIGHTS = settings_(
+    "STYLE_HEAT_CELL_LUMINANCE_WEIGHTS",
+  );
+  const STYLE_HEAT_CELL_TRANSFER_EXPONENT = settings_(
+    "STYLE_HEAT_CELL_TRANSFER_EXPONENT",
+  );
+  const STYLE_HEAT_CELL_TRANSFER_LINEAR_LIMIT = settings_(
+    "STYLE_HEAT_CELL_TRANSFER_LINEAR_LIMIT",
+  );
+  const STYLE_HEAT_CELL_TRANSFER_LINEAR_SLOPE = settings_(
+    "STYLE_HEAT_CELL_TRANSFER_LINEAR_SLOPE",
+  );
+  const STYLE_HEAT_CELL_TRANSFER_OFFSET = settings_(
+    "STYLE_HEAT_CELL_TRANSFER_OFFSET",
   );
   const STYLE_HEAT_COLOR_FULL_SCALE_PERCENT = settings_(
     "STYLE_HEAT_COLOR_FULL_SCALE_PERCENT",
@@ -151,6 +163,12 @@ window.report_ui_ = window.try_catch_handler_(function () {
   const DESIGN_SCALE_LAST_STOP = STYLE_DESIGN_SCALE_STOP_COUNT - 1;
   const DESIGN_SCALE_LOWER_TRAVEL_SHARE =
     STYLE_DESIGN_SCALE_DEFAULT_STOP / DESIGN_SCALE_LAST_STOP;
+  const HEAT_CELL_TEXT_CHANNEL_CHOICES = [
+    0,
+    STYLE_HEAT_CELL_CHANNEL_FULL_SCALE,
+  ].map((channel_value) =>
+    STYLE_HEAT_CELL_LUMINANCE_WEIGHTS.map(() => channel_value),
+  );
   const MENU_BUTTON_KIND_NAMES = ["action", "link", "pulldown"];
   const PULLDOWN_COMMAND_KEY_NAMES = Object.values(MENU_PULLDOWN_KEY_NAMES);
   const PULLDOWN_HIGHLIGHTED_ENTRY_CLASS = "highlighted-entry-";
@@ -252,6 +270,29 @@ window.report_ui_ = window.try_catch_handler_(function () {
       curve_name === "log" ? Math.log10(1 + 9 * fraction) : fraction;
     return is_diff && percent < 0 ? -curved : curved;
   }
+  // Returns the WCAG relative luminance of a color's channels.
+  function relative_luminance(channels) {
+    return channels.reduce((luminance, channel_value, channel) => {
+      const encoded = channel_value / STYLE_HEAT_CELL_CHANNEL_FULL_SCALE;
+      const linear =
+        encoded <= STYLE_HEAT_CELL_TRANSFER_LINEAR_LIMIT
+          ? encoded / STYLE_HEAT_CELL_TRANSFER_LINEAR_SLOPE
+          : ((encoded + STYLE_HEAT_CELL_TRANSFER_OFFSET) /
+              (1 + STYLE_HEAT_CELL_TRANSFER_OFFSET)) **
+            STYLE_HEAT_CELL_TRANSFER_EXPONENT;
+      return luminance + STYLE_HEAT_CELL_LUMINANCE_WEIGHTS[channel] * linear;
+    }, 0);
+  }
+  // Returns the WCAG contrast ratio of two colors, lighter over darker.
+  function contrast_ratio(first_channels, second_channels) {
+    const [darker, lighter] = [first_channels, second_channels]
+      .map(
+        (channels) =>
+          relative_luminance(channels) + STYLE_HEAT_CELL_CONTRAST_FLARE,
+      )
+      .sort((left, right) => left - right);
+    return lighter / darker;
+  }
   // Writes the heat colors of a cell by its share, the one heat color door.
   function heat_cell_style(percent, curve_name, is_diff) {
     const heat_value = heat_of_share(percent, curve_name, is_diff);
@@ -259,18 +300,17 @@ window.report_ui_ = window.try_catch_handler_(function () {
     const mixed_channels = ramp_channels_at(
       is_diff ? (heat_value + 1) * 0.5 : heat_value,
     );
-    const luminance =
-      (0.2126 * mixed_channels[0] +
-        0.7152 * mixed_channels[1] +
-        0.0722 * mixed_channels[2]) /
-      255;
-    const foreground_role =
-      luminance > STYLE_HEAT_CELL_ON_BRIGHT_ABOVE_LUMINANCE_SHARE
-        ? STYLE_HEAT_CELL_ON_BRIGHT_ROLE
-        : STYLE_HEAT_CELL_ON_DARK_ROLE;
+    // The text takes black or white, whichever contrasts more with the cell.
+    const text_channels = HEAT_CELL_TEXT_CHANNEL_CHOICES.reduce(
+      (best_channels, channels) =>
+        contrast_ratio(channels, mixed_channels) >
+        contrast_ratio(best_channels, mixed_channels)
+          ? channels
+          : best_channels,
+    );
     return (
       `background:rgb(${mixed_channels.join(",")});` +
-      `color:var(--${foreground_role})`
+      `color:rgb(${text_channels.join(",")})`
     );
   }
 
