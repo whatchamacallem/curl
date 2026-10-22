@@ -189,13 +189,10 @@ window.try_catch_handler_(function () {
   }
   // Resets the preferences on the toggle query, then shows the mode it opens.
   function dark_mode_toggle_query_apply() {
-    if (window.report_dark_mode_.toggle_query_value() === null) return;
+    const toggle_value = window.report_dark_mode_.toggle_query_value();
+    if (toggle_value === null) return;
     user_preferences_reset();
-    if (
-      window.report_dark_mode_.opening_enabled() !==
-      window.report_ui_.dark_mode_enabled_now_()
-    )
-      dark_mode_toggle();
+    if (toggle_value) dark_mode_toggle();
   }
 
   function choice_label(choices, choice_value) {

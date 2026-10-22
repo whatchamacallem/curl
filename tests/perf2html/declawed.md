@@ -3,11 +3,9 @@
 ## Project Rules
 
 The Project Rules section is set by the project maintainer and must not be
-modified without request. The Lookup Accelerator is maintained by the agents
-using declawed.md and not the project maintainer. The maintainer is the final
-authority and decides correctness and requirements, however discrepancies are
-worth fixing. Do not use the AskUserQuestion tool and use numbered number
-sub-lists per ISO 2145.
+modified without request. The maintainer is the final authority and decides
+correctness and requirements, however discrepancies are worth fixing. Do not
+use the AskUserQuestion tool and use numbered sub-lists per ISO 2145.
 
 Maintain an engineering log for each session in `tests/perf2html/tmp`
 following this format:
@@ -34,6 +32,11 @@ postmortem reference to a numbered item that is not itself in the postmortem.
 - No fallbacks: broke is broke. Never swallow an error, provide a default, or
   have a "just in case" branch for a case that can't happen - throw so it
   fails loud with a call stack or exit with the right Unix error code.
+- The dark mode is the one exception to fail fast validation: every dark mode
+  value, a setting, a query or a stored preference, is any truthy or falsy
+  value, and every reader consults its truthiness alone. `frame.js` writes
+  the frame query as `1` or `0` and the stored preference is cast to `1` or
+  `0`, a query's text read through `Number`.
 - Any error is a hard error, reported immediately, first failure only - no
   script collects failures, tallies of failures.
 - When asked to update this document then further confirmation should not be
@@ -103,15 +106,14 @@ postmortem reference to a numbered item that is not itself in the postmortem.
   making it an exception to a lot of rules. Try not to mention it.
 - Consider `speedscope` externally maintained and ignore it when applying the
   `perf2html` maintainers guidelines.
-- All constants must go in settings.py or settings.sh. The only exception is
-  for the numeric constant zero and the color clear.
 - `CLAUDE.md`/`declawed.md` is not user documentation and is exempt from
   formatting and validation. Ignore formatting errors it will never be added
-  to thw whitelist.
+  to the whitelist.
 - Provide links to screenshots showing changes in all postmortems.
+- Provide every diff as a link to an artifact when running in the cloud.
 - The perf2html_diff.sh script has to be able to run on a remote machine with
-only two `.txz` compressed reports as inputs. It has to work without access
-to any source code or repository involved in the report.
+  only two `.txz` compressed reports as inputs. It has to work without access
+  to any source code or repository involved in the report.
 
 ### Accidental-Requirements, Requirements-Data-Loss, and Requirements-Refusal
 
@@ -307,10 +309,8 @@ The single function/check owning each concern - never bypass or duplicate:
   runs `layout_refresh`, then each callback in registration order; a scale
   change settles with the refresh alone (theme.js).
 - `template_fill(template_text, marker_values)` - every template marker
-  fill, a marker its template lacks refused (theme.py, and theme.js
-  `report_ui_.template_fill` for the call graph's settings templates;
-  `settings.py` refuses a missing `__DATA__` itself, as theme.py imports
-  it).
+  fill, a marker its template lacks refused (theme.py; `settings.py`
+  refuses a missing `__DATA__` itself, as theme.py imports it).
 - `window.render_element_`/`render_element()` - every tag a page
   script or a page builder writes, each attribute escaped through
   `window.render_html_escape_`/`render_html_escape()`
@@ -388,7 +388,7 @@ The single function/check owning each concern - never bypass or duplicate:
   `index.html` on, to open in a report:
   `index.html#view=settings&setting=<NAME>&setting-values=<value>`,
   the value a JSON object of each setting's whole new value, base64.
-  - The default directories for temp and output files for perf2html.sh and
+- The default directories for temp and output files for perf2html.sh and
   perf2html_diff.sh are intentionally "pinned" to the invocation directory.
   `perf2html_batch.sh` is just a convenience wrapper and will likely evolve.
   This is a closed discussion.
@@ -415,7 +415,7 @@ The single function/check owning each concern - never bypass or duplicate:
   relative invocation silently.
 - buffering command stdout and stderr with `mktemp` is banned. Use of `mktemp`
   is to be by request only. The two door policy as follows. Door one is
-  non-debug mode (section 0.3) with no `--artifacts`: each `perf2html.sh` and
+  non-debug mode (Working agreement) with no `--artifacts`: each `perf2html.sh` and
   `perf2html_diff.sh` makes its own "TMP" directory with `mktemp -d`, which
   its `trap ... EXIT` deletes at every exit; the batch makes none. Door two
   is the diff's `.txz` archive extraction, deleted by the same trap in either
@@ -462,7 +462,7 @@ The single function/check owning each concern - never bypass or duplicate:
 - `--verbose` is additive/counted - no bare `printf` wrappers.
 - `tests/perf2html/` is bespoke tooling - one parser, one theme, no dead code
   or duplicate systems; the theme is color, notation, markup and layout
-  alone, no home for whatever two pages share (section 0.5).
+  alone, no home for whatever two pages share.
 - Pages are deterministic - same input, byte-identical output.
 - New identifiers need 2+ unabbreviated English words.
 - Naming split: `_SCREAMING_SNAKE` for a script's own global, `_lowercase` for

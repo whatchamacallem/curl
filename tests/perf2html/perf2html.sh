@@ -274,29 +274,6 @@ build_compile() {
   step_run 3 "header rows" header_rows_write
 }
 
-trace_record() {
-  local _test="$1" _loops="$2" _trace_file="$3" _skip="$4"
-  PERF_TRACE_OUT="$_trace_file" PERF_TRACE_SKIP="$_skip" \
-    taskset -c "$PROFILE_PINNED_CPU" "$_TRACE_BIN" "$_test" "$_loops"
-}
-
-trace_run() {
-  local _test="$1" _loops="$2" _trace_file="$3" _skip="$4" _page="$5"
-  local _name="${_trace_file##*/}" _pinned
-  _pinned="PERF_TRACE_SKIP=$_skip taskset -c $PROFILE_PINNED_CPU"
-  echo "\$ PERF_TRACE_OUT=$_name $_pinned $_TRACE_BIN_REL $_test $_loops" \
-    >>"$_page"
-  page_command_run "$_page" \
-    "PERF_TRACE_OUT=$_trace_file $_pinned $_TRACE_BIN $_test $_loops" \
-    trace_record "$_test" "$_loops" "$_trace_file" "$_skip"
-}
-
-trace_convert() {
-  python3 "$PERF2HTML_DIR_/scripts/trace_to_speedscope.py" convert \
-    "--artifacts=$ARTIFACTS_DIR" "--report=$_OUT_DIR" "--test=$1" \
-    "--loops=$2" 2>&1 | sed "s#$REPORT_ARTIFACTS_DIR/##g"
-}
-
 flame_app_name_read() {
   local _variable="$1" _document="$2" _role="$3" _line _rest _name=""
   local _pattern="${FLAME_GRAPH_APP_NAME_PATTERNS[$_role]}" _found=0
@@ -326,13 +303,11 @@ flame_app_install() {
 }
 
 trace_render() {
-  local _test="$1" _loops="$2"
-  local _seen _seen_file _tree_display _trace_file _trace_log _shown
-  artifact_path _seen_file "$REPORT_ARTIFACTS_DIR" trace-seen "$_test"
+  local _test="$1" _tree_display _trace_file _trace_log _command
   artifact_path _trace_file "$REPORT_ARTIFACTS_DIR" trace-binary "$_test"
   artifact_path _trace_log "$REPORT_ARTIFACTS_DIR" trace-log "$_test"
 
-  heading_print "PERF_TRACE_OUT=${_trace_file##*/} perf $_test $_loops"
+  heading_print "PERF_TRACE_OUT=${_trace_file##*/} perf $_test $TEST_LOOPS"
   _tree_display="$(path_display "$_TRACE_TREE" "$_REPO")"
   {
     echo "# $_tree_display = this report's build flags +"
@@ -344,33 +319,19 @@ trace_render() {
     echo "# after the run's midpoint (TEST_SAMPLES_SIZE in"
     echo "# tests/perf2html/scripts/settings.sh)."
   } >"$_trace_log"
-  trace_run "$_test" "$_loops" "$_trace_file" "$TRACE_SKIP_ALL" "$_trace_log"
-  command_run python3 "$PERF2HTML_DIR_/scripts/trace_to_speedscope.py" seen \
+  _command=(python3 "$PERF2HTML_DIR_/scripts/perf_measure.py" trace
     "--artifacts=$ARTIFACTS_DIR" "--report=$_OUT_DIR" "--test=$_test"
-  read -r _seen <"$_seen_file" && [[ "$_seen" =~ ^[0-9]+$ ]] || error_exit 1 \
-    "error: $_seen_file holds no event count: $_seen"
-  trace_run "$_test" "$_loops" "$_trace_file" "$((_seen / 2))" "$_trace_log"
-  _shown="python3 $PERF2HTML_DIR_/scripts/trace_to_speedscope.py convert"
-  _shown+=" --artifacts=$ARTIFACTS_DIR --report=$_OUT_DIR --test=$_test"
-  _shown+=" --loops=$_loops"
-  page_command_run "$_trace_log" "$_shown" \
-    trace_convert "$_test" "$_loops"
+    "--executable=$_TRACE_BIN" "--executable-shown=$_TRACE_BIN_REL")
+  page_command_run "$_trace_log" "${_command[*]}" "${_command[@]}"
 }
 
 callgrind_measure() {
-  local _test="$1" _cg_file _log _start
-  artifact_path _cg_file "$REPORT_ARTIFACTS_DIR" callgrind "$_test"
-  artifact_path _log "$REPORT_ARTIFACTS_DIR" valgrind-log "$_test"
+  local _test="$1" _start
   heading_print "valgrind --tool=callgrind perf $_test $TEST_LOOPS"
   _start="$(clock_microseconds)"
-  # `--collect-atstart=yes` goes after `--toggle-collect`, which implies `no`.
-  command_run taskset -c "$PROFILE_PINNED_CPU" valgrind --tool=callgrind \
-    --cache-sim=yes --branch-sim=yes --trace-redir=yes \
-    --zero-before="$PROFILE_START_FUNCTION_NAME" \
-    --toggle-collect="$PROFILE_STOP_FUNCTION_NAME" --collect-atstart=yes \
-    --LL="$CALLGRIND_LAST_LEVEL_CACHE" \
-    --callgrind-out-file="$_cg_file" --log-file="$_log" \
-    "$_BIN" "$_test" "$TEST_LOOPS"
+  command_run python3 "$PERF2HTML_DIR_/scripts/perf_measure.py" callgrind \
+    "--artifacts=$ARTIFACTS_DIR" "--report=$_OUT_DIR" "--test=$_test" \
+    "--executable=$_BIN"
   _CALLGRIND_DURATION="$(duration_format "$_start")"
 }
 
@@ -381,47 +342,24 @@ symbols_resolve() {
     "--artifacts=$ARTIFACTS_DIR" "--report=$_OUT_DIR" "--test=$_test"
 }
 
-timing_record() {
-  local _counter_value _counter_unit _counter_name _remaining_fields
-  local _event_part
-  perf stat -x, -o "$2" -e "$TIMING_PERF_STAT_EVENTS" \
-    taskset -c "$PROFILE_PINNED_CPU" "$_BIN" "$1" "$TEST_LOOPS" \
-    && while IFS=, read -r _counter_value _counter_unit _counter_name \
-      _remaining_fields; do
-      for _event_part in "${!TIMING_COUNTER_LABELS[@]}"; do
-        if [[ "$_counter_name" == *"$_event_part"* ]]; then
-          printf '%s: %s\n' "${TIMING_COUNTER_LABELS[$_event_part]}" \
-            "$_counter_value"
-        fi
-      done
-    done <"$2"
-}
-
 timing_measure() {
-  local _test="$1" _stat_file _page _shown _page_words
+  local _test="$1" _page _summary _command _label _value
   local _summary_headers _summary_values
-  artifact_path _stat_file "$REPORT_ARTIFACTS_DIR" timing-csv "$_test"
   artifact_path _page "$REPORT_ARTIFACTS_DIR" timing-page "$_test"
+  artifact_path _summary "$REPORT_ARTIFACTS_DIR" timing-summary "$_test"
   heading_print "perf stat -e $TIMING_PERF_STAT_EVENTS perf $_test" \
     "$TEST_LOOPS"
-  echo "\$ perf stat -e $TIMING_PERF_STAT_EVENTS taskset -c" \
-    "$PROFILE_PINNED_CPU $_BIN_REL $_test $TEST_LOOPS" >"$_page"
-  _shown="perf stat -x, -o $_stat_file -e $TIMING_PERF_STAT_EVENTS taskset"
-  page_command_run "$_page" \
-    "$_shown -c $PROFILE_PINNED_CPU $_BIN $_test $TEST_LOOPS" \
-    timing_record "$_test" "$_stat_file"
+  _command=(python3 "$PERF2HTML_DIR_/scripts/perf_measure.py" timing
+    "--artifacts=$ARTIFACTS_DIR" "--report=$_OUT_DIR" "--test=$_test"
+    "--executable=$_BIN" "--executable-shown=$_BIN_REL")
+  : >"$_page"
+  page_command_run "$_page" "${_command[*]}" "${_command[@]}"
   _summary_headers=(Test Loops Callgrind)
   _summary_values=("$_test" "$TEST_LOOPS" "$_CALLGRIND_DURATION")
-  while read -r -a _page_words; do
-    case "${_page_words[0]-}" in
-      Time/*: | Errors:)
-        _summary_headers+=("${_page_words[0]%:}")
-        _summary_values+=("${_page_words[*]:1}")
-        ;;
-    esac
-  done <"$_page"
-  [[ "${_summary_headers[*]}" == *" Time/"* ]] \
-    || error_exit 1 "error: no Time/<unit>: line in $_page"
+  while IFS='=' read -r _label _value; do
+    _summary_headers+=("$_label")
+    _summary_values+=("$_value")
+  done <"$_summary"
   table_print "${#_summary_headers[@]}" "${_summary_headers[@]}" \
     "${_summary_values[@]}"
 }
@@ -435,7 +373,7 @@ run_one() {
   step_run 1 callgrind callgrind_measure "$_test"
   step_run 2 symbols symbols_resolve "$_test"
   step_run 3 timing timing_measure "$_test"
-  step_run 4 trace trace_render "$_test" "$TEST_LOOPS"
+  step_run 4 trace trace_render "$_test"
 }
 
 tests_record() {

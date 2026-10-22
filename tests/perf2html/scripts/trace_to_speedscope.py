@@ -1,11 +1,10 @@
-#!/usr/bin/env python3
 # SPDX-FileCopyrightText: © 2026 Adrian Johnston.
 # SPDX-License-Identifier: MIT
 # This file is licensed under the terms of the LICENSE-MIT.md file.
 
 from __future__ import annotations
 
-import argparse, array, json, os, subprocess, sys
+import array, json, os, subprocess, sys
 from typing import NamedTuple, NotRequired, TypedDict
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -85,11 +84,6 @@ class TraceToSpeedscope:
         offset: int
         size: int
         address: int
-
-    class TraceArgs(NamedTuple):
-        artifacts: str
-        report: str
-        test: str
 
     class TraceRecording(NamedTuple):
         seen: int
@@ -175,18 +169,15 @@ class TraceToSpeedscope:
         return completed.stdout
 
     # Writes the speedscope profile of the busiest run's first calls.
-    def convert(self, args: TraceToSpeedscope.TraceArgs, loops: int) -> None:
-        artifacts_dir = artifacts.report_artifacts_dir(
-            args.artifacts, args.report
-        )
-        trace = self.load(artifacts_dir, args.test)
-        calls = self.kept_calls(artifacts_dir, args.test, trace)
-        frames = self.frames(artifacts_dir, args.test, trace, calls)
-        name = _FLAME_GRAPH_PROFILE_NAME_FORMAT % (args.test, loops)
+    def convert(self, artifacts_dir: str, test_name: str, loops: int) -> None:
+        trace = self.load(artifacts_dir, test_name)
+        calls = self.kept_calls(artifacts_dir, test_name, trace)
+        frames = self.frames(artifacts_dir, test_name, trace, calls)
+        name = _FLAME_GRAPH_PROFILE_NAME_FORMAT % (test_name, loops)
         document = self.document(trace, calls, frames, name)
         self.document_write(
             artifacts.artifact_path(
-                artifacts_dir, "trace-speedscope", args.test
+                artifacts_dir, "trace-speedscope", test_name
             ),
             document,
             calls,
@@ -250,7 +241,8 @@ class TraceToSpeedscope:
             handle.write(text)
         profile = document["profiles"][0]
         print(
-            f"wrote {path} ({len(text):,} bytes, {len(calls):,} calls,"
+            f"wrote {os.path.basename(path)} ({len(text):,} bytes,"
+            f" {len(calls):,} calls,"
             f" {profile['endValue'] - profile['startValue']:,} ns)",
             file=sys.stderr,
         )
@@ -322,8 +314,8 @@ class TraceToSpeedscope:
             artifacts_dir, "trace-binary", test_name
         )
         print(
-            f"{trace_file}: {trace.seen:,} events in the run,"
-            f" {trace.skip:,} skipped, {len(trace.functions):,} kept,"
+            f"{os.path.basename(trace_file)}: {trace.seen:,} events in the"
+            f" run, {trace.skip:,} skipped, {len(trace.functions):,} kept,"
             f" {trace.tsc_per_ns:.6f} tsc/ns",
             file=sys.stderr,
         )
@@ -398,17 +390,6 @@ class TraceToSpeedscope:
                     )
         return mappings
 
-    # Writes how many events the counting run saw into the test's seen file.
-    def seen(self, args: TraceToSpeedscope.TraceArgs) -> None:
-        artifacts_dir = artifacts.report_artifacts_dir(
-            args.artifacts, args.report
-        )
-        seen = self.load(artifacts_dir, args.test).seen
-        path = artifacts.artifact_path(artifacts_dir, "trace-seen", args.test)
-        with open(path, "w", encoding="utf-8") as handle:
-            handle.write(f"{seen}\n")
-        print(f"wrote {path} ({seen:,} events)", file=sys.stderr)
-
     def segments_read(self, path: str) -> list[TraceToSpeedscope.LoadSegment]:
         listing = self.command_output(["readelf", "-lW", path])
         segments: list[TraceToSpeedscope.LoadSegment] = []
@@ -438,51 +419,3 @@ class TraceToSpeedscope:
             f"error: {address:#x} (file offset {offset:#x}) is in no"
             f" LOAD segment of {mapping.path}"
         )
-
-
-def main() -> None:
-    parser = argparse.ArgumentParser()
-    subparsers = parser.add_subparsers(dest="cmd", required=True)
-    seen_parser = subparsers.add_parser(
-        "seen", help="the seen file, how many events the counting run saw"
-    )
-    convert_parser = subparsers.add_parser(
-        "convert", help="the speedscope profile of the busiest run's calls"
-    )
-    convert_parser.add_argument(
-        "--loops",
-        required=True,
-        type=int,
-        help="the loop count the traced run took, shown in the profile name",
-    )
-    for trace_parser in (seen_parser, convert_parser):
-        trace_parser.add_argument(
-            "--artifacts",
-            required=True,
-            metavar="DIR",
-            help="the profiler artifacts directory, holding the report's own,"
-            " where the test's trace sits",
-        )
-        trace_parser.add_argument(
-            "--report",
-            required=True,
-            metavar="DIR",
-            help="the report directory, naming its artifacts directory",
-        )
-        trace_parser.add_argument(
-            "--test", required=True, help="the test whose trace is read"
-        )
-    namespace = parser.parse_args()
-    trace_args = TraceToSpeedscope.TraceArgs(
-        artifacts=namespace.artifacts,
-        report=namespace.report,
-        test=namespace.test,
-    )
-    if namespace.cmd == "seen":
-        TraceToSpeedscope().seen(trace_args)
-    else:
-        TraceToSpeedscope().convert(trace_args, namespace.loops)
-
-
-if __name__ == "__main__":
-    main()

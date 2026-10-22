@@ -27,6 +27,7 @@ report generators. Start by running the tests and checking the results.
 - [Heat Map](#heat-map)
 - [Menu Strip](#menu-strip)
 - [Overview Page](#overview-page)
+- [Perf Measurement](#perf-measurement)
 - [README Page](#readme-page)
 - [Settings Files](#settings-files)
 - [Test Harness](#test-harness)
@@ -49,8 +50,8 @@ report generators. Start by running the tests and checking the results.
 
 ## URL Components
 
-- `dark-mode`: Query key of a view frame's address, `enabled` or `disabled`,
-  that the top page writes so the view opens in the dark mode it shows.
+- `dark-mode`: Query key of a view frame's address, `1` or `0`, that the top
+  page writes so the view opens in the dark mode it shows.
 - `debug`: Query key, value `1`, that unfreezes the settings so the settings
   view can apply a setting.
 - `file`: Hash key, heat map view only, that names the source file to open.
@@ -96,7 +97,7 @@ preferences are reset at startup.
 - `perf2html.version`: The `STORAGE_VERSION` the other keys were written under.
 - `speedscope-color-scheme`: Speedscope's scheme, `null` so that speedscope
   follows the color scheme its frame takes from the dark mode shown.
-- `view.dark_mode`: The dark mode chosen, `enabled` or `disabled`.
+- `view.dark_mode`: The dark mode chosen, `1` or `0`.
 - `view.scale`: The design scale multiple chosen, shown at the nearest stop.
 
 ## Report Contents
@@ -157,9 +158,9 @@ A regular report's run keeps these.
 - `<test>.cyg_callback.bin`: The function trace of the sampled run.
 - `<test>.cyg_callback.bin.maps`: The traced process's mappings.
 - `<test>.cyg_callback.log`: The trace page, both runs and the conversion.
-- `<test>.cyg_callback.seen`: The event count of the counting run.
 - `<test>.perf-stat.csv`: The perf stat counters.
 - `<test>.perf-stat.txt`: The timing page, command and counters.
+- `<test>.perf-stat.summary`: The timing summary rows, one `label=value` each.
 - `<test>.trace_to_speedscope.json`: The speedscope profile of the sampled run.
 - `<test>.valgrind.log`: The valgrind log with the objects loaded.
 - `perf2html.log`: The measuring run's log.
@@ -297,6 +298,15 @@ A diff report's run keeps these.
 |                   | and the view frame.                                  |
 | `overview.js`     | Fills the home panel's headings and raw data link,   |
 |                   | then draws its tables from the rows the page holds.  |
+
+## Perf Measurement
+
+| File              | Purpose                                              |
+| ----------------- | ---------------------------------------------------- |
+| `perf_measure.py` | Runs the perf test executable under callgrind, perf  |
+|                   | stat and the function trace, the one caller of perf, |
+|                   | and parses the timing page for the overview and the  |
+|                   | summary rows the measuring run prints.               |
 
 ## README Page
 

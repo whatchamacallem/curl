@@ -5,13 +5,13 @@
 
 from __future__ import annotations
 
-import argparse, json, os, re, sys, urllib.parse
+import argparse, json, os, sys, urllib.parse
 from collections.abc import Iterable, Sequence
 from typing import NamedTuple, NotRequired, TypedDict
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import artifacts, callgrind, callgrind_diff, callgrind_to_heatmap
-import settings, theme
+import perf_measure, settings, theme
 
 _ASSET_DEBUG_SCRIPT_NAME: str = ""
 _ASSET_TEMPLATE_CALL_GRAPH_PAGE_NAME: str = ""
@@ -20,13 +20,11 @@ _ASSET_TEMPLATE_OVERVIEW_PAGE_NAME: str = ""
 _ASSET_TEMPLATE_SETTINGS_PAGE_NAME: str = ""
 _CALL_GRAPH_PAGE_DIR_NAME: str = ""
 _DATABASE_PAGE_DIR_NAME: str = ""
-_DATABASE_TIME_SUFFIX_SECONDS: dict[str, float] = {}
 _DATABASE_VIEW_KEY: str = ""
 _FLAME_GRAPH_LOCAL_PROFILE_PATH: str = ""
 _FLAME_GRAPH_VIEW_ENTRY: tuple[str, str] = ("", "")
 _HEAT_MAP_VIEW_ENTRY: tuple[str, str] = ("", "")
 _OVERVIEW_PAGE_PATH: str = ""
-_PERF_TOOL_TIME_LABEL: str = ""
 _PROFILE_START_FUNCTION_NAME: str = ""
 _PROFILE_START_FUNCTION_UNRECORDED_CALLS: int = 0
 _RANKING_COUNTER_NAME: str = ""
@@ -34,9 +32,6 @@ _README_HTML_NAME: str = ""
 _README_MARKDOWN_NAME: str = ""
 _REPORT_SCRIPTS_DIR_NAME: str = ""
 _SETTINGS_VIEW_ENTRY: tuple[str, str] = ("", "")
-_TIMING_COUNTER_LABELS: dict[str, str] = {}
-_TIMING_COUNTER_RATIO_DIVIDEND: str = ""
-_TIMING_COUNTER_RATIO_DIVISOR: str = ""
 settings.load_into(__name__)
 
 _CALL_GRAPH_PAGE = theme.asset_text_read(_ASSET_TEMPLATE_CALL_GRAPH_PAGE_NAME)
@@ -54,12 +49,6 @@ _SETTINGS_PAGE = theme.asset_text_read(_ASSET_TEMPLATE_SETTINGS_PAGE_NAME)
 _OVERVIEW_PAGE_SCRIPTS_DEPTH = 0
 
 _OVERVIEW_PAGE = theme.asset_text_read(_ASSET_TEMPLATE_OVERVIEW_PAGE_NAME)
-
-_PERF_TOOL_TIME_LINE = re.compile(
-    rf"{re.escape(_PERF_TOOL_TIME_LABEL)}:\s+(\d+(?:\.\d+)?)\s*("
-    + "|".join(map(re.escape, sorted(_DATABASE_TIME_SUFFIX_SECONDS)))
-    + r")\s*"
-)
 
 
 class BuildReport:
@@ -869,39 +858,6 @@ class BuildReport:
             file=sys.stderr,
         )
 
-    # Returns the perf tool's time over its loops, its other output left out.
-    def perf_tool_time_per_loop(
-        self, page_path: str, page_lines: Sequence[str], test_name: str
-    ) -> float:
-        command_words = page_lines[0].split() if page_lines else []
-        if (
-            len(command_words) < 2
-            or command_words[-2] != test_name
-            or not command_words[-1].isdigit()
-            or not int(command_words[-1])
-        ):
-            sys.exit(
-                f"error: {page_path} opens with no {test_name} command ending"
-                f" in its loop count: {page_lines[:1]}"
-            )
-        time_matches = [
-            line_match
-            for line_match in map(_PERF_TOOL_TIME_LINE.fullmatch, page_lines)
-            if line_match
-        ]
-        if len(time_matches) != 1:
-            sys.exit(
-                f"error: {page_path} holds {len(time_matches)}"
-                f" {_PERF_TOOL_TIME_LABEL}: lines with a time unit"
-                f" of {sorted(_DATABASE_TIME_SUFFIX_SECONDS)}, expected 1"
-            )
-        time_match = time_matches[0]
-        run_seconds = (
-            float(time_match.group(1))
-            * (_DATABASE_TIME_SUFFIX_SECONDS[time_match.group(2)])
-        )
-        return run_seconds / int(command_words[-1])
-
     # Writes the blank line and the raw data heading over the archive link.
     def raw_data_render(self, name: str) -> str:
         if not name:
@@ -946,78 +902,20 @@ class BuildReport:
     def test_link_cell(self, name: str) -> theme.Cell:
         return theme.Cell(name, href=self.address(name, _DATABASE_VIEW_KEY))
 
-    # Returns a timing page's dividend counter over its divisor counter.
-    def timing_counter_ratio(
-        self, page_path: str, page_lines: Sequence[str]
-    ) -> float:
-        counter_values = self.timing_counters(page_path, page_lines)
-        ratio_terms: list[int] = []
-        for counter_key in (
-            _TIMING_COUNTER_RATIO_DIVIDEND,
-            _TIMING_COUNTER_RATIO_DIVISOR,
-        ):
-            if counter_key not in _TIMING_COUNTER_LABELS:
-                sys.exit(
-                    f"error: TIMING_COUNTER_LABELS holds no {counter_key}"
-                    f" key: {sorted(_TIMING_COUNTER_LABELS)}"
-                )
-            counter_label = _TIMING_COUNTER_LABELS[counter_key]
-            counter_text = counter_values[counter_label]
-            if not counter_text.isdigit() or not int(counter_text):
-                sys.exit(
-                    f"error: {page_path} holds {counter_label}:"
-                    f" {counter_text!r}, expected a count above 0"
-                )
-            ratio_terms.append(int(counter_text))
-        return ratio_terms[0] / ratio_terms[1]
-
-    # Returns each perf stat counter line's value of a timing page by label.
-    def timing_counters(
-        self, page_path: str, page_lines: Sequence[str]
-    ) -> dict[str, str]:
-        counter_values: dict[str, list[str]] = {
-            counter_label: []
-            for counter_label in _TIMING_COUNTER_LABELS.values()
-        }
-        for page_line in page_lines:
-            line_label, label_separator, line_value = page_line.partition(":")
-            if label_separator and line_label in counter_values:
-                counter_values[line_label].append(line_value.strip())
-        for counter_label, label_values in counter_values.items():
-            if len(label_values) != 1:
-                sys.exit(
-                    f"error: {page_path} holds {len(label_values)}"
-                    f" {counter_label}: lines, expected 1"
-                )
-        return {
-            counter_label: label_values[0]
-            for counter_label, label_values in counter_values.items()
-        }
-
     # Returns a row per test, its time per loop and instructions per cycle.
     def timing_rows(
         self, artifacts_dir: str, test_names: Sequence[str]
     ) -> list[list[theme.CellOrText]]:
         rows: list[list[theme.CellOrText]] = []
         for test_name in test_names:
-            page_path = artifacts.artifact_path(
-                artifacts_dir, "timing-page", test_name
+            timing = perf_measure.PerfMeasure().timing_read(
+                artifacts_dir, test_name
             )
-            with artifacts.artifact_open(
-                artifacts_dir, "timing-page", test_name
-            ) as handle:
-                page_lines = handle.read().splitlines()
             rows.append(
                 [
                     self.test_link_cell(test_name),
-                    theme.num_time(
-                        self.perf_tool_time_per_loop(
-                            page_path, page_lines, test_name
-                        )
-                    ),
-                    theme.fixed_text(
-                        self.timing_counter_ratio(page_path, page_lines)
-                    ),
+                    theme.num_time(timing.seconds_per_loop),
+                    theme.fixed_text(timing.counter_ratio),
                 ]
             )
         return rows

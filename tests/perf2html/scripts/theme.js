@@ -420,9 +420,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
   function dark_mode_set_(is_enabled) {
     view_storage.value_write(
       STORAGE_KEY_VIEW_DARK_MODE,
-      is_enabled === null
-        ? null
-        : window.report_dark_mode_.state_text(is_enabled),
+      is_enabled === null ? null : Number(is_enabled),
     );
     dark_mode_show(
       is_enabled === null ? DARK_MODE_ENABLED_DEFAULT : is_enabled,
@@ -1779,18 +1777,6 @@ window.report_ui_ = window.try_catch_handler_(function () {
       measure_text,
     ];
   }
-  // Fills each marker with its markup, refusing a marker the template lacks.
-  function template_fill(template_text, marker_values) {
-    for (const marker of Object.keys(marker_values)) {
-      if (!template_text.includes(marker))
-        window.throw_exception_("str_error_template_marker_missing", marker);
-    }
-    let filled_text = template_text;
-    for (const [marker, markup] of Object.entries(marker_values))
-      filled_text = filled_text.replaceAll(marker, () => markup);
-    return filled_text;
-  }
-
   // Binds or unbinds a press's move and every way that press can end.
   function listeners_bind(
     event_target,
@@ -3171,7 +3157,6 @@ window.report_ui_ = window.try_catch_handler_(function () {
       heading_labels: table_sort_heading_labels,
       records: table_sort_records,
     },
-    template_fill,
     text_scrollbar: { attach: text_scrollbar_attach },
     view_activate,
     view_frame,

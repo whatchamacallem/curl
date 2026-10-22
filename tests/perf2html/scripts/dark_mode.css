@@ -15,16 +15,12 @@
     color: var(--dark-mode-page-fg-);
   }
   /* Odd columns take the panel color where light mode draws column lines. */
-  .table- > tbody > tr > td {
-    &:nth-child(odd of :where(:not(.heat-map-source-table-tree-cell-))) {
-      background: var(--dark-mode-panel-bg-);
-    }
+  .table- > tbody > tr > td:nth-child(odd) {
+    background: var(--dark-mode-panel-bg-);
   }
   /* The odd column text color, which a row color rule overrides. */
-  :where(.table- > tbody > tr) > td {
-    &:nth-child(odd of :where(:not(.heat-map-source-table-tree-cell-))) {
-      color: var(--dark-mode-page-fg-);
-    }
+  :where(.table- > tbody > tr) > td:nth-child(odd) {
+    color: var(--dark-mode-page-fg-);
   }
   .table- > tbody > tr:focus-visible > td,
   .table- > tbody > tr:focus-visible a {

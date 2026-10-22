@@ -124,8 +124,8 @@ window.try_catch_handler_(function () {
     if (view_href === loaded_view_href) return;
     // The view opens in the dark mode shown, before its first paint.
     const mode_query = new URLSearchParams({
-      [DARK_MODE_FRAME_QUERY_KEY_NAME]: window.report_dark_mode_.state_text(
-        window.report_ui_.dark_mode_enabled_now_(),
+      [DARK_MODE_FRAME_QUERY_KEY_NAME]: Number(
+        Boolean(window.report_ui_.dark_mode_enabled_now_()),
       ),
     });
     view_frame.contentWindow.location.replace(

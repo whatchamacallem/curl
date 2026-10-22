@@ -25,10 +25,10 @@ declare -A ARTIFACT_FILE_PURPOSES=(
   ["test-list"]="the test names, one per line, sorted"
   ["timing-csv"]="the perf stat counters"
   ["timing-page"]="the timing page, command and counters"
+  ["timing-summary"]="the timing summary rows, one label=value each"
   ["trace-binary"]="the function trace of the sampled run"
   ["trace-log"]="the trace page, both runs and the conversion"
   ["trace-maps"]="the traced process's mappings"
-  ["trace-seen"]="the event count of the counting run"
   ["trace-speedscope"]="the speedscope profile of the sampled run"
   ["valgrind-log"]="the valgrind log with the objects loaded"
 )
@@ -56,10 +56,10 @@ declare -A ARTIFACT_TEST_FILE_FORMATS=(
   [delta]='%s/%s.callgrind_diff.out'
   ["timing-csv"]='%s/%s.perf-stat.csv'
   ["timing-page"]='%s/%s.perf-stat.txt'
+  ["timing-summary"]='%s/%s.perf-stat.summary'
   ["trace-binary"]='%s/%s.cyg_callback.bin'
   ["trace-log"]='%s/%s.cyg_callback.log'
   ["trace-maps"]='%s/%s.cyg_callback.bin.maps'
-  ["trace-seen"]='%s/%s.cyg_callback.seen'
   ["trace-speedscope"]='%s/%s.trace_to_speedscope.json'
   ["valgrind-log"]='%s/%s.valgrind.log'
 )

@@ -259,65 +259,36 @@ window.try_catch_handler_(function () {
     },
   };
 
-  // Returns the attribute value naming a dark mode, the value stored too.
-  function dark_mode_state(settings_values, is_enabled) {
-    return setting_read(
-      settings_values,
-      is_enabled ? "DARK_MODE_ENABLED_VALUE" : "DARK_MODE_DISABLED_VALUE",
+  // Returns a dark mode query's text as a number, null for none.
+  function dark_mode_query_value(settings_values, key_setting_name) {
+    const query_value = new URLSearchParams(location.search).get(
+      setting_read(settings_values, key_setting_name),
     );
+    return query_value === null ? null : Number(query_value);
   }
-  // Returns the toggle query value, null for none, refusing an unknown one.
-  function dark_mode_toggle_query_value(settings_values) {
-    const toggle_values = setting_read(
-      settings_values,
-      "DARK_MODE_TOGGLE_QUERY_VALUES",
-    );
-    const toggle_value = new URLSearchParams(location.search).get(
-      setting_read(settings_values, "DARK_MODE_TOGGLE_QUERY_KEY_NAME"),
-    );
-    if (
-      toggle_value !== null &&
-      toggle_value !== toggle_values.enabled &&
-      toggle_value !== toggle_values.disabled
-    )
-      window.throw_exception_(
-        "str_error_dark_mode_toggle_unusable",
-        toggle_value,
-      );
-    return toggle_value;
-  }
-  // Returns the dark mode the top page wrote in a framed page's address.
-  function dark_mode_frame_query_enabled(settings_values) {
-    const frame_value = new URLSearchParams(location.search).get(
-      setting_read(settings_values, "DARK_MODE_FRAME_QUERY_KEY_NAME"),
-    );
-    if (frame_value === dark_mode_state(settings_values, true)) return true;
-    if (frame_value === dark_mode_state(settings_values, false)) return false;
-    window.throw_exception_("str_error_internal");
-  }
-  // Returns whether a page opens in dark mode, the one door deciding that.
+  // Returns a truthy value when a page opens in dark mode, the one door.
   function dark_mode_opening_enabled(settings_values) {
-    if (is_framed) return dark_mode_frame_query_enabled(settings_values);
+    if (is_framed)
+      return dark_mode_query_value(
+        settings_values,
+        "DARK_MODE_FRAME_QUERY_KEY_NAME",
+      );
     const default_enabled = setting_read(
       settings_values,
       "DARK_MODE_ENABLED_DEFAULT",
     );
-    const toggle_values = setting_read(
+    const toggle_value = dark_mode_query_value(
       settings_values,
-      "DARK_MODE_TOGGLE_QUERY_VALUES",
+      "DARK_MODE_TOGGLE_QUERY_KEY_NAME",
     );
-    const toggle_value = dark_mode_toggle_query_value(settings_values);
-    // The query resets the preferences, then toggles on its enabled value.
+    // The query resets the preferences, then toggles on a truthy value.
     if (toggle_value !== null)
-      return (toggle_value === toggle_values.enabled) !== default_enabled;
+      return toggle_value ? !default_enabled : default_enabled;
     const stored_value = stored_value_read(
       settings_values,
       setting_read(settings_values, "STORAGE_KEY_VIEW_DARK_MODE"),
     );
-    if (stored_value === null) return default_enabled;
-    if (stored_value === dark_mode_state(settings_values, true)) return true;
-    if (stored_value === dark_mode_state(settings_values, false)) return false;
-    window.throw_exception_("str_error_internal");
+    return stored_value === null ? default_enabled : stored_value;
   }
   function early_fill_enabled(settings_values) {
     return setting_read(
@@ -347,7 +318,10 @@ window.try_catch_handler_(function () {
     const root_element = document.documentElement;
     root_element.setAttribute(
       setting_read(settings_values, "DARK_MODE_ATTRIBUTE_NAME"),
-      dark_mode_state(settings_values, is_enabled),
+      setting_read(
+        settings_values,
+        is_enabled ? "DARK_MODE_ENABLED_VALUE" : "DARK_MODE_DISABLED_VALUE",
+      ),
     );
     if (!early_fill_enabled(settings_values)) return;
     root_element.style.background =
@@ -367,8 +341,11 @@ window.try_catch_handler_(function () {
     opening_enabled: () => dark_mode_opening_enabled(settings_object),
     root_show: (is_enabled) =>
       dark_mode_root_show(settings_object, is_enabled),
-    state_text: (is_enabled) => dark_mode_state(settings_object, is_enabled),
-    toggle_query_value: () => dark_mode_toggle_query_value(settings_object),
+    toggle_query_value: () =>
+      dark_mode_query_value(
+        settings_object,
+        "DARK_MODE_TOGGLE_QUERY_KEY_NAME",
+      ),
   };
   window.report_view_storage_ = view_storage;
   window.settings_ = settings_;

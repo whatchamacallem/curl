@@ -12,25 +12,16 @@ window.try_catch_handler_(function () {
   const CALL_GRAPH_BRANCH_OPEN_TEXT = settings_("CALL_GRAPH_BRANCH_OPEN_TEXT");
   const CALL_GRAPH_BRANCH_PASS_TEXT = settings_("CALL_GRAPH_BRANCH_PASS_TEXT");
   const CALL_GRAPH_LINE_TEXT = settings_("CALL_GRAPH_LINE_TEXT");
-  const CALL_GRAPH_MULTIPLE_TEMPLATE = settings_(
-    "CALL_GRAPH_MULTIPLE_TEMPLATE",
-  );
   const CALL_GRAPH_REVEAL_CLEARANCE_CHARS = settings_(
     "CALL_GRAPH_REVEAL_CLEARANCE_CHARS",
   );
   const CALL_GRAPH_REVEAL_CLEARANCE_LINES = settings_(
     "CALL_GRAPH_REVEAL_CLEARANCE_LINES",
   );
-  const CALL_GRAPH_SHARE_TEMPLATE = settings_("CALL_GRAPH_SHARE_TEMPLATE");
-  const CALL_GRAPH_SUBROUTINE_TEMPLATE = settings_(
-    "CALL_GRAPH_SUBROUTINE_TEMPLATE",
-  );
-  const CALL_GRAPH_SYMBOL_TEMPLATE = settings_("CALL_GRAPH_SYMBOL_TEMPLATE");
   const NUMBER_FRACTION_DIGITS = settings_("NUMBER_FRACTION_DIGITS");
 
   const render_element = window.render_element_;
   const render_html_escape = window.render_html_escape_;
-  const template_fill = window.report_ui_.template_fill;
   const EMPTY_CELL_MARKUP = render_element("td", {}, "");
   const OPEN_CELL_MARKUP = render_element(
     "td",
@@ -197,60 +188,55 @@ window.try_catch_handler_(function () {
         : CALL_GRAPH_BRANCH_LAST_TEXT,
     );
   }
-  // Writes a node's share in its template, heat colored by the chosen curve.
+  // Writes a node's share, heat colored by the chosen curve.
   function share_markup(graph_node) {
     if (graph_node.call_edge === null) return "";
     const share_percent = edge_share(graph_node.call_edge);
     if (share_percent === null) return "";
-    return template_fill(render_html_escape(CALL_GRAPH_SHARE_TEMPLATE), {
-      __SHARE__: render_element(
-        "span",
-        {
-          style: window.report_ui_.heat_cell_style(
-            share_percent,
-            heat_curve_name,
-            false,
-          ),
-        },
-        render_html_escape(window.report_ui_.percent_text(share_percent)),
-      ),
-    });
+    return render_element(
+      "span",
+      {
+        style: window.report_ui_.heat_cell_style(
+          share_percent,
+          heat_curve_name,
+          false,
+        ),
+      },
+      render_html_escape(window.report_ui_.percent_text(share_percent)),
+    );
   }
-  // Writes a node's symbol in its template, a button if it has shown children.
+  // Writes a node's symbol between spaces, a button if it has shown children.
   function symbol_markup(graph_node, has_shown_children) {
     const name_markup = render_html_escape(
       path_function(graph_node.node_path).name,
     );
-    return template_fill(render_html_escape(CALL_GRAPH_SYMBOL_TEMPLATE), {
-      __SYMBOL__: has_shown_children
-        ? window.render_menu_button_("action", name_markup, {
-            tag_name: "span",
-          })
-        : name_markup,
-    });
+    const shown_markup = has_shown_children
+      ? window.render_menu_button_("action", name_markup, {
+          tag_name: "span",
+        })
+      : name_markup;
+    return " " + shown_markup + " ";
   }
-  // Writes a node's calls multiple in its template, if it has one.
+  // Writes a node's calls multiple then "x ", if it has one.
   function multiple_markup(graph_node) {
     if (graph_node.call_edge === null) return "";
     const calls_multiple = edge_multiple(graph_node.call_edge);
     if (calls_multiple === null) return "";
-    return template_fill(render_html_escape(CALL_GRAPH_MULTIPLE_TEMPLATE), {
-      __MULTIPLE__: render_html_escape(
+    return (
+      render_html_escape(
         window.report_ui_.fixed_text(calls_multiple, NUMBER_FRACTION_DIGITS),
-      ),
-    });
+      ) + "x "
+    );
   }
   // Writes a node's tail: the line when open, else its subroutine time.
   function tail_markup(graph_node, is_open) {
     if (is_open) return render_html_escape(CALL_GRAPH_LINE_TEXT);
     const function_record = path_function(graph_node.node_path);
-    return template_fill(render_html_escape(CALL_GRAPH_SUBROUTINE_TEMPLATE), {
-      __SUBROUTINE__: render_html_escape(
-        window.report_ui_.human_text(
-          function_record.cumulative_cost - function_record.self_cost,
-        ),
+    return render_html_escape(
+      window.report_ui_.human_text(
+        function_record.cumulative_cost - function_record.self_cost,
       ),
-    });
+    );
   }
   // Makes a node's row: its ancestors' pass texts, then its own cells.
   function node_row(graph_node) {

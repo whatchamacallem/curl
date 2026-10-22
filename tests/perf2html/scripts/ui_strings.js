@@ -54,8 +54,6 @@ window.ui_strings_ = (function () {
     str_counter_llm: "last level cache misses, all",
     str_debug_tip_none: "(none)",
     str_debug_tip_text: "<{tag}> class={class}\nid={id}\nfg={fg}\nbg={bg}",
-    str_error_dark_mode_toggle_unusable:
-      "the dark mode toggle came out as {0}, naming neither choice",
     str_error_hash_file_missing: "url names line {0} but no file",
     str_error_hash_file_unknown:
       "url encodes a file this report never profiled: {0}",
@@ -99,7 +97,6 @@ window.ui_strings_ = (function () {
       "url part {0} holds no object of setting values",
     str_error_strip_number_unusable:
       "no available strip entry is numbered {0}",
-    str_error_template_marker_missing: "the template holds no marker {0}",
     str_flame_graph_page_title: "speedscope",
     str_function_list_cell_entry: "{function} ({share})",
     str_function_name_unknown: "?",

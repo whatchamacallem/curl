@@ -1,6 +1,7 @@
 {
   "permissions": {
     "allow": [
+      "Artifact",
       "Bash(*)",
       "Edit(*)",
       "Glob(*)",
@@ -9,7 +10,8 @@
       "Skill(*)",
       "WebFetch(*)",
       "WebSearch(*)",
-      "Write(*)"
+      "Write(*)",
+      "mcp__claude-code-remote__register_repo_root"
     ],
     "deny": ["Edit(/mnt/**)", "Read(/mnt/**)", "Write(/mnt/**)"],
     "defaultMode": "auto"
