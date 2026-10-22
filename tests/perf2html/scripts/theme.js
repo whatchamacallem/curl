@@ -213,6 +213,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
     horizontal: new WeakSet(),
     vertical: new WeakSet(),
   };
+  const kept_column_widths = new Map();
   const registered_panes = [];
   const rendered_strips = new WeakMap();
   const resize_settle_callbacks = [];
@@ -1890,6 +1891,33 @@ window.report_ui_ = window.try_catch_handler_(function () {
     column_edge_hovered_element = edge_element;
     if (edge_element) edge_element.classList.add("column-edge-grab-");
   }
+  // Names a title for its kept width: its move name, else its column index.
+  function column_width_name(title_cell) {
+    return (
+      title_cell.getAttribute("data-column-move-name-") ??
+      String(title_cell.cellIndex)
+    );
+  }
+  // Keeps a dragged title's width for the next table its table key draws.
+  function column_width_keep(title_cell) {
+    const table_key = title_cell.closest("table").getAttribute("data-key-");
+    if (!kept_column_widths.has(table_key))
+      kept_column_widths.set(table_key, new Map());
+    kept_column_widths
+      .get(table_key)
+      .set(column_width_name(title_cell), title_cell.style.minWidth);
+  }
+  // Gives a drawn table's titles the widths dragged on its table key before.
+  function column_widths_restore(table_element) {
+    const kept_widths = kept_column_widths.get(
+      table_element.getAttribute("data-key-"),
+    );
+    if (!kept_widths) return;
+    for (const title_cell of table_element.tHead.rows[0].cells) {
+      const kept_width = kept_widths.get(column_width_name(title_cell));
+      if (kept_width !== undefined) title_cell.style.minWidth = kept_width;
+    }
+  }
   // Sizes a column title's min width or a pane's max width by its right edge.
   function column_edge_drag(
     press_event,
@@ -1914,6 +1942,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
         start_width_px + design_px(move_event.clientX - press_event.clientX);
       sized_element.style[size_property_name] =
         Math.max(0, wanted_width_px) + "px";
+      if (size_property_name === "minWidth") column_width_keep(sized_element);
       if (animation_frame) return;
       animation_frame = requestAnimationFrame(
         window.try_catch_handler_(() => {
@@ -2134,6 +2163,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
     for (const table_element of root_element.querySelectorAll(
       "table.table-",
     )) {
+      column_widths_restore(table_element);
       table_column_press_attach(table_element);
       table_sort_attach(table_element);
       if (table_element.tBodies[0].querySelector("a[href]"))
@@ -2166,6 +2196,8 @@ window.report_ui_ = window.try_catch_handler_(function () {
   }
   function layout_reset(root_element) {
     root_element = root_element || document.body;
+    // A page keeps the widths of its own tables alone, so all are forgotten.
+    kept_column_widths.clear();
     for (const title_cell of root_element.querySelectorAll(
       "table.table- > thead > tr > th",
     ))

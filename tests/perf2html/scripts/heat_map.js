@@ -55,9 +55,8 @@ window.try_catch_handler_(function () {
     function_table = null,
     shown_test_name = null;
   // Holds the tree and its bar, hung from the source table's first title.
-  const tree_track = document.getElementById(
-    "heat-map-tree-track-template-",
-  ).content.firstElementChild;
+  const tree_track = document.getElementById("heat-map-tree-track-template-")
+    .content.firstElementChild;
   const tree_panel = tree_track.querySelector("#heat-map-tree-");
   const main_panel = document.getElementById("heat-map-main-");
   const minimap_panel = document.getElementById("heat-map-minimap-");
