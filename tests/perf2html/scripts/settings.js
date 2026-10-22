@@ -9,13 +9,34 @@ window.try_catch_handler_(function () {
   const SETTINGS_RELAY_MESSAGE_NAME = "settings_relay";
   const SETTINGS_REQUEST_MESSAGE_NAME = "settings_request";
   const is_framed = window.is_framed_;
+  const written_object = __DATA__;
   let applied_values = {};
+  let preferences_are_ignored = false;
   let settings_object = null;
+  let storage_is_checked = false;
 
   function deep_freeze(value) {
     if (value === null || typeof value !== "object") return value;
     Object.values(value).forEach(deep_freeze);
     return Object.freeze(value);
+  }
+  // Reads one setting of the settings given, refusing an unknown one.
+  function setting_read(settings_values, setting_name) {
+    if (!Object.hasOwn(settings_values, setting_name))
+      window.throw_exception_("str_error_internal");
+    return settings_values[setting_name];
+  }
+  // Writes each palette role's color as the root value a stylesheet reads.
+  function palette_values_write(settings_values) {
+    for (const palette_name of [
+      "STYLE_COLOR_LIGHT_MODE",
+      "STYLE_COLOR_DARK_MODE",
+    ])
+      for (const [color, roles] of Object.entries(
+        setting_read(settings_values, palette_name),
+      ))
+        for (const role of roles)
+          document.documentElement.style.setProperty("--" + role, color);
   }
   // Writes each root value a stylesheet reads, from the window settings.
   function root_values_write() {
@@ -38,14 +59,9 @@ window.try_catch_handler_(function () {
     root_values[settings_("STYLE_PAGE_FONT_FAMILY_PROPERTY")] = settings_(
       "STYLE_PAGE_FONT_FAMILY",
     );
-    for (const palette_name of [
-      "STYLE_COLOR_LIGHT_MODE",
-      "STYLE_COLOR_DARK_MODE",
-    ])
-      for (const [color, roles] of Object.entries(settings_(palette_name)))
-        for (const role of roles) root_values["--" + role] = color;
     for (const [name, value] of Object.entries(root_values))
       document.documentElement.style.setProperty(name, value);
+    palette_values_write(settings_object);
   }
   // Returns whether settings debugging is on, the top page's query deciding.
   function settings_debug_enabled(written_object) {
@@ -67,18 +83,39 @@ window.try_catch_handler_(function () {
       );
     return query_value === query_values.enabled;
   }
-  // Returns the settings the top hash applies, an empty object for none.
-  function settings_applied_values(written_object) {
-    const key_prefix = written_object.SETTINGS_DEBUG_HASH_KEY_NAME + "=";
-    const applied_part = location.hash
+  // Turns the debug query on in place when the top hash applies settings.
+  function settings_debug_query_enable(written_object) {
+    if (
+      settings_applied_part(written_object) === undefined ||
+      settings_debug_enabled(written_object)
+    )
+      return;
+    const debug_url = new URL(location.href);
+    debug_url.searchParams.set(
+      written_object.SETTINGS_DEBUG_QUERY_KEY_NAME,
+      written_object.SETTINGS_DEBUG_QUERY_VALUES.enabled,
+    );
+    history.replaceState(history.state, "", debug_url.href);
+  }
+  // Returns the hash part applying settings, undefined for none.
+  function settings_applied_part(settings_values) {
+    const key_prefix =
+      setting_read(settings_values, "SETTINGS_DEBUG_HASH_KEY_NAME") + "=";
+    return location.hash
       .slice(1)
       .split("&")
       .find((hash_part) => hash_part.startsWith(key_prefix));
+  }
+  // Returns the settings the top hash applies, an empty object for none.
+  function settings_applied_values(written_object) {
+    const applied_part = settings_applied_part(written_object);
     if (applied_part === undefined) return {};
     const hash_values = JSON.parse(
       new TextDecoder(undefined, { fatal: true }).decode(
         Uint8Array.fromBase64(
-          decodeURIComponent(applied_part.slice(key_prefix.length)),
+          decodeURIComponent(
+            applied_part.slice(applied_part.indexOf("=") + 1),
+          ),
         ),
       ),
     );
@@ -100,6 +137,7 @@ window.try_catch_handler_(function () {
   // Installs the window settings object, under debug with the hash's applied.
   function settings_install(written_object) {
     if (!is_framed) {
+      settings_debug_query_enable(written_object);
       const debug_enabled = settings_debug_enabled(written_object);
       if (debug_enabled) {
         applied_values = settings_applied_values(written_object);
@@ -112,9 +150,7 @@ window.try_catch_handler_(function () {
   }
   // Reads one setting of the window settings object, refusing an unknown one.
   function settings_(setting_name) {
-    if (!Object.hasOwn(settings_object, setting_name))
-      window.throw_exception_("str_error_internal");
-    return settings_object[setting_name];
+    return setting_read(settings_object, setting_name);
   }
   function settings_names_() {
     return Object.keys(settings_object);
@@ -167,6 +203,174 @@ window.try_catch_handler_(function () {
       window.throw_exception_("str_error_held_script_unframed");
   }
 
+  // Stores null in every owned key, each preference one the user never set.
+  function storage_sweep(owned_keys) {
+    for (const storage_key of owned_keys) {
+      localStorage.setItem(storage_key, JSON.stringify(null));
+    }
+  }
+  function storage_version_check(settings_values) {
+    if (storage_is_checked) return;
+    storage_is_checked = true;
+    const owned_keys = setting_read(settings_values, "STORAGE_OWNED_KEYS");
+    const storage_version = setting_read(settings_values, "STORAGE_VERSION");
+    const version_key = setting_read(settings_values, "STORAGE_VERSION_KEY");
+    preferences_are_ignored =
+      settings_applied_part(settings_values) !== undefined;
+    try {
+      if (preferences_are_ignored) {
+        storage_sweep(owned_keys);
+        return;
+      }
+      if (localStorage.getItem(version_key) === storage_version) {
+        return;
+      }
+      storage_sweep(owned_keys);
+      localStorage.setItem(version_key, storage_version);
+    } catch (storage_error) {}
+  }
+  // Reads a stored preference, null for none or under ignored preferences.
+  function stored_value_read(settings_values, storage_key) {
+    storage_version_check(settings_values);
+    if (preferences_are_ignored) return null;
+    try {
+      return JSON.parse(localStorage.getItem(storage_key));
+    } catch (storage_error) {
+      return null;
+    }
+  }
+  const view_storage = {
+    preferences_clear() {
+      storage_version_check(settings_object);
+      const owned_keys = settings_("STORAGE_OWNED_KEYS");
+      try {
+        storage_sweep(owned_keys);
+      } catch (storage_error) {}
+    },
+    value_read(storage_key) {
+      return stored_value_read(settings_object, storage_key);
+    },
+    value_write(storage_key, stored_value) {
+      storage_version_check(settings_object);
+      if (preferences_are_ignored) return;
+      try {
+        localStorage.setItem(storage_key, JSON.stringify(stored_value));
+      } catch (storage_error) {}
+    },
+  };
+
+  // Returns the attribute value naming a dark mode, the value stored too.
+  function dark_mode_state(settings_values, is_enabled) {
+    return setting_read(
+      settings_values,
+      is_enabled ? "DARK_MODE_ENABLED_VALUE" : "DARK_MODE_DISABLED_VALUE",
+    );
+  }
+  // Returns the toggle query value, null for none, refusing an unknown one.
+  function dark_mode_toggle_query_value(settings_values) {
+    const toggle_values = setting_read(
+      settings_values,
+      "DARK_MODE_TOGGLE_QUERY_VALUES",
+    );
+    const toggle_value = new URLSearchParams(location.search).get(
+      setting_read(settings_values, "DARK_MODE_TOGGLE_QUERY_KEY_NAME"),
+    );
+    if (
+      toggle_value !== null &&
+      toggle_value !== toggle_values.enabled &&
+      toggle_value !== toggle_values.disabled
+    )
+      window.throw_exception_(
+        "str_error_dark_mode_toggle_unusable",
+        toggle_value,
+      );
+    return toggle_value;
+  }
+  // Returns the dark mode the top page wrote in a framed page's address.
+  function dark_mode_frame_query_enabled(settings_values) {
+    const frame_value = new URLSearchParams(location.search).get(
+      setting_read(settings_values, "DARK_MODE_FRAME_QUERY_KEY_NAME"),
+    );
+    if (frame_value === dark_mode_state(settings_values, true)) return true;
+    if (frame_value === dark_mode_state(settings_values, false)) return false;
+    window.throw_exception_("str_error_internal");
+  }
+  // Returns whether a page opens in dark mode, the one door deciding that.
+  function dark_mode_opening_enabled(settings_values) {
+    if (is_framed) return dark_mode_frame_query_enabled(settings_values);
+    const default_enabled = setting_read(
+      settings_values,
+      "DARK_MODE_ENABLED_DEFAULT",
+    );
+    const toggle_values = setting_read(
+      settings_values,
+      "DARK_MODE_TOGGLE_QUERY_VALUES",
+    );
+    const toggle_value = dark_mode_toggle_query_value(settings_values);
+    // The query resets the preferences, then toggles on its enabled value.
+    if (toggle_value !== null)
+      return (toggle_value === toggle_values.enabled) !== default_enabled;
+    const stored_value = stored_value_read(
+      settings_values,
+      setting_read(settings_values, "STORAGE_KEY_VIEW_DARK_MODE"),
+    );
+    if (stored_value === null) return default_enabled;
+    if (stored_value === dark_mode_state(settings_values, true)) return true;
+    if (stored_value === dark_mode_state(settings_values, false)) return false;
+    window.throw_exception_("str_error_internal");
+  }
+  function early_fill_enabled(settings_values) {
+    return setting_read(
+      settings_values,
+      "STYLE_PAGE_BACKGROUND_EARLY_FILL_ENABLED",
+    );
+  }
+  // Returns a mode's page background role, refusing one its palette lacks.
+  function page_background_role(settings_values, is_enabled) {
+    const [role_setting_name, palette_name] = is_enabled
+      ? ["STYLE_PAGE_BACKGROUND_DARK_MODE_ROLE", "STYLE_COLOR_DARK_MODE"]
+      : ["STYLE_PAGE_BACKGROUND_LIGHT_MODE_ROLE", "STYLE_COLOR_LIGHT_MODE"];
+    const role_name = setting_read(settings_values, role_setting_name);
+    const palette_roles = Object.values(
+      setting_read(settings_values, palette_name),
+    ).flat();
+    if (!palette_roles.includes(role_name))
+      window.throw_exception_(
+        "str_error_setting_choice_unknown",
+        role_setting_name,
+        role_name,
+      );
+    return role_name;
+  }
+  // Shows a dark mode on the root, under early fill its page background too.
+  function dark_mode_root_show(settings_values, is_enabled) {
+    const root_element = document.documentElement;
+    root_element.setAttribute(
+      setting_read(settings_values, "DARK_MODE_ATTRIBUTE_NAME"),
+      dark_mode_state(settings_values, is_enabled),
+    );
+    if (!early_fill_enabled(settings_values)) return;
+    root_element.style.background =
+      "var(--" + page_background_role(settings_values, is_enabled) + ")";
+  }
+  // Shows the opening mode and its page background before the body parses.
+  function page_early_fill(settings_values) {
+    if (!early_fill_enabled(settings_values)) return;
+    if (is_framed) palette_values_write(settings_values);
+    dark_mode_root_show(
+      settings_values,
+      dark_mode_opening_enabled(settings_values),
+    );
+  }
+
+  window.report_dark_mode_ = {
+    opening_enabled: () => dark_mode_opening_enabled(settings_object),
+    root_show: (is_enabled) =>
+      dark_mode_root_show(settings_object, is_enabled),
+    state_text: (is_enabled) => dark_mode_state(settings_object, is_enabled),
+    toggle_query_value: () => dark_mode_toggle_query_value(settings_object),
+  };
+  window.report_view_storage_ = view_storage;
   window.settings_ = settings_;
   window.settings_applied_values_ = settings_applied_values_;
   window.settings_names_ = settings_names_;
@@ -175,6 +379,11 @@ window.try_catch_handler_(function () {
     window.try_catch_handler_(settings_request_handler),
   );
   if (is_framed) {
+    // Fills under the written settings and those the address applies.
+    page_early_fill({
+      ...written_object,
+      ...settings_applied_values(written_object),
+    });
     window.addEventListener(
       "message",
       window.try_catch_handler_(settings_relay_handler),
@@ -184,7 +393,8 @@ window.try_catch_handler_(function () {
       "*",
     );
   } else {
-    settings_install(__DATA__);
+    settings_install(written_object);
+    page_early_fill(settings_object);
     document.addEventListener(
       "DOMContentLoaded",
       window.try_catch_handler_(held_scripts_unframed_check),

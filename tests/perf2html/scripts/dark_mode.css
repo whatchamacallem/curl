@@ -31,9 +31,6 @@
   .menu-button- a {
     color: inherit;
   }
-  .menu-status-bar- a:not(:focus-visible) {
-    color: inherit;
-  }
 
   #heat-map-minimap- {
     background: var(--dark-mode-page-bg-);
@@ -68,13 +65,18 @@
     background: var(--dark-mode-menu-focus-bg-) !important;
     color: var(--dark-mode-menu-focus-fg-) !important;
   }
+  .heat-map-tree-track- {
+    background: var(--dark-mode-page-bg-);
+  }
 
   body {
     background: var(--dark-mode-page-bg-);
     color: var(--dark-mode-page-fg-);
   }
-  #overview-raw-data- > a:not(:focus-visible) {
-    background: none;
+  /* The manifest labels and raw data link take the odd column color. */
+  #overview-raw-data- > a:not(:focus-visible),
+  .overview-manifest-label- {
+    background: var(--dark-mode-panel-bg-);
   }
   #overview-view-frame- {
     background: var(--dark-mode-page-bg-);
@@ -114,20 +116,20 @@
     color: var(--dark-mode-page-emphasis-fg-);
   }
   #heat-map-minimap-viewport- {
-    border-width: var(--dark-mode-menu-normal-outline-width-);
+    border-width: var(--page-line-width-);
     border-color: var(--dark-mode-menu-normal-outline-);
   }
   table.table-::before {
     left: anchor(left);
     right: anchor(right);
-    bottom: calc(anchor(bottom) - var(--dark-mode-menu-normal-outline-width-));
-    border-width: var(--dark-mode-menu-normal-outline-width-);
+    bottom: calc(anchor(bottom) - var(--page-line-width-));
+    border-width: var(--page-line-width-);
     border-color: var(--dark-mode-menu-normal-outline-);
   }
   .heat-map-tree-node-:not(.cold-):hover::before {
-    inset: 0 0 calc(-1 * var(--dark-mode-menu-normal-outline-width-));
+    inset: 0 0 calc(-1 * var(--page-line-width-));
     border-style: solid;
-    border-width: var(--dark-mode-menu-normal-outline-width-);
+    border-width: var(--page-line-width-);
     border-color: var(--dark-mode-menu-normal-outline-);
   }
   .heat-map-source-information-line- {
@@ -146,7 +148,6 @@
     background: var(--dark-mode-menu-normal-bg-);
     color: var(--dark-mode-menu-normal-fg-);
   }
-  #heat-map-tree-scrollbar-:focus-visible,
   .text-scrollbar-.drag- {
     background: var(--dark-mode-menu-focus-bg-);
     color: var(--dark-mode-menu-focus-fg-);

@@ -65,6 +65,7 @@
       <select id="width-" autocomplete="off"></select>
     </div>
     <div id="grid-"></div>
+    <pre id="page-timings-"></pre>
     __SHOT_LIST__
     <script>
       (function () {
@@ -74,6 +75,7 @@
         const select = document.getElementById("width-");
         const grid = document.getElementById("grid-");
         const report_links = document.getElementById("report-links-");
+        const timing_list = document.getElementById("page-timings-");
         const WIDTH_CHOICE_MAX = 16;
         const WIDTH_DEFAULT = 4;
         const WIDTH_STORAGE_KEY = "perf2html.test.thumbs_width";
@@ -93,6 +95,11 @@
           report_link.textContent = report_entry.name;
           report_links.append(report_link);
         });
+        // Draws each report's page load and phase timings below the grid.
+        const timing_lines = data.page_timings.map(function (page_timing) {
+          return page_timing.line;
+        });
+        timing_list.textContent = timing_lines.join("\n");
 
         // Returns the stored width choice, the default when none is stored.
         function width_choice_read() {

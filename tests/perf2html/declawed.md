@@ -240,19 +240,26 @@ The single function/check owning each concern - never bypass or duplicate:
 - `test_list.txt` - the one list of a run's tests, born from `TESTS_C` in
   `perf2html.sh`, read everywhere.
 - `counter_value()` - all counter lookups (callgrind.py).
-- `root_reach()` - every recording cut at `CALLGRIND_ROOT_FUNCTION_NAME`:
-  the root and what the calls reach from it kept, the root's calls into
-  `root_call_count`, the summary the kept lines' sum; a delta is not cut
-  (callgrind.py); `caller_calls()` every calls per caller aggregation.
+- `callgrind_measure` - every callgrind recording's collection window,
+  valgrind's own `--zero-before`, `--toggle-collect` and
+  `--collect-atstart` options naming `PROFILE_START_FUNCTION_NAME` and
+  `PROFILE_STOP_FUNCTION_NAME` (settings.sh), so nothing outside the
+  window is recorded and nothing cuts a recording after (perf2html.sh);
+  `function_calls()` every database row's and call graph root's calls, an
+  uncalled start function's `PROFILE_START_FUNCTION_UNRECORDED_CALLS`
+  (build_report.py); `caller_calls()` every calls per caller aggregation,
+  each caller's calls, first call line and summed costs (callgrind.py).
 - `function_line()` - the one line a function is addressed at: the line before
   its callgrind entry line when that line carries no counter and the
   function's counters span more than one line, else the entry line
   (callgrind_to_heatmap.py).
-- `report_source_database_` - the one list of the files and functions a report
-  names, every test's union, no counter (scripts/source_database.js).
+- `report_source_database_` - the one list of the files the tests show and
+  the functions with a line, every test's union, names alone
+  (scripts/source_database.js).
 - `text_clip()` - every cell text cut at its column's `clip`;
-  `table_slide_press()` every column width, a drag setting its title
-  cell's `min-width` (theme.js).
+  `table_slide_press()` every column width, a sideways drag of a body cell
+  setting the `min-width` of the title of the column left of it, a title
+  press sliding nothing (theme.js).
 - `checksum_compute`/`_REPORT_CHECKSUM_COMMAND` - report checksums, kept
   separate, re-verified on every open.
 - `share_of_test()` and `share_of_function()` - every regular heat map share,
@@ -261,16 +268,28 @@ The single function/check owning each concern - never bypass or duplicate:
   thing's own baseline through `diff_share()` (heat_map.js).
 - `diff_share()` - every diff share, a fall past its baseline refused
   (theme.py/js).
-- `fixed_text()` - every decimal a page prints; `percent_text()` every
-  share, `signed_percent()`/`signed_percent_text()` every diff share
+- `fixed_text()` - every decimal a page prints, the call graph's calls
+  multiple too; `percent_text()` every share,
+  `signed_percent()`/`signed_percent_text()` every diff share
   (theme.py `NumberFormat`, theme.js `report_ui_`); theme.js's
-  `uses_whitespace` false where nothing aligns: a callers cell, a call
-  graph share no sibling's shown share lines up with; the call graph
-  prints no zero share.
-- `edge_share()` - every call graph share, a callee's calls per call of its
-  caller, the root's calls from its row, a diff's the change of that through
-  `diff_share()` (call_graph.js); `call_graph_roots()` the one root a call
-  graph starts from, any other uncalled function refused (build_report.py).
+  `uses_whitespace` false where nothing aligns: a database callers or
+  callees cell; the call graph prints no zero share, its layout table
+  aligning the shares.
+- `edge_share()` - every call graph share, an edge's inclusive CEst
+  (`RANKING_COUNTER_NAME`) summed over its call sites as a share of its
+  caller's cumulative CEst, the caller's self plus its calls to every
+  other function, a root none; `edge_multiple()` every calls multiple, an
+  edge's calls per invocation of its caller, the caller's root calls and
+  incoming edge calls summed (call_graph.js); `call_graph_roots()` every
+  uncalled caller a root, a call graph with none or with a called function
+  none of them reaches refused (build_report.py).
+- `call_graph_open_set()` - the one open set of a fresh call graph view,
+  at its first render and every `view_reset`: the hottest path from the
+  root of greatest cumulative CEst, at each node its shown child of
+  greatest inclusive CEst (ties by call line, then name, whatever the
+  sort), each node on that path with shown children open, every other
+  closed; a shown child is a callee not already on the node's path
+  (call_graph.js).
 - `design_scale_stop_set()` - every scale change; `menu.js` then posts
   `layout_reset`, which resets column widths, pane widths and heading row
   counts.
@@ -280,34 +299,51 @@ The single function/check owning each concern - never bypass or duplicate:
 - `hash_for_location()` - every heat map link into a file at a line, a
   function's line written as the function's hash (heat_map.js).
 - `report_ui_.strip.render(strip_element, entries, status_entries)` - every
-  strip cell: the menu and its status bar, the heat map strip, each table
-  heading (theme.js).
+  strip cell: the menu and its status bar, an entry with an empty href a
+  plain label there, the preference strip, the settings view's load log
+  strip, each table heading (theme.js).
 - `report_ui_.resize_settle_register(callback)` - every window resize
   settle: the one animation frame per rendering update,
   runs `layout_refresh`, then each callback in registration order; a scale
   change settles with the refresh alone (theme.js).
 - `template_fill(template_text, marker_values)` - every template marker
-  fill, a marker its template lacks refused (theme.py/js; `settings.py`
-  refuses a missing `__DATA__` itself, as theme.py imports it).
+  fill, a marker its template lacks refused (theme.py, and theme.js
+  `report_ui_.template_fill` for the call graph's settings templates;
+  `settings.py` refuses a missing `__DATA__` itself, as theme.py imports
+  it).
 - `window.render_element_`/`render_element()` - every tag a page
   script or a page builder writes, each attribute escaped through
   `window.render_html_escape_`/`render_html_escape()`
   (theme.js/theme.py); the one HTML composition system per language,
-  `report_ui_.render_table` every table (theme.js),
+  `report_ui_.render_table` every data table, the call graph's layout
+  table not one (theme.js),
   `window.render_element_of_` every element made from markup.
 - `window.render_menu_button_`/`render_menu_button()` - every menu
-  button: a strip cell, a control, a ticker tape entry (theme.js); a link
-  in a table or a page is a plain anchor from `render_element()`.
+  button: a strip cell, a control, a ticker tape entry, a call graph
+  symbol with shown children (theme.js); a link in a table or a page is a
+  plain anchor from `render_element()`.
 - `window.render_page_emphasis_` - every page emphasis, called by
   the strip for a heading title (theme.js).
 - `heat_cell_style(percent, curve, is_diff)` - every heat color, JS
   alone; Python paints nothing.
 - `table_sort.records()` - every table sort; `render_table`'s
-  `on_sort` the one column title click (theme.js).
-- `report_preferences_.now()` - every read of the counters, calls, heat
-  scale and heat sort preferences; `preference_choose()` on the top
-  page the one writer, relayed down on every message, a view taking it
-  through `report_preferences_.relay_handler()` (preferences.js).
+  `on_sort` the one column title click, its `on_column_move` the one
+  column title drop, which moves a counters list's line (theme.js).
+- `report_preferences_.now()` - every read of the per-page counters lists
+  (`counter_lists`, each line calls, callers, callees or a counter, in
+  order, shown or not), the heat scale and the heat sort preferences;
+  `preference_choose()` on the top page the one writer, through
+  `counter_line_toggle()`, `counter_line_move()` (a view's title drop
+  posting the `counter_line_move` message up) and the heat choices,
+  relayed down on every message, a view taking it through
+  `report_preferences_.relay_handler()` (preferences.js).
+- `report_preferences_.counter_readers()` - every counter's reader for the
+  database and the heat map, a recorded counter's value by its index, a
+  derived one's its terms summed (preferences.js).
+- `report_dark_mode_.opening_enabled()` - the dark mode a page opens in: a
+  framed view's the `dark-mode` query the top page writes into its
+  address, the top page's the `toggle-dark` query, else the stored choice,
+  else `DARK_MODE_ENABLED_DEFAULT` (settings.js).
 - `load_log_append()` - every load log entry, on the clock the top page's
   navigation started, a framed page posting it up (utility.js);
   `report_load_log_.page_render_log()` and `.event_render_log()` every
@@ -477,6 +513,10 @@ The single function/check owning each concern - never bypass or duplicate:
   is regenerated the checksum for both reports (excluding MANIFEST.txt) should
   be byte identical. Regeneration from artifacts should be deterministic in
   general.
+- A diff report has no call graph: `perf2html_diff.sh` runs no call graph
+  code, the menu hides the call graph button in a diff and the frame
+  refuses a call graph address there (`REGULAR_REPORT_VIEW_KEYS`). No diff
+  version of the call graph is defined, planned or built.
 - Things that are the same should have the same name. The thesaurus was not
   meant to be a naming guide.
 - The pronouns for software are `the` and `that`. Not `it` or `they`. Do not

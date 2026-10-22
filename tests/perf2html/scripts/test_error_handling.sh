@@ -44,10 +44,11 @@ _TEST_ERROR_ARTIFACTS="$_DIR_PERF2HTML/perf2html_temporary_artifacts"
 
 _TEST_ERROR_ARCHIVE_SUFFIX=.txz
 _TEST_ERROR_HEAT_MAP_DIR_NAME=heat-map
+_TEST_ERROR_HEAT_MAP_MODEL_DIR_NAME=data
+_TEST_ERROR_HEAT_MAP_MODEL_FILE_SUFFIX=.js
 _TEST_ERROR_PROFILE_FILE_SUFFIX=.callgrind.out
 _TEST_ERROR_ROWS_FILE_NAME=perf2html.txt
 _TEST_ERROR_SOURCES_DIR_NAME=sources
-_TEST_ERROR_SOURCE_DATABASE_PATH=scripts/source_database.js
 _TEST_ERROR_TEST_LIST_FILE_NAME=test_list.txt
 _TEST_ERROR_TRUNCATED_BYTES=1024
 _TEST_ERROR_TIMER_ARTIFACTS_PREFIX=timer-artifacts-
@@ -62,8 +63,6 @@ _TEST_ERROR_RECORDING_FILE_SUFFIXES=("$_TEST_ERROR_PROFILE_FILE_SUFFIX"
 _TEST_ERROR_MANIFEST_CHECKSUM_LABEL=checksum
 
 _TEST_ERROR_MANIFEST_VERSION_DIFF='curl/perf2html_diff.sh v0'
-_TEST_ERROR_MANIFEST_VERSION_FULL='curl/perf2html.sh v0'
-_TEST_ERROR_MANIFEST_VERSION_PREVIOUS='curl/perf2html.sh v0'
 
 _TEST_ERROR_SCRATCH="$_DIR_PERF2HTML/build/test_error_handling_scratch"
 
@@ -332,7 +331,8 @@ writes another $_part/ than one made inside it"
 
 test_error_diff_tests() {
   local _baseline="$1" _modified="$2" _diff="$3" _copy _archive _kept
-  local _version _database _source _source_pattern='"source":"([^"]+)"'
+  local _test_list _first_test _model_path _model_text _source
+  local _source_pattern='"source":"([^"]+)"'
   local _tool="$_DIR_PERF2HTML/perf2html_diff.sh"
   local _scratch="$_TEST_ERROR_SCRATCH"
 
@@ -383,16 +383,6 @@ test_error_diff_tests() {
     "$_tool" "--artifacts=$_scratch/artifacts_bad_version" \
     "$_baseline" "$_copy" "$_scratch/out_bad_version"
 
-  _copy="$(test_report_copy "$_scratch/baseline_v1" "$_baseline")"
-  _version="$(head -n 1 "$_copy/MANIFEST.txt")"
-  [ "$_version" = "$_TEST_ERROR_MANIFEST_VERSION_FULL" ] \
-    || test_fail diff_baseline_v1 \
-      "line 1 is $_version, expected $_TEST_ERROR_MANIFEST_VERSION_FULL"
-  sed -i "1s|.*|$_TEST_ERROR_MANIFEST_VERSION_PREVIOUS|" "$_copy/MANIFEST.txt"
-  test_failure_expect diff_baseline_v1 2 -- \
-    "$_tool" "--artifacts=$_scratch/artifacts_baseline_v1" \
-    "$_copy" "$_modified" "$_scratch/out_baseline_v1"
-
   _copy="$(test_report_copy "$_scratch/baseline_extra_file" \
     "$_baseline")"
   echo 'added by test_error_handling.sh' >"$_copy/extra_file.txt"
@@ -409,12 +399,19 @@ test_error_diff_tests() {
 
   _copy="$(test_report_copy "$_scratch/modified_other_source" \
     "$_modified")"
-  [ -f "$_copy/$_TEST_ERROR_SOURCE_DATABASE_PATH" ] \
+  _test_list="$_TEST_ERROR_ARTIFACTS/${_modified##*/}"
+  _test_list+="/$_TEST_ERROR_TEST_LIST_FILE_NAME"
+  IFS= read -r _first_test <"$_test_list" || test_fail diff_sources_mismatch \
+    "no whole first line in $(path_shown "$_test_list")"
+  _model_path="$_copy/$_TEST_ERROR_HEAT_MAP_DIR_NAME"
+  _model_path+="/$_TEST_ERROR_HEAT_MAP_MODEL_DIR_NAME/$_first_test"
+  _model_path+="$_TEST_ERROR_HEAT_MAP_MODEL_FILE_SUFFIX"
+  [ -f "$_model_path" ] || test_fail diff_sources_mismatch \
+    "no $(path_shown "$_model_path")"
+  _model_text="$(<"$_model_path")"
+  [[ "$_model_text" =~ $_source_pattern ]] \
     || test_fail diff_sources_mismatch \
-      "no $(path_shown "$_copy/$_TEST_ERROR_SOURCE_DATABASE_PATH")"
-  _database="$(<"$_copy/$_TEST_ERROR_SOURCE_DATABASE_PATH")"
-  [[ "$_database" =~ $_source_pattern ]] || test_fail diff_sources_mismatch \
-    "no file with a source in $_TEST_ERROR_SOURCE_DATABASE_PATH"
+      "no file with a source in $(path_shown "$_model_path")"
   _source="$_copy/$_TEST_ERROR_SOURCES_DIR_NAME/${BASH_REMATCH[1]}"
   [ -f "$_source" ] || test_fail diff_sources_mismatch \
     "no source $(path_shown "$_source")"

@@ -13,6 +13,10 @@
 #include <unistd.h>
 #include <x86intrin.h>
 
+#ifndef PROFILE_START_FUNCTION_NAME
+#error "use -DPROFILE_START_FUNCTION_NAME from settings.sh"
+#endif
+
 #ifndef TEST_SAMPLES_SIZE
 #error "use -DTEST_SAMPLES_SIZE=$TEST_SAMPLES_SIZE from settings.sh"
 #endif
@@ -22,6 +26,8 @@
 #define CYG_CALLBACKS_MAX_REC                                                 \
   (CYG_CALLBACKS_RECORDS_PER_SAMPLE * (unsigned)TEST_SAMPLES_SIZE)
 #define CYG_CALLBACKS_EXIT_BIT (1ull << 63)
+#define CYG_CALLBACKS_EXPANDED_QUOTED(text) CYG_CALLBACKS_QUOTED(text)
+#define CYG_CALLBACKS_QUOTED(text) #text
 
 typedef struct {
   uint64_t fn;
@@ -64,6 +70,20 @@ __attribute__((cold)) static void cyg_callback_resume(void) {
   }
 }
 
+/* Declares where the trace starts, weak for a program lacking it. */
+__attribute__((weak)) int PROFILE_START_FUNCTION_NAME(void);
+
+/* Starts the clock and the event count at the start function's entry. */
+__attribute__((cold)) static void cyg_callback_start(void *fn, uint64_t flag) {
+  cyg_callbacks_t *cb = &s_cyg_callbacks;
+  if (!cb->out || flag || fn != (void *)PROFILE_START_FUNCTION_NAME)
+    return;
+  cb->t0_ns = cyg_callback_now_ns();
+  cb->t0_tsc = __rdtsc();
+  if (!cb->skip) /* nothing to pass */
+    cyg_callback_resume();
+}
+
 __attribute__((always_inline, hot)) static inline void
 cyg_callback_record(void *fn, uint64_t flag) {
   cyg_callbacks_t *cb = &s_cyg_callbacks;
@@ -71,6 +91,8 @@ cyg_callback_record(void *fn, uint64_t flag) {
     cb->next->fn = (uint64_t)fn;
     cb->next->tsc = __rdtsc() | flag;
     ++cb->next;
+  } else if (!cb->t0_tsc) {
+    cyg_callback_start(fn, flag);
   } else if (++cb->idle == cb->skip) {
     cyg_callback_resume();
   }
@@ -99,12 +121,6 @@ __attribute__((constructor)) static void cyg_callback_init(void) {
   cb->end = cb->buf + CYG_CALLBACKS_MAX_REC;
   cb->next = cb->end;
   cb->skip = skip_str ? strtoull(skip_str, NULL, 10) : 0;
-  cb->t0_ns = cyg_callback_now_ns();
-  cb->t0_tsc = __rdtsc();
-  if (cb->skip <= cb->idle) { /* nothing left to pass */
-    cb->skip = cb->idle;
-    cyg_callback_resume();
-  }
 }
 
 __attribute__((cold)) static int
@@ -160,6 +176,11 @@ __attribute__((destructor)) static void cyg_callback_dump(void) {
   FILE *f, *maps, *copy;
   if (!cb->out)
     return;
+  if (!cb->t0_tsc) {
+    fprintf(stderr, "error: %s: the traced run never entered %s\n", cb->out,
+            CYG_CALLBACKS_EXPANDED_QUOTED(PROFILE_START_FUNCTION_NAME));
+    _exit(EXIT_FAILURE);
+  }
   cyg_callback_pause();
   hdr[0] = CYG_CALLBACKS_MAGIC;
   hdr[1] = (uint64_t)(cb->final - cb->buf);

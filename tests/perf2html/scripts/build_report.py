@@ -10,31 +10,38 @@ from collections.abc import Iterable, Sequence
 from typing import NamedTuple, NotRequired, TypedDict
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import artifacts, callgrind, callgrind_diff, settings, theme
+import artifacts, callgrind, callgrind_diff, callgrind_to_heatmap
+import settings, theme
 
 _ASSET_DEBUG_SCRIPT_NAME: str = ""
 _ASSET_TEMPLATE_CALL_GRAPH_PAGE_NAME: str = ""
-_ASSET_TEMPLATE_CALLERS_PAGE_NAME: str = ""
+_ASSET_TEMPLATE_DATABASE_PAGE_NAME: str = ""
 _ASSET_TEMPLATE_OVERVIEW_PAGE_NAME: str = ""
 _ASSET_TEMPLATE_SETTINGS_PAGE_NAME: str = ""
 _CALL_GRAPH_PAGE_DIR_NAME: str = ""
-_CALLERS_PAGE_DIR_NAME: str = ""
-_CALLERS_TIME_SUFFIX_SECONDS: dict[str, float] = {}
-_CALLGRIND_ROOT_FUNCTION_NAME: str = ""
+_DATABASE_PAGE_DIR_NAME: str = ""
+_DATABASE_TIME_SUFFIX_SECONDS: dict[str, float] = {}
+_DATABASE_VIEW_KEY: str = ""
 _FLAME_GRAPH_LOCAL_PROFILE_PATH: str = ""
 _FLAME_GRAPH_VIEW_ENTRY: tuple[str, str] = ("", "")
 _HEAT_MAP_VIEW_ENTRY: tuple[str, str] = ("", "")
 _OVERVIEW_PAGE_PATH: str = ""
+_PERF_TOOL_TIME_LABEL: str = ""
+_PROFILE_START_FUNCTION_NAME: str = ""
+_PROFILE_START_FUNCTION_UNRECORDED_CALLS: int = 0
 _RANKING_COUNTER_NAME: str = ""
 _README_HTML_NAME: str = ""
 _README_MARKDOWN_NAME: str = ""
 _REPORT_SCRIPTS_DIR_NAME: str = ""
 _SETTINGS_VIEW_ENTRY: tuple[str, str] = ("", "")
+_TIMING_COUNTER_LABELS: dict[str, str] = {}
+_TIMING_COUNTER_RATIO_DIVIDEND: str = ""
+_TIMING_COUNTER_RATIO_DIVISOR: str = ""
 settings.load_into(__name__)
 
 _CALL_GRAPH_PAGE = theme.asset_text_read(_ASSET_TEMPLATE_CALL_GRAPH_PAGE_NAME)
 
-_CALLERS_PAGE = theme.asset_text_read(_ASSET_TEMPLATE_CALLERS_PAGE_NAME)
+_DATABASE_PAGE = theme.asset_text_read(_ASSET_TEMPLATE_DATABASE_PAGE_NAME)
 
 _DEBUG_SCRIPT = theme.asset_text_read(_ASSET_DEBUG_SCRIPT_NAME)
 
@@ -48,90 +55,83 @@ _OVERVIEW_PAGE_SCRIPTS_DEPTH = 0
 
 _OVERVIEW_PAGE = theme.asset_text_read(_ASSET_TEMPLATE_OVERVIEW_PAGE_NAME)
 
-_TIME_SUFFIX_ALTERNATION = "|".join(
-    re.escape(suffix) for suffix in sorted(_CALLERS_TIME_SUFFIX_SECONDS)
-)
-
-_TIME_LINE = re.compile(
-    r"^([ \t]*[A-Za-z][\w/ ]*:[ \t]*)"
-    r"(-?\d+(?:\.\d+)?)[ \t]*"
-    rf"({_TIME_SUFFIX_ALTERNATION})[ \t]*$",
-    re.I | re.M,
+_PERF_TOOL_TIME_LINE = re.compile(
+    rf"{re.escape(_PERF_TOOL_TIME_LABEL)}:\s+(\d+(?:\.\d+)?)\s*("
+    + "|".join(map(re.escape, sorted(_DATABASE_TIME_SUFFIX_SECONDS)))
+    + r")\s*"
 )
 
 
 class BuildReport:
-    class CalleeRow(NamedTuple):
-        function: int
+    class CallChange(NamedTuple):
         calls: int
-        values: list[int]
-        callers: list[BuildReport.CallerRow]
+        baseline_calls: int
 
-    class CallerRow(NamedTuple):
-        function: int
-        calls: int
-
-    class CallersData(NamedTuple):
-        callers: dict[str, list[callgrind_diff.CallerDelta]]
-        baseline_calls: dict[str, int]
-        baseline: dict[str, callgrind.Costs]
-        counters: list[str]
-
-    class CallersModel(TypedDict):
-        counterNames: list[str]
-        counterTotals: NotRequired[list[int]]
-        functions: list[BuildReport.FunctionLink]
-        callees: list[BuildReport.CalleeRow] | list[BuildReport.DiffCalleeRow]
+    class CallGraphArgs(NamedTuple):
+        artifacts: str
+        report: str
 
     class CallGraphEdge(NamedTuple):
         caller: int
         callee: int
         calls: int
         line: int
+        inclusive_value: int
+
+    class CallGraphFunction(NamedTuple):
+        name: str
+        self_value: int
 
     class CallGraphModel(TypedDict):
-        functions: list[BuildReport.FunctionLink]
-        roots: (
-            list[BuildReport.CallGraphRoot]
-            | list[BuildReport.DiffCallGraphRoot]
-        )
-        edges: (
-            list[BuildReport.CallGraphEdge]
-            | list[BuildReport.DiffCallGraphEdge]
-        )
+        functions: list[BuildReport.CallGraphFunction]
+        roots: list[BuildReport.CallGraphRoot]
+        edges: list[BuildReport.CallGraphEdge]
 
     class CallGraphRoot(NamedTuple):
         function: int
         calls: int
 
-    class DiffCalleeRow(NamedTuple):
+    class CallRow(NamedTuple):
         function: int
+        calls: int
+
+    class DatabaseModel(TypedDict):
+        counterNames: list[str]
+        counterTotals: NotRequired[list[int]]
+        derivedCounters: list[callgrind.ResolvedDerivedCounter]
+        functions: list[BuildReport.FunctionLink]
+        functionRows: (
+            list[BuildReport.FunctionRow] | list[BuildReport.DiffFunctionRow]
+        )
+
+    class DiffCallRow(NamedTuple):
+        function: int
+        calls: int
+        baseline_calls: int
+
+    class DiffFunctionRow(NamedTuple):
+        function: int
+        file: str
+        line: int
         calls: int
         values: list[int]
-        callers: list[BuildReport.DiffCallerRow]
-        baseline_calls: int | None
+        callers: list[BuildReport.DiffCallRow]
+        callees: list[BuildReport.DiffCallRow]
+        baseline_calls: int
         baseline_values: list[int]
-
-    class DiffCallerRow(NamedTuple):
-        function: int
-        calls: int
-        baseline_calls: int
-
-    class DiffCallGraphEdge(NamedTuple):
-        caller: int
-        callee: int
-        baseline_calls: int
-        calls: int
-        line: int
-
-    class DiffCallGraphRoot(NamedTuple):
-        function: int
-        baseline_calls: int
-        calls: int
 
     class FunctionLink(NamedTuple):
         name: str
         href: str
+
+    class FunctionRow(NamedTuple):
+        function: int
+        file: str
+        line: int
+        calls: int
+        values: list[int]
+        callers: list[BuildReport.CallRow]
+        callees: list[BuildReport.CallRow]
 
     class ManifestBlock(NamedTuple):
         heading_markup: str
@@ -162,27 +162,26 @@ class BuildReport:
     def blank_line_render(self) -> str:
         return theme.render_element("br", {}, None)
 
-    # Writes every listed test's call graph page, a diff's of both sides.
-    def call_graph(self, args: BuildReport.ReportArgs) -> None:
+    # Writes every listed test's call graph page from its recording.
+    def call_graph(self, args: BuildReport.CallGraphArgs) -> None:
         artifacts_dir = artifacts.report_artifacts_dir(
             args.artifacts, args.report
         )
         for test_name in artifacts.test_list_read(artifacts_dir):
-            call_graph_model = (
-                self.diff_call_graph_model(artifacts_dir, test_name)
-                if args.diff
-                else self.call_graph_model(
-                    test_name,
-                    callgrind.profile_load(
-                        artifacts_dir, "callgrind", test_name
-                    ),
-                )
+            profile = callgrind.profile_load(
+                artifacts_dir, "callgrind", test_name
+            )
+            callgrind.ranking_counter_check(
+                profile.counters,
+                artifacts.artifact_path(artifacts_dir, "callgrind", test_name),
             )
             self.call_graph_page(
-                args.report, test_name, args.diff, call_graph_model
+                args.report,
+                test_name,
+                self.call_graph_model(test_name, profile),
             )
 
-    # Returns each caller and callee pair's calls and its first call line.
+    # Returns each caller and callee pair's calls, first call line and costs.
     def call_graph_edges(
         self, profile: callgrind.Profile
     ) -> dict[tuple[str, str], callgrind.CallerCalls]:
@@ -195,22 +194,34 @@ class BuildReport:
                     edges[(caller_name, callee_name)] = entry
         return edges
 
-    # Lists every function the test calls, its root and every call edge.
+    # Lists the test's functions and call edges, their costs, and its roots.
     def call_graph_model(
         self, test_name: str, profile: callgrind.Profile
     ) -> BuildReport.CallGraphModel:
         edges = self.call_graph_edges(profile)
-        function_links = self.function_links(
-            test_name, profile, {name for pair in edges for name in pair}
-        )
+        call_graph_functions = [
+            BuildReport.CallGraphFunction(
+                function_name,
+                callgrind.counter_value(
+                    profile.counters,
+                    profile.function_self.get(function_name, []),
+                    _RANKING_COUNTER_NAME,
+                ),
+            )
+            for function_name in sorted(
+                {name for pair in edges for name in pair}
+            )
+        ]
         index_by_name = {
-            link.name: index for index, link in enumerate(function_links)
+            function.name: index
+            for index, function in enumerate(call_graph_functions)
         }
+        # A root is uncalled, so the recording holds no call of it.
         return {
-            "functions": function_links,
+            "functions": call_graph_functions,
             "roots": [
                 BuildReport.CallGraphRoot(
-                    index_by_name[root_name], profile.root_call_count
+                    index_by_name[root_name], self.function_calls(root_name, 0)
                 )
                 for root_name in self.call_graph_roots(test_name, edges)
             ],
@@ -220,6 +231,9 @@ class BuildReport:
                     index_by_name[callee_name],
                     tally.calls,
                     tally.line,
+                    callgrind.counter_value(
+                        profile.counters, tally.costs, _RANKING_COUNTER_NAME
+                    ),
                 )
                 for (caller_name, callee_name), tally in sorted(edges.items())
             ],
@@ -230,7 +244,6 @@ class BuildReport:
         self,
         report_dir: str,
         test_name: str,
-        is_diff: bool,
         call_graph_model: BuildReport.CallGraphModel,
     ) -> None:
         model_text = json.dumps(
@@ -241,12 +254,8 @@ class BuildReport:
             {
                 "__PAGE_TITLE__": theme.render_html_escape(test_name),
                 "__CALL_GRAPH__": theme.render_element(
-                    "pre",
-                    {
-                        "id": "call-graph-text-",
-                        "data-diff-": str(int(is_diff)),
-                        "data-model-": model_text,
-                    },
+                    "table",
+                    {"id": "call-graph-table-", "data-model-": model_text},
                     "",
                 ),
             },
@@ -258,100 +267,37 @@ class BuildReport:
             page_content,
         )
 
-    # Returns the root function alone, refusing a graph not cut there.
+    # Returns every uncalled caller, refusing a function none of them reaches.
     def call_graph_roots(
         self, test_name: str, pairs: Iterable[tuple[str, str]]
     ) -> list[str]:
-        called_names = {callee_name for _, callee_name in pairs}
-        root_names = sorted(
-            {caller_name for caller_name, _ in pairs} - called_names
-        )
-        if root_names != [_CALLGRIND_ROOT_FUNCTION_NAME]:
+        callee_names: dict[str, list[str]] = {}
+        for caller_name, callee_name in pairs:
+            callee_names.setdefault(caller_name, []).append(callee_name)
+        called_names = {
+            name for names in callee_names.values() for name in names
+        }
+        root_names = sorted(set(callee_names) - called_names)
+        if not root_names:
             sys.exit(
-                f"error: {test_name}'s call graph starts at"
-                f" {' '.join(root_names)}, not at"
-                f" {_CALLGRIND_ROOT_FUNCTION_NAME} alone"
+                f"error: {test_name}'s call graph has no uncalled function"
+                " to start at"
+            )
+        reached_names = set(root_names)
+        pending_names = list(root_names)
+        while pending_names:
+            for callee_name in callee_names.get(pending_names.pop(), []):
+                if callee_name not in reached_names:
+                    reached_names.add(callee_name)
+                    pending_names.append(callee_name)
+        unreached_names = sorted(called_names - reached_names)
+        if unreached_names:
+            sys.exit(
+                f"error: {test_name}'s call graph reaches"
+                f" {' '.join(unreached_names)} from none of its uncalled"
+                f" functions {' '.join(root_names)}"
             )
         return root_names
-
-    # Writes every listed test's callers page.
-    def callers(self, args: BuildReport.ReportArgs) -> None:
-        artifacts_dir = artifacts.report_artifacts_dir(
-            args.artifacts, args.report
-        )
-        test_page_write = self.diff_test if args.diff else self.test
-        for test_name in artifacts.test_list_read(artifacts_dir):
-            test_page_write(args.report, artifacts_dir, test_name)
-
-    def callers_data_load(
-        self, artifacts_dir: str, test_name: str
-    ) -> BuildReport.CallersData:
-        doc = callgrind_diff.callers_doc_load(artifacts_dir, test_name)
-        return BuildReport.CallersData(
-            callers=doc["callers"],
-            baseline_calls=doc["baselineCalls"],
-            baseline=doc["baseline"],
-            counters=doc["counters"],
-        )
-
-    # Lists every called function with its calls, counters and callers.
-    def callers_model(
-        self, test_name: str, profile: callgrind.Profile
-    ) -> BuildReport.CallersModel:
-        caller_counts_by_callee: dict[str, list[tuple[str, int]]] = {}
-        for callee_name in profile.callers:
-            count_by_caller = {
-                caller_name: entry.calls
-                for caller_name, entry in callgrind.caller_calls(
-                    profile, callee_name
-                ).items()
-            }
-            if sum(count_by_caller.values()) > 0:
-                caller_counts_by_callee[callee_name] = sorted(
-                    count_by_caller.items(),
-                    key=lambda pair: (-pair[1], pair[0]),
-                )
-        function_names = set(caller_counts_by_callee)
-        for caller_counts in caller_counts_by_callee.values():
-            function_names.update(
-                caller_name for caller_name, _ in caller_counts
-            )
-        function_links = self.function_links(
-            test_name, profile, function_names
-        )
-        index_by_name = {
-            link.name: index for index, link in enumerate(function_links)
-        }
-        counter_names = callgrind.counter_names(profile.counters)
-        callee_rows: list[BuildReport.CalleeRow] = []
-        for callee_name, caller_counts in sorted(
-            caller_counts_by_callee.items()
-        ):
-            callee_rows.append(
-                BuildReport.CalleeRow(
-                    index_by_name[callee_name],
-                    sum(call_count for _, call_count in caller_counts),
-                    self.counter_values(
-                        profile.counters,
-                        profile.function_self.get(callee_name, []),
-                        counter_names,
-                    ),
-                    [
-                        BuildReport.CallerRow(
-                            index_by_name[caller_name], call_count
-                        )
-                        for caller_name, call_count in caller_counts
-                    ],
-                )
-            )
-        return {
-            "counterNames": counter_names,
-            "counterTotals": self.counter_values(
-                profile.counters, profile.totals(), counter_names
-            ),
-            "functions": function_links,
-            "callees": callee_rows,
-        }
 
     # Returns each named counter's value in the costs.
     def counter_values(
@@ -364,6 +310,125 @@ class BuildReport:
             callgrind.counter_value(counters, costs, counter_name)
             for counter_name in counter_names
         ]
+
+    # Writes every listed test's database page, a diff's of the delta.
+    def database(self, args: BuildReport.ReportArgs) -> None:
+        artifacts_dir = artifacts.report_artifacts_dir(
+            args.artifacts, args.report
+        )
+        for test_name in artifacts.test_list_read(artifacts_dir):
+            database_model = (
+                self.diff_database_model(artifacts_dir, test_name)
+                if args.diff
+                else self.database_model(
+                    test_name,
+                    callgrind.profile_load(
+                        artifacts_dir, "callgrind", test_name
+                    ),
+                )
+            )
+            self.database_page(
+                args.report, test_name, args.diff, database_model
+            )
+
+    # Lists each function the test calls, where it is, its calls and counters.
+    def database_model(
+        self, test_name: str, profile: callgrind.Profile
+    ) -> BuildReport.DatabaseModel:
+        edges = self.call_graph_edges(profile)
+        recorded_calls: dict[str, int] = {}
+        for (_, callee_name), tally in edges.items():
+            recorded_calls[callee_name] = (
+                recorded_calls.get(callee_name, 0) + tally.calls
+            )
+        calls_by_name = {
+            name: self.function_calls(name, recorded_calls.get(name, 0))
+            for name in profile.function_home
+        }
+        row_names = {
+            name for name, calls in calls_by_name.items() if calls > 0
+        }
+        function_links = self.function_links(
+            test_name,
+            profile,
+            row_names | {name for pair in edges for name in pair},
+        )
+        index_by_name = {
+            link.name: index for index, link in enumerate(function_links)
+        }
+        callers: dict[str, list[BuildReport.CallRow]] = {}
+        callees: dict[str, list[BuildReport.CallRow]] = {}
+        for (caller_name, callee_name), tally in sorted(
+            edges.items(), key=lambda item: (-item[1].calls, item[0])
+        ):
+            callers.setdefault(callee_name, []).append(
+                BuildReport.CallRow(index_by_name[caller_name], tally.calls)
+            )
+            callees.setdefault(caller_name, []).append(
+                BuildReport.CallRow(index_by_name[callee_name], tally.calls)
+            )
+        counter_names = list(profile.counters)
+        locations = self.function_locations(
+            profile, self.file_display_paths(profile, None), row_names
+        )
+        row_order = sorted(row_names, key=lambda name: (locations[name], name))
+        return {
+            "counterNames": counter_names,
+            "counterTotals": self.counter_values(
+                profile.counters, profile.totals(), counter_names
+            ),
+            "derivedCounters": profile.resolved_derived_counters(),
+            "functions": function_links,
+            "functionRows": [
+                BuildReport.FunctionRow(
+                    index_by_name[name],
+                    locations[name].file,
+                    locations[name].line,
+                    calls_by_name[name],
+                    self.counter_values(
+                        profile.counters,
+                        profile.function_self.get(name, []),
+                        counter_names,
+                    ),
+                    callers.get(name, []),
+                    callees.get(name, []),
+                )
+                for name in row_order
+            ],
+        }
+
+    # Writes a test's database page, holding the model its script draws.
+    def database_page(
+        self,
+        report_dir: str,
+        test_name: str,
+        is_diff: bool,
+        database_model: BuildReport.DatabaseModel,
+    ) -> None:
+        model_text = json.dumps(
+            database_model, separators=(",", ":"), ensure_ascii=False
+        )
+        page_content = theme.template_fill(
+            _DATABASE_PAGE,
+            {
+                "__PAGE_TITLE__": theme.render_html_escape(test_name),
+                "__DATABASE__": theme.render_element(
+                    "div",
+                    {
+                        "id": "database-model-",
+                        "data-diff-": str(int(is_diff)),
+                        "data-model-": model_text,
+                    },
+                    "",
+                ),
+            },
+        )
+        self.page_write(
+            os.path.join(
+                report_dir, _DATABASE_PAGE_DIR_NAME, f"{test_name}.html"
+            ),
+            page_content,
+        )
 
     # Writes the report's debug script, its manifest table filled in.
     def debug_script_write(
@@ -382,105 +447,130 @@ class BuildReport:
                 )
             )
 
-    # Lists every function either side calls and each edge's calls on both.
-    def diff_call_graph_model(
+    # Lists each changed function either side calls, beside its baselines.
+    def diff_database_model(
         self, artifacts_dir: str, test_name: str
-    ) -> BuildReport.CallGraphModel:
-        baseline, modified = (
-            callgrind.profile_load(
-                artifacts.artifact_path(artifacts_dir, kind),
-                "callgrind",
-                test_name,
-            )
+    ) -> BuildReport.DatabaseModel:
+        delta = callgrind.profile_load(artifacts_dir, "delta", test_name)
+        callers_doc = callgrind_diff.callers_doc_load(artifacts_dir, test_name)
+        baseline_dir, modified_dir = (
+            artifacts.artifact_path(artifacts_dir, kind)
             for kind in ("baseline-profiles", "modified-profiles")
         )
-        baseline_edges = self.call_graph_edges(baseline)
-        modified_edges = self.call_graph_edges(modified)
-        pairs = sorted(set(baseline_edges) | set(modified_edges))
-        function_links = self.function_links(
-            test_name,
-            callgrind.profile_load(artifacts_dir, "delta", test_name),
-            {name for pair in pairs for name in pair},
+        baseline_edges, modified_edges = (
+            self.call_graph_edges(
+                callgrind.profile_load(profiles_dir, "callgrind", test_name)
+            )
+            for profiles_dir in (baseline_dir, modified_dir)
         )
+        uncalled_edge = callgrind.CallerCalls(0, 0, [])
+        call_changes: dict[tuple[str, str], BuildReport.CallChange] = {}
+        for pair in set(baseline_edges) | set(modified_edges):
+            baseline_calls = baseline_edges.get(pair, uncalled_edge).calls
+            call_changes[pair] = BuildReport.CallChange(
+                modified_edges.get(pair, uncalled_edge).calls - baseline_calls,
+                baseline_calls,
+            )
+        listed_names = set(delta.function_home)
+        caller_changes: dict[str, list[BuildReport.CallChange]] = {}
+        for (caller_name, callee_name), change in call_changes.items():
+            if change.calls:
+                listed_names.update((caller_name, callee_name))
+            caller_changes.setdefault(callee_name, []).append(change)
+        calls_by_name = {
+            name: self.diff_function_calls(name, caller_changes.get(name, []))
+            for name in listed_names
+        }
+        # A row is a function called on one side at least.
+        row_names = {
+            name
+            for name, (calls, baseline_calls) in calls_by_name.items()
+            if baseline_calls or baseline_calls + calls
+        }
+        named_names = set(row_names)
+        for pair in call_changes:
+            if row_names.intersection(pair):
+                named_names.update(pair)
+        function_links = self.function_links(test_name, delta, named_names)
         index_by_name = {
             link.name: index for index, link in enumerate(function_links)
         }
-        uncalled_edge = callgrind.CallerCalls(0, 0)
-        return {
-            "functions": function_links,
-            "roots": [
-                BuildReport.DiffCallGraphRoot(
-                    index_by_name[root_name],
-                    baseline.root_call_count,
-                    modified.root_call_count,
+        callers: dict[str, list[BuildReport.DiffCallRow]] = {}
+        callees: dict[str, list[BuildReport.DiffCallRow]] = {}
+        for (caller_name, callee_name), (calls, baseline_calls) in sorted(
+            call_changes.items(),
+            key=lambda item: (-abs(item[1].calls), item[0]),
+        ):
+            if callee_name in row_names:
+                callers.setdefault(callee_name, []).append(
+                    BuildReport.DiffCallRow(
+                        index_by_name[caller_name], calls, baseline_calls
+                    )
                 )
-                for root_name in self.call_graph_roots(test_name, pairs)
-            ],
-            "edges": [
-                BuildReport.DiffCallGraphEdge(
-                    index_by_name[pair[0]],
-                    index_by_name[pair[1]],
-                    baseline_edges.get(pair, uncalled_edge).calls,
-                    modified_edges.get(pair, uncalled_edge).calls,
-                    min(
-                        side_edges[pair].line
-                        for side_edges in (baseline_edges, modified_edges)
-                        if pair in side_edges
+            if caller_name in row_names:
+                callees.setdefault(caller_name, []).append(
+                    BuildReport.DiffCallRow(
+                        index_by_name[callee_name], calls, baseline_calls
+                    )
+                )
+        counter_names = list(delta.counters)
+        locations = self.function_locations(
+            delta,
+            self.file_display_paths(
+                delta, callgrind.DerivedPaths(baseline_dir, modified_dir)
+            ),
+            row_names.intersection(delta.function_home),
+        )
+        # The delta holds no record of a function none of whose lines changed.
+        for name in row_names.difference(locations):
+            locations[name] = callgrind.SourceLine("", 0)
+        row_order = sorted(row_names, key=lambda name: (locations[name], name))
+        return {
+            "counterNames": counter_names,
+            "derivedCounters": delta.resolved_derived_counters(),
+            "functions": function_links,
+            "functionRows": [
+                BuildReport.DiffFunctionRow(
+                    index_by_name[name],
+                    locations[name].file,
+                    locations[name].line,
+                    calls_by_name[name][0],
+                    self.counter_values(
+                        delta.counters,
+                        delta.function_self.get(name, []),
+                        counter_names,
+                    ),
+                    callers.get(name, []),
+                    callees.get(name, []),
+                    calls_by_name[name][1],
+                    self.counter_values(
+                        callers_doc["counters"],
+                        callers_doc["baseline"].get(name, []),
+                        counter_names,
                     ),
                 )
-                for pair in pairs
+                for name in row_order
             ],
         }
 
-    # Lists every function with a changed caller, its changes and baselines.
-    def diff_callers_model(
+    # Returns a function's change of calls and its baseline calls.
+    def diff_function_calls(
         self,
-        test_name: str,
-        profile: callgrind.LineProfile,
-        callers_data: BuildReport.CallersData,
-    ) -> BuildReport.CallersModel:
-        function_names = set(callers_data.callers)
-        for deltas in callers_data.callers.values():
-            function_names.update(delta.function for delta in deltas)
-        function_links = self.function_links(
-            test_name, profile, function_names
+        function_name: str,
+        caller_changes: Sequence[BuildReport.CallChange],
+    ) -> tuple[int, int]:
+        baseline_calls = self.function_calls(
+            function_name,
+            sum(change.baseline_calls for change in caller_changes),
         )
-        index_by_name = {
-            link.name: index for index, link in enumerate(function_links)
-        }
-        counter_names = callgrind.counter_names(profile.counters)
-        callee_rows: list[BuildReport.DiffCalleeRow] = []
-        for callee_name, deltas in sorted(callers_data.callers.items()):
-            callee_rows.append(
-                BuildReport.DiffCalleeRow(
-                    index_by_name[callee_name],
-                    sum(delta.count_ for delta in deltas),
-                    self.counter_values(
-                        profile.counters,
-                        profile.function_self.get(callee_name, []),
-                        counter_names,
-                    ),
-                    [
-                        BuildReport.DiffCallerRow(
-                            index_by_name[delta.function],
-                            delta.count_,
-                            delta.baseline_count,
-                        )
-                        for delta in deltas
-                    ],
-                    callers_data.baseline_calls.get(callee_name),
-                    self.counter_values(
-                        callers_data.counters,
-                        callers_data.baseline.get(callee_name, []),
-                        counter_names,
-                    ),
-                )
-            )
-        return {
-            "counterNames": counter_names,
-            "functions": function_links,
-            "callees": callee_rows,
-        }
+        modified_calls = self.function_calls(
+            function_name,
+            sum(
+                change.baseline_calls + change.calls
+                for change in caller_changes
+            ),
+        )
+        return modified_calls - baseline_calls, baseline_calls
 
     # Writes the diff's overview page, a row of each test's change.
     def diff_overview(
@@ -497,11 +587,10 @@ class BuildReport:
         self.overview_page(
             args.report,
             test_names,
-            [],
             rows,
             self.manifest_blocks_read(artifacts_dir, True),
             "",
-            callgrind.counter_names(counters),
+            counters,
             True,
             has_readme_html,
         )
@@ -536,18 +625,6 @@ class BuildReport:
             )
         return rows
 
-    def diff_test(
-        self, report_dir: str, artifacts_dir: str, test_name: str
-    ) -> None:
-        profile = callgrind.profile_load(artifacts_dir, "delta", test_name)
-        callers_data = self.callers_data_load(artifacts_dir, test_name)
-        self.report_page(
-            report_dir,
-            test_name,
-            True,
-            self.diff_callers_model(test_name, profile, callers_data),
-        )
-
     def entry_link(
         self, test_name: str, profile: callgrind.LineProfile, function: str
     ) -> str:
@@ -555,6 +632,41 @@ class BuildReport:
         if entry is None or not entry.line:
             return ""
         return self.address(test_name, _HEAT_MAP_VIEW_KEY, function)
+
+    # Returns the path the heat map shows for each file the profile names.
+    def file_display_paths(
+        self,
+        profile: callgrind.Profile,
+        derived_paths: callgrind.DerivedPaths | None,
+    ) -> dict[str, str]:
+        raw_paths = (
+            {key.file for key in profile.line_self}
+            | {key.file for key in profile.line_calls}
+            | {entry.file for entry in profile.function_entry.values()}
+        )
+        shown_paths: dict[str, str] = {}
+        for raw_path in sorted(raw_paths):
+            object_path = profile.file_ob.get(raw_path, "")
+            if derived_paths is None:
+                path_info = callgrind.path_norm(raw_path)
+                shown_paths[raw_path] = callgrind.display_path(
+                    path_info.display, path_info.group, object_path
+                )
+                continue
+            entry = derived_paths.path_entry(raw_path)
+            shown_paths[raw_path] = callgrind.display_path(
+                entry.canonical, entry.group, object_path
+            )
+        return shown_paths
+
+    # Returns the recorded calls, a settings count for an uncalled start.
+    def function_calls(self, function_name: str, recorded_calls: int) -> int:
+        if (
+            function_name == _PROFILE_START_FUNCTION_NAME
+            and not recorded_calls
+        ):
+            return _PROFILE_START_FUNCTION_UNRECORDED_CALLS
+        return recorded_calls
 
     # Returns each named function with its heat map address, the names sorted.
     def function_links(
@@ -570,6 +682,22 @@ class BuildReport:
             )
             for function_name in sorted(function_names)
         ]
+
+    # Returns each named function's shown file and the line it is addressed at.
+    def function_locations(
+        self,
+        profile: callgrind.Profile,
+        shown_paths: dict[str, str],
+        function_names: Iterable[str],
+    ) -> dict[str, callgrind.SourceLine]:
+        heat_map = callgrind_to_heatmap.CallgrindToHeatmap()
+        locations: dict[str, callgrind.SourceLine] = {}
+        for function_name in function_names:
+            location = heat_map.function_line(profile, function_name)
+            locations[function_name] = callgrind.SourceLine(
+                shown_paths[location.file], location.line
+            )
+        return locations
 
     # Returns the header tables, the run's own rows or each diffed report's.
     def manifest_blocks_read(
@@ -622,8 +750,14 @@ class BuildReport:
         return theme.render_element(
             "pre",
             {},
-            theme.render_html_escape(
-                settings.manifest_table(
+            "\n".join(
+                theme.render_element(
+                    "span",
+                    {"class": "overview-manifest-label-"},
+                    theme.render_html_escape(label_cell),
+                )
+                + theme.render_html_escape(value_cell)
+                for label_cell, value_cell in settings.manifest_table_rows(
                     [f"{pair.label}={pair.value}" for pair in pairs]
                 )
             ),
@@ -633,7 +767,7 @@ class BuildReport:
     def menu_render(
         self,
         test_names: Sequence[str],
-        counter_names: Sequence[str],
+        counters: Sequence[str],
         is_diff: bool,
         has_readme_html: bool,
     ) -> str:
@@ -647,9 +781,11 @@ class BuildReport:
             {
                 "id": "menu-",
                 "class": "strip-",
-                "data-counter-names-": json.dumps(list(counter_names)),
-                "data-flame-graph-": str(int(not is_diff)),
+                "data-counter-names-": json.dumps(
+                    callgrind.counter_names(counters)
+                ),
                 "data-help-href-": help_href,
+                "data-regular-report-": str(int(not is_diff)),
                 "data-test-names-": names_text,
             },
             "",
@@ -666,7 +802,7 @@ class BuildReport:
             args.artifacts, args.report
         )
         test_names = artifacts.test_list_read(artifacts_dir)
-        column_labels, rows = self.timing_rows(artifacts_dir, test_names)
+        rows = self.timing_rows(artifacts_dir, test_names)
         raw_data_path = artifacts.raw_data_archive_path(
             args.report, artifacts.recorded_time_read(artifacts_dir)
         )
@@ -676,11 +812,10 @@ class BuildReport:
         self.overview_page(
             args.report,
             test_names,
-            column_labels,
             rows,
             self.manifest_blocks_read(artifacts_dir, False),
             os.path.basename(raw_data_path),
-            callgrind.counter_names(counters),
+            counters,
             False,
             has_readme_html,
         )
@@ -689,11 +824,10 @@ class BuildReport:
         self,
         report_dir: str,
         test_names: Sequence[str],
-        column_labels: Sequence[str],
         rows: Sequence[Sequence[theme.CellOrText]],
         manifest_blocks: Sequence[BuildReport.ManifestBlock],
         raw_data_name: str,
-        counter_names: Sequence[str],
+        counters: Sequence[str],
         is_diff: bool,
         has_readme_html: bool,
     ) -> None:
@@ -702,16 +836,13 @@ class BuildReport:
             {
                 "id": "overview-tests-table-",
                 "data-diff-": str(int(is_diff)),
-                "data-column-labels-": json.dumps(
-                    list(column_labels), ensure_ascii=False
-                ),
             },
             "overview.tests",
             rows,
         )
         manifest_markup = self.manifest_blocks_render(manifest_blocks)
         menu_markup = self.menu_render(
-            test_names, counter_names, is_diff, has_readme_html
+            test_names, counters, is_diff, has_readme_html
         )
         page_content = theme.template_fill(
             _OVERVIEW_PAGE,
@@ -738,6 +869,40 @@ class BuildReport:
             file=sys.stderr,
         )
 
+    # Returns the perf tool's time over its loops, its other output left out.
+    def perf_tool_time_per_loop(
+        self, page_path: str, page_lines: Sequence[str], test_name: str
+    ) -> float:
+        command_words = page_lines[0].split() if page_lines else []
+        if (
+            len(command_words) < 2
+            or command_words[-2] != test_name
+            or not command_words[-1].isdigit()
+            or not int(command_words[-1])
+        ):
+            sys.exit(
+                f"error: {page_path} opens with no {test_name} command ending"
+                f" in its loop count: {page_lines[:1]}"
+            )
+        time_matches = [
+            line_match
+            for line_match in map(_PERF_TOOL_TIME_LINE.fullmatch, page_lines)
+            if line_match
+        ]
+        if len(time_matches) != 1:
+            sys.exit(
+                f"error: {page_path} holds {len(time_matches)}"
+                f" {_PERF_TOOL_TIME_LABEL}: lines with a time unit"
+                f" of {sorted(_DATABASE_TIME_SUFFIX_SECONDS)}, expected 1"
+            )
+        time_match = time_matches[0]
+        run_seconds = (
+            float(time_match.group(1))
+            * (_DATABASE_TIME_SUFFIX_SECONDS[time_match.group(2)])
+        )
+        return run_seconds / int(command_words[-1])
+
+    # Writes the blank line and the raw data heading over the archive link.
     def raw_data_render(self, name: str) -> str:
         if not name:
             return ""
@@ -746,40 +911,10 @@ class BuildReport:
             {"id": "overview-raw-data-"},
             theme.render_element("a", {"href": name, "target": "_blank"}, ""),
         )
-        return raw_data_markup + self.blank_line_render()
-
-    # Writes a test's callers page, holding the model its script draws.
-    def report_page(
-        self,
-        report_dir: str,
-        test_name: str,
-        is_diff: bool,
-        callers_model: BuildReport.CallersModel,
-    ) -> None:
-        model_text = json.dumps(
-            callers_model, separators=(",", ":"), ensure_ascii=False
-        )
-        page_content = theme.template_fill(
-            _CALLERS_PAGE,
-            {
-                "__PAGE_TITLE__": theme.render_html_escape(test_name),
-                "__FUNCTIONS__": theme.render_element(
-                    "div",
-                    {
-                        "id": "callers-functions-table-",
-                        "data-diff-": str(int(is_diff)),
-                        "data-key-": "report.functions",
-                        "data-model-": model_text,
-                    },
-                    "",
-                ),
-            },
-        )
-        self.page_write(
-            os.path.join(
-                report_dir, _CALLERS_PAGE_DIR_NAME, f"{test_name}.html"
-            ),
-            page_content,
+        return (
+            self.blank_line_render()
+            + theme.render_heading("", "overview-raw-data-heading-")
+            + raw_data_markup
         )
 
     # Writes the report's one shared copy of the theme.
@@ -792,17 +927,6 @@ class BuildReport:
     def settings_page(self, report_dir: str) -> None:
         self.page_write(
             os.path.join(report_dir, _SETTINGS_VIEW_ENTRY[1]), _SETTINGS_PAGE
-        )
-
-    def test(
-        self, report_dir: str, artifacts_dir: str, test_name: str
-    ) -> None:
-        profile = callgrind.profile_load(artifacts_dir, "callgrind", test_name)
-        self.report_page(
-            report_dir,
-            test_name,
-            False,
-            self.callers_model(test_name, profile),
         )
 
     # Writes the rows a page script draws as the table the key names.
@@ -820,56 +944,93 @@ class BuildReport:
         )
 
     def test_link_cell(self, name: str) -> theme.Cell:
-        return theme.Cell(name, href=self.address(name, _HEAT_MAP_VIEW_KEY))
+        return theme.Cell(name, href=self.address(name, _DATABASE_VIEW_KEY))
 
-    def time_humanize(self, text: str) -> str:
-        return _TIME_LINE.sub(self.time_line_rewrite, text)
+    # Returns a timing page's dividend counter over its divisor counter.
+    def timing_counter_ratio(
+        self, page_path: str, page_lines: Sequence[str]
+    ) -> float:
+        counter_values = self.timing_counters(page_path, page_lines)
+        ratio_terms: list[int] = []
+        for counter_key in (
+            _TIMING_COUNTER_RATIO_DIVIDEND,
+            _TIMING_COUNTER_RATIO_DIVISOR,
+        ):
+            if counter_key not in _TIMING_COUNTER_LABELS:
+                sys.exit(
+                    f"error: TIMING_COUNTER_LABELS holds no {counter_key}"
+                    f" key: {sorted(_TIMING_COUNTER_LABELS)}"
+                )
+            counter_label = _TIMING_COUNTER_LABELS[counter_key]
+            counter_text = counter_values[counter_label]
+            if not counter_text.isdigit() or not int(counter_text):
+                sys.exit(
+                    f"error: {page_path} holds {counter_label}:"
+                    f" {counter_text!r}, expected a count above 0"
+                )
+            ratio_terms.append(int(counter_text))
+        return ratio_terms[0] / ratio_terms[1]
 
-    def time_line_rewrite(self, match: re.Match[str]) -> str:
-        scale = _CALLERS_TIME_SUFFIX_SECONDS[match.group(3).lower()]
-        return match.group(1) + theme.num_time(float(match.group(2)) * scale)
+    # Returns each perf stat counter line's value of a timing page by label.
+    def timing_counters(
+        self, page_path: str, page_lines: Sequence[str]
+    ) -> dict[str, str]:
+        counter_values: dict[str, list[str]] = {
+            counter_label: []
+            for counter_label in _TIMING_COUNTER_LABELS.values()
+        }
+        for page_line in page_lines:
+            line_label, label_separator, line_value = page_line.partition(":")
+            if label_separator and line_label in counter_values:
+                counter_values[line_label].append(line_value.strip())
+        for counter_label, label_values in counter_values.items():
+            if len(label_values) != 1:
+                sys.exit(
+                    f"error: {page_path} holds {len(label_values)}"
+                    f" {counter_label}: lines, expected 1"
+                )
+        return {
+            counter_label: label_values[0]
+            for counter_label, label_values in counter_values.items()
+        }
 
-    # Returns the timing pages' labels in first seen order and a row per test.
+    # Returns a row per test, its time per loop and instructions per cycle.
     def timing_rows(
         self, artifacts_dir: str, test_names: Sequence[str]
-    ) -> tuple[list[str], list[list[theme.CellOrText]]]:
-        keys: list[str] = []
-        numbers: dict[str, dict[str, str]] = {}
+    ) -> list[list[theme.CellOrText]]:
+        rows: list[list[theme.CellOrText]] = []
         for test_name in test_names:
+            page_path = artifacts.artifact_path(
+                artifacts_dir, "timing-page", test_name
+            )
             with artifacts.artifact_open(
                 artifacts_dir, "timing-page", test_name
             ) as handle:
-                lines = handle.read().splitlines()
-            values: dict[str, str] = {}
-            for line in lines:
-                match = re.match(r"^([A-Za-z][^:]{0,30}):\s+(.+?)\s*$", line)
-                if match:
-                    values[match.group(1)] = self.value_humanize(
-                        match.group(1), match.group(2)
-                    )
-                    if match.group(1) not in keys:
-                        keys.append(match.group(1))
-            numbers[test_name] = values
-        rows: list[list[theme.CellOrText]] = [
-            [self.test_link_cell(test_name)]
-            + [numbers[test_name].get(key, "") for key in keys]
-            for test_name in test_names
-        ]
-        return keys, rows
-
-    def value_humanize(self, label: str, value: str) -> str:
-        line = self.time_humanize(f"{label}: {value}")
-        return line.split(": ", 1)[1] if line != f"{label}: {value}" else value
+                page_lines = handle.read().splitlines()
+            rows.append(
+                [
+                    self.test_link_cell(test_name),
+                    theme.num_time(
+                        self.perf_tool_time_per_loop(
+                            page_path, page_lines, test_name
+                        )
+                    ),
+                    theme.fixed_text(
+                        self.timing_counter_ratio(page_path, page_lines)
+                    ),
+                ]
+            )
+        return rows
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
     subparsers = parser.add_subparsers(dest="cmd", required=True)
 
-    callers_parser = subparsers.add_parser(
-        "callers", help="every listed test's callers page"
+    database_parser = subparsers.add_parser(
+        "database", help="every listed test's callers page"
     )
-    callers_parser.add_argument(
+    database_parser.add_argument(
         "--diff",
         action="store_true",
         help="the recordings are callgrind_diff.py deltas: each callee's"
@@ -878,12 +1039,6 @@ def main() -> None:
 
     call_graph_parser = subparsers.add_parser(
         "call-graph", help="every listed test's call graph page"
-    )
-    call_graph_parser.add_argument(
-        "--diff",
-        action="store_true",
-        help="the report is a diff: each edge carries its calls in the"
-        " extracted baseline and modified recordings",
     )
 
     scripts_parser = subparsers.add_parser(
@@ -925,7 +1080,7 @@ def main() -> None:
 
     for report_parser in (
         call_graph_parser,
-        callers_parser,
+        database_parser,
         scripts_parser,
         debug_parser,
         settings_parser,
@@ -939,7 +1094,7 @@ def main() -> None:
         )
     for artifacts_parser in (
         call_graph_parser,
-        callers_parser,
+        database_parser,
         overview_parser,
     ):
         artifacts_parser.add_argument(
@@ -960,14 +1115,12 @@ def main() -> None:
         report.settings_page(namespace.report)
     elif namespace.cmd == "call-graph":
         report.call_graph(
-            BuildReport.ReportArgs(
-                artifacts=namespace.artifacts,
-                report=namespace.report,
-                diff=namespace.diff,
+            BuildReport.CallGraphArgs(
+                artifacts=namespace.artifacts, report=namespace.report
             )
         )
-    elif namespace.cmd == "callers":
-        report.callers(
+    elif namespace.cmd == "database":
+        report.database(
             BuildReport.ReportArgs(
                 artifacts=namespace.artifacts,
                 report=namespace.report,

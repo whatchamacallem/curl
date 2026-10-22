@@ -16,7 +16,6 @@ _CALLGRIND_FILE_DATA_ERROR_CODE: str = ""
 _CALLGRIND_FILE_DATA_GIT_CODE: str = ""
 _CALLGRIND_FILE_DATA_REPO_CODE: str = ""
 _CALLGRIND_FILE_DATA_SYSTEM_CODE: str = ""
-_CALLGRIND_ROOT_FUNCTION_NAME: str = ""
 _DERIVED_COUNTER_TERMS: dict[str, dict[str, int]] = {}
 _RANKING_COUNTER_NAME: str = ""
 settings.load_into(__name__)
@@ -58,6 +57,7 @@ class Caller(NamedTuple):
 class CallerCalls(NamedTuple):
     calls: int
     line: int
+    costs: Costs
 
 
 class CallRecord(NamedTuple):
@@ -189,7 +189,7 @@ class DerivedPaths:
         return entry
 
 
-# Holds one function's cost lines as read, before the cut at the root.
+# Holds one function's cost lines as read.
 @dataclasses.dataclass
 class FunctionRecords:
     home: str
@@ -237,7 +237,6 @@ class PathInfo(NamedTuple):
 
 @dataclasses.dataclass
 class Profile(LineProfile):
-    root_call_count: int = 0
     line_calls: dict[SourceLine, Costs] = dataclasses.field(
         default_factory=dict
     )
@@ -389,6 +388,18 @@ class Callgrind:
                     lines[index] = f"{key}=({match.group(1)}) {resolved}"
         return "\n".join(lines)
 
+    # Refuses a recording calling a function it records no cost block of.
+    def callees_check(
+        self, records: dict[str, FunctionRecords], path: str
+    ) -> None:
+        for entry in records.values():
+            for call in entry.call_records:
+                if call.callee not in records:
+                    sys.exit(
+                        f"error: {path} calls {call.callee} but records no"
+                        " cost block of that function"
+                    )
+
     def entries_fill(self, profile: Profile) -> None:
         for function, lines in profile.function_lines.items():
             home = profile.function_home.get(function)
@@ -419,7 +430,7 @@ class Callgrind:
             )
         return name
 
-    # Adds a kept function's records to the profile, in the order read.
+    # Adds a function's records to the profile, in the order read.
     def function_accumulate(
         self, profile: Profile, function: str, records: FunctionRecords
     ) -> None:
@@ -463,17 +474,17 @@ class Callgrind:
             profile.function_home.setdefault(call.callee, call.callee_file)
             profile.file_ob.setdefault(call.callee_file, call.callee_object)
 
-    # Loads a profile, a recording cut at the root, a delta of two as is.
+    # Loads a profile, a recording or a delta of two.
     def load(self, directory: str, kind: str, test_name: str) -> Profile:
         path = artifacts.artifact_path(directory, kind, test_name)
         with artifacts.artifact_open(
             directory, kind, test_name, "rb"
         ) as handle:
             text = handle.read().decode("utf-8", errors="replace")
-        return self.parse(text, path, kind == "callgrind")
+        return self.parse(text, path)
 
-    # Returns the profile of the text, cut at the root function when asked.
-    def parse(self, text: str, path: str, is_cut: bool) -> Profile:
+    # Returns the profile of the text, refusing one that does not add up.
+    def parse(self, text: str, path: str) -> Profile:
         profile = Profile()
         records = self.records_read(text, path, profile)
         if not profile.counters:
@@ -481,19 +492,9 @@ class Callgrind:
                 f"error: no 'events:' line -- not a callgrind file? ({path})"
             )
         self.summary_check(profile, records, path)
-        kept = self.root_reach(records, path) if is_cut else set(records)
-        profile.root_call_count = sum(
-            call.call_count
-            for entry in records.values()
-            for call in entry.call_records
-            if call.callee == _CALLGRIND_ROOT_FUNCTION_NAME
-        )
+        self.callees_check(records, path)
         for function, entry in records.items():
-            if function in kept:
-                self.function_accumulate(profile, function, entry)
-        profile.summary = profile.zeros()
-        for costs in profile.line_self.values():
-            costs_add(profile.summary, costs)
+            self.function_accumulate(profile, function, entry)
         self.entries_fill(profile)
         return profile
 
@@ -631,31 +632,6 @@ class Callgrind:
                     profile.summary = values
         return records
 
-    # Returns the root function and every function the calls reach from it.
-    def root_reach(
-        self, records: dict[str, FunctionRecords], path: str
-    ) -> set[str]:
-        root = _CALLGRIND_ROOT_FUNCTION_NAME
-        if root not in records:
-            sys.exit(
-                f"error: {path} records no function {root}, the one the"
-                " recording is cut at"
-            )
-        reached = {root}
-        pending = [root]
-        while pending:
-            function = pending.pop()
-            if function not in records:
-                sys.exit(
-                    f"error: {path} calls {function} but records no cost"
-                    " block of that function"
-                )
-            for call in records[function].call_records:
-                if call.callee not in reached:
-                    reached.add(call.callee)
-                    pending.append(call.callee)
-        return reached
-
     # Refuses a recording whose cost lines do not add up to its summary.
     def summary_check(
         self,
@@ -697,13 +673,18 @@ def baseline_line_key(display: str, line: int | str) -> str:
     return f"{display}\n{line}"
 
 
-# Returns each function calling the callee, its calls and first call line.
+# Returns each caller of the callee, its calls, first call line and costs.
 def caller_calls(profile: Profile, callee: str) -> dict[str, CallerCalls]:
     calls: dict[str, CallerCalls] = {}
     for caller, tally in profile.callers.get(callee, {}).items():
-        known = calls.get(caller.function, CallerCalls(0, caller.line))
+        known = calls.get(
+            caller.function, CallerCalls(0, caller.line, profile.zeros())
+        )
+        costs_add(known.costs, tally.costs)
         calls[caller.function] = CallerCalls(
-            known.calls + tally.count, min(known.line, caller.line)
+            known.calls + tally.count,
+            min(known.line, caller.line),
+            known.costs,
         )
     return calls
 

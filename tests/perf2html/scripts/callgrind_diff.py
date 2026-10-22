@@ -106,7 +106,7 @@ class CallgrindDiff:
         modified: callgrind.Profile,
     ) -> dict[str, list[CallerDelta]]:
         out: dict[str, list[CallerDelta]] = {}
-        uncalled = callgrind.CallerCalls(0, 0)
+        uncalled = callgrind.CallerCalls(0, 0, [])
         for callee in sorted(set(baseline.callers) | set(modified.callers)):
             before = callgrind.caller_calls(baseline, callee)
             after = callgrind.caller_calls(modified, callee)

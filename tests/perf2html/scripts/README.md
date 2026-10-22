@@ -19,8 +19,8 @@ The remaining sections describe the source code implementing the `perf2html`
 report generators. Start by running the tests and checking the results.
 
 - [Call Graph Page](#call-graph-page)
-- [Callers Page](#callers-page)
 - [Callgrind Parsing](#callgrind-parsing)
+- [Database Page](#database-page)
 - [Developer Scripts](#developer-scripts)
 - [Error Overlay](#error-overlay)
 - [Flame Graph](#flame-graph)
@@ -49,6 +49,8 @@ report generators. Start by running the tests and checking the results.
 
 ## URL Components
 
+- `dark-mode`: Query key of a view frame's address, `enabled` or `disabled`,
+  that the top page writes so the view opens in the dark mode it shows.
 - `debug`: Query key, value `1`, that unfreezes the settings so the settings
   view can apply a setting.
 - `file`: Hash key, heat map view only, that names the source file to open.
@@ -63,11 +65,11 @@ report generators. Start by running the tests and checking the results.
 - `screenshot-menu`: Query key, focuses that number menu button.
 - `setting`: Hash key, settings view only, that focuses a setting.
 - `setting-values`: Hash key that carries the base64 JSON object of the setting
-  values to apply, loading the top page again under `debug`.
+  values to apply, writing `debug` into the top page's address in place.
 - `test`: Hash key that names the test shown, absent when no test is selected.
 - `toggle-dark`: Query key, `0` or `1`, that resets the browser preferences as
   the top page loads, `1` then toggling the dark mode as the dark button does.
-- `view`: Hash key, one of `call-graph`, `callers`, `heat-map`, `flame-graph`
+- `view`: Hash key, one of `call-graph`, `database`, `heat-map`, `flame-graph`
   or `settings`.
 
 ## Browser Preferences
@@ -79,16 +81,21 @@ the user never chose one and the default in `settings.py` applies.
 If the `perf2html.version` does not match `STORAGE_VERSION` then all
 preferences are reset at startup.
 
-- `callers.rows`: The callers row count, one of `TABLE_ROW_COUNT_CHOICES`.
-- `heatmap.rows`: The heat map row count, one of `TABLE_ROW_COUNT_CHOICES`.
+- `database.counter_list`: The database counters list, each line, calls,
+  callers, callees or any counter, in the order of the pulldown and the
+  columns, with whether the line is shown, every line toggled, the ranking
+  counter too.
+- `database.function_rows`: The database functions table row count, one of
+  `TABLE_ROW_COUNT_CHOICES`.
+- `heatmap.counter_list`: The heat map counters list, each line, calls or any
+  counter, in the order of the pulldown and the columns, with whether the line
+  is shown, the ranking counter always shown.
 - `heatmap.scale`: The heat map scale curve, `log` or `linear`.
 - `heatmap.sort`: The heat map sort order, `heat` or `name`.
 - `log.display_length`: The load log line count the settings view shows.
 - `perf2html.version`: The `STORAGE_VERSION` the other keys were written under.
 - `speedscope-color-scheme`: Speedscope's scheme, `null` so that speedscope
   follows the color scheme its frame takes from the dark mode shown.
-- `view.calls_column`: Whether the calls columns are shown, `true` or `false`.
-- `view.counter_columns`: The counter columns shown, never the ranking counter.
 - `view.dark_mode`: The dark mode chosen, `enabled` or `disabled`.
 - `view.scale`: The design scale multiple chosen, shown at the nearest stop.
 
@@ -98,12 +105,13 @@ Reading a report requires opening `index.html`. The rest of the report is of no
 interest to users, except perhaps automated processing of `MANIFEST.txt`.
 
 Otherwise, if you are an interested developer, these are the rest of the files
-in the directory. A diff report lacks the `flame-graph/`, `flame-graph-app/`
-and raw data archive files.
+in the directory. A diff report lacks the `call-graph/`, `flame-graph/`,
+`flame-graph-app/` and raw data archive files.
 
 - `scripts/*.js`: Files copied whole or modified, from the scripts/ dir.
 - `call-graph/<test>.html`: A test's call graph page.
-- `callers/<test>.html`: A test's callers page holding its JSON callers model.
+- `database/<test>.html`: A test's database page holding its JSON database
+  model.
 - `flame-graph-app/SourceCodePro-Regular.ttf-*.woff2`: The speedscope font.
 - `flame-graph-app/speedscope-*.css`: The speedscope app's stylesheet.
 - `flame-graph-app/speedscope-*.js`: The speedscope app.
@@ -179,19 +187,13 @@ A diff report's run keeps these.
 | File              | Purpose                                                |
 | ----------------- | ------------------------------------------------------ |
 | `call_graph.html` | Templates the call graph page of one test, holding the |
-|                   | JSON call graph model that `call_graph.js` lays out.   |
-| `call_graph.js`   | Lays out the call graph as text, each callee's share   |
-|                   | heat colored, a reference scrolling to its expansion.  |
-
-## Callers Page
-
-| File           | Purpose                                              |
-| -------------- | ---------------------------------------------------- |
-| `callers.html` | Templates the callers page of one test, holding the  |
-|                | JSON callers model that `callers.js` draws.          |
-| `callers.js`   | Draws the callers heading and function table, then   |
-|                | activates the page as a view that scrolls to the top |
-|                | when the address is followed again.                  |
+|                   | JSON call graph model on the empty layout table that   |
+|                   | `call_graph.js` fills.                                 |
+| `call_graph.js`   | Fills the layout table with a row per shown node, each |
+|                   | callee's share of its caller's cumulative cost heat    |
+|                   | colored, opens and closes nodes in place, the hottest  |
+|                   | path open by default, and sends the focused path to    |
+|                   | the status bar.                                        |
 
 ## Callgrind Parsing
 
@@ -201,12 +203,27 @@ A diff report's run keeps these.
 |                        | file's path, the test list, and the missing file   |
 |                        | error.                                             |
 | `callgrind.py`         | Parses callgrind files into the one profile model, |
-|                        | cut at `main`, with costs, derived counters and    |
-|                        | display paths.                                     |
+|                        | with costs, derived counters and display paths.    |
 | `callgrind_diff.py`    | Subtracts the baseline profile from the modified   |
 |                        | profile and writes the delta and the callers JSON. |
 | `callgrind_symbols.py` | Names the functions that callgrind left as         |
 |                        | addresses in one recording.                        |
+
+## Database Page
+
+| File            | Purpose                                              |
+| --------------- | ---------------------------------------------------- |
+| `database.html` | Templates the database page of one test, holding the |
+|                 | JSON database model of every called function, its    |
+|                 | file, line, calls, callers, callees and recorded     |
+|                 | counters, and the terms of the derived counters,     |
+|                 | that `database.js` draws.                            |
+| `database.js`   | Draws the functions table under its heading with its |
+|                 | row count, one row per called function linking to    |
+|                 | it: the function, file and line, then the shown      |
+|                 | lines of its counters list, then activates the page  |
+|                 | as a view that scrolls to the top when the address   |
+|                 | is followed again.                                   |
 
 ## Developer Scripts
 
@@ -253,10 +270,8 @@ A diff report's run keeps these.
 |                           | information box, ticker tape and minimap.    |
 | `heat_map.html`           | Templates the heat map page with its tree    |
 |                           | pane, main box, minimap and text bars.       |
-| `heat_map.js`             | Draws the heat map tree, home table, source  |
-|                           | view and info boxes for every test.          |
-| `heat_map_main.html`      | Templates the heat map home, a heading over  |
-|                           | the table of the kind its pulldown picks.    |
+| `heat_map.js`             | Draws the heat map tree, source view and     |
+|                           | info boxes for every test.                   |
 
 ## Menu Strip
 
@@ -265,14 +280,17 @@ A diff report's run keeps these.
 | `menu.js`        | Holds the menu controller, which draws the strip, takes |
 |                  | keys and starts every navigation.                       |
 | `preferences.js` | Holds the preferences the menu edits and a view draws   |
-|                  | with, their choices and their counter labels.           |
+|                  | with, their choices, each counters list's lines and     |
+|                  | labels, and the reader of each counter, a derived       |
+|                  | one summed from its terms.                              |
 
 ## Overview Page
 
 | File              | Purpose                                              |
 | ----------------- | ---------------------------------------------------- |
-| `build_report.py` | Writes the overview page with its menu, and the      |
-|                   | callers and call graph pages of each test.           |
+| `build_report.py` | Writes the overview page with its menu, the database |
+|                   | page of each test, and a regular report's call graph |
+|                   | page of each test.                                   |
 | `frame.js`        | Holds the model of the top page, which checks the    |
 |                   | address and loads each view into the frame.          |
 | `overview.html`   | Templates the top page with the menu, the home panel |

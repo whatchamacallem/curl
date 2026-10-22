@@ -17,12 +17,6 @@
     <link rel="stylesheet" href="../scripts/dark_mode.css" />
   </head>
   <body id="heat-map-">
-    <div id="heat-map-tree-" role="tree"></div>
-    <div
-      id="heat-map-tree-scrollbar-"
-      class="text-scrollbar- vertical-"
-      data-scrolls-="heat-map-tree-"
-    ></div>
     <section id="heat-map-main-" tabindex="0"></section>
     <div id="heat-map-minimap-" class="empty-" aria-hidden="true">
       <div id="heat-map-minimap-box-"></div>
@@ -32,9 +26,19 @@
       id="heat-map-main-scrollbar-"
       class="text-scrollbar- vertical-"
       data-scrolls-="heat-map-main-"
+      data-sizes-="heat-map-main-"
       aria-hidden="true"
     ></div>
-    <template id="heat-map-main-template-">__HEAT_MAP_MAIN__</template>
+    <template id="heat-map-tree-track-template-">
+      <div class="heat-map-tree-track-">
+        <div id="heat-map-tree-" role="tree"></div>
+        <div
+          class="text-scrollbar- vertical-"
+          data-scrolls-="heat-map-tree-"
+          aria-hidden="true"
+        ></div>
+      </div>
+    </template>
     <script src="../scripts/source_database.js"></script>
     <template id="page-held-script-">
       <script src="../scripts/debug.js"></script>

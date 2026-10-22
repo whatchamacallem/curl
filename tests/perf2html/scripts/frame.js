@@ -5,7 +5,10 @@
 window.try_catch_handler_(function () {
   "use strict";
 
-  const FLAME_GRAPH_VIEW_ENTRY = settings_("FLAME_GRAPH_VIEW_ENTRY");
+  const DARK_MODE_FRAME_QUERY_KEY_NAME = settings_(
+    "DARK_MODE_FRAME_QUERY_KEY_NAME",
+  );
+  const REGULAR_REPORT_VIEW_KEYS = settings_("REGULAR_REPORT_VIEW_KEYS");
   const SCREENSHOT_MENU_KEY_NUMBER = settings_("SCREENSHOT_MENU_KEY_NUMBER");
   const SETTINGS_DEBUG_ENABLED = settings_("SETTINGS_DEBUG_ENABLED");
   const SETTINGS_DEBUG_HASH_KEY_NAME = settings_(
@@ -39,21 +42,26 @@ window.try_catch_handler_(function () {
   const counter_names = JSON.parse(
     menu_strip.getAttribute("data-counter-names-"),
   );
-  const report_has_flame_graph =
-    menu_strip.getAttribute("data-flame-graph-") === "1";
+  const is_regular_report =
+    menu_strip.getAttribute("data-regular-report-") === "1";
   const test_names = JSON.parse(menu_strip.getAttribute("data-test-names-"));
   const view_frame = window.report_ui_.view_frame;
 
   let current_address = null;
+  let focused_path_entries = [];
   let load_log_shown_count = null;
   let loaded_view_href = "";
 
   function address_now() {
     return current_address;
   }
-  // Returns whether the report holds a flame graph for the test.
-  function has_flame_graph(test_name) {
-    return report_has_flame_graph && test_name !== null;
+  // Returns the focused path entries the call graph last sent, root first.
+  function focused_path_now() {
+    return focused_path_entries;
+  }
+  // Returns whether this report holds a view's page, a diff holding fewer.
+  function view_has_page(view_key) {
+    return is_regular_report || !REGULAR_REPORT_VIEW_KEYS.includes(view_key);
   }
   // Returns the query's menu entry number while the loaded address shows.
   function menu_entry_number_now() {
@@ -68,13 +76,10 @@ window.try_catch_handler_(function () {
         "str_error_hash_test_unknown",
         parsed_address.test,
       );
-    if (
-      parsed_address.view === FLAME_GRAPH_VIEW_ENTRY[0] &&
-      !has_flame_graph(parsed_address.test)
-    )
+    if (!view_has_page(parsed_address.view))
       window.throw_exception_(
-        "str_error_hash_flame_graph_missing",
-        parsed_address.test,
+        "str_error_hash_view_page_missing",
+        parsed_address.view,
       );
     if (
       parsed_address.setting !== null &&
@@ -112,20 +117,36 @@ window.try_catch_handler_(function () {
       window.report_ui_.address.settings_cleared_hash(current_address);
     location.replace(cleared_url.href);
   }
+  // Loads a new view page into the frame, clearing the focused path it held.
+  function view_page_load(shown_address) {
+    const page_href = window.report_ui_.address.page_href(shown_address);
+    const view_href = page_href + location.hash;
+    if (view_href === loaded_view_href) return;
+    // The view opens in the dark mode shown, before its first paint.
+    const mode_query = new URLSearchParams({
+      [DARK_MODE_FRAME_QUERY_KEY_NAME]: window.report_dark_mode_.state_text(
+        window.report_ui_.dark_mode_enabled_now_(),
+      ),
+    });
+    view_frame.contentWindow.location.replace(
+      page_href + "?" + mode_query + location.hash,
+    );
+    loaded_view_href = view_href;
+    focused_path_entries = [];
+  }
   function view_show() {
     const shown_address = window.report_ui_.address.of_hash(location.hash);
     address_check(shown_address);
     current_address = shown_address;
-    const applied_text = shown_address[SETTINGS_DEBUG_HASH_KEY_NAME];
-    if (applied_text !== null && !SETTINGS_DEBUG_ENABLED) {
-      settings_debug_load(true);
-      return;
-    }
     // Installs the settings again when the hash changes those it applies.
-    if (applied_text !== loaded_address[SETTINGS_DEBUG_HASH_KEY_NAME]) {
+    if (
+      shown_address[SETTINGS_DEBUG_HASH_KEY_NAME] !==
+      loaded_address[SETTINGS_DEBUG_HASH_KEY_NAME]
+    ) {
       location.reload();
       return;
     }
+    if (shown_address.view !== null) view_page_load(shown_address);
     window.report_menu_.address_show();
     if (shown_address.view === null) {
       const frame_had_focus = document.activeElement === view_frame;
@@ -141,12 +162,6 @@ window.try_catch_handler_(function () {
         );
       }
       return;
-    }
-    const view_href =
-      window.report_ui_.address.page_href(shown_address) + location.hash;
-    if (view_href !== loaded_view_href) {
-      view_frame.contentWindow.location.replace(view_href);
-      loaded_view_href = view_href;
     }
     const home_had_focus = home_panel.contains(document.activeElement);
     home_panel.hidden = true;
@@ -223,13 +238,27 @@ window.try_catch_handler_(function () {
     load_log_shown_count = line_count;
     load_log_relay_post();
   }
+  // Holds the focused path the view sent, then draws the menu with it.
+  function focused_path_set(path_entries) {
+    focused_path_entries = path_entries;
+    window.report_menu_.menu_render();
+  }
   function view_message_handler(message_event) {
     const message_data = message_event.data;
     if (message_event.source !== view_frame.contentWindow || !message_data)
       return;
     const message_tag = message_data.report_ui;
     if (message_tag === "address_request") address_request(message_data.hash);
+    else if (message_tag === "counter_line_move")
+      window.report_menu_.counter_line_move(
+        message_data.list_key,
+        message_data.line_name,
+        message_data.anchor_name,
+        message_data.lands_after,
+      );
     else if (message_tag === "dark_mode_request") view_post("dark_mode_show");
+    else if (message_tag === "focused_path_set")
+      focused_path_set(message_data.path_entries);
     else if (message_tag === "load_log_history_set")
       load_log_history_set(message_data.line_count);
     else if (message_tag === "load_log_request") load_log_relay_post();
@@ -286,11 +315,12 @@ window.try_catch_handler_(function () {
     address_now,
     address_request,
     counter_names,
-    has_flame_graph,
+    focused_path_now,
     load_log_history,
     menu_entry_number_now,
     settings_debug_clear,
     test_names,
+    view_has_page,
     view_post,
   };
 })();

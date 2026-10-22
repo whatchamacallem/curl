@@ -244,8 +244,7 @@ pages_write() {
   local _flags=("--artifacts=$ARTIFACTS_DIR" "--report=$_OUT_DIR" --diff)
   page_tool_run callgrind_to_heatmap.py data "${_flags[@]}" \
     "--baseline=$_BASE_DIR" "--modified=$_MOD_DIR"
-  page_tool_run build_report.py callers "${_flags[@]}"
-  page_tool_run build_report.py call-graph "${_flags[@]}"
+  page_tool_run build_report.py database "${_flags[@]}"
   page_tool_run callgrind_to_heatmap.py page "--report=$_OUT_DIR"
   page_tool_run build_report.py overview "${_flags[@]}" \
     "${README_HTML_FLAGS[@]}"

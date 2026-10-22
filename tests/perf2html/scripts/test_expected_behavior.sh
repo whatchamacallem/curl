@@ -366,7 +366,9 @@ screenshots_run() {
   heading_print "$_SCREENSHOT_SCRIPT_NAME"
   for _name in "$REPORT_MODIFIED_DIR_NAME" "$REPORT_DIFF_DIR_NAME"; do
     screenshot_command_set "$_name"
-    subprocess_run "${_SCREENSHOT_COMMAND[@]}"
+    # The verbose lines go to the Markdown log on stderr, as blocks of text.
+    subprocess_run "${_SCREENSHOT_COMMAND[@]}" >&2
+    VERBOSE_BLOCK_PRINTED=loose
   done
 
   # A measuring run changes the recorded values the golden screenshots show.

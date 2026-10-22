@@ -275,6 +275,7 @@ window.try_catch_handler_(function () {
                 ),
               keeps_open: false,
               on_close: () => {},
+              on_move: null,
               on_select: (value_text) =>
                 window.report_ui_.load_log_history_send(Number(value_text)),
               reads_line_number: false,

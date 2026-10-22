@@ -21,9 +21,6 @@ a:focus-visible {
 .menu-button- a {
   color: inherit;
 }
-.menu-status-bar- a:not(:focus-visible) {
-  color: inherit;
-}
 
 #heat-map-minimap- {
   background: var(--light-mode-page-bg-);
@@ -54,6 +51,9 @@ table.heat-map-source-table- > tbody > tr:focus-visible > td {
 .heat-map-tree-node-:focus-visible {
   background: var(--light-mode-menu-focus-bg-) !important;
   color: var(--light-mode-menu-focus-fg-) !important;
+}
+.heat-map-tree-track- {
+  background: var(--light-mode-page-bg-);
 }
 
 body {
@@ -101,7 +101,7 @@ body {
   background: var(--light-mode-page-bg-);
 }
 #heat-map-minimap-viewport- {
-  border-width: var(--light-mode-menu-normal-outline-width-);
+  border-width: var(--page-line-width-);
   border-color: var(--light-mode-menu-normal-outline-);
 }
 .heat-map-source-information-line- {
@@ -120,7 +120,6 @@ tr.heat-map-source-information-box-synthetic-row- > td {
   background: var(--light-mode-menu-normal-bg-);
   color: var(--light-mode-menu-normal-fg-);
 }
-#heat-map-tree-scrollbar-:focus-visible,
 .text-scrollbar-.drag- {
   background: var(--light-mode-menu-focus-bg-);
   color: var(--light-mode-menu-focus-fg-);
@@ -198,22 +197,16 @@ tr.heat-map-source-information-box-synthetic-row- > td {
   }
   /* A hovered row's frame, its sides on the side lines, its bottom below. */
   table.table-::before {
-    left: calc(
-      anchor(left) - var(--light-mode-menu-normal-outline-width-) / 2
-    );
-    right: calc(
-      anchor(right) - var(--light-mode-menu-normal-outline-width-) / 2
-    );
-    bottom: calc(
-      anchor(bottom) - var(--light-mode-menu-normal-outline-width-)
-    );
-    border-width: var(--light-mode-menu-normal-outline-width-);
+    left: calc(anchor(left) - var(--page-line-width-) / 2);
+    right: calc(anchor(right) - var(--page-line-width-) / 2);
+    bottom: calc(anchor(bottom) - var(--page-line-width-));
+    border-width: var(--page-line-width-);
     border-color: var(--light-mode-menu-normal-outline-);
   }
   /* A hovered node's frame, drawn the way the selected node's frame is. */
   .heat-map-tree-node-:not(.cold-):hover::before {
-    inset: 0 var(--light-mode-menu-normal-outline-width-);
-    outline: var(--light-mode-menu-normal-outline-width-) solid
+    inset: 0 var(--page-line-width-);
+    outline: var(--page-line-width-) solid
       var(--light-mode-menu-normal-outline-);
   }
 }

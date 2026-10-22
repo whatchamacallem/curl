@@ -12,6 +12,9 @@ window.try_catch_handler_(function () {
   const manifest_heading = document.getElementById(
     "overview-manifest-heading-",
   );
+  const raw_data_heading = document.getElementById(
+    "overview-raw-data-heading-",
+  );
   const raw_data_link = document.querySelector("#overview-raw-data- > a");
   const tests_heading = document.getElementById("overview-tests-heading-");
   const tests_table_data = document.getElementById("overview-tests-table-");
@@ -30,15 +33,10 @@ window.try_catch_handler_(function () {
           numeric: true,
         },
       ];
-    const column_labels = JSON.parse(
-      tests_table_data.getAttribute("data-column-labels-"),
-    );
     return [
       { label: text("str_column_report") },
-      ...column_labels.map((column_label) => ({
-        label: column_label,
-        numeric: true,
-      })),
+      { label: text("str_column_time_per_loop"), numeric: true },
+      { label: text("str_column_instructions_per_cycle"), numeric: true },
     ];
   }
   // Replaces table data with its table, each row leading to its first link.
@@ -64,9 +62,12 @@ window.try_catch_handler_(function () {
   // A diff report holds no manifest heading or raw data.
   if (manifest_heading)
     manifest_heading.textContent = text("str_heading_manifest");
-  if (raw_data_link)
-    raw_data_link.textContent = text_fill("str_raw_data_link", {
-      name: raw_data_link.getAttribute("href").split("/").pop(),
-    });
+  if (raw_data_heading) {
+    raw_data_heading.textContent = text("str_heading_raw_data");
+    raw_data_link.textContent = raw_data_link
+      .getAttribute("href")
+      .split("/")
+      .pop();
+  }
   table_data_replace(tests_table_data, tests_columns());
 })();

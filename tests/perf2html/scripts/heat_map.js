@@ -5,24 +5,14 @@
 window.try_catch_handler_(function () {
   "use strict";
 
-  const CALLERS_CELL_SEPARATOR_TEXT = settings_("CALLERS_CELL_SEPARATOR_TEXT");
   const CALLGRIND_FILE_DATA_ERROR_CODE = settings_(
     "CALLGRIND_FILE_DATA_ERROR_CODE",
   );
-  const HEAT_MAP_HOME_LINES_LOCATION_MAX_CHARS = settings_(
-    "HEAT_MAP_HOME_LINES_LOCATION_MAX_CHARS",
+  const COUNTER_LIST_CALLS_LINE_NAME = settings_(
+    "COUNTER_LIST_CALLS_LINE_NAME",
   );
-  const HEAT_MAP_HOME_LINES_SOURCE_COLUMN_MAX_CHARS = settings_(
-    "HEAT_MAP_HOME_LINES_SOURCE_COLUMN_MAX_CHARS",
-  );
-  const HEAT_MAP_HOME_LINES_SOURCE_SNIPPET_MAX_CHARS = settings_(
-    "HEAT_MAP_HOME_LINES_SOURCE_SNIPPET_MAX_CHARS",
-  );
-  const HEAT_MAP_HOME_TABLE_DEFAULT_KIND = settings_(
-    "HEAT_MAP_HOME_TABLE_DEFAULT_KIND",
-  );
-  const HEAT_MAP_HOME_TABLE_DEFAULT_ROWS = settings_(
-    "HEAT_MAP_HOME_TABLE_DEFAULT_ROWS",
+  const DATABASE_CELL_SEPARATOR_TEXT = settings_(
+    "DATABASE_CELL_SEPARATOR_TEXT",
   );
   const HEAT_MAP_MINIMAP_VIEWPORT_BOX_SMALLEST_PX = settings_(
     "HEAT_MAP_MINIMAP_VIEWPORT_BOX_SMALLEST_PX",
@@ -47,18 +37,8 @@ window.try_catch_handler_(function () {
   const HEAT_MAP_VIEW_ENTRY = settings_("HEAT_MAP_VIEW_ENTRY");
   const RANKING_COUNTER_NAME = settings_("RANKING_COUNTER_NAME");
   const REPORT_SOURCES_DIR_NAME = settings_("REPORT_SOURCES_DIR_NAME");
-  const STORAGE_KEY_HEATMAP_ROWS = settings_("STORAGE_KEY_HEATMAP_ROWS");
   const STYLE_HEAT_MAP_TREE_INDENT_PER_LEVEL_CHARS = settings_(
     "STYLE_HEAT_MAP_TREE_INDENT_PER_LEVEL_CHARS",
-  );
-  const STYLE_HEAT_MAP_TREE_PANE_NARROWEST_CHARS = settings_(
-    "STYLE_HEAT_MAP_TREE_PANE_NARROWEST_CHARS",
-  );
-  const STYLE_HEAT_MAP_TREE_PANE_WIDEST_CHARS = settings_(
-    "STYLE_HEAT_MAP_TREE_PANE_WIDEST_CHARS",
-  );
-  const STYLE_MENU_PULLDOWN_EXTRA_WIDTH_CHARS = settings_(
-    "STYLE_MENU_PULLDOWN_EXTRA_WIDTH_CHARS",
   );
   const STYLE_TABLE_FUNCTION_NAME_MAX_CHARS = settings_(
     "STYLE_TABLE_FUNCTION_NAME_MAX_CHARS",
@@ -66,28 +46,25 @@ window.try_catch_handler_(function () {
   const STYLE_TABLE_LOCATION_COLUMN_MAX_CHARS = settings_(
     "STYLE_TABLE_LOCATION_COLUMN_MAX_CHARS",
   );
-  const TABLE_ROW_COUNT_CHOICES = settings_("TABLE_ROW_COUNT_CHOICES");
   const WIDGET_KEY_NAMES = settings_("WIDGET_KEY_NAMES");
-  const HOME_TABLE_RENDERED_ROW_COUNT = Math.max(...TABLE_ROW_COUNT_CHOICES);
   if (!window.report_source_database_)
     window.throw_exception_("str_error_internal");
   const source_database = window.report_source_database_;
   let profile_model = null,
-    shown_model = null,
     file_table = null,
     function_table = null,
     shown_test_name = null;
-  const tree_panel = document.getElementById("heat-map-tree-");
-  const tree_scrollbar = document.getElementById("heat-map-tree-scrollbar-");
+  // Holds the tree and its bar, hung from the source table's first title.
+  const tree_track = document.getElementById(
+    "heat-map-tree-track-template-",
+  ).content.firstElementChild;
+  const tree_panel = tree_track.querySelector("#heat-map-tree-");
   const main_panel = document.getElementById("heat-map-main-");
   const minimap_panel = document.getElementById("heat-map-minimap-");
   const minimap_box = document.getElementById("heat-map-minimap-box-");
   const minimap_viewport = document.getElementById(
     "heat-map-minimap-viewport-",
   );
-  const home_template_text = document.getElementById(
-    "heat-map-main-template-",
-  ).innerHTML;
   let current_file_path = null;
   tree_panel.setAttribute(
     "aria-label",
@@ -102,8 +79,7 @@ window.try_catch_handler_(function () {
   const vector_at = (cost_vector, index) =>
     cost_vector && index < cost_vector.length ? cost_vector[index] : 0;
   let counter_list = null,
-    ranking_counter = null,
-    secondary_counters = null;
+    ranking_counter = null;
   const counter_find = (key) =>
     counter_list.find((counter) => counter.key === key);
 
@@ -112,34 +88,16 @@ window.try_catch_handler_(function () {
   const render_element = window.render_element_;
   const render_html_escape = window.render_html_escape_;
   const render_menu_button = window.render_menu_button_;
-  const table_sort_column = report_ui_.table_sort.column;
-  const table_sort_records = report_ui_.table_sort.records;
   let active_scale = null,
-    shows_calls = null,
+    shown_line_names = null,
     sort_mode = null;
   const counter_label = (counter) =>
     report_preferences_.counter_label(counter.key);
   function counters_build() {
-    counter_list = [];
-    profile_model.heatMapTotals.counters.forEach((name, index) => {
-      counter_list.push({
-        key: name,
-        get: (cost_vector) => vector_at(cost_vector, index),
-      });
-    });
-    for (const [name, terms] of profile_model.heatMapTotals.derived) {
-      const get = (cost_vector) =>
-        terms.reduce(
-          (running_total, term) =>
-            running_total + term[0] * vector_at(cost_vector, term[1]),
-          0,
-        );
-      counter_list.push({
-        key: name,
-        get,
-        derived: true,
-      });
-    }
+    counter_list = report_preferences_.counter_readers(
+      profile_model.heatMapTotals.counters,
+      profile_model.heatMapTotals.derived,
+    );
     ranking_counter = counter_find(RANKING_COUNTER_NAME);
   }
   const ranking_value = (cost_vector) => ranking_counter.get(cost_vector);
@@ -148,12 +106,14 @@ window.try_catch_handler_(function () {
   // Takes the relayed preferences: the columns, the scale and the tree order.
   function preferences_handler() {
     const view_preferences = report_preferences_.now();
-    shows_calls = view_preferences.shows_calls;
-    secondary_counters = view_preferences.counter_names
-      .filter((counter_name) => counter_name !== RANKING_COUNTER_NAME)
-      .map(counter_find);
-    if (secondary_counters.includes(undefined))
-      window.throw_exception_("str_error_internal");
+    shown_line_names = report_preferences_.shown_line_names(
+      HEAT_MAP_VIEW_ENTRY[0],
+    );
+    const unknown_names = shown_line_names.filter(
+      (line_name) =>
+        line_name !== COUNTER_LIST_CALLS_LINE_NAME && !counter_find(line_name),
+    );
+    if (unknown_names.length) window.throw_exception_("str_error_internal");
     const scale_choices = report_preferences_.heat_scale_choices();
     active_scale = scale_choices.find(
       (choice) => choice.value === view_preferences.heat_scale_value,
@@ -199,56 +159,6 @@ window.try_catch_handler_(function () {
     text: human_text(value),
   });
   let TICKER_TAPE_HEADING = text("str_ticker_tape_heading_self");
-  const SELF_COLUMN = {
-    label: text("str_column_self"),
-    numeric: true,
-  };
-  const HOME_KIND_ENTRY_NAME = "kind";
-  const HOME_SORT_DEFAULT_NAME = "self";
-  const HOME_RANK_COLUMN = table_sort_column(
-    { label: text("str_column_rank"), numeric: true },
-    "",
-    null,
-    (record, row_index) => String(row_index + 1),
-  );
-  const HOME_TABLE_KIND_CHOICES = [
-    {
-      value: "lines",
-      label: text("str_heat_map_home_kind_lines"),
-      heading_string_id: "str_heading_lines_by_counter",
-      reads_sources: true,
-      table: home_lines_table,
-    },
-    {
-      value: "functions",
-      label: text("str_heat_map_home_kind_functions"),
-      heading_string_id: "str_heading_functions_by_counter",
-      reads_sources: false,
-      table: home_functions_table,
-    },
-    {
-      value: "files",
-      label: text("str_heat_map_home_kind_files"),
-      heading_string_id: "str_heading_files_by_counter",
-      reads_sources: false,
-      table: home_files_table,
-    },
-  ];
-  const HOME_KIND_BOX_WIDTH_CHARS =
-    Math.max(...HOME_TABLE_KIND_CHOICES.map((choice) => choice.label.length)) +
-    STYLE_MENU_PULLDOWN_EXTRA_WIDTH_CHARS;
-  if (
-    !HOME_TABLE_KIND_CHOICES.some(
-      (choice) => choice.value === HEAT_MAP_HOME_TABLE_DEFAULT_KIND,
-    )
-  )
-    window.throw_exception_(
-      "str_error_setting_choice_unknown",
-      "HEAT_MAP_HOME_TABLE_DEFAULT_KIND",
-      HEAT_MAP_HOME_TABLE_DEFAULT_KIND,
-    );
-  let home_table_kind = HEAT_MAP_HOME_TABLE_DEFAULT_KIND,
-    home_sort_name = HOME_SORT_DEFAULT_NAME;
   let HAS_CALL_GRAPH = null;
 
   let IS_DIFF = null;
@@ -315,8 +225,6 @@ window.try_catch_handler_(function () {
     counter_baseline(line_baseline_vector(file_path, line_number), counter);
   const function_baseline = (function_index) =>
     baseline(function_baselines[function_index]);
-  const function_counter_baseline = (function_index, counter) =>
-    counter_baseline(function_baselines[function_index], counter);
   const file_counter_baseline = (file_path, counter) =>
     counter_baseline(file_baselines[file_path], counter);
   const file_baseline = (file_path) =>
@@ -328,8 +236,7 @@ window.try_catch_handler_(function () {
   const heat_style = (percent) =>
     report_ui_.heat_cell_style(percent, active_scale.curve, IS_DIFF);
 
-  let per_function_calls = null,
-    CALLS_TOTAL = null;
+  let CALLS_TOTAL = null;
   const call_count_cell = (call_count) =>
     call_count
       ? {
@@ -410,7 +317,7 @@ window.try_catch_handler_(function () {
   function function_names(function_indexes) {
     return function_indexes
       .map(function_name)
-      .join(CALLERS_CELL_SEPARATOR_TEXT);
+      .join(DATABASE_CELL_SEPARATOR_TEXT);
   }
 
   function source_text(file_path) {
@@ -421,42 +328,29 @@ window.try_catch_handler_(function () {
       window.throw_exception_("str_error_internal");
     return sources[file_path];
   }
-  // Returns whether the files' sources ran, loading the rest, then routing.
-  function sources_ready(file_paths) {
-    const missing_names = file_paths
-      .map((file_path) => file_table[file_path].source)
-      .filter(
-        (script_name) =>
-          script_name !== null && !source_scripts_loaded.has(script_name),
-      );
-    for (const script_name of missing_names) {
-      if (source_scripts_loading.has(script_name)) continue;
-      source_scripts_loading.add(script_name);
-      const source_script = document.createElement("script");
-      source_script.src = report_ui_.address.file_href(
-        REPORT_SOURCES_DIR_NAME + "/" + script_name,
-      );
-      source_script.addEventListener(
-        "load",
-        window.try_catch_handler_(() => {
-          source_scripts_loading.delete(script_name);
-          source_scripts_loaded.add(script_name);
-          if (source_scripts_loading.size) return;
-          rendered_key = "";
-          route_render();
-        }),
-      );
-      document.head.append(source_script);
-    }
-    return missing_names.length === 0;
-  }
-  // Returns the files whose sources the chosen home table reads.
-  function home_source_paths() {
-    const kind_choice = HOME_TABLE_KIND_CHOICES.find(
-      (choice) => choice.value === home_table_kind,
+  // Returns whether the file's source ran, else loads that source and routes.
+  function sources_ready(file_path) {
+    const script_name = file_table[file_path].source;
+    if (script_name === null || source_scripts_loaded.has(script_name))
+      return true;
+    if (source_scripts_loading.has(script_name)) return false;
+    source_scripts_loading.add(script_name);
+    const source_script = document.createElement("script");
+    source_script.src = report_ui_.address.file_href(
+      REPORT_SOURCES_DIR_NAME + "/" + script_name,
     );
-    if (!kind_choice) window.throw_exception_("str_error_internal");
-    return kind_choice.reads_sources ? Object.keys(file_table) : [];
+    source_script.addEventListener(
+      "load",
+      window.try_catch_handler_(() => {
+        source_scripts_loading.delete(script_name);
+        source_scripts_loaded.add(script_name);
+        if (source_scripts_loading.size) return;
+        rendered_key = "";
+        route_render();
+      }),
+    );
+    document.head.append(source_script);
+    return false;
   }
 
   function line_link_cell(file_path, line, text) {
@@ -486,21 +380,36 @@ window.try_catch_handler_(function () {
     label,
     clip: STYLE_TABLE_FUNCTION_NAME_MAX_CHARS,
   });
+  // Holds the source table's first column, the tree hung from its title.
+  const TREE_COLUMN = {
+    label: text("str_heat_map_tree_label"),
+    cls: "heat-map-source-table-tree-cell-",
+  };
   const secondary_column = (secondary) =>
     counter_column(secondary, {
       cls: "heat-map-source-table-secondary-counter-cell-",
+      move_name: secondary.key,
     });
-  const secondary_columns = () => secondary_counters.map(secondary_column);
+  // Lists what a table draws of each shown line, in the list's order.
+  const shown_line_parts = (line_part) =>
+    shown_line_names.flatMap((line_name) => line_part(line_name));
+  // Asks the top page to move a line of the heat map list, a column dropped.
+  const counter_line_move_send = (line_name, anchor_name, lands_after) =>
+    report_ui_.counter_line_move_send(
+      HEAT_MAP_VIEW_ENTRY[0],
+      line_name,
+      anchor_name,
+      lands_after,
+    );
   // Writes the cell of one selected counter, its share heat colored.
-  const secondary_cell = (percent, shows_zero) => ({
-    text: percent || shows_zero ? share_text(percent) : "",
+  const secondary_cell = (percent) => ({
+    text: percent ? share_text(percent) : "",
     style: heat_style(percent),
   });
 
   let tree_root = null;
-  // Builds the tree, with no test selected every file costing nothing.
+  // Builds the tree of the test's files, each costing its ranking count.
   function tree_build() {
-    const has_counters = shown_test_name !== null;
     const root = { name: "", path: "", dirs: new Map(), files: [], self: 0 };
     function node_insert(file_path, self_cost, baseline_cost, cold) {
       const path_parts = file_path.split("/");
@@ -529,47 +438,45 @@ window.try_catch_handler_(function () {
         self: self_cost,
         base: baseline_cost,
         cold,
-        zero: has_counters && self_cost === 0,
+        zero: self_cost === 0,
       });
     }
     for (const file_path of Object.keys(file_table)) {
-      if (!has_counters) node_insert(file_path, 0, 0, false);
-      else
-        node_insert(
-          file_path,
-          ranking_value(file_table[file_path].self),
-          file_baseline(file_path) || 0,
-          false,
-        );
+      node_insert(
+        file_path,
+        ranking_value(file_table[file_path].self),
+        file_baseline(file_path),
+        false,
+      );
     }
-    for (const file_path of shown_model.cold) {
-      node_insert(file_path, 0, 0, true);
+    for (const file_path of profile_model.cold) {
+      node_insert(file_path, 0, null, true);
     }
+    // Sums each subtree, its baseline null when none of its nodes has one.
     (function subtree_sum(tree_node) {
-      let running_total = 0,
-        baseline_cost = 0;
-      for (const directory_node of tree_node.dirs.values()) {
+      let running_total = 0;
+      for (const directory_node of tree_node.dirs.values())
         running_total += subtree_sum(directory_node);
-        baseline_cost += directory_node.base;
-      }
-      for (const file of tree_node.files) {
-        running_total += file.self;
-        baseline_cost += file.base;
-      }
+      for (const file of tree_node.files) running_total += file.self;
+      const baseline_costs = [...tree_node.dirs.values(), ...tree_node.files]
+        .map((child_node) => child_node.base)
+        .filter((baseline_cost) => baseline_cost !== null);
       tree_node.self = running_total;
-      tree_node.base = baseline_cost;
+      tree_node.base = baseline_costs.length
+        ? baseline_costs.reduce(
+            (baseline_sum, baseline_cost) => baseline_sum + baseline_cost,
+          )
+        : null;
       return running_total;
     })(root);
     return root;
   }
   const expanded_directories = new Set(),
     expanded_cold_groups = new Set();
-  // Orders tree nodes by the sort chosen, by name with no test selected.
+  // Orders tree nodes by heat when that sort is chosen, else by name.
   function node_compare(node_a, node_b) {
     const by_heat =
-      sort_mode === "heat" && shown_test_name !== null
-        ? absolute(node_b.self) - absolute(node_a.self)
-        : 0;
+      sort_mode === "heat" ? absolute(node_b.self) - absolute(node_a.self) : 0;
     return by_heat || node_a.name.localeCompare(node_b.name);
   }
   const caret = (is_expanded) =>
@@ -597,17 +504,12 @@ window.try_catch_handler_(function () {
       render_html_escape(share_shown),
     );
   function tree_render() {
-    const has_counters = shown_test_name !== null;
-    // Writes the heat colors of a node, none with no test selected.
+    // Writes the heat colors of a node.
     const node_heat_style = (tree_node) =>
-      has_counters
-        ? heat_style(share_of_baseline(tree_node.self, tree_node.base))
-        : "";
-    // Writes the share of a node, none with no test selected.
+      heat_style(share_of_baseline(tree_node.self, tree_node.base));
+    // Writes the share of a node.
     const node_share_text = (tree_node) =>
-      has_counters
-        ? share_of_baseline_text(tree_node.self, tree_node.base)
-        : "";
+      share_of_baseline_text(tree_node.self, tree_node.base);
     function nodes_emit(tree_node, depth) {
       const output_parts = [];
       const indent_text = " ".repeat(
@@ -714,6 +616,23 @@ window.try_catch_handler_(function () {
       document.hasFocus() && tree_panel.contains(document.activeElement);
     tree_panel.innerHTML = nodes_emit(tree_root, 0);
     tree_tab_stop_place(tree_had_focus);
+  }
+  // Reads the tree's focus and scroll before the main box draws again.
+  function tree_state_read() {
+    return {
+      had_focus:
+        document.hasFocus() && tree_panel.contains(document.activeElement),
+      scroll_top: tree_panel.scrollTop,
+    };
+  }
+  // Hangs the tree from the drawn table's first title, its state kept.
+  function tree_track_place(tree_state) {
+    main_panel
+      .querySelector("table.heat-map-source-table- > thead > tr > th")
+      .append(tree_track);
+    tree_render();
+    tree_panel.scrollTop = tree_state.scroll_top;
+    if (tree_state.had_focus) tree_tab_stop_place(true);
   }
   let tree_focus_selector = null;
   const TREE_NODE_KEY_ATTRIBUTE_NAMES = [
@@ -880,353 +799,6 @@ window.try_catch_handler_(function () {
   }
 
   let entry_line_index = null;
-
-  // Makes the self column, the ranking counter's share heat colored.
-  function home_self_column(cost, record_share) {
-    return table_sort_column(
-      SELF_COLUMN,
-      HOME_SORT_DEFAULT_NAME,
-      (record) => absolute(cost(record)),
-      (record) => {
-        const record_percent = record_share(record);
-        return {
-          text: share_text(record_percent),
-          style: heat_style(record_percent),
-        };
-      },
-    );
-  }
-  // Makes the function column, sorted by name.
-  function home_function_column(name) {
-    return table_sort_column(
-      {
-        label: text("str_column_function"),
-        clip: STYLE_TABLE_FUNCTION_NAME_MAX_CHARS,
-      },
-      "function",
-      name,
-      (record) => ({ text: name(record) }),
-    );
-  }
-  // Makes one column per selected counter, each sorted by its count.
-  function home_secondary_columns(cost_vector, counter_percent) {
-    return secondary_counters.map((secondary) =>
-      table_sort_column(
-        secondary_column(secondary),
-        secondary.key,
-        (record) => absolute(secondary.get(cost_vector(record))),
-        (record) => {
-          const counter_value = secondary.get(cost_vector(record));
-          return secondary_cell(
-            counter_percent(record, counter_value, secondary),
-            true,
-          );
-        },
-      ),
-    );
-  }
-  // Lists every line with a ranking count and the columns of the lines table.
-  function home_lines_table() {
-    const records = [];
-    for (const [file_path, file] of Object.entries(file_table)) {
-      for (const [line_key, line_costs] of Object.entries(file.lines)) {
-        const cost = ranking_value(line_costs[0]);
-        if (absolute(cost) <= 0) continue;
-        records.push({
-          cost,
-          file_path,
-          function_indexes: line_functions(file_path, line_key),
-          line_costs,
-          line_number: +line_key,
-        });
-      }
-    }
-    const record_location = (record) =>
-      record.file_path + ":" + record.line_number;
-    const source_lines_by_file = new Map();
-    // Returns a line's trimmed source, empty when the file's source is away.
-    function source_snippet(record) {
-      if (!source_lines_by_file.has(record.file_path)) {
-        const file_source = source_text(record.file_path);
-        source_lines_by_file.set(
-          record.file_path,
-          file_source == null ? [] : file_source.split("\n"),
-        );
-      }
-      const source_lines = source_lines_by_file.get(record.file_path);
-      if (record.line_number < 1 || record.line_number > source_lines.length)
-        return "";
-      return source_lines[record.line_number - 1]
-        .trim()
-        .slice(0, HEAT_MAP_HOME_LINES_SOURCE_SNIPPET_MAX_CHARS);
-    }
-    return {
-      home_columns: [
-        HOME_RANK_COLUMN,
-        home_self_column(
-          (record) => record.cost,
-          (record) =>
-            line_share(
-              record.cost,
-              line_baseline(record.file_path, record.line_number),
-              record.file_path,
-              record.line_number,
-            ),
-        ),
-        home_function_column((record) =>
-          function_names(record.function_indexes),
-        ),
-        table_sort_column(
-          {
-            label: text("str_column_defined_at"),
-            clip: HEAT_MAP_HOME_LINES_LOCATION_MAX_CHARS,
-          },
-          "location",
-          record_location,
-          (record) =>
-            line_link_cell(
-              record.file_path,
-              record.line_number,
-              record_location(record),
-            ),
-        ),
-        table_sort_column(
-          {
-            label: text("str_column_source"),
-            clip: HEAT_MAP_HOME_LINES_SOURCE_COLUMN_MAX_CHARS,
-          },
-          "source",
-          source_snippet,
-          source_snippet,
-        ),
-        table_sort_column(
-          counter_column(ranking_counter),
-          ranking_counter.key,
-          (record) => absolute(record.cost),
-          (record) => cell_number(record.cost),
-        ),
-        ...home_secondary_columns(
-          (record) => record.line_costs[0],
-          (record, value, counter) =>
-            line_counter_share(
-              value,
-              counter,
-              line_counter_baseline(
-                record.file_path,
-                record.line_number,
-                counter,
-              ),
-              record.file_path,
-              record.line_number,
-            ),
-        ),
-      ],
-      records,
-      row_href: (record) =>
-        hash_for_location(record.file_path, record.line_number),
-    };
-  }
-  // Lists every function with a ranking count and the functions table columns.
-  function home_functions_table() {
-    const records = [];
-    function_table.forEach((function_entry, function_index) => {
-      const self_cost = ranking_value(function_entry.self);
-      if (absolute(self_cost) > 0)
-        records.push({ function_entry, function_index, self_cost });
-    });
-    const record_location = (record) =>
-      record.function_entry.line
-        ? record.function_entry.file + ":" + record.function_entry.line
-        : record.function_entry.file;
-    const inclusive_cost = (record) =>
-      record.self_cost + ranking_value(record.function_entry.calls);
-    const calls_column = table_sort_column(
-      { label: text("str_column_calls"), numeric: true },
-      "calls",
-      (record) => per_function_calls[record.function_index],
-      (record) => call_count_cell(per_function_calls[record.function_index]),
-    );
-    const call_columns = HAS_CALL_GRAPH
-      ? [
-          ...(shows_calls ? [calls_column] : []),
-          table_sort_column(
-            { label: text("str_column_inclusive"), numeric: true },
-            "inclusive",
-            (record) => absolute(inclusive_cost(record)),
-            (record) =>
-              share_of_baseline_text(
-                inclusive_cost(record),
-                function_baseline(record.function_index),
-              ),
-          ),
-        ]
-      : [];
-    return {
-      home_columns: [
-        HOME_RANK_COLUMN,
-        home_self_column(
-          (record) => record.self_cost,
-          (record) =>
-            share_of_baseline(
-              record.self_cost,
-              function_baseline(record.function_index),
-            ),
-        ),
-        home_function_column((record) => record.function_entry.name),
-        table_sort_column(
-          {
-            label: text("str_column_defined_at"),
-            clip: STYLE_TABLE_LOCATION_COLUMN_MAX_CHARS,
-          },
-          "location",
-          record_location,
-          (record) =>
-            function_link_cell(record.function_index, record_location(record)),
-        ),
-        ...call_columns,
-        ...home_secondary_columns(
-          (record) => record.function_entry.self,
-          (record, value, counter) =>
-            counter_share(
-              value,
-              counter,
-              function_counter_baseline(record.function_index, counter),
-            ),
-        ),
-      ],
-      records,
-      row_href: (record) =>
-        function_is_linkable(record.function_index)
-          ? hash_for_function(record.function_entry.name)
-          : "",
-    };
-  }
-  // Lists every file node of the tree with a ranking count and its columns.
-  function home_files_table() {
-    const records = [];
-    (function tree_files_collect(tree_node) {
-      for (const directory_node of tree_node.dirs.values())
-        tree_files_collect(directory_node);
-      for (const file of tree_node.files) if (!file.zero) records.push(file);
-    })(tree_root);
-    return {
-      home_columns: [
-        HOME_RANK_COLUMN,
-        home_self_column(
-          (file) => file.self,
-          (file) => share_of_baseline(file.self, file.base),
-        ),
-        table_sort_column(
-          {
-            label: text("str_column_file"),
-            clip: STYLE_TABLE_LOCATION_COLUMN_MAX_CHARS,
-          },
-          "file",
-          (file) => file.path,
-          (file) => ({ text: file.path, href: hash_for_line(file.path) }),
-        ),
-        ...home_secondary_columns(
-          (file) => file_table[file.path].self,
-          (file, value, counter) =>
-            file_counter_share(value, counter, file.path),
-        ),
-      ],
-      records,
-      row_href: (file) => hash_for_line(file.path),
-    };
-  }
-  // Makes the heading pulldown that picks which home table shows.
-  function home_kind_entry(kind_choice) {
-    return report_ui_.strip.entry_make(
-      HOME_KIND_ENTRY_NAME,
-      "pulldown",
-      kind_choice.label,
-      {
-        pulldown_options: {
-          box_width_chars: HOME_KIND_BOX_WIDTH_CHARS,
-          entries: () =>
-            report_ui_.strip.choice_entries(HOME_TABLE_KIND_CHOICES),
-          keeps_open: false,
-          on_close: () => {},
-          on_select: home_kind_choose,
-          reads_line_number: false,
-        },
-      },
-    );
-  }
-  // Shows the chosen kind of home table by its default sort, focus kept.
-  function home_kind_choose(kind_value) {
-    const main_had_focus = main_panel.contains(document.activeElement);
-    home_table_kind = kind_value;
-    home_sort_name = HOME_SORT_DEFAULT_NAME;
-    if (!sources_ready(home_source_paths())) return;
-    home_render(false);
-    if (main_had_focus)
-      main_panel
-        .querySelector(`[data-entry-name-="${HOME_KIND_ENTRY_NAME}"]`)
-        .focus({ preventScroll: true });
-  }
-  // Sorts the home table by a column, the rank column restoring the default.
-  function home_sort_choose(home_column) {
-    home_sort_name = home_column.sort_value
-      ? home_column.sort_name
-      : HOME_SORT_DEFAULT_NAME;
-    home_render(false);
-  }
-  function home_render(is_new_address) {
-    const kept_scroll_top = is_new_address ? 0 : main_panel.scrollTop;
-    current_file_path = null;
-    const kind_choice = HOME_TABLE_KIND_CHOICES.find(
-      (choice) => choice.value === home_table_kind,
-    );
-    if (!kind_choice) window.throw_exception_("str_error_internal");
-    const { home_columns, records, row_href } = kind_choice.table();
-    const column_named = (sort_name) =>
-      home_columns.find((home_column) => home_column.sort_name === sort_name);
-    // A sort whose column left the table, a counter unselected, resets.
-    if (!column_named(home_sort_name)) home_sort_name = HOME_SORT_DEFAULT_NAME;
-    const sorted_column = column_named(home_sort_name);
-    const shown_records = table_sort_records(
-      table_sort_records(records, column_named(HOME_SORT_DEFAULT_NAME)),
-      sorted_column,
-    ).slice(0, HOME_TABLE_RENDERED_ROW_COUNT);
-    const table_markup = report_ui_.render_table(
-      "heat.home." + home_table_kind,
-      home_columns.map((home_column) => home_column.column),
-      shown_records.map((record, row_index) =>
-        home_columns.map((home_column) => home_column.cell(record, row_index)),
-      ),
-      {
-        on_sort: (column_index) =>
-          home_sort_choose(home_columns[column_index]),
-        row_href: shown_records.map(row_href),
-        sorted_column_index: home_columns.indexOf(sorted_column),
-      },
-    );
-    main_panel.innerHTML = report_ui_.template_fill(home_template_text, {
-      __HOME_TABLE__: table_markup,
-    });
-    const heading_element = main_panel.querySelector(
-      ".page- > .page-heading-",
-    );
-    heading_element.innerHTML = report_ui_.table_sort.heading_markup(
-      kind_choice.heading_string_id,
-      HEAT_MAP_HOME_TABLE_DEFAULT_ROWS,
-      sorted_column,
-      IS_DIFF,
-    );
-    heading_element.setAttribute(
-      "data-row-count-key-",
-      STORAGE_KEY_HEATMAP_ROWS,
-    );
-    report_ui_.page_heading.attach(heading_element, [
-      home_kind_entry(kind_choice),
-    ]);
-    main_panel.scrollTop = kept_scroll_top;
-    tree_render();
-    report_ui_.layout_activate(main_panel);
-    minimap_clear();
-  }
 
   // Renders the hottest lines strip of a file, or of one function in the file.
   function hottest_lines_render(file_path, function_index) {
@@ -1502,7 +1074,6 @@ window.try_catch_handler_(function () {
   // Renders the information box of a file, or of a line when one is given.
   function information_box_render(file_path, line_number) {
     const file = file_table[file_path];
-    const has_counters = shown_test_name !== null;
     const function_indexes = line_number
       ? declared_functions(file_path, line_number)
       : [];
@@ -1521,9 +1092,12 @@ window.try_catch_handler_(function () {
       label: text("str_column_defined_at"),
       clip: STYLE_TABLE_LOCATION_COLUMN_MAX_CHARS,
     };
-    const counter_table = has_counters
-      ? box_counter_table(file_path, line_number, line_costs, function_costs)
-      : null;
+    const counter_table = box_counter_table(
+      file_path,
+      line_number,
+      line_costs,
+      function_costs,
+    );
     const in_function_note = line_function_indexes.length
       ? text_fill("str_in_function", {
           function: function_names(line_function_indexes),
@@ -1542,19 +1116,13 @@ window.try_catch_handler_(function () {
       ? `${file_path}:${line_number}${in_function_note}`
       : file_path;
     const note_texts = [];
-    // The source database names a file by its shown path alone.
     if (!line_number && file.group === CALLGRIND_FILE_DATA_ERROR_CODE)
-      note_texts.push(
-        text_fill("str_not_in_repo", {
-          path: has_counters ? file.raw : file_path,
-        }),
-      );
+      note_texts.push(text_fill("str_not_in_repo", { path: file.raw }));
     if (!line_number && source_text(file_path) == null)
       note_texts.push(text("str_source_unavailable"));
-    const hottest_lines =
-      has_counters && !line_number
-        ? hottest_lines_render(file_path, null)
-        : { markup: "", copy_text: "" };
+    const hottest_lines = !line_number
+      ? hottest_lines_render(file_path, null)
+      : { markup: "", copy_text: "" };
     let markup = box_control_markup(
       "close",
       "str_information_box_close_symbol",
@@ -1567,13 +1135,12 @@ window.try_catch_handler_(function () {
         (line_number ? ":" + line_number : "") +
         in_function_html,
     );
-    if (counter_table)
-      markup += report_ui_.render_table(
-        "heat.detail.stats",
-        counter_table.columns,
-        counter_table.rows,
-        { row_attributes: counter_table.row_attributes },
-      );
+    markup += report_ui_.render_table(
+      "heat.detail.stats",
+      counter_table.columns,
+      counter_table.rows,
+      { row_attributes: counter_table.row_attributes },
+    );
     for (const note_text of note_texts) {
       markup += render_element(
         "div",
@@ -1583,11 +1150,9 @@ window.try_catch_handler_(function () {
     }
     markup += hottest_lines.markup;
     const text_parts = [
-      counter_table
-        ? heading_line +
-          "\n" +
-          report_ui_.table_markdown(counter_table.columns, counter_table.rows)
-        : heading_line,
+      heading_line +
+        "\n" +
+        report_ui_.table_markdown(counter_table.columns, counter_table.rows),
       ...note_texts,
     ];
     if (hottest_lines.copy_text) text_parts.push(hottest_lines.copy_text);
@@ -1696,14 +1261,10 @@ window.try_catch_handler_(function () {
   }
   // Renders the line that stands in for the file box while that box is away.
   function information_line_render(file_path, has_file_box) {
-    // With no test selected the line shows the path alone.
-    const link_text =
-      shown_test_name === null
-        ? file_path
-        : text_fill("str_information_line_link", {
-            path: file_path,
-            share: information_line_share_text(file_path),
-          });
+    const link_text = text_fill("str_information_line_link", {
+      path: file_path,
+      share: information_line_share_text(file_path),
+    });
     return render_element(
       "div",
       {
@@ -1746,22 +1307,58 @@ window.try_catch_handler_(function () {
       kept_scroll_top = is_first_view ? 0 : main_panel.scrollTop,
       has_file_box = is_first_view || !!file_box();
     current_file_path = file_path;
-    const has_counters = shown_test_name !== null;
     let markup =
       (has_file_box ? information_box_render(file_path, 0).markup : "") +
       information_line_render(file_path, has_file_box);
     const file_source = source_text(file_path);
-    const has_calls_column = has_counters && HAS_CALL_GRAPH && shows_calls;
+    const source_calls_cell = (source_row) => {
+      const calls_percent = source_row.share(
+        source_row.calls,
+        ranking_counter,
+      );
+      return {
+        text: source_row.calls ? share_text(calls_percent) : "",
+        style: heat_style(calls_percent),
+      };
+    };
+    const source_self_cell = (source_row) => ({
+      text: source_row.self_cost ? share_text(source_row.self_percent) : "",
+      style: source_row.heat_style_attribute,
+    });
+    // Pairs a shown line's column with the cell each source row writes in it.
+    function source_line_parts(line_name) {
+      if (line_name === COUNTER_LIST_CALLS_LINE_NAME) {
+        if (!HAS_CALL_GRAPH) return [];
+        const calls_column = {
+          label: text("str_column_calls"),
+          numeric: true,
+          cls: "heat-map-source-table-calls-cell-",
+          move_name: line_name,
+        };
+        return [{ column: calls_column, cell: source_calls_cell }];
+      }
+      if (line_name === RANKING_COUNTER_NAME) {
+        const self_column = counter_column(ranking_counter, {
+          cls: "heat-map-source-table-self-cell-",
+          move_name: line_name,
+        });
+        return [{ column: self_column, cell: source_self_cell }];
+      }
+      const secondary = counter_find(line_name);
+      const secondary_row_cell = (source_row) => {
+        if (!source_row.costs) return "";
+        const counter_value = secondary.get(source_row.costs[0]);
+        return secondary_cell(source_row.share(counter_value, secondary));
+      };
+      return [
+        { column: secondary_column(secondary), cell: secondary_row_cell },
+      ];
+    }
+    const line_parts = shown_line_parts(source_line_parts);
 
     const rows = [],
       attrs = [];
-    // Emits a row of the line number and source alone, no test selected.
-    const source_only_row_emit = (line_number, text) => {
-      attrs.push({ id: `L${line_number}-`, "data-line-number-": line_number });
-      rows.push([{ text: String(line_number) }, { text: tabs_expand(text) }]);
-    };
     const source_row_emit = (line_number, text) => {
-      if (!has_counters) return source_only_row_emit(line_number, text);
       const line_costs = file.lines[line_number];
       const function_indexes = line_costs
         ? []
@@ -1802,30 +1399,19 @@ window.try_catch_handler_(function () {
         ...(class_names ? { class: class_names } : {}),
         "data-line-number-": line_number,
       });
-      const call_cell = has_calls_column
-        ? [
-            {
-              text: calls ? share_text(row_share(calls, ranking_counter)) : "",
-              style: heat_style(row_share(calls, ranking_counter)),
-            },
-          ]
-        : [];
+      const source_row = {
+        calls,
+        costs: row_costs,
+        heat_style_attribute,
+        self_cost,
+        self_percent,
+        share: row_share,
+      };
       rows.push([
-        {
-          text: self_cost ? share_text(self_percent) : "",
-          style: heat_style_attribute,
-        },
+        "",
         { text: String(line_number), style: heat_style_attribute },
         { text: tabs_expand(text), style: heat_style_attribute },
-        ...call_cell,
-        ...secondary_counters.map((secondary) =>
-          row_costs
-            ? secondary_cell(
-                row_share(secondary.get(row_costs[0]), secondary),
-                false,
-              )
-            : "",
-        ),
+        ...line_parts.map((line_part) => line_part.cell(source_row)),
       ]);
     };
     const source_lines = file_source == null ? [] : file_source.split("\n");
@@ -1837,20 +1423,11 @@ window.try_catch_handler_(function () {
     }
     const beyond_end_text =
       file_source == null ? "" : text("str_source_beyond_end");
-    for (const line_number of has_counters ? known_lines(file_path) : []) {
+    for (const line_number of known_lines(file_path)) {
       if (file_source != null && line_number <= source_lines.length) continue;
       source_row_emit(line_number, beyond_end_text);
     }
 
-    const call_column = has_calls_column
-      ? [
-          {
-            label: text("str_column_calls"),
-            numeric: true,
-            cls: "heat-map-source-table-calls-cell-",
-          },
-        ]
-      : [];
     const line_column = {
       label: text("str_column_line"),
       numeric: true,
@@ -1861,27 +1438,24 @@ window.try_catch_handler_(function () {
       clip: HEAT_MAP_SOURCE_VIEW_WIDTH_CHARS,
       cls: "heat-map-source-table-code-cell-",
     };
-    const columns = has_counters
-      ? [
-          counter_column(ranking_counter, {
-            cls: "heat-map-source-table-self-cell-",
-          }),
-          line_column,
-          source_column,
-          ...call_column,
-          ...secondary_columns(),
-        ]
-      : [line_column, source_column];
+    const columns = [
+      TREE_COLUMN,
+      line_column,
+      source_column,
+      ...line_parts.map((line_part) => line_part.column),
+    ];
     markup += report_ui_.render_table("heat.src", columns, rows, {
       row_attributes: attrs,
       cls: "heat-map-source-table-",
+      on_column_move: counter_line_move_send,
     });
+    const tree_state = tree_state_read();
     main_panel.innerHTML = render_element(
       "div",
       { class: "heat-map-source-" },
       markup,
     );
-    tree_render();
+    tree_track_place(tree_state);
 
     minimap_build();
     report_ui_.table_rows.attach(
@@ -2199,7 +1773,7 @@ window.try_catch_handler_(function () {
     );
   }
 
-  // Shows a line, its box open below it unless no test is selected.
+  // Shows a line, its box open below it.
   function detail_set(line) {
     if (line === detail_line()) return;
     for (const detail_row of main_panel.querySelectorAll(
@@ -2209,7 +1783,7 @@ window.try_catch_handler_(function () {
     }
     const row = line ? document.getElementById("L" + line + "-") : null;
     if (row) {
-      if (shown_test_name !== null) detail_open(current_file_path, line, row);
+      detail_open(current_file_path, line, row);
       report_ui_.table_rows.tab_stop_set(row, false);
       if (!row_is_visible(row)) row_center(row);
     }
@@ -2223,17 +1797,19 @@ window.try_catch_handler_(function () {
     detail_row.remove();
     minimap_sync();
   }
+  // Opens a line's box below its row, the tree's column left clear.
   function detail_open(file_path, line_number, row) {
     row.insertAdjacentHTML(
       "afterend",
       render_element(
         "tr",
         { class: "heat-map-source-line-detail-row-" },
-        render_element(
-          "td",
-          { colspan: row.cells.length },
-          information_box_render(file_path, line_number).markup,
-        ),
+        render_element("td", { class: TREE_COLUMN.cls }, "") +
+          render_element(
+            "td",
+            { colspan: row.cells.length - 1 },
+            information_box_render(file_path, line_number).markup,
+          ),
       ),
     );
     const detail_row = row.nextElementSibling;
@@ -2398,15 +1974,7 @@ window.try_catch_handler_(function () {
       route_render();
       return;
     }
-    if (shown_model === null) return;
-    // With no test selected only a sort change routes again.
-    if (shown_test_name === null) {
-      const relayed_sort_mode = report_preferences_.now().heat_sort_mode;
-      if (relayed_sort_mode === sort_mode) return;
-      sort_mode = relayed_sort_mode;
-      route_render();
-      return;
-    }
+    if (profile_model === null) return;
     const tree_sort_mode = sort_mode,
       kept_key = rendered_key;
     preferences_handler();
@@ -2418,56 +1986,24 @@ window.try_catch_handler_(function () {
   function relay_handler(message_data) {
     if (report_preferences_.relay_handler(message_data)) preferences_apply();
   }
-  // Returns the source database's entry of a function, undefined if absent.
-  const database_function_find = (function_name) =>
-    source_database.functions.find(
-      (function_entry) => function_entry.name === function_name,
-    );
   // Writes the note of a file or function the test recorded no samples for.
   const no_samples_note_markup = (unsampled_name) =>
     render_html_escape(
       text_fill("str_no_samples_in_test", { name: unsampled_name }),
     );
-  // Writes the note of a function at several locations, one link each.
-  function locations_note_markup(database_entry) {
-    const note_text = text_fill("str_function_locations", {
-      function: database_entry.name,
-      count: database_entry.locations.length,
-    });
-    return (
-      render_element("div", {}, render_html_escape(note_text)) +
-      database_entry.locations
-        .map((function_location) =>
-          render_element(
-            "div",
-            {},
-            render_element(
-              "a",
-              {
-                href: hash_for_line(
-                  function_location.file,
-                  function_location.line,
-                ),
-              },
-              render_html_escape(
-                function_location.file + ":" + function_location.line,
-              ),
-            ),
-          ),
-        )
-        .join("")
-    );
-  }
-  // Shows a note in place of a file, the tree kept.
+  // Shows a note in place of a file's source, the tree kept in its column.
   function unavailable_note_render(note_markup) {
     current_file_path = null;
-    main_panel.innerHTML = render_element(
-      "div",
-      { class: "heat-map-source-unavailable-note-" },
-      note_markup,
+    const tree_state = tree_state_read();
+    main_panel.innerHTML = report_ui_.render_table(
+      "heat.note",
+      [TREE_COLUMN, { label: text("str_column_source") }],
+      [["", { html: note_markup }]],
+      { cls: "heat-map-source-table-" },
     );
     main_panel.scrollTop = 0;
-    tree_render();
+    tree_track_place(tree_state);
+    report_ui_.layout_activate(main_panel);
     minimap_clear();
   }
   function line_clamp(addressed_line) {
@@ -2489,17 +2025,17 @@ window.try_catch_handler_(function () {
     else main_panel.focus({ preventScroll: true });
   }
   function route_render() {
+    // The tree in the main box keeps its own focus through a draw.
     const main_had_focus =
-      document.hasFocus() && main_panel.contains(document.activeElement);
+      document.hasFocus() &&
+      main_panel.contains(document.activeElement) &&
+      !tree_panel.contains(document.activeElement);
     const page_address = report_ui_.address.of_hash(location.hash);
     if (page_address.view !== HEAT_MAP_VIEW_ENTRY[0])
       window.throw_exception_("str_error_internal");
-    if (shown_model === null || page_address.test !== shown_test_name) {
-      if (page_address.test !== null) {
-        model_load(page_address.test);
-        return;
-      }
-      none_switch();
+    if (profile_model === null || page_address.test !== shown_test_name) {
+      model_load(page_address.test);
+      return;
     }
     const is_new_address = location.hash !== routed_hash,
       is_detail_closed = !is_new_address && !detail_line(),
@@ -2512,39 +2048,25 @@ window.try_catch_handler_(function () {
       const function_entry = function_table.find(
         (candidate) => candidate.name === fn,
       );
-      // With no test selected the entry is the source database's.
-      if (shown_test_name === null) {
-        if (!function_entry)
-          window.throw_exception_("str_error_hash_function_unknown", fn);
-        if (function_entry.locations.length > 1)
-          note_markup = locations_note_markup(function_entry);
-        else {
-          file = function_entry.locations[0].file;
-          line = function_entry.locations[0].line;
-        }
-      } else if (
+      if (
         function_entry &&
         function_entry.line &&
         file_table[function_entry.file]
       ) {
         file = function_entry.file;
         line = function_entry.line;
-      } else if (database_function_find(fn)) {
+      } else if (source_database.functions.includes(fn)) {
         note_markup = no_samples_note_markup(fn);
       } else {
         window.throw_exception_("str_error_hash_function_unknown", fn);
       }
-    } else if (file && !file_table[file]) {
-      if (
-        shown_test_name === null ||
-        !Object.hasOwn(source_database.files, file)
-      ) {
+    } else if (!file_table[file]) {
+      if (!source_database.files.includes(file)) {
         window.throw_exception_("str_error_hash_file_unknown", file);
       }
       note_markup = no_samples_note_markup(file);
     }
-    if (!note_markup && !sources_ready(file ? [file] : home_source_paths()))
-      return;
+    if (!note_markup && !sources_ready(file)) return;
     routed_hash = location.hash;
     if (note_markup) {
       rendered_key = "";
@@ -2555,28 +2077,15 @@ window.try_catch_handler_(function () {
       return;
     }
 
-    const key =
-      shown_test_name === null
-        ? "file\n" + file
-        : [
-            file ? "file\n" + file : "home",
-            active_scale.value,
-            String(shows_calls),
-            ...secondary_counters.map(
-              (secondary_counter) => secondary_counter.key,
-            ),
-          ].join("\n");
+    const key = [file, active_scale.value, ...shown_line_names].join("\n");
     if (key !== rendered_key) {
       rendered_key = key;
-      if (file) file_render(file);
-      else home_render(is_new_address);
+      file_render(file);
     }
-    if (file) {
-      if (line) line = line_clamp(line);
-      if (!is_detail_closed) detail_set(line);
-      if (is_new_address)
-        file_address_show(file, line, file !== previous_file_path);
-    }
+    if (line) line = line_clamp(line);
+    if (!is_detail_closed) detail_set(line);
+    if (is_new_address)
+      file_address_show(file, line, file !== previous_file_path);
     rendered_line = line;
     main_focus_restore(main_had_focus);
     load_render_finish();
@@ -2614,25 +2123,9 @@ window.try_catch_handler_(function () {
     );
     document.head.append(model_script);
   }
-  // Shows every file and function the report names, no test, no counter.
-  function none_switch() {
-    shown_test_name = null;
-    shown_model = source_database;
-    profile_model = null;
-    file_table = source_database.files;
-    function_table = source_database.functions;
-    entry_line_index = null;
-    expanded_directories.clear();
-    expanded_cold_groups.clear();
-    current_file_path = null;
-    rendered_key = "";
-    sort_mode = report_preferences_.now().heat_sort_mode;
-    tree_root = tree_build();
-  }
   function model_switch(test_name, test_model) {
     if (IS_DIFF === null) report_kind_set(test_model);
     shown_test_name = test_name;
-    shown_model = test_model;
     profile_model = test_model;
     file_table = test_model.files;
     function_table = test_model.functions;
@@ -2641,7 +2134,7 @@ window.try_catch_handler_(function () {
     HAS_CALL_GRAPH = function_table.some(
       (function_entry) => function_entry.callers.length > 0,
     );
-    per_function_calls = function_table.map((function_entry) =>
+    const per_function_calls = function_table.map((function_entry) =>
       function_entry.callers.reduce(
         (running_total, caller) => running_total + caller[4],
         0,
@@ -2681,12 +2174,6 @@ window.try_catch_handler_(function () {
     row_center(document.getElementById("L" + rendered_line + "-"));
   }
 
-  report_ui_.pane_splitter.attach(
-    tree_scrollbar,
-    tree_panel,
-    STYLE_HEAT_MAP_TREE_PANE_NARROWEST_CHARS,
-    STYLE_HEAT_MAP_TREE_PANE_WIDEST_CHARS,
-  );
   report_ui_.drag_scroll.attach(tree_panel, tree_panel);
   report_ui_.drag_scroll.attach(main_panel, main_panel);
 

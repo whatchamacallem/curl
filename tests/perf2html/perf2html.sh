@@ -240,6 +240,7 @@ trees_compile() {
   done
   mkdir -p "$_TRACE_TREE"
   command_run "$_COMPILER_COMMAND" -O2 -fcf-protection=none \
+    -DPROFILE_START_FUNCTION_NAME="$PROFILE_START_FUNCTION_NAME" \
     -DTEST_SAMPLES_SIZE="$TEST_SAMPLES_SIZE" \
     -c "$PERF2HTML_DIR_/src/cyg_callback.c" -o "$_TRACE_TREE/cyg_callback.o"
   rm -f "$_TRACE_BIN"
@@ -337,7 +338,8 @@ trace_render() {
     echo "# $_tree_display = this report's build flags +"
     echo "# -finstrument-functions, linked with"
     echo "# tests/perf2html/src/cyg_callback.c, which reads rdtsc at every"
-    echo "# function enter and exit. Run 1 counts events, run 2 keeps up to"
+    echo "# function enter and exit from $PROFILE_START_FUNCTION_NAME's entry"
+    echo "# on. Run 1 counts events, run 2 keeps up to"
     echo "# $TEST_SAMPLES_SIZE samples, an enter and exit pair each, right"
     echo "# after the run's midpoint (TEST_SAMPLES_SIZE in"
     echo "# tests/perf2html/scripts/settings.sh)."
@@ -361,8 +363,11 @@ callgrind_measure() {
   artifact_path _log "$REPORT_ARTIFACTS_DIR" valgrind-log "$_test"
   heading_print "valgrind --tool=callgrind perf $_test $TEST_LOOPS"
   _start="$(clock_microseconds)"
+  # `--collect-atstart=yes` goes after `--toggle-collect`, which implies `no`.
   command_run taskset -c "$PROFILE_PINNED_CPU" valgrind --tool=callgrind \
     --cache-sim=yes --branch-sim=yes --trace-redir=yes \
+    --zero-before="$PROFILE_START_FUNCTION_NAME" \
+    --toggle-collect="$PROFILE_STOP_FUNCTION_NAME" --collect-atstart=yes \
     --LL="$CALLGRIND_LAST_LEVEL_CACHE" \
     --callgrind-out-file="$_cg_file" --log-file="$_log" \
     "$_BIN" "$_test" "$TEST_LOOPS"
@@ -378,14 +383,17 @@ symbols_resolve() {
 
 timing_record() {
   local _counter_value _counter_unit _counter_name _remaining_fields
-  perf stat -x, -o "$2" -e cycles:u,instructions:u \
+  local _event_part
+  perf stat -x, -o "$2" -e "$TIMING_PERF_STAT_EVENTS" \
     taskset -c "$PROFILE_PINNED_CPU" "$_BIN" "$1" "$TEST_LOOPS" \
     && while IFS=, read -r _counter_value _counter_unit _counter_name \
       _remaining_fields; do
-      case "$_counter_name" in
-        *cycles*) printf 'Cycles:    %s\n' "$_counter_value" ;;
-        *instructions*) printf 'Instructions: %s\n' "$_counter_value" ;;
-      esac
+      for _event_part in "${!TIMING_COUNTER_LABELS[@]}"; do
+        if [[ "$_counter_name" == *"$_event_part"* ]]; then
+          printf '%s: %s\n' "${TIMING_COUNTER_LABELS[$_event_part]}" \
+            "$_counter_value"
+        fi
+      done
     done <"$2"
 }
 
@@ -394,11 +402,11 @@ timing_measure() {
   local _summary_headers _summary_values
   artifact_path _stat_file "$REPORT_ARTIFACTS_DIR" timing-csv "$_test"
   artifact_path _page "$REPORT_ARTIFACTS_DIR" timing-page "$_test"
-  heading_print "perf stat -e cycles:u,instructions:u perf $_test" \
+  heading_print "perf stat -e $TIMING_PERF_STAT_EVENTS perf $_test" \
     "$TEST_LOOPS"
-  echo "\$ perf stat -e cycles:u,instructions:u taskset -c" \
+  echo "\$ perf stat -e $TIMING_PERF_STAT_EVENTS taskset -c" \
     "$PROFILE_PINNED_CPU $_BIN_REL $_test $TEST_LOOPS" >"$_page"
-  _shown="perf stat -x, -o $_stat_file -e cycles:u,instructions:u taskset"
+  _shown="perf stat -x, -o $_stat_file -e $TIMING_PERF_STAT_EVENTS taskset"
   page_command_run "$_page" \
     "$_shown -c $PROFILE_PINNED_CPU $_BIN $_test $TEST_LOOPS" \
     timing_record "$_test" "$_stat_file"
@@ -474,7 +482,7 @@ pages_write() {
     profiles "${_flags[@]}"
   step_run 4 "heat map data" page_tool_run callgrind_to_heatmap.py data \
     "${_flags[@]}"
-  step_run 5 callers page_tool_run build_report.py callers "${_flags[@]}"
+  step_run 5 database page_tool_run build_report.py database "${_flags[@]}"
   step_run 6 "call graph" page_tool_run build_report.py call-graph \
     "${_flags[@]}"
   step_run 7 "timer artifacts" timer_artifacts_write

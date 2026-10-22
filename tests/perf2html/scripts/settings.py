@@ -10,8 +10,8 @@ from typing import NoReturn, get_origin, get_type_hints
 
 
 ASSET_CALL_GRAPH_SCRIPT_NAME = "call_graph.js"
-ASSET_CALLERS_SCRIPT_NAME = "callers.js"
 ASSET_DARK_MODE_STYLESHEET_NAME = "dark_mode.css"
+ASSET_DATABASE_SCRIPT_NAME = "database.js"
 ASSET_ERROR_OVERLAY_SCRIPT_NAME = "error_overlay.js"
 ASSET_FLAME_GRAPH_SCRIPT_NAME = "flame_graph.js"
 ASSET_FRAME_SCRIPT_NAME = "frame.js"
@@ -25,9 +25,8 @@ ASSET_SETTINGS_PAGE_SCRIPT_NAME = "settings_page.js"
 ASSET_SETTINGS_SCRIPT_NAME = "settings.js"
 ASSET_SOURCE_DATABASE_SCRIPT_NAME = "source_database.js"
 ASSET_TEMPLATE_CALL_GRAPH_PAGE_NAME = "call_graph.html"
-ASSET_TEMPLATE_CALLERS_PAGE_NAME = "callers.html"
+ASSET_TEMPLATE_DATABASE_PAGE_NAME = "database.html"
 ASSET_TEMPLATE_FLAME_GRAPH_PAGE_NAME = "flame_graph.html"
-ASSET_TEMPLATE_HEAT_MAP_MAIN_NAME = "heat_map_main.html"
 ASSET_TEMPLATE_HEAT_MAP_PAGE_NAME = "heat_map.html"
 ASSET_TEMPLATE_OVERVIEW_PAGE_NAME = "overview.html"
 ASSET_TEMPLATE_README_PAGE_NAME = "readme_page.html"
@@ -37,34 +36,51 @@ ASSET_THEME_STYLESHEET_NAME = "theme.css"
 ASSET_UI_STRINGS_SCRIPT_NAME = "ui_strings.js"
 ASSET_UTILITY_SCRIPT_NAME = "utility.js"
 
+CALL_GRAPH_BRANCH_LAST_TEXT = "└ "
+CALL_GRAPH_BRANCH_MIDDLE_TEXT = "├ "
+CALL_GRAPH_BRANCH_OPEN_TEXT = "┬─"
+CALL_GRAPH_BRANCH_PASS_TEXT = "│ "
+CALL_GRAPH_LINE_TEXT = "─"
+CALL_GRAPH_MULTIPLE_TEMPLATE = "__MULTIPLE__x "
 CALL_GRAPH_PAGE_DIR_NAME = "call-graph"
+CALL_GRAPH_REVEAL_CLEARANCE_CHARS = 1
+CALL_GRAPH_REVEAL_CLEARANCE_LINES = 0.5
+CALL_GRAPH_SHARE_TEMPLATE = "__SHARE__"
+CALL_GRAPH_SUBROUTINE_TEMPLATE = "__SUBROUTINE__"
+CALL_GRAPH_SYMBOL_TEMPLATE = " __SYMBOL__ "
 CALL_GRAPH_VIEW_KEY = "call-graph"
-
-CALLERS_CELL_SEPARATOR_TEXT = ", "
-CALLERS_PAGE_DIR_NAME = "callers"
-CALLERS_TIME_SUFFIX_SECONDS: dict[str, float] = {"ns": 1e-9, "usecs": 1e-6}
-CALLERS_TOP_FUNCTION_ROWS = 50
-CALLERS_VIEW_KEY = "callers"
 
 CALLGRIND_FILE_DATA_ERROR_CODE = "err"
 CALLGRIND_FILE_DATA_GIT_CODE = "git"
 CALLGRIND_FILE_DATA_INDENT_CHARS = 2
 CALLGRIND_FILE_DATA_REPO_CODE = "repo"
 CALLGRIND_FILE_DATA_SYSTEM_CODE = "sys"
-CALLGRIND_ROOT_FUNCTION_NAME = "main"
 
-COUNTER_SELECTION_CALLS_SHOWN_DEFAULT = True
-COUNTER_SELECTION_DEFAULT_NAMES: tuple[str, ...] = ("D1m", "DLm", "Bcm")
+COUNTER_LIST_CALLEES_LINE_NAME = "callees"
+COUNTER_LIST_CALLERS_LINE_NAME = "callers"
+COUNTER_LIST_CALLS_LINE_NAME = "calls"
 
 DARK_MODE_ATTRIBUTE_NAME = "data-dark-mode-"
 DARK_MODE_DISABLED_VALUE = "disabled"
 DARK_MODE_ENABLED_DEFAULT = True
 DARK_MODE_ENABLED_VALUE = "enabled"
+DARK_MODE_FRAME_QUERY_KEY_NAME = "dark-mode"
 DARK_MODE_TOGGLE_QUERY_KEY_NAME = "toggle-dark"
 DARK_MODE_TOGGLE_QUERY_VALUES: dict[str, str] = {
     "disabled": "0",
     "enabled": "1",
 }
+
+DATABASE_CELL_SEPARATOR_TEXT = ", "
+DATABASE_COUNTER_LIST_DEFAULT_SHOWN_NAMES: tuple[str, ...] = (
+    "CEst",
+    COUNTER_LIST_CALLS_LINE_NAME,
+    COUNTER_LIST_CALLERS_LINE_NAME,
+)
+DATABASE_PAGE_DIR_NAME = "database"
+DATABASE_TIME_SUFFIX_SECONDS: dict[str, float] = {"ns": 1e-9, "usecs": 1e-6}
+DATABASE_TOP_FUNCTION_ROWS = 50
+DATABASE_VIEW_KEY = "database"
 
 DEBUG_TIP_IDLE_DELAY_MS = 2000
 
@@ -103,11 +119,12 @@ FLAME_GRAPH_VIEW_ENTRY: tuple[str, str] = (
 )
 
 HEAT_MAP_COUNTER_DESCRIPTION_STRING_ID_PREFIX = "str_counter_"
-HEAT_MAP_HOME_LINES_LOCATION_MAX_CHARS = 28
-HEAT_MAP_HOME_LINES_SOURCE_COLUMN_MAX_CHARS = 36
-HEAT_MAP_HOME_LINES_SOURCE_SNIPPET_MAX_CHARS = 110
-HEAT_MAP_HOME_TABLE_DEFAULT_KIND = "functions"
-HEAT_MAP_HOME_TABLE_DEFAULT_ROWS = 20
+HEAT_MAP_COUNTER_LIST_DEFAULT_SHOWN_NAMES: tuple[str, ...] = (
+    COUNTER_LIST_CALLS_LINE_NAME,
+    "Bcm",
+    "D1m",
+    "DLm",
+)
 HEAT_MAP_MINIMAP_VIEWPORT_BOX_SMALLEST_PX = 8
 HEAT_MAP_MODEL_DIR_NAME = "data"
 HEAT_MAP_MODEL_GLOBAL_NAME = "report_heat_map_models_"
@@ -125,6 +142,16 @@ HEAT_MAP_VIEW_ENTRY: tuple[str, str] = (
 )
 
 MENU_DIGIT_KEY_COUNT = 10
+MENU_ENTRY_NEEDS: dict[str, list[str]] = {
+    "counters": ["counter_list"],
+    "heat_scale": ["view"],
+    "heat_sort": ["view"],
+    "str_menu_file": ["test"],
+    "str_menu_function": ["test"],
+    "str_view_call_graph": ["test", "view_page"],
+    "str_view_database": ["test", "view_page"],
+    "str_view_flame_graph": ["test", "view_page"],
+}
 MENU_FLASH_DURATION_MS = 500
 MENU_PULLDOWN_KEY_NAMES: dict[str, str] = {
     "close": "Escape",
@@ -136,13 +163,22 @@ MENU_PULLDOWN_KEY_NAMES: dict[str, str] = {
 MENU_PULLDOWN_LINE_NUMBER_PATTERN = "^(.*):([0-9]+)$"
 MENU_PULLDOWN_OPENING_KEY_PATTERN = "^[a-zA-Z]$"
 MENU_PULLDOWN_SKIPPED_KEY_NAMES: tuple[str, ...] = (" ",)
+MENU_PULLDOWN_SMALL_ENTRY_MAX_COUNT = 3
 MENU_SCALE_KEY_STEPS: dict[str, int] = {"+": 1, "=": 1, "-": -1}
-MENU_TEST_NONE_NAME = "none"
 
 NUMBER_FRACTION_DIGITS = 2
 NUMBER_LARGEST_PRINTED_MULTIPLE_TIMES = 999.99
 
+PERF_TOOL_TIME_LABEL = "Time"
+
+PROFILE_START_FUNCTION_UNRECORDED_CALLS = 1
+
 RANKING_COUNTER_NAME = "CEst"
+
+REGULAR_REPORT_VIEW_KEYS: list[str] = [
+    CALL_GRAPH_VIEW_KEY,
+    FLAME_GRAPH_VIEW_ENTRY[0],
+]
 
 SCREENSHOT_LABEL_QUERY_KEY_NAME = "screenshot"
 SCREENSHOT_LABEL_QUERY_VALUE = "1"
@@ -161,44 +197,47 @@ SETTINGS_LOAD_LOG_HISTORY_LINE_CHOICES: tuple[int, ...] = (0, 10, 20, 50, 100)
 SETTINGS_LOAD_LOG_HISTORY_MAX_LINES = 100
 SETTINGS_VIEW_ENTRY: tuple[str, str] = ("settings", "settings/index.html")
 
-STORAGE_KEY_CALLERS_ROWS = "callers.rows"
-STORAGE_KEY_HEATMAP_ROWS = "heatmap.rows"
+STORAGE_KEY_DATABASE_COUNTER_LIST = "database.counter_list"
+STORAGE_KEY_DATABASE_FUNCTION_ROWS = "database.function_rows"
+STORAGE_KEY_HEATMAP_COUNTER_LIST = "heatmap.counter_list"
 STORAGE_KEY_HEATMAP_SCALE = "heatmap.scale"
 STORAGE_KEY_HEATMAP_SORT = "heatmap.sort"
 STORAGE_KEY_LOG_DISPLAY_LENGTH = "log.display_length"
-STORAGE_KEY_VIEW_CALLS_COLUMN = "view.calls_column"
-STORAGE_KEY_VIEW_COUNTER_COLUMNS = "view.counter_columns"
 STORAGE_KEY_VIEW_DARK_MODE = "view.dark_mode"
 STORAGE_KEY_VIEW_SCALE = "view.scale"
 STORAGE_OWNED_KEYS: tuple[str, ...] = (
     FLAME_GRAPH_COLOR_SCHEME_KEY_NAME,
-    STORAGE_KEY_CALLERS_ROWS,
-    STORAGE_KEY_HEATMAP_ROWS,
+    STORAGE_KEY_DATABASE_COUNTER_LIST,
+    STORAGE_KEY_DATABASE_FUNCTION_ROWS,
+    STORAGE_KEY_HEATMAP_COUNTER_LIST,
     STORAGE_KEY_HEATMAP_SCALE,
     STORAGE_KEY_HEATMAP_SORT,
     STORAGE_KEY_LOG_DISPLAY_LENGTH,
-    STORAGE_KEY_VIEW_CALLS_COLUMN,
-    STORAGE_KEY_VIEW_COUNTER_COLUMNS,
     STORAGE_KEY_VIEW_DARK_MODE,
     STORAGE_KEY_VIEW_SCALE,
 )
-STORAGE_VERSION = "perf2html v1"
+STORAGE_VERSION = "perf2html v0"
 STORAGE_VERSION_KEY = "perf2html.version"
 
 STYLE_COLOR_DARK_MODE: dict[str, list[str]] = {
     "#effdff": [
         "dark-mode-menu-normal-fg-",
-        "dark-mode-menu-focus-fg-",
         "dark-mode-menu-normal-outline-",
+        "dark-mode-menu-focus-bg-",
+    ],
+    "#D2691E": [
+        "dark-mode-status-bar-fg-",
     ],
     "#20354a": [
-        "dark-mode-menu-normal-bg-",
+        "dark-mode-panel-bg-",
         "dark-mode-status-bar-bg-",
     ],
     "#295987": [
-        "dark-mode-menu-focus-bg-",
+        "dark-mode-menu-normal-bg-",
+        "dark-mode-menu-focus-fg-",
+    ],
+    "#9fd9ff": [
         "dark-mode-page-fg-",
-        "dark-mode-status-bar-fg-",
         "dark-mode-page-emphasis-bg-",
     ],
     "#0e171e": [
@@ -210,8 +249,6 @@ STYLE_COLOR_DARK_MODE: dict[str, list[str]] = {
         "dark-mode-debug-tip-bg-",
         "dark-mode-screenshot-bg-",
     ],
-    "#00ff00": ["dark-mode-panel-bg-"],
-    "var(--page-line-width-)": ["dark-mode-menu-normal-outline-width-"],
 }
 STYLE_COLOR_DARK_MODE_ROLE_PREFIX = "dark-mode-"
 
@@ -239,7 +276,6 @@ STYLE_COLOR_LIGHT_MODE: dict[str, list[str]] = {
     "#00AAAA": [
         "light-mode-status-bar-bg-",
     ],
-    "var(--page-line-width-)": ["light-mode-menu-normal-outline-width-"],
 }
 STYLE_COLOR_LIGHT_MODE_ROLE_PREFIX = "light-mode-"
 STYLE_DESIGN_COORDINATES_WIDTH_PX = 1920
@@ -257,13 +293,9 @@ STYLE_DESIGN_SCALE_STOP_COUNT = 11
 STYLE_DESIGN_SCALE_STOP_MULTIPLE_FRACTION_DIGITS = 2
 STYLE_DESIGN_VIEWPORT_HEIGHT_PROPERTY = "--design-viewport-height-"
 STYLE_DESIGN_VIEWPORT_HEIGHT_START_PERCENT = 100
-STYLE_HEAT_CELL_CHANNEL_FULL_SCALE = 255
-STYLE_HEAT_CELL_CONTRAST_FLARE = 0.05
-STYLE_HEAT_CELL_LUMINANCE_WEIGHTS: list[float] = [0.2126, 0.7152, 0.0722]
-STYLE_HEAT_CELL_TRANSFER_EXPONENT = 2.4
-STYLE_HEAT_CELL_TRANSFER_LINEAR_LIMIT = 0.04045
-STYLE_HEAT_CELL_TRANSFER_LINEAR_SLOPE = 12.92
-STYLE_HEAT_CELL_TRANSFER_OFFSET = 0.055
+STYLE_HEAT_CELL_ON_BRIGHT_ABOVE_LUMINANCE_SHARE = 0.5
+STYLE_HEAT_CELL_ON_BRIGHT_ROLE = "dark-mode-page-bg-"
+STYLE_HEAT_CELL_ON_DARK_ROLE = "dark-mode-page-fg-"
 STYLE_HEAT_COLOR_FULL_SCALE_PERCENT = 100
 STYLE_HEAT_COLOR_STOPS: list[str] = [
     "#3E4A89",
@@ -284,21 +316,22 @@ STYLE_HEAT_MAP_SOURCE_LINE_NUMBER_MARKER_WIDTH_PROPERTY = (
     "--heat-map-source-table-line-number-cell-callee-marker-width-"
 )
 STYLE_HEAT_MAP_TREE_INDENT_PER_LEVEL_CHARS = 2
-STYLE_HEAT_MAP_TREE_PANE_NARROWEST_CHARS = 17
-STYLE_HEAT_MAP_TREE_PANE_WIDEST_CHARS = 40
 STYLE_MENU_LOGO_START_SHARE = 0.5
 STYLE_MENU_PULLDOWN_EXTRA_WIDTH_CHARS = 2
+STYLE_PAGE_BACKGROUND_DARK_MODE_ROLE = "dark-mode-page-bg-"
+STYLE_PAGE_BACKGROUND_EARLY_FILL_ENABLED = True
+STYLE_PAGE_BACKGROUND_LIGHT_MODE_ROLE = "light-mode-page-bg-"
 STYLE_PAGE_FONT_FAMILY = (
     'Monaco, Menlo, "DejaVu Sans Mono", "Liberation Mono", Consolas, monospace'
 )
 STYLE_PAGE_FONT_FAMILY_PROPERTY = "--page-font-family-"
-STYLE_PANE_SPLITTER_KEY_STEP_CHARS = 5
 STYLE_README_PAGE_VALUE_ENTRIES: dict[str, str] = {
     "readme-page-bg-": "#D8C9A3",
     "readme-page-fg-": "#3A2A14",
     "readme-page-font-family-": "Arial",
 }
-STYLE_TABLE_CALLERS_COLUMN_MAX_CHARS = 48
+STYLE_TABLE_COLUMN_EDGE_GRAB_CHARS = 0.5
+STYLE_TABLE_FUNCTION_LIST_COLUMN_MAX_CHARS = 48
 STYLE_TABLE_FUNCTION_NAME_MAX_CHARS = 20
 STYLE_TABLE_LOCATION_COLUMN_MAX_CHARS = 48
 STYLE_TEXT_SCROLLBAR_THUMB_SHORTEST_CHARS = 4
@@ -641,6 +674,15 @@ class SettingsWriter:
         return {name: scope[name] for name in sorted(_SETTING_NAMES)}
 
     def manifest_table(self, lines: Sequence[str]) -> str:
+        return "\n".join(
+            label_cell + value_cell
+            for label_cell, value_cell in self.manifest_table_rows(lines)
+        )
+
+    # Splits each manifest row into its padded label and its gapped value.
+    def manifest_table_rows(
+        self, lines: Sequence[str]
+    ) -> list[tuple[str, str]]:
         for line in lines:
             if "=" not in line:
                 raise ValueError(
@@ -649,10 +691,10 @@ class SettingsWriter:
         rows = [line.partition("=") for line in lines]
         label_width = max(len(label) for label, _, _ in rows)
         column_gap = " " * _MANIFEST_TABLE_COLUMN_GAP_CHARS
-        return "\n".join(
-            f"{label.ljust(label_width)}{column_gap}{value}"
+        return [
+            (label.ljust(label_width), f"{column_gap}{value}")
             for label, _, value in rows
-        )
+        ]
 
     def script_write(self) -> str:
         values = self.all_named()
@@ -683,6 +725,10 @@ def load_into(module_name: str) -> None:
 
 def manifest_table(lines: Sequence[str]) -> str:
     return _writer.manifest_table(lines)
+
+
+def manifest_table_rows(lines: Sequence[str]) -> list[tuple[str, str]]:
+    return _writer.manifest_table_rows(lines)
 
 
 def settings_script_write() -> str:

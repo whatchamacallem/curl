@@ -13,7 +13,6 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import artifacts, callgrind, callgrind_diff, settings, theme
 
 _ASSET_SOURCE_DATABASE_SCRIPT_NAME: str = ""
-_ASSET_TEMPLATE_HEAT_MAP_MAIN_NAME: str = ""
 _ASSET_TEMPLATE_HEAT_MAP_PAGE_NAME: str = ""
 _CALLGRIND_FILE_DATA_ERROR_CODE: str = ""
 _CALLGRIND_FILE_DATA_GIT_CODE: str = ""
@@ -22,12 +21,9 @@ _HEAT_MAP_MODEL_DIR_NAME: str = ""
 _HEAT_MAP_MODEL_GLOBAL_NAME: str = ""
 _HEAT_MAP_TREE_ALWAYS_LISTED_DIRS: tuple[str, ...] = ()
 _HEAT_MAP_VIEW_ENTRY: tuple[str, str] = ("", "")
-_MENU_TEST_NONE_NAME: str = ""
 _REPORT_SCRIPTS_DIR_NAME: str = ""
 _REPORT_SOURCES_DIR_NAME: str = ""
 settings.load_into(__name__)
-
-_HEAT_MAP_MAIN = theme.asset_text_read(_ASSET_TEMPLATE_HEAT_MAP_MAIN_NAME)
 
 _HEAT_MAP_PAGE = theme.asset_text_read(_ASSET_TEMPLATE_HEAT_MAP_PAGE_NAME)
 
@@ -53,14 +49,6 @@ class CallgrindToHeatmap:
         source: str | None
         group: str
 
-    class DatabaseFunction(TypedDict):
-        name: str
-        locations: list[CallgrindToHeatmap.DatabaseLocation]
-
-    class DatabaseLocation(TypedDict):
-        file: str
-        line: int
-
     # Holds what every test shows so far, the source database being built.
     @dataclasses.dataclass
     class DatabaseTally:
@@ -70,9 +58,7 @@ class CallgrindToHeatmap:
         files: dict[str, CallgrindToHeatmap.DatabaseFile] = dataclasses.field(
             default_factory=dict
         )
-        locations: dict[str, set[callgrind.SourceLine]] = dataclasses.field(
-            default_factory=dict
-        )
+        locations: set[str] = dataclasses.field(default_factory=set)
         cold: list[str] = dataclasses.field(default_factory=list)
 
     class FileModel(TypedDict):
@@ -183,9 +169,8 @@ class CallgrindToHeatmap:
         count: int = 0
 
     class SourceDatabase(TypedDict):
-        files: dict[str, CallgrindToHeatmap.DatabaseFile]
-        functions: list[CallgrindToHeatmap.DatabaseFunction]
-        cold: list[str]
+        files: list[str]
+        functions: list[str]
 
     @staticmethod
     def call_row_cost_key(row: CallgrindToHeatmap.CallRow) -> int:
@@ -228,7 +213,7 @@ class CallgrindToHeatmap:
                 database.cold,
             )
 
-    # Adds a test's files and function lines to the source database.
+    # Adds a test's files and functions with a line to the source database.
     def database_add(
         self,
         database: CallgrindToHeatmap.DatabaseTally,
@@ -256,13 +241,8 @@ class CallgrindToHeatmap:
                     f" {entry}, an earlier test as {known_entry}"
                 )
         for name in profile.function_home:
-            location = self.function_line(profile, name)
-            if location.line:
-                database.locations.setdefault(name, set()).add(
-                    callgrind.SourceLine(
-                        info[location.file].display, location.line
-                    )
-                )
+            if self.function_line(profile, name).line:
+                database.locations.add(name)
 
     # Returns the diff's path derive or None, and the tracked files.
     def derive_resolve(
@@ -541,19 +521,13 @@ class CallgrindToHeatmap:
             file=sys.stderr,
         )
 
-    def page_render(self) -> str:
-        return theme.template_fill(
-            _HEAT_MAP_PAGE, {"__HEAT_MAP_MAIN__": _HEAT_MAP_MAIN}
-        )
-
     def page_write(self, report_dir: str) -> None:
-        html = self.page_render()
         path = os.path.join(report_dir, _HEAT_MAP_PAGE_PATH)
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "w", encoding="utf-8") as handle:
-            handle.write(html)
+            handle.write(_HEAT_MAP_PAGE)
         print(
-            f"wrote {path} ({len(html.encode('utf-8')):,} bytes)",
+            f"wrote {path} ({len(_HEAT_MAP_PAGE.encode('utf-8')):,} bytes)",
             file=sys.stderr,
         )
 
@@ -646,7 +620,7 @@ class CallgrindToHeatmap:
             if line.endswith((".c", ".h"))
         ]
 
-    # Writes every file and function the tests show, with no counter.
+    # Writes every file the tests show and every function with a line.
     def source_database_write(
         self, report_dir: str, tally: CallgrindToHeatmap.DatabaseTally
     ) -> None:
@@ -657,18 +631,8 @@ class CallgrindToHeatmap:
             }
         )
         database: CallgrindToHeatmap.SourceDatabase = {
-            "files": dict(sorted(tally.files.items())),
-            "functions": [
-                {
-                    "name": name,
-                    "locations": [
-                        {"file": file, "line": line}
-                        for file, line in sorted(pairs)
-                    ],
-                }
-                for name, pairs in sorted(tally.locations.items())
-            ],
-            "cold": tally.cold,
+            "files": sorted(tally.files),
+            "functions": sorted(tally.locations),
         }
         data = json.dumps(database, separators=(",", ":"), ensure_ascii=False)
         text = f"window.report_source_database_ = {data};\n"
@@ -753,15 +717,10 @@ class CallgrindToHeatmap:
                     f" {body};\n"
                 )
 
-    # Refuses a test named like the menu's no test entry or a shipped script.
+    # Refuses a test named like a shipped script.
     def test_names_check(self, test_names: Iterable[str]) -> None:
         shipped_scripts = theme.shipped_script_names()
         for test_name in test_names:
-            if test_name == _MENU_TEST_NONE_NAME:
-                sys.exit(
-                    f"error: the test {test_name} is named like the menu's"
-                    " no test entry"
-                )
             if f"{test_name}.js" in shipped_scripts:
                 sys.exit(
                     f"error: the test {test_name} is named like the shipped"

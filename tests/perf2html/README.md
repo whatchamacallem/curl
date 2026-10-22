@@ -97,9 +97,9 @@ itself.
 ## Callgrind Counters
 
 These are the raw counters `callgrind` records and the derived ones this report
-adds up from them. They show up as column headers on the callers page and in
-the heat map, and as choices in the menu's counters pulldown, under these same
-names.
+adds up from them. They show up as column headers in the heat map, the raw ones
+on the database page too, and as choices in the menu's counters pulldown, under
+these same names.
 
 | Counter | Meaning                             | Derived from            |
 | ------- | ----------------------------------- | ----------------------- |
@@ -180,8 +180,8 @@ as long is `▲100.00%`, and smaller is better.
 The flame graph is a recording, not a model: every box is one call that
 happened, as wide as it took. The test runs in a build with
 `-finstrument-functions`, where a hook (`tests/perf2html/src/cyg_callback.c`)
-reads the CPU's time stamp counter at every function entry and exit. "Time
-Order" is the order the calls were made in.
+reads the CPU's time stamp counter at every function entry and exit from the
+entry of `main` on. "Time Order" is the order the calls were made in.
 
 A diff has no flame graph: a trace neither adds up nor subtracts.
 

@@ -11,8 +11,8 @@ from typing import NamedTuple, TypeAlias
 import settings
 
 _ASSET_CALL_GRAPH_SCRIPT_NAME: str = ""
-_ASSET_CALLERS_SCRIPT_NAME: str = ""
 _ASSET_DARK_MODE_STYLESHEET_NAME: str = ""
+_ASSET_DATABASE_SCRIPT_NAME: str = ""
 _ASSET_DEBUG_SCRIPT_NAME: str = ""
 _ASSET_ERROR_OVERLAY_SCRIPT_NAME: str = ""
 _ASSET_FLAME_GRAPH_SCRIPT_NAME: str = ""
@@ -205,9 +205,9 @@ class Theme:
     def shared_names(self) -> tuple[str, ...]:
         return (
             _ASSET_CALL_GRAPH_SCRIPT_NAME,
-            _ASSET_CALLERS_SCRIPT_NAME,
             _ASSET_LIGHT_MODE_STYLESHEET_NAME,
             _ASSET_DARK_MODE_STYLESHEET_NAME,
+            _ASSET_DATABASE_SCRIPT_NAME,
             _ASSET_ERROR_OVERLAY_SCRIPT_NAME,
             _ASSET_FLAME_GRAPH_SCRIPT_NAME,
             _ASSET_FRAME_SCRIPT_NAME,
@@ -342,6 +342,11 @@ def asset_text_read(name: str) -> str:
 
 def diff_share(delta: int, baseline: int | None) -> float:
     return _renderer.number_format.diff_share(delta, baseline)
+
+
+# Writes a decimal with the fraction digits every printed decimal takes.
+def fixed_text(number: float) -> str:
+    return _renderer.number_format.fixed_text(number, _NUMBER_FRACTION_DIGITS)
 
 
 def href(depth: int, name: str) -> str:
