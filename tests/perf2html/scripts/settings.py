@@ -409,7 +409,7 @@ TIMING_TIME_PER_LOOP_NAME = "time_per_loop"
 TRACE_BUILDID_KEYWORD = "buildid"
 TRACE_BUILDID_LABEL = "Build ID"
 TRACE_FUNCTION_EXIT_BIT = 1 << 63
- # Uses json compatible precision.
+# Uses json compatible precision.
 TRACE_HEADER_MAGIC = 0xABCDEF0123456000
 TRACE_HEADER_WORDS = 8
 TRACE_RECORD_WORDS = 2
