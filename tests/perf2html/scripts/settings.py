@@ -51,6 +51,7 @@ CALLGRIND_FILE_DATA_GIT_CODE = "git"
 CALLGRIND_FILE_DATA_INDENT_CHARS = 2
 CALLGRIND_FILE_DATA_REPO_CODE = "repo"
 CALLGRIND_FILE_DATA_SYSTEM_CODE = "sys"
+CALLGRIND_UNKNOWN_NAME = "???"
 
 COUNTER_LIST_CALLEES_LINE_NAME = "callees"
 COUNTER_LIST_CALLERS_LINE_NAME = "callers"
@@ -74,8 +75,6 @@ DATABASE_TIME_SUFFIX_SECONDS: dict[str, float] = {"ns": 1e-9, "usecs": 1e-6}
 DATABASE_TOP_FUNCTION_ROWS = 50
 DATABASE_VIEW_KEY = "database"
 
-DEBUG_TIP_IDLE_DELAY_MS = 2000
-
 DERIVED_COUNTER_TERMS: dict[str, dict[str, int]] = {
     "D1m": {"D1mr": 1, "D1mw": 1},
     "DLm": {"DLmr": 1, "DLmw": 1},
@@ -97,6 +96,9 @@ DRAG_DIRECTION_THRESHOLD_PX = 5
 
 FLAME_GRAPH_COLOR_SCHEME_KEY_NAME = "speedscope-color-scheme"
 FLAME_GRAPH_EXPORTER_NAME = "tests/perf2html/scripts/trace_to_speedscope.py"
+FLAME_GRAPH_FILE_FORMAT_SCHEMA_URL = (
+    "https://www.speedscope.app/file-format-schema.json"
+)
 FLAME_GRAPH_LOCAL_PROFILE_PATH = "profile"
 FLAME_GRAPH_LOCAL_PROFILE_URL_PREFIX = "file:///"
 FLAME_GRAPH_MAX_RECORDED_CALLS = 200
@@ -161,12 +163,18 @@ MENU_SCALE_KEY_STEPS: dict[str, int] = {"+": 1, "=": 1, "-": -1}
 NUMBER_FRACTION_DIGITS = 2
 NUMBER_LARGEST_PRINTED_MULTIPLE_TIMES = 999.99
 
-PERF_TOOL_ERRORS_LABEL = "Errors"
 PERF_TOOL_TIME_LABEL = "Time"
 
 PROFILE_START_FUNCTION_UNRECORDED_CALLS = 1
 
 RANKING_COUNTER_NAME = "CEst"
+
+README_PAGE_BODY_MARKER = "__README_BODY__"
+README_PAGE_CONVERTER_EXTENSION_ARGUMENTS: tuple[str, ...] = ("-e", "table")
+README_PAGE_HEADING_ANCHOR_DROPPED_PATTERN = r"[^\w\- ]"
+README_PAGE_HEADING_PATTERN = r"(?s)<h([1-6])>(.*?)</h\1>"
+README_PAGE_HEADING_TEXT_DROPPED_PATTERN = r"<[^>]*>|&\w+;"
+README_PAGE_ROOT_VALUES_MARKER = "__ROOT_VALUES__"
 
 REGULAR_REPORT_VIEW_KEYS: list[str] = [
     CALL_GRAPH_VIEW_KEY,
@@ -175,7 +183,6 @@ REGULAR_REPORT_VIEW_KEYS: list[str] = [
 
 SCREENSHOT_LABEL_QUERY_KEY_NAME = "screenshot"
 SCREENSHOT_LABEL_QUERY_VALUE = "1"
-SCREENSHOT_LABEL_TITLE_TEXT = "click to copy"
 SCREENSHOT_MENU_KEY_NUMBER = "screenshot-menu"
 
 SETTINGS_DEBUG_ENABLED = False
@@ -189,6 +196,8 @@ SETTINGS_LOAD_LOG_HISTORY_DEFAULT_LINES = 0
 SETTINGS_LOAD_LOG_HISTORY_LINE_CHOICES: tuple[int, ...] = (0, 10, 20, 50, 100)
 SETTINGS_LOAD_LOG_HISTORY_MAX_LINES = 100
 SETTINGS_VIEW_ENTRY: tuple[str, str] = ("settings", "settings/index.html")
+
+SIGNAL_EXIT_CODE_BASE = 128
 
 STORAGE_KEY_DATABASE_COUNTER_LIST = "database.counter_list"
 STORAGE_KEY_DATABASE_FUNCTION_ROWS = "database.function_rows"
@@ -237,17 +246,13 @@ STYLE_COLOR_DARK_MODE: dict[str, list[str]] = {
         "dark-mode-page-bg-",
         "dark-mode-page-emphasis-fg-",
     ],
-    "#FFFFFF": ["dark-mode-debug-tip-fg-", "dark-mode-screenshot-fg-"],
-    "#000000": [
-        "dark-mode-debug-tip-bg-",
-        "dark-mode-screenshot-bg-",
-    ],
+    "#FFFFFF": ["dark-mode-screenshot-fg-"],
+    "#000000": ["dark-mode-screenshot-bg-"],
 }
 STYLE_COLOR_DARK_MODE_ROLE_PREFIX = "dark-mode-"
 
 STYLE_COLOR_LIGHT_MODE: dict[str, list[str]] = {
     "#000000": [
-        "light-mode-debug-tip-bg-",
         "light-mode-menu-focus-bg-",
         "light-mode-menu-normal-fg-",
         "light-mode-menu-normal-outline-",
@@ -256,7 +261,6 @@ STYLE_COLOR_LIGHT_MODE: dict[str, list[str]] = {
         "light-mode-screenshot-bg-",
     ],
     "#FFFFFF": [
-        "light-mode-debug-tip-fg-",
         "light-mode-menu-focus-fg-",
         "light-mode-page-emphasis-fg-",
         "light-mode-page-bg-",
@@ -330,9 +334,6 @@ STYLE_TABLE_LOCATION_COLUMN_MAX_CHARS = 48
 STYLE_TEXT_SCROLLBAR_THUMB_SHORTEST_CHARS = 4
 STYLE_VALUE_ENTRIES: dict[str, str] = {
     "call-graph-border-width-": "1ch",
-    "debug-tip-font-size-": "1.5em",
-    "debug-tip-padding-": "1ch",
-    "debug-tip-z-index-": "2147483647",
     "heat-map-band-z-index-": "2",
     "heat-map-minimap-width-": "110px",
     "heat-map-source-band-height-": "1lh",
@@ -387,6 +388,30 @@ THEME_TIME_UNIT_ENTRIES: tuple[tuple[str, float], ...] = (
     ("ns", 1e-9),
     ("ps", 1e-12),
 )
+
+TIMING_COLUMN_STRING_ID_PREFIX = "str_column_"
+TIMING_COUNTER_RATIOS: tuple[tuple[str, str, str], ...] = (
+    ("loads_per_instruction", "L1-dcache-loads", "instructions"),
+)
+TIMING_PERF_STAT_METRICS: tuple[tuple[str, str, str], ...] = (
+    ("instructions_per_cycle", "instructions", "insn per cycle"),
+    ("branch_miss_percent", "branch-misses", "of all branches"),
+    ("l1d_miss_percent", "L1-dcache-load-misses", "of all L1-dcache accesses"),
+)
+TIMING_PERF_STAT_METRIC_FRACTION_DIGITS = 6
+TIMING_PERF_STAT_NUMBER_PATTERN = r"[0-9]+(?:\.[0-9]+)?"
+TIMING_PERF_STAT_UNCOUNTED_VALUES: tuple[str, ...] = (
+    "<not counted>",
+    "<not supported>",
+)
+TIMING_TIME_PER_LOOP_NAME = "time_per_loop"
+
+TRACE_BUILDID_KEYWORD = "buildid"
+TRACE_BUILDID_LABEL = "Build ID"
+TRACE_FUNCTION_EXIT_BIT = 1 << 63
+TRACE_HEADER_MAGIC = 0xABCDEF0123456789
+TRACE_HEADER_WORDS = 8
+TRACE_RECORD_WORDS = 2
 
 VALGRIND_DEBUG_LINE_PATTERN = "^--[0-9]+--"
 
@@ -474,9 +499,7 @@ class SettingsReader:
         raise NameError(
             f"error: constant doesn't match any setting: "
             f"{module_name}.{name} asks for the setting {setting}, which "
-            "neither settings.py nor settings.sh defines. Define it in one "
-            "of them, correct the spelling here, or -- if this is the "
-            "file's own constant -- move it below the load_into() call."
+            "neither settings.py nor settings.sh defines"
         )
 
     def sentinel_check(
@@ -490,18 +513,13 @@ class SettingsReader:
             raise NameError(
                 f"error: settings must have sentinels "
                 f"{_SENTINEL_TEXT}: {module_name}.{name} is assigned with "
-                "no annotation, so it declares no type. Write it as an "
-                "annotation naming the type plus an empty sentinel of that "
-                "type."
+                "no annotation"
             )
         if self.is_sentinel(written):
             return
         raise TypeError(
             f"error: settings must have sentinels {_SENTINEL_TEXT}: "
-            f"{module_name}.{name} is written with {written!r}. The value "
-            "comes from settings.py and overwrites whatever is here, so a "
-            "declaration carries an empty sentinel of its own type and "
-            "nothing else."
+            f"{module_name}.{name} is written with {written!r}"
         )
 
     def shell_name_check(
@@ -653,8 +671,7 @@ class SettingsReader:
             f"error: settings must not be coerced to another type: "
             f"{module_name}.{name} is annotated "
             f"{getattr(wanted, '__name__', wanted)}, but the setting is "
-            f"{found.__name__}. Correct the annotation, or change the value "
-            "in settings.py."
+            f"{found.__name__}"
         )
 
     def value(self, name: str) -> object:

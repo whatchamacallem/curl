@@ -1567,7 +1567,7 @@ window.try_catch_handler_(function () {
     minimap_box.innerHTML = "";
     minimap_viewport.hidden = true;
   }
-  // Holds the room of a source taller than the view, filled after the paint.
+  // Holds the room of a source taller than the view, filled before the paint.
   function minimap_build() {
     minimap_clear();
     const table_element = main_panel.querySelector(
@@ -1584,14 +1584,9 @@ window.try_catch_handler_(function () {
     minimap_panel.classList.remove("empty-");
     const build_number = minimap_build_number;
     requestAnimationFrame(
-      window.try_catch_handler_(() =>
-        setTimeout(
-          window.try_catch_handler_(() => {
-            if (build_number === minimap_build_number)
-              minimap_fill(table_element);
-          }),
-        ),
-      ),
+      window.try_catch_handler_(() => {
+        if (build_number === minimap_build_number) minimap_fill(table_element);
+      }),
     );
   }
   function minimap_fill(table_element) {

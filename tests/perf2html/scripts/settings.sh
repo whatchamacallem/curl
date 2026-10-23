@@ -23,8 +23,8 @@ declare -A ARTIFACT_FILE_PURPOSES=(
   ["profile-log"]="the measuring run's log"
   ["profile-regenerate-log"]="the last --regenerate run's log"
   ["test-list"]="the test names, one per line, sorted"
-  ["timing-csv"]="the perf stat counters"
-  ["timing-page"]="the timing page, command and counters"
+  ["timing-json"]="the perf stat counters, one JSON line per event"
+  ["timing-page"]="the timing page, the command and the curl perf tool's runs"
   ["timing-summary"]="the timing summary rows, one label=value each"
   ["trace-binary"]="the function trace of the sampled run"
   ["trace-log"]="the trace page, both runs and the conversion"
@@ -33,7 +33,7 @@ declare -A ARTIFACT_FILE_PURPOSES=(
   ["valgrind-log"]="the valgrind log with the objects loaded"
 )
 
-ARTIFACT_RECORDED_KINDS=(callgrind timing-csv timing-page trace-log
+ARTIFACT_RECORDED_KINDS=(callgrind timing-json timing-page trace-log
   trace-speedscope valgrind-log)
 
 declare -A ARTIFACT_RUN_FILE_FORMATS=(
@@ -54,7 +54,7 @@ declare -A ARTIFACT_TEST_FILE_FORMATS=(
   [callgrind]='%s/%s.callgrind.out'
   ["caller-counts"]='%s/%s.callgrind_diff.json'
   [delta]='%s/%s.callgrind_diff.out'
-  ["timing-csv"]='%s/%s.perf-stat.csv'
+  ["timing-json"]='%s/%s.perf-stat.json'
   ["timing-page"]='%s/%s.perf-stat.txt'
   ["timing-summary"]='%s/%s.perf-stat.summary'
   ["trace-binary"]='%s/%s.cyg_callback.bin'
@@ -82,9 +82,14 @@ declare -A CONTAINING_PACKAGES=(
   [cmake]=cmake
   [ninja]=ninja-build
   [ccache]=ccache
+  [cc]=build-essential
   [valgrind]=valgrind
+  [perf]=linux-perf
   [taskset]=util-linux
   [python3]=python3
+  [addr2line]=binutils
+  [objdump]=binutils
+  [readelf]=binutils
   [cksum]=coreutils
   [curl]=curl
   [tar]=tar
@@ -107,6 +112,8 @@ declare -A FLAME_GRAPH_APP_NAME_PATTERNS=(
 LOG_FAILURE_TAIL_LINES=40
 
 OVERVIEW_PAGE_PATH=index.html
+
+PACKAGE_INSTALL_COMMAND='sudo apt-get install -y'
 
 PROFILE_PINNED_CPU=3
 
@@ -143,20 +150,21 @@ TEST_SAMPLES_SIZE=$((TEST_LOOPS * 4 * 1024))
 
 TIMER_ARTIFACTS_ROOT_FORMAT='%s/timer-artifacts-%s'
 
-declare -A TIMING_COUNTER_LABELS=(
-  [cycles]=Cycles
-  [instructions]=Instructions
+TIMING_PERF_STAT_EVENTS=(cycles:u instructions:u branches:u branch-misses:u
+  L1-dcache-loads:u L1-dcache-load-misses:u)
+
+TIMING_PERF_STAT_RUNS=5
+
+declare -A TOOL_INSTALL_COMMANDS=(
+  [speedscope]='npm install -g speedscope'
 )
-
-TIMING_COUNTER_RATIO_DIVIDEND=instructions
-
-TIMING_COUNTER_RATIO_DIVISOR=cycles
-
-TIMING_PERF_STAT_EVENTS=cycles:u,instructions:u
 
 TRACE_BUILD_DIR=build-instr
 
+TRACE_OUT_VARIABLE=PERF_TRACE_OUT
+
 TRACE_SKIP_ALL=18446744073709551615
+TRACE_SKIP_VARIABLE=PERF_TRACE_SKIP
 
 VERBOSE=0
 

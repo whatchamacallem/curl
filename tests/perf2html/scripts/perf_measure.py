@@ -5,27 +5,38 @@
 
 from __future__ import annotations
 
-import argparse, os, re, subprocess, sys
+import argparse, json, os, re, shlex, statistics, subprocess, sys, typing
 from collections.abc import Sequence
-from typing import NamedTuple
+from typing import Any, NamedTuple
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import artifacts, settings, trace_to_speedscope
+import artifacts, settings, theme, trace_to_speedscope
 
 _CALLGRIND_LAST_LEVEL_CACHE: str = ""
 _DATABASE_TIME_SUFFIX_SECONDS: dict[str, float] = {}
-_PERF_TOOL_ERRORS_LABEL: str = ""
 _PERF_TOOL_TIME_LABEL: str = ""
 _PROFILE_PINNED_CPU: int = 0
 _PROFILE_START_FUNCTION_NAME: str = ""
 _PROFILE_STOP_FUNCTION_NAME: str = ""
+_SIGNAL_EXIT_CODE_BASE: int = 0
 _TEST_LOOPS: int = 0
-_TIMING_COUNTER_LABELS: dict[str, str] = {}
-_TIMING_COUNTER_RATIO_DIVIDEND: str = ""
-_TIMING_COUNTER_RATIO_DIVISOR: str = ""
-_TIMING_PERF_STAT_EVENTS: str = ""
+_TIMING_COUNTER_RATIOS: tuple[tuple[str, str, str], ...] = ()
+_TIMING_PERF_STAT_EVENTS: tuple[str, ...] = ()
+_TIMING_PERF_STAT_METRIC_FRACTION_DIGITS: int = 0
+_TIMING_PERF_STAT_METRICS: tuple[tuple[str, str, str], ...] = ()
+_TIMING_PERF_STAT_NUMBER_PATTERN: str = ""
+_TIMING_PERF_STAT_RUNS: int = 0
+_TIMING_PERF_STAT_UNCOUNTED_VALUES: tuple[str, ...] = ()
+_TIMING_TIME_PER_LOOP_NAME: str = ""
+_TRACE_OUT_VARIABLE: str = ""
 _TRACE_SKIP_ALL: int = 0
+_TRACE_SKIP_VARIABLE: str = ""
+_VERBOSE_RAW_LEVEL: int = 0
 settings.load_into(__name__)
+
+_PERF_STAT_EVENT_NAMES = tuple(
+    event.partition(":")[0] for event in _TIMING_PERF_STAT_EVENTS
+)
 
 _PERF_TOOL_TIME_LINE = re.compile(
     rf"{re.escape(_PERF_TOOL_TIME_LABEL)}:\s+(\d+(?:\.\d+)?)\s*("
@@ -33,15 +44,7 @@ _PERF_TOOL_TIME_LINE = re.compile(
     + r")\s*"
 )
 
-_PERF_TOOL_TIME_PER_UNIT_PREFIX = _PERF_TOOL_TIME_LABEL + "/"
-
 _PINNED_COMMAND = ("taskset", "-c", str(_PROFILE_PINNED_CPU))
-
-_SIGNAL_EXIT_CODE_BASE = 128
-
-_TRACE_OUT_VARIABLE = "PERF_TRACE_OUT"
-
-_TRACE_SKIP_VARIABLE = "PERF_TRACE_SKIP"
 
 
 class PerfMeasure:
@@ -51,10 +54,14 @@ class PerfMeasure:
         test: str
         executable: str
 
+    class PerfStat(NamedTuple):
+        counters: dict[str, float]
+        metric_texts: list[str]
+
     class Timing(NamedTuple):
         seconds_per_loop: float
-        counter_ratio: float
-        summary_rows: list[tuple[str, str]]
+        metric_texts: list[str]
+        counter_ratios: list[float]
 
     # Records the test under callgrind, the profiled window alone.
     def callgrind_measure(self, args: PerfMeasure.MeasureArgs) -> None:
@@ -89,41 +96,44 @@ class PerfMeasure:
         completed = subprocess.run(command_words, check=False)
         self.exit_check(completed.returncode, command_words)
 
-    # Returns a line per perf stat event, its label and the value perf wrote.
-    def counter_lines(self, artifacts_dir: str, test_name: str) -> list[str]:
-        stat_path = artifacts.artifact_path(
-            artifacts_dir, "timing-csv", test_name
-        )
-        with artifacts.artifact_open(
-            artifacts_dir, "timing-csv", test_name
-        ) as handle:
-            stat_rows = [
-                stat_line.split(",")
-                for stat_line in handle.read().splitlines()
-                if stat_line and not stat_line.startswith("#")
-            ]
-        labeled_lines: list[str] = []
-        for event_name in _TIMING_PERF_STAT_EVENTS.split(","):
-            event_values = [
-                row_fields[0]
-                for row_fields in stat_rows
-                if row_fields[2:3] == [event_name]
-            ]
-            if len(event_values) != 1:
-                sys.exit(
-                    f"error: {stat_path} holds {len(event_values)}"
-                    f" {event_name} rows, expected 1"
+    # Returns each counter ratio, one over a 0 being 0.
+    def counter_ratios(self, counters: dict[str, float]) -> list[float]:
+        ratios: list[float] = []
+        for ratio_name, dividend, divisor in _TIMING_COUNTER_RATIOS:
+            for event_name in (dividend, divisor):
+                self.event_name_check(
+                    "TIMING_COUNTER_RATIOS", ratio_name, event_name
                 )
-            counter_key = event_name.partition(":")[0]
-            if counter_key not in _TIMING_COUNTER_LABELS:
-                sys.exit(
-                    f"error: TIMING_COUNTER_LABELS holds no {counter_key}"
-                    f" key: {sorted(_TIMING_COUNTER_LABELS)}"
-                )
-            labeled_lines.append(
-                f"{_TIMING_COUNTER_LABELS[counter_key]}: {event_values[0]}"
+            ratios.append(
+                counters[dividend] / counters[divisor]
+                if counters[divisor]
+                else 0.0
             )
-        return labeled_lines
+        return ratios
+
+    # Returns the count of one perf stat line, an uncounted event's 0.
+    def counter_value(self, stat_path: str, stat_record: Any) -> float:
+        count_text = stat_record["counter-value"]
+        if count_text in _TIMING_PERF_STAT_UNCOUNTED_VALUES:
+            return 0.0
+        if not re.fullmatch(_TIMING_PERF_STAT_NUMBER_PATTERN, count_text):
+            sys.exit(
+                f"error: {stat_path} counts {stat_record['event']} as"
+                f" {count_text!r}, expected a count or one of"
+                f" {list(_TIMING_PERF_STAT_UNCOUNTED_VALUES)}"
+            )
+        return float(count_text)
+
+    # Exits when a setting entry names an event perf stat does not count.
+    def event_name_check(
+        self, setting_name: str, entry_name: str, event_name: str
+    ) -> None:
+        if event_name not in _PERF_STAT_EVENT_NAMES:
+            sys.exit(
+                f"error: {setting_name} {entry_name!r} names {event_name},"
+                " which TIMING_PERF_STAT_EVENTS does not count:"
+                f" {list(_PERF_STAT_EVENT_NAMES)}"
+            )
 
     # Exits as the shell would after a failed command, naming the command.
     def exit_check(self, exit_code: int, command_words: Sequence[str]) -> None:
@@ -143,7 +153,116 @@ class PerfMeasure:
         print(page_line, flush=True)
         return page_line
 
-    # Returns the perf tool's time over its loops, its other output left out.
+    # Returns perf's own metric text of one perf stat line, none if absent.
+    def metric_text(
+        self, stat_path: str, stat_record: Any, metric_unit: str
+    ) -> str:
+        if "metric-value" not in stat_record:
+            return ""
+        if stat_record["metric-unit"] != metric_unit or not re.fullmatch(
+            _TIMING_PERF_STAT_NUMBER_PATTERN, stat_record["metric-value"]
+        ):
+            sys.exit(
+                f"error: {stat_path} gives {stat_record['event']} the metric"
+                f" {stat_record['metric-value']!r}"
+                f" {stat_record['metric-unit']!r}, expected a number"
+                f" {metric_unit!r}"
+            )
+        return stat_record["metric-value"]
+
+    # Runs a command, writing its shown line and its output to the page.
+    def page_command_run(
+        self,
+        page_file: typing.IO[str],
+        verbose_level: int,
+        shown_words: Sequence[str],
+        command_words: Sequence[str],
+    ) -> tuple[list[str], int]:
+        page_lines = [
+            self.page_line_write(
+                page_file, verbose_level, "$ " + shlex.join(shown_words)
+            )
+        ]
+        with subprocess.Popen(
+            command_words,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+        ) as page_process:
+            assert page_process.stdout is not None, "stdout is a pipe"
+            for output_line in page_process.stdout:
+                page_lines.append(
+                    self.page_line_write(
+                        page_file, verbose_level, output_line.rstrip("\n")
+                    )
+                )
+        return page_lines, page_process.returncode
+
+    # Writes one timing page line, printing it at the raw verbose level.
+    def page_line_write(
+        self, page_file: typing.IO[str], verbose_level: int, page_line: str
+    ) -> str:
+        page_file.write(page_line + "\n")
+        page_file.flush()
+        if verbose_level >= _VERBOSE_RAW_LEVEL:
+            self.line_print(page_line)
+        return page_line
+
+    # Returns the perf stat counts by event name and perf's own metric texts.
+    def perf_stat_read(
+        self, artifacts_dir: str, test_name: str
+    ) -> PerfMeasure.PerfStat:
+        for metric_name, event_name, _ in _TIMING_PERF_STAT_METRICS:
+            self.event_name_check(
+                "TIMING_PERF_STAT_METRICS", metric_name, event_name
+            )
+        stat_path = artifacts.artifact_path(
+            artifacts_dir, "timing-json", test_name
+        )
+        with artifacts.artifact_open(
+            artifacts_dir, "timing-json", test_name
+        ) as handle:
+            stat_records = [
+                json.loads(stat_line)
+                for stat_line in handle.read().splitlines()
+            ]
+        if not stat_records:
+            return PerfMeasure.PerfStat(
+                counters=dict.fromkeys(_PERF_STAT_EVENT_NAMES, 0.0),
+                metric_texts=["" for _ in _TIMING_PERF_STAT_METRICS],
+            )
+        event_records: dict[str, list[Any]] = {
+            event_name: [] for event_name in _PERF_STAT_EVENT_NAMES
+        }
+        for stat_record in stat_records:
+            event_name = stat_record["event"].partition(":")[0]
+            if event_name not in event_records:
+                sys.exit(
+                    f"error: {stat_path} counts {stat_record['event']}, which"
+                    f" TIMING_PERF_STAT_EVENTS does not name:"
+                    f" {list(_TIMING_PERF_STAT_EVENTS)}"
+                )
+            event_records[event_name].append(stat_record)
+        for event_name, records in event_records.items():
+            if len(records) != 1:
+                sys.exit(
+                    f"error: {stat_path} holds {len(records)} {event_name}"
+                    " lines, expected 1"
+                )
+        return PerfMeasure.PerfStat(
+            counters={
+                event_name: self.counter_value(stat_path, records[0])
+                for event_name, records in event_records.items()
+            },
+            metric_texts=[
+                self.metric_text(
+                    stat_path, event_records[event_name][0], metric_unit
+                )
+                for _, event_name, metric_unit in _TIMING_PERF_STAT_METRICS
+            ],
+        )
+
+    # Returns the median over the runs of the perf tool's time over its loops.
     def perf_tool_time_per_loop(
         self, page_path: str, page_lines: Sequence[str], test_name: str
     ) -> float:
@@ -163,164 +282,139 @@ class PerfMeasure:
             for line_match in map(_PERF_TOOL_TIME_LINE.fullmatch, page_lines)
             if line_match
         ]
-        if len(time_matches) != 1:
+        if len(time_matches) != _TIMING_PERF_STAT_RUNS:
             sys.exit(
                 f"error: {page_path} holds {len(time_matches)}"
                 f" {_PERF_TOOL_TIME_LABEL}: lines with a time unit"
-                f" of {sorted(_DATABASE_TIME_SUFFIX_SECONDS)}, expected 1"
+                f" of {sorted(_DATABASE_TIME_SUFFIX_SECONDS)}, expected"
+                f" {_TIMING_PERF_STAT_RUNS}"
             )
-        time_match = time_matches[0]
-        run_seconds = (
+        run_seconds = [
             float(time_match.group(1))
-            * (_DATABASE_TIME_SUFFIX_SECONDS[time_match.group(2)])
-        )
-        return run_seconds / int(command_words[-1])
-
-    # Returns the time per unit and errors lines of a page, in page order.
-    def summary_rows(
-        self, page_path: str, page_lines: Sequence[str]
-    ) -> list[tuple[str, str]]:
-        label_values: list[tuple[str, str]] = []
-        for page_line in page_lines:
-            line_label, label_separator, line_value = page_line.partition(":")
-            if label_separator and (
-                line_label.startswith(_PERF_TOOL_TIME_PER_UNIT_PREFIX)
-                or line_label == _PERF_TOOL_ERRORS_LABEL
-            ):
-                label_values.append((line_label, line_value.strip()))
-        time_rows = [
-            label_value
-            for label_value in label_values
-            if label_value[0].startswith(_PERF_TOOL_TIME_PER_UNIT_PREFIX)
+            * _DATABASE_TIME_SUFFIX_SECONDS[time_match.group(2)]
+            for time_match in time_matches
         ]
-        if len(time_rows) != 1:
-            sys.exit(
-                f"error: {page_path} holds {len(time_rows)}"
-                f" {_PERF_TOOL_TIME_PER_UNIT_PREFIX}<unit>: lines, expected 1"
-            )
-        return label_values
+        return statistics.median(run_seconds) / int(command_words[-1])
 
-    # Returns a timing page's dividend counter over its divisor counter.
-    def timing_counter_ratio(
-        self, page_path: str, page_lines: Sequence[str]
-    ) -> float:
-        counter_values = self.timing_counters(page_path, page_lines)
-        ratio_terms: list[int] = []
-        for counter_key in (
-            _TIMING_COUNTER_RATIO_DIVIDEND,
-            _TIMING_COUNTER_RATIO_DIVISOR,
-        ):
-            if counter_key not in _TIMING_COUNTER_LABELS:
-                sys.exit(
-                    f"error: TIMING_COUNTER_LABELS holds no {counter_key}"
-                    f" key: {sorted(_TIMING_COUNTER_LABELS)}"
-                )
-            counter_label = _TIMING_COUNTER_LABELS[counter_key]
-            counter_text = counter_values[counter_label]
-            if not counter_text.isdigit() or not int(counter_text):
-                sys.exit(
-                    f"error: {page_path} holds {counter_label}:"
-                    f" {counter_text!r}, expected a count above 0"
-                )
-            ratio_terms.append(int(counter_text))
-        return ratio_terms[0] / ratio_terms[1]
-
-    # Returns each perf stat counter line's value of a timing page by label.
-    def timing_counters(
-        self, page_path: str, page_lines: Sequence[str]
-    ) -> dict[str, str]:
-        counter_values: dict[str, list[str]] = {
-            counter_label: []
-            for counter_label in _TIMING_COUNTER_LABELS.values()
-        }
-        for page_line in page_lines:
-            line_label, label_separator, line_value = page_line.partition(":")
-            if label_separator and line_label in counter_values:
-                counter_values[line_label].append(line_value.strip())
-        for counter_label, label_values in counter_values.items():
-            if len(label_values) != 1:
-                sys.exit(
-                    f"error: {page_path} holds {len(label_values)}"
-                    f" {counter_label}: lines, expected 1"
-                )
-        return {
-            counter_label: label_values[0]
-            for counter_label, label_values in counter_values.items()
-        }
-
-    # Records the test's perf stat run and writes its timing summary rows.
+    # Records the test's runs under perf stat, else directly, and its summary.
     def timing_measure(
-        self, args: PerfMeasure.MeasureArgs, executable_shown: str
+        self,
+        args: PerfMeasure.MeasureArgs,
+        executable_shown: str,
+        verbose_level: int,
     ) -> None:
         artifacts_dir = artifacts.report_artifacts_dir(
             args.artifacts, args.report
         )
         stat_path = artifacts.artifact_path(
-            artifacts_dir, "timing-csv", args.test
+            artifacts_dir, "timing-json", args.test
         )
-        event_words = ["perf", "stat", "-e", _TIMING_PERF_STAT_EVENTS]
-        loop_words = [args.test, str(_TEST_LOOPS)]
-        page_lines = [
-            self.line_print(
-                " ".join(
-                    [
-                        "$",
-                        *event_words,
-                        *_PINNED_COMMAND,
-                        executable_shown,
-                        *loop_words,
-                    ]
-                )
-            )
-        ]
-        command_words = [
-            *event_words,
-            "-x,",
-            "-o",
-            stat_path,
-            *_PINNED_COMMAND,
-            args.executable,
-            *loop_words,
-        ]
-        with subprocess.Popen(
-            command_words,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-        ) as stat_process:
-            assert stat_process.stdout is not None, "stdout is a pipe"
-            for output_line in stat_process.stdout:
-                page_lines.append(self.line_print(output_line.rstrip("\n")))
-        self.exit_check(stat_process.returncode, command_words)
-        page_lines += [
-            self.line_print(counter_line)
-            for counter_line in self.counter_lines(artifacts_dir, args.test)
-        ]
         page_path = artifacts.artifact_path(
             artifacts_dir, "timing-page", args.test
         )
-        timing = self.timing_parse(page_path, page_lines, args.test)
+        stat_words = ["perf", "stat", "-j", "-r", str(_TIMING_PERF_STAT_RUNS)]
+        event_words = [
+            "-e",
+            "{" + ",".join(_TIMING_PERF_STAT_EVENTS) + "}",
+            "--",
+            *_PINNED_COMMAND,
+        ]
+        loop_words = [args.test, str(_TEST_LOOPS)]
+        command_words = [
+            *stat_words,
+            "-o",
+            stat_path,
+            *event_words,
+            args.executable,
+            *loop_words,
+        ]
+        page_lines: list[str] = []
+        try:
+            with artifacts.artifact_open(
+                artifacts_dir, "timing-page", args.test, "w"
+            ) as page_file:
+                run_lines, stat_exit_code = self.page_command_run(
+                    page_file,
+                    verbose_level,
+                    [
+                        *stat_words,
+                        "-o",
+                        os.path.basename(stat_path),
+                        *event_words,
+                        executable_shown,
+                        *loop_words,
+                    ],
+                    command_words,
+                )
+                page_lines += run_lines
+                # A refused perf writes empty JSON, then curl perf runs alone.
+                if os.path.isfile(stat_path) and not os.path.getsize(
+                    stat_path
+                ):
+                    run_words = [
+                        *_PINNED_COMMAND,
+                        args.executable,
+                        *loop_words,
+                    ]
+                    for _ in range(_TIMING_PERF_STAT_RUNS):
+                        run_lines, run_exit_code = self.page_command_run(
+                            page_file,
+                            verbose_level,
+                            [*_PINNED_COMMAND, executable_shown, *loop_words],
+                            run_words,
+                        )
+                        page_lines += run_lines
+                        self.exit_check(run_exit_code, run_words)
+                else:
+                    self.exit_check(stat_exit_code, command_words)
+            timing = self.timing_parse(
+                page_path,
+                page_lines,
+                args.test,
+                self.perf_stat_read(artifacts_dir, args.test),
+            )
+        except SystemExit:
+            # No page line printed below the raw level, so the exit logs them.
+            if verbose_level < _VERBOSE_RAW_LEVEL:
+                print(*page_lines, sep="\n", file=sys.stderr, flush=True)
+            raise
+        timing_rows = self.timing_texts(timing)
+        summary_lines = [
+            f"{value_name}={value_text}"
+            for value_name, value_text in timing_rows
+        ]
         with artifacts.artifact_open(
             artifacts_dir, "timing-summary", args.test, "w"
         ) as handle:
             handle.writelines(
-                f"{row_label}={row_value}\n"
-                for row_label, row_value in timing.summary_rows
+                f"{summary_line}\n" for summary_line in summary_lines
             )
+        if verbose_level >= _VERBOSE_RAW_LEVEL:
+            with artifacts.artifact_open(
+                artifacts_dir, "timing-json", args.test
+            ) as handle:
+                stat_lines = handle.read().splitlines()
+            print(*stat_lines, *summary_lines, sep="\n", flush=True)
+        elif verbose_level:
+            self.timing_table_print(timing_rows)
 
-    # Returns the time per loop, counter ratio and summary rows of a page.
+    # Returns the time per loop over the runs, perf's metrics, the ratios.
     def timing_parse(
-        self, page_path: str, page_lines: Sequence[str], test_name: str
+        self,
+        page_path: str,
+        page_lines: Sequence[str],
+        test_name: str,
+        perf_stat: PerfMeasure.PerfStat,
     ) -> PerfMeasure.Timing:
         return PerfMeasure.Timing(
             seconds_per_loop=self.perf_tool_time_per_loop(
                 page_path, page_lines, test_name
             ),
-            counter_ratio=self.timing_counter_ratio(page_path, page_lines),
-            summary_rows=self.summary_rows(page_path, page_lines),
+            metric_texts=perf_stat.metric_texts,
+            counter_ratios=self.counter_ratios(perf_stat.counters),
         )
 
-    # Returns a test's timing, read from the timing page of its perf run.
+    # Returns a test's timing, read from its timing page and perf counters.
     def timing_read(
         self, artifacts_dir: str, test_name: str
     ) -> PerfMeasure.Timing:
@@ -332,7 +426,90 @@ class PerfMeasure:
             artifacts.artifact_path(artifacts_dir, "timing-page", test_name),
             page_lines,
             test_name,
+            self.perf_stat_read(artifacts_dir, test_name),
         )
+
+    # Prints the timing row the report shows, as a Markdown table.
+    def timing_table_print(
+        self, timing_rows: Sequence[tuple[str, str]]
+    ) -> None:
+        value_names = [value_name for value_name, _ in timing_rows]
+        value_cells = [
+            f"`{value_text}`" if value_text else ""
+            for _, value_text in timing_rows
+        ]
+        column_widths = [
+            max(len(value_name), len(value_cell))
+            for value_name, value_cell in zip(
+                value_names, value_cells, strict=True
+            )
+        ]
+        table_rows = [
+            value_names,
+            ["-" * column_width for column_width in column_widths],
+            value_cells,
+        ]
+        print(
+            "",
+            *(
+                "| "
+                + " | ".join(
+                    table_cell.ljust(column_width)
+                    for table_cell, column_width in zip(
+                        table_row, column_widths, strict=True
+                    )
+                )
+                + " |"
+                for table_row in table_rows
+            ),
+            sep="\n",
+            flush=True,
+        )
+
+    # Returns each timing value's name and printed text, a 0 printed empty.
+    def timing_texts(
+        self, timing: PerfMeasure.Timing
+    ) -> list[tuple[str, str]]:
+        return [
+            (
+                _TIMING_TIME_PER_LOOP_NAME,
+                (
+                    theme.num_time(timing.seconds_per_loop)
+                    if timing.seconds_per_loop
+                    else ""
+                ),
+            ),
+            *(
+                (
+                    metric_entry[0],
+                    (
+                        metric_text
+                        if metric_text and float(metric_text)
+                        else ""
+                    ),
+                )
+                for metric_entry, metric_text in zip(
+                    _TIMING_PERF_STAT_METRICS,
+                    timing.metric_texts,
+                    strict=True,
+                )
+            ),
+            *(
+                (
+                    ratio_entry[0],
+                    (
+                        theme.fixed_text(
+                            ratio, _TIMING_PERF_STAT_METRIC_FRACTION_DIGITS
+                        )
+                        if ratio
+                        else ""
+                    ),
+                )
+                for ratio_entry, ratio in zip(
+                    _TIMING_COUNTER_RATIOS, timing.counter_ratios, strict=True
+                )
+            ),
+        ]
 
     # Records the counting run and the sampled run, then converts the trace.
     def trace_measure(
@@ -432,6 +609,7 @@ def main() -> None:
             metavar="PATH",
             help="the perf test executable the run measures",
         )
+    timing_parser.add_argument("--verbose", action="count", default=0)
     for page_parser in (timing_parser, trace_parser):
         page_parser.add_argument(
             "--executable-shown",
@@ -449,7 +627,9 @@ def main() -> None:
     if namespace.cmd == "callgrind":
         PerfMeasure().callgrind_measure(measure_args)
     elif namespace.cmd == "timing":
-        PerfMeasure().timing_measure(measure_args, namespace.executable_shown)
+        PerfMeasure().timing_measure(
+            measure_args, namespace.executable_shown, namespace.verbose
+        )
     else:
         PerfMeasure().trace_measure(measure_args, namespace.executable_shown)
 

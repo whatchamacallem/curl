@@ -88,15 +88,6 @@ _MARKDOWN_FENCE_MIN_MARKS = 3
 
 _REPORT_THEME_STYLESHEET_ASSET: tuple[str, ...] = ("scripts/theme.css",)
 
-_SCREENSHOT_BROWSER_CANDIDATES: tuple[str, ...] = (
-    "chromium",
-    "chromium-browser",
-    "google-chrome",
-    "google-chrome-stable",
-    "/mnt/c/Program Files/Google/Chrome/Application/chrome.exe",
-    "/mnt/c/Program Files (x86)/Microsoft/Edge/Application/msedge.exe",
-)
-
 _SCREENSHOT_DIR_NAME = "screenshots"
 
 _SCREENSHOT_LABEL_URL_PARAM = "screenshot"
@@ -336,13 +327,11 @@ _VIEWS: tuple[ScreenshotSet, ...] = (
     ),
 )
 
-_WINDOWS_BROWSER_SUFFIX = ".exe"
-
 
 class Screenshots:
     def __init__(
         self,
-        browser: str | None,
+        browser: str,
         report: str,
         report_flag: int,
         out_dir: str,
@@ -359,21 +348,6 @@ class Screenshots:
         self.trace_path = trace_path
         self.report_views = self.report_views_select()
         self.page_timings: list[PageTiming] = []
-
-    def browser_path(self, path: str) -> str:
-        if not self.windows_browser_is():
-            return path
-        command = ["wslpath", "-w", os.path.realpath(path)]
-        completed = subprocess.run(
-            command, check=False, stdout=subprocess.PIPE, text=True
-        )
-        if completed.returncode != 0:
-            print(
-                f"error: {completed.returncode} returned {' '.join(command)}",
-                file=sys.stderr,
-            )
-            sys.exit(completed.returncode)
-        return completed.stdout.strip()
 
     def copy_shoot(
         self,
@@ -543,13 +517,7 @@ class Screenshots:
 
     # Returns the address the browser opens a file or directory at.
     def file_url(self, path: str) -> str:
-        opened_path = self.browser_path(path)
-        if self.windows_browser_is():
-            # A share path (//host/dir) names the host, a drive needs a slash.
-            slashed = opened_path.replace("\\", "/")
-            lead = "file:" if slashed.startswith("//") else "file:///"
-            return lead + slashed
-        return "file://" + opened_path
+        return "file://" + path
 
     # Names each shot that differs from its gold twin, each one missing.
     def gold_compare(
@@ -646,7 +614,7 @@ class Screenshots:
             f" ({changed_percent:.2f}%),"
             f" largest channel change {channel_change.getextrema()[1]},"
             f" {len(changed_regions)} region(s) {listed_regions},"
-            f" see {compare_path}",
+            f" compare image {compare_path}",
             file=sys.stderr,
         )
         return False
@@ -896,7 +864,7 @@ class Screenshots:
         out_path = os.path.join(self.out_dir, shot + _IMAGE_SUFFIX)
         if os.path.exists(out_path):
             os.remove(out_path)
-        assert self.browser is not None, "a compare only run shoots nothing"
+        assert self.browser, "a compare only run shoots nothing"
         window = f"{width_px},{height_px}"
         trace_flags: list[str] = []
         if trace_path:
@@ -904,7 +872,7 @@ class Screenshots:
                 os.remove(trace_path)
             trace_flags = [
                 f"--trace-startup={_TRACE_CATEGORIES}",
-                f"--trace-startup-file={self.browser_path(trace_path)}",
+                f"--trace-startup-file={trace_path}",
                 f"--trace-startup-format={_TRACE_FORMAT}",
                 # Zero traces until the browser exits after the shot.
                 "--trace-startup-duration=0",
@@ -912,7 +880,6 @@ class Screenshots:
         result = subprocess.run(
             [
                 self.browser,
-                "--headless=new",
                 "--disable-gpu",
                 "--no-sandbox",
                 "--hide-scrollbars",
@@ -920,7 +887,7 @@ class Screenshots:
                 # Draws a frame only after the page's own work for it.
                 "--run-all-compositor-stages-before-draw",
                 f"--window-size={window}",
-                f"--screenshot={self.browser_path(out_path)}",
+                f"--screenshot={out_path}",
                 f"--virtual-time-budget={_SCREENSHOT_RENDER_BUDGET_MS}",
                 *trace_flags,
                 self.page_url(
@@ -1170,25 +1137,12 @@ class Screenshots:
                 )
         return len(shot_variants)
 
-    def windows_browser_is(self) -> bool:
-        assert self.browser is not None, "a compare only run shoots nothing"
-        return self.browser.lower().endswith(_WINDOWS_BROWSER_SUFFIX)
-
-
-def browser_find() -> str | None:
-    for candidate in _SCREENSHOT_BROWSER_CANDIDATES:
-        if os.path.isfile(candidate):
-            return candidate
-        found = shutil.which(candidate)
-        if found:
-            return found
-    return None
-
 
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("report", help="a report directory to shoot")
     parser.add_argument("prefix", help="what every file name starts with")
+    parser.add_argument("--browser", default="", metavar="PATH")
     parser.add_argument(
         "--compare-gold",
         default="",
@@ -1249,18 +1203,9 @@ def main() -> int:
         print("error: --compare-only needs --compare-gold", file=sys.stderr)
         return 2
 
-    browser = None if namespace.compare_only else browser_find()
-    if browser is None and not namespace.compare_only:
-        print(
-            "error: no browser found. Tried: "
-            + ", ".join(_SCREENSHOT_BROWSER_CANDIDATES),
-            file=sys.stderr,
-        )
-        print(
-            "       sudo apt-get install -y chromium-browser",
-            file=sys.stderr,
-        )
-        return 127
+    if not namespace.browser and not namespace.compare_only:
+        print("error: shooting needs --browser", file=sys.stderr)
+        return 2
 
     perf2html_dir = os.path.join(
         os.path.dirname(os.path.abspath(__file__)), ".."
@@ -1281,7 +1226,7 @@ def main() -> int:
     )
     compare_dir = os.path.abspath(namespace.compare_out or out_dir)
     shooter = Screenshots(
-        browser,
+        namespace.browser,
         report,
         report_flag,
         out_dir,

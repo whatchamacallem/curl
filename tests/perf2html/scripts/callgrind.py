@@ -16,6 +16,7 @@ _CALLGRIND_FILE_DATA_ERROR_CODE: str = ""
 _CALLGRIND_FILE_DATA_GIT_CODE: str = ""
 _CALLGRIND_FILE_DATA_REPO_CODE: str = ""
 _CALLGRIND_FILE_DATA_SYSTEM_CODE: str = ""
+_CALLGRIND_UNKNOWN_NAME: str = ""
 _DERIVED_COUNTER_TERMS: dict[str, dict[str, int]] = {}
 _RANKING_COUNTER_NAME: str = ""
 settings.load_into(__name__)
@@ -27,8 +28,6 @@ REPO_ROOT = os.path.abspath(
 )
 
 _Key = TypeVar("_Key")
-
-_CALLGRIND_UNKNOWN_NAME = "???"
 
 
 @functools.cache
@@ -425,8 +424,7 @@ class Callgrind:
         ):
             sys.exit(
                 f"error: {path}: function {name} in no object is named by its"
-                " address, recorded before callgrind_symbols.py named it:"
-                " measure again without --regenerate"
+                " address, recorded before callgrind_symbols.py named it"
             )
         return name
 
@@ -508,8 +506,8 @@ class Callgrind:
 
         counter_count = 0
         current: FunctionRecords | None = None
-        current_file = "???"
-        current_object = "???"
+        current_file = _CALLGRIND_UNKNOWN_NAME
+        current_object = _CALLGRIND_UNKNOWN_NAME
         current_callee_object: str | None = None
         cur_callee_file: str | None = None
         cur_callee_function: str | None = None
@@ -535,7 +533,7 @@ class Callgrind:
                     current.call_records.append(
                         CallRecord(
                             key,
-                            cur_callee_function or "???",
+                            cur_callee_function or _CALLGRIND_UNKNOWN_NAME,
                             cur_callee_file
                             if cur_callee_file is not None
                             else current_file,

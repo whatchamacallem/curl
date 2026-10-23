@@ -32,11 +32,40 @@ postmortem reference to a numbered item that is not itself in the postmortem.
 - No fallbacks: broke is broke. Never swallow an error, provide a default, or
   have a "just in case" branch for a case that can't happen - throw so it
   fails loud with a call stack or exit with the right Unix error code.
-- The dark mode is the one exception to fail fast validation: every dark mode
-  value, a setting, a query or a stored preference, is any truthy or falsy
-  value, and every reader consults its truthiness alone. `frame.js` writes
-  the frame query as `1` or `0` and the stored preference is cast to `1` or
-  `0`, a query's text read through `Number`.
+- The dark mode is one of the two exceptions to fail fast validation: every
+  dark mode value, a setting, a query or a stored preference, is any truthy
+  or falsy value, and every reader consults its truthiness alone. `frame.js`
+  writes the frame query as `1` or `0` and the stored preference is cast to
+  `1` or `0`, a query's text read through `Number`.
+- Linux perf counting is the other exception to fail fast validation, and
+  `perf` (the `linux-perf` package, named by the toolchain check through
+  `CONTAINING_PACKAGES`) is a required tool all the same. `perf_measure.py
+  timing` runs `perf stat -j -r TIMING_PERF_STAT_RUNS -o
+  <test>.perf-stat.json -e '{TIMING_PERF_STAT_EVENTS}' --` over the pinned
+  curl perf tool command. A count perf writes as one of
+  `TIMING_PERF_STAT_UNCOUNTED_VALUES` (`<not counted>`, `<not supported>`)
+  reads 0. A perf run its permissions refuse exits non-zero with its JSON
+  empty and the curl perf tool never run: that is not a failure, only less
+  data. The curl perf tool then runs directly `TIMING_PERF_STAT_RUNS` times,
+  each run's command line in the timing page, so the parser sees the same
+  runs either way; every value expected from perf reads 0 (each counter 0.0,
+  each metric absent) and the run goes on. A ratio over a 0 is 0, and the overview prints
+  every 0 and every absent metric as an empty cell, the data not being
+  available. Any other non-zero perf exit is a hard error.
+- The overview's per test table shows the time per loop, the median over the
+  `TIMING_PERF_STAT_RUNS` runs of the curl perf tool's own `Time:` lines, then
+  `TIMING_PERF_STAT_METRICS`, perf stat's own `metric-value` texts as perf
+  writes them, full precision and unchanged, each on its event's line under
+  its `metric-unit`: instructions/cycle (`insn per cycle`), branch miss %
+  (`of all branches`), L1D miss % (`of all L1-dcache accesses`); then the
+  `TIMING_COUNTER_RATIOS` perf reports no metric for, derived from its
+  counters: loads / instruction, printed at perf's own metric precision,
+  `TIMING_PERF_STAT_METRIC_FRACTION_DIGITS`. A value perf reports itself is never
+  derived again. The column titles are `ui_strings.js` text; the settings
+  hold only keyword identifiers (event names, metric units, the string id
+  suffixes). No other linux perf metric is shown and no test case specific
+  stat; the curl perf tool's own output in the timing page speaks for the
+  rest.
 - Any error is a hard error, reported immediately, first failure only - no
   script collects failures, tallies of failures.
 - When asked to update this document then further confirmation should not be
@@ -50,6 +79,8 @@ postmortem reference to a numbered item that is not itself in the postmortem.
 - All constants outside of the test code go into a settings file. Zeros and
   the color clear are the only exceptions. Test files require a golden version
   to compare against and so they require independent constants for that.
+  Hardcoded settings in the test code are that golden reference: never report
+  them.
 - There must be no data loss in the logs from a hard exit because there is no
   buffering beyond a single external command.
 - `--regenerate` refuses (hard error, exit 2) rather than silently measuring
@@ -79,7 +110,7 @@ postmortem reference to a numbered item that is not itself in the postmortem.
   paths under the scripts' own flag names, reads `test_list.txt`, and composes
   every name from a settings format.
 - Any urge to add decorative comments, "helpful" extra logging, or stylistic
-  polish not asked for anywhere above is banned. Adding borders, tooltips,
+  polish not asked for anywhere above is banned. Adding borders,
   using alpha, adjusting shade, using gradients, adding requested style or
   redesigning on your own initiative is actively unwanted.
 - When asked to review a commit or unstaged change do not read this document.
@@ -246,11 +277,17 @@ The single function/check owning each concern - never bypass or duplicate:
   valgrind's own `--zero-before`, `--toggle-collect` and
   `--collect-atstart` options naming `PROFILE_START_FUNCTION_NAME` and
   `PROFILE_STOP_FUNCTION_NAME` (settings.sh), so nothing outside the
-  window is recorded and nothing cuts a recording after (perf2html.sh);
+  window is recorded and nothing cuts a recording after (perf_measure.py);
   `function_calls()` every database row's and call graph root's calls, an
   uncalled start function's `PROFILE_START_FUNCTION_UNRECORDED_CALLS`
   (build_report.py); `caller_calls()` every calls per caller aggregation,
   each caller's calls, first call line and summed costs (callgrind.py).
+- `perf_stat_read()` - every perf stat count and metric text, read from the
+  run's JSON, an uncounted count 0, an absent metric empty, a refused run's
+  every count 0; `counter_ratios()` every
+  overview ratio, one over a 0 being 0; `timing_texts()` every timing value
+  printed, the overview's row and the log's summary rows, a 0 printed empty
+  (perf_measure.py).
 - `function_line()` - the one line a function is addressed at: the line before
   its callgrind entry line when that line carries no counter and the
   function's counters span more than one line, else the entry line
@@ -442,9 +479,12 @@ The single function/check owning each concern - never bypass or duplicate:
   own or a child's - every child runs through `subprocess_run` and its lines
   reach the terminal verbatim; a non-zero exit is `error_exit`. The one
   exception is `pyright_filtered_run` at level 1.
-- `tools_resolve` (or equivalent) must find every formatter/linter before
-  anything is deleted, naming every missing tool with its install command -
-  never discover a missing tool mid-run after damage is done.
+- `tools_resolve` (or equivalent) must find every formatter/linter and the
+  screenshot browser before anything is deleted, naming every missing tool
+  with its install command - never discover a missing tool mid-run after
+  damage is done.
+- An install command names a package as this machine's release names it;
+  package name compatibility with other releases is ignored, never reported.
 - `test_all.sh` captures nothing and makes no temp file - refusals stream live
   to the terminal; failure checks the exit code only.
 - Plumbing (`perf2html.sh`, `perf2html_diff.sh`) and the batch (porcelain)
@@ -490,7 +530,7 @@ The single function/check owning each concern - never bypass or duplicate:
 - Follow source code style. Alphabetization of source sections matters.
 - Settings declared as annotation + empty sentinel + `load_into` - don't add
   accessors or conversions, don't turn off `F821`/`reportUnboundVariable`.
-- No decorative borders, no tooltips outside the two named exceptions.
+- No decorative borders.
 - Design-pixel discipline: think in design px/ch, then scale; never retune a
   length by eyeballing one screen size.
 - `scripts/` page scripts may carry comments under the 1-line limit, one `#`
@@ -501,7 +541,8 @@ The single function/check owning each concern - never bypass or duplicate:
   from the shipping scripts to compare against - not a bug to flag on sight.
 - One line helper functions in `.sh` are discouraged and require approval.
 - `error_exit` calls and other error messages must be only one line while
-  printing relevant variables too.
+  printing relevant variables too. `tools_resolve`'s missing tools error is
+  the single exception, a line per install command.
 - `test_all.sh` should print significant run times, it is not "no news is good
   news".
 - Don't change code when unable to implement a request as specified. Do not

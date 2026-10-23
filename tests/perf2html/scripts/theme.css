@@ -315,14 +315,6 @@ table.table-:has(> tbody > :is(tr.row-link-, tr.clickable-):hover)::before {
   display: none;
 }
 
-.debug-tip- {
-  position: fixed;
-  z-index: var(--debug-tip-z-index-);
-  white-space: pre;
-  display: none;
-  font-size: var(--debug-tip-font-size-);
-  padding: var(--debug-tip-padding-);
-}
 .screenshot- {
   position: fixed;
   left: 0;

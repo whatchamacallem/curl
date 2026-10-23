@@ -88,8 +88,7 @@ class SourceScan:
             if path.endswith(extensions):
                 return syntax
         sys.exit(
-            f"error: {path}: no comment syntax is known for this kind of"
-            " file; add its extension to _COMMENT_SYNTAX_BY_EXTENSION"
+            f"error: {path}: no comment syntax is known for this kind of file"
         )
 
     def comments(

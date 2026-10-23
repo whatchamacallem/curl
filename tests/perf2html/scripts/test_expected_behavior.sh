@@ -50,11 +50,19 @@ _WHITELIST_FILE=test_whitelist.txt
 _BATCH_SCRIPT_NAME=perf2html_batch.sh
 _README_PAGE_SCRIPT_NAME=build_readme_page.py
 _ROWS_FILE_NAME=perf2html.txt
+# Chrome for Testing's headless shell, headless without a switch.
+_SCREENSHOT_BROWSER_NAME=chrome-headless-shell
+_SCREENSHOT_BROWSER_PATH=/opt/chrome-headless-shell-linux64
+_SCREENSHOT_BROWSER_PATH+="/$_SCREENSHOT_BROWSER_NAME"
+_SCREENSHOT_BROWSER_URL=https://storage.googleapis.com
+_SCREENSHOT_BROWSER_URL+=/chrome-for-testing-public/156.0.8078.47/linux64
+_SCREENSHOT_BROWSER_URL+=/chrome-headless-shell-linux64.zip
+_SCREENSHOT_BROWSER_ZIP=/tmp/chrome-headless-shell-linux64.zip
 _SCREENSHOT_DIFF_DIR="$_DIR_PERF2HTML/screenshots-diff"
 _SCREENSHOT_GOLD_DIR="$_DIR_PERF2HTML/screenshots-gold"
 _SCREENSHOT_SCRIPT_NAME=test_screenshot.py
 _TEST_LIST_FILE_NAME=test_list.txt
-_TIMING_FILE_SUFFIX=.perf-stat.csv
+_TIMING_FILE_SUFFIX=.perf-stat.json
 
 _DEFAULT_REPORTS=(
   "$_DIR_PERF2HTML/$REPORT_BASELINE_DIR_NAME"
@@ -70,12 +78,18 @@ tools_resolve() {
   _PRETTIER="$(tool_find prettier)" || _missing+=(prettier)
   _PYRIGHT="$(tool_find pyright)" || _missing+=(pyright)
   _CMARK_GFM="$(tool_find cmark-gfm)" || _missing+=(cmark-gfm)
+  _SCREENSHOT_BROWSER="$(tool_find "$_SCREENSHOT_BROWSER_NAME")" \
+    || _missing+=("$_SCREENSHOT_BROWSER_NAME")
   [ "${#_missing[@]}" = 0 ] || error_exit 127 \
     "error: ${#_missing[@]} tool(s) missing, so nothing is verified:" \
     "${_missing[*]}" \
     "  sudo apt-get install -y shfmt clang-format cmark-gfm" \
     "  pip3 install --user --break-system-packages ruff" \
-    "  npm install -g prettier pyright"
+    "  npm install -g prettier pyright" \
+    "  sudo apt-get install -y libasound2t64 unzip" \
+    "  curl -fsSLo $_SCREENSHOT_BROWSER_ZIP $_SCREENSHOT_BROWSER_URL" \
+    "  sudo unzip -q -o $_SCREENSHOT_BROWSER_ZIP -d /opt" \
+    "  sudo ln -sf $_SCREENSHOT_BROWSER_PATH /usr/local/bin"
 }
 
 subprocess_run() {
@@ -365,7 +379,7 @@ screenshots_run() {
 
   heading_print "$_SCREENSHOT_SCRIPT_NAME"
   for _name in "$REPORT_MODIFIED_DIR_NAME" "$REPORT_DIFF_DIR_NAME"; do
-    screenshot_command_set "$_name"
+    screenshot_command_set "$_name" "--browser=$_SCREENSHOT_BROWSER"
     # The verbose lines go to the Markdown log on stderr, as blocks of text.
     subprocess_run "${_SCREENSHOT_COMMAND[@]}" >&2
     VERBOSE_BLOCK_PRINTED=loose

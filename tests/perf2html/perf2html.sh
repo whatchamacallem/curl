@@ -46,7 +46,6 @@ PERF2HTML_DIR_="$PWD"
 _REPO="$(cd -P -- ../.. && pwd)"
 
 args_parse() {
-  options_parse "$@"
   local _remaining_argument
   _OUT_DIR=""
   _CMAKE_FLAGS=()
@@ -203,7 +202,7 @@ tree_build() {
   command_item_print "${_configure_command[*]}"
   child_capture_noisy "${_configure_command[@]}" || _exit_code=$?
   [ "$_exit_code" = 0 ] \
-    || error_exit "$_exit_code" "error: cmake failed to build $_command_line"
+    || error_exit "$_exit_code" "error: exit $_exit_code from: $_command_line"
   command_run cmake --build "$_dir" --parallel --target perf
 }
 
@@ -220,15 +219,12 @@ build_paths() {
 }
 
 trees_compile() {
-  local _line
-  _line="$(printf '%-11s%s' build "${_CMAKE_FLAGS[*]}")"
   if [ "$REGENERATE" = 1 ]; then
-    log_verbose "$_line | reused"
+    log_verbose "reused build ${_CMAKE_FLAGS[*]}"
     return
   fi
   heading_print "cmake -B {$BUILD_DIR,$TRACE_BUILD_DIR}/$_TREE_NAME"
-  local _start _flag _trace_flags=()
-  _start="$(clock_microseconds)"
+  local _flag _trace_flags=()
   tree_build "$_BUILD_TREE" "${_CMAKE_FLAGS[@]}"
   for _flag in "${_CMAKE_FLAGS[@]}"; do
     case "$_flag" in
@@ -247,7 +243,6 @@ trees_compile() {
   local _hook="$_TRACE_TREE/cyg_callback.o"
   tree_build "$_TRACE_TREE" "${_trace_flags[@]}" \
     "-DCMAKE_EXE_LINKER_FLAGS=$_hook -Wl,--export-dynamic"
-  log_verbose "$_line | $(duration_format "$_start")"
   _BUILD_DESC="${_CMAKE_FLAGS[*]}"
 }
 
@@ -303,36 +298,25 @@ flame_app_install() {
 }
 
 trace_render() {
-  local _test="$1" _tree_display _trace_file _trace_log _command
+  local _test="$1" _trace_file _trace_log _command
   artifact_path _trace_file "$REPORT_ARTIFACTS_DIR" trace-binary "$_test"
   artifact_path _trace_log "$REPORT_ARTIFACTS_DIR" trace-log "$_test"
 
-  heading_print "PERF_TRACE_OUT=${_trace_file##*/} perf $_test $TEST_LOOPS"
-  _tree_display="$(path_display "$_TRACE_TREE" "$_REPO")"
-  {
-    echo "# $_tree_display = this report's build flags +"
-    echo "# -finstrument-functions, linked with"
-    echo "# tests/perf2html/src/cyg_callback.c, which reads rdtsc at every"
-    echo "# function enter and exit from $PROFILE_START_FUNCTION_NAME's entry"
-    echo "# on. Run 1 counts events, run 2 keeps up to"
-    echo "# $TEST_SAMPLES_SIZE samples, an enter and exit pair each, right"
-    echo "# after the run's midpoint (TEST_SAMPLES_SIZE in"
-    echo "# tests/perf2html/scripts/settings.sh)."
-  } >"$_trace_log"
+  heading_print \
+    "$TRACE_OUT_VARIABLE=${_trace_file##*/} perf $_test $TEST_LOOPS"
   _command=(python3 "$PERF2HTML_DIR_/scripts/perf_measure.py" trace
     "--artifacts=$ARTIFACTS_DIR" "--report=$_OUT_DIR" "--test=$_test"
     "--executable=$_TRACE_BIN" "--executable-shown=$_TRACE_BIN_REL")
-  page_command_run "$_trace_log" "${_command[*]}" "${_command[@]}"
+  page_command_run "$_trace_log" "$VERBOSE_RAW_LEVEL" "${_command[*]}" \
+    "${_command[@]}"
 }
 
 callgrind_measure() {
-  local _test="$1" _start
+  local _test="$1"
   heading_print "valgrind --tool=callgrind perf $_test $TEST_LOOPS"
-  _start="$(clock_microseconds)"
   command_run python3 "$PERF2HTML_DIR_/scripts/perf_measure.py" callgrind \
     "--artifacts=$ARTIFACTS_DIR" "--report=$_OUT_DIR" "--test=$_test" \
     "--executable=$_BIN"
-  _CALLGRIND_DURATION="$(duration_format "$_start")"
 }
 
 symbols_resolve() {
@@ -343,31 +327,22 @@ symbols_resolve() {
 }
 
 timing_measure() {
-  local _test="$1" _page _summary _command _label _value
-  local _summary_headers _summary_values
-  artifact_path _page "$REPORT_ARTIFACTS_DIR" timing-page "$_test"
-  artifact_path _summary "$REPORT_ARTIFACTS_DIR" timing-summary "$_test"
-  heading_print "perf stat -e $TIMING_PERF_STAT_EVENTS perf $_test" \
+  local _test="$1" _command _verbose_args
+  mapfile -t _verbose_args < <(verbose_flags)
+  heading_print "perf stat -j -r $TIMING_PERF_STAT_RUNS perf $_test" \
     "$TEST_LOOPS"
   _command=(python3 "$PERF2HTML_DIR_/scripts/perf_measure.py" timing
     "--artifacts=$ARTIFACTS_DIR" "--report=$_OUT_DIR" "--test=$_test"
-    "--executable=$_BIN" "--executable-shown=$_BIN_REL")
-  : >"$_page"
-  page_command_run "$_page" "${_command[*]}" "${_command[@]}"
-  _summary_headers=(Test Loops Callgrind)
-  _summary_values=("$_test" "$TEST_LOOPS" "$_CALLGRIND_DURATION")
-  while IFS='=' read -r _label _value; do
-    _summary_headers+=("$_label")
-    _summary_values+=("$_value")
-  done <"$_summary"
-  table_print "${#_summary_headers[@]}" "${_summary_headers[@]}" \
-    "${_summary_values[@]}"
+    "--executable=$_BIN" "--executable-shown=$_BIN_REL"
+    "${_verbose_args[@]}")
+  # The timing tool writes its own Markdown table at level 1.
+  page_command_run "" 1 "${_command[*]}" "${_command[@]}"
 }
 
 run_one() {
   local _test="$1"
   if [ "$REGENERATE" = 1 ]; then
-    log_verbose "$(printf '%-13sloops=%s | reused' "$_test" "$TEST_LOOPS")"
+    log_verbose "reused $_test loops=$TEST_LOOPS"
     return
   fi
   step_run 1 callgrind callgrind_measure "$_test"
@@ -433,9 +408,10 @@ pages_write() {
 }
 
 main() {
-  args_parse "$@"
+  options_parse "$@"
   verbose_begin
   title_print "$_SCRIPT" "$@"
+  args_parse
   recordings_check
   step_run 1 toolchain toolchain_check
   step_run 2 "source cache" source_cache_sync
@@ -444,7 +420,7 @@ main() {
   step_run 5 build build_compile
   step_run 6 tests tests_record
   step_run 7 pages pages_write
-  heading_print "$_SCRIPT, after the seven steps"
+  heading_print "$_SCRIPT, after ${#STEP_NAMES[@]} steps"
   table_print "${#STEP_NAMES[@]}" "${STEP_NAMES[@]}" "${STEP_SECONDS[@]}"
 }
 

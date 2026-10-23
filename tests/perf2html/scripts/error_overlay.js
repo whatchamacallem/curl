@@ -14,6 +14,7 @@
   const OVERLAY_COPY_LINK_TEXT = "copy";
   const OVERLAY_BACK_LINK_TEXT = "back";
   const OVERLAY_NO_MANIFEST_TEXT = "Report has no scripts/debug.js";
+  const UI_ERROR_TEXT = "ui error";
   const DESIGN_COORDINATES_WIDTH_PX = 1920;
   const DESIGN_FONT_SIZE_PX = 24;
   const REPORT_ROOT_URL = new URL("..", document.currentScript.src).href;
@@ -72,21 +73,28 @@
     };
   }
 
-  // Throws the filled UI string or its id, a trailing Error value its cause.
+  // Throws the filled UI string, a trailing Error value its cause.
   function throw_exception_(string_id, ...fill_values) {
     const error_options =
       fill_values.at(-1) instanceof Error
         ? { cause: fill_values.pop() }
         : undefined;
     if (window.ui_strings_ === undefined)
-      throw new Error(
-        "error (and missing ui string): " + string_id,
-        error_options,
-      );
-    throw new Error(
-      window.ui_strings_.text_fill(string_id, fill_values),
-      error_options,
-    );
+      ui_error_throw_(string_id, error_options);
+    let message_text;
+    try {
+      message_text = window.ui_strings_.text_fill(string_id, fill_values);
+    } catch (ui_error) {
+      // A ui error met while formatting keeps the formatted error's cause.
+      if (error_options) ui_error.cause = error_options.cause;
+      throw ui_error;
+    }
+    throw new Error(message_text, error_options);
+  }
+
+  // Throws the ui error of a missing ui string, naming what is missing.
+  function ui_error_throw_(missing_text, error_options) {
+    throw new Error(`${UI_ERROR_TEXT}: ${missing_text}`, error_options);
   }
 
   function err_overlay_show_(thrown_value) {
@@ -168,4 +176,5 @@
   window.is_framed_ = is_framed;
   window.throw_exception_ = throw_exception_;
   window.try_catch_handler_ = try_catch_handler_;
+  window.ui_error_throw_ = ui_error_throw_;
 })();

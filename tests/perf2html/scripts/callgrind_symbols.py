@@ -134,10 +134,7 @@ class CallgrindSymbols:
             path = artifacts.artifact_path(
                 artifacts_dir, "valgrind-log", test_name
             )
-            sys.exit(
-                f"error: no load address in {path}: valgrind needs"
-                " --trace-redir=yes"
-            )
+            sys.exit(f"error: no load address in {path}")
         return loaded_objects
 
     # Names an address in its object, or keeps callgrind's name there.

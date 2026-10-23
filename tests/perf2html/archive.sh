@@ -12,16 +12,18 @@ _ARCHIVE_="$_PROJECT_-$_DATE_.git.txz"
 
 # Print help if there is more than one arg or the first arg starts with a -.
 if [ "$#" -gt 1 ] || { [ "$#" -eq 1 ] && [ "${1#-}" != "$1" ]; }; then
-	echo "usage_error: $0 [destination-directory]"
-	echo "Will create $_ARCHIVE_ in the destination-directory if"
-	echo "provided, otherwise ~/Backups/ if it exists and in ~/ otherwise. Restores all"
-	echo "files if $_SCRIPT_NAME_ is the only file in the directory."
+	{
+		echo "usage_error: $0 [destination-directory]"
+		echo "Will create $_ARCHIVE_ in the destination-directory if"
+		echo "provided, otherwise ~/Backups/ if it exists and in ~/ otherwise. Restores all"
+		echo "files if $_SCRIPT_NAME_ is the only file in the directory."
+	} >&2
 	exit 2
 fi
 
 # Check for the .git file.
 if [ ! -d ".git" ]; then
-	echo "error: .git not found" >&2
+	echo "error: no .git directory in $PWD" >&2
 	exit 1
 fi
 
@@ -33,7 +35,7 @@ if [ "$(command ls)" = "$_SCRIPT_NAME_" ]; then
 
 	_FS_TYPE_=$(stat -f -c "%T" . 2>/dev/null) || _FS_TYPE_=""
 	if [ "$_FS_TYPE_" = "v9fs" ] || [ "$_FS_TYPE_" = "fuseblk" ] || [ "$_FS_TYPE_" = "ntfs" ]; then
-		echo "Windows detected. Setting config core.fileMode false."
+		echo "$_FS_TYPE_ file system: git config core.fileMode false"
 		git config core.fileMode false
 	fi
 	exit 0
@@ -48,7 +50,7 @@ else
 	_DEST_DIR_="$HOME"
 fi
 if [ ! -d "$_DEST_DIR_" ]; then
-	echo "Destination directory not found: $_DEST_DIR_" >&2
+	echo "error: no such destination directory: $_DEST_DIR_" >&2
 	exit 2
 fi
 

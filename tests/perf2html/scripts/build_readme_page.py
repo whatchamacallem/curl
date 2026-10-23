@@ -12,20 +12,14 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import settings, theme
 
 _ASSET_TEMPLATE_README_PAGE_NAME: str = ""
+_README_PAGE_BODY_MARKER: str = ""
+_README_PAGE_CONVERTER_EXTENSION_ARGUMENTS: tuple[str, ...] = ()
+_README_PAGE_HEADING_ANCHOR_DROPPED_PATTERN: str = ""
+_README_PAGE_HEADING_PATTERN: str = ""
+_README_PAGE_HEADING_TEXT_DROPPED_PATTERN: str = ""
+_README_PAGE_ROOT_VALUES_MARKER: str = ""
 _STYLE_README_PAGE_VALUE_ENTRIES: dict[str, str] = {}
 settings.load_into(__name__)
-
-_CONVERTER_EXTENSION_ARGUMENTS: tuple[str, ...] = ("-e", "table")
-
-_HEADING_ANCHOR_DROPPED_PATTERN = re.compile(r"[^\w\- ]")
-
-_HEADING_PATTERN = re.compile(r"<h([1-6])>(.*?)</h\1>", re.DOTALL)
-
-_HEADING_TEXT_DROPPED_PATTERN = re.compile(r"<[^>]*>|&\w+;")
-
-_README_BODY_MARKER = "__README_BODY__"
-
-_ROOT_VALUES_MARKER = "__ROOT_VALUES__"
 
 
 class BuildReadmePage:
@@ -39,7 +33,7 @@ class BuildReadmePage:
     def body_convert(self, args: BuildReadmePage.PageArgs) -> str:
         command = [
             args.converter,
-            *_CONVERTER_EXTENSION_ARGUMENTS,
+            *_README_PAGE_CONVERTER_EXTENSION_ARGUMENTS,
             args.markdown,
         ]
         completed = subprocess.run(
@@ -60,11 +54,13 @@ class BuildReadmePage:
 
         def heading_anchored(heading_found: re.Match[str]) -> str:
             heading_markup = heading_found[2]
-            heading_text = _HEADING_TEXT_DROPPED_PATTERN.sub(
-                "", heading_markup
+            heading_text = re.sub(
+                _README_PAGE_HEADING_TEXT_DROPPED_PATTERN, "", heading_markup
             )
-            heading_anchor = _HEADING_ANCHOR_DROPPED_PATTERN.sub(
-                "", heading_text.lower()
+            heading_anchor = re.sub(
+                _README_PAGE_HEADING_ANCHOR_DROPPED_PATTERN,
+                "",
+                heading_text.lower(),
             ).replace(" ", "-")
             repeat_count = anchor_counts.get(heading_anchor, 0)
             anchor_counts[heading_anchor] = repeat_count + 1
@@ -74,7 +70,9 @@ class BuildReadmePage:
                 f"h{heading_found[1]}", {"id": heading_anchor}, heading_markup
             )
 
-        return _HEADING_PATTERN.sub(heading_anchored, body_markup)
+        return re.sub(
+            _README_PAGE_HEADING_PATTERN, heading_anchored, body_markup
+        )
 
     # Returns whether the page is newer than every file it is built from.
     def is_current(self, args: BuildReadmePage.PageArgs) -> bool:
@@ -111,8 +109,10 @@ class BuildReadmePage:
         page_markup = theme.template_fill(
             theme.asset_text_read(_ASSET_TEMPLATE_README_PAGE_NAME),
             {
-                _ROOT_VALUES_MARKER: theme.render_html_escape(root_values),
-                _README_BODY_MARKER: self.headings_anchor(
+                _README_PAGE_ROOT_VALUES_MARKER: theme.render_html_escape(
+                    root_values
+                ),
+                _README_PAGE_BODY_MARKER: self.headings_anchor(
                     self.body_convert(args)
                 ),
             },

@@ -902,20 +902,18 @@ class BuildReport:
     def test_link_cell(self, name: str) -> theme.Cell:
         return theme.Cell(name, href=self.address(name, _DATABASE_VIEW_KEY))
 
-    # Returns a row per test, its time per loop and instructions per cycle.
+    # Returns a row per test, its time per loop and its counter ratios.
     def timing_rows(
         self, artifacts_dir: str, test_names: Sequence[str]
     ) -> list[list[theme.CellOrText]]:
+        measure = perf_measure.PerfMeasure()
         rows: list[list[theme.CellOrText]] = []
         for test_name in test_names:
-            timing = perf_measure.PerfMeasure().timing_read(
-                artifacts_dir, test_name
-            )
+            timing = measure.timing_read(artifacts_dir, test_name)
             rows.append(
                 [
                     self.test_link_cell(test_name),
-                    theme.num_time(timing.seconds_per_loop),
-                    theme.fixed_text(timing.counter_ratio),
+                    *(text for _, text in measure.timing_texts(timing)),
                 ]
             )
         return rows

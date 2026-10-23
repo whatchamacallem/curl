@@ -74,7 +74,6 @@ input_path_display() {
 }
 
 args_parse() {
-  options_parse "$@"
   local _remaining_argument _report_names=()
   for _remaining_argument in "${REMAINING_ARGUMENTS[@]}"; do
     case "$_remaining_argument" in
@@ -112,11 +111,10 @@ args_parse() {
 }
 
 manifest_check() {
-  local _dir="$1" _role="$2" _manifest="$1/MANIFEST.txt" _reason
+  local _dir="$1" _role="$2" _manifest="$1/MANIFEST.txt"
   if [ -f "$_manifest" ] \
     && [ "$(head -1 "$_manifest")" = "$REPORT_MANIFEST_VERSION_DIFF" ]; then
-    _reason="error: can't diff a diff: the $_role report was written by"
-    error_exit 2 "$_reason perf2html_diff.sh: $_dir"
+    error_exit 2 "error: the $_role report is a diff report: $_dir"
   fi
   manifest_verify "$_dir" "$_role" "$REPORT_MANIFEST_VERSION_FULL"
   recorded_time_read "$3" "$_manifest"
@@ -208,7 +206,7 @@ tests_pair() {
   local _profiles _kept_list _name
   local -a _paired_tests _modified_tests
   local -A _baseline_named=() _modified_named=()
-  local _one_sided="is in only one of the two reports, so it has no delta:"
+  local _one_sided="is in only one of the two reports:"
   artifact_path _profiles "$REPORT_ARTIFACTS_DIR" baseline-profiles
   test_list_read "$_profiles"
   _paired_tests=("${TEST_LIST[@]}")
@@ -248,7 +246,6 @@ pages_write() {
   page_tool_run callgrind_to_heatmap.py page "--report=$_OUT_DIR"
   page_tool_run build_report.py overview "${_flags[@]}" \
     "${README_HTML_FLAGS[@]}"
-  log_verbose "$(printf '%-13s%s' overview "$_OUT_DIR/$OVERVIEW_PAGE_PATH")"
   report_finish "$_OUT_DIR" "$REPORT_MANIFEST_VERSION_DIFF" \
     "baseline=$(input_path_display "$_BASE_DIR")" \
     "modified=$(input_path_display "$_MOD_DIR")" \
@@ -257,16 +254,17 @@ pages_write() {
 }
 
 main() {
-  args_parse "$@"
+  options_parse "$@"
   verbose_begin
   title_print "$_SCRIPT" "$@"
+  args_parse
   step_run 1 inputs inputs_check
   step_run 2 report report_prepare
   step_run 3 extract inputs_extract
   step_run 4 pair tests_pair
   step_run 5 deltas deltas_write
   step_run 6 pages pages_write
-  heading_print "$_SCRIPT, after the six steps"
+  heading_print "$_SCRIPT, after ${#STEP_NAMES[@]} steps"
   table_print "${#STEP_NAMES[@]}" "${STEP_NAMES[@]}" "${STEP_SECONDS[@]}"
 }
 

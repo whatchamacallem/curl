@@ -125,11 +125,6 @@ tr.heat-map-source-information-box-synthetic-row- > td {
   color: var(--light-mode-menu-focus-fg-);
 }
 
-.debug-tip- {
-  background: var(--light-mode-debug-tip-bg-);
-  color: var(--light-mode-debug-tip-fg-);
-}
-
 .screenshot- {
   background: var(--light-mode-screenshot-bg-);
   color: var(--light-mode-screenshot-fg-);

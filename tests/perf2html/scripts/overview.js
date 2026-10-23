@@ -6,6 +6,12 @@ window.try_catch_handler_(function () {
   "use strict";
 
   const RANKING_COUNTER_NAME = settings_("RANKING_COUNTER_NAME");
+  const TIMING_COLUMN_STRING_ID_PREFIX = settings_(
+    "TIMING_COLUMN_STRING_ID_PREFIX",
+  );
+  const TIMING_COUNTER_RATIOS = settings_("TIMING_COUNTER_RATIOS");
+  const TIMING_PERF_STAT_METRICS = settings_("TIMING_PERF_STAT_METRICS");
+  const TIMING_TIME_PER_LOOP_NAME = settings_("TIMING_TIME_PER_LOOP_NAME");
 
   const text = window.ui_strings_.text;
   const text_fill = window.ui_strings_.text_fill;
@@ -35,8 +41,14 @@ window.try_catch_handler_(function () {
       ];
     return [
       { label: text("str_column_report") },
-      { label: text("str_column_time_per_loop"), numeric: true },
-      { label: text("str_column_instructions_per_cycle"), numeric: true },
+      ...[
+        TIMING_TIME_PER_LOOP_NAME,
+        ...TIMING_PERF_STAT_METRICS.map(([metric_name]) => metric_name),
+        ...TIMING_COUNTER_RATIOS.map(([ratio_name]) => ratio_name),
+      ].map((timing_name) => ({
+        label: text(TIMING_COLUMN_STRING_ID_PREFIX + timing_name),
+        numeric: true,
+      })),
     ];
   }
   // Replaces table data with its table, each row leading to its first link.
@@ -55,10 +67,6 @@ window.try_catch_handler_(function () {
   }
 
   tests_heading.textContent = text("str_heading_tests");
-  window.report_ui_.view_frame.setAttribute(
-    "title",
-    text("str_view_frame_title"),
-  );
   // A diff report holds no manifest heading or raw data.
   if (manifest_heading)
     manifest_heading.textContent = text("str_heading_manifest");

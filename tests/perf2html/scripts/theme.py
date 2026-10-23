@@ -344,9 +344,9 @@ def diff_share(delta: int, baseline: int | None) -> float:
     return _renderer.number_format.diff_share(delta, baseline)
 
 
-# Writes a decimal with the fraction digits every printed decimal takes.
-def fixed_text(number: float) -> str:
-    return _renderer.number_format.fixed_text(number, _NUMBER_FRACTION_DIGITS)
+# Writes a decimal with the given count of fraction digits.
+def fixed_text(number: float, digit_count: int) -> str:
+    return _renderer.number_format.fixed_text(number, digit_count)
 
 
 def href(depth: int, name: str) -> str:

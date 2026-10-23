@@ -9,6 +9,7 @@ window.ui_strings_ = (function () {
     str_caret_right: "►",
     str_clip_ellipsis: "…",
     str_column_baseline_share: "vs baseline",
+    str_column_branch_miss_percent: "branch miss %",
     str_column_call_count: "call count",
     str_column_called_at: "called at",
     str_column_callee: "callee",
@@ -24,8 +25,10 @@ window.ui_strings_ = (function () {
     str_column_function: "function",
     str_column_function_share: "function %",
     str_column_functions_changed: "functions changed in {counter}",
-    str_column_instructions_per_cycle: "Instructions/Cycle",
+    str_column_instructions_per_cycle: "instructions/cycle",
+    str_column_l1d_miss_percent: "L1D miss %",
     str_column_line: "line",
+    str_column_loads_per_instruction: "loads / instruction",
     str_column_report: "report",
     str_column_report_per_test: "one report per test",
     str_column_self: "self",
@@ -52,8 +55,6 @@ window.ui_strings_ = (function () {
     str_counter_l1m: "L1 cache misses, all",
     str_counter_label: "{description} ({counter})",
     str_counter_llm: "last level cache misses, all",
-    str_debug_tip_none: "(none)",
-    str_debug_tip_text: "<{tag}> class={class}\nid={id}\nfg={fg}\nbg={bg}",
     str_error_hash_file_missing: "url names line {0} but no file",
     str_error_hash_file_unknown:
       "url encodes a file this report never profiled: {0}",
@@ -184,7 +185,6 @@ window.ui_strings_ = (function () {
     str_view_call_graph: "call graph",
     str_view_database: "database",
     str_view_flame_graph: "flame graph",
-    str_view_frame_title: "report page",
     str_view_heat_map: "heat map",
     str_view_overview: "overview",
     str_view_settings: "settings",
@@ -193,14 +193,13 @@ window.ui_strings_ = (function () {
     const template = text(string_id);
     return template.replace(/\{(\w+)\}/g, (marker, field_name) => {
       if (!Object.prototype.hasOwnProperty.call(replacements, field_name))
-        return "error (and missing ui string): " + string_id + " " + marker;
+        window.ui_error_throw_(`${string_id} ${marker}`);
       return String(replacements[field_name]);
     });
   }
   function text(string_id) {
-    if (!Object.prototype.hasOwnProperty.call(STRINGS, string_id)) {
-      return "error (and missing ui string): " + string_id;
-    }
+    if (!Object.prototype.hasOwnProperty.call(STRINGS, string_id))
+      window.ui_error_throw_(string_id);
     return STRINGS[string_id];
   }
   return { text_fill, text };

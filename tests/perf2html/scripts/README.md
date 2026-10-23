@@ -158,8 +158,9 @@ A regular report's run keeps these.
 - `<test>.cyg_callback.bin`: The function trace of the sampled run.
 - `<test>.cyg_callback.bin.maps`: The traced process's mappings.
 - `<test>.cyg_callback.log`: The trace page, both runs and the conversion.
-- `<test>.perf-stat.csv`: The perf stat counters.
-- `<test>.perf-stat.txt`: The timing page, command and counters.
+- `<test>.perf-stat.json`: The perf stat counters, one JSON line per event.
+- `<test>.perf-stat.txt`: The timing page, the command and the curl perf tool's
+  runs.
 - `<test>.perf-stat.summary`: The timing summary rows, one `label=value` each.
 - `<test>.trace_to_speedscope.json`: The speedscope profile of the sampled run.
 - `<test>.valgrind.log`: The valgrind log with the objects loaded.
@@ -240,7 +241,7 @@ A diff report's run keeps these.
 | File               | Purpose                                               |
 | ------------------ | ----------------------------------------------------- |
 | `debug.js`         | Templates the report's debug script, the manifest     |
-|                    | table the error report shows, then the debug tip.     |
+|                    | table the error report shows.                         |
 | `error_overlay.js` | Catches the first error a page throws, relays it up   |
 |                    | the frames and replaces the top page with a plain     |
 |                    | error report.                                         |
@@ -305,8 +306,9 @@ A diff report's run keeps these.
 | ----------------- | ---------------------------------------------------- |
 | `perf_measure.py` | Runs the perf test executable under callgrind, perf  |
 |                   | stat and the function trace, the one caller of perf, |
-|                   | and parses the timing page for the overview and the  |
-|                   | summary rows the measuring run prints.               |
+|                   | and parses the timing page and perf stat counters    |
+|                   | for the overview and the summary rows the measuring  |
+|                   | run prints.                                          |
 
 ## README Page
 

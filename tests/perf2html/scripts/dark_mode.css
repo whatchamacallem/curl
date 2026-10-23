@@ -153,11 +153,6 @@
     color: var(--dark-mode-menu-focus-fg-);
   }
 
-  .debug-tip- {
-    background: var(--dark-mode-debug-tip-bg-);
-    color: var(--dark-mode-debug-tip-fg-);
-  }
-
   .screenshot- {
     background: var(--dark-mode-screenshot-bg-);
     color: var(--dark-mode-screenshot-fg-);

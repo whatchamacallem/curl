@@ -11,25 +11,16 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import artifacts, callgrind, settings
 
 _FLAME_GRAPH_EXPORTER_NAME: str = ""
+_FLAME_GRAPH_FILE_FORMAT_SCHEMA_URL: str = ""
 _FLAME_GRAPH_MAX_RECORDED_CALLS: int = 0
 _FLAME_GRAPH_PROFILE_NAME_FORMAT: str = ""
+_TRACE_BUILDID_KEYWORD: str = ""
+_TRACE_BUILDID_LABEL: str = ""
+_TRACE_FUNCTION_EXIT_BIT: int = 0
+_TRACE_HEADER_MAGIC: int = 0
+_TRACE_HEADER_WORDS: int = 0
+_TRACE_RECORD_WORDS: int = 0
 settings.load_into(__name__)
-
-_BUILDID_KEYWORD = "buildid"
-
-_BUILDID_LABEL = "Build ID"
-
-_FUNCTION_EXIT_BIT = 1 << 63
-
-_FLAME_GRAPH_FILE_FORMAT_SCHEMA_URL = (
-    "https://www.speedscope.app/file-format-schema.json"
-)
-
-_HEADER_WORDS = 8
-
-_HEADER_MAGIC = 0xABCDEF0123456789
-
-_RECORD_WORDS = 2
 
 
 class Event(TypedDict):
@@ -97,7 +88,7 @@ class TraceToSpeedscope:
         listing = self.command_output(["readelf", "-n", path])
         for line in listing.splitlines():
             label, separator, value = line.partition(":")
-            if separator and label.strip() == _BUILDID_LABEL:
+            if separator and label.strip() == _TRACE_BUILDID_LABEL:
                 return value.strip().lower()
         return ""
 
@@ -115,7 +106,7 @@ class TraceToSpeedscope:
             sys.exit(
                 f"error: {path} was rebuilt since the trace was recorded:"
                 f" it now has build-id {found or '(none)'}, the trace was"
-                f" recorded against {want}. Re-record the trace"
+                f" recorded against {want}"
             )
 
     def buildids_read(
@@ -127,7 +118,7 @@ class TraceToSpeedscope:
         ) as handle:
             for line in handle:
                 fields = line.split(None, 2)
-                if len(fields) == 3 and fields[0] == _BUILDID_KEYWORD:
+                if len(fields) == 3 and fields[0] == _TRACE_BUILDID_KEYWORD:
                     out[fields[2].strip()] = fields[1].lower()
         return out
 
@@ -137,7 +128,7 @@ class TraceToSpeedscope:
         runs: list[list[TraceToSpeedscope.CallSpan]] = [[]]
         open_records: list[int] = []
         for record, function in enumerate(trace.functions):
-            if not trace.stamps[record] & _FUNCTION_EXIT_BIT:
+            if not trace.stamps[record] & _TRACE_FUNCTION_EXIT_BIT:
                 open_records.append(record)
             elif not open_records:
                 runs.append([])
@@ -197,12 +188,12 @@ class TraceToSpeedscope:
             stamp = trace.stamps[record]
             frame = order.setdefault(trace.functions[record], len(order))
             at = round(
-                ((stamp & ~_FUNCTION_EXIT_BIT) - trace.origin_tsc)
+                ((stamp & ~_TRACE_FUNCTION_EXIT_BIT) - trace.origin_tsc)
                 / trace.tsc_per_ns
             )
             events.append(
                 {
-                    "type": "C" if stamp & _FUNCTION_EXIT_BIT else "O",
+                    "type": "C" if stamp & _TRACE_FUNCTION_EXIT_BIT else "O",
                     "frame": frame,
                     "at": at,
                 }
@@ -345,13 +336,13 @@ class TraceToSpeedscope:
                 " was cut off while writing it"
             )
         words.frombytes(raw)
-        if len(words) < _HEADER_WORDS or words[0] != _HEADER_MAGIC:
+        if len(words) < _TRACE_HEADER_WORDS or words[0] != _TRACE_HEADER_MAGIC:
             sys.exit(f"error: {trace_file}: not a cyg_callback.c trace")
         _, kept, seen, skip, t0_ns, t0_tsc, t1_ns, t1_tsc = words[
-            :_HEADER_WORDS
+            :_TRACE_HEADER_WORDS
         ]
-        records = words[_HEADER_WORDS:]
-        if len(records) != kept * _RECORD_WORDS or t1_ns <= t0_ns:
+        records = words[_TRACE_HEADER_WORDS:]
+        if len(records) != kept * _TRACE_RECORD_WORDS or t1_ns <= t0_ns:
             sys.exit(
                 f"error: {trace_file}: truncated, or no time passed"
                 " between its two clock readings"
@@ -361,8 +352,8 @@ class TraceToSpeedscope:
             skip=skip,
             origin_tsc=t0_tsc,
             tsc_per_ns=(t1_tsc - t0_tsc) / (t1_ns - t0_ns),
-            functions=list(records[0::_RECORD_WORDS]),
-            stamps=list(records[1::_RECORD_WORDS]),
+            functions=list(records[0::_TRACE_RECORD_WORDS]),
+            stamps=list(records[1::_TRACE_RECORD_WORDS]),
         )
 
     def mappings_read(

@@ -142,14 +142,14 @@ checksum_compute() {
 }
 
 child_capture() {
-  local page_file="$1"
-  shift
+  local page_file="$1" unfiltered_level="$2"
+  shift 2
   local logs=("$RUN_LOG") statuses=() status
   [ -z "$page_file" ] || logs+=("$page_file")
   CHILD_EXIT_CODE=0
   printf '\n$ %s\n' "$*" >>"$RUN_LOG"
   LOG_LINE_FROM="$(wc -l <"$RUN_LOG")"
-  if [ "$VERBOSE" -ge "$VERBOSE_RAW_LEVEL" ]; then
+  if [ "$VERBOSE" -ge "$unfiltered_level" ]; then
     if ! { "$@" 2>&1 | tee -a "${logs[@]}" >&2; }; then
       statuses=("${PIPESTATUS[@]}")
     fi
@@ -171,7 +171,7 @@ child_capture() {
 
 child_capture_noisy() {
   if [ "$VERBOSE" -ge "$VERBOSE_RAW_LEVEL" ]; then
-    child_capture "" "$@"
+    child_capture "" "$VERBOSE_RAW_LEVEL" "$@"
     return "$CHILD_EXIT_CODE"
   fi
   "$@" >/dev/null 2>&1
@@ -207,7 +207,7 @@ command_item_print() {
 }
 
 command_run() {
-  page_command_run "" "$*" "$@"
+  page_command_run "" "$VERBOSE_RAW_LEVEL" "$*" "$@"
 }
 
 duration_format() {
@@ -239,7 +239,7 @@ failure_print_log_tail() {
     echo "error: exit $exit_code from: $shown"
     tail -n +"$((LOG_LINE_FROM + 1))" "$RUN_LOG" \
       | tail -n "$LOG_FAILURE_TAIL_LINES"
-    [ "$KEEP_ARTIFACTS" = 0 ] || echo "(see: $RUN_LOG)"
+    [ "$KEEP_ARTIFACTS" = 0 ] || echo "log: $RUN_LOG"
   } >&2
 }
 
@@ -269,17 +269,13 @@ input_archives_clean() {
 }
 
 install_command() {
-  case "$1" in
-    cmake | ninja | ccache | valgrind | taskset | python3 | cksum | curl | \
-      tar | xz | dpkg-query)
-      echo "sudo apt-get install -y ${CONTAINING_PACKAGES[$1]}"
-      ;;
-    cc) echo "sudo apt-get install -y build-essential" ;;
-    addr2line | objdump | readelf) echo "sudo apt-get install -y binutils" ;;
-    perf) echo "sudo apt-get install -y linux-perf" ;;
-    speedscope) echo "npm install -g speedscope" ;;
-    *) error_exit 1 "error: no install command is recorded for $1" ;;
-  esac
+  if [ -n "${TOOL_INSTALL_COMMANDS[$1]-}" ]; then
+    echo "${TOOL_INSTALL_COMMANDS[$1]}"
+  elif [ -n "${CONTAINING_PACKAGES[$1]-}" ]; then
+    echo "$PACKAGE_INSTALL_COMMAND ${CONTAINING_PACKAGES[$1]}"
+  else
+    error_exit 1 "error: no install command is recorded for $1"
+  fi
 }
 
 log_verbose() {
@@ -371,10 +367,10 @@ manifest_write() {
 }
 
 page_command_run() {
-  local page_file="$1" shown="$2"
-  shift 2
+  local page_file="$1" unfiltered_level="$2" shown="$3"
+  shift 3
   command_item_print "$shown"
-  child_capture "$page_file" "$@"
+  child_capture "$page_file" "$unfiltered_level" "$@"
   [ "$CHILD_EXIT_CODE" = 0 ] || {
     failure_print_log_tail "$CHILD_EXIT_CODE" "$shown"
     exit "$CHILD_EXIT_CODE"
@@ -410,16 +406,15 @@ path_overlap_check() {
       reason="error: the $first_role $first and the $second_role $second"
       [ "${first#"$second"}" != "$first" ] \
         || [ "${second#"$first"}" != "$second" ] || continue
-      error_exit 2 "$reason overlap: deleting or writing one damages the other"
+      error_exit 2 "$reason overlap"
     done
     reason="error: the $first_role $first and the scripts dir $scripts_dir"
-    reason="$reason overlap: deleting or writing one damages the other"
     { [ "${first#"$scripts_dir"}" != "$first" ] \
       || [ "${scripts_dir#"$first"}" != "$scripts_dir" ]; } \
-      && error_exit 2 "$reason"
+      && error_exit 2 "$reason overlap"
     [ "${invoked_from#"$first"}" != "$invoked_from" ] || continue
     reason="error: the $first_role $first holds the invocation dir"
-    error_exit 2 "$reason $invoked_from: deleting or writing damages it"
+    error_exit 2 "$reason $invoked_from"
   done
 }
 
@@ -485,7 +480,7 @@ report_delete() {
       answer=
     }
     [ "$answer" = y ] || error_exit 1 \
-      "error: the report is not deleted without a typed y: $dir"
+      "error: the report is kept, the answer was \"$answer\": $dir"
   fi
   rm -rf "$dir" || error_exit 1 "error: could not delete the report: $dir"
   [ "$present" = 1 ] && [ -e "$archive" ] || return 0
@@ -496,10 +491,10 @@ report_delete() {
 report_finish() {
   local dir="$1" version="$2"
   shift 2
-  log_verbose "== manifest -> $dir/MANIFEST.txt =="
+  heading_print "manifest $dir/MANIFEST.txt"
   manifest_write "$version" "$dir" "$@"
-  log_verbose "manifest $(manifest_value "$dir/MANIFEST.txt" \
-    "$REPORT_MANIFEST_CHECKSUM_LABEL")"
+  log_verbose "$REPORT_MANIFEST_CHECKSUM_LABEL=$(manifest_value \
+    "$dir/MANIFEST.txt" "$REPORT_MANIFEST_CHECKSUM_LABEL")"
   log_verbose "$dir/$OVERVIEW_PAGE_PATH"
   [ "$WRITE_REPORT_ARCHIVE" = 1 ] || return 0
   heading_print "tar $(basename "$dir")$REPORT_RAW_ARCHIVE_SUFFIX"
@@ -627,7 +622,8 @@ source_cache_sync() {
 step_failure_print() {
   local exit_code="$1"
   [ "$exit_code" != 0 ] && [ -n "${STEP_RUNNING_NAME-}" ] || return 0
-  printf '\n[%ss] FAILED: step %s %s, exit %s, after %s\n\n' \
+  [ "$VERBOSE" -lt 1 ] || block_lead other
+  printf '[%ss] FAILED: step %s %s, exit %s, after %s\n' \
     "$(elapsed_format)" "$PERF2HTML_STEP_NUMBER" "$STEP_RUNNING_NAME" \
     "$exit_code" "$(duration_format "$STEP_RUNNING_START")" >&2
 }
@@ -719,19 +715,13 @@ title_print() {
 }
 
 toolchain_check() {
-  local tool missing=() lines=()
+  local tool missing=''
   for tool in cmake ninja ccache cc valgrind perf taskset python3 \
     addr2line objdump readelf speedscope cksum curl tar xz dpkg-query; do
-    command -v "$tool" >/dev/null 2>&1 || missing+=("$tool")
+    command -v "$tool" >/dev/null 2>&1 \
+      || missing+="${missing:+, }$tool -> $(install_command "$tool")"
   done
-  if [ "${#missing[@]}" != 0 ]; then
-    lines=("error: ${#missing[@]} tool(s) not found on PATH:")
-    for tool in "${missing[@]}"; do
-      lines+=("$(printf '  %-12s -> %s' "$tool" \
-        "$(install_command "$tool")")")
-    done
-    error_exit 127 "${lines[@]}"
-  fi
+  [ -z "$missing" ] || error_exit 127 "error: not found on PATH: $missing"
   SPEEDSCOPE_RELEASE="$(dirname \
     "$(dirname "$(readlink -f "$(command -v speedscope)")")")/dist/release"
   local reason="error: no speedscope bundle at $SPEEDSCOPE_RELEASE/index.html"

@@ -1046,7 +1046,7 @@ class TestReport:
                 )
         self.timer_artifacts_check(out_dir, page_text, tests, layout)
 
-    # Checks each regular tests row holds a time per loop and a ratio cell.
+    # Checks each regular tests row holds a time per loop and ratio cells.
     def overview_columns_check(
         self,
         attributes: dict[str, str],
@@ -1074,16 +1074,28 @@ class TestReport:
                     f" time per loop {time_text!r}, expected"
                     f" {_TEST_OVERVIEW_TIME_PER_LOOP_PATTERN}: {path}"
                 )
-            ratio_text = table_row[_TEST_OVERVIEW_INSTRUCTIONS_PER_CYCLE_FIELD]
-            if not isinstance(ratio_text, str) or not re.fullmatch(
-                _TEST_OVERVIEW_INSTRUCTIONS_PER_CYCLE_PATTERN, ratio_text
-            ):
-                self.fail(
-                    f"overview index.html's tests row {table_row} holds the"
-                    f" instructions per cycle {ratio_text!r}, expected"
-                    f" {_TEST_OVERVIEW_INSTRUCTIONS_PER_CYCLE_PATTERN}:"
-                    f" {path}"
-                )
+            for ratio_field in _TEST_OVERVIEW_COUNTER_RATIO_FIELDS:
+                ratio_text = table_row[ratio_field]
+                if not isinstance(ratio_text, str) or not re.fullmatch(
+                    _TEST_OVERVIEW_COUNTER_RATIO_PATTERN, ratio_text
+                ):
+                    self.fail(
+                        f"overview index.html's tests row {table_row} holds"
+                        f" the counter ratio {ratio_text!r} in cell"
+                        f" {ratio_field}, expected"
+                        f" {_TEST_OVERVIEW_COUNTER_RATIO_PATTERN}: {path}"
+                    )
+            for metric_field in _TEST_OVERVIEW_PERF_METRIC_FIELDS:
+                metric_text = table_row[metric_field]
+                if not isinstance(metric_text, str) or not re.fullmatch(
+                    _TEST_OVERVIEW_PERF_METRIC_PATTERN, metric_text
+                ):
+                    self.fail(
+                        f"overview index.html's tests row {table_row} holds"
+                        f" the perf metric {metric_text!r} in cell"
+                        f" {metric_field}, expected"
+                        f" {_TEST_OVERVIEW_PERF_METRIC_PATTERN}: {path}"
+                    )
 
     # Checks the overview shows its tests, then its manifest, then raw data.
     def overview_sections_check(
@@ -1737,18 +1749,20 @@ _TEST_HEAT_MAP_MODEL_LEAST_BYTES = 5000
 _TEST_HEAT_MAP_PAGE_LEAST_BYTES = 1000
 _TEST_LIST_FILE_NAME = "test_list.txt"
 _TEST_MANIFEST_LEAST_BYTES = 40
-_TEST_OVERVIEW_INSTRUCTIONS_PER_CYCLE_FIELD = 2
-_TEST_OVERVIEW_INSTRUCTIONS_PER_CYCLE_PATTERN = r"\d+\.\d{2}"
+_TEST_OVERVIEW_COUNTER_RATIO_FIELDS = (5,)
+_TEST_OVERVIEW_COUNTER_RATIO_PATTERN = r"(?:\d+\.\d{6})?"
 _TEST_OVERVIEW_PAGE_LEAST_BYTES = 2000
 _TEST_OVERVIEW_PAGE_TITLE = ""
+_TEST_OVERVIEW_PERF_METRIC_FIELDS = (2, 3, 4)
+_TEST_OVERVIEW_PERF_METRIC_PATTERN = r"(?:\d+\.\d{6})?"
 _TEST_OVERVIEW_RAW_DATA_MARKUP = '<div id="overview-raw-data-">'
-_TEST_OVERVIEW_ROW_FIELD_COUNT = 3
+_TEST_OVERVIEW_ROW_FIELD_COUNT = 6
 _TEST_OVERVIEW_TESTS_HEADING_MARKUP = (
     '<div id="overview-tests-heading-" class="page-heading-"></div>'
 )
 _TEST_OVERVIEW_TESTS_TABLE_DATA_ID = "overview-tests-table-"
 _TEST_OVERVIEW_TIME_PER_LOOP_FIELD = 1
-_TEST_OVERVIEW_TIME_PER_LOOP_PATTERN = r"\d+\.\d{2}(?:s|ms|us|ns|ps)"
+_TEST_OVERVIEW_TIME_PER_LOOP_PATTERN = r"(?:\d+\.\d{2}(?:s|ms|us|ns|ps))?"
 _TEST_PAGE_PREAMBLE_SCRIPT_NAMES = (
     "error_overlay.js",
     "utility.js",

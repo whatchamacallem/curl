@@ -58,7 +58,6 @@ header_table_print() {
 }
 
 args_parse() {
-  options_parse "$@"
   local _remaining_argument
   for _remaining_argument in "${REMAINING_ARGUMENTS[@]}"; do
     case "$_remaining_argument" in
@@ -79,9 +78,10 @@ args_parse() {
 }
 
 main() {
-  args_parse "$@"
+  options_parse "$@"
   verbose_begin
   title_print "$_SCRIPT" "$@"
+  args_parse
   header_table_print
 
   local _dir _cache
@@ -124,7 +124,7 @@ main() {
   step_run 3 diff ./perf2html_diff.sh "${_verbose_args[@]}" \
     "${_child_args[@]}" "${_artifact_flags[@]}"
 
-  heading_print "$_SCRIPT, after the three steps"
+  heading_print "$_SCRIPT, after ${#STEP_NAMES[@]} steps"
   table_print "${#STEP_NAMES[@]}" "${STEP_NAMES[@]}" "${STEP_SECONDS[@]}"
 
   if [ "$KEEP_ARTIFACTS" = 1 ]; then
