@@ -23,6 +23,13 @@ conversation as well as providing a link to the task doc. Provide a single
 sentence bug, task or other description alongside every in-conversation
 postmortem reference to a numbered item that is not itself in the postmortem.
 
+Every statement in the conversation must carry the context needed to
+understand it on its own: name the request being read, the files meant and
+the effect, never only the interpretation. A real example the maintainer was
+unable to understand, having no context to know what was even being talked
+about: """Test code included: I read "in the codebase" as covering the test
+scripts too."""
+
 ### Top of mind
 
 - Overconstrained goals introduce failure modes that are best resolved by
@@ -301,6 +308,9 @@ The single function/check owning each concern - never bypass or duplicate:
   press sliding nothing (theme.js).
 - `checksum_compute`/`_REPORT_CHECKSUM_COMMAND` - report checksums, kept
   separate, re-verified on every open.
+- `number_exact_check()` - every settings number crossing into a page,
+  a number the 64 bit float rounds refused, so every setting holds the
+  code's own value and that value fits JSON storage (settings.py).
 - `share_of_test()` and `share_of_function()` - every regular heat map share,
   a file's or a function's of the test, a line's of the summed self of the
   functions costing it, `lineFunctions` of the model; a diff divides by the

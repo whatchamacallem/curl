@@ -409,7 +409,8 @@ TIMING_TIME_PER_LOOP_NAME = "time_per_loop"
 TRACE_BUILDID_KEYWORD = "buildid"
 TRACE_BUILDID_LABEL = "Build ID"
 TRACE_FUNCTION_EXIT_BIT = 1 << 63
-TRACE_HEADER_MAGIC = 0xABCDEF0123456789
+ # Uses json compatible precision.
+TRACE_HEADER_MAGIC = 0xABCDEF0123456000
 TRACE_HEADER_WORDS = 8
 TRACE_RECORD_WORDS = 2
 
@@ -706,8 +707,23 @@ class SettingsWriter:
             for label, _, value in rows
         ]
 
+    # Refuses a settings number the page's 64 bit float would round.
+    def number_exact_check(self, name: str, value: object) -> None:
+        if isinstance(value, int) and int(float(value)) != value:
+            raise ValueError(
+                f"error: a 64 bit float rounds the setting {name}: {value}"
+            )
+        if isinstance(value, (tuple, list)):
+            for item in value:
+                self.number_exact_check(name, item)
+        if isinstance(value, dict):
+            for item in value.values():
+                self.number_exact_check(name, item)
+
     def script_write(self) -> str:
         values = self.all_named()
+        for name, value in values.items():
+            self.number_exact_check(name, value)
         data = json.dumps(values, indent=2, sort_keys=True, ensure_ascii=False)
         path = os.path.join(_SETTINGS_DIRECTORY, ASSET_SETTINGS_SCRIPT_NAME)
         with open(path, encoding="utf-8") as handle:

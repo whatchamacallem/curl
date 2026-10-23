@@ -21,7 +21,8 @@
 #error "use -DTEST_SAMPLES_SIZE=$TEST_SAMPLES_SIZE from settings.sh"
 #endif
 
-#define CYG_CALLBACKS_MAGIC 0xABCDEF0123456789ull
+/* Uses json compatible precision. */
+#define CYG_CALLBACKS_MAGIC 0xABCDEF0123456000ull
 #define CYG_CALLBACKS_RECORDS_PER_SAMPLE 2u
 #define CYG_CALLBACKS_MAX_REC                                                 \
   (CYG_CALLBACKS_RECORDS_PER_SAMPLE * (unsigned)TEST_SAMPLES_SIZE)

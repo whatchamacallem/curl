@@ -77,6 +77,8 @@
         const grid = document.getElementById("grid-");
         const report_links = document.getElementById("report-links-");
         const timing_list = document.getElementById("page-timings-");
+        // The page y of the menu and view boundary, kept on whole pixels.
+        const SCALE_QUANTUM_PAGE_Y = 51;
         const WIDTH_CHOICE_MAX = 16;
         const WIDTH_DEFAULT = 4;
         const WIDTH_STORAGE_KEY = "perf2html.test.thumbs_width";
@@ -126,13 +128,18 @@
           } catch (storage_error) {}
         }
 
+        // Sizes whole pixel boxes under a scale quantized for whole rows.
         function layout() {
           const count = Number(select.value);
           const cell_width = grid.clientWidth / count;
-          const scale = cell_width / data.width;
-          const cell_height = data.height * scale;
+          const scale =
+            Math.floor((cell_width / data.width) * SCALE_QUANTUM_PAGE_Y) /
+            SCALE_QUANTUM_PAGE_Y;
+          const box_width = Math.floor(data.width * scale);
+          const box_height = Math.floor(data.height * scale);
           for (const cell of grid.querySelectorAll(".cell-")) {
-            cell.style.height = cell_height + "px";
+            cell.style.width = box_width + "px";
+            cell.style.height = box_height + "px";
             cell.firstChild.style.transform = "scale(" + scale + ")";
           }
         }
