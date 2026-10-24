@@ -23,9 +23,17 @@ _HEAT_MAP_TREE_ALWAYS_LISTED_DIRS: tuple[str, ...] = ()
 _HEAT_MAP_VIEW_ENTRY: tuple[str, str] = ("", "")
 _REPORT_SCRIPTS_DIR_NAME: str = ""
 _REPORT_SOURCES_DIR_NAME: str = ""
+_SETTINGS_HELD_SCRIPT_TEMPLATE_ID: str = ""
 settings.load_into(__name__)
 
-_HEAT_MAP_PAGE = theme.asset_text_read(_ASSET_TEMPLATE_HEAT_MAP_PAGE_NAME)
+_HEAT_MAP_PAGE = theme.template_fill(
+    theme.asset_text_read(_ASSET_TEMPLATE_HEAT_MAP_PAGE_NAME),
+    {
+        "__HELD_SCRIPT_TEMPLATE_ID__": theme.render_html_escape(
+            _SETTINGS_HELD_SCRIPT_TEMPLATE_ID
+        )
+    },
+)
 
 _HEAT_MAP_PAGE_PATH = _HEAT_MAP_VIEW_ENTRY[1]
 

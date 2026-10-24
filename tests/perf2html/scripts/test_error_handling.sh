@@ -74,7 +74,7 @@ test_error_path_without_tool() {
     case "$_dir" in /*) ;; *) continue ;; esac
     [ -d "$_dir" ] || continue
     # Links each directory's own entries, never a subtree with its modes.
-    find "$_dir" -mindepth 1 -maxdepth 1 -not -type d \
+    find "$_dir" -mindepth 1 -maxdepth 1 -not -xtype d \
       -exec cp -s --update=none -t "$_bin" {} +
   done
   [ -e "$_bin/$_tool" ] \

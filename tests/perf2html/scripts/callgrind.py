@@ -12,10 +12,29 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import artifacts, settings
 
 _CACHE_ROOT_DIR: str = ""
+_CALLGRIND_ADDRESS_NAME_PATTERN: str = ""
 _CALLGRIND_FILE_DATA_ERROR_CODE: str = ""
 _CALLGRIND_FILE_DATA_GIT_CODE: str = ""
 _CALLGRIND_FILE_DATA_REPO_CODE: str = ""
 _CALLGRIND_FILE_DATA_SYSTEM_CODE: str = ""
+_CALLGRIND_FORMAT_CALLEE_FILE_KEYS: tuple[str, ...] = ()
+_CALLGRIND_FORMAT_CALLEE_FUNCTION_KEY: str = ""
+_CALLGRIND_FORMAT_CALLEE_OBJECT_KEY: str = ""
+_CALLGRIND_FORMAT_CALLS_KEY: str = ""
+_CALLGRIND_FORMAT_COMMAND_KEY: str = ""
+_CALLGRIND_FORMAT_COUNTERS_KEY: str = ""
+_CALLGRIND_FORMAT_FILE_KEY: str = ""
+_CALLGRIND_FORMAT_FUNCTION_KEY: str = ""
+_CALLGRIND_FORMAT_INLINE_FILE_KEYS: tuple[str, ...] = ()
+_CALLGRIND_FORMAT_JUMP_FILE_KEY: str = ""
+_CALLGRIND_FORMAT_JUMP_FUNCTION_KEY: str = ""
+_CALLGRIND_FORMAT_LINE_POSITION_NAME: str = ""
+_CALLGRIND_FORMAT_OBJECT_KEY: str = ""
+_CALLGRIND_FORMAT_POSITIONS_KEY: str = ""
+_CALLGRIND_FORMAT_SUMMARY_KEYS: tuple[str, ...] = ()
+_CALLGRIND_NAME_COMPRESSION_PATTERN: str = ""
+_CALLGRIND_UNKNOWN_DISPLAY_OBJECT: str = ""
+_CALLGRIND_UNKNOWN_DISPLAY_PATH: str = ""
 _CALLGRIND_UNKNOWN_NAME: str = ""
 _DERIVED_COUNTER_TERMS: dict[str, dict[str, int]] = {}
 _RANKING_COUNTER_NAME: str = ""
@@ -282,15 +301,15 @@ class Tally:
 
 
 class Callgrind:
-    ADDRESS_NAME_RE = re.compile(r"0x[0-9a-f]+")
-    NAME_COMPRESSION_RE = re.compile(r"^\((\d+)\)(?: (.*))?$")
+    ADDRESS_NAME_RE = re.compile(_CALLGRIND_ADDRESS_NAME_PATTERN)
+    NAME_COMPRESSION_RE = re.compile(_CALLGRIND_NAME_COMPRESSION_PATTERN)
 
     class CompressedNames:
         def __init__(self) -> None:
             self.names: dict[str, dict[str, str]] = {
-                "fl": {},
-                "fn": {},
-                "ob": {},
+                _CALLGRIND_FORMAT_FILE_KEY: {},
+                _CALLGRIND_FORMAT_FUNCTION_KEY: {},
+                _CALLGRIND_FORMAT_OBJECT_KEY: {},
             }
 
         def uncompress(self, kind: str, value: str) -> str:
@@ -333,7 +352,9 @@ class Callgrind:
         def reset(self, names: Sequence[str]) -> None:
             self.count = len(names)
             self.line_index = (
-                names.index("line") if "line" in names else self.count - 1
+                names.index(_CALLGRIND_FORMAT_LINE_POSITION_NAME)
+                if _CALLGRIND_FORMAT_LINE_POSITION_NAME in names
+                else self.count - 1
             )
             self.previous = [0] * self.count
 
@@ -356,16 +377,21 @@ class Callgrind:
         current_callee_object: str | None = None
         for index, raw_line in enumerate(lines):
             key, _, specification_value = raw_line.partition("=")
-            if key == "ob":
-                current_object = names.uncompress("ob", specification_value)
-            elif key == "cob":
-                current_callee_object = names.uncompress(
-                    "ob", specification_value
+            if key == _CALLGRIND_FORMAT_OBJECT_KEY:
+                current_object = names.uncompress(
+                    _CALLGRIND_FORMAT_OBJECT_KEY, specification_value
                 )
-            elif key in ("fn", "cfn"):
+            elif key == _CALLGRIND_FORMAT_CALLEE_OBJECT_KEY:
+                current_callee_object = names.uncompress(
+                    _CALLGRIND_FORMAT_OBJECT_KEY, specification_value
+                )
+            elif key in (
+                _CALLGRIND_FORMAT_FUNCTION_KEY,
+                _CALLGRIND_FORMAT_CALLEE_FUNCTION_KEY,
+            ):
                 object_path = (
                     (current_callee_object or current_object)
-                    if key == "cfn"
+                    if key == _CALLGRIND_FORMAT_CALLEE_FUNCTION_KEY
                     else current_object
                 )
                 current_callee_object = None
@@ -418,7 +444,9 @@ class Callgrind:
         object_path: str,
         path: str,
     ) -> str:
-        name = names.uncompress("fn", compressed_name)
+        name = names.uncompress(
+            _CALLGRIND_FORMAT_FUNCTION_KEY, compressed_name
+        )
         if object_path == _CALLGRIND_UNKNOWN_NAME and (
             Callgrind.ADDRESS_NAME_RE.fullmatch(name)
         ):
@@ -561,12 +589,17 @@ class Callgrind:
                     raw_line[:equals_index],
                     raw_line[equals_index + 1 :],
                 )
-                if key in ("fl", "fi", "fe"):
+                if (
+                    key == _CALLGRIND_FORMAT_FILE_KEY
+                    or key in _CALLGRIND_FORMAT_INLINE_FILE_KEYS
+                ):
                     current_file = file_key(
-                        names.uncompress("fl", specification_value),
+                        names.uncompress(
+                            _CALLGRIND_FORMAT_FILE_KEY, specification_value
+                        ),
                         current_object,
                     )
-                elif key == "fn":
+                elif key == _CALLGRIND_FORMAT_FUNCTION_KEY:
                     function = self.function_name(
                         names, specification_value, current_object, path
                     )
@@ -576,31 +609,37 @@ class Callgrind:
                             current_file
                         )
                     cur_callee_file = None
-                elif key == "ob":
+                elif key == _CALLGRIND_FORMAT_OBJECT_KEY:
                     current_object = names.uncompress(
-                        "ob", specification_value
+                        _CALLGRIND_FORMAT_OBJECT_KEY, specification_value
                     )
-                elif key == "cob":
+                elif key == _CALLGRIND_FORMAT_CALLEE_OBJECT_KEY:
                     current_callee_object = names.uncompress(
-                        "ob", specification_value
+                        _CALLGRIND_FORMAT_OBJECT_KEY, specification_value
                     )
-                elif key in ("cfl", "cfi"):
+                elif key in _CALLGRIND_FORMAT_CALLEE_FILE_KEYS:
                     cur_callee_file = file_key(
-                        names.uncompress("fl", specification_value),
+                        names.uncompress(
+                            _CALLGRIND_FORMAT_FILE_KEY, specification_value
+                        ),
                         current_callee_object or current_object,
                     )
-                elif key == "cfn":
+                elif key == _CALLGRIND_FORMAT_CALLEE_FUNCTION_KEY:
                     cur_callee_function = self.function_name(
                         names,
                         specification_value,
                         current_callee_object or current_object,
                         path,
                     )
-                elif key in ("jfi", "jfn"):
+                elif key == _CALLGRIND_FORMAT_JUMP_FILE_KEY:
                     names.uncompress(
-                        "fl" if key == "jfi" else "fn", specification_value
+                        _CALLGRIND_FORMAT_FILE_KEY, specification_value
                     )
-                elif key == "calls":
+                elif key == _CALLGRIND_FORMAT_JUMP_FUNCTION_KEY:
+                    names.uncompress(
+                        _CALLGRIND_FORMAT_FUNCTION_KEY, specification_value
+                    )
+                elif key == _CALLGRIND_FORMAT_CALLS_KEY:
                     parts = specification_value.split()
                     if len(parts) <= 1 + positions.line_index:
                         sys.exit(f"error: malformed 'calls=' line: {raw_line}")
@@ -617,14 +656,14 @@ class Callgrind:
                 raw_line[:colon_index],
                 raw_line[colon_index + 1 :].strip(),
             )
-            if key == "events":
+            if key == _CALLGRIND_FORMAT_COUNTERS_KEY:
                 profile.counters = header_value.split()
                 counter_count = len(profile.counters)
-            elif key == "positions":
+            elif key == _CALLGRIND_FORMAT_POSITIONS_KEY:
                 positions.reset(header_value.split())
-            elif key == "cmd":
+            elif key == _CALLGRIND_FORMAT_COMMAND_KEY:
                 profile.command = header_value
-            elif key in ("summary", "totals"):
+            elif key in _CALLGRIND_FORMAT_SUMMARY_KEYS:
                 values = [int(v) for v in header_value.split()]
                 if len(values) >= len(profile.summary):
                     profile.summary = values
@@ -756,7 +795,7 @@ def counters_read(directory: str, kind: str, test_name: str) -> list[str]:
             key, separator, header_value = raw_line.decode(
                 "utf-8", errors="replace"
             ).partition(":")
-            if separator and key == "events":
+            if separator and key == _CALLGRIND_FORMAT_COUNTERS_KEY:
                 return header_value.split()
     path = artifacts.artifact_path(directory, kind, test_name)
     sys.exit(f"error: no 'events:' line -- not a callgrind file? ({path})")
@@ -766,7 +805,7 @@ def counters_read(directory: str, kind: str, test_name: str) -> list[str]:
 def display_path(canonical: str, group: str, object_path: str) -> str:
     if group != _CALLGRIND_FILE_DATA_ERROR_CODE:
         return canonical
-    owner = os.path.basename(object_path) or "(unknown object)"
+    owner = os.path.basename(object_path) or _CALLGRIND_UNKNOWN_DISPLAY_OBJECT
     return f"{owner}/{canonical}"
 
 
@@ -779,7 +818,7 @@ def file_key(path: str, object_path: str) -> str:
 # There is no i18n path for Python yet. Just don't name your file "(unknown)".
 def path_canonical(path: str) -> str:
     if posixpath.basename(path) == _CALLGRIND_UNKNOWN_NAME:
-        return "(unknown)"
+        return _CALLGRIND_UNKNOWN_DISPLAY_PATH
     return posixpath.normpath(repo_root_strip(path)).lstrip("/")
 
 

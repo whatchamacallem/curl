@@ -1765,9 +1765,9 @@ _TEST_OVERVIEW_TIME_PER_LOOP_FIELD = 1
 _TEST_OVERVIEW_TIME_PER_LOOP_PATTERN = r"(?:\d+\.\d{2}(?:s|ms|us|ns|ps))?"
 _TEST_PAGE_PREAMBLE_SCRIPT_NAMES = (
     "error_overlay.js",
+    "settings.js",
     "utility.js",
     "ui_strings.js",
-    "settings.js",
 )
 _TEST_PATHS_DOCUMENT_CODES = ("err", "git", "repo", "sys")
 _TEST_PATHS_DOCUMENT_NAME = "0_file_data.json"

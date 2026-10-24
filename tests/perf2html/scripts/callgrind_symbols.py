@@ -6,24 +6,33 @@
 from __future__ import annotations
 
 import argparse, os, re, subprocess, sys
+from collections.abc import Sequence
 from typing import NamedTuple
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import artifacts, callgrind, settings
 
+_OBJDUMP_CODE_SECTION_FLAG: str = ""
+_OBJDUMP_DISASSEMBLY_COMMAND: tuple[str, ...] = ()
+_OBJDUMP_FUNCTION_SYMBOL_PATTERN: str = ""
+_OBJDUMP_LABEL_PATTERN: str = ""
+_OBJDUMP_SECTION_HEADERS_COMMAND: tuple[str, ...] = ()
+_OBJDUMP_SECTION_OPTION: str = ""
+_OBJDUMP_SYMBOL_TABLE_COMMAND: tuple[str, ...] = ()
+_OBJDUMP_TEXT_SECTION_NAME: str = ""
 _VALGRIND_DEBUG_LINE_PATTERN: str = ""
+_VALGRIND_LOAD_ADDRESS_PATTERN: str = ""
+_VALGRIND_READING_SYMBOLS_PATTERN: str = ""
 settings.load_into(__name__)
 
-_OBJDUMP_FUNCTION_SYMBOL_RE = re.compile(r"^([0-9a-f]+) .{6}F .*\s(\S+)$")
-_OBJDUMP_LABEL_RE = re.compile(r"^([0-9a-f]+) <(.+)>:$")
-_OBJDUMP_TEXT_SECTION_NAME = ".text"
+_OBJDUMP_FUNCTION_SYMBOL_RE = re.compile(_OBJDUMP_FUNCTION_SYMBOL_PATTERN)
+_OBJDUMP_LABEL_RE = re.compile(_OBJDUMP_LABEL_PATTERN)
 
 _VALGRIND_LOAD_ADDRESS_RE = re.compile(
-    _VALGRIND_DEBUG_LINE_PATTERN
-    + r"\s+svma (0x[0-9a-f]+), avma (0x[0-9a-f]+)$"
+    _VALGRIND_DEBUG_LINE_PATTERN + _VALGRIND_LOAD_ADDRESS_PATTERN
 )
 _VALGRIND_READING_SYMBOLS_RE = re.compile(
-    _VALGRIND_DEBUG_LINE_PATTERN + r" Reading syms from (.+)$"
+    _VALGRIND_DEBUG_LINE_PATTERN + _VALGRIND_READING_SYMBOLS_PATTERN
 )
 
 
@@ -78,12 +87,14 @@ class CallgrindSymbols:
     def code_sections(self, path: str) -> list[CodeSection]:
         if path not in self.sections_by_path:
             sections: list[CodeSection] = []
-            for line in self.listing(["-h", "-w"], path).splitlines():
+            for line in self.listing(
+                _OBJDUMP_SECTION_HEADERS_COMMAND, path
+            ).splitlines():
                 line_fields = line.split(maxsplit=7)
                 if (
                     len(line_fields) == 8
                     and line_fields[0].isdigit()
-                    and "CODE" in line_fields[7]
+                    and _OBJDUMP_CODE_SECTION_FLAG in line_fields[7]
                 ):
                     sections.append(
                         CodeSection(
@@ -95,8 +106,8 @@ class CallgrindSymbols:
             self.sections_by_path[path] = sections
         return self.sections_by_path[path]
 
-    def listing(self, options: list[str], path: str) -> str:
-        command = ["objdump", *options, path]
+    def listing(self, command_words: Sequence[str], path: str) -> str:
+        command = [*command_words, path]
         completed = subprocess.run(
             command, check=False, stdout=subprocess.PIPE, text=True
         )
@@ -180,7 +191,9 @@ class CallgrindSymbols:
     def object_labels(self, path: str) -> dict[int, str]:
         if path not in self.labels_by_path:
             label_names: dict[int, str] = {}
-            for line in self.listing(["-t"], path).splitlines():
+            for line in self.listing(
+                _OBJDUMP_SYMBOL_TABLE_COMMAND, path
+            ).splitlines():
                 match = _OBJDUMP_FUNCTION_SYMBOL_RE.match(line)
                 if match:
                     label_names.setdefault(
@@ -190,11 +203,11 @@ class CallgrindSymbols:
                 option
                 for section in self.code_sections(path)
                 if section.name != _OBJDUMP_TEXT_SECTION_NAME
-                for option in ("-j", section.name)
+                for option in (_OBJDUMP_SECTION_OPTION, section.name)
             ]
             if section_options:
                 disassembly_text = self.listing(
-                    ["-d", "--no-show-raw-insn", *section_options], path
+                    [*_OBJDUMP_DISASSEMBLY_COMMAND, *section_options], path
                 )
                 for line in disassembly_text.splitlines():
                     match = _OBJDUMP_LABEL_RE.match(line)

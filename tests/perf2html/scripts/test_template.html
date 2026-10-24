@@ -106,10 +106,7 @@
 
         // Returns the stored width choice, the default when none is stored.
         function width_choice_read() {
-          let stored_choice = null;
-          try {
-            stored_choice = localStorage.getItem(WIDTH_STORAGE_KEY);
-          } catch (storage_error) {}
+          const stored_choice = localStorage.getItem(WIDTH_STORAGE_KEY);
           if (stored_choice === null) {
             return String(WIDTH_DEFAULT);
           }
@@ -123,9 +120,7 @@
         }
 
         function width_choice_write() {
-          try {
-            localStorage.setItem(WIDTH_STORAGE_KEY, select.value);
-          } catch (storage_error) {}
+          localStorage.setItem(WIDTH_STORAGE_KEY, select.value);
         }
 
         // Sizes whole pixel boxes under a scale quantized for whole rows.

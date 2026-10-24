@@ -14,11 +14,11 @@
 #include <x86intrin.h>
 
 #ifndef PROFILE_START_FUNCTION_NAME
-#error "use -DPROFILE_START_FUNCTION_NAME from settings.sh"
+#error "PROFILE_START_FUNCTION_NAME is not defined"
 #endif
 
 #ifndef TEST_SAMPLES_SIZE
-#error "use -DTEST_SAMPLES_SIZE=$TEST_SAMPLES_SIZE from settings.sh"
+#error "TEST_SAMPLES_SIZE is not defined"
 #endif
 
 /* Uses json compatible precision. */

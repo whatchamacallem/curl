@@ -140,8 +140,15 @@ scripts too."""
   you to reformat this document then it has to be disabled, inform the user.
 - Never add un-requested documentation because you saw some was missing. Only
   document new code and prefer 1 line comments.
-- `error_overlay.js` needs to function when the other modules didn't load
-  making it an exception to a lot of rules. Try not to mention it.
+- Every page loads `error_overlay.js` first and `settings.js` immediately
+  after it, then `utility.js` and `ui_strings.js`, so every later script
+  reads its values from the settings; a framed page's script that runs before
+  the top page relays the settings reads them through
+  `window.settings_opening_`, the settings the page opens under.
+- `error_overlay.js` needs to function when the other modules didn't load or
+  `settings.js` is malformed, making it an exception to a lot of rules: it is
+  the one script expected to hold hardcoded UI strings. Try not to mention
+  it.
 - Consider `speedscope` externally maintained and ignore it when applying the
   `perf2html` maintainers guidelines.
 - `CLAUDE.md`/`declawed.md` is not user documentation and is exempt from
@@ -553,6 +560,9 @@ The single function/check owning each concern - never bypass or duplicate:
 - `error_exit` calls and other error messages must be only one line while
   printing relevant variables too. `tools_resolve`'s missing tools error is
   the single exception, a line per install command.
+- An error message states what failed and carries no advice: no fix, no next
+  step, no command to run. A missing tool named with its install command
+  (`tools_resolve` or equivalent) is the one exception.
 - `test_all.sh` should print significant run times, it is not "no news is good
   news".
 - Don't change code when unable to implement a request as specified. Do not

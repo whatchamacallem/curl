@@ -5,11 +5,16 @@
 window.try_catch_handler_(function () {
   "use strict";
 
-  const INPUT_EVENT_NAMES = ["click", "keydown"];
-  const LOAD_LOG_MESSAGE_NAME = "load_log_entry";
-  const NAVIGATION_CAUSE_NAME = "navigation";
-  const RESOURCE_FAILURE_TEXT = "resource failed: ";
-  const RESOURCE_TAG_NAMES = ["LINK", "SCRIPT", "IMG"];
+  const LOAD_LOG_INPUT_EVENT_NAMES = window.settings_opening_(
+    "LOAD_LOG_INPUT_EVENT_NAMES",
+  );
+  const LOAD_LOG_MESSAGE_NAME = window.settings_opening_(
+    "LOAD_LOG_MESSAGE_NAME",
+  );
+  const RESOURCE_FAILURE_TEXT = window.settings_opening_(
+    "RESOURCE_FAILURE_TEXT",
+  );
+  const RESOURCE_TAG_NAMES = window.settings_opening_("RESOURCE_TAG_NAMES");
   const is_framed = window.is_framed_;
   const expected_failure_sources = new Set();
   const load_log_entries = [];
@@ -130,15 +135,18 @@ window.try_catch_handler_(function () {
   // Logs the page's load render from navigation start, then runs the callback.
   function page_render_log(render_logged) {
     if (page_render_is_logged) window.throw_exception_("str_error_internal");
+    const navigation_cause_name = window.settings_(
+      "LOAD_LOG_NAVIGATION_CAUSE_NAME",
+    );
     if (document.readyState !== "loading") {
-      render_log(NAVIGATION_CAUSE_NAME, 0, render_logged);
+      render_log(navigation_cause_name, 0, render_logged);
       return;
     }
     // Listening after the page's own activation, the render then includes it.
     document.addEventListener(
       "DOMContentLoaded",
       window.try_catch_handler_(() =>
-        render_log(NAVIGATION_CAUSE_NAME, 0, render_logged),
+        render_log(navigation_cause_name, 0, render_logged),
       ),
     );
   }
@@ -146,7 +154,8 @@ window.try_catch_handler_(function () {
   function event_render_log() {
     if (!page_render_is_logged) return;
     if (!window.event) window.throw_exception_("str_error_internal");
-    if (INPUT_EVENT_NAMES.includes(window.event.type)) return;
+    if (Object.values(LOAD_LOG_INPUT_EVENT_NAMES).includes(window.event.type))
+      return;
     render_log(window.event.type, window.event.timeStamp, () => {});
   }
 
@@ -162,7 +171,7 @@ window.try_catch_handler_(function () {
   function input_handler_(input_event) {
     if (!input_event.isTrusted) return;
     const target_name =
-      input_event.type === "keydown"
+      input_event.type === LOAD_LOG_INPUT_EVENT_NAMES.key
         ? input_event.code
         : element_name(input_event.target);
     after_paint_run(() =>
@@ -284,7 +293,7 @@ window.try_catch_handler_(function () {
     "DOMContentLoaded",
     window.try_catch_handler_(page_parse_handler_),
   );
-  for (const event_name of INPUT_EVENT_NAMES)
+  for (const event_name of Object.values(LOAD_LOG_INPUT_EVENT_NAMES))
     window.addEventListener(
       event_name,
       window.try_catch_handler_(input_handler_),

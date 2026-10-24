@@ -5,12 +5,11 @@
 window.try_catch_handler_(function () {
   "use strict";
 
-  const HELD_SCRIPT_TEMPLATE_ID = "page-held-script-";
-  const SETTINGS_RELAY_MESSAGE_NAME = "settings_relay";
-  const SETTINGS_REQUEST_MESSAGE_NAME = "settings_request";
   const is_framed = window.is_framed_;
   const written_object = __DATA__;
   let applied_values = {};
+  // Holds the settings a page opens under, before a framed page's relay.
+  let opening_object = written_object;
   let preferences_are_ignored = false;
   let settings_object = null;
   let storage_is_checked = false;
@@ -152,6 +151,10 @@ window.try_catch_handler_(function () {
   function settings_(setting_name) {
     return setting_read(settings_object, setting_name);
   }
+  // Reads one setting the page opens under, a framed page's before its relay.
+  function settings_opening_(setting_name) {
+    return setting_read(opening_object, setting_name);
+  }
   function settings_names_() {
     return Object.keys(settings_object);
   }
@@ -161,7 +164,9 @@ window.try_catch_handler_(function () {
   }
   // Loads the scripts a framed page holds, in order, under its settings.
   function held_scripts_load() {
-    const held_template = document.getElementById(HELD_SCRIPT_TEMPLATE_ID);
+    const held_template = document.getElementById(
+      settings_("SETTINGS_HELD_SCRIPT_TEMPLATE_ID"),
+    );
     if (!held_template) window.throw_exception_("str_error_internal");
     for (const held_script of held_template.content.querySelectorAll(
       "script",
@@ -175,9 +180,19 @@ window.try_catch_handler_(function () {
   // Relays the window settings object to a framed page asking for it.
   function settings_request_handler(browser_event) {
     const payload = browser_event.data;
-    if (payload && payload.report_ui === SETTINGS_REQUEST_MESSAGE_NAME)
+    if (
+      payload &&
+      payload.report_ui ===
+        setting_read(opening_object, "SETTINGS_REQUEST_MESSAGE_NAME")
+    )
       browser_event.source.postMessage(
-        { report_ui: SETTINGS_RELAY_MESSAGE_NAME, settings_object },
+        {
+          report_ui: setting_read(
+            opening_object,
+            "SETTINGS_RELAY_MESSAGE_NAME",
+          ),
+          settings_object,
+        },
         "*",
       );
   }
@@ -187,7 +202,8 @@ window.try_catch_handler_(function () {
     if (
       browser_event.source !== window.parent ||
       !payload ||
-      payload.report_ui !== SETTINGS_RELAY_MESSAGE_NAME
+      payload.report_ui !==
+        setting_read(opening_object, "SETTINGS_RELAY_MESSAGE_NAME")
     )
       return;
     settings_install(payload.settings_object);
@@ -199,7 +215,7 @@ window.try_catch_handler_(function () {
       );
   }
   function held_scripts_unframed_check() {
-    if (document.getElementById(HELD_SCRIPT_TEMPLATE_ID))
+    if (document.getElementById(settings_("SETTINGS_HELD_SCRIPT_TEMPLATE_ID")))
       window.throw_exception_("str_error_held_script_unframed");
   }
 
@@ -217,35 +233,26 @@ window.try_catch_handler_(function () {
     const version_key = setting_read(settings_values, "STORAGE_VERSION_KEY");
     preferences_are_ignored =
       settings_applied_part(settings_values) !== undefined;
-    try {
-      if (preferences_are_ignored) {
-        storage_sweep(owned_keys);
-        return;
-      }
-      if (localStorage.getItem(version_key) === storage_version) {
-        return;
-      }
+    if (preferences_are_ignored) {
       storage_sweep(owned_keys);
-      localStorage.setItem(version_key, storage_version);
-    } catch (storage_error) {}
+      return;
+    }
+    if (localStorage.getItem(version_key) === storage_version) {
+      return;
+    }
+    storage_sweep(owned_keys);
+    localStorage.setItem(version_key, storage_version);
   }
   // Reads a stored preference, null for none or under ignored preferences.
   function stored_value_read(settings_values, storage_key) {
     storage_version_check(settings_values);
     if (preferences_are_ignored) return null;
-    try {
-      return JSON.parse(localStorage.getItem(storage_key));
-    } catch (storage_error) {
-      return null;
-    }
+    return JSON.parse(localStorage.getItem(storage_key));
   }
   const view_storage = {
     preferences_clear() {
       storage_version_check(settings_object);
-      const owned_keys = settings_("STORAGE_OWNED_KEYS");
-      try {
-        storage_sweep(owned_keys);
-      } catch (storage_error) {}
+      storage_sweep(settings_("STORAGE_OWNED_KEYS"));
     },
     value_read(storage_key) {
       return stored_value_read(settings_object, storage_key);
@@ -253,9 +260,7 @@ window.try_catch_handler_(function () {
     value_write(storage_key, stored_value) {
       storage_version_check(settings_object);
       if (preferences_are_ignored) return;
-      try {
-        localStorage.setItem(storage_key, JSON.stringify(stored_value));
-      } catch (storage_error) {}
+      localStorage.setItem(storage_key, JSON.stringify(stored_value));
     },
   };
 
@@ -351,22 +356,29 @@ window.try_catch_handler_(function () {
   window.settings_ = settings_;
   window.settings_applied_values_ = settings_applied_values_;
   window.settings_names_ = settings_names_;
+  window.settings_opening_ = settings_opening_;
   window.addEventListener(
     "message",
     window.try_catch_handler_(settings_request_handler),
   );
   if (is_framed) {
     // Fills under the written settings and those the address applies.
-    page_early_fill({
+    opening_object = {
       ...written_object,
       ...settings_applied_values(written_object),
-    });
+    };
+    page_early_fill(opening_object);
     window.addEventListener(
       "message",
       window.try_catch_handler_(settings_relay_handler),
     );
     window.parent.postMessage(
-      { report_ui: SETTINGS_REQUEST_MESSAGE_NAME },
+      {
+        report_ui: setting_read(
+          opening_object,
+          "SETTINGS_REQUEST_MESSAGE_NAME",
+        ),
+      },
       "*",
     );
   } else {

@@ -16,6 +16,7 @@ _FLAME_GRAPH_APP_DIR_NAME: str = ""
 _FLAME_GRAPH_PROFILE_DIR_NAME: str = ""
 _FLAME_GRAPH_PROFILE_GLOBAL_NAME: str = ""
 _FLAME_GRAPH_VIEW_ENTRY: tuple[str, str] = ("", "")
+_SETTINGS_HELD_SCRIPT_TEMPLATE_ID: str = ""
 settings.load_into(__name__)
 
 _FLAME_GRAPH_PAGE_PATH = _FLAME_GRAPH_VIEW_ENTRY[1]
@@ -43,6 +44,9 @@ class BuildFlameGraph:
             {
                 "__APP_CSS__": f"{app_href}/{args.app_css}",
                 "__APP_SCRIPT__": f"{app_href}/{args.app_js}",
+                "__HELD_SCRIPT_TEMPLATE_ID__": theme.render_html_escape(
+                    _SETTINGS_HELD_SCRIPT_TEMPLATE_ID
+                ),
             },
         )
         path = os.path.join(args.report, _FLAME_GRAPH_PAGE_PATH)

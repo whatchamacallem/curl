@@ -20,6 +20,9 @@ window.try_catch_handler_(function () {
     "SETTINGS_DEBUG_QUERY_KEY_NAME",
   );
   const SETTINGS_DEBUG_QUERY_VALUES = settings_("SETTINGS_DEBUG_QUERY_VALUES");
+  const SETTINGS_LOAD_LOG_HISTORY_ENTRY_NAME = settings_(
+    "SETTINGS_LOAD_LOG_HISTORY_ENTRY_NAME",
+  );
   const SETTINGS_LOAD_LOG_HISTORY_LINE_CHOICES = settings_(
     "SETTINGS_LOAD_LOG_HISTORY_LINE_CHOICES",
   );
@@ -51,7 +54,6 @@ window.try_catch_handler_(function () {
         (line_count) => String(line_count).length,
       ),
     ) + STYLE_MENU_PULLDOWN_EXTRA_WIDTH_CHARS;
-  const HISTORY_ENTRY_NAME = "history";
   const INDENT_TEXT = " ".repeat(SETTINGS_DEBUG_JSON_INDENT_CHARS);
   // Writes each kind of line value: a file as its report path, a span in ms.
   const LOAD_LOG_VALUE_WRITERS = {
@@ -258,7 +260,7 @@ window.try_catch_handler_(function () {
       load_log_menu,
       [
         window.report_ui_.strip.entry_make(
-          HISTORY_ENTRY_NAME,
+          SETTINGS_LOAD_LOG_HISTORY_ENTRY_NAME,
           "pulldown",
           history_label(line_count),
           {
@@ -292,7 +294,7 @@ window.try_catch_handler_(function () {
       [...log_entries.toReversed().map(load_log_line), ""].join("\n") + "\n";
     if (load_log_strip !== null) {
       load_log_strip.pulldown_label_set(
-        HISTORY_ENTRY_NAME,
+        SETTINGS_LOAD_LOG_HISTORY_ENTRY_NAME,
         history_label(line_count),
       );
       return;

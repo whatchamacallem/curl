@@ -31,6 +31,7 @@ _RANKING_COUNTER_NAME: str = ""
 _README_HTML_NAME: str = ""
 _README_MARKDOWN_NAME: str = ""
 _REPORT_SCRIPTS_DIR_NAME: str = ""
+_SETTINGS_HELD_SCRIPT_TEMPLATE_ID: str = ""
 _SETTINGS_VIEW_ENTRY: tuple[str, str] = ("", "")
 settings.load_into(__name__)
 
@@ -241,6 +242,9 @@ class BuildReport:
         page_content = theme.template_fill(
             _CALL_GRAPH_PAGE,
             {
+                "__HELD_SCRIPT_TEMPLATE_ID__": theme.render_html_escape(
+                    _SETTINGS_HELD_SCRIPT_TEMPLATE_ID
+                ),
                 "__PAGE_TITLE__": theme.render_html_escape(test_name),
                 "__CALL_GRAPH__": theme.render_element(
                     "table",
@@ -400,6 +404,9 @@ class BuildReport:
         page_content = theme.template_fill(
             _DATABASE_PAGE,
             {
+                "__HELD_SCRIPT_TEMPLATE_ID__": theme.render_html_escape(
+                    _SETTINGS_HELD_SCRIPT_TEMPLATE_ID
+                ),
                 "__PAGE_TITLE__": theme.render_html_escape(test_name),
                 "__DATABASE__": theme.render_element(
                     "div",
@@ -882,7 +889,15 @@ class BuildReport:
     # Writes the settings view, the settings relayed to it.
     def settings_page(self, report_dir: str) -> None:
         self.page_write(
-            os.path.join(report_dir, _SETTINGS_VIEW_ENTRY[1]), _SETTINGS_PAGE
+            os.path.join(report_dir, _SETTINGS_VIEW_ENTRY[1]),
+            theme.template_fill(
+                _SETTINGS_PAGE,
+                {
+                    "__HELD_SCRIPT_TEMPLATE_ID__": theme.render_html_escape(
+                        _SETTINGS_HELD_SCRIPT_TEMPLATE_ID
+                    )
+                },
+            ),
         )
 
     # Writes the rows a page script draws as the table the key names.

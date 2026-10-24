@@ -10,15 +10,27 @@ from typing import NamedTuple, NotRequired, TypedDict
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import artifacts, callgrind, settings
 
+_FLAME_GRAPH_ADDRESS_FRAME_NAME_FORMAT: str = ""
 _FLAME_GRAPH_EXPORTER_NAME: str = ""
+_FLAME_GRAPH_FILE_FORMAT_CLOSE_EVENT_TYPE: str = ""
+_FLAME_GRAPH_FILE_FORMAT_OPEN_EVENT_TYPE: str = ""
+_FLAME_GRAPH_FILE_FORMAT_PROFILE_TYPE: str = ""
+_FLAME_GRAPH_FILE_FORMAT_PROFILE_UNIT: str = ""
 _FLAME_GRAPH_FILE_FORMAT_SCHEMA_URL: str = ""
 _FLAME_GRAPH_MAX_RECORDED_CALLS: int = 0
 _FLAME_GRAPH_PROFILE_NAME_FORMAT: str = ""
+_FLAME_GRAPH_TRACE_PROFILE_NAME_FORMAT: str = ""
+_TRACE_ADDR2LINE_COMMAND: tuple[str, ...] = ()
+_TRACE_ADDR2LINE_UNKNOWN_NAME: str = ""
+_TRACE_BUILDID_COMMAND: tuple[str, ...] = ()
 _TRACE_BUILDID_KEYWORD: str = ""
 _TRACE_BUILDID_LABEL: str = ""
 _TRACE_FUNCTION_EXIT_BIT: int = 0
 _TRACE_HEADER_MAGIC: int = 0
 _TRACE_HEADER_WORDS: int = 0
+_TRACE_LOAD_SEGMENT_COMMAND: tuple[str, ...] = ()
+_TRACE_LOAD_SEGMENT_KEYWORD: str = ""
+_TRACE_MAPS_EXECUTABLE_FLAG: str = ""
 _TRACE_RECORD_WORDS: int = 0
 settings.load_into(__name__)
 
@@ -85,7 +97,7 @@ class TraceToSpeedscope:
         stamps: list[int]
 
     def buildid_read(self, path: str) -> str:
-        listing = self.command_output(["readelf", "-n", path])
+        listing = self.command_output([*_TRACE_BUILDID_COMMAND, path])
         for line in listing.splitlines():
             label, separator, value = line.partition(":")
             if separator and label.strip() == _TRACE_BUILDID_LABEL:
@@ -193,24 +205,29 @@ class TraceToSpeedscope:
             )
             events.append(
                 {
-                    "type": "C" if stamp & _TRACE_FUNCTION_EXIT_BIT else "O",
+                    "type": (
+                        _FLAME_GRAPH_FILE_FORMAT_CLOSE_EVENT_TYPE
+                        if stamp & _TRACE_FUNCTION_EXIT_BIT
+                        else _FLAME_GRAPH_FILE_FORMAT_OPEN_EVENT_TYPE
+                    ),
                     "frame": frame,
                     "at": at,
                 }
             )
-        profile_name = (
-            f"rdtsc trace (-finstrument-functions), {len(calls)} calls,"
-            f" events {trace.skip + first + 1:,}"
-            f"..{trace.skip + last + 1:,} of {trace.seen:,}"
+        profile_name = _FLAME_GRAPH_TRACE_PROFILE_NAME_FORMAT % (
+            len(calls),
+            f"{trace.skip + first + 1:,}",
+            f"{trace.skip + last + 1:,}",
+            f"{trace.seen:,}",
         )
         return {
             "$schema": _FLAME_GRAPH_FILE_FORMAT_SCHEMA_URL,
             "shared": {"frames": [frames[function] for function in order]},
             "profiles": [
                 {
-                    "type": "evented",
+                    "type": _FLAME_GRAPH_FILE_FORMAT_PROFILE_TYPE,
                     "name": profile_name,
-                    "unit": "nanoseconds",
+                    "unit": _FLAME_GRAPH_FILE_FORMAT_PROFILE_UNIT,
                     "startValue": events[0]["at"],
                     "endValue": events[-1]["at"],
                     "events": events,
@@ -276,7 +293,7 @@ class TraceToSpeedscope:
         frames: dict[int, Frame] = {}
         for path, virtual in by_object.items():
             lines = self.command_output(
-                ["addr2line", "-f", "-C", "-e", path]
+                [*_TRACE_ADDR2LINE_COMMAND, path]
                 + [f"{address:#x}" for address in virtual.values()]
             ).splitlines()
             for position, address in enumerate(virtual):
@@ -284,10 +301,11 @@ class TraceToSpeedscope:
                 file, _, line = where.partition(" ")[0].rpartition(":")
                 frame: Frame = {
                     "name": symbol
-                    if symbol != "??"
-                    else f"{os.path.basename(path)}+{virtual[address]:#x}"
+                    if symbol != _TRACE_ADDR2LINE_UNKNOWN_NAME
+                    else _FLAME_GRAPH_ADDRESS_FRAME_NAME_FORMAT
+                    % (os.path.basename(path), virtual[address])
                 }
-                if file and file != "??":
+                if file and file != _TRACE_ADDR2LINE_UNKNOWN_NAME:
                     frame["file"] = callgrind.path_norm(file).display
                     if line.isdigit():
                         frame["line"] = int(line)
@@ -367,7 +385,7 @@ class TraceToSpeedscope:
                 fields = line.split(None, 5)
                 if (
                     len(fields) == 6
-                    and "x" in fields[1]
+                    and _TRACE_MAPS_EXECUTABLE_FLAG in fields[1]
                     and fields[5].startswith("/")
                 ):
                     low, _, high = fields[0].partition("-")
@@ -382,11 +400,11 @@ class TraceToSpeedscope:
         return mappings
 
     def segments_read(self, path: str) -> list[TraceToSpeedscope.LoadSegment]:
-        listing = self.command_output(["readelf", "-lW", path])
+        listing = self.command_output([*_TRACE_LOAD_SEGMENT_COMMAND, path])
         segments: list[TraceToSpeedscope.LoadSegment] = []
         for line in listing.splitlines():
             fields = line.split()
-            if fields and fields[0] == "LOAD":
+            if fields and fields[0] == _TRACE_LOAD_SEGMENT_KEYWORD:
                 segments.append(
                     TraceToSpeedscope.LoadSegment(
                         int(fields[1], 16),

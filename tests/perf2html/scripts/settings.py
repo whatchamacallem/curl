@@ -46,11 +46,30 @@ CALL_GRAPH_REVEAL_CLEARANCE_CHARS = 1
 CALL_GRAPH_REVEAL_CLEARANCE_LINES = 0.5
 CALL_GRAPH_VIEW_KEY = "call-graph"
 
+CALLGRIND_ADDRESS_NAME_PATTERN = r"0x[0-9a-f]+"
 CALLGRIND_FILE_DATA_ERROR_CODE = "err"
 CALLGRIND_FILE_DATA_GIT_CODE = "git"
 CALLGRIND_FILE_DATA_INDENT_CHARS = 2
 CALLGRIND_FILE_DATA_REPO_CODE = "repo"
 CALLGRIND_FILE_DATA_SYSTEM_CODE = "sys"
+CALLGRIND_FORMAT_CALLEE_FILE_KEYS: tuple[str, ...] = ("cfl", "cfi")
+CALLGRIND_FORMAT_CALLEE_FUNCTION_KEY = "cfn"
+CALLGRIND_FORMAT_CALLEE_OBJECT_KEY = "cob"
+CALLGRIND_FORMAT_CALLS_KEY = "calls"
+CALLGRIND_FORMAT_COMMAND_KEY = "cmd"
+CALLGRIND_FORMAT_COUNTERS_KEY = "events"
+CALLGRIND_FORMAT_FILE_KEY = "fl"
+CALLGRIND_FORMAT_FUNCTION_KEY = "fn"
+CALLGRIND_FORMAT_INLINE_FILE_KEYS: tuple[str, ...] = ("fi", "fe")
+CALLGRIND_FORMAT_JUMP_FILE_KEY = "jfi"
+CALLGRIND_FORMAT_JUMP_FUNCTION_KEY = "jfn"
+CALLGRIND_FORMAT_LINE_POSITION_NAME = "line"
+CALLGRIND_FORMAT_OBJECT_KEY = "ob"
+CALLGRIND_FORMAT_POSITIONS_KEY = "positions"
+CALLGRIND_FORMAT_SUMMARY_KEYS: tuple[str, ...] = ("summary", "totals")
+CALLGRIND_NAME_COMPRESSION_PATTERN = r"^\((\d+)\)(?: (.*))?$"
+CALLGRIND_UNKNOWN_DISPLAY_OBJECT = "(unknown object)"
+CALLGRIND_UNKNOWN_DISPLAY_PATH = "(unknown)"
 CALLGRIND_UNKNOWN_NAME = "???"
 
 COUNTER_LIST_CALLEES_LINE_NAME = "callees"
@@ -94,8 +113,13 @@ DERIVED_COUNTER_TERMS: dict[str, dict[str, int]] = {
 
 DRAG_DIRECTION_THRESHOLD_PX = 5
 
+FLAME_GRAPH_ADDRESS_FRAME_NAME_FORMAT = "%s+%#x"
 FLAME_GRAPH_COLOR_SCHEME_KEY_NAME = "speedscope-color-scheme"
 FLAME_GRAPH_EXPORTER_NAME = "tests/perf2html/scripts/trace_to_speedscope.py"
+FLAME_GRAPH_FILE_FORMAT_CLOSE_EVENT_TYPE = "C"
+FLAME_GRAPH_FILE_FORMAT_OPEN_EVENT_TYPE = "O"
+FLAME_GRAPH_FILE_FORMAT_PROFILE_TYPE = "evented"
+FLAME_GRAPH_FILE_FORMAT_PROFILE_UNIT = "nanoseconds"
 FLAME_GRAPH_FILE_FORMAT_SCHEMA_URL = (
     "https://www.speedscope.app/file-format-schema.json"
 )
@@ -107,6 +131,9 @@ FLAME_GRAPH_PROFILE_GLOBAL_NAME = "report_flame_graph_profiles_"
 FLAME_GRAPH_PROFILE_NAME_FORMAT = "%s (loops=%s)"
 FLAME_GRAPH_STARTUP_POLL_DELAY_MS = 50
 FLAME_GRAPH_STARTUP_POLL_MAX_ATTEMPTS = 200
+FLAME_GRAPH_TRACE_PROFILE_NAME_FORMAT = (
+    "rdtsc trace (-finstrument-functions), %s calls, events %s..%s of %s"
+)
 FLAME_GRAPH_VIEW_ENTRY: tuple[str, str] = (
     "flame-graph",
     "flame-graph/index.html",
@@ -134,6 +161,13 @@ HEAT_MAP_VIEW_ENTRY: tuple[str, str] = (
     "heat-map",
     "heat-map/index.html",
 )
+
+LOAD_LOG_INPUT_EVENT_NAMES: dict[str, str] = {
+    "click": "click",
+    "key": "keydown",
+}
+LOAD_LOG_MESSAGE_NAME = "load_log_entry"
+LOAD_LOG_NAVIGATION_CAUSE_NAME = "navigation"
 
 MENU_DIGIT_KEY_COUNT = 10
 MENU_ENTRY_NEEDS: dict[str, list[str]] = {
@@ -163,6 +197,19 @@ MENU_SCALE_KEY_STEPS: dict[str, int] = {"+": 1, "=": 1, "-": -1}
 NUMBER_FRACTION_DIGITS = 2
 NUMBER_LARGEST_PRINTED_MULTIPLE_TIMES = 999.99
 
+OBJDUMP_CODE_SECTION_FLAG = "CODE"
+OBJDUMP_DISASSEMBLY_COMMAND: tuple[str, ...] = (
+    "objdump",
+    "-d",
+    "--no-show-raw-insn",
+)
+OBJDUMP_FUNCTION_SYMBOL_PATTERN = r"^([0-9a-f]+) .{6}F .*\s(\S+)$"
+OBJDUMP_LABEL_PATTERN = r"^([0-9a-f]+) <(.+)>:$"
+OBJDUMP_SECTION_HEADERS_COMMAND: tuple[str, ...] = ("objdump", "-h", "-w")
+OBJDUMP_SECTION_OPTION = "-j"
+OBJDUMP_SYMBOL_TABLE_COMMAND: tuple[str, ...] = ("objdump", "-t")
+OBJDUMP_TEXT_SECTION_NAME = ".text"
+
 PERF_TOOL_TIME_LABEL = "Time"
 
 PROFILE_START_FUNCTION_UNRECORDED_CALLS = 1
@@ -181,6 +228,9 @@ REGULAR_REPORT_VIEW_KEYS: list[str] = [
     FLAME_GRAPH_VIEW_ENTRY[0],
 ]
 
+RESOURCE_FAILURE_TEXT = "resource failed: "
+RESOURCE_TAG_NAMES: tuple[str, ...] = ("LINK", "SCRIPT", "IMG")
+
 SCREENSHOT_LABEL_QUERY_KEY_NAME = "screenshot"
 SCREENSHOT_LABEL_QUERY_VALUE = "1"
 SCREENSHOT_MENU_KEY_NUMBER = "screenshot-menu"
@@ -192,9 +242,13 @@ SETTINGS_DEBUG_JSON_MAX_LENGTH_CHARS = 79
 SETTINGS_DEBUG_JSON_SPACING_PATTERN = r'("(?:[^\\"]|\\.)*")|[:,]'
 SETTINGS_DEBUG_QUERY_KEY_NAME = "debug"
 SETTINGS_DEBUG_QUERY_VALUES: dict[str, str] = {"disabled": "0", "enabled": "1"}
+SETTINGS_HELD_SCRIPT_TEMPLATE_ID = "page-held-script-"
 SETTINGS_LOAD_LOG_HISTORY_DEFAULT_LINES = 0
+SETTINGS_LOAD_LOG_HISTORY_ENTRY_NAME = "history"
 SETTINGS_LOAD_LOG_HISTORY_LINE_CHOICES: tuple[int, ...] = (0, 10, 20, 50, 100)
 SETTINGS_LOAD_LOG_HISTORY_MAX_LINES = 100
+SETTINGS_RELAY_MESSAGE_NAME = "settings_relay"
+SETTINGS_REQUEST_MESSAGE_NAME = "settings_request"
 SETTINGS_VIEW_ENTRY: tuple[str, str] = ("settings", "settings/index.html")
 
 SIGNAL_EXIT_CODE_BASE = 128
@@ -406,15 +460,23 @@ TIMING_PERF_STAT_UNCOUNTED_VALUES: tuple[str, ...] = (
 )
 TIMING_TIME_PER_LOOP_NAME = "time_per_loop"
 
+TRACE_ADDR2LINE_COMMAND: tuple[str, ...] = ("addr2line", "-f", "-C", "-e")
+TRACE_ADDR2LINE_UNKNOWN_NAME = "??"
+TRACE_BUILDID_COMMAND: tuple[str, ...] = ("readelf", "-n")
 TRACE_BUILDID_KEYWORD = "buildid"
 TRACE_BUILDID_LABEL = "Build ID"
 TRACE_FUNCTION_EXIT_BIT = 1 << 63
 # Uses json compatible precision.
 TRACE_HEADER_MAGIC = 0xABCDEF0123456000
 TRACE_HEADER_WORDS = 8
+TRACE_LOAD_SEGMENT_COMMAND: tuple[str, ...] = ("readelf", "-lW")
+TRACE_LOAD_SEGMENT_KEYWORD = "LOAD"
+TRACE_MAPS_EXECUTABLE_FLAG = "x"
 TRACE_RECORD_WORDS = 2
 
 VALGRIND_DEBUG_LINE_PATTERN = "^--[0-9]+--"
+VALGRIND_LOAD_ADDRESS_PATTERN = r"\s+svma (0x[0-9a-f]+), avma (0x[0-9a-f]+)$"
+VALGRIND_READING_SYMBOLS_PATTERN = r" Reading syms from (.+)$"
 
 WIDGET_KEY_NAMES: dict[str, str] = {
     "activate": "Enter",
@@ -531,14 +593,10 @@ class SettingsReader:
                 number, f"{name} is not a setting name (SCREAMING_SNAKE)"
             )
         if name in found:
-            self.shell_settings_fail(
-                number, f"{name} is assigned twice; keep one of them"
-            )
+            self.shell_settings_fail(number, f"{name} is assigned twice")
         if name in globals():
             self.shell_settings_fail(
-                number,
-                f"{name} is also defined in settings.py; a setting has one "
-                "definition, in one of the two files",
+                number, f"{name} is also defined in settings.py"
             )
 
     def shell_scalar_parse(
