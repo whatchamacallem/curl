@@ -90,12 +90,12 @@ window.report_ui_ = window.try_catch_handler_(function () {
     "STYLE_HEAT_COLOR_FULL_SCALE_PERCENT",
   );
   const STYLE_HEAT_COLOR_STOPS = settings_("STYLE_HEAT_COLOR_STOPS");
-  const STYLE_MENU_PULLDOWN_EXTRA_WIDTH_CHARS = settings_(
-    "STYLE_MENU_PULLDOWN_EXTRA_WIDTH_CHARS",
-  );
   const STYLE_PAGE_FONT_FAMILY = settings_("STYLE_PAGE_FONT_FAMILY");
   const STYLE_TABLE_COLUMN_EDGE_GRAB_CHARS = settings_(
     "STYLE_TABLE_COLUMN_EDGE_GRAB_CHARS",
+  );
+  const STYLE_TEXT_SCROLLBAR_FONT_MULTIPLE = settings_(
+    "STYLE_TEXT_SCROLLBAR_FONT_MULTIPLE",
   );
   const STYLE_TEXT_SCROLLBAR_THUMB_SHORTEST_CHARS = settings_(
     "STYLE_TEXT_SCROLLBAR_THUMB_SHORTEST_CHARS",
@@ -104,6 +104,9 @@ window.report_ui_ = window.try_catch_handler_(function () {
     "TABLE_MARKDOWN_COLUMN_NARROWEST_CHARS",
   );
   const TABLE_ROW_COUNT_CHOICES = settings_("TABLE_ROW_COUNT_CHOICES");
+  const TEXT_SCROLLBAR_CHEVRON_STEP_CHARS = settings_(
+    "TEXT_SCROLLBAR_CHEVRON_STEP_CHARS",
+  );
   const TEXT_SCROLLBAR_WHEEL_DELTA_PER_NOTCH = settings_(
     "TEXT_SCROLLBAR_WHEEL_DELTA_PER_NOTCH",
   );
@@ -170,14 +173,12 @@ window.report_ui_ = window.try_catch_handler_(function () {
   const STRIP_STATUS_SEPARATOR_TEXT = window.ui_strings_.text(
     "str_menu_status_separator",
   );
-  const TABLE_HEADING_COUNT_BOX_WIDTH_CHARS =
-    Math.max(
-      ...TABLE_ROW_COUNT_CHOICES.map((row_count) => String(row_count).length),
-    ) + STYLE_MENU_PULLDOWN_EXTRA_WIDTH_CHARS;
   const TEXT_SCROLLBAR_AXES = {
     horizontal: {
+      backward_chevron_string_id: "str_text_scrollbar_chevron_left",
       backward_key: WIDGET_KEY_NAMES.left,
       client_size: "clientWidth",
+      forward_chevron_string_id: "str_text_scrollbar_chevron_right",
       forward_key: WIDGET_KEY_NAMES.right,
       layout_size: "offsetWidth",
       pointer_along: "clientX",
@@ -188,8 +189,10 @@ window.report_ui_ = window.try_catch_handler_(function () {
       wheel_delta: "deltaX",
     },
     vertical: {
+      backward_chevron_string_id: "str_text_scrollbar_chevron_up",
       backward_key: WIDGET_KEY_NAMES.up,
       client_size: "clientHeight",
+      forward_chevron_string_id: "str_text_scrollbar_chevron_down",
       forward_key: WIDGET_KEY_NAMES.down,
       layout_size: "offsetHeight",
       pointer_along: "clientY",
@@ -987,15 +990,22 @@ window.report_ui_ = window.try_catch_handler_(function () {
   }
   // Turns a cell into a text pulldown whose typed box is the cell itself.
   function pulldown_attach(root_element, pulldown_options) {
+    const placeholder_text = window.ui_strings_.text(
+      pulldown_options.on_move
+        ? "str_pulldown_drag_placeholder"
+        : "str_pulldown_placeholder",
+    );
     root_element.innerHTML =
-      render_element("span", {}, "") +
       render_element(
         "span",
-        {
-          class: "menu-pulldown-search-box-",
-          style: `width:${pulldown_options.box_width_chars}ch`,
-        },
-        "",
+        { class: "menu-pulldown-text-box-" },
+        render_element("span", { class: "menu-pulldown-search-box-" }, "") +
+          render_element("span", {}, "") +
+          render_element(
+            "span",
+            { class: "menu-pulldown-placeholder-box-" },
+            render_html_escape(placeholder_text),
+          ),
       ) +
       render_element(
         "span",
@@ -1011,7 +1021,8 @@ window.report_ui_ = window.try_catch_handler_(function () {
             "",
           ),
       );
-    const [label_box, search_box, entry_box] = root_element.children;
+    const [text_box, entry_box] = root_element.children;
+    const [search_box, label_box, placeholder_box] = text_box.children;
     const [entry_list, list_scrollbar] = entry_box.children;
     const no_match_note = render_element_of(
       render_element(
@@ -1022,7 +1033,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
     );
     let entries = [],
       entries_line_number = 0,
-      highlight_index = 0,
+      highlight_index = -1,
       is_open = false,
       is_small = false,
       matches = [],
@@ -1039,15 +1050,17 @@ window.report_ui_ = window.try_catch_handler_(function () {
         entry_element.setAttribute("aria-selected", String(is_highlighted));
       }
     }
+    // Steps through the matches, a step back from the first lighting none.
     function highlight_step(step_count) {
       if (!matches.length) return;
       highlight_set(
         Math.min(
-          Math.max(highlight_index + step_count, 0),
+          Math.max(highlight_index + step_count, -1),
           matches.length - 1,
         ),
       );
-      matches[highlight_index].scrollIntoView({ block: "nearest" });
+      if (highlight_index >= 0)
+        matches[highlight_index].scrollIntoView({ block: "nearest" });
     }
     function search_parts(typed_text) {
       const line_match =
@@ -1075,15 +1088,9 @@ window.report_ui_ = window.try_catch_handler_(function () {
       entry_list.replaceChildren(
         ...(matches.length ? matches : [no_match_note]),
       );
-      search_box.textContent =
-        search_text ||
-        window.ui_strings_.text(
-          pulldown_options.on_move
-            ? "str_pulldown_drag_placeholder"
-            : "str_pulldown_placeholder",
-        );
+      search_box.textContent = search_text || placeholder_text;
       entry_list.scrollTop = 0;
-      highlight_set(0);
+      highlight_set(-1);
       list_scrollbar_handle.refresh();
     }
     // Writes each offered entry's label again, the list kept as it stands.
@@ -1110,7 +1117,6 @@ window.report_ui_ = window.try_catch_handler_(function () {
       entries_offer(search_parts(search_text)[1]);
       // A small pulldown keeps its label, with no search box and no scrollbar.
       if (is_small) search_text = "";
-      label_box.hidden = !is_small;
       search_box.hidden = is_small;
       list_scrollbar.hidden = is_small;
       entries_filter();
@@ -1121,7 +1127,6 @@ window.report_ui_ = window.try_catch_handler_(function () {
       search_text = "";
       root_element.classList.remove("open-");
       root_element.setAttribute("aria-expanded", "false");
-      label_box.hidden = false;
       search_box.hidden = true;
       entry_box.hidden = true;
     }
@@ -1158,7 +1163,9 @@ window.report_ui_ = window.try_catch_handler_(function () {
           highlight_step(-1);
           return true;
         case MENU_PULLDOWN_KEY_NAMES.select:
-          if (matches.length) matches[highlight_index].click();
+          // With none lit, a search matching one entry selects that entry.
+          if (highlight_index >= 0) matches[highlight_index].click();
+          else if (matches.length === 1) matches[0].click();
           return true;
       }
       if (key_name.length !== 1) return false;
@@ -1246,6 +1253,9 @@ window.report_ui_ = window.try_catch_handler_(function () {
     root_element.setAttribute("aria-haspopup", "listbox");
     root_element.tabIndex = 0;
     closed_show();
+    // A small pulldown never searches, so its placeholder takes no room.
+    entries_offer(0);
+    placeholder_box.hidden = is_small;
     const list_scrollbar_handle = text_scrollbar_attach(
       list_scrollbar,
       entry_list,
@@ -2462,7 +2472,6 @@ window.report_ui_ = window.try_catch_handler_(function () {
     const all_rows = table_body ? [...table_body.rows] : [];
     const copy_text = window.ui_strings_.text("str_table_heading_copy");
     const row_count_options = {
-      box_width_chars: TABLE_HEADING_COUNT_BOX_WIDTH_CHARS,
       entries: row_count_entries,
       keeps_open: false,
       on_close: () => {},
@@ -2659,11 +2668,21 @@ window.report_ui_ = window.try_catch_handler_(function () {
   }
   // Shows and drives the target's scroll offset on one axis in text cells.
   function text_scrollbar_attach(bar_element, target_element, axis_name) {
-    if (!Object.hasOwn(TEXT_SCROLLBAR_AXES, axis_name))
+    if (
+      !Object.hasOwn(TEXT_SCROLLBAR_AXES, axis_name) ||
+      !Object.hasOwn(TEXT_SCROLLBAR_CHEVRON_STEP_CHARS, axis_name)
+    )
       window.throw_exception_("str_error_internal");
     if (attached_scrollbars.has(bar_element))
       window.throw_exception_("str_error_internal");
     const scroll_axis = TEXT_SCROLLBAR_AXES[axis_name];
+    const chevron_step_chars = TEXT_SCROLLBAR_CHEVRON_STEP_CHARS[axis_name];
+    const backward_chevron_text = window.ui_strings_.text(
+      scroll_axis.backward_chevron_string_id,
+    );
+    const forward_chevron_text = window.ui_strings_.text(
+      scroll_axis.forward_chevron_string_id,
+    );
     const gutter_text = window.ui_strings_.text("str_text_scrollbar_gutter");
     const thumb_text = window.ui_strings_.text("str_text_scrollbar_thumb");
     const taken_wheel_events = wheel_taken_events[axis_name];
@@ -2681,7 +2700,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
         target_element[scroll_axis.client_size]
       );
     }
-    // Measures in characters, null when the bar is not laid out.
+    // Measures the target in its characters, the bar in its cells, or null.
     function geometry() {
       const bar_rect = bar_element.getBoundingClientRect();
       const cell_rect = bar_element.firstElementChild.getBoundingClientRect();
@@ -2689,9 +2708,10 @@ window.report_ui_ = window.try_catch_handler_(function () {
       const cell_screen_px = cell_rect[scroll_axis.rect_size];
       const target_screen_px = target_rect[scroll_axis.rect_size];
       if (!cell_screen_px || !target_screen_px) return null;
+      // A bar cell spans the font multiple of the target's characters.
       const units_per_char =
         (cell_screen_px * target_element[scroll_axis.layout_size]) /
-        target_screen_px;
+        (target_screen_px * STYLE_TEXT_SCROLLBAR_FONT_MULTIPLE);
       const content_min = 0;
       const content_size =
         target_element[scroll_axis.scroll_size] / units_per_char;
@@ -2702,9 +2722,11 @@ window.report_ui_ = window.try_catch_handler_(function () {
         content_min +
         target_element[scroll_axis.scroll_offset] / units_per_char;
       const scroll_span = content_max - page_size + 1 - content_min;
-      const track_length = Math.floor(
+      const cell_count = Math.floor(
         bar_rect[scroll_axis.rect_size] / cell_screen_px,
       );
+      // The track lies between the chevrons, one in each end cell.
+      const track_length = Math.max(cell_count - 2, 0);
       const thumb_length = Math.min(
         track_length,
         Math.max(
@@ -2718,7 +2740,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
         ? (thumb_room * (scroll_position - content_min)) / scroll_span
         : 0;
       return {
-        bar_start: bar_rect[scroll_axis.rect_start],
+        cell_count,
         cell_screen_px,
         content_min,
         is_scrolling,
@@ -2728,6 +2750,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
         thumb_position: Math.min(thumb_room, Math.max(0, unclamped_position)),
         thumb_room,
         track_length,
+        track_start: bar_rect[scroll_axis.rect_start] + cell_screen_px,
         units_per_char,
       };
     }
@@ -2737,23 +2760,27 @@ window.report_ui_ = window.try_catch_handler_(function () {
         Math.round(bar_geometry.thumb_position + bar_geometry.thumb_length),
       ];
     }
-    // Hides the bar while its target fits, else draws its track and thumb.
+    // Hides the bar while its target fits, else draws chevrons, track, thumb.
     function scrollbar_draw() {
       bar_element.classList.toggle("target-fits-", !target_scrolls());
       const bar_geometry = geometry();
       if (!bar_geometry) return;
-      const cell_count = Math.max(bar_geometry.track_length, 1);
+      const cell_count = Math.max(bar_geometry.cell_count, 1);
       while (bar_element.children.length < cell_count)
         bar_element.append(cell_make());
       while (bar_element.children.length > cell_count)
         bar_element.lastElementChild.remove();
       const [thumb_first, thumb_end] = thumb_cells(bar_geometry);
       [...bar_element.children].forEach((cell_element, cell_index) => {
+        const track_index = cell_index - 1;
         const is_thumb =
           bar_geometry.is_scrolling &&
-          cell_index >= thumb_first &&
-          cell_index < thumb_end;
-        const cell_text = is_thumb ? thumb_text : gutter_text;
+          track_index >= thumb_first &&
+          track_index < thumb_end;
+        let cell_text = is_thumb ? thumb_text : gutter_text;
+        if (cell_index === 0) cell_text = backward_chevron_text;
+        else if (cell_index === cell_count - 1)
+          cell_text = forward_chevron_text;
         if (cell_element.textContent !== cell_text)
           cell_element.textContent = cell_text;
       });
@@ -2775,7 +2802,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
     }
     function pointer_cells(pointer_event, bar_geometry) {
       return (
-        (pointer_event[scroll_axis.pointer_along] - bar_geometry.bar_start) /
+        (pointer_event[scroll_axis.pointer_along] - bar_geometry.track_start) /
         bar_geometry.cell_screen_px
       );
     }
@@ -2803,10 +2830,18 @@ window.report_ui_ = window.try_catch_handler_(function () {
         size_property_name: "maxWidth",
       };
     }
-    // Moves the thumb to a track press, then returns the grab in the thumb.
+    // Steps at a chevron press, else returns the grab in the moved thumb.
     function thumb_press_offset(press_event, bar_geometry) {
       if (!bar_geometry.is_scrolling) return 0;
       const pointer_position = pointer_cells(press_event, bar_geometry);
+      if (
+        pointer_position < 0 ||
+        pointer_position >= bar_geometry.track_length
+      ) {
+        const step_direction = pointer_position < 0 ? -1 : 1;
+        scroll_step(step_direction * chevron_step_chars, bar_geometry);
+        return null;
+      }
       const [thumb_first, thumb_end] = thumb_cells(bar_geometry);
       const pressed_cell = Math.floor(pointer_position);
       const is_thumb_press =
@@ -2867,7 +2902,9 @@ window.report_ui_ = window.try_catch_handler_(function () {
         );
         press_state.sized_target = null;
       }
-      if (!bar_geometry.is_scrolling) return;
+      // A chevron press drags nothing.
+      if (!bar_geometry.is_scrolling || press_state.grab_offset === null)
+        return;
       thumb_place(
         bar_geometry,
         pointer_cells(move_event, bar_geometry) - press_state.grab_offset,

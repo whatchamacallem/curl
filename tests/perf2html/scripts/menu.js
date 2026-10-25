@@ -13,9 +13,6 @@ window.try_catch_handler_(function () {
   const MENU_SCALE_KEY_STEPS = settings_("MENU_SCALE_KEY_STEPS");
   const SETTINGS_VIEW_ENTRY = settings_("SETTINGS_VIEW_ENTRY");
   const STYLE_MENU_LOGO_START_SHARE = settings_("STYLE_MENU_LOGO_START_SHARE");
-  const STYLE_MENU_PULLDOWN_EXTRA_WIDTH_CHARS = settings_(
-    "STYLE_MENU_PULLDOWN_EXTRA_WIDTH_CHARS",
-  );
 
   const FLAME_GRAPH_VIEW_KEY = FLAME_GRAPH_VIEW_ENTRY[0];
   const HEAT_MAP_VIEW_KEY = HEAT_MAP_VIEW_ENTRY[0];
@@ -40,10 +37,6 @@ window.try_catch_handler_(function () {
   const menu_strip = document.getElementById("menu-");
   const help_href = menu_strip.getAttribute("data-help-href-");
   const preference_strip = document.getElementById("menu-preference-");
-  const pulldown_box_width_chars =
-    Math.max(
-      ...window.report_frame_.test_names.map((test_name) => test_name.length),
-    ) + STYLE_MENU_PULLDOWN_EXTRA_WIDTH_CHARS;
 
   if (typeof window.report_manifest_table_ === "undefined")
     window.throw_exception_("str_error_report_incomplete");
@@ -127,7 +120,6 @@ window.try_catch_handler_(function () {
   }
   function pulldown_options(entries, on_close, reads_line_number) {
     return {
-      box_width_chars: pulldown_box_width_chars,
       entries,
       keeps_open: false,
       on_close,
@@ -421,9 +413,6 @@ window.try_catch_handler_(function () {
       {
         is_available: entry_available(entry_name, address, null),
         pulldown_options: {
-          box_width_chars:
-            Math.max(...choices().map((choice) => choice.label.length)) +
-            STYLE_MENU_PULLDOWN_EXTRA_WIDTH_CHARS,
           entries: () => window.report_ui_.strip.choice_entries(choices()),
           keeps_open,
           on_close: () => {},

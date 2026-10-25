@@ -375,7 +375,7 @@ timer_artifacts_write() {
     cp "$_source" "$_member"
     sed -i "s#$_REPO/##g" "$_member"
   done
-  for _kind in file-data test-list; do
+  for _kind in "${ARTIFACT_ARCHIVE_RUN_KINDS[@]}" test-list; do
     artifact_path _source "$REPORT_ARTIFACTS_DIR" "$_kind"
     artifact_path _member "$_root_directory" "$_kind"
     cp "$_source" "$_member"
@@ -398,12 +398,14 @@ pages_write() {
   step_run 5 database page_tool_run build_report.py database "${_flags[@]}"
   step_run 6 "call graph" page_tool_run build_report.py call-graph \
     "${_flags[@]}"
-  step_run 7 "timer artifacts" timer_artifacts_write
-  step_run 8 overview page_tool_run build_report.py overview "${_flags[@]}" \
+  step_run 7 "timing data" page_tool_run perf_measure.py timing-data \
+    "${_flags[@]}"
+  step_run 8 "timer artifacts" timer_artifacts_write
+  step_run 9 overview page_tool_run build_report.py overview "${_flags[@]}" \
     "${README_HTML_FLAGS[@]}"
-  step_run 9 "heat map page" page_tool_run callgrind_to_heatmap.py page \
+  step_run 10 "heat map page" page_tool_run callgrind_to_heatmap.py page \
     "--report=$_OUT_DIR"
-  step_run 10 finish report_finish "$_OUT_DIR" \
+  step_run 11 finish report_finish "$_OUT_DIR" \
     "$REPORT_MANIFEST_VERSION_FULL" "${_HEADER_ROWS[@]}"
 }
 

@@ -136,6 +136,7 @@ Every file sits in the archive's one root directory,
 `timer-artifacts-<time_t>/`.
 
 - `0_file_data.json`: Source directory file listing with mode flags.
+- `0_timing_data.json`: The overview's timing values perf2html_diff.sh reads.
 - `<test>.callgrind.out`: A test's callgrind file, the repo root cut.
 - `test_list.txt`: The test names, one per line, sorted.
 

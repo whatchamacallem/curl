@@ -82,6 +82,7 @@
         const WIDTH_CHOICE_MAX = 16;
         const WIDTH_DEFAULT = 4;
         const WIDTH_STORAGE_KEY = "perf2html.test.thumbs_width";
+        let layout_animation_frame = 0;
         for (let n = 1; n <= WIDTH_CHOICE_MAX; n++) {
           const option = document.createElement("option");
           option.value = String(n);
@@ -139,6 +140,16 @@
           }
         }
 
+        // Lays out next frame, so no observed size changes in the callback.
+        function layout_defer() {
+          if (!layout_animation_frame) {
+            layout_animation_frame = requestAnimationFrame(function () {
+              layout_animation_frame = 0;
+              layout();
+            });
+          }
+        }
+
         function build() {
           const count = Number(select.value);
           const table = document.createElement("table");
@@ -178,7 +189,7 @@
           width_choice_write();
           build();
         });
-        new ResizeObserver(layout).observe(grid);
+        new ResizeObserver(layout_defer).observe(grid);
         // Takes the focus from the frames, each of which may have focused one.
         window.addEventListener("load", function () {
           window.focus();

@@ -591,32 +591,29 @@ class BuildReport:
             has_readme_html,
         )
 
+    # Returns a row per test, each timing value's change from its baseline.
     def diff_overview_rows(
         self, artifacts_dir: str, test_names: Sequence[str]
     ) -> list[list[theme.CellOrText]]:
+        measure = perf_measure.PerfMeasure()
+        baseline_document = measure.timing_data_read(
+            artifacts.artifact_path(artifacts_dir, "baseline-profiles")
+        )
+        modified_document = measure.timing_data_read(
+            artifacts.artifact_path(artifacts_dir, "modified-profiles")
+        )
         rows: list[list[theme.CellOrText]] = []
         for test_name in test_names:
-            doc = callgrind_diff.callers_doc_load(artifacts_dir, test_name)
-            counters = doc["counters"]
-            callgrind.ranking_counter_check(
-                counters,
-                artifacts.artifact_path(
-                    artifacts_dir, "caller-counts", test_name
-                ),
-            )
-            delta = callgrind.counter_value(
-                counters, doc["deltaTotal"], _RANKING_COUNTER_NAME
-            )
-            baseline_total = callgrind.counter_value(
-                counters, doc["baselineTotal"], _RANKING_COUNTER_NAME
-            )
-            share = theme.diff_share(delta, baseline_total)
             rows.append(
                 [
                     self.test_link_cell(test_name),
-                    theme.num_signed(delta),
-                    theme.num_signed_pct(share),
-                    theme.num_human(doc["changedFunctions"]),
+                    *(
+                        self.timing_change_cell(
+                            baseline_document[test_name][value_name],
+                            modified_document[test_name][value_name],
+                        )
+                        for value_name in baseline_document[test_name]
+                    ),
                 ]
             )
         return rows
@@ -829,12 +826,7 @@ class BuildReport:
     ) -> None:
         raw_data_markup = self.raw_data_render(raw_data_name)
         tests_markup = self.table_data_render(
-            {
-                "id": "overview-tests-table-",
-                "data-diff-": str(int(is_diff)),
-            },
-            "overview.tests",
-            rows,
+            {"id": "overview-tests-table-"}, "overview.tests", rows
         )
         manifest_markup = self.manifest_blocks_render(manifest_blocks)
         menu_markup = self.menu_render(
@@ -917,18 +909,36 @@ class BuildReport:
     def test_link_cell(self, name: str) -> theme.Cell:
         return theme.Cell(name, href=self.address(name, _DATABASE_VIEW_KEY))
 
-    # Returns a row per test, its time per loop and its counter ratios.
+    # Returns a timing value's change from its baseline, none beside a 0.
+    def timing_change_cell(
+        self, baseline_value: float, modified_value: float
+    ) -> theme.CellOrText:
+        if not baseline_value or not modified_value:
+            return ""
+        change_share = theme.diff_share(
+            modified_value - baseline_value, baseline_value
+        )
+        return theme.Cell(
+            theme.num_signed_pct(change_share), heat_percent=change_share
+        )
+
+    # Returns a row per test, its timing document's time per loop and ratios.
     def timing_rows(
         self, artifacts_dir: str, test_names: Sequence[str]
     ) -> list[list[theme.CellOrText]]:
         measure = perf_measure.PerfMeasure()
+        timing_document = measure.timing_data_read(artifacts_dir)
         rows: list[list[theme.CellOrText]] = []
         for test_name in test_names:
-            timing = measure.timing_read(artifacts_dir, test_name)
             rows.append(
                 [
                     self.test_link_cell(test_name),
-                    *(text for _, text in measure.timing_texts(timing)),
+                    *(
+                        text
+                        for _, text in measure.timing_texts(
+                            timing_document[test_name]
+                        )
+                    ),
                 ]
             )
         return rows

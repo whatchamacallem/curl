@@ -92,7 +92,7 @@ artifacts_verify() {
   case "$1:$#" in
     archive:2)
       directory="$2"
-      run_kinds=(file-data)
+      run_kinds=("${ARTIFACT_ARCHIVE_RUN_KINDS[@]}")
       test_kinds=("${ARTIFACT_ARCHIVE_KINDS[@]}")
       ;;
     diffed:1)

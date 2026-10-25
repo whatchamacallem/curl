@@ -58,6 +58,8 @@ window.try_catch_handler_(function () {
     root_values[settings_("STYLE_PAGE_FONT_FAMILY_PROPERTY")] = settings_(
       "STYLE_PAGE_FONT_FAMILY",
     );
+    root_values[settings_("STYLE_TEXT_SCROLLBAR_FONT_MULTIPLE_PROPERTY")] =
+      String(settings_("STYLE_TEXT_SCROLLBAR_FONT_MULTIPLE"));
     for (const [name, value] of Object.entries(root_values))
       document.documentElement.style.setProperty(name, value);
     palette_values_write(settings_object);

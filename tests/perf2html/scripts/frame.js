@@ -151,6 +151,7 @@ window.try_catch_handler_(function () {
     if (shown_address.view === null) {
       const frame_had_focus = document.activeElement === view_frame;
       view_frame.hidden = true;
+      window.report_overview_.heat_colors_apply();
       home_panel.hidden = false;
       window.report_ui_.layout_refresh(home_panel);
       if (frame_had_focus) {

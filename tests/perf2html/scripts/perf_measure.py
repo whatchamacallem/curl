@@ -5,7 +5,8 @@
 
 from __future__ import annotations
 
-import argparse, json, os, re, shlex, statistics, subprocess, sys, typing
+import argparse, decimal, json, math, os, re, shlex, statistics, subprocess
+import sys, typing
 from collections.abc import Sequence
 from typing import Any, NamedTuple
 
@@ -20,10 +21,12 @@ _PROFILE_START_FUNCTION_NAME: str = ""
 _PROFILE_STOP_FUNCTION_NAME: str = ""
 _SIGNAL_EXIT_CODE_BASE: int = 0
 _TEST_LOOPS: int = 0
+_TIMING_COLUMN_NAMES: tuple[str, ...] = ()
 _TIMING_COUNTER_RATIOS: tuple[tuple[str, str, str], ...] = ()
+_TIMING_DATA_INDENT_CHARS: int = 0
 _TIMING_PERF_STAT_EVENTS: tuple[str, ...] = ()
 _TIMING_PERF_STAT_METRIC_FRACTION_DIGITS: int = 0
-_TIMING_PERF_STAT_METRICS: tuple[tuple[str, str, str], ...] = ()
+_TIMING_PERF_STAT_METRICS: tuple[tuple[str, str, str, int], ...] = ()
 _TIMING_PERF_STAT_NUMBER_PATTERN: str = ""
 _TIMING_PERF_STAT_RUNS: int = 0
 _TIMING_PERF_STAT_UNCOUNTED_VALUES: tuple[str, ...] = ()
@@ -46,8 +49,18 @@ _PERF_TOOL_TIME_LINE = re.compile(
 
 _PINNED_COMMAND = ("taskset", "-c", str(_PROFILE_PINNED_CPU))
 
+_TIMING_VALUE_NAMES = (
+    _TIMING_TIME_PER_LOOP_NAME,
+    *(metric_entry[0] for metric_entry in _TIMING_PERF_STAT_METRICS),
+    *(ratio_entry[0] for ratio_entry in _TIMING_COUNTER_RATIOS),
+)
+
 
 class PerfMeasure:
+    class DataArgs(NamedTuple):
+        artifacts: str
+        report: str
+
     class MeasureArgs(NamedTuple):
         artifacts: str
         report: str
@@ -57,11 +70,6 @@ class PerfMeasure:
     class PerfStat(NamedTuple):
         counters: dict[str, float]
         metric_texts: list[str]
-
-    class Timing(NamedTuple):
-        seconds_per_loop: float
-        metric_texts: list[str]
-        counter_ratios: list[float]
 
     # Records the test under callgrind, the profiled window alone.
     def callgrind_measure(self, args: PerfMeasure.MeasureArgs) -> None:
@@ -153,6 +161,19 @@ class PerfMeasure:
         print(page_line, flush=True)
         return page_line
 
+    # Returns each perf metric as a ratio, an absent metric 0.
+    def metric_ratios(self, metric_texts: Sequence[str]) -> list[float]:
+        return [
+            (
+                float(decimal.Decimal(metric_text) / units_per_ratio)
+                if metric_text
+                else 0.0
+            )
+            for (*_, units_per_ratio), metric_text in zip(
+                _TIMING_PERF_STAT_METRICS, metric_texts, strict=True
+            )
+        ]
+
     # Returns perf's own metric text of one perf stat line, none if absent.
     def metric_text(
         self, stat_path: str, stat_record: Any, metric_unit: str
@@ -212,7 +233,7 @@ class PerfMeasure:
     def perf_stat_read(
         self, artifacts_dir: str, test_name: str
     ) -> PerfMeasure.PerfStat:
-        for metric_name, event_name, _ in _TIMING_PERF_STAT_METRICS:
+        for metric_name, event_name, _, _ in _TIMING_PERF_STAT_METRICS:
             self.event_name_check(
                 "TIMING_PERF_STAT_METRICS", metric_name, event_name
             )
@@ -258,7 +279,7 @@ class PerfMeasure:
                 self.metric_text(
                     stat_path, event_records[event_name][0], metric_unit
                 )
-                for _, event_name, metric_unit in _TIMING_PERF_STAT_METRICS
+                for _, event_name, metric_unit, _ in _TIMING_PERF_STAT_METRICS
             ],
         )
 
@@ -295,6 +316,66 @@ class PerfMeasure:
             for time_match in time_matches
         ]
         return statistics.median(run_seconds) / int(command_words[-1])
+
+    # Returns a timing document, refusing one unlike its tests or values.
+    def timing_data_read(self, directory: str) -> dict[str, dict[str, float]]:
+        with artifacts.artifact_open(directory, "timing-data") as handle:
+            timing_document = json.load(handle)
+        path = artifacts.artifact_path(directory, "timing-data")
+        test_names = artifacts.test_list_read(directory)
+        if (
+            not isinstance(timing_document, dict)
+            or list(timing_document) != test_names
+        ):
+            found_names = (
+                list(timing_document)
+                if isinstance(timing_document, dict)
+                else timing_document
+            )
+            print(
+                f"error: {path} names the tests {found_names!r}, expected"
+                f" {test_names}",
+                file=sys.stderr,
+            )
+            sys.exit(2)
+        for test_name, timing in timing_document.items():
+            if not isinstance(timing, dict) or list(timing) != list(
+                _TIMING_COLUMN_NAMES
+            ):
+                print(
+                    f"error: {path} gives {test_name} values other than"
+                    f" {list(_TIMING_COLUMN_NAMES)}: {timing!r}",
+                    file=sys.stderr,
+                )
+                sys.exit(2)
+            for value_name, value in timing.items():
+                if type(value) not in (int, float) or not (
+                    0 <= value < math.inf
+                ):
+                    print(
+                        f"error: {path} gives {test_name} the {value_name}"
+                        f" {value!r}, expected a finite number not below 0",
+                        file=sys.stderr,
+                    )
+                    sys.exit(2)
+        return timing_document
+
+    # Writes the timing document, each test's overview values by name.
+    def timing_data_write(self, args: PerfMeasure.DataArgs) -> None:
+        artifacts_dir = artifacts.report_artifacts_dir(
+            args.artifacts, args.report
+        )
+        timing_document = {
+            test_name: self.timing_read(artifacts_dir, test_name)
+            for test_name in artifacts.test_list_read(artifacts_dir)
+        }
+        with artifacts.artifact_open(
+            artifacts_dir, "timing-data", "", "w"
+        ) as handle:
+            handle.write(
+                json.dumps(timing_document, indent=_TIMING_DATA_INDENT_CHARS)
+                + "\n"
+            )
 
     # Records the test's runs under perf stat, else directly, and its summary.
     def timing_measure(
@@ -398,26 +479,41 @@ class PerfMeasure:
         elif verbose_level:
             self.timing_table_print(timing_rows)
 
-    # Returns the time per loop over the runs, perf's metrics, the ratios.
+    # Returns the overview values by name, in the overview's column order.
     def timing_parse(
         self,
         page_path: str,
         page_lines: Sequence[str],
         test_name: str,
         perf_stat: PerfMeasure.PerfStat,
-    ) -> PerfMeasure.Timing:
-        return PerfMeasure.Timing(
-            seconds_per_loop=self.perf_tool_time_per_loop(
-                page_path, page_lines, test_name
-            ),
-            metric_texts=perf_stat.metric_texts,
-            counter_ratios=self.counter_ratios(perf_stat.counters),
+    ) -> dict[str, float]:
+        timing: dict[str, float] = dict(
+            zip(
+                _TIMING_VALUE_NAMES,
+                [
+                    self.perf_tool_time_per_loop(
+                        page_path, page_lines, test_name
+                    ),
+                    *self.metric_ratios(perf_stat.metric_texts),
+                    *self.counter_ratios(perf_stat.counters),
+                ],
+                strict=True,
+            )
         )
+        if sorted(_TIMING_COLUMN_NAMES) != sorted(timing):
+            sys.exit(
+                f"error: TIMING_COLUMN_NAMES {list(_TIMING_COLUMN_NAMES)}"
+                f" names other than each timing value once: {list(timing)}"
+            )
+        return {
+            column_name: timing[column_name]
+            for column_name in _TIMING_COLUMN_NAMES
+        }
 
     # Returns a test's timing, read from its timing page and perf counters.
     def timing_read(
         self, artifacts_dir: str, test_name: str
-    ) -> PerfMeasure.Timing:
+    ) -> dict[str, float]:
         with artifacts.artifact_open(
             artifacts_dir, "timing-page", test_name
         ) as handle:
@@ -467,49 +563,19 @@ class PerfMeasure:
         )
 
     # Returns each timing value's name and printed text, a 0 printed empty.
-    def timing_texts(
-        self, timing: PerfMeasure.Timing
-    ) -> list[tuple[str, str]]:
-        return [
-            (
-                _TIMING_TIME_PER_LOOP_NAME,
-                (
-                    theme.num_time(timing.seconds_per_loop)
-                    if timing.seconds_per_loop
-                    else ""
-                ),
-            ),
-            *(
-                (
-                    metric_entry[0],
-                    (
-                        metric_text
-                        if metric_text and float(metric_text)
-                        else ""
-                    ),
+    def timing_texts(self, timing: dict[str, float]) -> list[tuple[str, str]]:
+        timing_rows: list[tuple[str, str]] = []
+        for value_name, value in timing.items():
+            if not value:
+                value_text = ""
+            elif value_name == _TIMING_TIME_PER_LOOP_NAME:
+                value_text = theme.num_time(value)
+            else:
+                value_text = theme.fixed_text(
+                    value, _TIMING_PERF_STAT_METRIC_FRACTION_DIGITS
                 )
-                for metric_entry, metric_text in zip(
-                    _TIMING_PERF_STAT_METRICS,
-                    timing.metric_texts,
-                    strict=True,
-                )
-            ),
-            *(
-                (
-                    ratio_entry[0],
-                    (
-                        theme.fixed_text(
-                            ratio, _TIMING_PERF_STAT_METRIC_FRACTION_DIGITS
-                        )
-                        if ratio
-                        else ""
-                    ),
-                )
-                for ratio_entry, ratio in zip(
-                    _TIMING_COUNTER_RATIOS, timing.counter_ratios, strict=True
-                )
-            ),
-        ]
+            timing_rows.append((value_name, value_text))
+        return timing_rows
 
     # Records the counting run and the sampled run, then converts the trace.
     def trace_measure(
@@ -581,25 +647,36 @@ def main() -> None:
         "timing",
         help="the perf stat counters, the timing page and its summary rows",
     )
+    timing_data_parser = subparsers.add_parser(
+        "timing-data",
+        help="the timing document of every test's overview values, which"
+        " the raw data archive holds",
+    )
     trace_parser = subparsers.add_parser(
         "trace",
         help="the function trace of the sampled run and its speedscope"
         " profile",
     )
-    for measure_parser in (callgrind_parser, timing_parser, trace_parser):
-        measure_parser.add_argument(
+    for report_parser in (
+        callgrind_parser,
+        timing_parser,
+        timing_data_parser,
+        trace_parser,
+    ):
+        report_parser.add_argument(
             "--artifacts",
             required=True,
             metavar="DIR",
             help="the profiler artifacts directory, holding the report's own,"
             " where the test's recordings go",
         )
-        measure_parser.add_argument(
+        report_parser.add_argument(
             "--report",
             required=True,
             metavar="DIR",
             help="the report directory, naming its artifacts directory",
         )
+    for measure_parser in (callgrind_parser, timing_parser, trace_parser):
         measure_parser.add_argument(
             "--test", required=True, help="the test the executable runs"
         )
@@ -618,6 +695,13 @@ def main() -> None:
             help="the executable as the page shows it",
         )
     namespace = parser.parse_args()
+    if namespace.cmd == "timing-data":
+        PerfMeasure().timing_data_write(
+            PerfMeasure.DataArgs(
+                artifacts=namespace.artifacts, report=namespace.report
+            )
+        )
+        return
     measure_args = PerfMeasure.MeasureArgs(
         artifacts=namespace.artifacts,
         report=namespace.report,

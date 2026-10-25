@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-import argparse, base64, html, json, os, re, subprocess, sys, tarfile
+import argparse, base64, html, json, math, os, re, subprocess, sys, tarfile
 import urllib.parse
 from collections.abc import Sequence
 from typing import Any, NamedTuple
@@ -1008,17 +1008,11 @@ class TestReport:
         tests_attributes = self.element_attributes(
             page_text, _TEST_OVERVIEW_TESTS_TABLE_DATA_ID
         )
-        if (
-            tests_attributes is not None
-            and tests_attributes.get("data-diff-") != layout.table_diff_value
-        ):
+        if tests_attributes is not None and "data-diff-" in tests_attributes:
             self.fail(
-                "overview index.html's tests table data holds data-diff-"
-                f" {tests_attributes.get('data-diff-')!r}, expected"
-                f" {layout.table_diff_value!r}: {path}"
+                "overview index.html's tests table data holds data-diff-,"
+                f" which both reports' one column list leaves out: {path}"
             )
-        if tests_attributes is not None:
-            self.overview_columns_check(tests_attributes, layout, path)
         self.overview_sections_check(page_text, layout, path)
         page_hrefs = self.overview_tests_hrefs(page_text, path)
         for test_name in tests:
@@ -1044,17 +1038,22 @@ class TestReport:
                     "overview index.html has no header block heading"
                     f" {heading!r}: {path}"
                 )
-        self.timer_artifacts_check(out_dir, page_text, tests, layout)
+        timing_document = self.timer_artifacts_check(
+            out_dir, page_text, tests, layout
+        )
+        if tests_attributes is not None:
+            self.overview_columns_check(
+                tests_attributes, layout, timing_document, path
+            )
 
-    # Checks each regular tests row holds a time per loop and ratio cells.
+    # Checks each tests row, a regular one's values, a diff one's changes.
     def overview_columns_check(
         self,
         attributes: dict[str, str],
         layout: TestReport.ReportLayout,
+        timing_document: dict[str, dict[str, float]] | None,
         path: str,
     ) -> None:
-        if not layout.is_regular_report:
-            return
         for table_row in self.table_data_rows(
             attributes, "overview index.html", path
         ):
@@ -1065,37 +1064,129 @@ class TestReport:
                     f" {_TEST_OVERVIEW_ROW_FIELD_COUNT}: {path}"
                 )
                 continue
-            time_text = table_row[_TEST_OVERVIEW_TIME_PER_LOOP_FIELD]
-            if not isinstance(time_text, str) or not re.fullmatch(
-                _TEST_OVERVIEW_TIME_PER_LOOP_PATTERN, time_text
-            ):
-                self.fail(
-                    f"overview index.html's tests row {table_row} holds the"
-                    f" time per loop {time_text!r}, expected"
-                    f" {_TEST_OVERVIEW_TIME_PER_LOOP_PATTERN}: {path}"
+            field_patterns = (
+                [
+                    (
+                        _TEST_OVERVIEW_TIME_PER_LOOP_FIELD,
+                        _TEST_OVERVIEW_TIME_PER_LOOP_PATTERN,
+                    ),
+                    *(
+                        (ratio_field, _TEST_OVERVIEW_RATIO_PATTERN)
+                        for ratio_field in _TEST_OVERVIEW_RATIO_FIELDS
+                    ),
+                ]
+                if layout.is_regular_report
+                else [
+                    (change_field, _TEST_OVERVIEW_CHANGE_PATTERN)
+                    for change_field in _TEST_OVERVIEW_VALUE_FIELDS
+                ]
+            )
+            for value_field, value_pattern in field_patterns:
+                value_text = (
+                    table_row[value_field]
+                    if layout.is_regular_report
+                    else self.overview_change_text(table_row[value_field])
                 )
-            for ratio_field in _TEST_OVERVIEW_COUNTER_RATIO_FIELDS:
-                ratio_text = table_row[ratio_field]
-                if not isinstance(ratio_text, str) or not re.fullmatch(
-                    _TEST_OVERVIEW_COUNTER_RATIO_PATTERN, ratio_text
+                if not isinstance(value_text, str) or not re.fullmatch(
+                    value_pattern, value_text
                 ):
+                    cell_text = (
+                        ""
+                        if layout.is_regular_report
+                        else _TEST_OVERVIEW_CHANGE_CELL_TEXT
+                    )
                     self.fail(
                         f"overview index.html's tests row {table_row} holds"
-                        f" the counter ratio {ratio_text!r} in cell"
-                        f" {ratio_field}, expected"
-                        f" {_TEST_OVERVIEW_COUNTER_RATIO_PATTERN}: {path}"
+                        f" {table_row[value_field]!r} in cell {value_field},"
+                        f" expected {value_pattern}{cell_text}: {path}"
                     )
-            for metric_field in _TEST_OVERVIEW_PERF_METRIC_FIELDS:
-                metric_text = table_row[metric_field]
-                if not isinstance(metric_text, str) or not re.fullmatch(
-                    _TEST_OVERVIEW_PERF_METRIC_PATTERN, metric_text
-                ):
-                    self.fail(
-                        f"overview index.html's tests row {table_row} holds"
-                        f" the perf metric {metric_text!r} in cell"
-                        f" {metric_field}, expected"
-                        f" {_TEST_OVERVIEW_PERF_METRIC_PATTERN}: {path}"
+                    break
+            else:
+                if timing_document is not None:
+                    self.overview_values_check(
+                        table_row, timing_document, path
                     )
+
+    # Returns a diff change cell's text, none for a heat cell unlike its text.
+    def overview_change_text(self, change_cell: Any) -> str | None:
+        if change_cell == "":
+            return change_cell
+        if not isinstance(change_cell, dict) or set(change_cell) != {
+            "text",
+            "heat_percent",
+        }:
+            return None
+        change_text, heat_percent = (
+            change_cell["text"],
+            change_cell["heat_percent"],
+        )
+        if (
+            not isinstance(change_text, str)
+            or type(heat_percent) not in (int, float)
+            or not math.isfinite(heat_percent)
+        ):
+            return None
+        arrow_sign = (
+            1
+            if change_text.startswith("▲")
+            else -1
+            if change_text.startswith("▼")
+            else 0
+        )
+        if arrow_sign != (heat_percent > 0) - (heat_percent < 0):
+            return None
+        percent_match = re.fullmatch(r"[▲▼] *(-?\d+\.\d{2})%", change_text)
+        if percent_match and (
+            abs(float(percent_match.group(1)) - heat_percent)
+            > _TEST_OVERVIEW_CHANGE_LARGEST_ERROR
+        ):
+            return None
+        return change_text
+
+    # Checks a regular row's cells print its timing document's values.
+    def overview_values_check(
+        self,
+        table_row: list[Any],
+        timing_document: dict[str, dict[str, float]],
+        path: str,
+    ) -> None:
+        test_name = (
+            table_row[0].get("text", "")
+            if isinstance(table_row[0], dict)
+            else ""
+        )
+        if test_name not in timing_document:
+            self.fail(
+                f"overview index.html's tests row {table_row} names no test"
+                f" of {_TEST_TIMING_DOCUMENT_NAME}: {path}"
+            )
+            return
+        for value_field, value_name in zip(
+            _TEST_OVERVIEW_VALUE_FIELDS, _TEST_TIMING_VALUE_NAMES, strict=True
+        ):
+            value = timing_document[test_name][value_name]
+            value_text = table_row[value_field]
+            unit_seconds = 1.0
+            largest_error = _TEST_OVERVIEW_RATIO_LARGEST_ERROR
+            is_time = value_field == _TEST_OVERVIEW_TIME_PER_LOOP_FIELD
+            if is_time and value_text:
+                unit_text = value_text.lstrip("0123456789.")
+                unit_seconds = _TEST_OVERVIEW_TIME_UNIT_SECONDS[unit_text]
+                value_text = value_text.removesuffix(unit_text)
+                largest_error = _TEST_OVERVIEW_TIME_LARGEST_ERROR
+            if value:
+                is_printed = bool(value_text) and (
+                    abs(float(value_text) * unit_seconds - value)
+                    <= largest_error * unit_seconds
+                )
+            else:
+                is_printed = not value_text
+            if not is_printed:
+                self.fail(
+                    f"overview index.html's tests row {table_row} prints"
+                    f" {value_name} {value} of {_TEST_TIMING_DOCUMENT_NAME}"
+                    f" as {table_row[value_field]!r}: {path}"
+                )
 
     # Checks the overview shows its tests, then its manifest, then raw data.
     def overview_sections_check(
@@ -1503,7 +1594,7 @@ class TestReport:
         archive_name: str,
         tests: Sequence[str],
         layout: TestReport.ReportLayout,
-    ) -> None:
+    ) -> dict[str, dict[str, float]] | None:
         size = os.path.getsize(path)
         if size < _TEST_RAW_ARCHIVE_LEAST_BYTES:
             self.fail(
@@ -1523,7 +1614,7 @@ class TestReport:
             self.fail(
                 f"{archive_name} is not readable as tar.xz: {path}: {error}"
             )
-            return
+            return None
         if not any(
             member.isdir() and member.name == root_name
             for member in archive_members
@@ -1562,9 +1653,16 @@ class TestReport:
             _TEST_PATHS_DOCUMENT_NAME,
             path,
         )
+        timing_document = self.timing_document_check(
+            texts_by_name.get(_TEST_TIMING_DOCUMENT_NAME),
+            archive_name,
+            tests,
+            path,
+        )
         wanted_names = {
             _TEST_LIST_FILE_NAME,
             _TEST_PATHS_DOCUMENT_NAME,
+            _TEST_TIMING_DOCUMENT_NAME,
             *profile_names.values(),
         }
         for file_name in texts_by_name:
@@ -1579,14 +1677,16 @@ class TestReport:
                     f"{archive_name} still contains the absolute repo root "
                     f"{callgrind.REPO_ROOT!r} in {member_name}: {path}"
                 )
+        return timing_document
 
+    # Returns the regular report's timing document, none for a diff report.
     def timer_artifacts_check(
         self,
         out_dir: str,
         overview_text: str,
         tests: Sequence[str],
         layout: TestReport.ReportLayout,
-    ) -> None:
+    ) -> dict[str, dict[str, float]] | None:
         has_raw_data_line = _TEST_OVERVIEW_RAW_DATA_MARKUP in overview_text
         if layout.has_timer_artifacts and not has_raw_data_line:
             self.fail(f"overview index.html has no 'raw data' line: {out_dir}")
@@ -1604,7 +1704,8 @@ class TestReport:
                 f"MANIFEST.txt names no raw data archive: {error}:"
                 f" {manifest_path}"
             )
-            return
+            return None
+        timing_document = None
         for label in layout.manifest_recorded_labels:
             archive_name = (
                 f"{_TEST_TIMER_ARTIFACTS_PREFIX}"
@@ -1631,9 +1732,61 @@ class TestReport:
                     f"overview index.html does not link {archive_name}:"
                     f" {out_dir}"
                 )
-            self.timer_artifacts_archive_check(
+            timing_document = self.timer_artifacts_archive_check(
                 path, archive_name, tests, layout
             )
+        return timing_document
+
+    # Returns the archive's timing document of each test's overview values.
+    def timing_document_check(
+        self,
+        text: str | None,
+        archive_name: str,
+        tests: Sequence[str],
+        path: str,
+    ) -> dict[str, dict[str, float]] | None:
+        if text is None:
+            self.fail(
+                f"{archive_name} holds no {_TEST_TIMING_DOCUMENT_NAME}: {path}"
+            )
+            return None
+        try:
+            document = json.loads(text)
+        except ValueError as error:
+            self.fail(
+                f"{_TEST_TIMING_DOCUMENT_NAME} holds no JSON: {error}: {path}"
+            )
+            return None
+        if not isinstance(document, dict) or list(document) != sorted(tests):
+            self.fail(
+                f"{_TEST_TIMING_DOCUMENT_NAME} keys"
+                f" {list(document) if isinstance(document, dict) else []},"
+                f" expected the overview's tests {sorted(tests)}: {path}"
+            )
+            return None
+        for test_name, values in document.items():
+            if not isinstance(values, dict) or list(values) != list(
+                _TEST_TIMING_VALUE_NAMES
+            ):
+                self.fail(
+                    f"{_TEST_TIMING_DOCUMENT_NAME} gives {test_name} the"
+                    f" values {values!r}, expected the names"
+                    f" {list(_TEST_TIMING_VALUE_NAMES)}: {path}"
+                )
+                return None
+            for value_name, value in values.items():
+                if (
+                    type(value) not in (int, float)
+                    or value < 0
+                    or not math.isfinite(value)
+                ):
+                    self.fail(
+                        f"{_TEST_TIMING_DOCUMENT_NAME} gives {test_name}"
+                        f" {value_name} {value!r}, expected a finite number"
+                        f" not below 0: {path}"
+                    )
+                    return None
+        return document
 
 
 _FLAME_GRAPH_VIEW_KEY = _FLAME_GRAPH_VIEW_ENTRY[0]
@@ -1749,20 +1902,35 @@ _TEST_HEAT_MAP_MODEL_LEAST_BYTES = 5000
 _TEST_HEAT_MAP_PAGE_LEAST_BYTES = 1000
 _TEST_LIST_FILE_NAME = "test_list.txt"
 _TEST_MANIFEST_LEAST_BYTES = 40
-_TEST_OVERVIEW_COUNTER_RATIO_FIELDS = (5,)
-_TEST_OVERVIEW_COUNTER_RATIO_PATTERN = r"(?:\d+\.\d{6})?"
+_TEST_OVERVIEW_CHANGE_CELL_TEXT = (
+    " in a cell whose heat_percent agrees with it, else an empty text"
+)
+_TEST_OVERVIEW_CHANGE_LARGEST_ERROR = 0.0050001
+_TEST_OVERVIEW_CHANGE_PATTERN = (
+    r"(?:0\.00%|[▲▼] *(?:≈0\.00%|-?\d+\.\d{2}%|∞%|≈∞%|\d+\.\d{2}x))?"
+)
 _TEST_OVERVIEW_PAGE_LEAST_BYTES = 2000
 _TEST_OVERVIEW_PAGE_TITLE = ""
-_TEST_OVERVIEW_PERF_METRIC_FIELDS = (2, 3, 4)
-_TEST_OVERVIEW_PERF_METRIC_PATTERN = r"(?:\d+\.\d{6})?"
+_TEST_OVERVIEW_RATIO_FIELDS = (2, 3, 4, 5)
+_TEST_OVERVIEW_RATIO_LARGEST_ERROR = 0.00000050001
+_TEST_OVERVIEW_RATIO_PATTERN = r"(?:\d+\.\d{6})?"
 _TEST_OVERVIEW_RAW_DATA_MARKUP = '<div id="overview-raw-data-">'
 _TEST_OVERVIEW_ROW_FIELD_COUNT = 6
 _TEST_OVERVIEW_TESTS_HEADING_MARKUP = (
     '<div id="overview-tests-heading-" class="page-heading-"></div>'
 )
 _TEST_OVERVIEW_TESTS_TABLE_DATA_ID = "overview-tests-table-"
+_TEST_OVERVIEW_TIME_LARGEST_ERROR = 0.0050001
 _TEST_OVERVIEW_TIME_PER_LOOP_FIELD = 1
 _TEST_OVERVIEW_TIME_PER_LOOP_PATTERN = r"(?:\d+\.\d{2}(?:s|ms|us|ns|ps))?"
+_TEST_OVERVIEW_TIME_UNIT_SECONDS = {
+    "s": 1.0,
+    "ms": 1e-3,
+    "us": 1e-6,
+    "ns": 1e-9,
+    "ps": 1e-12,
+}
+_TEST_OVERVIEW_VALUE_FIELDS = (1, 2, 3, 4, 5)
 _TEST_PAGE_PREAMBLE_SCRIPT_NAMES = (
     "error_overlay.js",
     "settings.js",
@@ -1780,6 +1948,14 @@ _TEST_SOURCE_DATABASE_KEYS = ("files", "functions")
 _TEST_SOURCE_DATABASE_LEAST_BYTES = 1000
 _TEST_SOURCE_DATABASE_SCRIPT_PATH = "scripts/source_database.js"
 _TEST_TIMER_ARTIFACTS_PREFIX = "timer-artifacts-"
+_TEST_TIMING_DOCUMENT_NAME = "0_timing_data.json"
+_TEST_TIMING_VALUE_NAMES = (
+    "time_per_loop",
+    "instructions_per_cycle",
+    "loads_per_instruction",
+    "branch_miss_ratio",
+    "l1d_miss_ratio",
+)
 
 
 def main() -> int:

@@ -6,6 +6,8 @@ ARTIFACTS_NAME=perf2html_temporary_artifacts
 
 ARTIFACT_ARCHIVE_KINDS=(callgrind)
 
+ARTIFACT_ARCHIVE_RUN_KINDS=(file-data timing-data)
+
 ARTIFACT_DIFFED_KINDS=(caller-counts delta)
 
 declare -A ARTIFACT_FILE_PURPOSES=(
@@ -23,6 +25,7 @@ declare -A ARTIFACT_FILE_PURPOSES=(
   ["profile-log"]="the measuring run's log"
   ["profile-regenerate-log"]="the last --regenerate run's log"
   ["test-list"]="the test names, one per line, sorted"
+  ["timing-data"]="the timing document, each test's overview values"
   ["timing-json"]="the perf stat counters, one JSON line per event"
   ["timing-page"]="the timing page, the command and the curl perf tool's runs"
   ["timing-summary"]="the timing summary rows, one label=value each"
@@ -48,6 +51,7 @@ declare -A ARTIFACT_RUN_FILE_FORMATS=(
   ["profile-log"]='%s/perf2html.log'
   ["profile-regenerate-log"]='%s/perf2html.regenerate.log'
   ["test-list"]='%s/test_list.txt'
+  ["timing-data"]='%s/0_timing_data.json'
 )
 
 declare -A ARTIFACT_TEST_FILE_FORMATS=(

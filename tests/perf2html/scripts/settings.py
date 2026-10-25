@@ -306,7 +306,7 @@ STYLE_COLOR_DARK_MODE: dict[str, list[str]] = {
 STYLE_COLOR_DARK_MODE_ROLE_PREFIX = "dark-mode-"
 
 STYLE_COLOR_LIGHT_MODE: dict[str, list[str]] = {
-    "#000000": [
+    "#101010": [
         "light-mode-menu-focus-bg-",
         "light-mode-menu-normal-fg-",
         "light-mode-menu-normal-outline-",
@@ -314,17 +314,17 @@ STYLE_COLOR_LIGHT_MODE: dict[str, list[str]] = {
         "light-mode-page-fg-",
         "light-mode-screenshot-bg-",
     ],
-    "#FFFFFF": [
+    "#FCFCFA": [
         "light-mode-menu-focus-fg-",
         "light-mode-page-emphasis-fg-",
         "light-mode-page-bg-",
         "light-mode-screenshot-fg-",
         "light-mode-status-bar-fg-",
     ],
-    "#AAAAAA": [
+    "#AAAAA9": [
         "light-mode-menu-normal-bg-",
     ],
-    "#00AAAA": [
+    "#10AAA9": [
         "light-mode-status-bar-bg-",
     ],
 }
@@ -368,7 +368,6 @@ STYLE_HEAT_MAP_SOURCE_LINE_NUMBER_MARKER_WIDTH_PROPERTY = (
 )
 STYLE_HEAT_MAP_TREE_INDENT_PER_LEVEL_CHARS = 2
 STYLE_MENU_LOGO_START_SHARE = 0.5
-STYLE_MENU_PULLDOWN_EXTRA_WIDTH_CHARS = 2
 STYLE_PAGE_BACKGROUND_DARK_MODE_ROLE = "dark-mode-page-bg-"
 STYLE_PAGE_BACKGROUND_EARLY_FILL_ENABLED = True
 STYLE_PAGE_BACKGROUND_LIGHT_MODE_ROLE = "light-mode-page-bg-"
@@ -385,6 +384,10 @@ STYLE_TABLE_COLUMN_EDGE_GRAB_CHARS = 0.5
 STYLE_TABLE_FUNCTION_LIST_COLUMN_MAX_CHARS = 48
 STYLE_TABLE_FUNCTION_NAME_MAX_CHARS = 20
 STYLE_TABLE_LOCATION_COLUMN_MAX_CHARS = 48
+STYLE_TEXT_SCROLLBAR_FONT_MULTIPLE = 2
+STYLE_TEXT_SCROLLBAR_FONT_MULTIPLE_PROPERTY = (
+    "--page-text-scrollbar-font-multiple-"
+)
 STYLE_TEXT_SCROLLBAR_THUMB_SHORTEST_CHARS = 4
 STYLE_VALUE_ENTRIES: dict[str, str] = {
     "call-graph-border-width-": "1ch",
@@ -396,12 +399,11 @@ STYLE_VALUE_ENTRIES: dict[str, str] = {
     "heat-map-tree-node-hover-z-index-": "1",
     "heat-map-tree-node-padding-right-": "1ch",
     "heat-map-tree-node-share-percent-width-": "10ch",
-    "heat-map-tree-width-": "39ch",
+    "heat-map-tree-width-": "40ch",
     "menu-button-padding-inline-": "1ch",
     "menu-pulldown-entry-list-max-height-share-": "0.6",
     "menu-pulldown-entry-list-z-index-": "3",
     "menu-pulldown-entry-padding-inline-": "1ch",
-    "menu-pulldown-search-box-min-width-": "13ch",
     "menu-status-bar-padding-left-": "1ch",
     "menu-status-bar-padding-right-": "1ch",
     "menu-strip-blank-line-height-": "0.5lh",
@@ -432,6 +434,10 @@ TABLE_ROW_COUNT_CHOICES: tuple[int, ...] = (
     100,
 )
 
+TEXT_SCROLLBAR_CHEVRON_STEP_CHARS: dict[str, int] = {
+    "horizontal": 6,
+    "vertical": 3,
+}
 TEXT_SCROLLBAR_WHEEL_DELTA_PER_NOTCH = 100
 TEXT_SCROLLBAR_WHEEL_NOTCH_LINES = 2.5
 
@@ -443,14 +449,28 @@ THEME_TIME_UNIT_ENTRIES: tuple[tuple[str, float], ...] = (
     ("ps", 1e-12),
 )
 
+TIMING_COLUMN_NAMES: tuple[str, ...] = (
+    "time_per_loop",
+    "instructions_per_cycle",
+    "loads_per_instruction",
+    "branch_miss_ratio",
+    "l1d_miss_ratio",
+)
 TIMING_COLUMN_STRING_ID_PREFIX = "str_column_"
 TIMING_COUNTER_RATIOS: tuple[tuple[str, str, str], ...] = (
     ("loads_per_instruction", "L1-dcache-loads", "instructions"),
 )
-TIMING_PERF_STAT_METRICS: tuple[tuple[str, str, str], ...] = (
-    ("instructions_per_cycle", "instructions", "insn per cycle"),
-    ("branch_miss_percent", "branch-misses", "of all branches"),
-    ("l1d_miss_percent", "L1-dcache-load-misses", "of all L1-dcache accesses"),
+TIMING_DATA_INDENT_CHARS = 2
+# Each metric's last field is how many of perf's metric units make a ratio 1.
+TIMING_PERF_STAT_METRICS: tuple[tuple[str, str, str, int], ...] = (
+    ("instructions_per_cycle", "instructions", "insn per cycle", 1),
+    ("branch_miss_ratio", "branch-misses", "of all branches", 100),
+    (
+        "l1d_miss_ratio",
+        "L1-dcache-load-misses",
+        "of all L1-dcache accesses",
+        100,
+    ),
 )
 TIMING_PERF_STAT_METRIC_FRACTION_DIGITS = 6
 TIMING_PERF_STAT_NUMBER_PATTERN = r"[0-9]+(?:\.[0-9]+)?"

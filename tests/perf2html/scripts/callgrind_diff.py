@@ -10,10 +10,7 @@ from collections.abc import Sequence
 from typing import NamedTuple, TextIO, TypedDict
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import artifacts, callgrind, settings
-
-_RANKING_COUNTER_NAME: str = ""
-settings.load_into(__name__)
+import artifacts, callgrind
 
 
 class CallerDelta(NamedTuple):
@@ -26,11 +23,8 @@ class CallersDoc(TypedDict):
     counters: list[str]
     callers: dict[str, list[CallerDelta]]
     baseline: dict[str, callgrind.Costs]
-    baselineTotal: callgrind.Costs
     baselineCalls: dict[str, int]
     fileBaseline: dict[str, callgrind.Costs]
-    deltaTotal: callgrind.Costs
-    changedFunctions: int
 
 
 class CallgrindDiff:
@@ -134,22 +128,11 @@ class CallgrindDiff:
             "counters": list(baseline.counters),
             "callers": callers,
             "baseline": self.baseline_costs(baseline, objects),
-            "baselineTotal": callgrind.costs_fit(
-                baseline.totals(), len(baseline.counters)
-            ),
             "baselineCalls": {
                 callee: sum(tally.count for tally in tallies.values())
                 for callee, tallies in baseline.callers.items()
             },
             "fileBaseline": self.baseline_files(baseline, objects),
-            "deltaTotal": profile_magnitudes(diff),
-            "changedFunctions": sum(
-                1
-                for costs in diff.function_self.values()
-                if callgrind.counter_value(
-                    diff.counters, costs, _RANKING_COUNTER_NAME
-                )
-            ),
         }
         os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
         with open(path, "w", encoding="utf-8") as handle:
@@ -352,11 +335,8 @@ def callers_doc_load(directory: str, test_name: str) -> CallersDoc:
         "counters",
         "callers",
         "baseline",
-        "baselineTotal",
         "baselineCalls",
         "fileBaseline",
-        "deltaTotal",
-        "changedFunctions",
     ):
         if key not in doc:
             path = artifacts.artifact_path(

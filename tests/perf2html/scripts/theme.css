@@ -212,9 +212,29 @@ pre {
   margin-right: var(--menu-status-bar-padding-right-);
   white-space: pre;
 }
+/* The search, label and placeholder share one place the last two size. */
+.menu-pulldown-text-box- {
+  display: inline-grid;
+}
+.menu-pulldown-text-box- > * {
+  grid-area: 1 / 1;
+}
+/* A search past its box shows its end, its start cut. */
 .menu-pulldown-search-box- {
-  display: inline-block;
-  min-width: var(--menu-pulldown-search-box-min-width-);
+  display: flex;
+  justify-content: flex-end;
+  contain: inline-size;
+  overflow: clip;
+}
+/* A search that fits starts at the box start. */
+.menu-pulldown-search-box-::after {
+  content: "";
+  flex-grow: 1;
+}
+/* A shown search hides the label under it, the placeholder only sizing. */
+.menu-pulldown-search-box-:not([hidden]) ~ *,
+.menu-pulldown-placeholder-box- {
+  visibility: hidden;
 }
 .menu-pulldown-entry-box- {
   position: absolute;
@@ -292,9 +312,18 @@ table.table-:has(> tbody > :is(tr.row-link-, tr.clickable-):hover)::before {
   height: 1lh;
   align-content: unsafe end;
 }
+/* The raw data link takes a column cell's side room around its name. */
+#overview-raw-data- > a {
+  padding: 0 var(--page-table-cell-padding-inline-);
+}
 
-/* A text scrollbar: one cell per character of its track. */
+/* A text scrollbar: one cell per character, its characters design scaled. */
 .text-scrollbar- {
+  display: flex;
+  font-size: calc(
+    var(--design-font-size-px-) * var(--design-font-fit-) *
+      var(--page-text-scrollbar-font-multiple-)
+  );
   contain: size;
   overflow: hidden;
   white-space: pre;
@@ -305,10 +334,15 @@ table.table-:has(> tbody > :is(tr.row-link-, tr.clickable-):hover)::before {
   height: var(--page-text-scrollbar-horizontal-height-);
 }
 .text-scrollbar-.vertical- {
+  flex-direction: column;
   width: var(--page-text-scrollbar-vertical-width-);
 }
-.text-scrollbar-.vertical- > span {
-  display: block;
+/* The forward chevron sits at the bar's end, past the room of a part cell. */
+.text-scrollbar-.horizontal- > :last-child:not(:first-child) {
+  margin-left: auto;
+}
+.text-scrollbar-.vertical- > :last-child:not(:first-child) {
+  margin-top: auto;
 }
 /* A bar whose target shows all it holds takes no room. */
 .text-scrollbar-.target-fits- {

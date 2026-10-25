@@ -93,6 +93,11 @@ body {
   background: var(--light-mode-menu-focus-bg-);
   color: var(--light-mode-menu-focus-fg-);
 }
+/* An open pulldown whose list holds the focus shows its cell unfocused. */
+.menu-button-.open-:has(.highlighted-entry-) {
+  background: var(--light-mode-menu-normal-bg-);
+  color: var(--light-mode-menu-normal-fg-);
+}
 
 #heat-map-main- {
   background: var(--light-mode-page-bg-);
@@ -133,19 +138,19 @@ tr.heat-map-source-information-box-synthetic-row- > td {
 /* Light mode alone draws lines, each on the top of the slot below its own. */
 :where(:root[data-dark-mode-="disabled"]) {
   /* A framed box: its top line in the room of a clear top border. */
-  .page- a:not(.row-link- a),
+  .page- a:not(.table- a),
   .heat-map-source- a,
   .heat-map-tree-node- {
     position: relative;
   }
-  .page- a:not(.row-link- a),
+  .page- a:not(.table- a),
   .heat-map-source- a,
   .menu-button-,
   .heat-map-tree-node- {
     border-top: var(--page-line-width-) solid transparent;
   }
   /* The frame, over its box, passing each press to what lies under it. */
-  .page- a:not(.row-link- a)::after,
+  .page- a:not(.table- a)::after,
   .heat-map-source- a::after,
   .menu-button-:not([data-entry-name-="str_report_name"])::after,
   .heat-map-tree-node-.selected-::after {

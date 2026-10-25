@@ -26,9 +26,6 @@ window.try_catch_handler_(function () {
   const SETTINGS_LOAD_LOG_HISTORY_LINE_CHOICES = settings_(
     "SETTINGS_LOAD_LOG_HISTORY_LINE_CHOICES",
   );
-  const STYLE_MENU_PULLDOWN_EXTRA_WIDTH_CHARS = settings_(
-    "STYLE_MENU_PULLDOWN_EXTRA_WIDTH_CHARS",
-  );
 
   const ACTION_LABEL_TEXTS = {
     apply: window.ui_strings_.text("str_settings_apply"),
@@ -48,12 +45,6 @@ window.try_catch_handler_(function () {
         : SETTINGS_DEBUG_QUERY_VALUES.disabled,
     },
   );
-  const HISTORY_BOX_WIDTH_CHARS =
-    Math.max(
-      ...SETTINGS_LOAD_LOG_HISTORY_LINE_CHOICES.map(
-        (line_count) => String(line_count).length,
-      ),
-    ) + STYLE_MENU_PULLDOWN_EXTRA_WIDTH_CHARS;
   const INDENT_TEXT = " ".repeat(SETTINGS_DEBUG_JSON_INDENT_CHARS);
   // Writes each kind of line value: a file as its report path, a span in ms.
   const LOAD_LOG_VALUE_WRITERS = {
@@ -265,7 +256,6 @@ window.try_catch_handler_(function () {
           history_label(line_count),
           {
             pulldown_options: {
-              box_width_chars: HISTORY_BOX_WIDTH_CHARS,
               entries: () =>
                 window.report_ui_.strip.choice_entries(
                   SETTINGS_LOAD_LOG_HISTORY_LINE_CHOICES.map(

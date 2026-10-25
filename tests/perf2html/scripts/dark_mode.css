@@ -78,6 +78,10 @@
   .overview-manifest-label- {
     background: var(--dark-mode-panel-bg-);
   }
+  /* The tests table's report names take the page text color. */
+  .overview-tests-table- a:not(:focus-visible) {
+    color: var(--dark-mode-page-fg-);
+  }
   #overview-view-frame- {
     background: var(--dark-mode-page-bg-);
     color-scheme: dark;
@@ -106,6 +110,11 @@
   .menu-pulldown-entry-list- > .highlighted-entry- {
     background: var(--dark-mode-menu-focus-bg-);
     color: var(--dark-mode-menu-focus-fg-);
+  }
+  /* An open pulldown whose list holds the focus shows its cell unfocused. */
+  .menu-button-.open-:has(.highlighted-entry-) {
+    background: var(--dark-mode-menu-normal-bg-);
+    color: var(--dark-mode-menu-normal-fg-);
   }
 
   #heat-map-main- {
