@@ -176,7 +176,7 @@ function = [
 ]
 
 self_costs = [<int>, ...]
-callers = [<function_index>, <calls>, ...] // pairs of functions and calls 
+callers = [<function_index>, <calls>, ...] // pairs of functions and calls
 callees = [<function_index>, <calls>, ...] // same format as callers
 function_index = <int>                     // index into "functions" array
 calls = <int>                              // total number of calls
