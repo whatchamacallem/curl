@@ -128,6 +128,7 @@ FLAME_GRAPH_MAX_RECORDED_CALLS = 200
 FLAME_GRAPH_PROFILE_DIR_NAME = "profiles"
 FLAME_GRAPH_PROFILE_GLOBAL_NAME = "report_flame_graph_profiles_"
 FLAME_GRAPH_PROFILE_NAME_FORMAT = "%s (loops=%s)"
+FLAME_GRAPH_RELAYED_KEY_NAMES: tuple[str, ...] = ("0",)
 FLAME_GRAPH_STARTUP_POLL_DELAY_MS = 50
 FLAME_GRAPH_STARTUP_POLL_MAX_ATTEMPTS = 200
 FLAME_GRAPH_TRACE_PROFILE_NAME_FORMAT = (
@@ -170,7 +171,7 @@ LOAD_LOG_NAVIGATION_CAUSE_NAME = "navigation"
 
 MENU_DIGIT_KEY_COUNT = 10
 MENU_ENTRY_NEEDS: dict[str, list[str]] = {
-    "counters": ["counter_list"],
+    "counters": ["menu_counter_list"],
     "heat_scale": ["view"],
     "heat_sort": ["view"],
     "str_menu_file": ["test"],
@@ -370,10 +371,14 @@ STYLE_TABLE_COLUMN_EDGE_GRAB_CHARS = 0.5
 STYLE_TABLE_FUNCTION_LIST_COLUMN_MAX_CHARS = 48
 STYLE_TABLE_FUNCTION_NAME_MAX_CHARS = 20
 STYLE_TABLE_LOCATION_COLUMN_MAX_CHARS = 48
-STYLE_TEXT_SCROLLBAR_FONT_MULTIPLE = 2
-STYLE_TEXT_SCROLLBAR_FONT_MULTIPLE_PROPERTY = (
-    "--page-text-scrollbar-font-multiple-"
-)
+STYLE_TEXT_SCROLLBAR_FONT_MULTIPLE: dict[str, float] = {
+    "horizontal": 0.75,
+    "vertical": 1.5,
+}
+STYLE_TEXT_SCROLLBAR_FONT_MULTIPLE_PROPERTY: dict[str, str] = {
+    "horizontal": "--page-text-scrollbar-horizontal-font-multiple-",
+    "vertical": "--page-text-scrollbar-vertical-font-multiple-",
+}
 STYLE_TEXT_SCROLLBAR_THUMB_SHORTEST_CHARS = 4
 STYLE_VALUE_ENTRIES: dict[str, str] = {
     "call-graph-border-width-": "1ch",
@@ -407,18 +412,7 @@ STYLE_VALUE_ENTRIES: dict[str, str] = {
 }
 
 TABLE_MARKDOWN_COLUMN_NARROWEST_CHARS = 3
-TABLE_ROW_COUNT_CHOICES: tuple[int, ...] = (
-    10,
-    20,
-    30,
-    40,
-    50,
-    60,
-    70,
-    80,
-    90,
-    100,
-)
+TABLE_ROW_COUNT_CHOICES: tuple[int, ...] = (20, 50, 100, 1000)
 
 TEXT_SCROLLBAR_CHEVRON_STEP_CHARS: dict[str, int] = {
     "horizontal": 6,

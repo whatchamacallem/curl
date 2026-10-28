@@ -165,11 +165,19 @@ window.report_preferences_ = window.try_catch_handler_(function () {
       .filter((counter_line) => counter_line.is_shown)
       .map((counter_line) => counter_line.line_name);
   }
-  // Returns the shown counters of a list in its order, its other lines left.
-  function shown_counter_names(list_key) {
-    return shown_line_names(list_key).filter((line_name) =>
-      is_counter_line(list_key, line_name),
-    );
+  // Lists the counters pulldown's choices, each line of the list, marked.
+  function counter_choices(list_key) {
+    return now().counter_lists[list_key].map((counter_line) => ({
+      label: window.ui_strings_.text_fill("str_menu_counter_entry", {
+        mark: window.ui_strings_.text(
+          counter_line.is_shown
+            ? "str_menu_counter_selected_mark"
+            : "str_menu_counter_unselected_mark",
+        ),
+        label: line_label(list_key, counter_line.line_name),
+      }),
+      value: counter_line.line_name,
+    }));
   }
   // Copies the lines of a counters list, each frozen as the page shows it.
   function counter_lines_freeze(counter_lines) {
@@ -395,7 +403,7 @@ window.report_preferences_ = window.try_catch_handler_(function () {
 
   return {
     activate,
-    counter_description,
+    counter_choices,
     counter_label,
     counter_line_move,
     counter_line_toggle,
@@ -404,11 +412,9 @@ window.report_preferences_ = window.try_catch_handler_(function () {
     heat_scale_choose,
     heat_sort_choices: HEAT_SORT_CHOICES,
     heat_sort_choose,
-    line_label,
     now,
     relay_handler,
     seed,
-    shown_counter_names,
     shown_line_names,
   };
 })();

@@ -50,6 +50,7 @@ window.try_catch_handler_(function () {
     database_model.derivedCounters,
   );
   const RENDERED_ROW_COUNT = Math.max(...TABLE_ROW_COUNT_CHOICES);
+  const FUNCTIONS_TABLE_KEY = "database.functions";
   const count_text = is_diff
     ? window.report_ui_.signed_human_text
     : window.report_ui_.human_text;
@@ -59,7 +60,9 @@ window.try_catch_handler_(function () {
   let shown_line_names = null,
     heat_curve_name = null,
     rendered_preferences_text = null,
-    chosen_sort_name = "";
+    chosen_sort_name = "",
+    chosen_sort_direction = "",
+    pressed_sort_name = null;
 
   // Returns a function the model names, with its heat map address or none.
   function function_link(function_index) {
@@ -119,8 +122,8 @@ window.try_catch_handler_(function () {
     style: heat_style(percent),
   });
 
-  // Lists each caller or callee with its share of calls, cut at the limit.
-  function function_list_cell(call_records) {
+  // Lists each caller or callee with its share of calls, cut at its clip.
+  function function_list_cell(call_records, clip_chars) {
     const entry_labels = call_records.map((call_record) =>
       text_fill("str_function_list_cell_entry", {
         function: call_record.name,
@@ -138,11 +141,7 @@ window.try_catch_handler_(function () {
       const next_text = shown_text
         ? shown_text + DATABASE_CELL_SEPARATOR_TEXT + label_text
         : label_text;
-      if (
-        shown_text &&
-        next_text.length > STYLE_TABLE_FUNCTION_LIST_COLUMN_MAX_CHARS
-      )
-        break;
+      if (shown_text && next_text.length > clip_chars) break;
       shown_text = next_text;
       const label_markup = render_html_escape(label_text);
       shown_markups.push(
@@ -160,53 +159,64 @@ window.try_catch_handler_(function () {
   }
   // Makes the column listing the callers or the callees of each function.
   function function_list_column(label_string_id, line_name, call_records_of) {
-    const cell = (record) => function_list_cell(call_records_of(record));
-    return table_sort_column(
-      { label: text(label_string_id), move_name: line_name },
-      line_name,
-      (record) => cell(record).text,
+    const cell = (record, clip_chars) =>
+      function_list_cell(call_records_of(record), clip_chars);
+    return table_sort_column({
+      column: {
+        label: text(label_string_id),
+        clip: STYLE_TABLE_FUNCTION_LIST_COLUMN_MAX_CHARS,
+        move_name: line_name,
+      },
+      sort_name: line_name,
+      sort_value: (record) =>
+        cell(record, STYLE_TABLE_FUNCTION_LIST_COLUMN_MAX_CHARS).text,
       cell,
-    );
+      first_direction: "descending",
+    });
   }
-  const FUNCTION_COLUMN = table_sort_column(
-    {
+  const FUNCTION_COLUMN = table_sort_column({
+    column: {
       label: text("str_column_function"),
       clip: STYLE_TABLE_FUNCTION_NAME_MAX_CHARS,
     },
-    "function",
-    (record) => record.name,
-    (record) => ({ text: record.name, href: record.href }),
-  );
-  const FILE_COLUMN = table_sort_column(
-    {
+    sort_name: "function",
+    sort_value: (record) => record.name,
+    cell: (record) => ({ text: record.name, href: record.href }),
+    first_direction: "ascending",
+  });
+  const FILE_COLUMN = table_sort_column({
+    column: {
       label: text("str_column_file"),
       clip: STYLE_TABLE_LOCATION_COLUMN_MAX_CHARS,
     },
-    "file",
-    (record) => record.file,
-    (record) => ({ text: record.file }),
-  );
-  const LINE_COLUMN = table_sort_column(
-    { label: text("str_column_line"), numeric: true },
-    "line",
-    (record) => record.line,
-    (record) => ({ text: record.line ? String(record.line) : "" }),
-  );
+    sort_name: "file",
+    sort_value: (record) => record.file,
+    cell: (record) => ({ text: record.file }),
+    first_direction: "ascending",
+  });
+  const LINE_COLUMN = table_sort_column({
+    column: { label: text("str_column_line"), numeric: true },
+    sort_name: "line",
+    sort_value: (record) => record.line,
+    cell: (record) => ({ text: record.line ? String(record.line) : "" }),
+    first_direction: "ascending",
+  });
   // Holds the columns each row draws first, none a line of the counters list.
   const FIXED_COLUMNS = [FUNCTION_COLUMN, FILE_COLUMN, LINE_COLUMN];
-  const CALLS_COLUMN = table_sort_column(
-    {
+  const CALLS_COLUMN = table_sort_column({
+    column: {
       label: text("str_column_calls"),
       move_name: COUNTER_LIST_CALLS_LINE_NAME,
       numeric: true,
     },
-    COUNTER_LIST_CALLS_LINE_NAME,
-    (record) => Math.abs(record.calls),
-    (record) => ({
+    sort_name: COUNTER_LIST_CALLS_LINE_NAME,
+    sort_value: (record) => Math.abs(record.calls),
+    cell: (record) => ({
       text: count_text(record.calls),
       style: heat_style(calls_share(record.calls, record.baseline_calls)),
     }),
-  );
+    first_direction: "descending",
+  });
   const CALLERS_COLUMN = function_list_column(
     "str_column_callers",
     COUNTER_LIST_CALLERS_LINE_NAME,
@@ -225,17 +235,18 @@ window.try_catch_handler_(function () {
   };
   // Makes the column of one shown counter, its shares heat colored.
   function counter_column(counter_reader) {
-    return table_sort_column(
-      {
+    return table_sort_column({
+      column: {
         label: counter_reader.key,
         measure: window.report_preferences_.counter_label(counter_reader.key),
         move_name: counter_reader.key,
         numeric: true,
       },
-      counter_reader.key,
-      (record) => Math.abs(counter_reader.get(record.values)),
-      (record) => share_cell(counter_share(record, counter_reader)),
-    );
+      sort_name: counter_reader.key,
+      sort_value: (record) => Math.abs(counter_reader.get(record.values)),
+      cell: (record) => share_cell(counter_share(record, counter_reader)),
+      first_direction: "descending",
+    });
   }
   // Lists the columns of the shown lines, in list order.
   function line_columns() {
@@ -267,12 +278,47 @@ window.try_catch_handler_(function () {
     const chosen_column = sort_columns.find(
       (sort_column) => sort_column.sort_name === chosen_sort_name,
     );
-    // A sort whose column left the table, a line hidden, resets.
-    if (!chosen_column) chosen_sort_name = "";
-    return (
-      chosen_column ||
+    if (chosen_column) return chosen_column;
+    const first_column =
       shown_line_columns.find((sort_column) => sort_column.column.numeric) ||
-      FUNCTION_COLUMN
+      FUNCTION_COLUMN;
+    // A sort whose column left the table, a line hidden, starts again.
+    chosen_sort_name = "";
+    chosen_sort_direction = first_column.first_direction;
+    return first_column;
+  }
+  // Asks the top page to move a line of the list, a title or entry dropped.
+  function line_move_send(line_name, anchor_name, lands_after) {
+    window.report_ui_.counter_line_move_send(
+      DATABASE_VIEW_KEY,
+      line_name,
+      anchor_name,
+      lands_after,
+    );
+  }
+  // Makes the counters pulldown, which sends each change up to the top page.
+  function counters_entry() {
+    return window.report_ui_.strip.entry_make(
+      "counters",
+      "pulldown",
+      text("str_menu_counters"),
+      {
+        pulldown_options: {
+          entries: () =>
+            window.report_ui_.strip.choice_entries(
+              window.report_preferences_.counter_choices(DATABASE_VIEW_KEY),
+            ),
+          keeps_open: true,
+          on_close: () => {},
+          on_move: line_move_send,
+          on_select: (line_name) =>
+            window.report_ui_.counter_line_toggle_send(
+              DATABASE_VIEW_KEY,
+              line_name,
+            ),
+          reads_line_number: false,
+        },
+      },
     );
   }
   // Draws the table under its heading by its sort, each row linked.
@@ -283,6 +329,7 @@ window.try_catch_handler_(function () {
     const shown_records = table_sort_records(
       function_records,
       sorted_column,
+      chosen_sort_direction,
     ).slice(0, RENDERED_ROW_COUNT);
     const heading_markup = render_element(
       "div",
@@ -290,48 +337,72 @@ window.try_catch_handler_(function () {
         class: "page-heading-",
         "data-row-count-default-": String(DATABASE_TOP_FUNCTION_ROWS),
         "data-row-count-key-": STORAGE_KEY_DATABASE_FUNCTION_ROWS,
-        "data-state-labels-": JSON.stringify(
-          window.report_ui_.table_sort.heading_labels(
-            "str_heading_functions",
-            sorted_column,
-            is_diff,
-          ),
-        ),
       },
       "",
     );
     const table_markup = window.report_ui_.render_table(
-      "database.functions",
+      FUNCTIONS_TABLE_KEY,
       sort_columns.map((sort_column) => sort_column.column),
       shown_records.map((record) =>
-        sort_columns.map((sort_column) => sort_column.cell(record)),
+        sort_columns.map(
+          (sort_column) => (clip_chars) =>
+            sort_column.cell(record, clip_chars),
+        ),
       ),
       {
-        on_column_move: (line_name, anchor_name, lands_after) =>
-          window.report_ui_.counter_line_move_send(
-            DATABASE_VIEW_KEY,
-            line_name,
-            anchor_name,
-            lands_after,
-          ),
-        on_sort: (column_index) => sort_choose(sort_columns[column_index]),
+        heading_entries: [
+          ...window.report_ui_.table_sort.heading_entries({
+            row_string_id: "str_heading_functions",
+            offered_columns: shown_line_columns,
+            sorted_column,
+            sort_direction: chosen_sort_direction,
+            is_diff,
+            on_column_choose: column_choose,
+            on_direction_choose: (sort_direction) =>
+              sort_choose(sorted_column.sort_name, sort_direction),
+          }),
+          counters_entry(),
+        ],
+        on_clip_change: page_render,
+        on_column_move: line_move_send,
+        on_sort: (column_index) => title_press(sort_columns[column_index]),
         row_href: shown_records.map((record) => record.href),
+        sort_direction: chosen_sort_direction,
         sorted_column_index: sort_columns.indexOf(sorted_column),
       },
     );
-    page_element.innerHTML = heading_markup + table_markup;
-    window.report_ui_.layout_activate(page_element);
+    window.report_ui_.layout_replace(
+      page_element,
+      heading_markup + table_markup,
+    );
   }
-  // Sorts the table by a column and draws it again.
-  function sort_choose(sort_column) {
-    chosen_sort_name = sort_column.sort_name;
+  // Sorts the table by a column in a direction, then draws the table again.
+  function sort_choose(sort_name, sort_direction) {
+    chosen_sort_name = sort_name;
+    chosen_sort_direction = sort_direction;
     page_render();
+  }
+  // Sorts by a column the functions pulldown chose, no title pressed last.
+  function column_choose(sort_name) {
+    pressed_sort_name = null;
+    sort_choose(sort_name, chosen_sort_direction);
+  }
+  // Sorts by a pressed column title, a second press in a row reversing.
+  function title_press(pressed_column) {
+    const sort_direction = window.report_ui_.table_sort.pressed_direction(
+      pressed_column,
+      pressed_sort_name,
+      chosen_sort_direction,
+    );
+    pressed_sort_name = pressed_column.sort_name;
+    sort_choose(pressed_column.sort_name, sort_direction);
   }
   // Draws the table again when the relayed preferences change what it shows.
   function preferences_apply() {
     preferences_handler();
+    // The counters pulldown shows every line, a hidden line's place too.
     const preferences_text = JSON.stringify([
-      shown_line_names,
+      window.report_preferences_.now().counter_lists[DATABASE_VIEW_KEY],
       heat_curve_name,
     ]);
     if (preferences_text === rendered_preferences_text) return;

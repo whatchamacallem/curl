@@ -7,6 +7,9 @@ window.try_catch_handler_(function () {
 
   const CALL_GRAPH_VIEW_KEY = settings_("CALL_GRAPH_VIEW_KEY");
   const DATABASE_VIEW_KEY = settings_("DATABASE_VIEW_KEY");
+  const FLAME_GRAPH_RELAYED_KEY_NAMES = settings_(
+    "FLAME_GRAPH_RELAYED_KEY_NAMES",
+  );
   const FLAME_GRAPH_VIEW_ENTRY = settings_("FLAME_GRAPH_VIEW_ENTRY");
   const HEAT_MAP_VIEW_ENTRY = settings_("HEAT_MAP_VIEW_ENTRY");
   const MENU_ENTRY_NEEDS = settings_("MENU_ENTRY_NEEDS");
@@ -190,41 +193,11 @@ window.try_catch_handler_(function () {
   function choice_label(choices, choice_value) {
     return choices.find((choice) => choice.value === choice_value).label;
   }
-  // Returns the counters label: one counter's description, else the word.
-  function counters_label(list_key) {
-    const shown_names =
-      window.report_preferences_.shown_counter_names(list_key);
-    return shown_names.length === 1
-      ? window.report_preferences_.counter_description(shown_names[0])
-      : window.ui_strings_.text("str_menu_counters");
-  }
-  // Lists the counters pulldown's choices, each line of the list, marked.
-  function counter_choices(list_key) {
-    const shown_preferences = window.report_preferences_.now();
-    return shown_preferences.counter_lists[list_key].map((counter_line) => ({
-      label: window.ui_strings_.text_fill("str_menu_counter_entry", {
-        mark: window.ui_strings_.text(
-          counter_line.is_shown
-            ? "str_menu_counter_selected_mark"
-            : "str_menu_counter_unselected_mark",
-        ),
-        label: window.report_preferences_.line_label(
-          list_key,
-          counter_line.line_name,
-        ),
-      }),
-      value: counter_line.line_name,
-    }));
-  }
   // Shows or hides one line of a counters list, unless the list keeps it.
   function counter_line_toggle(list_key, line_name) {
     if (!window.report_preferences_.counter_line_toggle(list_key, line_name))
       return;
     window.report_frame_.view_post("preferences_apply");
-    preference_strip_handle.pulldown_label_set(
-      "counters",
-      counters_label(list_key),
-    );
   }
   // Moves one line of a counters list next to its anchor, columns following.
   function counter_line_move(list_key, line_name, anchor_name, lands_after) {
@@ -299,10 +272,14 @@ window.try_catch_handler_(function () {
   function entry_available(entry_name, address, view_key) {
     if (!Object.hasOwn(MENU_ENTRY_NEEDS, entry_name)) return true;
     return MENU_ENTRY_NEEDS[entry_name].every((need_name) => {
-      if (need_name === "counter_list")
-        return Object.hasOwn(
-          window.report_preferences_.now().counter_lists,
-          address.view,
+      // The database page shows its own counters pulldown over its table.
+      if (need_name === "menu_counter_list")
+        return (
+          address.view !== DATABASE_VIEW_KEY &&
+          Object.hasOwn(
+            window.report_preferences_.now().counter_lists,
+            address.view,
+          )
         );
       if (need_name === "test") return address.test !== null;
       if (need_name === "view") return address.view !== null;
@@ -429,8 +406,8 @@ window.try_catch_handler_(function () {
     return preference_pulldown_entry(
       "counters",
       address,
-      counters_label(list_key),
-      () => counter_choices(list_key),
+      window.ui_strings_.text("str_menu_counters"),
+      () => window.report_preferences_.counter_choices(list_key),
       (line_name) => counter_line_toggle(list_key, line_name),
       true,
       (line_name, anchor_name, lands_after) =>
@@ -555,6 +532,19 @@ window.try_catch_handler_(function () {
     menu_strip_handle.pulldown_open("str_menu_test", key_name);
     return true;
   }
+  // Sends the flame graph view a key speedscope takes, pressed in this page.
+  function flame_graph_key_relay(key_name) {
+    if (
+      window.report_frame_.address_now().view !== FLAME_GRAPH_VIEW_KEY ||
+      !FLAME_GRAPH_RELAYED_KEY_NAMES.includes(key_name)
+    )
+      return false;
+    window.report_frame_.view_post("view_key_pressed", {
+      key: key_name,
+      view_key: FLAME_GRAPH_VIEW_KEY,
+    });
+    return true;
+  }
 
   function activate() {
     window.report_preferences_.activate(window.report_frame_.counter_names);
@@ -563,7 +553,11 @@ window.try_catch_handler_(function () {
       window.try_catch_handler_((key_event) => {
         window.report_ui_.widget_key.link_click_handler(key_event);
         const key_name = window.report_ui_.view_key.of(key_event);
-        if (key_name && menu_key_handler(key_name, key_event.repeat))
+        if (
+          key_name &&
+          (menu_key_handler(key_name, key_event.repeat) ||
+            flame_graph_key_relay(key_name))
+        )
           key_event.preventDefault();
       }),
     );
@@ -582,6 +576,7 @@ window.try_catch_handler_(function () {
   window.report_menu_ = {
     address_show,
     counter_line_move,
+    counter_line_toggle,
     menu_key_handler,
     menu_render,
   };

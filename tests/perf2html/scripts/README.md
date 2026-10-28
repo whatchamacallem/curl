@@ -261,19 +261,12 @@ A diff report's run keeps these.
 
 ## Database Page
 
-| File            | Purpose                                              |
-| --------------- | ---------------------------------------------------- |
-| `database.html` | Templates the database page of one test, holding the |
-|                 | JSON database model of every called function, its    |
-|                 | file, line, calls, callers, callees and recorded     |
-|                 | counters, and the terms of the derived counters,     |
-|                 | that `database.js` draws.                            |
-| `database.js`   | Draws the functions table under its heading with its |
-|                 | row count, one row per called function linking to    |
-|                 | it: the function, file and line, then the shown      |
-|                 | lines of its counters list, then activates the page  |
-|                 | as a view that scrolls to the top when the address   |
-|                 | is followed again.                                   |
+| File            | Purpose                                                   |
+| --------------- | --------------------------------------------------------- |
+| `database.html` | Templates one test's database page, the JSON model of     |
+|                 | every called function and the derived counters' terms.    |
+| `database.js`   | Draws the functions table, a row per called function, and |
+|                 | its heading's row count, sort and counters pulldowns.     |
 
 ## Developer Scripts
 

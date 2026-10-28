@@ -46,7 +46,7 @@ _STYLE_DESIGN_SCALE_SMALLEST_MULTIPLE: float = 0.0
 _STYLE_DESIGN_VIEWPORT_HEIGHT_PROPERTY: str = ""
 _STYLE_HEAT_MAP_SOURCE_LINE_NUMBER_MARKER_WIDTH_PROPERTY: str = ""
 _STYLE_PAGE_FONT_FAMILY_PROPERTY: str = ""
-_STYLE_TEXT_SCROLLBAR_FONT_MULTIPLE_PROPERTY: str = ""
+_STYLE_TEXT_SCROLLBAR_FONT_MULTIPLE_PROPERTY: dict[str, str] = {}
 _STYLE_VALUE_ENTRIES: dict[str, str] = {}
 _THEME_TIME_UNIT_ENTRIES: tuple[tuple[str, float], ...] = ()
 settings.load_into(__name__)
@@ -284,7 +284,7 @@ class Theme:
             _STYLE_DESIGN_VIEWPORT_HEIGHT_PROPERTY,
             _STYLE_HEAT_MAP_SOURCE_LINE_NUMBER_MARKER_WIDTH_PROPERTY,
             _STYLE_PAGE_FONT_FAMILY_PROPERTY,
-            _STYLE_TEXT_SCROLLBAR_FONT_MULTIPLE_PROPERTY,
+            *_STYLE_TEXT_SCROLLBAR_FONT_MULTIPLE_PROPERTY.values(),
         }
         common_stylesheets_text = "".join(
             self.asset_read(name)

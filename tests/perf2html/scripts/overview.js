@@ -41,6 +41,7 @@ window.try_catch_handler_(function () {
         table_rows,
         {
           cls: "overview-tests-table-",
+          heading_entries: [],
           row_href: table_rows.map((table_row) => table_row[0].href),
         },
       ),

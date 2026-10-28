@@ -320,10 +320,6 @@ table.table-:has(> tbody > :is(tr.row-link-, tr.clickable-):hover)::before {
 /* A text scrollbar: one cell per character, its characters design scaled. */
 .text-scrollbar- {
   display: flex;
-  font-size: calc(
-    var(--design-font-size-px-) * var(--design-font-fit-) *
-      var(--page-text-scrollbar-font-multiple-)
-  );
   contain: size;
   overflow: hidden;
   white-space: pre;
@@ -331,10 +327,18 @@ table.table-:has(> tbody > :is(tr.row-link-, tr.clickable-):hover)::before {
   touch-action: none;
 }
 .text-scrollbar-.horizontal- {
+  font-size: calc(
+    var(--design-font-size-px-) * var(--design-font-fit-) *
+      var(--page-text-scrollbar-horizontal-font-multiple-)
+  );
   height: var(--page-text-scrollbar-horizontal-height-);
 }
 .text-scrollbar-.vertical- {
   flex-direction: column;
+  font-size: calc(
+    var(--design-font-size-px-) * var(--design-font-fit-) *
+      var(--page-text-scrollbar-vertical-font-multiple-)
+  );
   width: var(--page-text-scrollbar-vertical-width-);
 }
 /* The forward chevron sits at the bar's end, past the room of a part cell. */

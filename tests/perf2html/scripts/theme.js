@@ -173,6 +173,19 @@ window.report_ui_ = window.try_catch_handler_(function () {
   const STRIP_STATUS_SEPARATOR_TEXT = window.ui_strings_.text(
     "str_menu_status_separator",
   );
+  // Holds each sort direction, named as `aria-sort` is, with its reverse.
+  const TABLE_SORT_DIRECTIONS = {
+    ascending: {
+      order_sign: 1,
+      reversed_name: "descending",
+      string_id: "str_heading_sort_ascending",
+    },
+    descending: {
+      order_sign: -1,
+      reversed_name: "ascending",
+      string_id: "str_heading_sort_descending",
+    },
+  };
   const TEXT_SCROLLBAR_AXES = {
     horizontal: {
       backward_chevron_string_id: "str_text_scrollbar_chevron_left",
@@ -212,6 +225,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
   const attached_headings = new WeakMap();
   const attached_scrollbars = new WeakMap();
   const drag_scroll_surfaces = new WeakSet();
+  const drawn_table_clips = new Map();
   const wheel_taken_events = {
     horizontal: new WeakSet(),
     vertical: new WeakSet(),
@@ -222,6 +236,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
   const resize_settle_callbacks = [];
   const row_walks = new WeakMap();
   const table_column_move_callbacks = new Map();
+  const table_heading_entries = new Map();
   const table_sort_callbacks = new Map();
   const view_storage = window.report_view_storage_;
   let settle_animation_frame = 0;
@@ -742,6 +757,10 @@ window.report_ui_ = window.try_catch_handler_(function () {
       lands_after,
     });
   }
+  // Asks the top page to show or hide one line of a counters list.
+  function counter_line_toggle_send(list_key, line_name) {
+    parent_post({ report_ui: "counter_line_toggle", list_key, line_name });
+  }
   // Sends the call graph's focused path up, root first, for the status line.
   function focused_path_send(path_entries) {
     parent_post({ report_ui: "focused_path_set", path_entries });
@@ -874,7 +893,11 @@ window.report_ui_ = window.try_catch_handler_(function () {
         if (view_options.recenter) view_options.recenter();
       } else if (message_name === "tests_pulldown_closed")
         view_key_tests_pulldown_closed();
-      else if (
+      else if (message_name === "view_key_pressed") {
+        // A key sent for the next view while this view still shows is dropped.
+        if (message_data.view_key === address_of_hash(location.hash).view)
+          view_options.relayed_key_press(message_data.key);
+      } else if (
         message_name !== "preferences_apply" &&
         message_name !== "view_reset"
       )
@@ -1176,17 +1199,36 @@ window.report_ui_ = window.try_catch_handler_(function () {
     function entry_value(entry_element) {
       return entry_element.getAttribute("data-entry-value-");
     }
+    // Scrolls the list back to a kept place and lights the entry of a value.
+    function list_place_restore(scroll_top, lit_value) {
+      entry_list.scrollTop = scroll_top;
+      highlight_set(
+        matches.findIndex(
+          (entry_element) => entry_value(entry_element) === lit_value,
+        ),
+      );
+    }
     // Offers the entries again after a drop, the scroll kept, the line lit.
     function entries_reoffer(moved_value) {
       const kept_scroll_top = entry_list.scrollTop;
       entries_offer(entries_line_number);
       entries_filter();
-      entry_list.scrollTop = kept_scroll_top;
-      highlight_set(
-        matches.findIndex(
-          (entry_element) => entry_value(entry_element) === moved_value,
-        ),
-      );
+      list_place_restore(kept_scroll_top, moved_value);
+    }
+    // Returns how the open list shows: its search, scroll place and lit value.
+    function pulldown_open_state() {
+      if (!is_open) window.throw_exception_("str_error_internal");
+      return {
+        lit_value:
+          highlight_index < 0 ? null : entry_value(matches[highlight_index]),
+        scroll_top: entry_list.scrollTop,
+        search_text,
+      };
+    }
+    // Opens the list as another list showed, its search, place and light kept.
+    function pulldown_reopen(open_state) {
+      pulldown_open(open_state.search_text);
+      list_place_restore(open_state.scroll_top, open_state.lit_value);
     }
     // Moves a dragged line among the others, a drop moving it in the list.
     function entry_drag_press(press_event, dragged_entry) {
@@ -1334,6 +1376,8 @@ window.report_ui_ = window.try_catch_handler_(function () {
         label_box.textContent = label_text;
       },
       open: pulldown_open,
+      open_state: pulldown_open_state,
+      reopen: pulldown_reopen,
     };
   }
 
@@ -1482,23 +1526,37 @@ window.report_ui_ = window.try_catch_handler_(function () {
       if (entry.kind === "pulldown") entry_activate(entry);
       else entry_cell.focus({ focusVisible: true, preventScroll: true });
     }
-    function strip_pulldown_open(entry_name, search_text) {
+    // Returns the pulldown of a named cell, refusing a cell holding none.
+    function strip_pulldown_named(entry_name) {
       strip_cell_named(entry_name);
       if (!pulldowns_by_name.has(entry_name))
         window.throw_exception_("str_error_internal");
-      pulldowns_by_name.get(entry_name).open(search_text);
+      return pulldowns_by_name.get(entry_name);
+    }
+    function strip_pulldown_open(entry_name, search_text) {
+      strip_pulldown_named(entry_name).open(search_text);
+    }
+    // Returns the open pulldown's name and how its list shows, null for none.
+    function strip_open_pulldown_state() {
+      for (const [entry_name, pulldown] of pulldowns_by_name) {
+        if (pulldown.is_open())
+          return { entry_name, open_state: pulldown.open_state() };
+      }
+      return null;
+    }
+    // Opens a pulldown as another strip showed it, its list state kept.
+    function strip_pulldown_reopen(open_pulldown_state) {
+      strip_pulldown_named(open_pulldown_state.entry_name).reopen(
+        open_pulldown_state.open_state,
+      );
     }
     // Relabels a pulldown cell without a render, so focus stays where it is.
     function strip_pulldown_label_set(entry_name, label_text) {
-      strip_cell_named(entry_name);
-      if (!pulldowns_by_name.has(entry_name))
-        window.throw_exception_("str_error_internal");
+      const pulldown = strip_pulldown_named(entry_name);
       const labelled_entries = entries.map((entry) =>
         entry.name === entry_name ? { ...entry, label: label_text } : entry,
       );
-      pulldowns_by_name
-        .get(entry_name)
-        .label_set(strip_label_text(labelled_entries, entry_name));
+      pulldown.label_set(strip_label_text(labelled_entries, entry_name));
     }
     function strip_widget_text_set(entry_name, widget_text) {
       const widget_box = strip_cell_named(entry_name).querySelector(
@@ -1564,8 +1622,10 @@ window.report_ui_ = window.try_catch_handler_(function () {
       flash: strip_flash,
       key_handler: strip_key_handler,
       numbered_entry_focus: strip_numbered_entry_focus,
+      open_pulldown_state: strip_open_pulldown_state,
       pulldown_label_set: strip_pulldown_label_set,
       pulldown_open: strip_pulldown_open,
+      pulldown_reopen: strip_pulldown_reopen,
       widget_text_set: strip_widget_text_set,
     };
   }
@@ -1643,8 +1703,8 @@ window.report_ui_ = window.try_catch_handler_(function () {
     );
     return table_markdown(markdown_columns, markdown_rows);
   }
-  // Writes a cell, its text clipped at the column's limit, a link plain.
-  function table_cell_render(cell, column) {
+  // Writes a cell, its text clipped at the characters shown, a link plain.
+  function table_cell_render(cell, column, clip_chars) {
     const cell_attributes = {};
     const class_names = [column.numeric ? "numeric-" : "", column.cls || ""]
       .filter(Boolean)
@@ -1652,7 +1712,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
     if (class_names) cell_attributes.class = class_names;
     if (cell.style) cell_attributes.style = cell.style;
     const shown_text =
-      column.clip != null ? text_clip(cell.text, column.clip) : cell.text;
+      clip_chars != null ? text_clip(cell.text, clip_chars) : cell.text;
     let inner_markup =
       cell.html != null ? cell.html : render_html_escape(shown_text);
     if (cell.href) {
@@ -1670,8 +1730,15 @@ window.report_ui_ = window.try_catch_handler_(function () {
     const sorted_column_index = table_options.sorted_column_index;
     if (!columns[sorted_column_index])
       window.throw_exception_("str_error_internal");
+    table_sort_direction(table_options.sort_direction);
     table_sort_callbacks.set(table_key, table_options.on_sort);
     return sorted_column_index;
+  }
+  // Keeps the entries a heading over the table shows after its row count.
+  function table_heading_register(table_key, table_options) {
+    if (table_options.heading_entries)
+      table_heading_entries.set(table_key, table_options.heading_entries);
+    else table_heading_entries.delete(table_key);
   }
   // Keeps the `on_column_move` a column drop calls, needed by a moved column.
   function table_column_move_register(table_key, columns, table_options) {
@@ -1683,15 +1750,67 @@ window.report_ui_ = window.try_catch_handler_(function () {
       window.throw_exception_("str_error_internal");
     table_column_move_callbacks.delete(table_key);
   }
+  // Returns each clipped column's characters, more if a kept width holds more.
+  function table_clip_chars(table_key, columns) {
+    const kept_widths = kept_column_widths.get(table_key);
+    return columns.map((column, column_index) => {
+      const kept_width =
+        kept_widths &&
+        kept_widths.get(column_width_name(column.move_name, column_index));
+      return column.clip != null && kept_width
+        ? Math.max(column.clip, kept_width.held_chars)
+        : column.clip;
+    });
+  }
+  // Returns a table's clips, kept for a table that takes an `on_clip_change`.
+  function table_clip_register(table_key, columns, table_options) {
+    if (!table_options.on_clip_change) {
+      drawn_table_clips.delete(table_key);
+      return columns.map((column) => column.clip);
+    }
+    const clip_chars_list = table_clip_chars(table_key, columns);
+    drawn_table_clips.set(table_key, {
+      clip_chars_list,
+      columns,
+      on_clip_change: table_options.on_clip_change,
+    });
+    return clip_chars_list;
+  }
+  // Draws a table again when a kept width changes a clipped column's text.
+  function table_clip_refresh(table_key) {
+    const drawn_clips = drawn_table_clips.get(table_key);
+    if (!drawn_clips) return;
+    const clip_chars_list = table_clip_chars(table_key, drawn_clips.columns);
+    const is_changed = clip_chars_list.some(
+      (clip_chars, column_index) =>
+        clip_chars !== drawn_clips.clip_chars_list[column_index],
+    );
+    if (is_changed) drawn_clips.on_clip_change();
+  }
   // Writes columns and rows as a table, the one table writer in JS.
   function render_table(table_key, columns, rows, table_options) {
-    const cell_rows = rows.map((row) => row.map(cell_normalize));
     const sorted_column_index = table_sort_register(
       table_key,
       columns,
       table_options,
     );
     table_column_move_register(table_key, columns, table_options);
+    table_heading_register(table_key, table_options);
+    const clip_chars_list = table_clip_register(
+      table_key,
+      columns,
+      table_options,
+    );
+    // A cell given as a function is written for its column's clip.
+    const cell_rows = rows.map((row) =>
+      row.map((cell, column_index) =>
+        cell_normalize(
+          typeof cell === "function"
+            ? cell(clip_chars_list[column_index])
+            : cell,
+        ),
+      ),
+    );
     const title_markup = render_element(
       "thead",
       {},
@@ -1705,9 +1824,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
               {
                 ...(column.numeric ? { class: "numeric-" } : {}),
                 ...(column_index === sorted_column_index
-                  ? {
-                      "aria-sort": column.numeric ? "descending" : "ascending",
-                    }
+                  ? { "aria-sort": table_options.sort_direction }
                   : {}),
                 ...(column.move_name
                   ? { "data-column-move-name-": column.move_name }
@@ -1733,7 +1850,11 @@ window.report_ui_ = window.try_catch_handler_(function () {
           row_attributes,
           row
             .map((cell, column_index) =>
-              table_cell_render(cell, columns[column_index]),
+              table_cell_render(
+                cell,
+                columns[column_index],
+                clip_chars_list[column_index],
+              ),
             )
             .join(""),
         );
@@ -1748,43 +1869,110 @@ window.report_ui_ = window.try_catch_handler_(function () {
       title_markup + render_element("tbody", {}, body_markup),
     );
   }
-  // Pairs a table column with how its cells are written and its rows sorted.
-  function table_sort_column(column, sort_name, sort_value, cell) {
-    return { column, sort_name, sort_value, cell };
+  // Returns a sort direction by its name, refusing a name `aria-sort` lacks.
+  function table_sort_direction(direction_name) {
+    if (!Object.hasOwn(TABLE_SORT_DIRECTIONS, direction_name))
+      window.throw_exception_("str_error_internal");
+    return TABLE_SORT_DIRECTIONS[direction_name];
   }
-  // Returns records ordered by a column, numbers largest first, text A to Z.
-  function table_sort_records(records, sort_column) {
+  // Returns the label the heading shows for a sort direction.
+  function table_sort_direction_label(direction_name) {
+    return window.ui_strings_.text(
+      table_sort_direction(direction_name).string_id,
+    );
+  }
+  // Pairs a table column with how its cells are written and its rows sorted.
+  function table_sort_column({
+    column,
+    sort_name,
+    sort_value,
+    cell,
+    first_direction,
+  }) {
+    table_sort_direction(first_direction);
+    return { column, sort_name, sort_value, cell, first_direction };
+  }
+  // Returns records ordered by a column in a direction, text by its letters.
+  function table_sort_records(records, sort_column, sort_direction) {
+    const order_sign = table_sort_direction(sort_direction).order_sign;
+    const ascending_order = sort_column.column.numeric
+      ? (first_value, second_value) => first_value - second_value
+      : (first_value, second_value) => first_value.localeCompare(second_value);
     const keyed_records = records.map((record) => [
       sort_column.sort_value(record),
       record,
     ]);
     keyed_records.sort(
-      sort_column.column.numeric
-        ? (keyed_record_a, keyed_record_b) =>
-            keyed_record_b[0] - keyed_record_a[0]
-        : (keyed_record_a, keyed_record_b) =>
-            keyed_record_a[0].localeCompare(keyed_record_b[0]),
+      (keyed_record_a, keyed_record_b) =>
+        order_sign * ascending_order(keyed_record_a[0], keyed_record_b[0]),
     );
     return keyed_records.map((keyed_record) => keyed_record[1]);
   }
-  // Lists a sorted table's state: its rows, its sort direction, its measure.
-  function table_sort_heading_labels(row_string_id, sort_column, is_diff) {
-    const column_label =
-      sort_column.column.measure ?? sort_column.column.label;
+  // Returns the direction a title press sorts in, a repeat press reversing.
+  function table_sort_pressed_direction(
+    pressed_column,
+    pressed_sort_name,
+    sort_direction,
+  ) {
+    if (pressed_column.sort_name !== pressed_sort_name)
+      return pressed_column.first_direction;
+    return table_sort_direction(sort_direction).reversed_name;
+  }
+  // Returns a sort column's measure, the label for a column naming none.
+  function table_sort_column_label(sort_column) {
+    return sort_column.column.measure ?? sort_column.column.label;
+  }
+  // Lists a sorted table's heading entries: its column, direction and measure.
+  function table_sort_heading_entries({
+    row_string_id,
+    offered_columns,
+    sorted_column,
+    sort_direction,
+    is_diff,
+    on_column_choose,
+    on_direction_choose,
+  }) {
+    const column_label = table_sort_column_label(sorted_column);
     const measure_text =
-      is_diff && sort_column.column.numeric
+      is_diff && sorted_column.column.numeric
         ? window.ui_strings_.text_fill("str_heading_measure_diff", {
             column: column_label,
           })
         : column_label;
+    const column_choices = offered_columns.map((sort_column) => ({
+      label: table_sort_column_label(sort_column),
+      value: sort_column.sort_name,
+    }));
+    const direction_choices = Object.keys(TABLE_SORT_DIRECTIONS).map(
+      (direction_name) => ({
+        label: table_sort_direction_label(direction_name),
+        value: direction_name,
+      }),
+    );
     return [
-      window.ui_strings_.text(row_string_id),
-      window.ui_strings_.text(
-        sort_column.column.numeric
-          ? "str_heading_sort_descending"
-          : "str_heading_sort_ascending",
+      strip_entry_make(
+        "sort_column",
+        "pulldown",
+        window.ui_strings_.text(row_string_id),
+        {
+          pulldown_options: choice_pulldown_options(
+            () => strip_choice_entries(column_choices),
+            on_column_choose,
+          ),
+        },
       ),
-      measure_text,
+      strip_entry_make(
+        "sort_direction",
+        "pulldown",
+        table_sort_direction_label(sort_direction),
+        {
+          pulldown_options: choice_pulldown_options(
+            () => strip_choice_entries(direction_choices),
+            on_direction_choose,
+          ),
+        },
+      ),
+      strip_entry_make("sort_measure", "label", measure_text, {}),
     ];
   }
   // Binds or unbinds a press's move and every way that press can end.
@@ -1887,21 +2075,40 @@ window.report_ui_ = window.try_catch_handler_(function () {
     column_edge_hovered_element = edge_element;
     if (edge_element) edge_element.classList.add("column-edge-grab-");
   }
-  // Names a title for its kept width: its move name, else its column index.
-  function column_width_name(title_cell) {
-    return (
-      title_cell.getAttribute("data-column-move-name-") ??
-      String(title_cell.cellIndex)
+  // Names a column for its kept width: its move name, else its column index.
+  function column_width_name(move_name, column_index) {
+    return move_name ?? String(column_index);
+  }
+  // Names the column of a title for its kept width.
+  function title_width_name(title_cell) {
+    return column_width_name(
+      title_cell.getAttribute("data-column-move-name-"),
+      title_cell.cellIndex,
     );
   }
-  // Keeps a dragged title's width for the next table its table key draws.
-  function column_width_keep(title_cell) {
+  // Returns the room a cell's padding and side lines take beside its text.
+  function cell_side_room_px(table_cell) {
+    const cell_style = getComputedStyle(table_cell);
+    return (
+      parseFloat(cell_style.paddingLeft) +
+      parseFloat(cell_style.paddingRight) +
+      parseFloat(cell_style.borderLeftWidth) +
+      parseFloat(cell_style.borderRightWidth)
+    );
+  }
+  // Keeps a dragged title's width and the characters held, by table key.
+  function column_width_keep(title_cell, width_px) {
     const table_key = title_cell.closest("table").getAttribute("data-key-");
     if (!kept_column_widths.has(table_key))
       kept_column_widths.set(table_key, new Map());
+    const text_width_px = width_px - cell_side_room_px(title_cell);
+    const kept_width = {
+      held_chars: Math.floor(text_width_px / DESIGN_CHARACTER_WIDTH_PX),
+      width_px,
+    };
     kept_column_widths
       .get(table_key)
-      .set(column_width_name(title_cell), title_cell.style.minWidth);
+      .set(title_width_name(title_cell), kept_width);
   }
   // Gives a drawn table's titles the widths dragged on its table key before.
   function column_widths_restore(table_element) {
@@ -1910,8 +2117,9 @@ window.report_ui_ = window.try_catch_handler_(function () {
     );
     if (!kept_widths) return;
     for (const title_cell of table_element.tHead.rows[0].cells) {
-      const kept_width = kept_widths.get(column_width_name(title_cell));
-      if (kept_width !== undefined) title_cell.style.minWidth = kept_width;
+      const kept_width = kept_widths.get(title_width_name(title_cell));
+      if (kept_width !== undefined)
+        title_cell.style.minWidth = kept_width.width_px + "px";
     }
   }
   // Sizes a column title's min width or a pane's max width by its right edge.
@@ -1936,9 +2144,10 @@ window.report_ui_ = window.try_catch_handler_(function () {
       }
       const wanted_width_px =
         start_width_px + design_px(move_event.clientX - press_event.clientX);
-      sized_element.style[size_property_name] =
-        Math.max(0, wanted_width_px) + "px";
-      if (size_property_name === "minWidth") column_width_keep(sized_element);
+      const sized_width_px = Math.max(0, wanted_width_px);
+      sized_element.style[size_property_name] = sized_width_px + "px";
+      if (size_property_name === "minWidth")
+        column_width_keep(sized_element, sized_width_px);
       if (animation_frame) return;
       animation_frame = requestAnimationFrame(
         window.try_catch_handler_(() => {
@@ -1959,6 +2168,11 @@ window.report_ui_ = window.try_catch_handler_(function () {
       if (!has_travelled) return;
       document.removeEventListener("selectionchange", selection_drop);
       if (release_event.type === "pointerup") click_swallow_next();
+      // The column's cells take its new width's characters once, at release.
+      if (size_property_name === "minWidth")
+        table_clip_refresh(
+          sized_element.closest("table").getAttribute("data-key-"),
+        );
     });
     function press_end() {
       column_press_is_active = false;
@@ -2207,7 +2421,39 @@ window.report_ui_ = window.try_catch_handler_(function () {
       const attached_heading = attached_headings.get(heading_element);
       if (attached_heading) attached_heading.reset();
     }
+    // A column a forgotten width widened shows its own clip again.
+    for (const table_key of drawn_table_clips.keys())
+      table_clip_refresh(table_key);
     layout_refresh(root_element);
+  }
+  // Replaces the markup under a root, each heading's open pulldown reopened.
+  function layout_replace(root_element, markup) {
+    const open_pulldown_states = new Map();
+    for (const heading_element of root_element.querySelectorAll(
+      ".page-heading-",
+    )) {
+      const attached_heading = attached_headings.get(heading_element);
+      if (!attached_heading) window.throw_exception_("str_error_internal");
+      const open_pulldown_state = attached_heading.open_pulldown_state();
+      if (open_pulldown_state)
+        open_pulldown_states.set(
+          attached_heading.table_key,
+          open_pulldown_state,
+        );
+    }
+    root_element.innerHTML = markup;
+    layout_activate(root_element);
+    // A page without the focus reopens nothing, the focus left where it is.
+    if (!document.hasFocus()) return;
+    for (const heading_element of root_element.querySelectorAll(
+      ".page-heading-",
+    )) {
+      const attached_heading = attached_headings.get(heading_element);
+      if (open_pulldown_states.has(attached_heading.table_key))
+        attached_heading.pulldown_reopen(
+          open_pulldown_states.get(attached_heading.table_key),
+        );
+    }
   }
 
   function scroller(focused_element) {
@@ -2423,6 +2669,17 @@ window.report_ui_ = window.try_catch_handler_(function () {
       ),
     );
   }
+  // Fills the options of a pulldown that closes on a choice and moves nothing.
+  function choice_pulldown_options(entries, on_select) {
+    return {
+      entries,
+      keeps_open: false,
+      on_close: () => {},
+      on_move: null,
+      on_select,
+      reads_line_number: false,
+    };
+  }
   // Fills every strip entry field the caller leaves out.
   function strip_entry_make(entry_name, kind_name, label, entry_fields) {
     return {
@@ -2442,7 +2699,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
       ...entry_fields,
     };
   }
-  // Shows a heading as a strip, any title as page emphasis, state as labels.
+  // Shows a heading as a strip, any title as page emphasis, its table's state.
   function page_heading_attach(heading_element) {
     const heading_text = heading_element.textContent;
     if (attached_headings.has(heading_element))
@@ -2452,14 +2709,17 @@ window.report_ui_ = window.try_catch_handler_(function () {
     const default_count_text = heading_element.getAttribute(
       "data-row-count-default-",
     );
-    const state_labels = heading_element.hasAttribute("data-state-labels-")
-      ? JSON.parse(heading_element.getAttribute("data-state-labels-"))
-      : [];
     const shown_element = heading_element.nextElementSibling;
     if (!shown_element) window.throw_exception_("str_error_internal");
     const table_element = shown_element.matches("table.table-")
       ? shown_element
       : null;
+    const table_key = table_element
+      ? table_element.getAttribute("data-key-")
+      : null;
+    const state_entries =
+      table_key === null ? [] : table_heading_entries.get(table_key);
+    if (!state_entries) window.throw_exception_("str_error_internal");
     if ((count_key === null) !== (default_count_text === null))
       window.throw_exception_("str_error_internal");
     if (count_key !== null && !table_element)
@@ -2471,14 +2731,10 @@ window.report_ui_ = window.try_catch_handler_(function () {
     const table_body = table_element ? table_element.tBodies[0] : null;
     const all_rows = table_body ? [...table_body.rows] : [];
     const copy_text = window.ui_strings_.text("str_table_heading_copy");
-    const row_count_options = {
-      entries: row_count_entries,
-      keeps_open: false,
-      on_close: () => {},
-      on_move: null,
-      on_select: row_count_choose,
-      reads_line_number: false,
-    };
+    const row_count_options = choice_pulldown_options(
+      row_count_entries,
+      row_count_choose,
+    );
     let shown_count = default_count,
       strip_handle = null;
 
@@ -2562,9 +2818,6 @@ window.report_ui_ = window.try_catch_handler_(function () {
           ]
         : [];
       const count_entries = count_key === null ? [] : [count_entry()];
-      const state_entries = state_labels.map((state_label, label_index) =>
-        strip_entry_make(`state_${label_index}`, "label", state_label, {}),
-      );
       strip_handle = strip_render(
         heading_element,
         [
@@ -2586,8 +2839,12 @@ window.report_ui_ = window.try_catch_handler_(function () {
     }
 
     attached_headings.set(heading_element, {
+      open_pulldown_state: () => strip_handle.open_pulldown_state(),
+      pulldown_reopen: (open_pulldown_state) =>
+        strip_handle.pulldown_reopen(open_pulldown_state),
       reset: heading_reset,
       row_count_show,
+      table_key,
     });
     heading_reset();
   }
@@ -2670,13 +2927,15 @@ window.report_ui_ = window.try_catch_handler_(function () {
   function text_scrollbar_attach(bar_element, target_element, axis_name) {
     if (
       !Object.hasOwn(TEXT_SCROLLBAR_AXES, axis_name) ||
-      !Object.hasOwn(TEXT_SCROLLBAR_CHEVRON_STEP_CHARS, axis_name)
+      !Object.hasOwn(TEXT_SCROLLBAR_CHEVRON_STEP_CHARS, axis_name) ||
+      !Object.hasOwn(STYLE_TEXT_SCROLLBAR_FONT_MULTIPLE, axis_name)
     )
       window.throw_exception_("str_error_internal");
     if (attached_scrollbars.has(bar_element))
       window.throw_exception_("str_error_internal");
     const scroll_axis = TEXT_SCROLLBAR_AXES[axis_name];
     const chevron_step_chars = TEXT_SCROLLBAR_CHEVRON_STEP_CHARS[axis_name];
+    const font_multiple = STYLE_TEXT_SCROLLBAR_FONT_MULTIPLE[axis_name];
     const backward_chevron_text = window.ui_strings_.text(
       scroll_axis.backward_chevron_string_id,
     );
@@ -2708,10 +2967,10 @@ window.report_ui_ = window.try_catch_handler_(function () {
       const cell_screen_px = cell_rect[scroll_axis.rect_size];
       const target_screen_px = target_rect[scroll_axis.rect_size];
       if (!cell_screen_px || !target_screen_px) return null;
-      // A bar cell spans the font multiple of the target's characters.
+      // A bar cell spans its axis's font multiple of the target's characters.
       const units_per_char =
         (cell_screen_px * target_element[scroll_axis.layout_size]) /
-        (target_screen_px * STYLE_TEXT_SCROLLBAR_FONT_MULTIPLE);
+        (target_screen_px * font_multiple);
       const content_min = 0;
       const content_size =
         target_element[scroll_axis.scroll_size] / units_per_char;
@@ -3151,6 +3410,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
       top_href: address_top_href,
     },
     counter_line_move_send,
+    counter_line_toggle_send,
     dark_mode_enabled_now_,
     dark_mode_set_,
     design_character_width_px: DESIGN_CHARACTER_WIDTH_PX,
@@ -3167,6 +3427,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
     human_text,
     layout_activate,
     layout_refresh,
+    layout_replace,
     layout_reset,
     listeners_bind,
     load_log_history_send,
@@ -3191,7 +3452,8 @@ window.report_ui_ = window.try_catch_handler_(function () {
     },
     table_sort: {
       column: table_sort_column,
-      heading_labels: table_sort_heading_labels,
+      heading_entries: table_sort_heading_entries,
+      pressed_direction: table_sort_pressed_direction,
       records: table_sort_records,
     },
     text_scrollbar: { attach: text_scrollbar_attach },

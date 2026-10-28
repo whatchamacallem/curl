@@ -146,6 +146,7 @@ tr.heat-map-source-information-box-synthetic-row- > td {
   .page- a:not(.table- a),
   .heat-map-source- a,
   .menu-button-,
+  .menu-pulldown-entry-box-,
   .heat-map-tree-node- {
     border-top: var(--page-line-width-) solid transparent;
   }
@@ -153,6 +154,7 @@ tr.heat-map-source-information-box-synthetic-row- > td {
   .page- a:not(.table- a)::after,
   .heat-map-source- a::after,
   .menu-button-:not([data-entry-name-="str_report_name"])::after,
+  .menu-pulldown-entry-box-::after,
   .heat-map-tree-node-.selected-::after {
     content: "";
     position: absolute;
