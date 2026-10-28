@@ -326,7 +326,7 @@ class CallgrindToHeatmap:
             file_path = function_diff["files"][row.file_index]
             place_info = self.path_info(
                 file_path,
-                function_diff["objects"][row.object_index],
+                function_diff["images"][row.image_index],
                 derive,
             )
             known = info.setdefault(file_path, place_info)
@@ -443,63 +443,61 @@ class CallgrindToHeatmap:
         function_index = {
             name: index for index, name in enumerate(function_names)
         }
-        objects = sorted(
+        images = sorted(
             {
                 callgrind.repo_root_strip(
-                    profile.function_keys[name].object_path
+                    profile.function_keys[name].image_path
                 )
                 for name in function_names
             }
         )
-        object_index = {path: index for index, path in enumerate(objects)}
-        caller_rows: dict[str, list[callgrind.CallCount]] = {}
-        callee_rows: dict[str, list[callgrind.CallCount]] = {
+        image_index = {path: index for index, path in enumerate(images)}
+        caller_pairs: dict[str, list[int]] = {}
+        callee_pairs: dict[str, list[int]] = {
             name: [] for name in function_names
         }
         for name in function_names:
-            caller_rows[name] = []
+            caller_pairs[name] = []
             for caller_name, calls in sorted(
                 callgrind.caller_calls(profile, name).items()
             ):
-                caller_rows[name].append(
-                    callgrind.CallCount(
-                        function_index[caller_name], calls.calls
-                    )
+                caller_pairs[name].extend(
+                    (function_index[caller_name], calls.calls)
                 )
-                callee_rows[caller_name].append(
-                    callgrind.CallCount(function_index[name], calls.calls)
+                callee_pairs[caller_name].extend(
+                    (function_index[name], calls.calls)
                 )
         rows: list[callgrind.FunctionDataRow] = []
         for name in function_names:
             key = profile.function_keys[name]
-            object_path = callgrind.repo_root_strip(key.object_path)
+            image_path = callgrind.repo_root_strip(key.image_path)
             place = self.function_line(profile, name)
             path_info = info[place.file]
             file_path = callgrind.path_canonical(place.file)
-            # An error coded file is shown under its object's file name.
+            # An error coded file is shown under its image's file name.
             if (
-                callgrind.display_path(file_path, path_info.group, object_path)
+                callgrind.display_path(file_path, path_info.group, image_path)
                 != path_info.display
             ):
                 sys.exit(
-                    f"error: {name} of {object_path} is placed in"
+                    f"error: {name} of {image_path} is placed in"
                     f" {path_info.display}, which its function data would"
-                    f" show under its own object as {file_path}"
+                    f" show under its own image as {file_path}"
                 )
             rows.append(
                 callgrind.FunctionDataRow(
-                    object_index[object_path],
                     key.name,
+                    image_index[image_path],
                     file_indexes[file_path],
                     place.line,
                     list(profile.function_self.get(name, profile.zeros())),
-                    caller_rows[name],
-                    callee_rows[name],
+                    caller_pairs[name],
+                    callee_pairs[name],
                 )
             )
         return {
             "counters": list(profile.counters),
-            "objects": objects,
+            "images": images,
             "functions": rows,
         }
 
@@ -711,22 +709,22 @@ class CallgrindToHeatmap:
                 f"wrote {path} ({len(_HEAT_MAP_PAGE.encode('utf-8')):,} bytes)"
             )
 
-    # Returns how a page shows a recorded path of an object.
+    # Returns how a page shows a recorded path of an image.
     def path_info(
         self,
         raw: str,
-        object_path: str,
+        image_path: str,
         derive: CallgrindToHeatmap.Derive | None,
     ) -> callgrind.PathInfo:
         if derive is None:
             path_info = callgrind.path_norm(raw)
             return path_info._replace(
                 display=callgrind.display_path(
-                    path_info.display, path_info.group, object_path
+                    path_info.display, path_info.group, image_path
                 )
             )
         entry = derive.paths.path_entry(raw)
-        display = derive.paths.display(raw, object_path)
+        display = derive.paths.display(raw, image_path)
         script = None
         if entry.has_source:
             script = os.path.join(
@@ -787,7 +785,7 @@ class CallgrindToHeatmap:
             | {entry.file for entry in profile.function_entry.values()}
         )
         return {
-            raw: self.path_info(raw, profile.file_ob[raw], derive)
+            raw: self.path_info(raw, profile.file_image[raw], derive)
             for raw in raw_files
         }
 

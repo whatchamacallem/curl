@@ -20,17 +20,17 @@ _CALLGRIND_FILE_DATA_REPO_CODE: str = ""
 _CALLGRIND_FILE_DATA_SYSTEM_CODE: str = ""
 _CALLGRIND_FORMAT_CALLEE_FILE_KEYS: tuple[str, ...] = ()
 _CALLGRIND_FORMAT_CALLEE_FUNCTION_KEY: str = ""
-_CALLGRIND_FORMAT_CALLEE_OBJECT_KEY: str = ""
+_CALLGRIND_FORMAT_CALLEE_IMAGE_KEY: str = ""
 _CALLGRIND_FORMAT_CALLS_KEY: str = ""
 _CALLGRIND_FORMAT_COMMAND_KEY: str = ""
 _CALLGRIND_FORMAT_COUNTERS_KEY: str = ""
 _CALLGRIND_FORMAT_FILE_KEY: str = ""
 _CALLGRIND_FORMAT_FUNCTION_KEY: str = ""
+_CALLGRIND_FORMAT_IMAGE_KEY: str = ""
 _CALLGRIND_FORMAT_INLINE_FILE_KEYS: tuple[str, ...] = ()
 _CALLGRIND_FORMAT_JUMP_FILE_KEY: str = ""
 _CALLGRIND_FORMAT_JUMP_FUNCTION_KEY: str = ""
 _CALLGRIND_FORMAT_LINE_POSITION_NAME: str = ""
-_CALLGRIND_FORMAT_OBJECT_KEY: str = ""
 _CALLGRIND_FORMAT_POSITIONS_KEY: str = ""
 _CALLGRIND_FORMAT_SUMMARY_KEYS: tuple[str, ...] = ()
 _CALLGRIND_NAME_COMPRESSION_PATTERN: str = ""
@@ -66,11 +66,6 @@ def external_source_roots() -> tuple[str, ...]:
     return tuple(found)
 
 
-class CallCount(NamedTuple):
-    function_index: int
-    call_count: int
-
-
 class Caller(NamedTuple):
     function: str
     file: str
@@ -85,7 +80,7 @@ class CallerCalls(NamedTuple):
 
 class CallRecord(NamedTuple):
     key: SourceLine
-    object_path: str
+    image_path: str
     callee: FunctionKey
     callee_file: str
     call_count: int
@@ -185,10 +180,10 @@ class DerivedPaths:
                         f" {shown.group} in {document}"
                     )
 
-    # Returns the path a diff shows of a recorded path of an object.
-    def display(self, path: str, object_path: str) -> str:
+    # Returns the path a diff shows of a recorded path of an image.
+    def display(self, path: str, image_path: str) -> str:
         entry = self.path_entry(path)
-        return display_path(entry.canonical, entry.group, object_path)
+        return display_path(entry.canonical, entry.group, image_path)
 
     def path_entry(self, path: str) -> DerivedPath:
         canonical = path_canonical(path)
@@ -206,27 +201,29 @@ class FileEntry(NamedTuple):
     code: str
 
 
-# Holds a test's function data, each file and object by its list index.
+# Holds a test's function data, each file and image by its list index.
 class FunctionDataDocument(TypedDict):
     counters: list[str]
-    objects: list[str]
+    images: list[str]
     functions: list[FunctionDataRow]
 
 
-# Holds a function's object, name, place, self costs, callers and callees.
+# Holds a function's name, image, place, self costs, callers and callees.
 class FunctionDataRow(NamedTuple):
-    object_index: int
     function_name: str
+    image_index: int
     file_index: int
     line_number: int
     self_costs: Costs
-    caller_rows: list[CallCount]
-    callee_rows: list[CallCount]
+    # Each caller's row index then its calls, one caller after another.
+    caller_pairs: list[int]
+    # Each callee's row index then its calls, one callee after another.
+    callee_pairs: list[int]
 
 
-# Names a function as callgrind does, by its object and its name.
+# Names a function as callgrind does, by its image and its name.
 class FunctionKey(NamedTuple):
-    object_path: str
+    image_path: str
     name: str
 
 
@@ -264,7 +261,7 @@ class LineProfile:
     function_entry: dict[str, SourceLine] = dataclasses.field(
         default_factory=dict
     )
-    file_ob: dict[str, str] = dataclasses.field(default_factory=dict)
+    file_image: dict[str, str] = dataclasses.field(default_factory=dict)
 
     def resolved_derived_counters(self) -> list[ResolvedDerivedCounter]:
         return resolved_derived_counters(self.counters)
@@ -327,7 +324,7 @@ class ResolvedTerm(NamedTuple):
 
 class SelfRecord(NamedTuple):
     key: SourceLine
-    object_path: str
+    image_path: str
     costs: Costs
 
 
@@ -350,7 +347,7 @@ class Callgrind:
             self.names: dict[str, dict[str, str]] = {
                 _CALLGRIND_FORMAT_FILE_KEY: {},
                 _CALLGRIND_FORMAT_FUNCTION_KEY: {},
-                _CALLGRIND_FORMAT_OBJECT_KEY: {},
+                _CALLGRIND_FORMAT_IMAGE_KEY: {},
             }
 
         def uncompress(self, kind: str, value: str) -> str:
@@ -416,7 +413,7 @@ class Callgrind:
                 if call.callee not in records:
                     sys.exit(
                         f"error: {path} calls {call.callee.name} of"
-                        f" {call.callee.object_path} but records no cost block"
+                        f" {call.callee.image_path} but records no cost block"
                         " of that function"
                     )
 
@@ -432,7 +429,7 @@ class Callgrind:
         if known != line:
             sys.exit(
                 f"error: {path}: calls enter {callee.name} of"
-                f" {callee.object_path} at {known.file}:{known.line} and at"
+                f" {callee.image_path} at {known.file}:{known.line} and at"
                 f" {line.file}:{line.line}"
             )
 
@@ -457,13 +454,13 @@ class Callgrind:
                 self_record.key,
                 self_record.costs,
             )
-            profile.file_ob.setdefault(
-                self_record.key.file, self_record.object_path
+            profile.file_image.setdefault(
+                self_record.key.file, self_record.image_path
             )
         for call in records.call_records:
             costs_accumulate(profile.line_calls, call.key, call.costs)
             profile.line_call_count[call.key] += call.call_count
-            profile.file_ob.setdefault(call.key.file, call.object_path)
+            profile.file_image.setdefault(call.key.file, call.image_path)
             costs_accumulate(profile.function_calls, function, call.costs)
             profile.function_call_lines[function].add(call.key)
             callee = names[call.callee]
@@ -480,47 +477,47 @@ class Callgrind:
                 call.costs,
             )
             profile.function_home.setdefault(callee, call.callee_file)
-            profile.file_ob.setdefault(
-                call.callee_file, call.callee.object_path
+            profile.file_image.setdefault(
+                call.callee_file, call.callee.image_path
             )
 
-    # Refuses a function in no object, which the recording bills to its caller.
+    # Refuses a function in no image, which the recording bills to its caller.
     def function_key(
         self,
         names: Callgrind.CompressedNames,
         compressed_name: str,
-        object_path: str,
+        image_path: str,
         path: str,
     ) -> FunctionKey:
         name = names.uncompress(
             _CALLGRIND_FORMAT_FUNCTION_KEY, compressed_name
         )
-        if object_path == _CALLGRIND_UNKNOWN_NAME:
-            sys.exit(f"error: {path}: function {name} lies in no object")
-        return FunctionKey(object_path, name)
+        if image_path == _CALLGRIND_UNKNOWN_NAME:
+            sys.exit(f"error: {path}: function {name} lies in no image")
+        return FunctionKey(image_path, name)
 
-    # Returns each function's shown name, a shared one under its object's.
+    # Returns each function's shown name, a shared one under its image's.
     def function_names(
         self, keys: Collection[FunctionKey]
     ) -> dict[FunctionKey, str]:
-        object_names = self.object_names(keys)
+        image_names = self.image_names(keys)
         shared_names = self.shared_names(keys)
         return {
             key: (
-                f"{object_names[key.object_path]}/{key.name}"
+                f"{image_names[key.image_path]}/{key.name}"
                 if key.name in shared_names
                 else key.name
             )
             for key in keys
         }
 
-    # Returns each object's file name, its path when two objects share one.
-    def object_names(self, keys: Iterable[FunctionKey]) -> dict[str, str]:
+    # Returns each image's file name, its path when two images share one.
+    def image_names(self, keys: Iterable[FunctionKey]) -> dict[str, str]:
         base_paths: dict[str, set[str]] = {}
         for key in keys:
-            base_paths.setdefault(
-                os.path.basename(key.object_path), set()
-            ).add(key.object_path)
+            base_paths.setdefault(os.path.basename(key.image_path), set()).add(
+                key.image_path
+            )
         return {
             path: base_name if len(paths) == 1 else repo_root_strip(path)
             for base_name, paths in base_paths.items()
@@ -547,8 +544,8 @@ class Callgrind:
         for key, line in recording.entries.items():
             if key in recording.records:
                 recording.profile.function_entry[names[key]] = line
-                recording.profile.file_ob.setdefault(
-                    line.file, key.object_path
+                recording.profile.file_image.setdefault(
+                    line.file, key.image_path
                 )
         return recording.profile
 
@@ -594,8 +591,8 @@ class Callgrind:
         current_function: FunctionKey | None = None
         current_home = _CALLGRIND_UNKNOWN_NAME
         current_file = _CALLGRIND_UNKNOWN_NAME
-        current_object = _CALLGRIND_UNKNOWN_NAME
-        current_callee_object: str | None = None
+        current_image = _CALLGRIND_UNKNOWN_NAME
+        current_callee_image: str | None = None
         cur_callee_file: str | None = None
         cur_callee_function: FunctionKey | None = None
         pending_call: Callgrind.PendingCall | None = None
@@ -631,14 +628,14 @@ class Callgrind:
                     )
                     call_record = CallRecord(
                         key,
-                        current_object,
+                        current_image,
                         pending_call.callee,
                         callee_file,
                         pending_call.call_count,
                         costs,
                     )
                     cur_callee_file = None
-                    current_callee_object = None
+                    current_callee_image = None
                     cur_callee_function = None
                     pending_call = None
                     # A call counting no calls began before collection did.
@@ -651,7 +648,7 @@ class Callgrind:
                     )
                 if call_record is None:
                     current.self_records.append(
-                        SelfRecord(key, current_object, costs)
+                        SelfRecord(key, current_image, costs)
                     )
                 else:
                     current.call_records.append(call_record)
@@ -674,35 +671,35 @@ class Callgrind:
                         names.uncompress(
                             _CALLGRIND_FORMAT_FILE_KEY, specification_value
                         ),
-                        current_object,
+                        current_image,
                     )
                 elif key == _CALLGRIND_FORMAT_FUNCTION_KEY:
                     current_function = self.function_key(
-                        names, specification_value, current_object, path
+                        names, specification_value, current_image, path
                     )
                     current = records.get(current_function)
                     current_home = current_file
                     cur_callee_file = None
-                elif key == _CALLGRIND_FORMAT_OBJECT_KEY:
-                    current_object = names.uncompress(
-                        _CALLGRIND_FORMAT_OBJECT_KEY, specification_value
+                elif key == _CALLGRIND_FORMAT_IMAGE_KEY:
+                    current_image = names.uncompress(
+                        _CALLGRIND_FORMAT_IMAGE_KEY, specification_value
                     )
-                elif key == _CALLGRIND_FORMAT_CALLEE_OBJECT_KEY:
-                    current_callee_object = names.uncompress(
-                        _CALLGRIND_FORMAT_OBJECT_KEY, specification_value
+                elif key == _CALLGRIND_FORMAT_CALLEE_IMAGE_KEY:
+                    current_callee_image = names.uncompress(
+                        _CALLGRIND_FORMAT_IMAGE_KEY, specification_value
                     )
                 elif key in _CALLGRIND_FORMAT_CALLEE_FILE_KEYS:
                     cur_callee_file = file_key(
                         names.uncompress(
                             _CALLGRIND_FORMAT_FILE_KEY, specification_value
                         ),
-                        current_callee_object or current_object,
+                        current_callee_image or current_image,
                     )
                 elif key == _CALLGRIND_FORMAT_CALLEE_FUNCTION_KEY:
                     cur_callee_function = self.function_key(
                         names,
                         specification_value,
-                        current_callee_object or current_object,
+                        current_callee_image or current_image,
                         path,
                     )
                 elif key == _CALLGRIND_FORMAT_JUMP_FILE_KEY:
@@ -750,12 +747,12 @@ class Callgrind:
                     profile.summary = values
         return records
 
-    # Returns the names two objects record.
+    # Returns the names two images record.
     def shared_names(self, keys: Iterable[FunctionKey]) -> set[str]:
-        object_paths: dict[str, set[str]] = {}
+        image_paths: dict[str, set[str]] = {}
         for key in keys:
-            object_paths.setdefault(key.name, set()).add(key.object_path)
-        return {name for name, paths in object_paths.items() if len(paths) > 1}
+            image_paths.setdefault(key.name, set()).add(key.image_path)
+        return {name for name, paths in image_paths.items() if len(paths) > 1}
 
     # Refuses a recording whose cost lines do not add up to its summary.
     def summary_check(
@@ -879,11 +876,11 @@ def counters_read(directory: str, kind: str, test_name: str) -> list[str]:
     sys.exit(f"error: no 'events:' line -- not a callgrind file? ({path})")
 
 
-# Returns the path a page shows, an external one under its object's name.
-def display_path(canonical: str, group: str, object_path: str) -> str:
+# Returns the path a page shows, an external one under its image's name.
+def display_path(canonical: str, group: str, image_path: str) -> str:
     if group != _CALLGRIND_FILE_DATA_ERROR_CODE:
         return canonical
-    return f"{os.path.basename(object_path)}/{canonical}"
+    return f"{os.path.basename(image_path)}/{canonical}"
 
 
 # Returns a report's paths document in index order, refusing a malformed one.
@@ -925,10 +922,10 @@ def file_data_read(directory: str) -> list[FileEntry]:
     return entries
 
 
-def file_key(path: str, object_path: str) -> str:
+def file_key(path: str, image_path: str) -> str:
     if path != _CALLGRIND_UNKNOWN_NAME:
         return path
-    return f"{os.path.basename(object_path)}/{path}"
+    return f"{os.path.basename(image_path)}/{path}"
 
 
 # Returns a test's function data document, refusing one of other keys.
@@ -939,28 +936,12 @@ def function_data_parse(text: str, path: str) -> FunctionDataDocument:
     if found_keys != keys:
         sys.exit(f"error: {path} holds no object of the keys {' '.join(keys)}")
     function_rows = [
-        FunctionDataRow(
-            object_index,
-            function_name,
-            file_index,
-            line_number,
-            self_costs,
-            [CallCount(*call_row) for call_row in caller_rows],
-            [CallCount(*call_row) for call_row in callee_rows],
-        )
-        for (
-            object_index,
-            function_name,
-            file_index,
-            line_number,
-            self_costs,
-            caller_rows,
-            callee_rows,
-        ) in document["functions"]
+        FunctionDataRow(*function_row)
+        for function_row in document["functions"]
     ]
     return {
         "counters": document["counters"],
-        "objects": document["objects"],
+        "images": document["images"],
         "functions": function_rows,
     }
 
@@ -991,11 +972,11 @@ def function_pair_names(
     names: tuple[dict[FunctionKey, str], dict[FunctionKey, str]] = ({}, {})
     for pair in pairs:
         base_name = os.path.basename(pair.location)
-        object_name = (
+        image_name = (
             base_name if len(base_locations[base_name]) == 1 else pair.location
         )
         shown_name = (
-            f"{object_name}/{pair.name}"
+            f"{image_name}/{pair.name}"
             if name_counts[pair.name] > 1
             else pair.name
         )
@@ -1019,14 +1000,14 @@ def function_pairs(
         zip(key_sets, build_trees, strict=True)
     ):
         for key in keys:
-            location = object_location(key.object_path, build_tree)
+            location = image_location(key.image_path, build_tree)
             known = located.setdefault(key.name, ({}, {}))[side].setdefault(
                 location, key
             )
             if known != key:
                 sys.exit(
                     f"error: ambiguous resolution of overloads of {key.name}:"
-                    f" {known.object_path} and {key.object_path} lie at"
+                    f" {known.image_path} and {key.image_path} lie at"
                     f" {location}"
                 )
     pairs: list[FunctionPair] = []
@@ -1067,9 +1048,9 @@ def function_pairs(
     return pairs
 
 
-# Returns an object's location, its path less its report's build tree.
-def object_location(object_path: str, build_tree: str) -> str:
-    return object_path.removeprefix(f"{build_tree}/")
+# Returns an image's location, its path less its report's build tree.
+def image_location(image_path: str, build_tree: str) -> str:
+    return image_path.removeprefix(f"{build_tree}/")
 
 
 # There is no i18n path for Python yet. Just don't name your file "(unknown)".

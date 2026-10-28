@@ -53,7 +53,7 @@ _TEST_ERROR_TEST_LIST_FILE_NAME=test_list.txt
 _TEST_ERROR_TRUNCATED_BYTES=1024
 _TEST_ERROR_TIMER_ARTIFACTS_PREFIX=timer-artifacts-
 _TEST_ERROR_VALGRIND_LOG_FILE_SUFFIX=.valgrind.log
-_TEST_ERROR_VALGRIND_LOG_PURPOSE='the valgrind log with the objects loaded'
+_TEST_ERROR_VALGRIND_LOG_PURPOSE='the valgrind log'
 
 _TEST_ERROR_RECORDING_FILE_SUFFIXES=("$_TEST_ERROR_PROFILE_FILE_SUFFIX"
   .cyg_callback.bin .cyg_callback.bin.maps .cyg_callback.log .perf-stat.json

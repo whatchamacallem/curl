@@ -5,11 +5,11 @@
 
 from __future__ import annotations
 
-import argparse, html.entities, os, re, sys
+import argparse, os, re, sys
 from typing import NamedTuple
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import callgrind
+import callgrind, test_settings
 
 
 class SourceScan:
@@ -38,7 +38,7 @@ class SourceScan:
         ]
 
     def banned_tag_re(self) -> re.Pattern[str]:
-        names = "|".join(_SOURCE_SCAN_BANNED_TAG_NAMES)
+        names = "|".join(test_settings.SOURCE_SCAN_BANNED_TAG_NAMES)
         return re.compile(r"</?(" + names + r")(?=[\s/>]|$)", re.IGNORECASE)
 
     def comment_check(
@@ -51,13 +51,13 @@ class SourceScan:
             if comment.first_line < header_end:
                 continue
             length = comment.last_line - comment.first_line + 1
-            if length > _COMMENT_BLOCK_MAX_LINES:
+            if length > test_settings.COMMENT_BLOCK_MAX_LINES:
                 self.faults.append(
                     SourceScan.SourceFault(
                         path,
                         comment.first_line,
                         f"a comment block of {length} lines, over the limit"
-                        f" of {_COMMENT_BLOCK_MAX_LINES}",
+                        f" of {test_settings.COMMENT_BLOCK_MAX_LINES}",
                     )
                 )
 
@@ -67,7 +67,9 @@ class SourceScan:
         )
 
     def comment_markup_pattern(self) -> str:
-        marks = sorted(_SOURCE_SCAN_COMMENT_MARKUP, key=len, reverse=True)
+        marks = sorted(
+            test_settings.SOURCE_SCAN_COMMENT_MARKUP, key=len, reverse=True
+        )
         return "|".join(re.escape(mark) for mark in marks)
 
     def comment_re(self, syntax: SourceScan.CommentSyntax) -> re.Pattern[str]:
@@ -123,7 +125,8 @@ class SourceScan:
             if verbose:
                 print(
                     f"{file_count} file(s): no comment block over"
-                    f" {_COMMENT_BLOCK_MAX_LINES} lines, no stray non-ASCII,"
+                    f" {test_settings.COMMENT_BLOCK_MAX_LINES} lines, no stray"
+                    " non-ASCII,"
                     " no unicode escape, no banned tag, no comment outside"
                     " ENGLISH_PUNCT, no comment opening with a banned word"
                 )
@@ -202,7 +205,8 @@ class SourceScan:
             match = first_word.match(text)
             if (
                 not match
-                or match.group(1) not in _COMMENT_FIRST_WORD_REPLACEMENTS
+                or match.group(1)
+                not in test_settings.COMMENT_FIRST_WORD_REPLACEMENTS
             ):
                 continue
             word = match.group(1)
@@ -210,8 +214,8 @@ class SourceScan:
                 SourceScan.SourceFault(
                     path,
                     comment.first_line + text.count("\n", 0, match.start(1)),
-                    f"comment opens with the banned word {word!r}, use"
-                    f" {_COMMENT_FIRST_WORD_REPLACEMENTS[word]!r}",
+                    f"comment opens with the banned word {word!r}, use "
+                    f"{test_settings.COMMENT_FIRST_WORD_REPLACEMENTS[word]!r}",
                 )
             )
 
@@ -235,11 +239,13 @@ class SourceScan:
         return header_end
 
     def non_ascii_re(self) -> re.Pattern[str]:
-        allowed = "".join(_SOURCE_SCAN_ALLOWED_NON_ASCII_CHARS)
+        allowed = "".join(test_settings.SOURCE_SCAN_ALLOWED_NON_ASCII_CHARS)
         return re.compile(r"[^\t\n\r -~" + allowed + r"]")
 
     def outside_punctuation_re(self) -> re.Pattern[str]:
-        return re.compile(r"[^A-Za-z0-9\s" + re.escape(ENGLISH_PUNCT) + r"]")
+        return re.compile(
+            r"[^A-Za-z0-9\s" + re.escape(test_settings.ENGLISH_PUNCT) + r"]"
+        )
 
     def punctuation_check(
         self,
@@ -303,10 +309,6 @@ class SourceScan:
                 )
 
 
-_COMMENT_BLOCK_MAX_LINES = 1
-
-_COMMENT_FIRST_WORD_REPLACEMENTS = {"Answers": "Returns"}
-
 _COMMENT_SYNTAX_BY_EXTENSION = (
     ((".py", ".sh"), SourceScan.CommentSyntax(("#",), ())),
     ((".c", ".h", ".js"), SourceScan.CommentSyntax(("//",), (("/*", "*/"),))),
@@ -318,39 +320,35 @@ _COMMENT_SYNTAX_BY_EXTENSION = (
     ((".md",), SourceScan.CommentSyntax((), (("<!--", "-->"),))),
 )
 
-ENGLISH_PUNCT = """.,"'?:!()/"""
-
-_ESCAPE_NAMED_ENTITY_PATTERN = "|".join(
-    re.escape(name)
-    for name, glyph in sorted(html.entities.html5.items())
-    if name.endswith(";") and not glyph.isascii()
-)
-
-_ESCAPE_PREFIX_PATTERN = r"(?<!\\)(?:\\\\)*"
-
 _ESCAPE_RULES = (
     SourceScan.EscapeRule(
         "the unicode escape",
-        _ESCAPE_PREFIX_PATTERN + r"(\\[uU][0-9A-Fa-f{])",
+        test_settings.ESCAPE_PREFIX_PATTERN + r"(\\[uU][0-9A-Fa-f{])",
         (),
     ),
     SourceScan.EscapeRule(
-        "the hex escape", _ESCAPE_PREFIX_PATTERN + r"(\\x[0-9A-Fa-f])", ()
+        "the hex escape",
+        test_settings.ESCAPE_PREFIX_PATTERN + r"(\\x[0-9A-Fa-f])",
+        (),
     ),
     SourceScan.EscapeRule(
-        "the named escape", _ESCAPE_PREFIX_PATTERN + r"(\\N\{)", ()
+        "the named escape",
+        test_settings.ESCAPE_PREFIX_PATTERN + r"(\\N\{)",
+        (),
     ),
     SourceScan.EscapeRule(
-        "the octal escape", _ESCAPE_PREFIX_PATTERN + r"(\\[0-7]{3})", ()
+        "the octal escape",
+        test_settings.ESCAPE_PREFIX_PATTERN + r"(\\[0-7]{3})",
+        (),
     ),
     SourceScan.EscapeRule(
         "the stylesheet escape",
-        _ESCAPE_PREFIX_PATTERN + r"(\\[0-9A-Fa-f]{1,6})",
+        test_settings.ESCAPE_PREFIX_PATTERN + r"(\\[0-9A-Fa-f]{1,6})",
         (".css",),
     ),
     SourceScan.EscapeRule(
         "the named entity",
-        r"(&(?:" + _ESCAPE_NAMED_ENTITY_PATTERN + r"))",
+        r"(&(?:" + test_settings.ESCAPE_NAMED_ENTITY_PATTERN + r"))",
         (".css", ".html", ".js", ".md", ".py", ".sh"),
     ),
     SourceScan.EscapeRule(
@@ -366,77 +364,6 @@ _ESCAPE_RULES = (
         r"|unicode[_]escape)",
         (),
     ),
-)
-
-_SOURCE_SCAN_ALLOWED_NON_ASCII_CHARS = (
-    "©",
-    "≈",
-    "∞",
-    "▲",
-    "◄",
-    "►",
-    "▼",
-    "…",
-    " ",
-    "░",
-    "▒",
-    "▓",
-    "█",
-    "◼",
-    "─",
-    "│",
-    "└",
-    "├",
-    "┬",
-)
-
-_SOURCE_SCAN_BANNED_TAG_NAMES = (
-    "abbr",
-    "address",
-    "b",
-    "big",
-    "blockquote",
-    "center",
-    "cite",
-    "code",
-    "del",
-    "dfn",
-    "em",
-    "font",
-    "h1",
-    "h2",
-    "h3",
-    "h4",
-    "h5",
-    "h6",
-    "hr",
-    "i",
-    "ins",
-    "kbd",
-    "mark",
-    "p",
-    "q",
-    "s",
-    "samp",
-    "small",
-    "strike",
-    "strong",
-    "sub",
-    "sup",
-    "tt",
-    "u",
-    "var",
-)
-
-_SOURCE_SCAN_COMMENT_MARKUP = (
-    "<!--",
-    "-->",
-    "/*",
-    "*/",
-    "///",
-    "//",
-    "#",
-    "*",
 )
 
 

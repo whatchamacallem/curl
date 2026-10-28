@@ -19,10 +19,10 @@ class CallChange(NamedTuple):
     baseline_count: int
 
 
-# Holds a test's function data diff, each file and object by its list index.
+# Holds a test's function data diff, each file and image by its list index.
 class FunctionDiff(TypedDict):
     counters: list[str]
-    objects: list[str]
+    images: list[str]
     files: list[str]
     functions: list[FunctionDiffRow]
 
@@ -36,7 +36,7 @@ class FunctionDiffDocument(FunctionDiff):
 # Holds a function's place, self change and baseline, callers and callees.
 class FunctionDiffRow(NamedTuple):
     function_name: str
-    object_index: int
+    image_index: int
     file_index: int
     line_number: int
     self_costs: callgrind.Costs
@@ -75,12 +75,12 @@ class CallgrindDiff:
         )
 
     def baseline_files(
-        self, baseline: callgrind.LineProfile, objects: dict[str, str]
+        self, baseline: callgrind.LineProfile, images: dict[str, str]
     ) -> dict[str, callgrind.Costs]:
         out: dict[str, callgrind.Costs] = {}
         for lines in baseline.function_lines.values():
             for key, costs in lines.items():
-                display = self.display_path(key.file, objects)
+                display = self.display_path(key.file, images)
                 total = out.get(display)
                 if total is None:
                     out[display] = list(costs)
@@ -93,20 +93,20 @@ class CallgrindDiff:
         }
 
     def baseline_key(
-        self, key: callgrind.SourceLine, objects: dict[str, str]
+        self, key: callgrind.SourceLine, images: dict[str, str]
     ) -> str:
         return callgrind.baseline_line_key(
-            self.display_path(key.file, objects), key.line
+            self.display_path(key.file, images), key.line
         )
 
     # Returns the baseline costs of each line, keyed by its shown place.
     def baseline_lines(
-        self, baseline: callgrind.LineProfile, objects: dict[str, str]
+        self, baseline: callgrind.LineProfile, images: dict[str, str]
     ) -> dict[str, callgrind.Costs]:
         lines: dict[str, callgrind.Costs] = {}
         for key, costs in baseline.line_self.items():
             callgrind.costs_accumulate(
-                lines, self.baseline_key(key, objects), costs
+                lines, self.baseline_key(key, images), costs
             )
         return {
             line_key: callgrind.costs_fit(costs, len(baseline.counters))
@@ -172,9 +172,9 @@ class CallgrindDiff:
                     f" {changes.get(function)}"
                 )
 
-    # Returns the path the diff heat map shows, from the delta's objects.
-    def display_path(self, file: str, objects: dict[str, str]) -> str:
-        return self.derived.display(file, objects[file])
+    # Returns the path the diff heat map shows, from the delta's images.
+    def display_path(self, file: str, images: dict[str, str]) -> str:
+        return self.derived.display(file, images[file])
 
     # Returns every function two function data documents list, 0 changes kept.
     @staticmethod
@@ -195,7 +195,7 @@ class CallgrindDiff:
         baseline_keys, modified_keys = (
             [
                 callgrind.FunctionKey(
-                    document["objects"][row.object_index], row.function_name
+                    document["images"][row.image_index], row.function_name
                 )
                 for row in document["functions"]
             ]
@@ -224,31 +224,39 @@ class CallgrindDiff:
             callee_counts.append({})
             for row, name in zip(document["functions"], names, strict=True):
                 places[name] = (
-                    document["objects"][row.object_index],
+                    document["images"][row.image_index],
                     paths[row.file_index],
                     row.line_number,
                 )
                 self_costs[-1][name] = row.self_costs
                 caller_counts[-1][name] = {
-                    names[call_row.function_index]: call_row.call_count
-                    for call_row in row.caller_rows
+                    names[partner_index]: call_count
+                    for partner_index, call_count in zip(
+                        row.caller_pairs[::2],
+                        row.caller_pairs[1::2],
+                        strict=True,
+                    )
                 }
                 callee_counts[-1][name] = {
-                    names[call_row.function_index]: call_row.call_count
-                    for call_row in row.callee_rows
+                    names[partner_index]: call_count
+                    for partner_index, call_count in zip(
+                        row.callee_pairs[::2],
+                        row.callee_pairs[1::2],
+                        strict=True,
+                    )
                 }
         function_names = sorted(places)
         function_index = {
             name: index for index, name in enumerate(function_names)
         }
-        objects = sorted({place[0] for place in places.values()})
-        object_index = {path: index for index, path in enumerate(objects)}
+        images = sorted({place[0] for place in places.values()})
+        image_index = {path: index for index, path in enumerate(images)}
         files = sorted({place[1] for place in places.values()})
         file_index = {path: index for index, path in enumerate(files)}
         zeros = [0] * len(baseline["counters"])
         rows: list[FunctionDiffRow] = []
         for name in function_names:
-            object_path, file_path, line_number = places[name]
+            image_path, file_path, line_number = places[name]
             baseline_costs = self_costs[0].get(name, zeros)
             caller_rows, callee_rows = (
                 CallgrindDiff.call_changes(
@@ -261,7 +269,7 @@ class CallgrindDiff:
             rows.append(
                 FunctionDiffRow(
                     name,
-                    object_index[object_path],
+                    image_index[image_path],
                     file_index[file_path],
                     line_number,
                     callgrind.costs_sub(
@@ -274,7 +282,7 @@ class CallgrindDiff:
             )
         return {
             "counters": list(baseline["counters"]),
-            "objects": objects,
+            "images": images,
             "files": files,
             "functions": rows,
         }
@@ -307,8 +315,8 @@ class CallgrindDiff:
         for source in (modified, baseline):
             for function, home in source.function_home.items():
                 diff.function_home.setdefault(function, home)
-            for file, ob in source.file_ob.items():
-                diff.file_ob.setdefault(file, ob)
+            for file, image_path in source.file_image.items():
+                diff.file_image.setdefault(file, image_path)
         diff.summary = diff.zeros()
         for costs in diff.line_self.values():
             callgrind.costs_add(diff.summary, costs)
@@ -352,11 +360,11 @@ class CallgrindDiff:
         self.delta_check(diff, function_diff, delta_path)
         document: FunctionDiffDocument = {
             "counters": function_diff["counters"],
-            "objects": function_diff["objects"],
+            "images": function_diff["images"],
             "files": function_diff["files"],
             "functions": function_diff["functions"],
-            "lineBaseline": self.baseline_lines(baseline, diff.file_ob),
-            "fileBaseline": self.baseline_files(baseline, diff.file_ob),
+            "lineBaseline": self.baseline_lines(baseline, diff.file_image),
+            "fileBaseline": self.baseline_files(baseline, diff.file_image),
         }
         text = json.dumps(document, separators=(",", ":"), ensure_ascii=False)
         with open(function_diff_path, "w", encoding="utf-8") as handle:
@@ -402,10 +410,10 @@ class CallgrindDiff:
                 + " ".join(str(value) for value in profile.totals())
                 + "\n"
             )
-            current_ob = ""
+            current_image = ""
             for function in sorted(profile.function_lines):
-                current_ob = self.write_function(
-                    handle, profile, function, current_ob
+                current_image = self.write_function(
+                    handle, profile, function, current_image
                 )
 
     @staticmethod
@@ -413,7 +421,7 @@ class CallgrindDiff:
         handle: TextIO,
         profile: callgrind.LineProfile,
         function: str,
-        current_ob: str,
+        current_image: str,
     ) -> str:
         home = profile.function_home[function]
         # The home opens the block, whether or not a changed line lies in it.
@@ -422,10 +430,10 @@ class CallgrindDiff:
             by_file.setdefault(key.file, []).append((key.line, costs))
         handle.write("\n")
         for file in [home] + sorted(name for name in by_file if name != home):
-            ob = profile.file_ob[file]
-            if ob != current_ob:
-                handle.write(f"ob={callgrind.repo_root_strip(ob)}\n")
-                current_ob = ob
+            image_path = profile.file_image[file]
+            if image_path != current_image:
+                handle.write(f"ob={callgrind.repo_root_strip(image_path)}\n")
+                current_image = image_path
             handle.write(
                 f"{'fl' if file == home else 'fi'}="
                 f"{callgrind.repo_root_strip(file)}\n"
@@ -436,7 +444,7 @@ class CallgrindDiff:
                 handle.write(
                     f"{line} {' '.join(str(value) for value in costs)}\n"
                 )
-        return current_ob
+        return current_image
 
 
 # Returns a test's function data diff, refusing a document of other keys.
@@ -455,7 +463,7 @@ def function_diff_load(directory: str, test_name: str) -> FunctionDiffDocument:
     document["functions"] = [
         FunctionDiffRow(
             function_name,
-            object_index,
+            image_index,
             file_index,
             line_number,
             self_costs,
@@ -465,7 +473,7 @@ def function_diff_load(directory: str, test_name: str) -> FunctionDiffDocument:
         )
         for (
             function_name,
-            object_index,
+            image_index,
             file_index,
             line_number,
             self_costs,

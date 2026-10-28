@@ -138,7 +138,7 @@ Every file sits in the archive's one root directory,
 - `0_file_data.json`: Source directory file listing with mode flags.
 - `0_timing_data.json`: The overview's timing values perf2html_diff.sh reads.
 - `<test>.callgrind.out`: A test's callgrind file, the repo root cut.
-- `<test>_function_data.json`: Each function's object, name, file, line, self
+- `<test>_function_data.json`: Each function's name, image, file, line, self
   costs, callers and callees, a file by its `0_file_data.json` index.
 - `test_list.txt`: The test names, one per line, sorted.
 
@@ -149,6 +149,46 @@ and its code `t`, one of the following:
 - `git` : A non-contributing project file with no source.
 - `sys` : A system file with source.
 - `err` : A file that `callgrind` could not find or was deleted.
+
+### `<test>_function_data.json` layout
+
+The file has this overall structure:
+
+```txt
+{
+  "counters":  [<string>, ...],   // the callgrind events in line order
+  "images":    [<string>, ...],   // array of binary image paths, repo root cut
+  "functions": [<function>, ...]  // array of function records
+}
+```
+
+It decomposes like this:
+
+```txt
+function = [
+  <name>,          // <string>, callgrind's function name
+  <image_index>,   // <int>, index into "images"
+  <file_index>,    // <int>, index into 0_file_data.json's array
+  <line>,          // <int>, the line the function is addressed at
+  <self_costs>,    // one per "counters" entry, same order
+  <callers>,       // callers sorted by name
+  <callees>        // callees sorted by name
+]
+
+self_costs = [<int>, ...]
+callers = [<function_index>, <calls>, ...] // pairs of functions and calls 
+callees = [<function_index>, <calls>, ...] // same format as callers
+function_index = <int>                     // index into "functions" array
+calls = <int>                              // total number of calls
+```
+
+- The three keys are the whole document.
+- A name two images record is shown, and sorted, as `<image file name>/<name>`,
+  the row holding the name alone.
+- `callers` and `callees` are flat, a row index then its calls for each one, so
+  a list holds half its length of callers or callees.
+- Every caller pair has a mirror callee pair in the row it names, with the same
+  calls, and no calls count is 0.
 
 ## Temporary Artifacts Contents
 
@@ -169,7 +209,7 @@ A regular report's run keeps these.
   runs.
 - `<test>.perf-stat.summary`: The timing summary rows, one `label=value` each.
 - `<test>.trace_to_speedscope.json`: The speedscope profile of the sampled run.
-- `<test>.valgrind.log`: The valgrind log with the objects loaded.
+- `<test>.valgrind.log`: The valgrind log.
 - `perf2html.log`: The measuring run's log.
 - `perf2html.regenerate.log`: The last `--regenerate` run's log, that run's
   alone.
@@ -212,7 +252,7 @@ A diff report's run keeps these.
 |                     | and the missing file error.                        |
 | `callgrind.py`      | Parses callgrind files into the one profile model, |
 |                     | with costs, derived counters and display paths,    |
-|                     | and pairs a diff's functions of one name by object |
+|                     | and pairs a diff's functions of one name by image  |
 |                     | path less each report's build tree, the lone one   |
 |                     | left in each report as moved.                      |
 | `callgrind_diff.py` | Subtracts the baseline profile from the modified   |
@@ -356,6 +396,8 @@ A diff report's run keeps these.
 |                             | report.                                      |
 | `test_screenshot.py`        | Shoots the golden bookmarks of one report in |
 |                             | Chrome and writes `test_index.html`.         |
+| `test_settings.py`          | Holds the golden values the test scripts     |
+|                             | compare the reports and sources against.     |
 | `test_source_scan.py`       | Faults long comment blocks, comment          |
 |                             | punctuation, glyphs and escapes in the given |
 |                             | sources.                                     |

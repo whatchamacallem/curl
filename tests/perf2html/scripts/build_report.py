@@ -498,7 +498,7 @@ class BuildReport:
             name: callgrind.SourceLine(
                 derived.display(
                     function_diff["files"][diff_rows[name].file_index],
-                    function_diff["objects"][diff_rows[name].object_index],
+                    function_diff["images"][diff_rows[name].image_index],
                 ),
                 diff_rows[name].line_number,
             )
@@ -637,7 +637,9 @@ class BuildReport:
         for raw_path in sorted(raw_paths):
             path_info = callgrind.path_norm(raw_path)
             shown_paths[raw_path] = callgrind.display_path(
-                path_info.display, path_info.group, profile.file_ob[raw_path]
+                path_info.display,
+                path_info.group,
+                profile.file_image[raw_path],
             )
         return shown_paths
 

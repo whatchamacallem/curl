@@ -274,7 +274,7 @@ class TraceToSpeedscope:
         mappings = self.mappings_read(artifacts_dir, test_name)
         recorded = self.buildids_read(artifacts_dir, test_name)
         segments: dict[str, list[TraceToSpeedscope.LoadSegment]] = {}
-        by_object: dict[str, dict[int, int]] = {}
+        by_image: dict[str, dict[int, int]] = {}
         for function in functions:
             mapping = next(
                 (m for m in mappings if m.low <= function < m.high), None
@@ -287,11 +287,11 @@ class TraceToSpeedscope:
             if mapping.path not in segments:
                 self.buildid_verify(maps_file, recorded, mapping.path)
                 segments[mapping.path] = self.segments_read(mapping.path)
-            by_object.setdefault(mapping.path, {})[function] = (
+            by_image.setdefault(mapping.path, {})[function] = (
                 self.virtual_address(mapping, segments[mapping.path], function)
             )
         frames: dict[int, Frame] = {}
-        for path, virtual in by_object.items():
+        for path, virtual in by_image.items():
             lines = self.command_output(
                 [*_TRACE_ADDR2LINE_COMMAND, path]
                 + [f"{address:#x}" for address in virtual.values()]
