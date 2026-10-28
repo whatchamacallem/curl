@@ -11,7 +11,9 @@ import settings
 _ARTIFACT_FILE_PURPOSES: dict[str, str] = {}
 _ARTIFACT_RUN_FILE_FORMATS: dict[str, str] = {}
 _ARTIFACT_TEST_FILE_FORMATS: dict[str, str] = {}
+_BUILD_DIR: str = ""
 _REPORT_ARTIFACTS_DIR_FORMAT: str = ""
+_REPORT_MANIFEST_EXECUTABLE_LABEL: str = ""
 _REPORT_RAW_ARCHIVE_SUFFIX: str = ""
 _TIMER_ARTIFACTS_ROOT_FORMAT: str = ""
 settings.load_into(__name__)
@@ -43,6 +45,30 @@ def artifact_path(directory: str, kind: str, test_name: str = "") -> str:
     raise ValueError(
         f"no artifact kind {kind!r} takes the test name {test_name!r}"
     )
+
+
+# Returns a report's build tree, the directory its executable lies in.
+def build_tree_read(directory: str, kind: str) -> str:
+    with artifact_open(directory, kind) as handle:
+        rows = handle.read().splitlines()
+    tree_prefix = f"{_BUILD_DIR}/"
+    for row in rows:
+        label, _, value = row.partition("=")
+        if label != _REPORT_MANIFEST_EXECUTABLE_LABEL:
+            continue
+        tree_name, separator, _ = value.removeprefix(tree_prefix).partition(
+            "/"
+        )
+        if value.startswith(tree_prefix) and tree_name and separator:
+            return tree_prefix + tree_name
+        break
+    path = artifact_path(directory, kind)
+    print(
+        f"error: {path} holds no {_REPORT_MANIFEST_EXECUTABLE_LABEL}= row"
+        f" naming a file under a tree of {tree_prefix}",
+        file=sys.stderr,
+    )
+    sys.exit(2)
 
 
 # Returns the report's raw data archive, named for the run's recorded time.

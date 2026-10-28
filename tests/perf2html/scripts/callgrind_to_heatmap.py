@@ -14,9 +14,10 @@ import artifacts, callgrind, callgrind_diff, settings, theme
 
 _ASSET_SOURCE_DATABASE_SCRIPT_NAME: str = ""
 _ASSET_TEMPLATE_HEAT_MAP_PAGE_NAME: str = ""
+_CALLGRIND_FILE_DATA_CODE_KEY: str = ""
 _CALLGRIND_FILE_DATA_ERROR_CODE: str = ""
 _CALLGRIND_FILE_DATA_GIT_CODE: str = ""
-_CALLGRIND_FILE_DATA_INDENT_CHARS: int = 0
+_CALLGRIND_FILE_DATA_PATH_KEY: str = ""
 _HEAT_MAP_MODEL_DIR_NAME: str = ""
 _HEAT_MAP_MODEL_GLOBAL_NAME: str = ""
 _HEAT_MAP_TREE_ALWAYS_LISTED_DIRS: tuple[str, ...] = ()
@@ -68,6 +69,9 @@ class CallgrindToHeatmap:
         )
         locations: set[str] = dataclasses.field(default_factory=set)
         cold: list[str] = dataclasses.field(default_factory=list)
+        tests: list[CallgrindToHeatmap.ShownTest] = dataclasses.field(
+            default_factory=list
+        )
 
     class FileModel(TypedDict):
         self: callgrind.Costs
@@ -176,9 +180,23 @@ class CallgrindToHeatmap:
         calls_cost: callgrind.Costs
         count: int = 0
 
+    # Holds a regular test's profile and paths for its function data.
+    class ShownTest(NamedTuple):
+        test_name: str
+        profile: callgrind.Profile
+        info: dict[str, callgrind.PathInfo]
+
     class SourceDatabase(TypedDict):
         files: list[str]
         functions: list[str]
+
+    # Holds a diff's paths and a test's function data diff.
+    class TestDiff(NamedTuple):
+        derive: CallgrindToHeatmap.Derive
+        function_diff: callgrind_diff.FunctionDiffDocument
+
+    def __init__(self, verbose: int) -> None:
+        self.verbose = verbose
 
     @staticmethod
     def call_row_cost_key(row: CallgrindToHeatmap.CallRow) -> int:
@@ -196,11 +214,8 @@ class CallgrindToHeatmap:
         self, test_name: str, model: CallgrindToHeatmap.HeatModel
     ) -> str:
         data = json.dumps(model, separators=(",", ":"), ensure_ascii=False)
-        models_global = f"window.{_HEAT_MAP_MODEL_GLOBAL_NAME}"
-        return (
-            f"{models_global} = {models_global} || {{}};\n"
-            f"{models_global}[{json.dumps(test_name)}] = {data};\n"
-        )
+        head, tail = self.model_script_parts(test_name)
+        return f"{head}{data}{tail}"
 
     # Writes every test's model and sources, the source database, the paths.
     def data_write(self, args: CallgrindToHeatmap.DataArgs) -> None:
@@ -215,11 +230,12 @@ class CallgrindToHeatmap:
         )
         self.source_database_write(args.report, database)
         if derive is None:
-            self.paths_write(
+            file_paths = self.paths_write(
                 artifacts.artifact_path(artifacts_dir, "file-data"),
                 database.shown,
                 database.cold,
             )
+            self.function_data_write(artifacts_dir, database.tests, file_paths)
 
     # Adds a test's files and functions with a line to the source database.
     def database_add(
@@ -228,6 +244,7 @@ class CallgrindToHeatmap:
         test_name: str,
         profile: callgrind.Profile,
         info: dict[str, callgrind.PathInfo],
+        functions: Sequence[CallgrindToHeatmap.FunctionModel],
     ) -> None:
         for raw, path_info in info.items():
             known = database.shown.setdefault(raw, path_info)
@@ -248,20 +265,17 @@ class CallgrindToHeatmap:
                     f"error: the test {test_name} shows {display} as"
                     f" {entry}, an earlier test as {known_entry}"
                 )
-        for name in profile.function_home:
-            if self.function_line(profile, name).line:
-                database.locations.add(name)
+        for function in functions:
+            if function["line"]:
+                database.locations.add(function["name"])
 
     # Returns the diff's path derive or None, and the tracked files.
     def derive_resolve(
         self, artifacts_dir: str, args: CallgrindToHeatmap.DataArgs
     ) -> tuple[CallgrindToHeatmap.Derive | None, Sequence[str]]:
-        if (args.baseline or args.modified) and not args.diff:
-            sys.exit("error: --baseline and --modified need --diff")
+        self.diff_reports_check(args.diff, args.baseline, args.modified)
         if not args.diff:
             return None, self.repo_tracked_files()
-        if not args.baseline or not args.modified:
-            sys.exit("error: --diff needs --baseline and --modified")
         derive = CallgrindToHeatmap.Derive(
             callgrind.DerivedPaths(
                 artifacts.artifact_path(artifacts_dir, "baseline-profiles"),
@@ -276,62 +290,75 @@ class CallgrindToHeatmap:
         self,
         model: CallgrindToHeatmap.HeatModel,
         profile: callgrind.LineProfile,
-        artifacts_dir: str,
-        test_name: str,
+        function_diff: callgrind_diff.FunctionDiffDocument,
     ) -> None:
-        synthesized = callgrind_diff.callers_doc_load(artifacts_dir, test_name)
         totals = model["heatMapTotals"]
         totals["totals"] = callgrind_diff.profile_magnitudes(profile)
         totals["diff"] = True
-        baseline = synthesized["baseline"]
-        functions = model["functions"]
         model["functionBaseline"] = [
-            baseline.get(func["name"], []) for func in functions
+            callgrind.costs_trim(row.baseline_costs)
+            for row in function_diff["functions"]
         ]
         model["fileBaseline"] = {
             path: costs
-            for path, costs in synthesized["fileBaseline"].items()
+            for path, costs in function_diff["fileBaseline"].items()
             if path in model["files"]
         }
         for path, entry in model["files"].items():
             lines: dict[str, callgrind.Costs] = {}
             for line in entry["lines"]:
-                costs = baseline.get(callgrind.baseline_line_key(path, line))
+                costs = function_diff["lineBaseline"].get(
+                    callgrind.baseline_line_key(path, line)
+                )
                 if costs:
                     lines[line] = costs
             entry["baseline"] = lines
 
-    def display_paths(
+    # Returns the shown paths with each place of a function data diff added.
+    def diff_place_infos(
         self,
-        profile: callgrind.Profile,
-        raw_files: Sequence[str],
-        derive: CallgrindToHeatmap.Derive | None,
+        function_diff: callgrind_diff.FunctionDiffDocument,
+        derive: CallgrindToHeatmap.Derive,
+        recorded_info: dict[str, callgrind.PathInfo],
     ) -> dict[str, callgrind.PathInfo]:
-        info: dict[str, callgrind.PathInfo] = {}
-        for raw in raw_files:
-            object_path = profile.file_ob.get(raw, "")
-            if derive is None:
-                path_info = callgrind.path_norm(raw)
-                info[raw] = path_info._replace(
-                    display=callgrind.display_path(
-                        path_info.display, path_info.group, object_path
-                    )
-                )
-                continue
-            entry = derive.paths.path_entry(raw)
-            display = callgrind.display_path(
-                entry.canonical, entry.group, object_path
+        info = dict(recorded_info)
+        for row in function_diff["functions"]:
+            file_path = function_diff["files"][row.file_index]
+            place_info = self.path_info(
+                file_path,
+                function_diff["objects"][row.object_index],
+                derive,
             )
-            script = None
-            if entry.has_source:
-                script = os.path.join(
-                    derive.baseline_sources_dir
-                    if entry.in_baseline
-                    else derive.modified_sources_dir,
-                    self.source_name(display),
+            known = info.setdefault(file_path, place_info)
+            if known != place_info:
+                sys.exit(
+                    f"error: the diff shows {file_path} as {known.display}"
+                    f" and as {place_info.display}"
                 )
-            info[raw] = callgrind.PathInfo(display, script, entry.group)
         return info
+
+    # Returns each function's shown place, as its function data diff gives it.
+    def diff_places(
+        self,
+        function_diff: callgrind_diff.FunctionDiffDocument,
+        info: dict[str, callgrind.PathInfo],
+    ) -> dict[str, callgrind.SourceLine]:
+        return {
+            row.function_name: callgrind.SourceLine(
+                info[function_diff["files"][row.file_index]].display,
+                row.line_number,
+            )
+            for row in function_diff["functions"]
+        }
+
+    # Refuses a diff without its two reports, or reports without a diff.
+    def diff_reports_check(
+        self, is_diff: bool, baseline_report: str, modified_report: str
+    ) -> None:
+        if (baseline_report or modified_report) and not is_diff:
+            sys.exit("error: --baseline and --modified need --diff")
+        if is_diff and (not baseline_report or not modified_report):
+            sys.exit("error: --diff needs --baseline and --modified")
 
     # Returns one empty tally per path a page shows, keyed by that path.
     def file_tallies(
@@ -360,6 +387,7 @@ class CallgrindToHeatmap:
         profile: callgrind.Profile,
         info: dict[str, callgrind.PathInfo],
         function_index: dict[str, int],
+        locations: dict[str, callgrind.SourceLine],
     ) -> dict[str, CallgrindToHeatmap.FileModel]:
         counter_count = len(profile.counters)
         display = {raw: path_info.display for raw, path_info in info.items()}
@@ -390,27 +418,123 @@ class CallgrindToHeatmap:
                 raise KeyError(
                     f"callee {site.callee!r} is missing from function_home"
                 )
-            callee_line = self.function_line(profile, site.callee)
+            callee_location = locations[site.callee]
             accumulators[display[site.file]].callees.setdefault(
                 str(site.line), []
             ).append(
                 CallgrindToHeatmap.CallRow(
                     function_index[site.callee],
-                    display.get(callee_line.file, callee_line.file),
-                    callee_line.line,
+                    callee_location.file,
+                    callee_location.line,
                     callgrind.costs_trim(tally.costs),
                     tally.count,
                 )
             )
         return {name: entry.emit() for name, entry in accumulators.items()}
 
+    # Returns a test's function data, each file by its paths document index.
+    def function_data(
+        self,
+        profile: callgrind.Profile,
+        info: dict[str, callgrind.PathInfo],
+        file_indexes: dict[str, int],
+    ) -> callgrind.FunctionDataDocument:
+        function_names = sorted(profile.function_home)
+        function_index = {
+            name: index for index, name in enumerate(function_names)
+        }
+        objects = sorted(
+            {
+                callgrind.repo_root_strip(
+                    profile.function_keys[name].object_path
+                )
+                for name in function_names
+            }
+        )
+        object_index = {path: index for index, path in enumerate(objects)}
+        caller_rows: dict[str, list[callgrind.CallCount]] = {}
+        callee_rows: dict[str, list[callgrind.CallCount]] = {
+            name: [] for name in function_names
+        }
+        for name in function_names:
+            caller_rows[name] = []
+            for caller_name, calls in sorted(
+                callgrind.caller_calls(profile, name).items()
+            ):
+                caller_rows[name].append(
+                    callgrind.CallCount(
+                        function_index[caller_name], calls.calls
+                    )
+                )
+                callee_rows[caller_name].append(
+                    callgrind.CallCount(function_index[name], calls.calls)
+                )
+        rows: list[callgrind.FunctionDataRow] = []
+        for name in function_names:
+            key = profile.function_keys[name]
+            object_path = callgrind.repo_root_strip(key.object_path)
+            place = self.function_line(profile, name)
+            path_info = info[place.file]
+            file_path = callgrind.path_canonical(place.file)
+            # An error coded file is shown under its object's file name.
+            if (
+                callgrind.display_path(file_path, path_info.group, object_path)
+                != path_info.display
+            ):
+                sys.exit(
+                    f"error: {name} of {object_path} is placed in"
+                    f" {path_info.display}, which its function data would"
+                    f" show under its own object as {file_path}"
+                )
+            rows.append(
+                callgrind.FunctionDataRow(
+                    object_index[object_path],
+                    key.name,
+                    file_indexes[file_path],
+                    place.line,
+                    list(profile.function_self.get(name, profile.zeros())),
+                    caller_rows[name],
+                    callee_rows[name],
+                )
+            )
+        return {
+            "counters": list(profile.counters),
+            "objects": objects,
+            "functions": rows,
+        }
+
+    # Writes each test's function data, its files indexed in the paths order.
+    def function_data_write(
+        self,
+        artifacts_dir: str,
+        shown_tests: Sequence[CallgrindToHeatmap.ShownTest],
+        file_paths: Sequence[str],
+    ) -> None:
+        file_indexes = {
+            file_path: index for index, file_path in enumerate(file_paths)
+        }
+        for shown_test in shown_tests:
+            document = self.function_data(
+                shown_test.profile, shown_test.info, file_indexes
+            )
+            text = json.dumps(
+                document, separators=(",", ":"), ensure_ascii=False
+            )
+            path = artifacts.artifact_path(
+                artifacts_dir, "function-data", shown_test.test_name
+            )
+            with open(path, "w", encoding="utf-8") as handle:
+                handle.write(f"{text}\n")
+            if self.verbose:
+                print(
+                    f"wrote {path} ({len(text.encode('utf-8')) + 1:,} bytes)"
+                )
+
     # Returns where a function is addressed, its entry line or the line before.
     def function_line(
         self, profile: callgrind.Profile, name: str
     ) -> callgrind.SourceLine:
-        entry = profile.function_entry.get(
-            name, callgrind.SourceLine(profile.function_home[name], 0)
-        )
+        entry = profile.function_entry[name]
         before = callgrind.SourceLine(entry.file, entry.line - 1)
         if (
             entry.line <= 1
@@ -419,15 +543,25 @@ class CallgrindToHeatmap:
         ):
             return entry
         own_lines = {
-            key.line
-            for keys in (
-                profile.function_lines.get(name, {}),
-                profile.function_call_lines.get(name, set()),
-            )
-            for key in keys
-            if key.file == entry.file
+            *profile.function_lines.get(name, {}),
+            *profile.function_call_lines.get(name, set()),
         }
         return before if len(own_lines) > 1 else entry
+
+    # Returns each named function's shown file and the line it is addressed at.
+    def function_locations(
+        self,
+        profile: callgrind.Profile,
+        shown_paths: dict[str, str],
+        function_names: Iterable[str],
+    ) -> dict[str, callgrind.SourceLine]:
+        locations: dict[str, callgrind.SourceLine] = {}
+        for function_name in function_names:
+            location = self.function_line(profile, function_name)
+            locations[function_name] = callgrind.SourceLine(
+                shown_paths[location.file], location.line
+            )
+        return locations
 
     def functions_model(
         self,
@@ -435,11 +569,13 @@ class CallgrindToHeatmap:
         info: dict[str, callgrind.PathInfo],
         function_names: Sequence[str],
         function_index: dict[str, int],
+        locations: dict[str, callgrind.SourceLine],
+        self_costs: dict[str, callgrind.Costs],
     ) -> list[CallgrindToHeatmap.FunctionModel]:
         display = {raw: path_info.display for raw, path_info in info.items()}
         functions: list[CallgrindToHeatmap.FunctionModel] = []
         for name in function_names:
-            location = self.function_line(profile, name)
+            location = locations[name]
             callers = sorted(
                 (
                     CallgrindToHeatmap.CallRow(
@@ -456,11 +592,9 @@ class CallgrindToHeatmap:
             functions.append(
                 {
                     "name": name,
-                    "file": display.get(location.file, location.file),
+                    "file": location.file,
                     "line": location.line,
-                    "self": callgrind.costs_trim(
-                        profile.function_self.get(name, [])
-                    ),
+                    "self": callgrind.costs_trim(self_costs.get(name, [])),
                     "calls": callgrind.costs_trim(
                         profile.function_calls.get(name, [])
                     ),
@@ -472,15 +606,42 @@ class CallgrindToHeatmap:
     def model(
         self,
         profile: callgrind.Profile,
-        derive: CallgrindToHeatmap.Derive | None,
         tracked: Sequence[str],
+        test_diff: CallgrindToHeatmap.TestDiff | None,
     ) -> tuple[CallgrindToHeatmap.HeatModel, dict[str, callgrind.PathInfo]]:
-        function_names = sorted(profile.function_home)
+        if test_diff is None:
+            info = self.profile_path_infos(profile, None)
+            function_names = sorted(profile.function_home)
+            locations = self.function_locations(
+                profile,
+                {raw: path_info.display for raw, path_info in info.items()},
+                function_names,
+            )
+            self_costs = dict(profile.function_self)
+        else:
+            function_diff = test_diff.function_diff
+            info = self.diff_place_infos(
+                function_diff,
+                test_diff.derive,
+                self.profile_path_infos(profile, test_diff.derive),
+            )
+            function_names = [
+                row.function_name for row in function_diff["functions"]
+            ]
+            locations = self.diff_places(function_diff, info)
+            self_costs = {
+                row.function_name: row.self_costs
+                for row in function_diff["functions"]
+            }
         function_index = {name: i for i, name in enumerate(function_names)}
-        info = self.profile_path_infos(profile, derive)
-        files = self.files_model(profile, info, function_index)
+        files = self.files_model(profile, info, function_index, locations)
         functions = self.functions_model(
-            profile, info, function_names, function_index
+            profile,
+            info,
+            function_names,
+            function_index,
+            locations,
+            self_costs,
         )
         callgrind.ranking_counter_check(profile.counters, "this profile")
         return {
@@ -495,7 +656,25 @@ class CallgrindToHeatmap:
             "cold": self.cold_paths(tracked, files),
         }, info
 
-    # Writes a test's model script, printing what the model holds.
+    # Returns the path of a test's model script in a report.
+    def model_path(self, report_dir: str, test_name: str) -> str:
+        return os.path.join(
+            report_dir,
+            os.path.dirname(_HEAT_MAP_PAGE_PATH),
+            _HEAT_MAP_MODEL_DIR_NAME,
+            f"{test_name}.js",
+        )
+
+    # Returns the text a test's model script holds before and after its model.
+    def model_script_parts(self, test_name: str) -> tuple[str, str]:
+        models_global = f"window.{_HEAT_MAP_MODEL_GLOBAL_NAME}"
+        return (
+            f"{models_global} = {models_global} || {{}};\n"
+            f"{models_global}[{json.dumps(test_name)}] = ",
+            ";\n",
+        )
+
+    # Writes a test's model script, printing what the model holds if verbose.
     def model_write(
         self,
         report_dir: str,
@@ -503,15 +682,12 @@ class CallgrindToHeatmap:
         model: CallgrindToHeatmap.HeatModel,
     ) -> None:
         model_script = self.data_render(test_name, model)
-        data_dir = os.path.join(
-            report_dir,
-            os.path.dirname(_HEAT_MAP_PAGE_PATH),
-            _HEAT_MAP_MODEL_DIR_NAME,
-        )
-        os.makedirs(data_dir, exist_ok=True)
-        path = os.path.join(data_dir, f"{test_name}.js")
+        path = self.model_path(report_dir, test_name)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "w", encoding="utf-8") as handle:
             handle.write(model_script)
+        if not self.verbose:
+            return
         count = sum(
             1
             for entry in model["files"].values()
@@ -521,31 +697,53 @@ class CallgrindToHeatmap:
             f"files with samples: {len(model['files'])}"
             f" ({count} with source shared),"
             f" cold files listed: {len(model['cold'])}, "
-            f"functions: {len(model['functions'])}",
-            file=sys.stderr,
+            f"functions: {len(model['functions'])}"
         )
-        print(
-            f"wrote {path} ({len(model_script.encode('utf-8')):,} bytes)",
-            file=sys.stderr,
-        )
+        print(f"wrote {path} ({len(model_script.encode('utf-8')):,} bytes)")
 
     def page_write(self, report_dir: str) -> None:
         path = os.path.join(report_dir, _HEAT_MAP_PAGE_PATH)
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "w", encoding="utf-8") as handle:
             handle.write(_HEAT_MAP_PAGE)
-        print(
-            f"wrote {path} ({len(_HEAT_MAP_PAGE.encode('utf-8')):,} bytes)",
-            file=sys.stderr,
-        )
+        if self.verbose:
+            print(
+                f"wrote {path} ({len(_HEAT_MAP_PAGE.encode('utf-8')):,} bytes)"
+            )
 
-    # Writes the code of each path this report shows or keeps cold, for a diff.
+    # Returns how a page shows a recorded path of an object.
+    def path_info(
+        self,
+        raw: str,
+        object_path: str,
+        derive: CallgrindToHeatmap.Derive | None,
+    ) -> callgrind.PathInfo:
+        if derive is None:
+            path_info = callgrind.path_norm(raw)
+            return path_info._replace(
+                display=callgrind.display_path(
+                    path_info.display, path_info.group, object_path
+                )
+            )
+        entry = derive.paths.path_entry(raw)
+        display = derive.paths.display(raw, object_path)
+        script = None
+        if entry.has_source:
+            script = os.path.join(
+                derive.baseline_sources_dir
+                if entry.in_baseline
+                else derive.modified_sources_dir,
+                self.source_name(display),
+            )
+        return callgrind.PathInfo(display, script, entry.group)
+
+    # Writes the code of each path shown or kept cold, answering the paths.
     def paths_write(
         self,
         path: str,
         info: dict[str, callgrind.PathInfo],
         cold_files: Sequence[str],
-    ) -> None:
+    ) -> list[str]:
         coded: dict[str, tuple[str, str]] = {}
         for raw, path_info in info.items():
             code = path_info.group
@@ -559,18 +757,23 @@ class CallgrindToHeatmap:
         document = {canonical: code for canonical, (_, code) in coded.items()}
         for cold in cold_files:
             document.setdefault(cold, _CALLGRIND_FILE_DATA_GIT_CODE)
+        file_paths = sorted(document)
         text = json.dumps(
-            document,
-            sort_keys=True,
-            indent=_CALLGRIND_FILE_DATA_INDENT_CHARS,
+            [
+                {
+                    _CALLGRIND_FILE_DATA_PATH_KEY: file_path,
+                    _CALLGRIND_FILE_DATA_CODE_KEY: document[file_path],
+                }
+                for file_path in file_paths
+            ],
+            separators=(",", ":"),
             ensure_ascii=False,
         )
         with open(path, "w", encoding="utf-8") as handle:
             handle.write(f"{text}\n")
-        print(
-            f"wrote {path} ({len(text.encode('utf-8')) + 1:,} bytes)",
-            file=sys.stderr,
-        )
+        if self.verbose:
+            print(f"wrote {path} ({len(text.encode('utf-8')) + 1:,} bytes)")
+        return file_paths
 
     # Returns how a page shows each path the profile records.
     def profile_path_infos(
@@ -583,7 +786,10 @@ class CallgrindToHeatmap:
             | {key.file for key in profile.line_calls}
             | {entry.file for entry in profile.function_entry.values()}
         )
-        return self.display_paths(profile, raw_files, derive)
+        return {
+            raw: self.path_info(raw, profile.file_ob[raw], derive)
+            for raw in raw_files
+        }
 
     # Loads each test's profile in turn, refusing counters unlike the first's.
     def profiles_load(
@@ -651,10 +857,8 @@ class CallgrindToHeatmap:
         )
         with open(script_path, "w", encoding="utf-8") as handle:
             handle.write(text)
-        print(
-            f"wrote {script_path} ({len(text.encode('utf-8')):,} bytes)",
-            file=sys.stderr,
-        )
+        if self.verbose:
+            print(f"wrote {script_path} ({len(text.encode('utf-8')):,} bytes)")
 
     @staticmethod
     def source_name(display: str) -> str:
@@ -750,12 +954,28 @@ class CallgrindToHeatmap:
         for test_name, profile in self.profiles_load(
             artifacts_dir, kind, test_names
         ):
-            model, info = self.model(profile, derive, tracked)
-            if derive is not None:
-                self.diff_model(model, profile, artifacts_dir, test_name)
+            test_diff = (
+                None
+                if derive is None
+                else CallgrindToHeatmap.TestDiff(
+                    derive,
+                    callgrind_diff.function_diff_load(
+                        artifacts_dir, test_name
+                    ),
+                )
+            )
+            model, info = self.model(profile, tracked, test_diff)
+            if test_diff is None:
+                database.tests.append(
+                    CallgrindToHeatmap.ShownTest(test_name, profile, info)
+                )
+            else:
+                self.diff_model(model, profile, test_diff.function_diff)
             self.sources_write(sources_dir, info, model, derive)
             self.model_write(report_dir, test_name, model)
-            self.database_add(database, test_name, profile, info)
+            self.database_add(
+                database, test_name, profile, info, model["functions"]
+            )
         database.cold = self.cold_paths(tracked, database.files)
         return database
 
@@ -835,9 +1055,17 @@ def main() -> None:
         metavar="DIR",
         help="the report directory the page is written in",
     )
+    for written_parser in (data_parser, page_parser):
+        written_parser.add_argument(
+            "--verbose",
+            action="count",
+            default=0,
+            help="print each file written; a quiet run prints nothing on"
+            " success",
+        )
 
     namespace = parser.parse_args()
-    heat_map = CallgrindToHeatmap()
+    heat_map = CallgrindToHeatmap(namespace.verbose)
     if namespace.cmd == "page":
         heat_map.page_write(namespace.report)
     else:

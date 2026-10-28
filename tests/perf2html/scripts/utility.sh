@@ -353,11 +353,12 @@ manifest_write() {
   shift 2
   local manifest="$dir/MANIFEST.txt" checksum
   command_run python3 "$PERF2HTML_DIR_/scripts/build_report.py" scripts \
-    "--report=$dir"
+    "--report=$dir" "${VERBOSE_FLAGS[@]}"
   command_run python3 "$PERF2HTML_DIR_/scripts/build_report.py" settings \
-    "--report=$dir"
+    "--report=$dir" "${VERBOSE_FLAGS[@]}"
   command_run python3 "$PERF2HTML_DIR_/scripts/build_report.py" debug \
-    "--report=$dir" -- "$REPORT_MANIFEST_VERSION_LABEL=$version" "$@"
+    "--report=$dir" "${VERBOSE_FLAGS[@]}" -- \
+    "$REPORT_MANIFEST_VERSION_LABEL=$version" "$@"
   checksum="$(checksum_compute "$dir")"
   {
     printf '%s\n' "$version"
@@ -717,7 +718,7 @@ title_print() {
 toolchain_check() {
   local tool missing=''
   for tool in cmake ninja ccache cc valgrind perf taskset python3 \
-    addr2line objdump readelf speedscope cksum curl tar xz dpkg-query; do
+    addr2line readelf speedscope cksum curl tar xz dpkg-query; do
     command -v "$tool" >/dev/null 2>&1 \
       || missing+="${missing:+, }$tool -> $(install_command "$tool")"
   done
@@ -730,6 +731,7 @@ toolchain_check() {
 }
 
 verbose_begin() {
+  local flag_count
   export PERF2HTML_HEADER_DEPTH=$((${PERF2HTML_HEADER_DEPTH:-0} + 1))
   PERF2HTML_CLOCK_START_US="${PERF2HTML_CLOCK_START_US:-$(clock_microseconds)}"
   export PERF2HTML_CLOCK_START_US
@@ -738,6 +740,10 @@ verbose_begin() {
   VERBOSE_COMMAND_NUMBER=1
   VERBOSE_ITEM_INDENT=0
   VERBOSE_BLOCK_PRINTED=other
+  VERBOSE_FLAGS=()
+  for ((flag_count = 0; flag_count < VERBOSE; flag_count++)); do
+    VERBOSE_FLAGS+=(--verbose)
+  done
   STEP_NAMES=()
   STEP_RUNNING_NAME=""
   STEP_RUNNING_START=""
@@ -819,11 +825,4 @@ verbose_filter() {
   ')" || status=$?
   [ "$loose" != loose ] || VERBOSE_BLOCK_PRINTED=loose
   return "$status"
-}
-
-verbose_flags() {
-  local flag_count
-  for ((flag_count = 0; flag_count < VERBOSE; flag_count++)); do
-    echo --verbose
-  done
 }

@@ -138,9 +138,12 @@ Every file sits in the archive's one root directory,
 - `0_file_data.json`: Source directory file listing with mode flags.
 - `0_timing_data.json`: The overview's timing values perf2html_diff.sh reads.
 - `<test>.callgrind.out`: A test's callgrind file, the repo root cut.
+- `<test>_function_data.json`: Each function's object, name, file, line, self
+  costs, callers and callees, a file by its `0_file_data.json` index.
 - `test_list.txt`: The test names, one per line, sorted.
 
-In `0_file_data.json` each filename is associated with the following:
+`0_file_data.json` is an array, sorted by path, of objects holding a path `p`
+and its code `t`, one of the following:
 
 - `repo` : A project file with source.
 - `git` : A non-contributing project file with no source.
@@ -155,6 +158,8 @@ An HTML generation run keeps its temporary files in a directory under
 A regular report's run keeps these.
 
 - `0_file_data.json`: The paths document, each path's code.
+- `<test>_function_data.json`: The function data, each function's place, self
+  costs, callers and callees.
 - `<test>.callgrind.out`: The callgrind recording.
 - `<test>.cyg_callback.bin`: The function trace of the sampled run.
 - `<test>.cyg_callback.bin.maps`: The traced process's mappings.
@@ -174,7 +179,7 @@ A regular report's run keeps these.
 
 A diff report's run keeps these.
 
-- `<test>.callgrind_diff.json`: The callers diff with the baseline costs.
+- `<test>.callgrind_diff.json`: The function data diff with the baseline costs.
 - `<test>.callgrind_diff.out`: The callgrind delta, modified minus baseline.
 - `baseline.txt`: The baseline report's header block.
 - `baseline/`: The baseline report's raw data archive, extracted.
@@ -200,17 +205,19 @@ A diff report's run keeps these.
 
 ## Callgrind Parsing
 
-| File                   | Purpose                                            |
-| ---------------------- | -------------------------------------------------- |
-| `artifacts.py`         | Holds the artifacts contract: every temporary      |
-|                        | file's path, the test list, and the missing file   |
-|                        | error.                                             |
-| `callgrind.py`         | Parses callgrind files into the one profile model, |
-|                        | with costs, derived counters and display paths.    |
-| `callgrind_diff.py`    | Subtracts the baseline profile from the modified   |
-|                        | profile and writes the delta and the callers JSON. |
-| `callgrind_symbols.py` | Names the functions that callgrind left as         |
-|                        | addresses in one recording.                        |
+| File                | Purpose                                            |
+| ------------------- | -------------------------------------------------- |
+| `artifacts.py`      | Holds the artifacts contract: every temporary      |
+|                     | file's path, the test list, a report's build tree  |
+|                     | and the missing file error.                        |
+| `callgrind.py`      | Parses callgrind files into the one profile model, |
+|                     | with costs, derived counters and display paths,    |
+|                     | and pairs a diff's functions of one name by object |
+|                     | path less each report's build tree, the lone one   |
+|                     | left in each report as moved.                      |
+| `callgrind_diff.py` | Subtracts the baseline profile from the modified   |
+|                     | profile and writes the delta, and the function     |
+|                     | data diff of every function either report lists.   |
 
 ## Database Page
 
@@ -267,8 +274,8 @@ A diff report's run keeps these.
 | File                      | Purpose                                      |
 | ------------------------- | -------------------------------------------- |
 | `callgrind_to_heatmap.py` | Writes the heat map data and sources of each |
-|                           | test, the paths document a diff derives and  |
-|                           | the one heat map page.                       |
+|                           | test, the paths document and function data a |
+|                           | diff derives, and the one heat map page.     |
 | `heat_map.css`            | Styles the heat map tree, source table,      |
 |                           | information box, ticker tape and minimap.    |
 | `heat_map.html`           | Templates the heat map page with its tree    |

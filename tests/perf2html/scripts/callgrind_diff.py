@@ -13,26 +13,46 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import artifacts, callgrind
 
 
-class CallerDelta(NamedTuple):
-    function: str
-    count_: int
+class CallChange(NamedTuple):
+    function_index: int
+    call_count: int
     baseline_count: int
 
 
-class CallersDoc(TypedDict):
+# Holds a test's function data diff, each file and object by its list index.
+class FunctionDiff(TypedDict):
     counters: list[str]
-    callers: dict[str, list[CallerDelta]]
-    baseline: dict[str, callgrind.Costs]
-    baselineCalls: dict[str, int]
+    objects: list[str]
+    files: list[str]
+    functions: list[FunctionDiffRow]
+
+
+# Holds the function data diff beside the baseline costs of lines and files.
+class FunctionDiffDocument(FunctionDiff):
+    lineBaseline: dict[str, callgrind.Costs]
     fileBaseline: dict[str, callgrind.Costs]
+
+
+# Holds a function's place, self change and baseline, callers and callees.
+class FunctionDiffRow(NamedTuple):
+    function_name: str
+    object_index: int
+    file_index: int
+    line_number: int
+    self_costs: callgrind.Costs
+    baseline_costs: callgrind.Costs
+    caller_rows: list[CallChange]
+    callee_rows: list[CallChange]
 
 
 class CallgrindDiff:
     class DiffArgs(NamedTuple):
         artifacts: str
         report: str
+        verbose: int
 
     def __init__(self, args: CallgrindDiff.DiffArgs) -> None:
+        self.verbose = args.verbose
         self.artifacts_dir = artifacts.report_artifacts_dir(
             args.artifacts, args.report
         )
@@ -45,24 +65,14 @@ class CallgrindDiff:
         self.derived = callgrind.DerivedPaths(
             self.baseline_dir, self.modified_dir
         )
-
-    def baseline_costs(
-        self, baseline: callgrind.LineProfile, objects: dict[str, str]
-    ) -> dict[str, callgrind.Costs]:
-        out: dict[str, callgrind.Costs] = {}
-        width = len(baseline.counters)
-        for function, costs in baseline.function_self.items():
-            if any(costs):
-                out[function] = callgrind.costs_fit(costs, width)
-        lines: dict[str, callgrind.Costs] = {}
-        for key, costs in baseline.line_self.items():
-            callgrind.costs_accumulate(
-                lines, self.baseline_key(key, objects), costs
-            )
-        for line_key, costs in lines.items():
-            if any(costs):
-                out[line_key] = callgrind.costs_fit(costs, width)
-        return out
+        self.baseline_paths, self.modified_paths = (
+            [entry.path for entry in callgrind.file_data_read(directory)]
+            for directory in (self.baseline_dir, self.modified_dir)
+        )
+        self.build_trees = (
+            artifacts.build_tree_read(self.artifacts_dir, "baseline-header"),
+            artifacts.build_tree_read(self.artifacts_dir, "modified-header"),
+        )
 
     def baseline_files(
         self, baseline: callgrind.LineProfile, objects: dict[str, str]
@@ -89,54 +99,40 @@ class CallgrindDiff:
             self.display_path(key.file, objects), key.line
         )
 
+    # Returns the baseline costs of each line, keyed by its shown place.
+    def baseline_lines(
+        self, baseline: callgrind.LineProfile, objects: dict[str, str]
+    ) -> dict[str, callgrind.Costs]:
+        lines: dict[str, callgrind.Costs] = {}
+        for key, costs in baseline.line_self.items():
+            callgrind.costs_accumulate(
+                lines, self.baseline_key(key, objects), costs
+            )
+        return {
+            line_key: callgrind.costs_fit(costs, len(baseline.counters))
+            for line_key, costs in lines.items()
+            if any(costs)
+        }
+
     def build(self) -> None:
         for test_name in artifacts.test_list_read(self.artifacts_dir):
             self.test_write(test_name)
 
-    # Keeps each callee with a changed caller, listing unchanged callers last.
-    def callers_subtract(
-        self,
-        baseline: callgrind.Profile,
-        modified: callgrind.Profile,
-    ) -> dict[str, list[CallerDelta]]:
-        out: dict[str, list[CallerDelta]] = {}
-        uncalled = callgrind.CallerCalls(0, 0, [])
-        for callee in sorted(set(baseline.callers) | set(modified.callers)):
-            before = callgrind.caller_calls(baseline, callee)
-            after = callgrind.caller_calls(modified, callee)
-            deltas: list[CallerDelta] = []
-            for caller_name in sorted(set(before) | set(after)):
-                before_count = before.get(caller_name, uncalled).calls
-                count = after.get(caller_name, uncalled).calls - before_count
-                deltas.append(CallerDelta(caller_name, count, before_count))
-            if any(delta.count_ for delta in deltas):
-                deltas.sort(
-                    key=lambda delta: (-abs(delta.count_), delta.function)
-                )
-                out[callee] = deltas
-        return out
-
-    def callers_write(
-        self,
-        callers: dict[str, list[CallerDelta]],
-        path: str,
-        baseline: callgrind.Profile,
-        diff: callgrind.LineProfile,
-    ) -> None:
-        objects = diff.file_ob
-        doc: CallersDoc = {
-            "counters": list(baseline.counters),
-            "callers": callers,
-            "baseline": self.baseline_costs(baseline, objects),
-            "baselineCalls": {
-                callee: sum(tally.count for tally in tallies.values())
-                for callee, tallies in baseline.callers.items()
-            },
-            "fileBaseline": self.baseline_files(baseline, objects),
-        }
-        os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
-        with open(path, "w", encoding="utf-8") as handle:
-            json.dump(doc, handle)
+    # Returns each call's change and baseline calls, by its function's index.
+    @staticmethod
+    def call_changes(
+        baseline_counts: dict[str, int],
+        modified_counts: dict[str, int],
+        function_index: dict[str, int],
+    ) -> list[CallChange]:
+        return sorted(
+            CallChange(
+                function_index[name],
+                modified_counts.get(name, 0) - baseline_counts.get(name, 0),
+                baseline_counts.get(name, 0),
+            )
+            for name in baseline_counts.keys() | modified_counts.keys()
+        )
 
     def counters_check(
         self,
@@ -154,12 +150,134 @@ class CallgrindDiff:
                 profile.counters, f"the {side} profile"
             )
 
+    # Refuses a delta changing a function otherwise than its function data.
+    def delta_check(
+        self,
+        delta: callgrind.LineProfile,
+        function_diff: FunctionDiff,
+        delta_path: str,
+    ) -> None:
+        changes = {
+            row.function_name: callgrind.costs_trim(row.self_costs)
+            for row in function_diff["functions"]
+        }
+        for function in sorted(changes.keys() | delta.function_self.keys()):
+            delta_costs = callgrind.costs_trim(
+                delta.function_self.get(function, [])
+            )
+            if changes.get(function) != delta_costs:
+                sys.exit(
+                    f"error: {delta_path} changes {function} by"
+                    f" {delta_costs}, the function data by"
+                    f" {changes.get(function)}"
+                )
+
     # Returns the path the diff heat map shows, from the delta's objects.
     def display_path(self, file: str, objects: dict[str, str]) -> str:
-        entry = self.derived.path_entry(file)
-        return callgrind.display_path(
-            entry.canonical, entry.group, objects.get(file, "")
+        return self.derived.display(file, objects[file])
+
+    # Returns every function two function data documents list, 0 changes kept.
+    @staticmethod
+    def function_diff(
+        baseline: callgrind.FunctionDataDocument,
+        modified: callgrind.FunctionDataDocument,
+        baseline_paths: Sequence[str],
+        modified_paths: Sequence[str],
+        build_trees: tuple[str, str],
+    ) -> FunctionDiff:
+        if baseline["counters"] != modified["counters"]:
+            sys.exit(
+                "error: the two function data documents record different"
+                f" counters: {' '.join(baseline['counters'])} vs"
+                f" {' '.join(modified['counters'])}"
+            )
+        sides = (baseline, modified)
+        baseline_keys, modified_keys = (
+            [
+                callgrind.FunctionKey(
+                    document["objects"][row.object_index], row.function_name
+                )
+                for row in document["functions"]
+            ]
+            for document in sides
         )
+        side_names = [
+            [names[key] for key in keys]
+            for keys, names in zip(
+                (baseline_keys, modified_keys),
+                callgrind.function_pair_names(
+                    (baseline_keys, modified_keys), build_trees
+                ),
+                strict=True,
+            )
+        ]
+        places: dict[str, tuple[str, str, int]] = {}
+        self_costs: list[dict[str, callgrind.Costs]] = []
+        caller_counts: list[dict[str, dict[str, int]]] = []
+        callee_counts: list[dict[str, dict[str, int]]] = []
+        # The modified side, read last, places a function both list.
+        for document, names, paths in zip(
+            sides, side_names, (baseline_paths, modified_paths), strict=True
+        ):
+            self_costs.append({})
+            caller_counts.append({})
+            callee_counts.append({})
+            for row, name in zip(document["functions"], names, strict=True):
+                places[name] = (
+                    document["objects"][row.object_index],
+                    paths[row.file_index],
+                    row.line_number,
+                )
+                self_costs[-1][name] = row.self_costs
+                caller_counts[-1][name] = {
+                    names[call_row.function_index]: call_row.call_count
+                    for call_row in row.caller_rows
+                }
+                callee_counts[-1][name] = {
+                    names[call_row.function_index]: call_row.call_count
+                    for call_row in row.callee_rows
+                }
+        function_names = sorted(places)
+        function_index = {
+            name: index for index, name in enumerate(function_names)
+        }
+        objects = sorted({place[0] for place in places.values()})
+        object_index = {path: index for index, path in enumerate(objects)}
+        files = sorted({place[1] for place in places.values()})
+        file_index = {path: index for index, path in enumerate(files)}
+        zeros = [0] * len(baseline["counters"])
+        rows: list[FunctionDiffRow] = []
+        for name in function_names:
+            object_path, file_path, line_number = places[name]
+            baseline_costs = self_costs[0].get(name, zeros)
+            caller_rows, callee_rows = (
+                CallgrindDiff.call_changes(
+                    counts[0].get(name, {}),
+                    counts[1].get(name, {}),
+                    function_index,
+                )
+                for counts in (caller_counts, callee_counts)
+            )
+            rows.append(
+                FunctionDiffRow(
+                    name,
+                    object_index[object_path],
+                    file_index[file_path],
+                    line_number,
+                    callgrind.costs_sub(
+                        self_costs[1].get(name, zeros), baseline_costs
+                    ),
+                    list(baseline_costs),
+                    caller_rows,
+                    callee_rows,
+                )
+            )
+        return {
+            "counters": list(baseline["counters"]),
+            "objects": objects,
+            "files": files,
+            "functions": rows,
+        }
 
     def subtract(
         self,
@@ -189,8 +307,6 @@ class CallgrindDiff:
         for source in (modified, baseline):
             for function, home in source.function_home.items():
                 diff.function_home.setdefault(function, home)
-            for function, entry in source.function_entry.items():
-                diff.function_entry.setdefault(function, entry)
             for file, ob in source.file_ob.items():
                 diff.file_ob.setdefault(file, ob)
         diff.summary = diff.zeros()
@@ -198,7 +314,7 @@ class CallgrindDiff:
             callgrind.costs_add(diff.summary, costs)
         return diff
 
-    # Writes one test's delta and callers diff, modified minus baseline.
+    # Writes one test's delta and function data diff, modified minus baseline.
     def test_write(self, test_name: str) -> None:
         baseline_path = artifacts.artifact_path(
             self.baseline_dir, "callgrind", test_name
@@ -209,14 +325,11 @@ class CallgrindDiff:
         delta_path = artifacts.artifact_path(
             self.artifacts_dir, "delta", test_name
         )
-        callers_path = artifacts.artifact_path(
-            self.artifacts_dir, "caller-counts", test_name
+        function_diff_path = artifacts.artifact_path(
+            self.artifacts_dir, "function-diff", test_name
         )
-        baseline = callgrind.profile_load(
-            self.baseline_dir, "callgrind", test_name
-        )
-        modified = callgrind.profile_load(
-            self.modified_dir, "callgrind", test_name
+        baseline, modified = callgrind.profile_pair_load(
+            self.baseline_dir, self.modified_dir, test_name, self.build_trees
         )
         diff = self.subtract(baseline, modified)
         if not any(diff.summary):
@@ -229,6 +342,27 @@ class CallgrindDiff:
             delta_path,
             [f"Baseline: {baseline_path}", f"Modified: {modified_path}"],
         )
+        function_diff = self.function_diff(
+            callgrind.function_data_read(self.baseline_dir, test_name),
+            callgrind.function_data_read(self.modified_dir, test_name),
+            self.baseline_paths,
+            self.modified_paths,
+            self.build_trees,
+        )
+        self.delta_check(diff, function_diff, delta_path)
+        document: FunctionDiffDocument = {
+            "counters": function_diff["counters"],
+            "objects": function_diff["objects"],
+            "files": function_diff["files"],
+            "functions": function_diff["functions"],
+            "lineBaseline": self.baseline_lines(baseline, diff.file_ob),
+            "fileBaseline": self.baseline_files(baseline, diff.file_ob),
+        }
+        text = json.dumps(document, separators=(",", ":"), ensure_ascii=False)
+        with open(function_diff_path, "w", encoding="utf-8") as handle:
+            handle.write(f"{text}\n")
+        if not self.verbose:
+            return
         lines_changed = sum(
             1 for costs in diff.line_self.values() if any(costs)
         )
@@ -236,16 +370,12 @@ class CallgrindDiff:
         print(
             f"wrote {delta_path} ({os.path.getsize(delta_path):,} bytes): "
             f"{lines_changed:,} lines changed, {changed:,} functions"
-            " changed in any recorded counter",
-            file=sys.stderr,
+            " changed in any recorded counter"
         )
-        callers = self.callers_subtract(baseline, modified)
-        self.callers_write(callers, callers_path, baseline, diff)
         print(
-            f"wrote {callers_path} "
-            f"({os.path.getsize(callers_path):,} bytes): "
-            f"{len(callers):,} function(s) with a caller change",
-            file=sys.stderr,
+            f"wrote {function_diff_path}"
+            f" ({os.path.getsize(function_diff_path):,} bytes):"
+            f" {len(function_diff['functions']):,} functions"
         )
 
     def write(
@@ -278,79 +408,73 @@ class CallgrindDiff:
                     handle, profile, function, current_ob
                 )
 
+    @staticmethod
     def write_function(
-        self,
         handle: TextIO,
         profile: callgrind.LineProfile,
         function: str,
         current_ob: str,
     ) -> str:
-        by_file: dict[str, list[tuple[int, callgrind.Costs]]] = {}
+        home = profile.function_home[function]
+        # The home opens the block, whether or not a changed line lies in it.
+        by_file: dict[str, list[tuple[int, callgrind.Costs]]] = {home: []}
         for key, costs in profile.function_lines[function].items():
             by_file.setdefault(key.file, []).append((key.line, costs))
-        home = profile.function_home.get(function, "")
-        if home not in by_file:
-            home = max(
-                by_file,
-                key=lambda name: (
-                    sum(
-                        abs(value)
-                        for _, costs in by_file[name]
-                        for value in costs
-                    ),
-                    name,
-                ),
-            )
-        entry = profile.function_entry.get(function)
         handle.write("\n")
         for file in [home] + sorted(name for name in by_file if name != home):
-            ob = profile.file_ob.get(file, "")
-            if ob and ob != current_ob:
+            ob = profile.file_ob[file]
+            if ob != current_ob:
                 handle.write(f"ob={callgrind.repo_root_strip(ob)}\n")
                 current_ob = ob
             handle.write(
                 f"{'fl' if file == home else 'fi'}="
                 f"{callgrind.repo_root_strip(file)}\n"
             )
-            ordered = sorted(by_file[file])
             if file == home:
                 handle.write(f"fn={function}\n")
-                if entry is not None and entry.file == home and entry.line:
-                    ordered = [
-                        pair for pair in ordered if pair[0] == entry.line
-                    ] + [pair for pair in ordered if pair[0] != entry.line]
-            for line, costs in ordered:
+            for line, costs in sorted(by_file[file]):
                 handle.write(
                     f"{line} {' '.join(str(value) for value in costs)}\n"
                 )
         return current_ob
 
 
-def callers_doc_load(directory: str, test_name: str) -> CallersDoc:
+# Returns a test's function data diff, refusing a document of other keys.
+def function_diff_load(directory: str, test_name: str) -> FunctionDiffDocument:
+    path = artifacts.artifact_path(directory, "function-diff", test_name)
     with artifacts.artifact_open(
-        directory, "caller-counts", test_name
+        directory, "function-diff", test_name
     ) as handle:
-        doc = json.load(handle)
-    for key in (
-        "counters",
-        "callers",
-        "baseline",
-        "baselineCalls",
-        "fileBaseline",
-    ):
-        if key not in doc:
-            path = artifacts.artifact_path(
-                directory, "caller-counts", test_name
-            )
-            sys.exit(
-                f"error: {path} is not a synthesized callers diff:"
-                f" the {key!r} key is missing"
-            )
-    doc["callers"] = {
-        callee: [CallerDelta(*row) for row in rows]
-        for callee, rows in doc["callers"].items()
-    }
-    return doc
+        document = json.load(handle)
+    keys = sorted(FunctionDiffDocument.__required_keys__)
+    if sorted(document) != keys:
+        sys.exit(
+            f"error: {path} is not a function data diff: it holds the keys"
+            f" {' '.join(sorted(document))}, expected {' '.join(keys)}"
+        )
+    document["functions"] = [
+        FunctionDiffRow(
+            function_name,
+            object_index,
+            file_index,
+            line_number,
+            self_costs,
+            baseline_costs,
+            [CallChange(*call_row) for call_row in caller_rows],
+            [CallChange(*call_row) for call_row in callee_rows],
+        )
+        for (
+            function_name,
+            object_index,
+            file_index,
+            line_number,
+            self_costs,
+            baseline_costs,
+            caller_rows,
+            callee_rows,
+        ) in document["functions"]
+    ]
+    return document
 
 
 def profile_magnitudes(profile: callgrind.LineProfile) -> callgrind.Costs:
@@ -376,10 +500,18 @@ def main() -> None:
         metavar="DIR",
         help="the diff report directory, naming its artifacts directory",
     )
+    parser.add_argument(
+        "--verbose",
+        action="count",
+        default=0,
+        help="print each file written; a quiet run prints nothing on success",
+    )
     namespace = parser.parse_args()
     CallgrindDiff(
         CallgrindDiff.DiffArgs(
-            artifacts=namespace.artifacts, report=namespace.report
+            artifacts=namespace.artifacts,
+            report=namespace.report,
+            verbose=namespace.verbose,
         )
     ).build()
 

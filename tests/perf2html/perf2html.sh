@@ -255,7 +255,7 @@ header_rows_write() {
     "os=$_OPERATING_SYSTEM"
     "compiler=$_COMPILER_NAME"
     "build=$_BUILD_DESC"
-    "executable=$_BIN_REL"
+    "$REPORT_MANIFEST_EXECUTABLE_LABEL=$_BIN_REL"
     "$(manifest_recorded_row)"
   )
   [ "$REGENERATE" = 0 ] || return 0
@@ -319,22 +319,14 @@ callgrind_measure() {
     "--executable=$_BIN"
 }
 
-symbols_resolve() {
-  local _test="$1"
-  heading_print "python3 callgrind_symbols.py $_test"
-  command_run python3 "$PERF2HTML_DIR_/scripts/callgrind_symbols.py" \
-    "--artifacts=$ARTIFACTS_DIR" "--report=$_OUT_DIR" "--test=$_test"
-}
-
 timing_measure() {
-  local _test="$1" _command _verbose_args
-  mapfile -t _verbose_args < <(verbose_flags)
+  local _test="$1" _command
   heading_print "perf stat -j -r $TIMING_PERF_STAT_RUNS perf $_test" \
     "$TEST_LOOPS"
   _command=(python3 "$PERF2HTML_DIR_/scripts/perf_measure.py" timing
     "--artifacts=$ARTIFACTS_DIR" "--report=$_OUT_DIR" "--test=$_test"
     "--executable=$_BIN" "--executable-shown=$_BIN_REL"
-    "${_verbose_args[@]}")
+    "${VERBOSE_FLAGS[@]}")
   # The timing tool writes its own Markdown table at level 1.
   page_command_run "" 1 "${_command[*]}" "${_command[@]}"
 }
@@ -346,9 +338,8 @@ run_one() {
     return
   fi
   step_run 1 callgrind callgrind_measure "$_test"
-  step_run 2 symbols symbols_resolve "$_test"
-  step_run 3 timing timing_measure "$_test"
-  step_run 4 trace trace_render "$_test"
+  step_run 2 timing timing_measure "$_test"
+  step_run 3 trace trace_render "$_test"
 }
 
 tests_record() {
@@ -370,9 +361,12 @@ timer_artifacts_write() {
   rm -rf "$_root_directory"
   mkdir "$_root_directory"
   for _test_name in "${_TESTS[@]}"; do
-    artifact_path _source "$REPORT_ARTIFACTS_DIR" callgrind "$_test_name"
+    for _kind in "${ARTIFACT_ARCHIVE_KINDS[@]}"; do
+      artifact_path _source "$REPORT_ARTIFACTS_DIR" "$_kind" "$_test_name"
+      artifact_path _member "$_root_directory" "$_kind" "$_test_name"
+      cp "$_source" "$_member"
+    done
     artifact_path _member "$_root_directory" callgrind "$_test_name"
-    cp "$_source" "$_member"
     sed -i "s#$_REPO/##g" "$_member"
   done
   for _kind in "${ARTIFACT_ARCHIVE_RUN_KINDS[@]}" test-list; do
@@ -390,21 +384,22 @@ pages_write() {
   step_run 1 "flame graph app" flame_app_install "$_OUT_DIR"
   step_run 2 "flame graph page" page_tool_run build_flame_graph.py page \
     "--report=$_OUT_DIR" "--app-js=$_FLAME_APP_JS" \
-    "--app-css=$_FLAME_APP_CSS"
+    "--app-css=$_FLAME_APP_CSS" "${VERBOSE_FLAGS[@]}"
   step_run 3 "flame graph profiles" page_tool_run build_flame_graph.py \
-    profiles "${_flags[@]}"
+    profiles "${_flags[@]}" "${VERBOSE_FLAGS[@]}"
   step_run 4 "heat map data" page_tool_run callgrind_to_heatmap.py data \
-    "${_flags[@]}"
-  step_run 5 database page_tool_run build_report.py database "${_flags[@]}"
+    "${_flags[@]}" "${VERBOSE_FLAGS[@]}"
+  step_run 5 database page_tool_run build_report.py database "${_flags[@]}" \
+    "${VERBOSE_FLAGS[@]}"
   step_run 6 "call graph" page_tool_run build_report.py call-graph \
-    "${_flags[@]}"
+    "${_flags[@]}" "${VERBOSE_FLAGS[@]}"
   step_run 7 "timing data" page_tool_run perf_measure.py timing-data \
     "${_flags[@]}"
   step_run 8 "timer artifacts" timer_artifacts_write
   step_run 9 overview page_tool_run build_report.py overview "${_flags[@]}" \
-    "${README_HTML_FLAGS[@]}"
+    "${README_HTML_FLAGS[@]}" "${VERBOSE_FLAGS[@]}"
   step_run 10 "heat map page" page_tool_run callgrind_to_heatmap.py page \
-    "--report=$_OUT_DIR"
+    "--report=$_OUT_DIR" "${VERBOSE_FLAGS[@]}"
   step_run 11 finish report_finish "$_OUT_DIR" \
     "$REPORT_MANIFEST_VERSION_FULL" "${_HEADER_ROWS[@]}"
 }

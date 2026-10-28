@@ -194,9 +194,6 @@ The keybindings are:
 - -: zoom out
 - 0: zoom out to see the entire profile
 - w/a/s/d or arrow keys: pan around the profile
-- 1: Switch to the "Time Order" view
-- 2: Switch to the "Left Heavy" view
-- 3: Switch to the "Sandwich" view
 - r: Collapse recursion in the flamegraphs
 - Cmd+S/Ctrl+S to save the current profile
 - Cmd+O/Ctrl+O to open a new profile

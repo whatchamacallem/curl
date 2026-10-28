@@ -48,6 +48,7 @@ _WHITELIST_FILE=test_whitelist.txt
 . ./test_utility.sh
 
 _BATCH_SCRIPT_NAME=perf2html_batch.sh
+_QUIET_LOG_SUCCESS_PATTERN='^(wrote /|files with samples: )'
 _README_PAGE_SCRIPT_NAME=build_readme_page.py
 _ROWS_FILE_NAME=perf2html.txt
 # Chrome for Testing's headless shell, headless without a switch.
@@ -283,9 +284,7 @@ report_version() {
 }
 
 test_expected_report_check_run() {
-  local _path _args _flags=()
-  mapfile -t _flags < <(verbose_flags)
-  _flags+=("${_README_HTML_FLAGS[@]}")
+  local _path _args _flags=("${VERBOSE_FLAGS[@]}" "${_README_HTML_FLAGS[@]}")
 
   heading_print test_report.py
   for _path in "${_DEFAULT_REPORTS[@]}"; do
@@ -294,7 +293,9 @@ test_expected_report_check_run() {
 
     _args=("$(cd "$_path" && pwd)")
     if [ "$(report_version "$_path")" = "$REPORT_MANIFEST_VERSION_DIFF" ]; then
-      _args+=(--diff)
+      _args+=(--diff
+        "--baseline=$_DIR_PERF2HTML/$REPORT_BASELINE_DIR_NAME"
+        "--modified=$_DIR_PERF2HTML/$REPORT_MODIFIED_DIR_NAME")
     fi
 
     subprocess_run python3 "$_SCRIPT_DIR/test_report.py" "${_flags[@]}" \
@@ -327,17 +328,14 @@ test_expected_archive_check_run() {
 }
 
 test_source_scan_run() {
-  local _flags=()
-  mapfile -t _flags < <(verbose_flags)
-
   heading_print test_source_scan.py
-  subprocess_run python3 "$_SCRIPT_DIR/test_source_scan.py" "${_flags[@]}" \
+  subprocess_run python3 "$_SCRIPT_DIR/test_source_scan.py" \
+    "${VERBOSE_FLAGS[@]}" \
     "${_WHITELISTED_FILES[@]}"
 }
 
 batch_run() {
-  local _flags=() _target _shown _exit_code=0
-  mapfile -t _flags < <(verbose_flags)
+  local _flags=("${VERBOSE_FLAGS[@]}") _target _shown _exit_code=0
   _target="$(cd "$_DIR_PERF2HTML" && pwd)"
 
   if [ "$_REGENERATE" = 1 ]; then _flags+=(--regenerate); fi
@@ -355,11 +353,27 @@ batch_run() {
     || error_exit "$_exit_code" "error: exit $_exit_code from: $_shown"
 }
 
+# Refuses a quiet run whose log holds a page tool's success line.
+quiet_logs_check() {
+  local _name _kind _log _line
+  [ "$VERBOSE" = 0 ] || return 0
+  for _name in "$REPORT_BASELINE_DIR_NAME" "$REPORT_MODIFIED_DIR_NAME" \
+    "$REPORT_DIFF_DIR_NAME"; do
+    _kind=profile
+    [ "$_name" != "$REPORT_DIFF_DIR_NAME" ] || _kind=diff
+    [ "$_REGENERATE" != 1 ] || _kind+=-regenerate
+    artifact_path _log "$_DIR_PERF2HTML/$ARTIFACTS_NAME/$_name" "$_kind-log"
+    while IFS= read -r _line; do
+      [[ ! "$_line" =~ $_QUIET_LOG_SUCCESS_PATTERN ]] || error_exit 1 \
+        "error: $_log holds a success line in a quiet run: $_line"
+    done <"$_log"
+  done
+}
+
 # Sets `_SCREENSHOT_COMMAND` to the screenshot script command for one report.
 screenshot_command_set() {
-  local _name="$1" _path _prefix _args _flags=()
+  local _name="$1" _path _prefix _args
   shift
-  mapfile -t _flags < <(verbose_flags)
   _path="$_DIR_PERF2HTML/$_name"
 
   _prefix="${_name#perf2html_}"
@@ -371,7 +385,7 @@ screenshot_command_set() {
   fi
 
   _SCREENSHOT_COMMAND=(python3 "$_SCRIPT_DIR/$_SCREENSHOT_SCRIPT_NAME"
-    "${_flags[@]}" "${_args[@]}" "$@")
+    "${VERBOSE_FLAGS[@]}" "${_args[@]}" "$@")
 }
 
 screenshots_run() {
@@ -423,13 +437,12 @@ readme_html_flags_set() {
 }
 
 readme_html_build() {
-  local _converter _flags=()
-  mapfile -t _flags < <(verbose_flags)
+  local _converter
   _converter="$(command -v "$_CMARK_GFM")"
 
   heading_print "$_README_PAGE_SCRIPT_NAME"
   subprocess_run python3 "$_SCRIPT_DIR/$_README_PAGE_SCRIPT_NAME" \
-    "${_flags[@]}" "--converter=$_converter" \
+    "${VERBOSE_FLAGS[@]}" "--converter=$_converter" \
     "--markdown=$_DIR_PERF2HTML/$README_MARKDOWN_NAME" \
     "--out=$_DIR_PERF2HTML/$README_HTML_BUILD_PATH"
 }
@@ -571,6 +584,7 @@ main() {
   lint_run
   readme_html_flags_set
   batch_run
+  quiet_logs_check
   test_expected_report_check_run
   test_expected_archive_check_run
   screenshots_run

@@ -107,8 +107,6 @@ main() {
   elif [ "$KEEP_ARTIFACTS" = 1 ]; then
     _artifact_flags+=(--keep-artifacts)
   fi
-  local _verbose_args=()
-  mapfile -t _verbose_args < <(verbose_flags)
   log_verbose "[$(elapsed_format)s] $_SCRIPT $TIMESTAMP: modified build" \
     "flags: ${_CMAKE_FLAGS[*]}"
 
@@ -117,11 +115,11 @@ main() {
     report_delete "$_dir"
   done
 
-  step_run 1 baseline ./perf2html.sh "${_verbose_args[@]}" \
+  step_run 1 baseline ./perf2html.sh "${VERBOSE_FLAGS[@]}" \
     "${_child_args[@]}" "${_artifact_flags[@]}"
-  step_run 2 modified ./perf2html.sh "${_verbose_args[@]}" \
+  step_run 2 modified ./perf2html.sh "${VERBOSE_FLAGS[@]}" \
     "${_child_args[@]}" "${_artifact_flags[@]}" "${_CMAKE_FLAGS[@]}"
-  step_run 3 diff ./perf2html_diff.sh "${_verbose_args[@]}" \
+  step_run 3 diff ./perf2html_diff.sh "${VERBOSE_FLAGS[@]}" \
     "${_child_args[@]}" "${_artifact_flags[@]}"
 
   heading_print "$_SCRIPT, after ${#STEP_NAMES[@]} steps"

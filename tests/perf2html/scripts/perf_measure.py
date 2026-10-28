@@ -17,6 +17,7 @@ _CALLGRIND_LAST_LEVEL_CACHE: str = ""
 _DATABASE_TIME_SUFFIX_SECONDS: dict[str, float] = {}
 _PERF_TOOL_TIME_LABEL: str = ""
 _PROFILE_PINNED_CPU: int = 0
+_PROFILE_SKIPPED_FUNCTION_PATTERN: str = ""
 _PROFILE_START_FUNCTION_NAME: str = ""
 _PROFILE_STOP_FUNCTION_NAME: str = ""
 _SIGNAL_EXIT_CODE_BASE: int = 0
@@ -89,7 +90,8 @@ class PerfMeasure:
             "--tool=callgrind",
             "--cache-sim=yes",
             "--branch-sim=yes",
-            "--trace-redir=yes",
+            "--show-below-main=yes",
+            f"--fn-skip={_PROFILE_SKIPPED_FUNCTION_PATTERN}",
             f"--zero-before={_PROFILE_START_FUNCTION_NAME}",
             f"--toggle-collect={_PROFILE_STOP_FUNCTION_NAME}",
             "--collect-atstart=yes",

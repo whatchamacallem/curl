@@ -234,18 +234,19 @@ deltas_write() {
     "$(basename "$_MOD_DIR")"
   heading_print "python3 callgrind_diff.py"
   command_run python3 "$PERF2HTML_DIR_/scripts/callgrind_diff.py" \
-    "--artifacts=$ARTIFACTS_DIR" "--report=$_OUT_DIR"
+    "--artifacts=$ARTIFACTS_DIR" "--report=$_OUT_DIR" "${VERBOSE_FLAGS[@]}"
   artifacts_verify diffed
 }
 
 pages_write() {
   local _flags=("--artifacts=$ARTIFACTS_DIR" "--report=$_OUT_DIR" --diff)
   page_tool_run callgrind_to_heatmap.py data "${_flags[@]}" \
-    "--baseline=$_BASE_DIR" "--modified=$_MOD_DIR"
-  page_tool_run build_report.py database "${_flags[@]}"
-  page_tool_run callgrind_to_heatmap.py page "--report=$_OUT_DIR"
+    "--baseline=$_BASE_DIR" "--modified=$_MOD_DIR" "${VERBOSE_FLAGS[@]}"
+  page_tool_run build_report.py database "${_flags[@]}" "${VERBOSE_FLAGS[@]}"
+  page_tool_run callgrind_to_heatmap.py page "--report=$_OUT_DIR" \
+    "${VERBOSE_FLAGS[@]}"
   page_tool_run build_report.py overview "${_flags[@]}" \
-    "${README_HTML_FLAGS[@]}"
+    "${README_HTML_FLAGS[@]}" "${VERBOSE_FLAGS[@]}"
   report_finish "$_OUT_DIR" "$REPORT_MANIFEST_VERSION_DIFF" \
     "baseline=$(input_path_display "$_BASE_DIR")" \
     "modified=$(input_path_display "$_MOD_DIR")" \

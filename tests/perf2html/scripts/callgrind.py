@@ -5,16 +5,17 @@
 from __future__ import annotations
 
 import collections, dataclasses, functools, json, os, posixpath, re, sys
-from collections.abc import Callable, Sequence
-from typing import NamedTuple, TypeAlias, TypeVar
+from collections.abc import Collection, Iterable, Sequence
+from typing import NamedTuple, TypeAlias, TypedDict, TypeVar
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import artifacts, settings
 
 _CACHE_ROOT_DIR: str = ""
-_CALLGRIND_ADDRESS_NAME_PATTERN: str = ""
+_CALLGRIND_FILE_DATA_CODE_KEY: str = ""
 _CALLGRIND_FILE_DATA_ERROR_CODE: str = ""
 _CALLGRIND_FILE_DATA_GIT_CODE: str = ""
+_CALLGRIND_FILE_DATA_PATH_KEY: str = ""
 _CALLGRIND_FILE_DATA_REPO_CODE: str = ""
 _CALLGRIND_FILE_DATA_SYSTEM_CODE: str = ""
 _CALLGRIND_FORMAT_CALLEE_FILE_KEYS: tuple[str, ...] = ()
@@ -33,7 +34,6 @@ _CALLGRIND_FORMAT_OBJECT_KEY: str = ""
 _CALLGRIND_FORMAT_POSITIONS_KEY: str = ""
 _CALLGRIND_FORMAT_SUMMARY_KEYS: tuple[str, ...] = ()
 _CALLGRIND_NAME_COMPRESSION_PATTERN: str = ""
-_CALLGRIND_UNKNOWN_DISPLAY_OBJECT: str = ""
 _CALLGRIND_UNKNOWN_DISPLAY_PATH: str = ""
 _CALLGRIND_UNKNOWN_NAME: str = ""
 _DERIVED_COUNTER_TERMS: dict[str, dict[str, int]] = {}
@@ -66,6 +66,11 @@ def external_source_roots() -> tuple[str, ...]:
     return tuple(found)
 
 
+class CallCount(NamedTuple):
+    function_index: int
+    call_count: int
+
+
 class Caller(NamedTuple):
     function: str
     file: str
@@ -80,11 +85,10 @@ class CallerCalls(NamedTuple):
 
 class CallRecord(NamedTuple):
     key: SourceLine
-    callee: str
+    object_path: str
+    callee: FunctionKey
     callee_file: str
-    callee_object: str
     call_count: int
-    target_line: int
     costs: Costs
 
 
@@ -148,53 +152,43 @@ class DerivedPath(NamedTuple):
 # Holds each recorded path's category as a diff's two reports coded it.
 class DerivedPaths:
     def __init__(self, baseline_dir: str, modified_dir: str) -> None:
-        baseline = self.document_read(baseline_dir)
+        baseline = file_data_read(baseline_dir)
         baseline_document = artifacts.artifact_path(baseline_dir, "file-data")
         self.tracked = [
-            path
-            for path, code in baseline.items()
-            if code == _CALLGRIND_FILE_DATA_GIT_CODE
+            entry.path
+            for entry in baseline
+            if entry.code == _CALLGRIND_FILE_DATA_GIT_CODE
         ]
         self.files: dict[str, DerivedPath] = {}
-        codes = (
-            _CALLGRIND_FILE_DATA_ERROR_CODE,
-            _CALLGRIND_FILE_DATA_GIT_CODE,
-            _CALLGRIND_FILE_DATA_REPO_CODE,
-            _CALLGRIND_FILE_DATA_SYSTEM_CODE,
-        )
-        for document, read, in_baseline in (
+        for document, entries, in_baseline in (
             (baseline_document, baseline, True),
             (
                 artifacts.artifact_path(modified_dir, "file-data"),
-                self.document_read(modified_dir),
+                file_data_read(modified_dir),
                 False,
             ),
         ):
-            for path, code in read.items():
-                if code not in codes:
-                    sys.exit(
-                        f"error: {document} codes {path} as {code!r},"
-                        f" which is none of {' '.join(codes)}"
-                    )
-                if code == _CALLGRIND_FILE_DATA_GIT_CODE:
+            for entry in entries:
+                if entry.code == _CALLGRIND_FILE_DATA_GIT_CODE:
                     continue
                 shown = DerivedPath(
-                    path,
-                    code,
-                    code != _CALLGRIND_FILE_DATA_ERROR_CODE,
+                    entry.path,
+                    entry.code,
+                    entry.code != _CALLGRIND_FILE_DATA_ERROR_CODE,
                     in_baseline,
                 )
-                known = self.files.setdefault(path, shown)
+                known = self.files.setdefault(entry.path, shown)
                 if known.group != shown.group:
                     sys.exit(
-                        f"error: the two reports code {path} apart:"
+                        f"error: the two reports code {entry.path} apart:"
                         f" {known.group} in {baseline_document},"
                         f" {shown.group} in {document}"
                     )
 
-    def document_read(self, directory: str) -> dict[str, str]:
-        with artifacts.artifact_open(directory, "file-data") as handle:
-            return json.load(handle)
+    # Returns the path a diff shows of a recorded path of an object.
+    def display(self, path: str, object_path: str) -> str:
+        entry = self.path_entry(path)
+        return display_path(entry.canonical, entry.group, object_path)
 
     def path_entry(self, path: str) -> DerivedPath:
         canonical = path_canonical(path)
@@ -205,6 +199,43 @@ class DerivedPaths:
                 f" recorded as {path}"
             )
         return entry
+
+
+class FileEntry(NamedTuple):
+    path: str
+    code: str
+
+
+# Holds a test's function data, each file and object by its list index.
+class FunctionDataDocument(TypedDict):
+    counters: list[str]
+    objects: list[str]
+    functions: list[FunctionDataRow]
+
+
+# Holds a function's object, name, place, self costs, callers and callees.
+class FunctionDataRow(NamedTuple):
+    object_index: int
+    function_name: str
+    file_index: int
+    line_number: int
+    self_costs: Costs
+    caller_rows: list[CallCount]
+    callee_rows: list[CallCount]
+
+
+# Names a function as callgrind does, by its object and its name.
+class FunctionKey(NamedTuple):
+    object_path: str
+    name: str
+
+
+# Holds a diff function, its name, shown location and each report's key.
+class FunctionPair(NamedTuple):
+    name: str
+    location: str
+    baseline: FunctionKey | None
+    modified: FunctionKey | None
 
 
 # Holds one function's cost lines as read.
@@ -236,7 +267,7 @@ class LineProfile:
     file_ob: dict[str, str] = dataclasses.field(default_factory=dict)
 
     def resolved_derived_counters(self) -> list[ResolvedDerivedCounter]:
-        return list(counter_schema(tuple(self.counters)).derived_counters)
+        return resolved_derived_counters(self.counters)
 
     def totals(self) -> Costs:
         if not self.summary:
@@ -271,6 +302,17 @@ class Profile(LineProfile):
             default_factory=lambda: collections.defaultdict(dict)
         )
     )
+    function_keys: dict[str, FunctionKey] = dataclasses.field(
+        default_factory=dict
+    )
+
+
+# Holds a recording's header, cost lines and the line each callee is entered.
+class Recording(NamedTuple):
+    path: str
+    profile: Profile
+    records: dict[FunctionKey, FunctionRecords]
+    entries: dict[FunctionKey, SourceLine]
 
 
 class ResolvedDerivedCounter(NamedTuple):
@@ -301,7 +343,6 @@ class Tally:
 
 
 class Callgrind:
-    ADDRESS_NAME_RE = re.compile(_CALLGRIND_ADDRESS_NAME_PATTERN)
     NAME_COMPRESSION_RE = re.compile(_CALLGRIND_NAME_COMPRESSION_PATTERN)
 
     class CompressedNames:
@@ -331,6 +372,7 @@ class Callgrind:
     class PendingCall(NamedTuple):
         call_count: int
         target_line: int
+        callee: FunctionKey
 
     class PositionDecoder:
         def __init__(self) -> None:
@@ -365,100 +407,42 @@ class Callgrind:
                 )
             return self.previous[self.line_index]
 
-    # Renames each function spelled as an address, through its object or None.
-    def address_names_resolve(
-        self,
-        text: str,
-        address_name_resolve: Callable[[str | None, str], str | None],
-    ) -> str:
-        names = Callgrind.CompressedNames()
-        lines = text.split("\n")
-        current_object = _CALLGRIND_UNKNOWN_NAME
-        current_callee_object: str | None = None
-        for index, raw_line in enumerate(lines):
-            key, _, specification_value = raw_line.partition("=")
-            if key == _CALLGRIND_FORMAT_OBJECT_KEY:
-                current_object = names.uncompress(
-                    _CALLGRIND_FORMAT_OBJECT_KEY, specification_value
-                )
-            elif key == _CALLGRIND_FORMAT_CALLEE_OBJECT_KEY:
-                current_callee_object = names.uncompress(
-                    _CALLGRIND_FORMAT_OBJECT_KEY, specification_value
-                )
-            elif key in (
-                _CALLGRIND_FORMAT_FUNCTION_KEY,
-                _CALLGRIND_FORMAT_CALLEE_FUNCTION_KEY,
-            ):
-                object_path = (
-                    (current_callee_object or current_object)
-                    if key == _CALLGRIND_FORMAT_CALLEE_FUNCTION_KEY
-                    else current_object
-                )
-                current_callee_object = None
-                match = Callgrind.NAME_COMPRESSION_RE.match(
-                    specification_value
-                )
-                if not match or not match.group(2):
-                    continue
-                name = match.group(2)
-                if not Callgrind.ADDRESS_NAME_RE.fullmatch(name):
-                    continue
-                resolved = address_name_resolve(
-                    None
-                    if object_path == _CALLGRIND_UNKNOWN_NAME
-                    else object_path,
-                    name,
-                )
-                if resolved is not None:
-                    lines[index] = f"{key}=({match.group(1)}) {resolved}"
-        return "\n".join(lines)
-
     # Refuses a recording calling a function it records no cost block of.
     def callees_check(
-        self, records: dict[str, FunctionRecords], path: str
+        self, records: dict[FunctionKey, FunctionRecords], path: str
     ) -> None:
         for entry in records.values():
             for call in entry.call_records:
                 if call.callee not in records:
                     sys.exit(
-                        f"error: {path} calls {call.callee} but records no"
-                        " cost block of that function"
+                        f"error: {path} calls {call.callee.name} of"
+                        f" {call.callee.object_path} but records no cost block"
+                        " of that function"
                     )
 
-    def entries_fill(self, profile: Profile) -> None:
-        for function, lines in profile.function_lines.items():
-            home = profile.function_home.get(function)
-            if function in profile.function_entry or home is None:
-                continue
-            line = next(
-                (key.line for key in lines if key.file == home and key.line), 0
-            )
-            if line:
-                profile.function_entry[function] = SourceLine(home, line)
-
-    # Refuses a function in no object that is still named by its address.
-    def function_name(
+    # Records the line a call enters its callee at, refusing a second line.
+    def entry_record(
         self,
-        names: Callgrind.CompressedNames,
-        compressed_name: str,
-        object_path: str,
+        entries: dict[FunctionKey, SourceLine],
+        callee: FunctionKey,
+        line: SourceLine,
         path: str,
-    ) -> str:
-        name = names.uncompress(
-            _CALLGRIND_FORMAT_FUNCTION_KEY, compressed_name
-        )
-        if object_path == _CALLGRIND_UNKNOWN_NAME and (
-            Callgrind.ADDRESS_NAME_RE.fullmatch(name)
-        ):
+    ) -> None:
+        known = entries.setdefault(callee, line)
+        if known != line:
             sys.exit(
-                f"error: {path}: function {name} in no object is named by its"
-                " address, recorded before callgrind_symbols.py named it"
+                f"error: {path}: calls enter {callee.name} of"
+                f" {callee.object_path} at {known.file}:{known.line} and at"
+                f" {line.file}:{line.line}"
             )
-        return name
 
     # Adds a function's records to the profile, in the order read.
     def function_accumulate(
-        self, profile: Profile, function: str, records: FunctionRecords
+        self,
+        profile: Profile,
+        function: str,
+        records: FunctionRecords,
+        names: dict[FunctionKey, str],
     ) -> None:
         profile.function_home.setdefault(function, records.home)
         for self_record in records.self_records:
@@ -479,66 +463,141 @@ class Callgrind:
         for call in records.call_records:
             costs_accumulate(profile.line_calls, call.key, call.costs)
             profile.line_call_count[call.key] += call.call_count
+            profile.file_ob.setdefault(call.key.file, call.object_path)
             costs_accumulate(profile.function_calls, function, call.costs)
             profile.function_call_lines[function].add(call.key)
+            callee = names[call.callee]
             tally_accumulate(
                 profile.callees,
-                CallSite(call.key.file, call.key.line, call.callee),
+                CallSite(call.key.file, call.key.line, callee),
                 call.call_count,
                 call.costs,
             )
             tally_accumulate(
-                profile.callers[call.callee],
+                profile.callers[callee],
                 Caller(function, call.key.file, call.key.line),
                 call.call_count,
                 call.costs,
             )
-            if call.callee not in profile.function_entry:
-                profile.function_entry[call.callee] = SourceLine(
-                    call.callee_file, call.target_line
-                )
-            profile.function_home.setdefault(call.callee, call.callee_file)
-            profile.file_ob.setdefault(call.callee_file, call.callee_object)
+            profile.function_home.setdefault(callee, call.callee_file)
+            profile.file_ob.setdefault(
+                call.callee_file, call.callee.object_path
+            )
 
-    # Loads a profile, a recording or a delta of two.
-    def load(self, directory: str, kind: str, test_name: str) -> Profile:
-        path = artifacts.artifact_path(directory, kind, test_name)
+    # Refuses a function in no object, which the recording bills to its caller.
+    def function_key(
+        self,
+        names: Callgrind.CompressedNames,
+        compressed_name: str,
+        object_path: str,
+        path: str,
+    ) -> FunctionKey:
+        name = names.uncompress(
+            _CALLGRIND_FORMAT_FUNCTION_KEY, compressed_name
+        )
+        if object_path == _CALLGRIND_UNKNOWN_NAME:
+            sys.exit(f"error: {path}: function {name} lies in no object")
+        return FunctionKey(object_path, name)
+
+    # Returns each function's shown name, a shared one under its object's.
+    def function_names(
+        self, keys: Collection[FunctionKey]
+    ) -> dict[FunctionKey, str]:
+        object_names = self.object_names(keys)
+        shared_names = self.shared_names(keys)
+        return {
+            key: (
+                f"{object_names[key.object_path]}/{key.name}"
+                if key.name in shared_names
+                else key.name
+            )
+            for key in keys
+        }
+
+    # Returns each object's file name, its path when two objects share one.
+    def object_names(self, keys: Iterable[FunctionKey]) -> dict[str, str]:
+        base_paths: dict[str, set[str]] = {}
+        for key in keys:
+            base_paths.setdefault(
+                os.path.basename(key.object_path), set()
+            ).add(key.object_path)
+        return {
+            path: base_name if len(paths) == 1 else repo_root_strip(path)
+            for base_name, paths in base_paths.items()
+            for path in paths
+        }
+
+    # Returns the profile of the text, refusing one that does not add up.
+    def parse(self, text: str, path: str) -> Profile:
+        recording = self.recording_read(text, path)
+        return self.profile_name(
+            recording, self.function_names(recording.records)
+        )
+
+    # Returns a recording's profile, each function under its shown name.
+    def profile_name(
+        self, recording: Recording, names: dict[FunctionKey, str]
+    ) -> Profile:
+        for key, entry in recording.records.items():
+            self.function_accumulate(
+                recording.profile, names[key], entry, names
+            )
+            recording.profile.function_keys[names[key]] = key
+        # A call made before collection names a function holding no record.
+        for key, line in recording.entries.items():
+            if key in recording.records:
+                recording.profile.function_entry[names[key]] = line
+                recording.profile.file_ob.setdefault(
+                    line.file, key.object_path
+                )
+        return recording.profile
+
+    # Reads a test's recording or delta of a directory.
+    def recording_load(
+        self, directory: str, kind: str, test_name: str
+    ) -> Recording:
         with artifacts.artifact_open(
             directory, kind, test_name, "rb"
         ) as handle:
             text = handle.read().decode("utf-8", errors="replace")
-        return self.parse(text, path)
+        return self.recording_read(
+            text, artifacts.artifact_path(directory, kind, test_name)
+        )
 
-    # Returns the profile of the text, refusing one that does not add up.
-    def parse(self, text: str, path: str) -> Profile:
+    # Reads a recording, refusing one that does not add up.
+    def recording_read(self, text: str, path: str) -> Recording:
         profile = Profile()
-        records = self.records_read(text, path, profile)
+        entries: dict[FunctionKey, SourceLine] = {}
+        records = self.records_read(text, path, profile, entries)
         if not profile.counters:
             sys.exit(
                 f"error: no 'events:' line -- not a callgrind file? ({path})"
             )
         self.summary_check(profile, records, path)
         self.callees_check(records, path)
-        for function, entry in records.items():
-            self.function_accumulate(profile, function, entry)
-        self.entries_fill(profile)
-        return profile
+        return Recording(path, profile, records, entries)
 
-    # Reads the header into the profile and each function's cost lines.
+    # Reads the header, each function's cost lines and the line calls enter.
     def records_read(
-        self, text: str, path: str, profile: Profile
-    ) -> dict[str, FunctionRecords]:
-        records: dict[str, FunctionRecords] = {}
+        self,
+        text: str,
+        path: str,
+        profile: Profile,
+        entries: dict[FunctionKey, SourceLine],
+    ) -> dict[FunctionKey, FunctionRecords]:
+        records: dict[FunctionKey, FunctionRecords] = {}
         names = Callgrind.CompressedNames()
         positions = Callgrind.PositionDecoder()
 
         counter_count = 0
         current: FunctionRecords | None = None
+        current_function: FunctionKey | None = None
+        current_home = _CALLGRIND_UNKNOWN_NAME
         current_file = _CALLGRIND_UNKNOWN_NAME
         current_object = _CALLGRIND_UNKNOWN_NAME
         current_callee_object: str | None = None
         cur_callee_file: str | None = None
-        cur_callee_function: str | None = None
+        cur_callee_function: FunctionKey | None = None
         pending_call: Callgrind.PendingCall | None = None
 
         for raw_line in text.split("\n"):
@@ -546,7 +605,7 @@ class Callgrind:
                 continue
             first_char = raw_line[0]
             if first_char.isdigit() or first_char in "+-*":
-                if current is None:
+                if current_function is None:
                     sys.exit(
                         f"error: {path}: a cost line before the first fn="
                         f" line: {raw_line}"
@@ -557,27 +616,45 @@ class Callgrind:
                 if len(costs) < counter_count:
                     costs.extend([0] * (counter_count - len(costs)))
                 key = SourceLine(current_file, line)
+                call_record: CallRecord | None = None
                 if pending_call is not None:
-                    current.call_records.append(
-                        CallRecord(
-                            key,
-                            cur_callee_function or _CALLGRIND_UNKNOWN_NAME,
-                            cur_callee_file
-                            if cur_callee_file is not None
-                            else current_file,
-                            current_callee_object or current_object,
-                            pending_call.call_count,
-                            pending_call.target_line,
-                            costs,
-                        )
+                    callee_file = (
+                        cur_callee_file
+                        if cur_callee_file is not None
+                        else current_file
+                    )
+                    self.entry_record(
+                        entries,
+                        pending_call.callee,
+                        SourceLine(callee_file, pending_call.target_line),
+                        path,
+                    )
+                    call_record = CallRecord(
+                        key,
+                        current_object,
+                        pending_call.callee,
+                        callee_file,
+                        pending_call.call_count,
+                        costs,
                     )
                     cur_callee_file = None
                     current_callee_object = None
+                    cur_callee_function = None
                     pending_call = None
-                else:
+                    # A call counting no calls began before collection did.
+                    if not call_record.call_count:
+                        continue
+                # Homes a function where its first block with a record starts.
+                if current is None:
+                    current = records[current_function] = FunctionRecords(
+                        current_home
+                    )
+                if call_record is None:
                     current.self_records.append(
                         SelfRecord(key, current_object, costs)
                     )
+                else:
+                    current.call_records.append(call_record)
                 continue
 
             equals_index = raw_line.find("=")
@@ -600,14 +677,11 @@ class Callgrind:
                         current_object,
                     )
                 elif key == _CALLGRIND_FORMAT_FUNCTION_KEY:
-                    function = self.function_name(
+                    current_function = self.function_key(
                         names, specification_value, current_object, path
                     )
-                    current = records.get(function)
-                    if current is None:
-                        current = records[function] = FunctionRecords(
-                            current_file
-                        )
+                    current = records.get(current_function)
+                    current_home = current_file
                     cur_callee_file = None
                 elif key == _CALLGRIND_FORMAT_OBJECT_KEY:
                     current_object = names.uncompress(
@@ -625,7 +699,7 @@ class Callgrind:
                         current_callee_object or current_object,
                     )
                 elif key == _CALLGRIND_FORMAT_CALLEE_FUNCTION_KEY:
-                    cur_callee_function = self.function_name(
+                    cur_callee_function = self.function_key(
                         names,
                         specification_value,
                         current_callee_object or current_object,
@@ -643,11 +717,18 @@ class Callgrind:
                     parts = specification_value.split()
                     if len(parts) <= 1 + positions.line_index:
                         sys.exit(f"error: malformed 'calls=' line: {raw_line}")
+                    if cur_callee_function is None:
+                        sys.exit(
+                            f"error: {path}: a {_CALLGRIND_FORMAT_CALLS_KEY}="
+                            " line with no"
+                            f" {_CALLGRIND_FORMAT_CALLEE_FUNCTION_KEY}= line"
+                            f" since the last call: {raw_line}"
+                        )
                     target_line = positions.decode(
                         parts[1 + positions.line_index], positions.line_index
                     )
                     pending_call = Callgrind.PendingCall(
-                        int(parts[0]), target_line
+                        int(parts[0]), target_line, cur_callee_function
                     )
                 continue
             if colon_index == -1:
@@ -669,11 +750,18 @@ class Callgrind:
                     profile.summary = values
         return records
 
+    # Returns the names two objects record.
+    def shared_names(self, keys: Iterable[FunctionKey]) -> set[str]:
+        object_paths: dict[str, set[str]] = {}
+        for key in keys:
+            object_paths.setdefault(key.name, set()).add(key.object_path)
+        return {name for name, paths in object_paths.items() if len(paths) > 1}
+
     # Refuses a recording whose cost lines do not add up to its summary.
     def summary_check(
         self,
         profile: Profile,
-        records: dict[str, FunctionRecords],
+        records: dict[FunctionKey, FunctionRecords],
         path: str,
     ) -> None:
         self_sum = sum(
@@ -686,24 +774,14 @@ class Callgrind:
         if total == 0:
             sys.exit(f"error: callgrind summary total is 0 ({path})")
         ratio = self_sum / total
-        print(
-            f"ratio (must be 1.0000): {ratio:.4f}  {os.path.basename(path)}",
-            file=sys.stderr,
-        )
         if abs(ratio - 1.0) > 1e-6:
             sys.exit(
-                "error: per-line self cost does not add up to"
-                f" callgrind's summary ({path})"
+                f"error: per-line self cost {self_sum} is {ratio:.4f} of"
+                f" callgrind's summary {total}, expected 1.0000 ({path})"
             )
 
 
 _profile_parser = Callgrind()
-
-
-def address_names_resolve(
-    text: str, address_name_resolve: Callable[[str | None, str], str | None]
-) -> str:
-    return _profile_parser.address_names_resolve(text, address_name_resolve)
 
 
 def baseline_line_key(display: str, line: int | str) -> str:
@@ -805,14 +883,193 @@ def counters_read(directory: str, kind: str, test_name: str) -> list[str]:
 def display_path(canonical: str, group: str, object_path: str) -> str:
     if group != _CALLGRIND_FILE_DATA_ERROR_CODE:
         return canonical
-    owner = os.path.basename(object_path) or _CALLGRIND_UNKNOWN_DISPLAY_OBJECT
-    return f"{owner}/{canonical}"
+    return f"{os.path.basename(object_path)}/{canonical}"
+
+
+# Returns a report's paths document in index order, refusing a malformed one.
+def file_data_read(directory: str) -> list[FileEntry]:
+    path = artifacts.artifact_path(directory, "file-data")
+    with artifacts.artifact_open(directory, "file-data") as handle:
+        document = json.load(handle)
+    keys = sorted(
+        (_CALLGRIND_FILE_DATA_CODE_KEY, _CALLGRIND_FILE_DATA_PATH_KEY)
+    )
+    codes = (
+        _CALLGRIND_FILE_DATA_ERROR_CODE,
+        _CALLGRIND_FILE_DATA_GIT_CODE,
+        _CALLGRIND_FILE_DATA_REPO_CODE,
+        _CALLGRIND_FILE_DATA_SYSTEM_CODE,
+    )
+    entries: list[FileEntry] = []
+    for item in document:
+        if not isinstance(item, dict) or sorted(item) != keys:
+            sys.exit(
+                f"error: {path} holds {item!r}, which is no object of the"
+                f" keys {' '.join(keys)}"
+            )
+        entry = FileEntry(
+            item[_CALLGRIND_FILE_DATA_PATH_KEY],
+            item[_CALLGRIND_FILE_DATA_CODE_KEY],
+        )
+        if entry.code not in codes:
+            sys.exit(
+                f"error: {path} codes {entry.path} as {entry.code!r}, which"
+                f" is none of {' '.join(codes)}"
+            )
+        if entries and entry.path <= entries[-1].path:
+            sys.exit(
+                f"error: {path} lists {entry.path} after {entries[-1].path},"
+                " out of path order"
+            )
+        entries.append(entry)
+    return entries
 
 
 def file_key(path: str, object_path: str) -> str:
     if path != _CALLGRIND_UNKNOWN_NAME:
         return path
     return f"{os.path.basename(object_path)}/{path}"
+
+
+# Returns a test's function data document, refusing one of other keys.
+def function_data_parse(text: str, path: str) -> FunctionDataDocument:
+    document = json.loads(text)
+    keys = sorted(FunctionDataDocument.__required_keys__)
+    found_keys = sorted(document) if isinstance(document, dict) else []
+    if found_keys != keys:
+        sys.exit(f"error: {path} holds no object of the keys {' '.join(keys)}")
+    function_rows = [
+        FunctionDataRow(
+            object_index,
+            function_name,
+            file_index,
+            line_number,
+            self_costs,
+            [CallCount(*call_row) for call_row in caller_rows],
+            [CallCount(*call_row) for call_row in callee_rows],
+        )
+        for (
+            object_index,
+            function_name,
+            file_index,
+            line_number,
+            self_costs,
+            caller_rows,
+            callee_rows,
+        ) in document["functions"]
+    ]
+    return {
+        "counters": document["counters"],
+        "objects": document["objects"],
+        "functions": function_rows,
+    }
+
+
+# Returns a test's function data document of a report's archive.
+def function_data_read(directory: str, test_name: str) -> FunctionDataDocument:
+    with artifacts.artifact_open(
+        directory, "function-data", test_name
+    ) as handle:
+        return function_data_parse(
+            handle.read(),
+            artifacts.artifact_path(directory, "function-data", test_name),
+        )
+
+
+# Returns each report's shown names of a diff's paired functions.
+def function_pair_names(
+    key_sets: tuple[Collection[FunctionKey], Collection[FunctionKey]],
+    build_trees: tuple[str, str],
+) -> tuple[dict[FunctionKey, str], dict[FunctionKey, str]]:
+    pairs = function_pairs(key_sets, build_trees)
+    name_counts = collections.Counter(pair.name for pair in pairs)
+    base_locations: dict[str, set[str]] = {}
+    for pair in pairs:
+        base_locations.setdefault(os.path.basename(pair.location), set()).add(
+            pair.location
+        )
+    names: tuple[dict[FunctionKey, str], dict[FunctionKey, str]] = ({}, {})
+    for pair in pairs:
+        base_name = os.path.basename(pair.location)
+        object_name = (
+            base_name if len(base_locations[base_name]) == 1 else pair.location
+        )
+        shown_name = (
+            f"{object_name}/{pair.name}"
+            if name_counts[pair.name] > 1
+            else pair.name
+        )
+        for side_names, key in zip(
+            names, (pair.baseline, pair.modified), strict=True
+        ):
+            if key is not None:
+                side_names[key] = shown_name
+    return names
+
+
+# Pairs a diff's functions of a name by location, a lone rest of each moved.
+def function_pairs(
+    key_sets: tuple[Collection[FunctionKey], Collection[FunctionKey]],
+    build_trees: tuple[str, str],
+) -> list[FunctionPair]:
+    located: dict[
+        str, tuple[dict[str, FunctionKey], dict[str, FunctionKey]]
+    ] = {}
+    for side, (keys, build_tree) in enumerate(
+        zip(key_sets, build_trees, strict=True)
+    ):
+        for key in keys:
+            location = object_location(key.object_path, build_tree)
+            known = located.setdefault(key.name, ({}, {}))[side].setdefault(
+                location, key
+            )
+            if known != key:
+                sys.exit(
+                    f"error: ambiguous resolution of overloads of {key.name}:"
+                    f" {known.object_path} and {key.object_path} lie at"
+                    f" {location}"
+                )
+    pairs: list[FunctionPair] = []
+    for name in sorted(located):
+        baseline_at, modified_at = located[name]
+        pairs.extend(
+            FunctionPair(
+                name, location, baseline_at[location], modified_at[location]
+            )
+            for location in sorted(baseline_at.keys() & modified_at.keys())
+        )
+        baseline_left = sorted(baseline_at.keys() - modified_at.keys())
+        modified_left = sorted(modified_at.keys() - baseline_at.keys())
+        if len(baseline_left) == 1 and len(modified_left) == 1:
+            pairs.append(
+                FunctionPair(
+                    name,
+                    modified_left[0],
+                    baseline_at[baseline_left[0]],
+                    modified_at[modified_left[0]],
+                )
+            )
+        elif baseline_left and modified_left:
+            sys.exit(
+                f"error: ambiguous resolution of overloads of {name}:"
+                f" {' '.join(baseline_left)} in the baseline,"
+                f" {' '.join(modified_left)} in the modified build"
+            )
+        else:
+            pairs.extend(
+                FunctionPair(name, location, baseline_at[location], None)
+                for location in baseline_left
+            )
+            pairs.extend(
+                FunctionPair(name, location, None, modified_at[location])
+                for location in modified_left
+            )
+    return pairs
+
+
+# Returns an object's location, its path less its report's build tree.
+def object_location(object_path: str, build_tree: str) -> str:
+    return object_path.removeprefix(f"{build_tree}/")
 
 
 # There is no i18n path for Python yet. Just don't name your file "(unknown)".
@@ -848,7 +1105,30 @@ def path_norm(path: str) -> PathInfo:
 
 
 def profile_load(directory: str, kind: str, test_name: str) -> Profile:
-    return _profile_parser.load(directory, kind, test_name)
+    recording = _profile_parser.recording_load(directory, kind, test_name)
+    return _profile_parser.profile_name(
+        recording, _profile_parser.function_names(recording.records)
+    )
+
+
+# Loads a diff's two recordings of a test, named by their paired functions.
+def profile_pair_load(
+    baseline_dir: str,
+    modified_dir: str,
+    test_name: str,
+    build_trees: tuple[str, str],
+) -> tuple[Profile, Profile]:
+    baseline, modified = (
+        _profile_parser.recording_load(directory, "callgrind", test_name)
+        for directory in (baseline_dir, modified_dir)
+    )
+    baseline_names, modified_names = function_pair_names(
+        (baseline.records, modified.records), build_trees
+    )
+    return (
+        _profile_parser.profile_name(baseline, baseline_names),
+        _profile_parser.profile_name(modified, modified_names),
+    )
 
 
 def ranking_counter_check(counters: Sequence[str], source: str) -> None:
@@ -864,6 +1144,13 @@ def ranking_counter_check(counters: Sequence[str], source: str) -> None:
 # Cuts the repository root as the archived recordings have it cut.
 def repo_root_strip(text: str) -> str:
     return text.replace(REPO_ROOT + "/", "")
+
+
+# Returns each derived counter the recorded counters supply, with its terms.
+def resolved_derived_counters(
+    counters: Sequence[str],
+) -> list[ResolvedDerivedCounter]:
+    return list(counter_schema(tuple(counters)).derived_counters)
 
 
 def tally_accumulate(

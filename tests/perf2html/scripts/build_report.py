@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 import argparse, json, os, sys, urllib.parse
-from collections.abc import Iterable, Sequence
+from collections.abc import Container, Iterable, Sequence
 from typing import NamedTuple, NotRequired, TypedDict
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -85,6 +85,11 @@ class BuildReport:
         function: int
         calls: int
 
+    class DatabaseArgs(NamedTuple):
+        artifacts: str
+        report: str
+        diff: bool
+
     class DatabaseModel(TypedDict):
         counterNames: list[str]
         counterTotals: NotRequired[list[int]]
@@ -136,6 +141,9 @@ class BuildReport:
         report: str
         diff: bool
 
+    def __init__(self, verbose: int) -> None:
+        self.verbose = verbose
+
     def address(
         self, test_name: str, view_key: str, function_name: str = ""
     ) -> str:
@@ -180,8 +188,7 @@ class BuildReport:
             for caller_name, entry in callgrind.caller_calls(
                 profile, callee_name
             ).items():
-                if entry.calls:
-                    edges[(caller_name, callee_name)] = entry
+                edges[(caller_name, callee_name)] = entry
         return edges
 
     # Lists the test's functions and call edges, their costs, and its roots.
@@ -305,7 +312,7 @@ class BuildReport:
         ]
 
     # Writes every listed test's database page, a diff's of the delta.
-    def database(self, args: BuildReport.ReportArgs) -> None:
+    def database(self, args: BuildReport.DatabaseArgs) -> None:
         artifacts_dir = artifacts.report_artifacts_dir(
             args.artifacts, args.report
         )
@@ -341,10 +348,16 @@ class BuildReport:
         row_names = {
             name for name, calls in calls_by_name.items() if calls > 0
         }
+        named_names = row_names | {name for pair in edges for name in pair}
+        locations = callgrind_to_heatmap.CallgrindToHeatmap(
+            self.verbose
+        ).function_locations(
+            profile, self.file_display_paths(profile), named_names
+        )
         function_links = self.function_links(
             test_name,
-            profile,
-            row_names | {name for pair in edges for name in pair},
+            named_names,
+            {name for name, location in locations.items() if location.line},
         )
         index_by_name = {
             link.name: index for index, link in enumerate(function_links)
@@ -361,9 +374,6 @@ class BuildReport:
                 BuildReport.CallRow(index_by_name[callee_name], tally.calls)
             )
         counter_names = list(profile.counters)
-        locations = self.function_locations(
-            profile, self.file_display_paths(profile, None), row_names
-        )
         row_order = sorted(row_names, key=lambda name: (locations[name], name))
         return {
             "counterNames": counter_names,
@@ -443,39 +453,36 @@ class BuildReport:
                 )
             )
 
-    # Lists each changed function either side calls, beside its baselines.
+    # Lists each function either side calls, its change beside its baselines.
     def diff_database_model(
         self, artifacts_dir: str, test_name: str
     ) -> BuildReport.DatabaseModel:
-        delta = callgrind.profile_load(artifacts_dir, "delta", test_name)
-        callers_doc = callgrind_diff.callers_doc_load(artifacts_dir, test_name)
-        baseline_dir, modified_dir = (
-            artifacts.artifact_path(artifacts_dir, kind)
-            for kind in ("baseline-profiles", "modified-profiles")
+        function_diff = callgrind_diff.function_diff_load(
+            artifacts_dir, test_name
         )
-        baseline_edges, modified_edges = (
-            self.call_graph_edges(
-                callgrind.profile_load(profiles_dir, "callgrind", test_name)
+        derived = callgrind.DerivedPaths(
+            *(
+                artifacts.artifact_path(artifacts_dir, kind)
+                for kind in ("baseline-profiles", "modified-profiles")
             )
-            for profiles_dir in (baseline_dir, modified_dir)
         )
-        uncalled_edge = callgrind.CallerCalls(0, 0, [])
+        diff_rows = {
+            row.function_name: row for row in function_diff["functions"]
+        }
+        diff_names = list(diff_rows)
         call_changes: dict[tuple[str, str], BuildReport.CallChange] = {}
-        for pair in set(baseline_edges) | set(modified_edges):
-            baseline_calls = baseline_edges.get(pair, uncalled_edge).calls
-            call_changes[pair] = BuildReport.CallChange(
-                modified_edges.get(pair, uncalled_edge).calls - baseline_calls,
-                baseline_calls,
-            )
-        listed_names = set(delta.function_home)
         caller_changes: dict[str, list[BuildReport.CallChange]] = {}
-        for (caller_name, callee_name), change in call_changes.items():
-            if change.calls:
-                listed_names.update((caller_name, callee_name))
-            caller_changes.setdefault(callee_name, []).append(change)
+        for caller_name, diff_row in diff_rows.items():
+            for call_row in diff_row.callee_rows:
+                callee_name = diff_names[call_row.function_index]
+                change = BuildReport.CallChange(
+                    call_row.call_count, call_row.baseline_count
+                )
+                call_changes[(caller_name, callee_name)] = change
+                caller_changes.setdefault(callee_name, []).append(change)
         calls_by_name = {
             name: self.diff_function_calls(name, caller_changes.get(name, []))
-            for name in listed_names
+            for name in diff_names
         }
         # A row is a function called on one side at least.
         row_names = {
@@ -487,7 +494,21 @@ class BuildReport:
         for pair in call_changes:
             if row_names.intersection(pair):
                 named_names.update(pair)
-        function_links = self.function_links(test_name, delta, named_names)
+        locations = {
+            name: callgrind.SourceLine(
+                derived.display(
+                    function_diff["files"][diff_rows[name].file_index],
+                    function_diff["objects"][diff_rows[name].object_index],
+                ),
+                diff_rows[name].line_number,
+            )
+            for name in named_names
+        }
+        function_links = self.function_links(
+            test_name,
+            named_names,
+            {name for name, location in locations.items() if location.line},
+        )
         index_by_name = {
             link.name: index for index, link in enumerate(function_links)
         }
@@ -509,21 +530,12 @@ class BuildReport:
                         index_by_name[callee_name], calls, baseline_calls
                     )
                 )
-        counter_names = list(delta.counters)
-        locations = self.function_locations(
-            delta,
-            self.file_display_paths(
-                delta, callgrind.DerivedPaths(baseline_dir, modified_dir)
-            ),
-            row_names.intersection(delta.function_home),
-        )
-        # The delta holds no record of a function none of whose lines changed.
-        for name in row_names.difference(locations):
-            locations[name] = callgrind.SourceLine("", 0)
+        counters = function_diff["counters"]
+        counter_names = list(counters)
         row_order = sorted(row_names, key=lambda name: (locations[name], name))
         return {
             "counterNames": counter_names,
-            "derivedCounters": delta.resolved_derived_counters(),
+            "derivedCounters": callgrind.resolved_derived_counters(counters),
             "functions": function_links,
             "functionRows": [
                 BuildReport.DiffFunctionRow(
@@ -532,17 +544,13 @@ class BuildReport:
                     locations[name].line,
                     calls_by_name[name][0],
                     self.counter_values(
-                        delta.counters,
-                        delta.function_self.get(name, []),
-                        counter_names,
+                        counters, diff_rows[name].self_costs, counter_names
                     ),
                     callers.get(name, []),
                     callees.get(name, []),
                     calls_by_name[name][1],
                     self.counter_values(
-                        callers_doc["counters"],
-                        callers_doc["baseline"].get(name, []),
-                        counter_names,
+                        counters, diff_rows[name].baseline_costs, counter_names
                     ),
                 )
                 for name in row_order
@@ -618,20 +626,8 @@ class BuildReport:
             )
         return rows
 
-    def entry_link(
-        self, test_name: str, profile: callgrind.LineProfile, function: str
-    ) -> str:
-        entry = profile.function_entry.get(function)
-        if entry is None or not entry.line:
-            return ""
-        return self.address(test_name, _HEAT_MAP_VIEW_KEY, function)
-
     # Returns the path the heat map shows for each file the profile names.
-    def file_display_paths(
-        self,
-        profile: callgrind.Profile,
-        derived_paths: callgrind.DerivedPaths | None,
-    ) -> dict[str, str]:
+    def file_display_paths(self, profile: callgrind.Profile) -> dict[str, str]:
         raw_paths = (
             {key.file for key in profile.line_self}
             | {key.file for key in profile.line_calls}
@@ -639,16 +635,9 @@ class BuildReport:
         )
         shown_paths: dict[str, str] = {}
         for raw_path in sorted(raw_paths):
-            object_path = profile.file_ob.get(raw_path, "")
-            if derived_paths is None:
-                path_info = callgrind.path_norm(raw_path)
-                shown_paths[raw_path] = callgrind.display_path(
-                    path_info.display, path_info.group, object_path
-                )
-                continue
-            entry = derived_paths.path_entry(raw_path)
+            path_info = callgrind.path_norm(raw_path)
             shown_paths[raw_path] = callgrind.display_path(
-                entry.canonical, entry.group, object_path
+                path_info.display, path_info.group, profile.file_ob[raw_path]
             )
         return shown_paths
 
@@ -661,36 +650,22 @@ class BuildReport:
             return _PROFILE_START_FUNCTION_UNRECORDED_CALLS
         return recorded_calls
 
-    # Returns each named function with its heat map address, the names sorted.
+    # Returns each named function, the linked ones with their heat map address.
     def function_links(
         self,
         test_name: str,
-        profile: callgrind.LineProfile,
         function_names: set[str],
+        linked_names: Container[str],
     ) -> list[BuildReport.FunctionLink]:
         return [
             BuildReport.FunctionLink(
                 function_name,
-                self.entry_link(test_name, profile, function_name),
+                self.address(test_name, _HEAT_MAP_VIEW_KEY, function_name)
+                if function_name in linked_names
+                else "",
             )
             for function_name in sorted(function_names)
         ]
-
-    # Returns each named function's shown file and the line it is addressed at.
-    def function_locations(
-        self,
-        profile: callgrind.Profile,
-        shown_paths: dict[str, str],
-        function_names: Iterable[str],
-    ) -> dict[str, callgrind.SourceLine]:
-        heat_map = callgrind_to_heatmap.CallgrindToHeatmap()
-        locations: dict[str, callgrind.SourceLine] = {}
-        for function_name in function_names:
-            location = heat_map.function_line(profile, function_name)
-            locations[function_name] = callgrind.SourceLine(
-                shown_paths[location.file], location.line
-            )
-        return locations
 
     # Returns the header tables, the run's own rows or each diffed report's.
     def manifest_blocks_read(
@@ -852,10 +827,8 @@ class BuildReport:
         os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
         with open(path, "w", encoding="utf-8") as handle:
             handle.write(page)
-        print(
-            f"wrote {path} ({len(page.encode('utf-8')):,} bytes)",
-            file=sys.stderr,
-        )
+        if self.verbose:
+            print(f"wrote {path} ({len(page.encode('utf-8')):,} bytes)")
 
     # Writes the blank line and the raw data heading over the archive link.
     def raw_data_render(self, name: str) -> str:
@@ -1013,6 +986,13 @@ def main() -> None:
             metavar="DIR",
             help="the report directory the files are written in",
         )
+        report_parser.add_argument(
+            "--verbose",
+            action="count",
+            default=0,
+            help="print each file written; a quiet run prints nothing on"
+            " success",
+        )
     for artifacts_parser in (
         call_graph_parser,
         database_parser,
@@ -1027,7 +1007,7 @@ def main() -> None:
         )
 
     namespace = parser.parse_args()
-    report = BuildReport()
+    report = BuildReport(namespace.verbose)
     if namespace.cmd == "scripts":
         report.scripts_write(namespace.report)
     elif namespace.cmd == "debug":
@@ -1042,7 +1022,7 @@ def main() -> None:
         )
     elif namespace.cmd == "database":
         report.database(
-            BuildReport.ReportArgs(
+            BuildReport.DatabaseArgs(
                 artifacts=namespace.artifacts,
                 report=namespace.report,
                 diff=namespace.diff,

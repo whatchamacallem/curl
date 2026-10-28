@@ -35,6 +35,9 @@ class BuildFlameGraph:
         artifacts: str
         report: str
 
+    def __init__(self, verbose: int) -> None:
+        self.verbose = verbose
+
     def page_write(self, args: BuildFlameGraph.PageArgs) -> None:
         app_href = theme.href(
             _FLAME_GRAPH_PAGE_DEPTH, _FLAME_GRAPH_APP_DIR_NAME
@@ -53,7 +56,8 @@ class BuildFlameGraph:
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "w", encoding="utf-8") as handle:
             handle.write(html)
-        print(f"wrote {path}", file=sys.stderr)
+        if self.verbose:
+            print(f"wrote {path}")
 
     # Writes one test's profile script, its speedscope profile embedded.
     def profile_write(
@@ -81,7 +85,8 @@ class BuildFlameGraph:
                 f"{profiles_global}[{json.dumps(test_name)}] ="
                 f" {json.dumps(test_profile)};\n"
             )
-        print(f"wrote {path} ({len(raw):,} bytes of profile)", file=sys.stderr)
+        if self.verbose:
+            print(f"wrote {path} ({len(raw):,} bytes of profile)")
 
     # Writes every listed test's profile script.
     def profiles_write(self, args: BuildFlameGraph.ProfilesArgs) -> None:
@@ -132,9 +137,17 @@ def main() -> None:
         metavar="DIR",
         help="the report directory the page is written in",
     )
+    for written_parser in (page_parser, profiles_parser):
+        written_parser.add_argument(
+            "--verbose",
+            action="count",
+            default=0,
+            help="print each file written; a quiet run prints nothing on"
+            " success",
+        )
 
     namespace = parser.parse_args()
-    flame_graph = BuildFlameGraph()
+    flame_graph = BuildFlameGraph(namespace.verbose)
     if namespace.cmd == "page":
         flame_graph.page_write(
             BuildFlameGraph.PageArgs(
