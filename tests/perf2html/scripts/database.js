@@ -97,7 +97,7 @@ window.try_catch_handler_(function () {
   // Returns the share of all calls a count is, a diff's its change.
   function calls_share(calls, baseline_calls) {
     if (is_diff) return window.report_ui_.diff_share(calls, baseline_calls);
-    return (100 * calls) / calls_total;
+    return window.report_ui_.share_of_test(calls, calls_total);
   }
   // Returns the share of its test total a counter holds, a diff's its change.
   function counter_share(record, counter_reader) {
@@ -107,9 +107,10 @@ window.try_catch_handler_(function () {
         value,
         counter_reader.get(record.baseline_values),
       );
-    return value
-      ? (100 * value) / counter_reader.get(database_model.counterTotals)
-      : 0;
+    return window.report_ui_.share_of_test(
+      value,
+      counter_reader.get(database_model.counterTotals),
+    );
   }
   // Writes the heat colors of a cell by its share, on the chosen curve.
   const heat_style = (percent) =>

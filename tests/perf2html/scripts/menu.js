@@ -90,7 +90,7 @@ window.try_catch_handler_(function () {
   }
   function files_entries(line_number) {
     return heat_map_entries(
-      window.report_source_database_.files,
+      window.report_source_database_.filesWithSource,
       "str_menu_file",
       (file_name) => ({ file: file_name, line: line_number || null }),
     );

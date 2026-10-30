@@ -99,8 +99,10 @@ window.try_catch_handler_(function () {
 
   // Returns a function's self cost as a percent of the test's total cost.
   function self_share_of_test(function_record) {
-    if (!test_total) window.throw_exception_("str_error_internal");
-    return (100 * function_record.self_cost) / test_total;
+    return window.report_ui_.share_of_test(
+      function_record.self_cost,
+      test_total,
+    );
   }
   // Returns an edge's calls per invocation of its caller, null for none.
   function edge_multiple(call_edge) {

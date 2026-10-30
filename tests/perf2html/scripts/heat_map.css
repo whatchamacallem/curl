@@ -75,18 +75,42 @@
 .heat-map-source-information-box-heading- {
   white-space: pre;
 }
-tr.heat-map-source-line-detail-row- > td {
+/* A box's table titles stay on their tables. */
+.heat-map-source-information-box- th {
+  position: static;
+}
+:is(
+    tr.heat-map-source-line-detail-row-,
+    tr.heat-map-source-file-information-row-
+  )
+  > td {
   white-space: normal;
   padding: 0;
 }
-/* A line detail's table and first control take the source line as left. */
-tr.heat-map-source-line-detail-row- .table-,
-tr.heat-map-source-line-detail-row- .table- :is(th, td):first-child,
-tr.heat-map-source-line-detail-row-
+/* A box's table and first control take the source line as left. */
+:is(
+    tr.heat-map-source-line-detail-row-,
+    tr.heat-map-source-file-information-row-
+  )
+  .table-,
+:is(
+    tr.heat-map-source-line-detail-row-,
+    tr.heat-map-source-file-information-row-
+  )
+  .table-
+  :is(th, td):first-child,
+:is(
+    tr.heat-map-source-line-detail-row-,
+    tr.heat-map-source-file-information-row-
+  )
   .heat-map-source-information-box-
   > div
   > .menu-button-:first-child {
   border-left: 0;
+}
+/* The file box's hottest lines take the source column's width, no wider. */
+tr.heat-map-source-file-information-row- .heat-map-source-ticker-tape- {
+  contain: inline-size;
 }
 td.heat-map-source-table-line-number-cell- {
   user-select: none;

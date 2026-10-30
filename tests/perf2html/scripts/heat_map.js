@@ -129,33 +129,18 @@ window.try_catch_handler_(function () {
     sort_mode = view_preferences.heat_sort_mode;
   }
 
-  // Returns a value as a percent of a whole, refusing a share of nothing.
-  function percent_of(value, whole) {
-    if (!value) return 0;
-    if (!whole) window.throw_exception_("str_error_internal");
-    return (100 * value) / whole;
-  }
   // Returns a value as a share of the test's total of the counter.
   const share_of_test = (value, counter) =>
-    percent_of(value, counter.get(profile_model.heatMapTotals.totals));
+    report_ui_.share_of_test(
+      value,
+      counter.get(profile_model.heatMapTotals.totals),
+    );
   // Returns the functions costing a line, refusing a line none costs.
   function line_functions(file_path, line_number) {
     const function_indexes = file_table[file_path].lineFunctions[line_number];
     if (!function_indexes || !function_indexes.length)
       window.throw_exception_("str_error_internal");
     return function_indexes;
-  }
-  // Returns a line's value as a share of the self counts of its functions.
-  function share_of_function(value, counter, file_path, line_number) {
-    if (!value) return 0;
-    return percent_of(
-      value,
-      line_functions(file_path, line_number).reduce(
-        (running_total, function_index) =>
-          running_total + counter.get(function_table[function_index].self),
-        0,
-      ),
-    );
   }
   let share_text = report_ui_.percent_text;
   const share_of_test_text = (value, counter) =>
@@ -172,55 +157,32 @@ window.try_catch_handler_(function () {
   let function_baselines = null,
     file_baselines = null;
   let counter_baseline = () => null;
-  let FUNCTION_SHARE_LABEL = text("str_column_function_share"),
-    TEST_SHARE_LABEL = text("str_column_test_share");
-  let share_of_baseline = (value, baseline_cost) =>
-    share_of_test(value, ranking_counter);
+  let SHARE_LABEL = text("str_column_test_share");
+  // Returns a file's, function's or line's share, a diff's of its baseline.
   let counter_share = (value, counter, baseline_cost) =>
     share_of_test(value, counter);
-  let line_counter_share = (
-    value,
-    counter,
-    baseline_cost,
-    file_path,
-    line_number,
-  ) => share_of_function(value, counter, file_path, line_number);
   function report_kind_set(first_model) {
     IS_DIFF = !!first_model.heatMapTotals.diff;
     if (IS_DIFF) {
       share_text = report_ui_.signed_percent_text;
       human_text = report_ui_.signed_human_text;
       TICKER_TAPE_HEADING = text("str_ticker_tape_heading_diff");
-      FUNCTION_SHARE_LABEL = text("str_column_baseline_share");
-      TEST_SHARE_LABEL = text("str_column_baseline_share");
+      SHARE_LABEL = text("str_column_baseline_share");
       counter_baseline = (cost_vector, counter) => {
         if (!cost_vector) return null;
         const baseline_cost = absolute(counter.get(cost_vector));
         return baseline_cost ? baseline_cost : null;
       };
-      share_of_baseline = report_ui_.diff_share;
       counter_share = (value, counter, baseline_cost) =>
-        share_of_baseline(value, baseline_cost);
-      line_counter_share = (value, counter, baseline_cost) =>
-        share_of_baseline(value, baseline_cost);
+        report_ui_.diff_share(value, baseline_cost);
     }
   }
   const baseline = (cost_vector) =>
     counter_baseline(cost_vector, ranking_counter);
-  const share_of_baseline_text = (value, baseline_cost) =>
-    share_text(share_of_baseline(value, baseline_cost));
-  const line_share = (value, baseline_cost, file_path, line_number) =>
-    line_counter_share(
-      value,
-      ranking_counter,
-      baseline_cost,
-      file_path,
-      line_number,
-    );
-  const line_share_text = (value, baseline_cost, file_path, line_number) =>
-    value
-      ? share_text(line_share(value, baseline_cost, file_path, line_number))
-      : "";
+  const ranking_share = (value, baseline_cost) =>
+    counter_share(value, ranking_counter, baseline_cost);
+  const ranking_share_text = (value, baseline_cost) =>
+    share_text(ranking_share(value, baseline_cost));
   const line_baseline_vector = (file_path, line_number) => {
     const baseline_table =
       file_table[file_path] && file_table[file_path].baseline;
@@ -236,8 +198,6 @@ window.try_catch_handler_(function () {
     counter_baseline(file_baselines[file_path], counter);
   const file_baseline = (file_path) =>
     file_counter_baseline(file_path, ranking_counter);
-  const file_counter_share = (value, counter, file_path) =>
-    counter_share(value, counter, file_counter_baseline(file_path, counter));
 
   // Writes the heat colors of a cell by its share, on the chosen curve.
   const heat_style = (percent) =>
@@ -248,7 +208,7 @@ window.try_catch_handler_(function () {
     call_count
       ? {
           text: human_text(call_count),
-          style: heat_style(percent_of(call_count, CALLS_TOTAL)),
+          style: heat_style(report_ui_.share_of_test(call_count, CALLS_TOTAL)),
         }
       : "";
 
@@ -520,10 +480,10 @@ window.try_catch_handler_(function () {
   function tree_render() {
     // Writes the heat colors of a node.
     const node_heat_style = (tree_node) =>
-      heat_style(share_of_baseline(tree_node.self, tree_node.base));
+      heat_style(ranking_share(tree_node.self, tree_node.base));
     // Writes the share of a node.
     const node_share_text = (tree_node) =>
-      share_of_baseline_text(tree_node.self, tree_node.base);
+      ranking_share_text(tree_node.self, tree_node.base);
     function nodes_emit(tree_node, depth) {
       const output_parts = [];
       const indent_text = " ".repeat(
@@ -814,48 +774,54 @@ window.try_catch_handler_(function () {
 
   let entry_line_index = null;
 
-  // Renders the hottest lines strip of a file, or of one function in the file.
+  // Renders the hottest lines of a file, or of one function in the file.
   function hottest_lines_render(file_path, function_index) {
     const file = file_table[file_path];
-    const file_line_share = (line_number, cost) =>
-      line_share(
-        cost,
-        line_baseline(file_path, line_number),
-        file_path,
-        line_number,
-      );
     const tape_lines = Object.keys(file.lines)
+      .map(Number)
       .filter(
-        (line_key) =>
-          function_index == null ||
-          line_functions(file_path, line_key).includes(function_index),
+        (line_number) =>
+          function_index === null ||
+          line_functions(file_path, line_number).includes(function_index),
       )
-      .map((line_key) => [+line_key, ranking_value(file.lines[line_key][0])])
+      .map((line_number) => {
+        const self_cost = ranking_value(file.lines[line_number][0]);
+        return {
+          line_number,
+          self_cost,
+          percent: ranking_share(
+            self_cost,
+            line_baseline(file_path, line_number),
+          ),
+        };
+      })
       .filter(
-        ([line_number, cost]) =>
-          absolute(file_line_share(line_number, cost)) >=
+        (tape_line) =>
+          absolute(tape_line.percent) >=
           HEAT_MAP_SOURCE_TICKER_TAPE_ENTRY_LEAST_SHARE,
       )
-      .sort((entry_a, entry_b) => absolute(entry_b[1]) - absolute(entry_a[1]))
+      .sort(
+        (tape_line_a, tape_line_b) =>
+          absolute(tape_line_b.self_cost) - absolute(tape_line_a.self_cost),
+      )
       .slice(0, HEAT_MAP_SOURCE_TICKER_TAPE_ENTRY_MAX_COUNT);
     if (!tape_lines.length) return { markup: "", copy_text: "" };
     let entries_markup = "";
-    const entry_texts = tape_lines.map(([line_number, cost], entry_index) => {
-      const baseline_cost = line_baseline(file_path, line_number);
+    const entry_texts = tape_lines.map((tape_line, entry_index) => {
       const entry_text = text_fill("str_ticker_tape_entry", {
-        line: line_number,
-        share: line_share_text(cost, baseline_cost, file_path, line_number),
+        line: tape_line.line_number,
+        share: share_text(tape_line.percent),
       });
       entries_markup += render_menu_button(
         "link",
         render_html_escape(entry_text),
         {
           tag_name: "a",
-          href: hash_for_location(file_path, line_number),
+          href: hash_for_location(file_path, tape_line.line_number),
           class_names: ["heat-map-source-ticker-tape-entry-"],
           attributes: {
             tabindex: entry_index ? -1 : 0,
-            style: heat_style(file_line_share(line_number, cost)),
+            style: heat_style(tape_line.percent),
           },
         },
       );
@@ -906,21 +872,17 @@ window.try_catch_handler_(function () {
       return {
         cost_vector: line_costs[0],
         self_label: text("str_line_self"),
-        share_label: FUNCTION_SHARE_LABEL,
         percent: (value, counter) =>
-          line_counter_share(
+          counter_share(
             value,
             counter,
             line_counter_baseline(file_path, line_number, counter),
-            file_path,
-            line_number,
           ),
       };
     if (function_costs)
       return {
         cost_vector: function_costs.self,
         self_label: text("str_column_self"),
-        share_label: TEST_SHARE_LABEL,
         percent: (value, counter) =>
           counter_share(
             value,
@@ -931,9 +893,12 @@ window.try_catch_handler_(function () {
     return {
       cost_vector: file_table[file_path].self,
       self_label: text("str_column_self"),
-      share_label: TEST_SHARE_LABEL,
       percent: (value, counter) =>
-        file_counter_share(value, counter, file_path),
+        counter_share(
+          value,
+          counter,
+          file_counter_baseline(file_path, counter),
+        ),
     };
   }
   // Lists the counter table of a box, a line's calls rows after its counters.
@@ -951,7 +916,7 @@ window.try_catch_handler_(function () {
     );
     const columns = [
       { label: text("str_column_counter") },
-      { label: counter_source.share_label, numeric: true },
+      { label: SHARE_LABEL, numeric: true },
       { label: text("str_column_count"), numeric: true },
     ];
     const listed_counters = [
@@ -990,12 +955,7 @@ window.try_catch_handler_(function () {
     if (call_cost) {
       rows.push([
         { text: text("str_column_calls") },
-        line_share_text(
-          call_cost,
-          line_baseline(file_path, line_number),
-          file_path,
-          line_number,
-        ),
+        ranking_share_text(call_cost, line_baseline(file_path, line_number)),
         cell_number(call_cost),
       ]);
       rows.push([
@@ -1014,12 +974,12 @@ window.try_catch_handler_(function () {
       .sort((caller_a, caller_b) => caller_b[4] - caller_a[4]);
     const function_baseline_cost = function_baseline(function_index);
     const function_self_text =
-      share_of_baseline_text(
+      ranking_share_text(
         ranking_value(function_entry.self),
         function_baseline_cost,
       ) || report_ui_.zero_percent_text();
     const function_total_text =
-      share_of_baseline_text(
+      ranking_share_text(
         ranking_value(function_entry.self) +
           ranking_value(function_entry.calls),
         function_baseline_cost,
@@ -1127,11 +1087,14 @@ window.try_catch_handler_(function () {
     const hottest_lines = !line_number
       ? hottest_lines_render(file_path, null)
       : { markup: "", copy_text: "" };
-    let markup = box_control_markup(
-      "close",
-      "str_information_box_close_symbol",
-      "heat-map-source-information-box-close-symbol-",
-    );
+    // A file's box is part of the page, so no control closes it.
+    let markup = line_number
+      ? box_control_markup(
+          "close",
+          "str_information_box_close_symbol",
+          "heat-map-source-information-box-close-symbol-",
+        )
+      : "";
     markup += render_element(
       "div",
       {},
@@ -1234,8 +1197,10 @@ window.try_catch_handler_(function () {
       {},
       owner_link_markup +
         box_control_markup("copy", "str_information_box_copy") +
-        box_separator_markup +
-        box_control_markup("close", "str_information_box_close"),
+        (line_number
+          ? box_separator_markup +
+            box_control_markup("close", "str_information_box_close")
+          : ""),
     );
     return {
       markup: render_element(
@@ -1254,14 +1219,11 @@ window.try_catch_handler_(function () {
   function information_line_share_text(file_path) {
     const self_cost = ranking_value(file_table[file_path].self);
     return self_cost
-      ? share_text(
-          file_counter_share(self_cost, ranking_counter, file_path),
-          false,
-        )
+      ? share_text(ranking_share(self_cost, file_baseline(file_path)), false)
       : report_ui_.zero_percent_text();
   }
   // Renders the line that stands in for the file box while that box is away.
-  function information_line_render(file_path, has_file_box) {
+  function information_line_render(file_path) {
     const link_text = text_fill("str_information_line_link", {
       path: file_path,
       share: information_line_share_text(file_path),
@@ -1269,9 +1231,7 @@ window.try_catch_handler_(function () {
     return render_element(
       "div",
       {
-        class:
-          "heat-map-source-information-line- band-" +
-          (has_file_box ? " empty-" : ""),
+        class: "heat-map-source-information-line- band- empty-",
         "data-information-box-line-": 0,
       },
       render_element(
@@ -1296,21 +1256,49 @@ window.try_catch_handler_(function () {
     }
     return expanded_text;
   }
-  const file_box = () =>
-    main_panel.querySelector(
-      ".heat-map-source- > .heat-map-source-information-box-",
+  const file_box_row = () =>
+    main_panel.querySelector("tr.heat-map-source-file-information-row-");
+  // Opens the file's box above its first line, in the source column.
+  function file_box_place(file_path) {
+    const table_element = main_panel.querySelector(
+      "table.heat-map-source-table-",
     );
+    const title_cells = [...table_element.tHead.rows[0].cells];
+    const source_title = table_element.tHead.querySelector(
+      `th[data-column-name-="${TABLE_COLUMN_SOURCE_NAME}"]`,
+    );
+    if (!source_title) window.throw_exception_("str_error_internal");
+    table_element.tBodies[0].insertAdjacentHTML(
+      "afterbegin",
+      render_element(
+        "tr",
+        { class: "heat-map-source-file-information-row-" },
+        title_cells
+          .map((title_cell, title_index) =>
+            title_cell === source_title
+              ? render_element(
+                  "td",
+                  {},
+                  information_box_render(file_path, 0).markup,
+                )
+              : render_element(
+                  "td",
+                  title_index ? {} : { class: TREE_COLUMN.cls },
+                  "",
+                ),
+          )
+          .join(""),
+      ),
+    );
+  }
 
   function file_render(file_path) {
     const file = file_table[file_path];
     if (!file) window.throw_exception_("str_error_internal");
     const is_first_view = current_file_path !== file_path,
-      kept_scroll_top = is_first_view ? 0 : main_panel.scrollTop,
-      has_file_box = is_first_view || !!file_box();
+      kept_scroll_top = is_first_view ? 0 : main_panel.scrollTop;
     current_file_path = file_path;
-    let markup =
-      (has_file_box ? information_box_render(file_path, 0).markup : "") +
-      information_line_render(file_path, has_file_box);
+    let markup = information_line_render(file_path);
     const file_source = source_text(file_path);
     const source_calls_cell = (source_row) => {
       const calls_percent = source_row.share(
@@ -1426,19 +1414,13 @@ window.try_catch_handler_(function () {
         ? [function_costs.self, function_costs.calls]
         : line_costs;
       const row_share = (value, counter) =>
-        function_costs
-          ? counter_share(
-              value,
-              counter,
-              counter_baseline(function_costs.baseline, counter),
-            )
-          : line_counter_share(
-              value,
-              counter,
-              line_counter_baseline(file_path, line_number, counter),
-              file_path,
-              line_number,
-            );
+        counter_share(
+          value,
+          counter,
+          function_costs
+            ? counter_baseline(function_costs.baseline, counter)
+            : line_counter_baseline(file_path, line_number, counter),
+        );
       const self_cost = row_costs ? ranking_value(row_costs[0]) : 0,
         calls = row_costs ? ranking_value(row_costs[1]) : 0;
       const self_percent = row_share(self_cost, ranking_counter);
@@ -1534,6 +1516,7 @@ window.try_catch_handler_(function () {
       { class: "heat-map-source-" },
       markup,
     );
+    file_box_place(file_path);
     tree_track_place(tree_state);
 
     minimap_build();
@@ -1547,43 +1530,24 @@ window.try_catch_handler_(function () {
     minimap_sync();
   }
 
-  // Shows the information line once the file box is closed or scrolled away.
+  // Shows the information line once the file box is scrolled under the titles.
   function information_line_refresh() {
     const information_line = main_panel.querySelector(
       ".heat-map-source-information-line-",
     );
     if (!information_line) return;
-    const shown_file_box = file_box();
-    const is_box_shown =
-      !!shown_file_box &&
-      design_rect(shown_file_box).bottom > design_rect(main_panel).top;
-    information_line.classList.toggle("empty-", is_box_shown);
-  }
-  // Opens the file box again if closed and shows the top of the view.
-  function file_box_show() {
-    const information_line = main_panel.querySelector(
-      ".heat-map-source-information-line-",
+    const covered_bottom_px =
+      design_rect(main_panel).top +
+      covered_height(main_panel.querySelector("table.heat-map-source-table-"));
+    information_line.classList.toggle(
+      "empty-",
+      design_rect(file_box_row()).bottom > covered_bottom_px,
     );
-    if (!file_box()) {
-      information_line.insertAdjacentHTML(
-        "beforebegin",
-        information_box_render(current_file_path, 0).markup,
-      );
-      report_ui_.layout_activate(file_box());
-    }
+  }
+  // Shows the file box at the top of the view.
+  function file_box_show() {
     main_panel.scrollTop = 0;
     information_line_refresh();
-    minimap_sync();
-  }
-  // Closes the file box and leaves the address as the address was.
-  function file_box_close(file_box) {
-    const box_had_focus = file_box.contains(document.activeElement);
-    file_box.remove();
-    information_line_refresh();
-    if (box_had_focus)
-      main_panel
-        .querySelector(".heat-map-source-information-line- a")
-        .focus({ preventScroll: true });
     minimap_sync();
   }
   // Shows an address in a file: the tree node if asked, then the file box.
@@ -1716,7 +1680,13 @@ window.try_catch_handler_(function () {
       ),
       table_body = table_element.tBodies[0];
     const main = design_rect(main_panel);
-    const clone_body = design_rect(table_body);
+    const body_bottom_px = design_rect(table_body).bottom;
+    // The rows the minimap clones start below the file box's row.
+    const code_top_px = design_rect(file_box_row()).bottom;
+    const clone_body = {
+      height: body_bottom_px - code_top_px,
+      top: code_top_px,
+    };
     const detail_element = table_body.querySelector(
       "tr.heat-map-source-line-detail-row-",
     );
@@ -1898,9 +1868,7 @@ window.try_catch_handler_(function () {
       return navigator.clipboard.writeText(
         information_box_render(current_file_path, box_line_number).copy_text,
       );
-    if (box_line_number)
-      detail_close(box_control.closest("tr.heat-map-source-line-detail-row-"));
-    else file_box_close(file_box());
+    detail_close(box_control.closest("tr.heat-map-source-line-detail-row-"));
   }
 
   main_panel.addEventListener(
@@ -1999,12 +1967,6 @@ window.try_catch_handler_(function () {
         return;
       }
       if (key_name !== WIDGET_KEY_NAMES.close) return;
-      const shown_file_box = file_box();
-      if (shown_file_box && shown_file_box.contains(key_event.target)) {
-        key_event.preventDefault();
-        file_box_close(shown_file_box);
-        return;
-      }
       const detail_row = main_panel.querySelector(
         "tr.heat-map-source-line-detail-row-",
       );

@@ -2456,6 +2456,12 @@ class TestReport:
                     f"{label} lists {file_name!r}, a file in no known image:"
                     f" {path}"
                 )
+        unshown = sorted(set(listed["filesWithSource"]) - set(listed["files"]))
+        if unshown:
+            self.fail(
+                f"{label} lists {unshown[0]!r} with source but not among its"
+                f" files: {path}"
+            )
         if test_settings.TEST_BELOW_MAIN_FUNCTION_NAME in listed["functions"]:
             self.fail(
                 f"{label} lists"

@@ -42,6 +42,9 @@
   .heat-map-source-information-box- .table- {
     background: var(--dark-mode-page-bg-);
   }
+  tr.heat-map-source-file-information-row- .heat-map-source-information-box- {
+    background: var(--dark-mode-page-bg-);
+  }
   tr.has-callee- td.heat-map-source-table-line-number-cell-::before {
     color: var(--dark-mode-menu-normal-fg-);
   }

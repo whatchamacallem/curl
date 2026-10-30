@@ -493,6 +493,12 @@ window.report_ui_ = window.try_catch_handler_(function () {
     if (!number) return "";
     return (number < 0 ? "-" : "") + human_text(Math.abs(number));
   }
+  // Returns a value as a percent of its test's total, refusing a share of 0.
+  function share_of_test(value, test_total) {
+    if (!value) return 0;
+    if (!test_total) window.throw_exception_("str_error_internal");
+    return (100 * value) / test_total;
+  }
   function diff_share(delta, baseline) {
     const baseline_count = baseline === null ? 0 : baseline;
     if (delta < -baseline_count) {
@@ -2037,7 +2043,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
   function table_sort_column_label(sort_column) {
     return sort_column.column.measure ?? sort_column.column.label;
   }
-  // Lists a sorted table's heading entries: its sort order and direction.
+  // Lists a sorted table's heading entries: its sort order, direction toggle.
   function table_sort_heading_entries({
     order_choices,
     sorted_column,
@@ -2053,12 +2059,6 @@ window.report_ui_ = window.try_catch_handler_(function () {
             column: column_label,
           })
         : column_label;
-    const direction_choices = Object.keys(TABLE_SORT_DIRECTIONS).map(
-      (direction_name) => ({
-        label: table_sort_direction_label(direction_name),
-        value: direction_name,
-      }),
-    );
     return [
       strip_entry_make("sort_order", "pulldown", sorted_label, {
         pulldown_options: choice_pulldown_options(
@@ -2068,13 +2068,13 @@ window.report_ui_ = window.try_catch_handler_(function () {
       }),
       strip_entry_make(
         "sort_direction",
-        "pulldown",
+        "action",
         table_sort_direction_label(sort_direction),
         {
-          pulldown_options: choice_pulldown_options(
-            () => strip_choice_entries(direction_choices),
-            on_direction_choose,
-          ),
+          on_activate: () =>
+            on_direction_choose(
+              table_sort_direction(sort_direction).reversed_name,
+            ),
         },
       ),
     ];
@@ -3529,6 +3529,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
     resize_settle_register,
     settings_apply_send,
     settings_debug_toggle_send,
+    share_of_test,
     signed_human_text,
     signed_percent_text,
     strip: {

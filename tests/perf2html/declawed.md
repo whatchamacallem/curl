@@ -106,6 +106,10 @@ scripts too."""
   sharing one tree corrupts comparisons.
 - No fake data - every value is a measurement or plain arithmetic on one. If a
   tool can't supply a view's data, the view isn't built.
+- Every percentage a regular report shows of a file, a function or a line
+  is that thing's share of the test's global total of its counter, through
+  `share_of_test()`; a share of any other whole, a file's, a function's or
+  a line's, is confusing and disallowed.
 - No combined test data: every number is one test's, or one diff's of one test.
   Nothing sums, merges or averages tests, and no page shows test data in a
   combined form where each test's own contribution is not explicit. The merged
@@ -333,8 +337,9 @@ The single function/check owning each concern - never bypass or duplicate:
   its callgrind entry line when that line carries no counter and the
   function's counters span more than one line, else the entry line
   (callgrind_to_heatmap.py).
-- `report_source_database_` - the one list of the files the tests show and
-  the functions with a line, every test's union, names alone
+- `report_source_database_` - the one list of the files the tests show,
+  the files among them with source, the menu's file pulldown, and the
+  functions with a line, every test's union, names alone
   (scripts/source_database.js).
 - `text_clip()` - every cell text cut at its column's `clip`;
   `column_edge_drag()` every column width, a drag at the right edge grab of
@@ -346,10 +351,12 @@ The single function/check owning each concern - never bypass or duplicate:
 - `number_exact_check()` - every settings number crossing into a page,
   a number the 64 bit float rounds refused, so every setting holds the
   code's own value and that value fits JSON storage (settings.py).
-- `share_of_test()` and `share_of_function()` - every regular heat map share,
-  a file's or a function's of the test, a line's of the summed self of the
-  functions costing it, `lineFunctions` of the model; a diff divides by the
-  thing's own baseline through `diff_share()` (heat_map.js).
+- `share_of_test(value, test_total)` - every regular share of a file, a
+  function or a line, a heat map tree folder's too, its value as a share of
+  the test's total of its counter, a calls count's of the test's calls,
+  for every page: the heat map, the database and the call graph, each
+  passing its test's total; a diff divides by the thing's own baseline
+  through `diff_share()` (theme.js).
 - `diff_share()` - every diff share, a fall past its baseline refused
   (theme.py/js).
 - `fixed_text()` - every decimal a page prints, the call graph's calls
@@ -361,7 +368,7 @@ The single function/check owning each concern - never bypass or duplicate:
   aligning the shares.
 - `self_share_of_test()` - every call graph share, a function's self CEst
   (`RANKING_COUNTER_NAME`) as a share of the test's total CEst, the call
-  graph model's `test_total`, a root none; `edge_multiple()` every calls
+  graph model's `test_total`, through `share_of_test()`, a root none; `edge_multiple()` every calls
   multiple, an
   edge's calls per invocation of its caller, the caller's root calls and
   incoming edge calls summed (call_graph.js); `call_graph_roots()` every
@@ -380,8 +387,9 @@ The single function/check owning each concern - never bypass or duplicate:
   `layout_reset`, which resets column widths, pane widths and heading row
   counts.
 - `information_box_render(file_path, line_number)` - every file, function
-  and line info box, answering `{markup, copy_text}`, line 0 the file's
-  (heat_map.js).
+  and line info box, answering `{markup, copy_text}`, line 0 the file's,
+  which is part of the page: the first row of the source table, in the
+  source column, closed by no control (heat_map.js).
 - `hash_for_location()` - every heat map link into a file at a line, a
   function's line written as the function's hash (heat_map.js).
 - `report_ui_.strip.render(strip_element, entries, status_entries)` - every

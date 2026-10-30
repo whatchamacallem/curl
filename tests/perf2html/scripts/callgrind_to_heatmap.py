@@ -188,6 +188,7 @@ class CallgrindToHeatmap:
 
     class SourceDatabase(TypedDict):
         files: list[str]
+        filesWithSource: list[str]
         functions: list[str]
 
     # Holds a diff's paths and a test's function data diff.
@@ -832,7 +833,7 @@ class CallgrindToHeatmap:
             if line.endswith((".c", ".h"))
         ]
 
-    # Writes every file the tests show and every function with a line.
+    # Writes the shown files, those with source, and the functions with a line.
     def source_database_write(
         self, report_dir: str, tally: CallgrindToHeatmap.DatabaseTally
     ) -> None:
@@ -844,6 +845,11 @@ class CallgrindToHeatmap:
         )
         database: CallgrindToHeatmap.SourceDatabase = {
             "files": sorted(tally.files),
+            "filesWithSource": sorted(
+                display
+                for display, entry in tally.files.items()
+                if entry["source"] is not None
+            ),
             "functions": sorted(tally.locations),
         }
         data = json.dumps(database, separators=(",", ":"), ensure_ascii=False)
