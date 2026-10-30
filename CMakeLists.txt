@@ -1099,6 +1099,22 @@ if(USE_SSLS_EXPORT)
   endif()
 endif()
 
+option(USE_SIMD "Enable SIMD-accelerated routines (experimental)" OFF)
+if(USE_SIMD)
+  check_c_source_compiles("
+    #include <immintrin.h>
+    int main(void)
+    {
+      __m128i v = _mm_setzero_si128();
+      (void)v;
+      return 0;
+    }" HAVE_IMMINTRIN_H)
+  if(NOT HAVE_IMMINTRIN_H)
+    message(FATAL_ERROR "USE_SIMD requires <immintrin.h>")
+  endif()
+  message(STATUS "SIMD routines enabled (experimental)")
+endif()
+
 option(USE_PROXY_HTTP3 "Enable HTTP/3 proxy support (experimental)" OFF)
 
 option(USE_NGHTTP2 "Use nghttp2 library" ON)
@@ -2050,6 +2066,7 @@ curl_add_if("HTTPSRR"       _ssl_enabled AND USE_HTTPSRR)
 curl_add_if("PSL"           USE_LIBPSL)
 curl_add_if("CAcert"        CURL_CA_EMBED_SET)
 curl_add_if("SSLS-EXPORT"   _ssl_enabled AND USE_SSLS_EXPORT)
+curl_add_if("SIMD"          USE_SIMD)
 curl_add_if("AppleSecTrust" USE_APPLE_SECTRUST AND _ssl_enabled AND (USE_OPENSSL OR USE_GNUTLS))
 curl_add_if("NativeCA"      NOT USE_APPLE_SECTRUST AND _ssl_enabled AND CURL_CA_NATIVE)
 if(_items)

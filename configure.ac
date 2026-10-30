@@ -54,6 +54,7 @@ CURL_CHECK_OPTION_RT
 CURL_CHECK_OPTION_HTTPSRR
 CURL_CHECK_OPTION_ECH
 CURL_CHECK_OPTION_SSLS_EXPORT
+CURL_CHECK_OPTION_SIMD
 AC_MSG_CHECKING([whether to enable HTTP/3 proxy support])
 OPT_PROXY_HTTP3="default"
 AC_ARG_ENABLE(proxy-http3,
@@ -5116,6 +5117,28 @@ if test "$want_ssls_export" != "no"; then
 fi
 
 dnl *************************************************************
+dnl check whether experimental SIMD-accelerated routines are enabled
+dnl
+if test "$want_simd" = "yes"; then
+  AC_MSG_CHECKING([whether SIMD intrinsics are usable])
+  AC_COMPILE_IFELSE([
+    AC_LANG_PROGRAM([[
+#include <immintrin.h>
+    ]],[[
+      __m128i v = _mm_setzero_si128();
+      (void)v;
+    ]])
+  ],[
+    AC_MSG_RESULT([yes])
+    AC_DEFINE(USE_SIMD, 1, [if SIMD-accelerated routines are enabled])
+    USE_SIMD=1
+    experimental="$experimental SIMD"
+  ],[
+    AC_MSG_ERROR([--enable-simd requires <immintrin.h>])
+  ])
+fi
+
+dnl *************************************************************
 dnl check whether experimental HTTP/3 proxy support is enabled
 dnl
 if test "$want_proxy_http3" = "yes"; then
@@ -5605,6 +5628,7 @@ AC_MSG_NOTICE([Configured to build curl/libcurl:
   ECH:              ${curl_ech_msg}
   HTTPS RR:         ${curl_httpsrr_msg}
   SSLS-EXPORT:      ${curl_ssls_export_msg}
+  SIMD:             ${curl_simd_msg}
   Protocols:        ${SUPPORT_PROTOCOLS_LOWER}
   Features:         ${SUPPORT_FEATURES}
 ])

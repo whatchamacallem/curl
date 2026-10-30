@@ -256,6 +256,7 @@ target_link_libraries(my_target PRIVATE CURL::libcurl)
 - `USE_ECH`:                                Enable ECH support (experimental). Default: `OFF`
 - `USE_HTTPSRR`:                            Enable HTTPS RR support (experimental). Default: `OFF`
 - `USE_PROXY_HTTP3`:                        Enable HTTP/3 proxy support (experimental). Default: `OFF`
+- `USE_SIMD`:                               Enable SIMD-accelerated routines (experimental). Default: `OFF`
 - `USE_SSLS_EXPORT`:                        Enable SSL session import/export (experimental). Default: `OFF`
 - `USE_WIN32_IDN`:                          Use WinIDN for IDN support. Default: `OFF`
 - `USE_WIN32_LDAP`:                         Use Windows LDAP implementation. Default: `ON`

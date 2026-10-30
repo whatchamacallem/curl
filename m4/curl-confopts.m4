@@ -572,4 +572,41 @@ AS_HELP_STRING([--disable-ssls-export],
       ;;
   esac
 ])
+
+dnl CURL_CHECK_OPTION_SIMD
+dnl -----------------------------------------------------
+dnl Verify whether configure has been invoked with option
+dnl --enable-simd or --disable-simd, and set shell variable
+dnl want_simd as appropriate.
+
+AC_DEFUN([CURL_CHECK_OPTION_SIMD], [
+  AC_MSG_CHECKING([whether to enable SIMD-accelerated routines])
+  OPT_SIMD="default"
+  AC_ARG_ENABLE(simd,
+AS_HELP_STRING([--enable-simd],
+               [Enable SIMD-accelerated routines (experimental)])
+AS_HELP_STRING([--disable-simd],
+               [Disable SIMD-accelerated routines (experimental)]),
+  OPT_SIMD=$enableval)
+  case "$OPT_SIMD" in
+    no)
+      dnl --disable-simd option used
+      want_simd="no"
+      curl_simd_msg="no      (--enable-simd)"
+      AC_MSG_RESULT([no])
+      ;;
+    default)
+      dnl configure option not specified
+      want_simd="no"
+      curl_simd_msg="no      (--enable-simd)"
+      AC_MSG_RESULT([no])
+      ;;
+    *)
+      dnl --enable-simd option used
+      want_simd="yes"
+      curl_simd_msg="enabled (--disable-simd)"
+      AC_MSG_RESULT([yes])
+      ;;
+  esac
+])
 ])

@@ -87,6 +87,26 @@ Graduation requirements:
 
 - feedback from users saying that session export works for their use cases
 
+## SIMD-accelerated routines
+
+Vectorized versions of selected internal string routines, selected at
+compile time from the instruction set the compiler targets (AVX2, AVX-512
+or plain C). Enabled with `--enable-simd` or `-DUSE_SIMD=ON`. The first
+routine is the `%XX` decoding in `Curl_urldecode()`.
+
+Graduation requirements:
+
+- runtime CPU dispatch, so that distribution builds benefit without
+  compiler architecture flags
+
+- measurements showing a gain on real inputs, with the AVX-512 frequency
+  effect quantified
+
+- the C, AVX2 and AVX-512 versions produce identical output, verified by
+  the unit test in CI on every run, and no test cases disabled
+
+- at least one more routine converted, to prove the scheme generalizes
+
 ## HTTPS RR
 
 HTTPS records support is a requirement for ECH but is provided as a

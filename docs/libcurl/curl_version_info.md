@@ -326,6 +326,13 @@ libcurl ignore cookies with a domain that is on the list.
 libcurl was built with support for SPNEGO authentication (Simple and Protected
 GSS-API Negotiation Mechanism, defined in RFC 2478.)
 
+## `SIMD`
+
+*features* mask bit: non-existent
+
+libcurl was built with SIMD-accelerated routines (experimental, added in
+8.23.0)
+
 ## `SSL`
 
 *features* mask bit: CURL_VERSION_SSL

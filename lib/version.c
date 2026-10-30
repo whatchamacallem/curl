@@ -503,6 +503,9 @@ static const struct feat features_table[] = {
   FEATURE("NativeCA",    NULL,              0),
 #endif
 #endif /* USE_SSL */
+#ifdef USE_SIMD
+  FEATURE("SIMD",        NULL,                0),
+#endif
 #ifdef USE_SPNEGO
   FEATURE("SPNEGO",      NULL,                CURL_VERSION_SPNEGO),
 #endif

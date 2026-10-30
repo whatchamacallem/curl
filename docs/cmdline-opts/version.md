@@ -108,6 +108,9 @@ This feature was removed from curl in 8.8.0.
 PSL is short for Public Suffix List and means that this curl has been built
 with knowledge about "public suffixes".
 
+## `SIMD`
+This build uses SIMD-accelerated routines (experimental).
+
 ## `SPNEGO`
 SPNEGO authentication is supported.
 
