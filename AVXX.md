@@ -494,3 +494,63 @@ Listed because each one is easy to do by accident in this kind of code.
 - Spelling: `docs/` is checked by `codespell`, `typos` and `pyspelling`.
   Unknown technical words (`AVX2`, `pshufb`) go in
   `.github/scripts/spellcheck.words` only if the spellcheck job complains.
+
+## 9. Results
+
+Implemented on `dev-vec`. Everything below was measured in the same
+container (GCC 13.3, 4 cores, AVX-512 F/BW/CD/DQ/VL CPU), release builds
+with `-O2`, `tests/perf/perf urldecode`, median of eight runs.
+
+| build                                | body    | ns/loop |
+|--------------------------------------|---------|---------|
+| `USE_SIMD=OFF` (master behavior)     | none    | 373     |
+| `USE_SIMD=ON`, no `-m` flags         | C       | 364     |
+| `USE_SIMD=ON -mavx2`                 | AVX2    | 209     |
+| `USE_SIMD=ON -mavx512bw -mavx512vl`  | AVX-512 | 189     |
+
+Run to run noise is about 5%; the C body is within noise of master.
+
+Verification done:
+
+- `make checksrc` clean (autotools tree) and `scripts/checksrc.pl` on the
+  changed files.
+- `autoreconf -fi && configure --enable-simd --enable-debug` builds,
+  reports `SIMD: enabled (--disable-simd)` and the EXPERIMENTAL warning,
+  `curl -V` lists `SIMD`.
+- CMake `-DUSE_SIMD=ON` with `-DENABLE_DEBUG=ON -DCURL_WERROR=ON` builds
+  clean for the C and AVX2 bodies.
+- Unit test 1688 passes against all three bodies (C: step 10, needs 30
+  bytes; AVX2: step 10, needs 32; AVX-512: step 20, needs 62) and under
+  ASan/UBSan for the AVX-512 body.
+- Tests 1302 1396 1537 1560 1688 pass on all three debug builds; the full
+  suite was run on the AVX2 build.
+
+Deviations from the plan above, with reasons:
+
+- The AVX-512 step is 20 triplets, not 21. A single 64 byte load puts
+  triplet 10 across the 128 bit lane boundary at byte 32, which the lane
+  local `vpshufb` cannot gather without VBMI. Two 32 byte loads at
+  offsets 0 and 30 inserted into one 512 bit register give two halves
+  with the AVX2 layout, so the shuffle controls are shared and only BW+VL
+  are required. 62 bytes are loaded, 60 consumed.
+- The vector bodies need `inlen` of 32 (AVX2) or 62 (AVX-512) bytes to
+  consume a step of 30 or 60, because the loads are unmasked. The unit
+  test discovers both the step and the minimum length by probing instead
+  of reading constants out of `escape.c`, so `URLDECODE_RUN_TRIPLETS`
+  stays file local.
+- `urldecode_run()` stays `static CURL_INLINE`; a `UNITTEST` wrapper
+  `urldecode_run_unit()` exposes it to test 1688, because the
+  `extract-unit-protos` script needs a plain `UNITTEST` prototype and an
+  external `inline` definition would not link in the unit test bundle.
+- One AVX2 valgrind job was added to `linux.yml` and `-DUSE_SIMD=ON` to
+  the two existing `-O3` valgrind jobs (C body). The AVX-512 job is not
+  added: with `-mavx512bw -mavx512vl` GCC 13 emits the pre-existing
+  `-Wstringop-overflow` false positive in `lib/curlx/inet_pton.c:178`
+  and every CMake CI job uses `CURL_WERROR=ON`. That needs the separate
+  fix from work order item 6 first. valgrind also rejects AVX-512
+  instructions, so `runtests.pl -n` is required locally for that build.
+- The work order's separate commits per body were collapsed: build,
+  escape (all three bodies), tests, CI, results.
+- `tests/data/test1688` sets `Allocations: 8000` in `<limits>` because
+  the per lane cases allocate every input at its exact length for the
+  over-read check and exceed the 1000 default.
