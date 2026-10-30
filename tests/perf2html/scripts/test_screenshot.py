@@ -1138,8 +1138,9 @@ def main() -> int:
         default="",
         metavar="DIR",
         help="compare each new shot with the same named shot in DIR, naming"
-        " every difference and writing a compare_ image of it; exit 1 if"
-        " any shot differs or is missing",
+        " every difference on stdout and writing a compare_ image of it; a"
+        " difference exits 0, the --compare-out directory made only for"
+        " one, and a shot this run did not write is an error",
     )
     parser.add_argument(
         "--compare-only",

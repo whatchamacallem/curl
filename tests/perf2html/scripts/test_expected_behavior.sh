@@ -11,10 +11,12 @@ test_expected_behavior.sh [debug-flags] [--check-formatting]
     Formats, lints and scans the files scripts/test_whitelist.txt lists,
     runs perf2html_batch.sh over the three reports it cleared, then
     validates and screenshots what it wrote. When screenshots-gold/
-    exists, each shot is compared with its same named gold shot and a
-    compare_ image of each difference goes to screenshots-diff/, which
-    every run clears and only a difference makes. Any fault stops the run
-    where it happened.
+    exists, a --regenerate run compares each shot with its same named gold
+    shot, naming each difference and writing a compare_ image of it to
+    screenshots-diff/, which every run clears and only a difference makes.
+    Any fault stops the run where it happened. A difference is no fault:
+    the run finishes every stage, then notes it and exits with
+    SCREENSHOT_GOLD_DIFFERENCE_EXIT_CODE from settings.sh.
     --check-formatting  Report what would change rather than writing it.
 
     The debug-flags are the same as the README.md documents.
