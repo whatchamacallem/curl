@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="US-ASCII"?>
+<testcase>
+<info>
+<keywords>
+unittest
+URL
+</keywords>
+</info>
+
+# Client-side
+<client>
+<features>
+unittest
+</features>
+<name>
+unit tests for the urldecode run helper in escape.c
+</name>
+</client>
+
+<verify>
+<limits>
+Allocations: 8000
+</limits>
+</verify>
+</testcase>
