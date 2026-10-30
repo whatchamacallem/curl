@@ -59,7 +59,7 @@ class TestReport:
         readme_html: bool
         verbose: bool
 
-    # Checks the rows, costs and window of a call graph.
+    # Checks the rows, costs, total and window of a call graph.
     def call_graph_model_check(
         self,
         call_graph_model: dict[str, Any],
@@ -67,6 +67,7 @@ class TestReport:
         path: str,
     ) -> None:
         function_names: list[str] = []
+        self_total = 0
         for function_row in call_graph_model["functions"]:
             if (
                 len(function_row)
@@ -90,6 +91,19 @@ class TestReport:
                     f" {path}"
                 )
             function_names.append(function_name)
+            self_total += self_value
+        # A test's total holds the self costs of its functions.
+        test_total = call_graph_model["test_total"]
+        if (
+            not isinstance(test_total, int)
+            or test_total <= 0
+            or test_total < self_total
+        ):
+            self.fail(
+                f"{label}'s call graph gives the test total {test_total!r},"
+                " expected an integer above 0 and of at least its functions'"
+                f" summed self cost {self_total}: {path}"
+            )
         function_count = len(function_names)
         caller_indexes: set[int] = set()
         called_indexes: set[int] = set()

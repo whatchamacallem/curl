@@ -25,14 +25,14 @@
       #strip- select {
         font: inherit;
       }
-      table {
+      #grid- table {
         width: 100%;
         border: 0;
         border-spacing: 0;
         border-collapse: collapse;
         table-layout: fixed;
       }
-      td {
+      #grid- td {
         padding: 0;
         border: 0;
         overflow: hidden;
@@ -56,6 +56,14 @@
         right: 0;
         bottom: 0;
       }
+      #page-timings- {
+        border-collapse: collapse;
+      }
+      #page-timings- th,
+      #page-timings- td {
+        padding: 0 1ch;
+        text-align: left;
+      }
     </style>
   </head>
   <body>
@@ -66,7 +74,17 @@
       <select id="width-" autocomplete="off"></select>
     </div>
     <div id="grid-"></div>
-    <pre id="page-timings-"></pre>
+    <table id="page-timings-">
+      <thead>
+        <tr>
+          <th>ms</th>
+          <th>page</th>
+          <th>phase</th>
+          <th>shot</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
     __SHOT_LIST__
     <script>
       (function () {
@@ -76,7 +94,7 @@
         const select = document.getElementById("width-");
         const grid = document.getElementById("grid-");
         const report_links = document.getElementById("report-links-");
-        const timing_list = document.getElementById("page-timings-");
+        const timing_table = document.getElementById("page-timings-");
         // The page y of the menu and view boundary, kept on whole pixels.
         const SCALE_QUANTUM_PAGE_Y = 51;
         const WIDTH_CHOICE_MAX = 16;
@@ -99,11 +117,24 @@
           report_link.textContent = report_entry.name;
           report_links.append(report_link);
         });
-        // Draws each report's page load and phase timings below the grid.
-        const timing_lines = data.page_timings.map(function (page_timing) {
-          return page_timing.line;
+        // Draws every report's page load and phase timings, slowest first.
+        data.page_timings.sort(function (first_timing, second_timing) {
+          return (
+            Number(second_timing.duration_ms) -
+            Number(first_timing.duration_ms)
+          );
         });
-        timing_list.textContent = timing_lines.join("\n");
+        for (const page_timing of data.page_timings) {
+          const timing_row = timing_table.tBodies[0].insertRow();
+          for (const column_text of [
+            page_timing.duration_ms,
+            page_timing.page_file,
+            page_timing.phase_label,
+            page_timing.shot,
+          ]) {
+            timing_row.insertCell().textContent = column_text;
+          }
+        }
 
         // Returns the stored width choice, the default when none is stored.
         function width_choice_read() {

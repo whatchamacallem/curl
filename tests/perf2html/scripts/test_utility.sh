@@ -6,6 +6,21 @@ path_shown() {
   printf '%s' "${1//"$HOME"\//"~/"}"
 }
 
+# Tells the agent reading a run that shots differing from gold are no failure.
+screenshot_gold_notice() {
+  local _gold _diff
+  _gold="$(cd "$1" && pwd)"
+  _diff="$(cd "$2" && pwd)"
+  cat <<EOF
+
+Note: Some shots differ from their gold twins. This is not a failure of the
+test suite during development: every other stage passed and change is expected.
+
+Gold: $(path_shown "$_gold")
+Diff: $(path_shown "$_diff")
+EOF
+}
+
 test_fail() {
   {
     printf '\nFAILED: %s: %s\n' "$1" "$2"

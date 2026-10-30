@@ -589,6 +589,11 @@ main() {
   test_expected_archive_check_run
   screenshots_run
   readme_html_build
+  # Only a shot differing from its gold twin makes the shot diffs directory.
+  if [ -d "$_SCREENSHOT_DIFF_DIR" ]; then
+    screenshot_gold_notice "$_SCREENSHOT_GOLD_DIR" "$_SCREENSHOT_DIFF_DIR"
+    exit "$SCREENSHOT_GOLD_DIFFERENCE_EXIT_CODE"
+  fi
 }
 
 main "$@"

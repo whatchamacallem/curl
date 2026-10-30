@@ -443,20 +443,12 @@ window.try_catch_handler_(function () {
     if (address.function !== null) return address.function;
     if (address.file === null) return "";
     const base_name = address.file.split("/").pop();
-    return address.line !== null ? base_name + ":" + address.line : base_name;
+    return window.report_ui_.location_text(base_name, address.line);
   }
-  // Lists the heat map's status labels: a function, else a file and its line.
+  // Lists the heat map's status label: a function, else a file and its line.
   function heat_map_status_entries(address) {
-    if (address.function !== null) return [address.function];
-    if (address.file === null) return [];
-    const file_label = address.file.split("/").pop();
-    if (address.line === null) return [file_label];
-    return [
-      file_label,
-      window.ui_strings_.text_fill("str_menu_status_line", {
-        line: address.line,
-      }),
-    ];
+    const part_text = heat_map_part_text(address);
+    return part_text ? [part_text] : [];
   }
   // Lists the focused path labels while the call graph shows, root first.
   function focused_path_status_entries(address) {
@@ -552,6 +544,7 @@ window.try_catch_handler_(function () {
   window.report_menu_ = {
     address_show,
     counter_line_move,
+    heat_sort_choose,
     menu_key_handler,
     menu_render,
   };

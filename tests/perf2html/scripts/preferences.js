@@ -161,12 +161,13 @@ window.report_preferences_ = window.try_catch_handler_(function () {
       ? counter_label(line_name)
       : line_title(line_name);
   }
-  // Returns a line's column: its title, its label, its move and its kind.
+  // Returns a line's column: its title, its label, its name and its kind.
   function line_column(line_name) {
     return {
+      is_counter_line: true,
       label: line_title(line_name),
       measure: line_label(line_name),
-      move_name: line_name,
+      name: line_name,
       numeric:
         is_callgrind_line(line_name) ||
         NON_CALLGRIND_LINES[line_name].is_numeric,

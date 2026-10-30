@@ -106,6 +106,9 @@ window.report_ui_ = window.try_catch_handler_(function () {
   const TABLE_MARKDOWN_COLUMN_NARROWEST_CHARS = settings_(
     "TABLE_MARKDOWN_COLUMN_NARROWEST_CHARS",
   );
+  const TABLE_RESIZABLE_COLUMN_NAMES = settings_(
+    "TABLE_RESIZABLE_COLUMN_NAMES",
+  );
   const TABLE_ROW_COUNT_CHOICES = settings_("TABLE_ROW_COUNT_CHOICES");
   const TEXT_SCROLLBAR_CHEVRON_STEP_CHARS = settings_(
     "TEXT_SCROLLBAR_CHEVRON_STEP_CHARS",
@@ -227,18 +230,17 @@ window.report_ui_ = window.try_catch_handler_(function () {
   const page_element = document.getElementById("overview-page-");
   const attached_headings = new WeakMap();
   const attached_scrollbars = new WeakMap();
-  const drag_scroll_surfaces = new WeakSet();
-  const drawn_table_clips = new Map();
   const wheel_taken_events = {
     horizontal: new WeakSet(),
     vertical: new WeakSet(),
   };
+  const kept_column_orders = new Map();
   const kept_column_widths = new Map();
+  const redrawn_tables = new Map();
   const registered_panes = [];
   const rendered_strips = new WeakMap();
   const resize_settle_callbacks = [];
   const row_walks = new WeakMap();
-  const table_counter_list_keys = new Map();
   const table_heading_entries = new Map();
   const table_sort_callbacks = new Map();
   const view_storage = window.report_view_storage_;
@@ -759,6 +761,10 @@ window.report_ui_ = window.try_catch_handler_(function () {
       anchor_name,
       lands_after,
     });
+  }
+  // Asks the top page to order the heat map tree by a sort mode.
+  function heat_sort_choose_send(sort_mode) {
+    parent_post({ report_ui: "heat_sort_choose", sort_mode });
   }
   // Sends the call graph's focused path up, root first, for the status line.
   function focused_path_send(path_entries) {
@@ -1730,6 +1736,14 @@ window.report_ui_ = window.try_catch_handler_(function () {
       html: shown_markups.join(separator_markup),
     };
   }
+  // Writes a source location as its file and line, a line 0 its file alone.
+  function location_text(file_path, line_number) {
+    if (!line_number) return file_path;
+    return window.ui_strings_.text_fill("str_location_cell", {
+      file: file_path,
+      line: line_number,
+    });
+  }
   // Writes a cell, its text clipped at the characters shown, a link plain.
   function table_cell_render(cell, column, clip_chars) {
     const cell_attributes = {};
@@ -1748,18 +1762,28 @@ window.report_ui_ = window.try_catch_handler_(function () {
     }
     return render_element("td", cell_attributes, inner_markup);
   }
-  // Keeps the `on_sort` a click on a column title calls with its index.
-  function table_sort_register(table_key, columns, table_options) {
+  // Keeps the `on_sort` a title click calls, returns the sorted title index.
+  function table_sort_register(
+    table_key,
+    columns,
+    column_order,
+    table_options,
+  ) {
     if (!table_options.on_sort) {
       table_sort_callbacks.delete(table_key);
       return -1;
     }
+    // A click passes the index its column was given, not the drawn one.
+    table_sort_callbacks.set(table_key, (drawn_index) =>
+      table_options.on_sort(column_order[drawn_index]),
+    );
+    // A null sorted column orders no rows, so no title shows a sort.
+    if (table_options.sorted_column_index === null) return -1;
     const sorted_column_index = table_options.sorted_column_index;
     if (!columns[sorted_column_index])
       window.throw_exception_("str_error_internal");
     table_sort_direction(table_options.sort_direction);
-    table_sort_callbacks.set(table_key, table_options.on_sort);
-    return sorted_column_index;
+    return column_order.indexOf(sorted_column_index);
   }
   // Keeps the entries a heading over the table shows after its row count.
   function table_heading_register(table_key, table_options) {
@@ -1767,15 +1791,37 @@ window.report_ui_ = window.try_catch_handler_(function () {
       table_heading_entries.set(table_key, table_options.heading_entries);
     else table_heading_entries.delete(table_key);
   }
-  // Keeps the counters list a column drop moves a line of, a moved column's.
-  function table_column_move_register(table_key, columns, table_options) {
-    if (table_options.counter_list_key) {
-      table_counter_list_keys.set(table_key, table_options.counter_list_key);
-      return;
+  // Refuses a moving table's missing redraw or name, a line in another table.
+  function table_column_move_check(columns, table_options) {
+    const is_refused = table_options.counter_list_key
+      ? !table_options.on_redraw ||
+        columns.some((column) => !column.name && !column.is_sized_by_bar)
+      : columns.some((column) => column.is_counter_line);
+    if (is_refused) window.throw_exception_("str_error_internal");
+  }
+  // Orders columns as last dropped, the lines in list order in line places.
+  function table_column_order(table_key, columns) {
+    const column_indexes = [...columns.keys()];
+    const dropped_names = kept_column_orders.get(table_key);
+    if (!dropped_names) return column_indexes;
+    const line_indexes = column_indexes.filter(
+      (column_index) => columns[column_index].is_counter_line,
+    );
+    // A column its bar sizes takes no move, so it leads as it was given.
+    const column_order = column_indexes.filter(
+      (column_index) => columns[column_index].is_sized_by_bar,
+    );
+    for (const dropped_name of dropped_names) {
+      const placed_index = columns.findIndex(
+        (column) => column.name === dropped_name && !column.is_counter_line,
+      );
+      if (placed_index >= 0) column_order.push(placed_index);
+      else if (line_indexes.length) column_order.push(line_indexes.shift());
     }
-    if (columns.some((column) => column.move_name))
+    column_order.push(...line_indexes);
+    if (column_order.length !== columns.length)
       window.throw_exception_("str_error_internal");
-    table_counter_list_keys.delete(table_key);
+    return column_order;
   }
   // Returns each clipped column's characters, more if a kept width holds more.
   function table_clip_chars(table_key, columns) {
@@ -1783,60 +1829,71 @@ window.report_ui_ = window.try_catch_handler_(function () {
     return columns.map((column, column_index) => {
       const kept_width =
         kept_widths &&
-        kept_widths.get(column_width_name(column.move_name, column_index));
+        kept_widths.get(column_width_name(column.name, column_index));
       return column.clip != null && kept_width
         ? Math.max(column.clip, kept_width.held_chars)
         : column.clip;
     });
   }
-  // Returns a table's clips, kept for a table that takes an `on_clip_change`.
-  function table_clip_register(table_key, columns, table_options) {
-    if (!table_options.on_clip_change) {
-      drawn_table_clips.delete(table_key);
-      return columns.map((column) => column.clip);
+  // Returns a table's clips, kept with its moves for a table taking a redraw.
+  function table_redraw_register(table_key, drawn_columns, table_options) {
+    if (!table_options.on_redraw) {
+      redrawn_tables.delete(table_key);
+      return drawn_columns.map((column) => column.clip);
     }
-    const clip_chars_list = table_clip_chars(table_key, columns);
-    drawn_table_clips.set(table_key, {
+    const clip_chars_list = table_clip_chars(table_key, drawn_columns);
+    redrawn_tables.set(table_key, {
       clip_chars_list,
-      columns,
-      on_clip_change: table_options.on_clip_change,
+      columns: drawn_columns,
+      counter_list_key: table_options.counter_list_key,
+      on_redraw: table_options.on_redraw,
     });
     return clip_chars_list;
   }
+  // Returns whether a kept width changes the text a drawn table's column cuts.
+  function table_clip_is_changed(table_key) {
+    const redrawn_table = redrawn_tables.get(table_key);
+    const clip_chars_list = table_clip_chars(table_key, redrawn_table.columns);
+    return clip_chars_list.some(
+      (clip_chars, column_index) =>
+        clip_chars !== redrawn_table.clip_chars_list[column_index],
+    );
+  }
   // Draws a table again when a kept width changes a clipped column's text.
   function table_clip_refresh(table_key) {
-    const drawn_clips = drawn_table_clips.get(table_key);
-    if (!drawn_clips) return;
-    const clip_chars_list = table_clip_chars(table_key, drawn_clips.columns);
-    const is_changed = clip_chars_list.some(
-      (clip_chars, column_index) =>
-        clip_chars !== drawn_clips.clip_chars_list[column_index],
-    );
-    if (is_changed) drawn_clips.on_clip_change();
+    if (redrawn_tables.has(table_key) && table_clip_is_changed(table_key))
+      redrawn_tables.get(table_key).on_redraw();
   }
   // Writes columns and rows as a table, the one table writer in JS.
   function render_table(table_key, columns, rows, table_options) {
-    const sorted_column_index = table_sort_register(
+    table_column_move_check(columns, table_options);
+    // Each drawn column's given index, in the order a drop left them.
+    const column_order = table_column_order(table_key, columns);
+    const drawn_columns = column_order.map(
+      (column_index) => columns[column_index],
+    );
+    const sorted_drawn_index = table_sort_register(
       table_key,
       columns,
+      column_order,
       table_options,
     );
-    table_column_move_register(table_key, columns, table_options);
     table_heading_register(table_key, table_options);
-    const clip_chars_list = table_clip_register(
+    const clip_chars_list = table_redraw_register(
       table_key,
-      columns,
+      drawn_columns,
       table_options,
     );
     // A cell given as a function is written for its column's clip.
     const cell_rows = rows.map((row) =>
-      row.map((cell, column_index) =>
-        cell_normalize(
+      column_order.map((column_index, drawn_index) => {
+        const cell = row[column_index];
+        return cell_normalize(
           typeof cell === "function"
-            ? cell(clip_chars_list[column_index])
+            ? cell(clip_chars_list[drawn_index])
             : cell,
-        ),
-      ),
+        );
+      }),
     );
     const title_markup = render_element(
       "thead",
@@ -1844,17 +1901,18 @@ window.report_ui_ = window.try_catch_handler_(function () {
       render_element(
         "tr",
         {},
-        columns
-          .map((column, column_index) =>
+        drawn_columns
+          .map((column, drawn_index) =>
             render_element(
               "th",
               {
                 ...(column.numeric ? { class: "numeric-" } : {}),
-                ...(column_index === sorted_column_index
+                ...(drawn_index === sorted_drawn_index
                   ? { "aria-sort": table_options.sort_direction }
                   : {}),
-                ...(column.move_name
-                  ? { "data-column-move-name-": column.move_name }
+                ...(column.name ? { "data-column-name-": column.name } : {}),
+                ...(column.is_sized_by_bar
+                  ? { "data-column-sized-by-bar-": "" }
                   : {}),
               },
               render_html_escape(column.label),
@@ -1876,11 +1934,11 @@ window.report_ui_ = window.try_catch_handler_(function () {
           "tr",
           row_attributes,
           row
-            .map((cell, column_index) =>
+            .map((cell, drawn_index) =>
               table_cell_render(
                 cell,
-                columns[column_index],
-                clip_chars_list[column_index],
+                drawn_columns[drawn_index],
+                clip_chars_list[drawn_index],
               ),
             )
             .join(""),
@@ -1927,30 +1985,41 @@ window.report_ui_ = window.try_catch_handler_(function () {
       table_sort_direction(direction_name).string_id,
     );
   }
-  // Pairs a table column with how its cells are written and its rows sorted.
-  function table_sort_column({
-    column,
-    sort_name,
-    sort_value,
-    cell,
-    first_direction,
-  }) {
+  // Pairs a named column with how its cells are written and its rows sorted.
+  function table_sort_column({ column, sort_value, cell, first_direction }) {
+    if (!column.name) window.throw_exception_("str_error_internal");
     table_sort_direction(first_direction);
-    return { column, sort_name, sort_value, cell, first_direction };
+    return {
+      column,
+      sort_name: column.name,
+      sort_value,
+      cell,
+      first_direction,
+    };
+  }
+  // Orders two sort values ascending, the first part they differ in deciding.
+  function table_sort_value_order(first_value, second_value) {
+    for (const [part_index, first_part] of first_value.entries()) {
+      const second_part = second_value[part_index];
+      const part_order =
+        typeof first_part === "number"
+          ? first_part - second_part
+          : first_part.localeCompare(second_part);
+      if (part_order) return part_order;
+    }
+    return 0;
   }
   // Returns records ordered by a column in a direction, text by its letters.
   function table_sort_records(records, sort_column, sort_direction) {
     const order_sign = table_sort_direction(sort_direction).order_sign;
-    const ascending_order = sort_column.column.numeric
-      ? (first_value, second_value) => first_value - second_value
-      : (first_value, second_value) => first_value.localeCompare(second_value);
     const keyed_records = records.map((record) => [
       sort_column.sort_value(record),
       record,
     ]);
     keyed_records.sort(
       (keyed_record_a, keyed_record_b) =>
-        order_sign * ascending_order(keyed_record_a[0], keyed_record_b[0]),
+        order_sign *
+        table_sort_value_order(keyed_record_a[0], keyed_record_b[0]),
     );
     return keyed_records.map((keyed_record) => keyed_record[1]);
   }
@@ -2074,12 +2143,17 @@ window.report_ui_ = window.try_catch_handler_(function () {
       return null;
     return title_row.cells[table_cell.cellIndex];
   }
-  // Returns the title of a moved column holding an element, or null.
-  function column_moved_title(target_element) {
+  // Returns the title of the column a press there drags in a table, or null.
+  function dragged_column_title(target_element, table_element) {
+    if (target_element.closest(".text-scrollbar-")) return null;
     const title_cell = column_title_of(target_element);
-    return title_cell && title_cell.hasAttribute("data-column-move-name-")
-      ? title_cell
-      : null;
+    if (
+      !title_cell ||
+      title_cell.closest("table") !== table_element ||
+      title_cell.hasAttribute("data-column-sized-by-bar-")
+    )
+      return null;
+    return title_cell;
   }
   // Returns whether the pointer lies in the grab of an element's right edge.
   function edge_grab_holds(pointer_event, edge_element) {
@@ -2089,16 +2163,20 @@ window.report_ui_ = window.try_catch_handler_(function () {
       ) <= DESIGN_COLUMN_EDGE_GRAB_WIDTH_PX
     );
   }
-  // Returns the table's cell whose right edge grab holds the pointer, or null.
+  // Returns the cell of a resizable column whose edge grab holds the pointer.
   function column_edge_cell(pointer_event, table_element) {
-    if (pointer_event.target.closest(".text-scrollbar-")) return null;
-    const table_cell = pointer_event.target.closest("td, th");
+    const title_cell = dragged_column_title(
+      pointer_event.target,
+      table_element,
+    );
     if (
-      !table_cell ||
-      table_cell.closest("table") !== table_element ||
-      !column_title_of(table_cell)
+      !title_cell ||
+      !TABLE_RESIZABLE_COLUMN_NAMES.includes(
+        title_cell.getAttribute("data-column-name-"),
+      )
     )
       return null;
+    const table_cell = pointer_event.target.closest("td, th");
     return edge_grab_holds(pointer_event, table_cell) ? table_cell : null;
   }
   // Marks the cell or pane whose edge grab holds the pointer, unmarks others.
@@ -2110,14 +2188,14 @@ window.report_ui_ = window.try_catch_handler_(function () {
     column_edge_hovered_element = edge_element;
     if (edge_element) edge_element.classList.add("column-edge-grab-");
   }
-  // Names a column for its kept width: its move name, else its column index.
-  function column_width_name(move_name, column_index) {
-    return move_name ?? String(column_index);
+  // Names a column for its kept width: its name, else its column index.
+  function column_width_name(column_name, column_index) {
+    return column_name ?? String(column_index);
   }
   // Names the column of a title for its kept width.
   function title_width_name(title_cell) {
     return column_width_name(
-      title_cell.getAttribute("data-column-move-name-"),
+      title_cell.getAttribute("data-column-name-"),
       title_cell.cellIndex,
     );
   }
@@ -2264,7 +2342,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
     const other_titles = [...moved_title.parentElement.cells].filter(
       (title_cell) =>
         title_cell !== moved_title &&
-        title_cell.hasAttribute("data-column-move-name-"),
+        !title_cell.hasAttribute("data-column-sized-by-bar-"),
     );
     if (!other_titles.length) return moved_index;
     const next_title = other_titles.find((title_cell) => {
@@ -2280,14 +2358,46 @@ window.report_ui_ = window.try_catch_handler_(function () {
       ? last_title.cellIndex + 1
       : last_title.cellIndex;
   }
-  // Moves a column among the moved columns while a press in it drags sideways.
-  function table_column_move_press(
-    press_event,
-    moved_title,
-    counter_list_key,
-  ) {
+  // Keeps a dropped column order, a line moved in its list when lines moved.
+  function table_column_drop(table_element, moved_title, redrawn_table) {
+    const dropped_names = [...table_element.tHead.rows[0].cells]
+      .filter(
+        (title_cell) => !title_cell.hasAttribute("data-column-sized-by-bar-"),
+      )
+      .map((title_cell) => title_cell.getAttribute("data-column-name-"));
+    kept_column_orders.set(
+      table_element.getAttribute("data-key-"),
+      dropped_names,
+    );
+    const drawn_line_names = redrawn_table.columns
+      .filter((column) => column.is_counter_line)
+      .map((column) => column.name);
+    const dropped_line_names = dropped_names.filter((column_name) =>
+      drawn_line_names.includes(column_name),
+    );
+    // A drop keeping the lines in their list order draws the table at once.
+    if (
+      dropped_line_names.every(
+        (line_name, line_index) => line_name === drawn_line_names[line_index],
+      )
+    ) {
+      redrawn_table.on_redraw();
+      return;
+    }
+    // The relayed list draws the table, the moved line beside an anchor line.
+    const moved_name = moved_title.getAttribute("data-column-name-");
+    const moved_line_index = dropped_line_names.indexOf(moved_name);
+    const lands_after = moved_line_index === dropped_line_names.length - 1;
+    counter_line_move_send(
+      redrawn_table.counter_list_key,
+      moved_name,
+      dropped_line_names[moved_line_index + (lands_after ? -1 : 1)],
+      lands_after,
+    );
+  }
+  // Moves a column among the others while a press in it drags sideways.
+  function table_column_move_press(press_event, moved_title, redrawn_table) {
     const table_element = moved_title.closest("table");
-    const title_row = moved_title.parentElement;
     const start_index = moved_title.cellIndex;
     let is_moving = false;
     const on_pointer_move = window.try_catch_handler_((move_event) => {
@@ -2317,34 +2427,21 @@ window.report_ui_ = window.try_catch_handler_(function () {
       if (!is_moving) return;
       document.removeEventListener("selectionchange", selection_drop);
       if (release_event.type === "pointerup") click_swallow_next();
-      // A release outside the window finds no element, so no title.
+      // A release outside the window finds no element, so no column.
       const released_element = document.elementFromPoint(
         release_event.clientX,
         release_event.clientY,
       );
-      const released_title =
-        released_element && column_moved_title(released_element);
       if (
         release_event.type !== "pointerup" ||
-        !released_title ||
-        released_title.parentElement !== title_row ||
+        !released_element ||
+        !dragged_column_title(released_element, table_element) ||
         moved_title.cellIndex === start_index
       ) {
         table_column_place(table_element, moved_title.cellIndex, start_index);
         return;
       }
-      const next_title = moved_title.nextElementSibling;
-      const lands_after =
-        !next_title || !next_title.hasAttribute("data-column-move-name-");
-      const anchor_title = lands_after
-        ? moved_title.previousElementSibling
-        : next_title;
-      counter_line_move_send(
-        counter_list_key,
-        moved_title.getAttribute("data-column-move-name-"),
-        anchor_title.getAttribute("data-column-move-name-"),
-        lands_after,
-      );
+      table_column_drop(table_element, moved_title, redrawn_table);
     });
     function press_end() {
       column_press_is_active = false;
@@ -2354,7 +2451,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
     listeners_bind(window, on_pointer_move, on_pointer_release, true);
     window.addEventListener("dragstart", default_prevent, true);
   }
-  // Hands a press in the table to an edge grab, else to its column's move.
+  // Hands a press in a column to its edge grab, else to the column's move.
   function table_column_press_attach(table_element) {
     if (table_element.is_column_press_attached) return;
     table_element.is_column_press_attached = true;
@@ -2362,31 +2459,24 @@ window.report_ui_ = window.try_catch_handler_(function () {
     table_element.addEventListener(
       "pointerdown",
       window.try_catch_handler_((press_event) => {
-        if (
-          press_event.button ||
-          press_event.defaultPrevented ||
-          press_event.target.closest(".text-scrollbar-")
-        )
-          return;
+        if (press_event.button || press_event.defaultPrevented) return;
+        const title_cell = dragged_column_title(
+          press_event.target,
+          table_element,
+        );
+        if (!title_cell) return;
         const edge_cell = column_edge_cell(press_event, table_element);
         if (edge_cell) {
           press_event.preventDefault();
-          column_edge_drag(
-            press_event,
-            edge_cell,
-            column_title_of(edge_cell),
-            "minWidth",
-          );
+          column_edge_drag(press_event, edge_cell, title_cell, "minWidth");
           return;
         }
-        const moved_title = column_moved_title(press_event.target);
-        if (!moved_title || moved_title.closest("table") !== table_element)
-          return;
-        const counter_list_key = table_counter_list_keys.get(
+        // A table showing the lines of a counters list moves its columns.
+        const redrawn_table = redrawn_tables.get(
           table_element.getAttribute("data-key-"),
         );
-        if (!counter_list_key) window.throw_exception_("str_error_internal");
-        table_column_move_press(press_event, moved_title, counter_list_key);
+        if (redrawn_table && redrawn_table.counter_list_key)
+          table_column_move_press(press_event, title_cell, redrawn_table);
       }),
       true,
     );
@@ -2418,9 +2508,9 @@ window.report_ui_ = window.try_catch_handler_(function () {
     table_element.tHead.addEventListener(
       "click",
       window.try_catch_handler_((click_event) => {
-        const title_cell = click_event.target.closest("th");
-        if (title_cell && click_is_plain(click_event))
-          on_sort(title_cell.cellIndex);
+        // A click on an element a title holds, as a tree, is that element's.
+        if (click_event.target.matches("th") && click_is_plain(click_event))
+          on_sort(click_event.target.cellIndex);
       }),
     );
   }
@@ -2472,7 +2562,9 @@ window.report_ui_ = window.try_catch_handler_(function () {
   }
   function layout_reset(root_element) {
     root_element = root_element || document.body;
-    // A page keeps the widths of its own tables alone, so all are forgotten.
+    // A page keeps its own tables' widths and orders, so all are forgotten.
+    const reordered_table_keys = new Set(kept_column_orders.keys());
+    kept_column_orders.clear();
     kept_column_widths.clear();
     for (const title_cell of root_element.querySelectorAll(
       "table.table- > thead > tr > th",
@@ -2487,9 +2579,13 @@ window.report_ui_ = window.try_catch_handler_(function () {
       const attached_heading = attached_headings.get(heading_element);
       if (attached_heading) attached_heading.reset();
     }
-    // A column a forgotten width widened shows its own clip again.
-    for (const table_key of drawn_table_clips.keys())
-      table_clip_refresh(table_key);
+    // A table a forgotten width widened or forgotten order moved draws again.
+    for (const [table_key, redrawn_table] of [...redrawn_tables])
+      if (
+        reordered_table_keys.has(table_key) ||
+        table_clip_is_changed(table_key)
+      )
+        redrawn_table.on_redraw();
     layout_refresh(root_element);
   }
   // Replaces the markup under a root, each heading's open pulldown reopened.
@@ -3052,11 +3148,14 @@ window.report_ui_ = window.try_catch_handler_(function () {
       );
       // The track lies between the chevrons, one in each end cell.
       const track_length = Math.max(cell_count - 2, 0);
+      // The thumb spans whole cells, so a scroll moves it and never sizes it.
       const thumb_length = Math.min(
         track_length,
-        Math.max(
-          STYLE_TEXT_SCROLLBAR_THUMB_SHORTEST_CHARS,
-          (track_length * page_size) / content_size,
+        Math.round(
+          Math.max(
+            STYLE_TEXT_SCROLLBAR_THUMB_SHORTEST_CHARS,
+            (track_length * page_size) / content_size,
+          ),
         ),
       );
       const thumb_room = track_length - thumb_length;
@@ -3080,10 +3179,8 @@ window.report_ui_ = window.try_catch_handler_(function () {
       };
     }
     function thumb_cells(bar_geometry) {
-      return [
-        Math.round(bar_geometry.thumb_position),
-        Math.round(bar_geometry.thumb_position + bar_geometry.thumb_length),
-      ];
+      const thumb_first = Math.round(bar_geometry.thumb_position);
+      return [thumb_first, thumb_first + bar_geometry.thumb_length];
     }
     // Hides the bar while its target fits, else draws chevrons, track, thumb.
     function scrollbar_draw() {
@@ -3146,7 +3243,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
     }
     // Returns the column title or pane a sideways drag sizes, or null.
     function bar_sized_target() {
-      const sized_title = column_title_of(bar_element);
+      const sized_title = bar_element.closest("th[data-column-sized-by-bar-]");
       if (sized_title)
         return { element: sized_title, size_property_name: "minWidth" };
       if (!bar_element.hasAttribute("data-sizes-")) return null;
@@ -3345,78 +3442,6 @@ window.report_ui_ = window.try_catch_handler_(function () {
     return attached_scrollbar;
   }
 
-  function drag_scroll_press(press_event, surface_element, target_element) {
-    if (press_event.button || press_event.defaultPrevented) return;
-    // A press in a surface nested in this one drags that surface alone.
-    for (
-      let pressed_element = press_event.target;
-      pressed_element !== surface_element;
-      pressed_element = pressed_element.parentElement
-    )
-      if (drag_scroll_surfaces.has(pressed_element)) return;
-    // Yields a sideways drag to a column move, an edge grab already taken.
-    const takes_column_drag = !!column_moved_title(press_event.target);
-    const start_scroll_left = target_element.scrollLeft,
-      start_scroll_top = target_element.scrollTop;
-    let is_dragging = false,
-      is_moving_target = false;
-    const on_pointer_move = window.try_catch_handler_((move_event) => {
-      if (move_event.pointerId !== press_event.pointerId) return;
-      if (!is_dragging) {
-        const move_direction = drag_direction(press_event, move_event);
-        const is_column_drag =
-          takes_column_drag && move_direction === "sideways";
-        if (!move_event.buttons || is_column_drag) {
-          press_end();
-          return;
-        }
-        if (!move_direction) return;
-        is_dragging = true;
-        // A drag along an axis the target cannot scroll moves nothing.
-        is_moving_target =
-          move_direction === "sideways"
-            ? target_element.scrollWidth > target_element.clientWidth
-            : target_element.scrollHeight > target_element.clientHeight;
-        selection_drop();
-        document.addEventListener("selectionchange", selection_drop);
-        surface_element.setPointerCapture(press_event.pointerId);
-      }
-      if (!is_moving_target) return;
-      const target_rect = target_element.getBoundingClientRect();
-      const sideways_travel =
-        (target_element.offsetWidth / target_rect.width) *
-        (move_event.clientX - press_event.clientX);
-      const vertical_travel =
-        (target_element.offsetHeight / target_rect.height) *
-        (move_event.clientY - press_event.clientY);
-      target_element.scrollLeft = start_scroll_left - sideways_travel;
-      target_element.scrollTop = start_scroll_top - vertical_travel;
-    });
-    const on_pointer_release = window.try_catch_handler_((release_event) => {
-      if (release_event.pointerId !== press_event.pointerId) return;
-      press_end();
-      if (!is_dragging) return;
-      document.removeEventListener("selectionchange", selection_drop);
-      click_swallow_next();
-    });
-    function press_end() {
-      listeners_bind(window, on_pointer_move, on_pointer_release, false);
-      window.removeEventListener("dragstart", default_prevent, true);
-    }
-    listeners_bind(window, on_pointer_move, on_pointer_release, true);
-    window.addEventListener("dragstart", default_prevent, true);
-  }
-  // Drags the target's view by the surface, a moved press swallows its click.
-  function drag_scroll_attach(surface_element, target_element) {
-    drag_scroll_surfaces.add(surface_element);
-    surface_element.addEventListener(
-      "pointerdown",
-      window.try_catch_handler_((press_event) =>
-        drag_scroll_press(press_event, surface_element, target_element),
-      ),
-    );
-  }
-
   function design_scale_settle() {
     design_scale_apply();
     if (!settle_animation_frame)
@@ -3483,11 +3508,11 @@ window.report_ui_ = window.try_catch_handler_(function () {
     design_scale_stop_now,
     design_scale_stop_set,
     diff_share,
-    drag_scroll: { attach: drag_scroll_attach },
     fixed_text,
     focused_path_send,
     function_list_cell,
     heat_cell_style,
+    heat_sort_choose_send,
     home_panel,
     human_text,
     layout_activate,
@@ -3496,6 +3521,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
     layout_reset,
     listeners_bind,
     load_log_history_send,
+    location_text,
     percent_text,
     ramp_channels_at,
     render_record_table,

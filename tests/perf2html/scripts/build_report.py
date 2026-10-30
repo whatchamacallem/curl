@@ -76,6 +76,7 @@ class BuildReport:
         functions: list[BuildReport.CallGraphFunction]
         roots: list[BuildReport.CallGraphRoot]
         edges: list[BuildReport.CallGraphEdge]
+        test_total: int
 
     class CallGraphRoot(NamedTuple):
         function: int
@@ -191,7 +192,7 @@ class BuildReport:
                 edges[(caller_name, callee_name)] = entry
         return edges
 
-    # Lists the test's functions and call edges, their costs, and its roots.
+    # Lists the test's functions and call edges, their costs, roots and total.
     def call_graph_model(
         self, test_name: str, profile: callgrind.Profile
     ) -> BuildReport.CallGraphModel:
@@ -234,6 +235,9 @@ class BuildReport:
                 )
                 for (caller_name, callee_name), tally in sorted(edges.items())
             ],
+            "test_total": callgrind.counter_value(
+                profile.counters, profile.totals(), _RANKING_COUNTER_NAME
+            ),
         }
 
     # Writes a test's call graph page, holding the model its script lays out.

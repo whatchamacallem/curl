@@ -28,6 +28,8 @@ window.try_catch_handler_(function () {
   const STYLE_TABLE_LOCATION_COLUMN_MAX_CHARS = settings_(
     "STYLE_TABLE_LOCATION_COLUMN_MAX_CHARS",
   );
+  const TABLE_COLUMN_FUNCTION_NAME = settings_("TABLE_COLUMN_FUNCTION_NAME");
+  const TABLE_COLUMN_LOCATION_NAME = settings_("TABLE_COLUMN_LOCATION_NAME");
   const TABLE_ROW_COUNT_CHOICES = settings_("TABLE_ROW_COUNT_CHOICES");
 
   const text = window.ui_strings_.text;
@@ -140,9 +142,9 @@ window.try_catch_handler_(function () {
         ...line_column(line_name),
         clip: STYLE_TABLE_FUNCTION_LIST_COLUMN_MAX_CHARS,
       },
-      sort_name: line_name,
-      sort_value: (record) =>
+      sort_value: (record) => [
         cell(record, STYLE_TABLE_FUNCTION_LIST_COLUMN_MAX_CHARS).text,
+      ],
       cell,
       first_direction: "descending",
     });
@@ -150,32 +152,27 @@ window.try_catch_handler_(function () {
   const FUNCTION_COLUMN = table_sort_column({
     column: {
       label: text("str_column_function"),
+      name: TABLE_COLUMN_FUNCTION_NAME,
       clip: STYLE_TABLE_FUNCTION_NAME_MAX_CHARS,
     },
-    sort_name: "function",
-    sort_value: (record) => record.name,
+    sort_value: (record) => [record.name],
     cell: (record) => ({ text: record.name, href: record.href }),
     first_direction: "ascending",
   });
-  const FILE_COLUMN = table_sort_column({
+  const LOCATION_COLUMN = table_sort_column({
     column: {
-      label: text("str_column_file"),
+      label: text("str_column_location"),
+      name: TABLE_COLUMN_LOCATION_NAME,
       clip: STYLE_TABLE_LOCATION_COLUMN_MAX_CHARS,
     },
-    sort_name: "file",
-    sort_value: (record) => record.file,
-    cell: (record) => ({ text: record.file }),
+    sort_value: (record) => [record.file, record.line],
+    cell: (record) => ({
+      text: window.report_ui_.location_text(record.file, record.line),
+    }),
     first_direction: "ascending",
   });
-  const LINE_COLUMN = table_sort_column({
-    column: { label: text("str_column_line"), numeric: true },
-    sort_name: "line",
-    sort_value: (record) => record.line,
-    cell: (record) => ({ text: record.line ? String(record.line) : "" }),
-    first_direction: "ascending",
-  });
-  // Holds the columns each row draws first, none a line of the counters list.
-  const FIXED_COLUMNS = [FUNCTION_COLUMN, FILE_COLUMN, LINE_COLUMN];
+  // Holds the columns no line of the counters list shows, first until moved.
+  const FIXED_COLUMNS = [FUNCTION_COLUMN, LOCATION_COLUMN];
   // Holds the column of each line of calls, by its line name.
   const CALL_LINE_COLUMNS = {
     [COUNTER_LIST_CALLEES_LINE_NAME]: function_list_column(
@@ -188,8 +185,7 @@ window.try_catch_handler_(function () {
     ),
     [COUNTER_LIST_CALLS_LINE_NAME]: table_sort_column({
       column: line_column(COUNTER_LIST_CALLS_LINE_NAME),
-      sort_name: COUNTER_LIST_CALLS_LINE_NAME,
-      sort_value: (record) => Math.abs(record.calls),
+      sort_value: (record) => [Math.abs(record.calls)],
       cell: (record) => ({
         text: count_text(record.calls),
         style: heat_style(calls_share(record.calls, record.baseline_calls)),
@@ -205,8 +201,7 @@ window.try_catch_handler_(function () {
     if (!counter_reader) window.throw_exception_("str_error_internal");
     return table_sort_column({
       column: line_column(counter_name),
-      sort_name: counter_name,
-      sort_value: (record) => Math.abs(counter_reader.get(record.values)),
+      sort_value: (record) => [Math.abs(counter_reader.get(record.values))],
       cell: (record) => share_cell(counter_share(record, counter_reader)),
       first_direction: "descending",
     });
@@ -275,7 +270,7 @@ window.try_catch_handler_(function () {
           on_direction_choose: (sort_direction) =>
             sort_choose(sorted_column.sort_name, sort_direction),
         }),
-        on_clip_change: page_render,
+        on_redraw: page_render,
         on_sort: (column_index) => title_press(sort_columns[column_index]),
         row_href: shown_records.map((record) => record.href),
         sort_direction: chosen_sort_direction,

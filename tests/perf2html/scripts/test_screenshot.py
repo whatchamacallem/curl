@@ -51,6 +51,21 @@ class ScreenshotSet(NamedTuple):
         return _SHOT_REPORT_PERMUTATIONS
 
 
+# The texts of a kept timing, as the index table and the verbose line show.
+class TimingRow(NamedTuple):
+    duration_ms: str
+    page_file: str
+    phase_label: str
+    shot: str
+
+    # Returns the line the verbose output prints for the timing.
+    def verbose_line(self) -> str:
+        return (
+            f"{self.page_file}: {self.phase_label}"
+            f" {self.duration_ms} ms, {self.shot}"
+        )
+
+
 _SHOOT_BOTH_REPORTS = (
     test_settings.SHOOT_DIFF_REPORT | test_settings.SHOOT_REGULAR_REPORT
 )
@@ -446,7 +461,7 @@ class Screenshots:
     # Names each shot that differs from its gold twin, each one missing.
     def gold_compare(
         self, gold_dir: str, prefix: str, verbose_level: int
-    ) -> bool:
+    ) -> None:
         shot_pattern = re.compile(
             f"[0-9]{{{test_settings.SHOT_NUMBER_DIGITS}}}-[^-]+-[^-]+-[^-]+"
             f"-{re.escape(prefix.rstrip('_'))}-.*"
@@ -474,32 +489,29 @@ class Screenshots:
                 not in shot_names
             ):
                 print(
-                    f"{file_name}: in {gold_dir}, not among this run's shots",
-                    file=sys.stderr,
+                    f"{file_name}: in {gold_dir}, not among this run's shots"
                 )
                 is_same = False
+        # A difference makes the compare directory, its one sign to the run.
         if not is_same:
             os.makedirs(self.compare_dir, exist_ok=True)
-        return is_same
 
     def gold_compare_one(
         self, file_name: str, gold_dir: str, verbose_level: int
     ) -> bool:
-        gold_path = os.path.join(gold_dir, file_name)
-        if not os.path.isfile(gold_path):
-            print(f"{file_name}: absent from {gold_dir}", file=sys.stderr)
-            return False
         new_path = os.path.join(self.out_dir, file_name)
         if not os.path.isfile(new_path):
-            print(f"{file_name}: absent from {self.out_dir}", file=sys.stderr)
+            raise RuntimeError(f"{file_name}: absent from {self.out_dir}")
+        gold_path = os.path.join(gold_dir, file_name)
+        if not os.path.isfile(gold_path):
+            print(f"{file_name}: absent from {gold_dir}")
             return False
         new_shot = PIL.Image.open(new_path).convert("RGB")
         gold_shot = PIL.Image.open(gold_path).convert("RGB")
         if new_shot.size != gold_shot.size:
             print(
                 f"{file_name}: {new_shot.width}x{new_shot.height}, gold"
-                f" {gold_shot.width}x{gold_shot.height}",
-                file=sys.stderr,
+                f" {gold_shot.width}x{gold_shot.height}"
             )
             return False
         red_change, green_change, blue_change = PIL.ImageChops.difference(
@@ -542,8 +554,7 @@ class Screenshots:
             f" ({changed_percent:.2f}%),"
             f" largest channel change {channel_change.getextrema()[1]},"
             f" {len(changed_regions)} region(s) {listed_regions},"
-            f" compare image {compare_path}",
-            file=sys.stderr,
+            f" compare image {compare_path}"
         )
         return False
 
@@ -553,7 +564,7 @@ class Screenshots:
         prefix: str,
         index_path: str,
         template: str,
-        timing_lines: list[str],
+        timing_rows: list[TimingRow],
     ) -> None:
         assert template.count(test_settings.INDEX_MARKER) == 1, (
             test_settings.INDEX_MARKER
@@ -592,14 +603,21 @@ class Screenshots:
             for page in index_data["pages"]:
                 if page["report"] != report_name:
                     pages[page["name"]] = page["href"]
+            timing_keys = sorted(("report", *TimingRow._fields))
+            for page_timing in index_data["page_timings"]:
+                if sorted(page_timing) != timing_keys:
+                    raise RuntimeError(
+                        f"{index_path} holds a page timing keyed"
+                        f" {sorted(page_timing)}, not {timing_keys}"
+                    )
             page_timings = [
                 page_timing
                 for page_timing in index_data["page_timings"]
                 if page_timing["report"] != report_name
             ]
         page_timings += [
-            {"report": report_name, "line": timing_line}
-            for timing_line in timing_lines
+            {"report": report_name, **timing_row._asdict()}
+            for timing_row in timing_rows
         ]
         for view_index, view in self.report_views:
             if (
@@ -902,7 +920,7 @@ class Screenshots:
         ]
 
     # Returns each page file's slowest load, then its largest phases.
-    def timing_lines(self) -> list[str]:
+    def timing_rows(self) -> list[TimingRow]:
         largest_timings: dict[tuple[str, str], PageTiming] = {}
         for page_timing in self.page_timings:
             self.page_timing_keep(largest_timings, page_timing)
@@ -917,7 +935,7 @@ class Screenshots:
             file_timings.setdefault(page_timing.page_file, []).append(
                 page_timing
             )
-        kept_lines: list[str] = []
+        kept_rows: list[TimingRow] = []
         for page_file, page_file_timings in sorted(
             file_timings.items(),
             key=lambda file_entry: -file_entry[1][0].duration_us,
@@ -929,11 +947,15 @@ class Screenshots:
                     page_timing.duration_us
                     / test_settings.TIMING_MICROSECONDS_PER_MILLISECOND
                 )
-                kept_lines.append(
-                    f"{page_file}: {page_timing.phase_label}"
-                    f" {duration_ms:.1f} ms, {page_timing.shot}"
+                kept_rows.append(
+                    TimingRow(
+                        f"{duration_ms:.1f}",
+                        page_file,
+                        page_timing.phase_label,
+                        page_timing.shot,
+                    )
                 )
-        return kept_lines
+        return kept_rows
 
     # Returns the longest load and phase slice of each page file a trace shows.
     def trace_page_timings(
@@ -1208,10 +1230,8 @@ def main() -> int:
         trace_path,
     )
     if namespace.compare_only:
-        is_same = shooter.gold_compare(
-            gold_dir, namespace.prefix, namespace.verbose
-        )
-        return 0 if is_same else 1
+        shooter.gold_compare(gold_dir, namespace.prefix, namespace.verbose)
+        return 0
 
     os.makedirs(out_dir, exist_ok=True)
     os.makedirs(os.path.dirname(trace_path), exist_ok=True)
@@ -1220,7 +1240,7 @@ def main() -> int:
             namespace.verbose, [f"{os.path.basename(report)} -> {out_dir}"]
         )
     written = shooter.shoot_all(namespace.prefix)
-    timing_lines = shooter.timing_lines()
+    timing_rows = shooter.timing_rows()
 
     with open(
         os.path.join(
@@ -1232,7 +1252,7 @@ def main() -> int:
         namespace.prefix,
         os.path.join(perf2html_dir, test_settings.INDEX_PAGE_NAME),
         index_template,
-        timing_lines,
+        timing_rows,
     )
     written += shooter.index_shoot(
         namespace.prefix,
@@ -1240,12 +1260,13 @@ def main() -> int:
     )
     if namespace.verbose:
         verbose_print(namespace.verbose, [f"{written} screenshot(s)"])
-    if namespace.compare_gold and not shooter.gold_compare(
-        gold_dir, namespace.prefix, namespace.verbose
-    ):
-        return 1
+    if namespace.compare_gold:
+        shooter.gold_compare(gold_dir, namespace.prefix, namespace.verbose)
     if namespace.verbose:
-        verbose_print(namespace.verbose, timing_lines)
+        verbose_print(
+            namespace.verbose,
+            [timing_row.verbose_line() for timing_row in timing_rows],
+        )
     return 0
 
 

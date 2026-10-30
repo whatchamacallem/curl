@@ -260,6 +260,8 @@ window.try_catch_handler_(function () {
     else if (message_tag === "dark_mode_request") view_post("dark_mode_show");
     else if (message_tag === "focused_path_set")
       focused_path_set(message_data.path_entries);
+    else if (message_tag === "heat_sort_choose")
+      window.report_menu_.heat_sort_choose(message_data.sort_mode);
     else if (message_tag === "load_log_history_set")
       load_log_history_set(message_data.line_count);
     else if (message_tag === "load_log_request") load_log_relay_post();

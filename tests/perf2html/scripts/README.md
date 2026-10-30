@@ -237,11 +237,7 @@ A diff report's run keeps these.
 | `call_graph.html` | Templates the call graph page of one test, holding the |
 |                   | JSON call graph model on the empty layout table that   |
 |                   | `call_graph.js` fills.                                 |
-| `call_graph.js`   | Fills the layout table with a row per shown node, each |
-|                   | callee's share of its caller's cumulative cost heat    |
-|                   | colored, opens and closes nodes in place, the hottest  |
-|                   | path open by default, and sends the focused path to    |
-|                   | the status bar.                                        |
+| `call_graph.js`   | Arranges the call graph in a tree layout               |
 
 ## Callgrind Parsing
 

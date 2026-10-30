@@ -5,12 +5,16 @@
 window.try_catch_handler_(function () {
   "use strict";
 
+  const CALL_GRAPH_BRANCH_FIRST_TEXT = settings_(
+    "CALL_GRAPH_BRANCH_FIRST_TEXT",
+  );
   const CALL_GRAPH_BRANCH_LAST_TEXT = settings_("CALL_GRAPH_BRANCH_LAST_TEXT");
   const CALL_GRAPH_BRANCH_MIDDLE_TEXT = settings_(
     "CALL_GRAPH_BRANCH_MIDDLE_TEXT",
   );
-  const CALL_GRAPH_BRANCH_OPEN_TEXT = settings_("CALL_GRAPH_BRANCH_OPEN_TEXT");
+  const CALL_GRAPH_BRANCH_ONLY_TEXT = settings_("CALL_GRAPH_BRANCH_ONLY_TEXT");
   const CALL_GRAPH_BRANCH_PASS_TEXT = settings_("CALL_GRAPH_BRANCH_PASS_TEXT");
+  const CALL_GRAPH_CLOSED_TEXT = settings_("CALL_GRAPH_CLOSED_TEXT");
   const CALL_GRAPH_LINE_TEXT = settings_("CALL_GRAPH_LINE_TEXT");
   const CALL_GRAPH_REVEAL_CLEARANCE_CHARS = settings_(
     "CALL_GRAPH_REVEAL_CLEARANCE_CHARS",
@@ -22,24 +26,34 @@ window.try_catch_handler_(function () {
 
   const render_element = window.render_element_;
   const render_html_escape = window.render_html_escape_;
-  const EMPTY_CELL_MARKUP = render_element("td", {}, "");
-  const OPEN_CELL_MARKUP = render_element(
-    "td",
-    {},
-    render_html_escape(CALL_GRAPH_BRANCH_OPEN_TEXT),
-  );
-  const PASS_CELL_MARKUP = render_element(
-    "td",
-    {},
-    render_html_escape(CALL_GRAPH_BRANCH_PASS_TEXT),
-  );
+  // Writes a group's cells: branch, share, symbol, multiple and tail.
+  function group_markup(
+    branch_cell_markup,
+    share_cell_markup,
+    symbol_cell_markup,
+    multiple_cell_markup,
+    tail_cell_markup,
+  ) {
+    return (
+      render_element("td", {}, branch_cell_markup) +
+      render_element("td", { class: "call-graph-share-" }, share_cell_markup) +
+      render_element("td", {}, symbol_cell_markup) +
+      render_element(
+        "td",
+        { class: "call-graph-multiple-" },
+        multiple_cell_markup,
+      ) +
+      render_element("td", {}, tail_cell_markup)
+    );
+  }
+  // Marks a layout group a branch passes through, holding no node.
+  const PASS_PLACE = {};
   const page_scroll_box = document.getElementById("call-graph-page-");
   const graph_table = document.getElementById("call-graph-table-");
   const call_graph_model = JSON.parse(graph_table.getAttribute("data-model-"));
   const graph_body = window.render_element_of_(
     render_element("tbody", {}, ""),
   );
-  const row_graph_nodes = new WeakMap();
 
   // Reads one function's row, its cumulative cost and calls summed below.
   function function_record_read(function_row) {
@@ -69,6 +83,7 @@ window.try_catch_handler_(function () {
     function_record_read,
   );
   const call_roots = call_graph_model.roots.map(call_root_read);
+  const test_total = call_graph_model.test_total;
   for (const call_root of call_roots)
     function_records[call_root.function_index].invocation_count +=
       call_root.calls;
@@ -82,12 +97,10 @@ window.try_catch_handler_(function () {
       caller_record.cumulative_cost += call_edge.inclusive_cost;
   }
 
-  // Returns an edge's share of its caller's cumulative cost, null for none.
-  function edge_share(call_edge) {
-    const caller_cost =
-      function_records[call_edge.caller_index].cumulative_cost;
-    if (!caller_cost || !call_edge.inclusive_cost) return null;
-    return (100 * call_edge.inclusive_cost) / caller_cost;
+  // Returns a function's self cost as a percent of the test's total cost.
+  function self_share_of_test(function_record) {
+    if (!test_total) window.throw_exception_("str_error_internal");
+    return (100 * function_record.self_cost) / test_total;
   }
   // Returns an edge's calls per invocation of its caller, null for none.
   function edge_multiple(call_edge) {
@@ -101,7 +114,7 @@ window.try_catch_handler_(function () {
       function_records[edge_b.callee_index].name,
     );
   }
-  // Orders a caller's edges by share, as by inclusive cost, line and name.
+  // Orders a caller's edges by inclusive cost, then line, then name.
   function heat_order(edge_a, edge_b) {
     return (
       edge_b.inclusive_cost - edge_a.inclusive_cost ||
@@ -149,8 +162,10 @@ window.try_catch_handler_(function () {
     }
     return open_set;
   }
-  let heat_curve_name = null,
+  let button_graph_nodes = new WeakMap(),
+    heat_curve_name = null,
     heat_sort_mode = null,
+    node_places = new Map(),
     open_path_keys = call_graph_open_set(),
     rendered_preferences_text = null;
 
@@ -159,19 +174,24 @@ window.try_catch_handler_(function () {
     return {
       node_path: [call_root.function_index],
       call_edge: null,
-      later_sibling_flags: [],
+      branch_text: "",
     };
   }
-  // Lists a node's shown children by the chosen sort, flagging later siblings.
+  // Lists a node's shown children by the chosen sort, each with its branch.
   function node_children(graph_node) {
     const shown_edges = edges_sort(shown_callee_edges(graph_node.node_path));
+    const last_index = shown_edges.length - 1;
     return shown_edges.map((call_edge, child_index) => ({
       node_path: [...graph_node.node_path, call_edge.callee_index],
       call_edge,
-      later_sibling_flags: [
-        ...graph_node.later_sibling_flags,
-        child_index < shown_edges.length - 1,
-      ],
+      branch_text:
+        child_index === 0
+          ? last_index === 0
+            ? CALL_GRAPH_BRANCH_ONLY_TEXT
+            : CALL_GRAPH_BRANCH_FIRST_TEXT
+          : child_index < last_index
+            ? CALL_GRAPH_BRANCH_MIDDLE_TEXT
+            : CALL_GRAPH_BRANCH_LAST_TEXT,
     }));
   }
   // Returns whether a node is open.
@@ -179,20 +199,69 @@ window.try_catch_handler_(function () {
     return open_path_keys.has(path_key(graph_node.node_path));
   }
 
-  // Writes a node's branch, the middle one before a later sibling.
-  function branch_markup(graph_node) {
-    if (graph_node.call_edge === null) return "";
-    return render_html_escape(
-      graph_node.later_sibling_flags.at(-1)
-        ? CALL_GRAPH_BRANCH_MIDDLE_TEXT
-        : CALL_GRAPH_BRANCH_LAST_TEXT,
+  // Places every drawn node in a row and a group, one group per depth.
+  function graph_layout() {
+    const layout_rows = [];
+    const next_free_rows = [];
+    // Places a node, then its children when open, and returns its row.
+    function node_place(graph_node, least_row) {
+      const group_index = graph_node.node_path.length - 1;
+      const is_open = node_is_open(graph_node);
+      // An open node sits below every branch right of it, any other beside.
+      const node_row = Math.max(
+        least_row,
+        ...next_free_rows.slice(
+          group_index,
+          is_open ? next_free_rows.length : group_index + 1,
+        ),
+      );
+      (layout_rows[node_row] ??= [])[group_index] = graph_node;
+      next_free_rows[group_index] = node_row + 1;
+      // A row keeps a group right of a closed node, its closed mark's place.
+      if (place_is_closed(graph_node))
+        layout_rows[node_row].length = Math.max(
+          layout_rows[node_row].length,
+          group_index + 2,
+        );
+      if (!is_open) return node_row;
+      const child_rows = node_children(graph_node).map((child_node) =>
+        node_place(child_node, node_row),
+      );
+      for (
+        let pass_row = child_rows[0] + 1;
+        pass_row < child_rows.at(-1);
+        pass_row++
+      )
+        if (!child_rows.includes(pass_row))
+          layout_rows[pass_row][group_index + 1] = PASS_PLACE;
+      return node_row;
+    }
+    for (const call_root of call_roots) node_place(root_node(call_root), 0);
+    return layout_rows;
+  }
+
+  // Returns whether a layout place holds a closed node with shown children.
+  function place_is_closed(layout_place) {
+    return (
+      layout_place !== undefined &&
+      layout_place !== PASS_PLACE &&
+      !node_is_open(layout_place) &&
+      shown_callee_edges(layout_place.node_path).length > 0
     );
   }
-  // Writes a node's share, heat colored by the chosen curve.
+  // Returns a place's branch text: a node's, a passing branch's, or none.
+  function place_branch_text(layout_place) {
+    if (layout_place === undefined) return "";
+    if (layout_place === PASS_PLACE) return CALL_GRAPH_BRANCH_PASS_TEXT;
+    return layout_place.branch_text;
+  }
+  // Writes a node's self share of the test, heat colored by the chosen curve.
   function share_markup(graph_node) {
     if (graph_node.call_edge === null) return "";
-    const share_percent = edge_share(graph_node.call_edge);
-    if (share_percent === null) return "";
+    const share_percent = self_share_of_test(
+      path_function(graph_node.node_path),
+    );
+    if (!share_percent) return "";
     return render_element(
       "span",
       {
@@ -228,92 +297,69 @@ window.try_catch_handler_(function () {
       ) + "x "
     );
   }
-  // Writes a node's tail: the line when open, else its subroutine time.
-  function tail_markup(graph_node, is_open) {
-    if (is_open) return render_html_escape(CALL_GRAPH_LINE_TEXT);
-    const function_record = path_function(graph_node.node_path);
-    return render_html_escape(
-      window.report_ui_.human_text(
-        function_record.cumulative_cost - function_record.self_cost,
-      ),
-    );
+  // Writes a node's tail: the line to its first child when open.
+  function tail_markup(graph_node) {
+    return node_is_open(graph_node)
+      ? render_html_escape(CALL_GRAPH_LINE_TEXT)
+      : "";
   }
-  // Makes a node's row: its ancestors' pass texts, then its own cells.
-  function node_row(graph_node) {
-    const node_depth = graph_node.later_sibling_flags.length;
+  // Writes a placed node's group of cells after its branch cell's markup.
+  function node_markup(graph_node, branch_cell_markup) {
     const has_shown_children =
       shown_callee_edges(graph_node.node_path).length > 0;
-    const is_open = node_is_open(graph_node);
-    const row_cells = [];
-    for (let group_depth = 0; group_depth < node_depth; group_depth++) {
-      const is_passed =
-        group_depth > 0 && graph_node.later_sibling_flags[group_depth - 1];
-      row_cells.push(
-        is_passed ? PASS_CELL_MARKUP : EMPTY_CELL_MARKUP,
-        EMPTY_CELL_MARKUP,
-        EMPTY_CELL_MARKUP,
-        EMPTY_CELL_MARKUP,
-        EMPTY_CELL_MARKUP,
-      );
-    }
-    const own_multiple_markup = multiple_markup(graph_node);
-    row_cells.push(
-      render_element("td", {}, branch_markup(graph_node)),
-      render_element(
-        "td",
-        { class: "call-graph-share-" },
-        share_markup(graph_node),
-      ),
-      render_element("td", {}, symbol_markup(graph_node, has_shown_children)),
+    return group_markup(
+      branch_cell_markup,
+      share_markup(graph_node),
+      symbol_markup(graph_node, has_shown_children),
+      multiple_markup(graph_node),
+      tail_markup(graph_node),
     );
-    // A row ends at its last used cell, one with shown children at its tail.
-    if (has_shown_children || own_multiple_markup)
-      row_cells.push(render_element("td", {}, own_multiple_markup));
-    if (has_shown_children)
-      row_cells.push(
-        render_element(
-          "td",
-          { class: "call-graph-tail-" },
-          tail_markup(graph_node, is_open),
-        ),
+  }
+  // Writes a layout row's groups: a node's, a passing branch's, or empty.
+  function layout_row_markup(layout_row) {
+    return Array.from(layout_row, (layout_place, group_index) => {
+      // A closed node's mark replaces the branch of the group right of it.
+      const branch_cell_markup = render_html_escape(
+        place_is_closed(layout_row[group_index - 1])
+          ? CALL_GRAPH_CLOSED_TEXT
+          : place_branch_text(layout_place),
       );
-    if (is_open) row_cells.push(OPEN_CELL_MARKUP);
-    const graph_row = window.render_element_of_(
-      render_element("tr", {}, row_cells.join("")),
-    );
-    row_graph_nodes.set(graph_row, graph_node);
-    return graph_row;
+      if (layout_place === undefined || layout_place === PASS_PLACE)
+        return group_markup(branch_cell_markup, "", "", "", "");
+      return node_markup(layout_place, branch_cell_markup);
+    }).join("");
   }
-  // Makes a node's row, then the rows below it when it is open.
-  function node_rows(graph_node) {
-    const graph_row = node_row(graph_node);
-    if (!node_is_open(graph_node)) return [graph_row];
-    return [graph_row, ...rows_below(graph_node)];
-  }
-  // Makes the rows below an open node, each child's and those below it.
-  function rows_below(graph_node) {
-    return node_children(graph_node).flatMap(node_rows);
-  }
-  // Draws every root's row and the rows below each open node.
+  // Draws every layout row, keeping each placed node's cells and button.
   function graph_render() {
-    graph_body.replaceChildren(
-      ...call_roots.flatMap((call_root) => node_rows(root_node(call_root))),
-    );
+    button_graph_nodes = new WeakMap();
+    node_places = new Map();
+    const graph_rows = graph_layout().map((layout_row) => {
+      const graph_row = window.render_element_of_(
+        render_element("tr", {}, layout_row_markup(layout_row)),
+      );
+      const row_cells = [...graph_row.cells];
+      const group_size = row_cells.length / layout_row.length;
+      layout_row.forEach((layout_place, group_index) => {
+        if (layout_place === PASS_PLACE) return;
+        const node_cells = row_cells.slice(
+          group_index * group_size,
+          (group_index + 1) * group_size,
+        );
+        const symbol_button = node_cells
+          .map((node_cell) => node_cell.querySelector(".menu-button-"))
+          .find((found_button) => found_button);
+        node_places.set(path_key(layout_place.node_path), {
+          node_cells,
+          symbol_button,
+        });
+        if (symbol_button) button_graph_nodes.set(symbol_button, layout_place);
+      });
+      return graph_row;
+    });
+    graph_body.replaceChildren(...graph_rows);
     window.report_ui_.layout_activate();
   }
 
-  // Removes the rows below a node's row, each deeper row that follows it.
-  function rows_below_remove(graph_row) {
-    const path_length = row_graph_nodes.get(graph_row).node_path.length;
-    let next_row = graph_row.nextElementSibling;
-    while (
-      next_row &&
-      row_graph_nodes.get(next_row).node_path.length > path_length
-    ) {
-      next_row.remove();
-      next_row = graph_row.nextElementSibling;
-    }
-  }
   // Returns the least scroll showing a span with clearance, its start first.
   function reveal_travel(span_start, span_end, window_size, clearance_size) {
     const start_travel = span_start - clearance_size;
@@ -323,30 +369,25 @@ window.try_catch_handler_(function () {
       Math.max(0, span_end + clearance_size - window_size),
     );
   }
-  // Scrolls the page the least that shows the rows just opened below a row.
-  function rows_reveal(graph_row, shown_rows) {
+  // Scrolls the page the least that shows the cells, with the clearance.
+  function cells_reveal(span_cells) {
     const design_px = window.report_ui_.design_px;
     const box_rect = page_scroll_box.getBoundingClientRect();
     const table_style = getComputedStyle(graph_table);
-    const first_rect = shown_rows[0].getBoundingClientRect();
-    const last_rect = shown_rows.at(-1).getBoundingClientRect();
-    // The open text starts the column of the opened rows' branches.
-    const span_left = graph_row.lastElementChild.getBoundingClientRect().left;
-    const span_right = Math.max(
-      ...shown_rows.map(
-        (shown_row) =>
-          shown_row.lastElementChild.getBoundingClientRect().right,
-      ),
+    const cell_rects = span_cells.map((span_cell) =>
+      span_cell.getBoundingClientRect(),
     );
+    const span_edge = (pick_edge, edge_name) =>
+      pick_edge(...cell_rects.map((cell_rect) => cell_rect[edge_name]));
     page_scroll_box.scrollTop += reveal_travel(
-      design_px(first_rect.top - box_rect.top),
-      design_px(last_rect.bottom - box_rect.top),
+      design_px(span_edge(Math.min, "top") - box_rect.top),
+      design_px(span_edge(Math.max, "bottom") - box_rect.top),
       page_scroll_box.clientHeight,
       parseFloat(table_style.scrollMarginTop),
     );
     page_scroll_box.scrollLeft += reveal_travel(
-      design_px(span_left - box_rect.left),
-      design_px(span_right - box_rect.left),
+      design_px(span_edge(Math.min, "left") - box_rect.left),
+      design_px(span_edge(Math.max, "right") - box_rect.left),
       page_scroll_box.clientWidth,
       parseFloat(table_style.scrollMarginLeft),
     );
@@ -357,26 +398,26 @@ window.try_catch_handler_(function () {
       (function_index) => function_records[function_index].name,
     );
   }
-  // Opens or closes a symbol's node, then sends its path as the focused path.
+  // Opens or closes a symbol's node, draws again, shows it, sends its path.
   function node_toggle(symbol_button) {
-    const graph_row = symbol_button.closest("tr");
-    const graph_node = row_graph_nodes.get(graph_row);
-    const tail_cell = graph_row.querySelector(":scope > .call-graph-tail-");
-    if (node_is_open(graph_node)) {
-      open_path_keys.delete(path_key(graph_node.node_path));
-      rows_below_remove(graph_row);
-      // The open text ends an open node's row.
-      graph_row.lastElementChild.remove();
-      tail_cell.innerHTML = tail_markup(graph_node, false);
-    } else {
-      open_path_keys.add(path_key(graph_node.node_path));
-      tail_cell.innerHTML = tail_markup(graph_node, true);
-      graph_row.append(window.render_element_of_(OPEN_CELL_MARKUP));
-      const shown_rows = rows_below(graph_node);
-      graph_row.after(...shown_rows);
-      rows_reveal(graph_row, shown_rows);
-    }
-    window.report_ui_.layout_activate();
+    const graph_node = button_graph_nodes.get(symbol_button);
+    const node_key = path_key(graph_node.node_path);
+    const is_opening = !open_path_keys.has(node_key);
+    if (is_opening) open_path_keys.add(node_key);
+    else open_path_keys.delete(node_key);
+    const had_focus = document.activeElement === symbol_button;
+    graph_render();
+    const toggled_place = node_places.get(node_key);
+    // The redraw replaced the button, so its new one takes the focus.
+    if (had_focus) toggled_place.symbol_button.focus({ preventScroll: true });
+    cells_reveal(
+      is_opening
+        ? node_children(graph_node).flatMap(
+            (child_node) =>
+              node_places.get(path_key(child_node.node_path)).node_cells,
+          )
+        : toggled_place.node_cells,
+    );
     window.report_ui_.focused_path_send(focused_path_entries(graph_node));
   }
   // Returns the symbol button an input reached, null for none.

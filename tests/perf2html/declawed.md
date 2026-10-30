@@ -159,6 +159,33 @@ scripts too."""
 - The perf2html_diff.sh script has to be able to run on a remote machine with
   only two `.txz` compressed reports as inputs. It has to work without access
   to any source code or repository involved in the report.
+- A message to the maintainer is understood without opening another file.
+  Every identifier it uses, such as a task, question or item number, a test,
+  a class or a file, comes with plain words saying what it is and why it
+  matters there; a number may follow that description for reference, never
+  replace it.
+- Never report a problem without its solutions. Anything that waits on the
+  maintainer, whether a decision, an approval, an install or a command only
+  they may run, is written as a question naming what is being decided, not
+  as a blocker, a problem or an instruction to run something.
+- Give a question's solutions as multiple choice: each option on a line of
+  its own that starts with `[ ]`, so that the maintainer can mark a choice
+  `[x]`, lettered from A. Option A is the default, taken when nothing is
+  marked, so A is the option recommended.
+- The maintainer holds the authority and the intent; the agent holds the
+  context, having written and read the code. A question carries authority
+  or intent back to the agent, and never makes the maintainer gather
+  context the agent already has. Before asking, spend the agent's own
+  means: the rules, the plans, the code, an experiment or a measurement.
+- Ask only when the answer is worth more than the maintainer's time to give
+  it: when only the maintainer may decide, when the right choice depends on
+  intent that nothing written settles, or when a wrong guess is costly or
+  hard to undo. Otherwise decide, and report the decision so that
+  overturning it is cheap. Ask first what blocks the most work, and say
+  what each answer unblocks.
+- Put a question in the maintainer's terms: the requirement at stake, what
+  each choice does and what it costs, with the code's names as references
+  only.
 
 ### Accidental-Requirements, Requirements-Data-Loss, and Requirements-Refusal
 
@@ -310,9 +337,10 @@ The single function/check owning each concern - never bypass or duplicate:
   the functions with a line, every test's union, names alone
   (scripts/source_database.js).
 - `text_clip()` - every cell text cut at its column's `clip`;
-  `table_slide_press()` every column width, a sideways drag of a body cell
-  setting the `min-width` of the title of the column left of it, a title
-  press sliding nothing (theme.js).
+  `column_edge_drag()` every column width, a drag at the right edge grab of
+  a body cell or title of a `TABLE_RESIZABLE_COLUMN_NAMES` column setting
+  that column title's `min-width`, a column its bar sizes, the heat map's
+  tree, set by a sideways drag of that bar instead (theme.js).
 - `checksum_compute`/`_REPORT_CHECKSUM_COMMAND` - report checksums, kept
   separate, re-verified on every open.
 - `number_exact_check()` - every settings number crossing into a page,
@@ -331,17 +359,19 @@ The single function/check owning each concern - never bypass or duplicate:
   `uses_whitespace` false where nothing aligns: a database callers or
   callees cell; the call graph prints no zero share, its layout table
   aligning the shares.
-- `edge_share()` - every call graph share, an edge's inclusive CEst
-  (`RANKING_COUNTER_NAME`) summed over its call sites as a share of its
-  caller's cumulative CEst, the caller's self plus its calls to every
-  other function, a root none; `edge_multiple()` every calls multiple, an
+- `self_share_of_test()` - every call graph share, a function's self CEst
+  (`RANKING_COUNTER_NAME`) as a share of the test's total CEst, the call
+  graph model's `test_total`, a root none; `edge_multiple()` every calls
+  multiple, an
   edge's calls per invocation of its caller, the caller's root calls and
   incoming edge calls summed (call_graph.js); `call_graph_roots()` every
   uncalled caller a root, a call graph with none or with a called function
   none of them reaches refused (build_report.py).
 - `call_graph_open_set()` - the one open set of a fresh call graph view,
   at its first render and every `view_reset`: the hottest path from the
-  root of greatest cumulative CEst, at each node its shown child of
+  root of greatest cumulative CEst, a function's self plus its calls to
+  every other function, used for that alone and never shown, at each node
+  its shown child of
   greatest inclusive CEst (ties by call line, then name, whatever the
   sort), each node on that path with shown children open, every other
   closed; a shown child is a callee not already on the node's path
@@ -434,6 +464,24 @@ The single function/check owning each concern - never bypass or duplicate:
   difference into `tests/perf2html/screenshots-diff/`; a difference is then
   the edit's own. Only `--regenerate` compares: a measuring run changes what
   the shots show, so after one copy its shots to `screenshots-gold/` again.
+- A shot differing from its gold twin is not a failure of the test suite but
+  an outcome the development process requires: a measuring run changes the
+  values the shots show and an edit changes what its pages draw.
+  `test_screenshot.py` names each differing shot on stdout with its
+  `compare_` image; `test_expected_behavior.sh` runs every other stage, then
+  explains the difference to the agent reading the run and exits
+  `SCREENSHOT_GOLD_DIFFERENCE_EXIT_CODE` (settings.sh), never 0, so that no
+  difference goes unseen. Any other non-zero exit is a failure.
+- `test_all.sh` measures once, through `test_expected_behavior.sh
+  --keep-artifacts`; `test_error_handling.sh` then regenerates from those
+  recordings with `--regenerate --keep-artifacts`, never measuring again, so
+  its run compares the shots with the gold. After a gold difference it runs
+  every other test, explains the difference again at its end and exits
+  `SCREENSHOT_GOLD_DIFFERENCE_EXIT_CODE`, which `test_all.sh` passes on.
+- An agent concluding whether a run passed or failed first looks at every
+  `compare_` image in `screenshots-diff/` not already inspected and reports
+  what each shows. It never deletes or moves the gold shots and never
+  challenges the maintainer over a difference.
 - The full run is `test_all.sh` and only run that when asked to "test".
 - More than one goal in a response ends with a done/not-done checklist.
 - Numbering of multi-item communication in summaries follows ISO 2145.
@@ -494,7 +542,8 @@ The single function/check owning each concern - never bypass or duplicate:
   read back as an input to itself.
 - `test_expected_behavior.sh` captures, redirects or reformats no output of its
   own or a child's - every child runs through `subprocess_run` and its lines
-  reach the terminal verbatim; a non-zero exit is `error_exit`. The one
+  reach the terminal verbatim; a non-zero exit is `error_exit`, the gold
+  comparison's `SCREENSHOT_GOLD_DIFFERENCE_EXIT_CODE` aside. The one
   exception is `pyright_filtered_run` at level 1.
 - `tools_resolve` (or equivalent) must find every formatter/linter and the
   screenshot browser before anything is deleted, naming every missing tool
@@ -535,8 +584,11 @@ The single function/check owning each concern - never bypass or duplicate:
   and any backtick code span, then faults the first other character on each
   comment line as `comment holds 'X' outside ENGLISH_PUNCT`.
 - ASCII plus the specific whitelisted glyphs (`© ≈ ∞ ▲◄►▼ … █ ░ ▒ ▓ ◼`,
-  the call graph's `─ │ └ ├ ┬` and a no-break space), written literally,
+  the call graph's `─ │ └ ├ ┬ ⊞` and a no-break space), written literally,
   never as HTML entities.
+- A maintainer's explicit request for a Unicode character is also an
+  instruction to add it to the allowed glyphs, this list and the source
+  scan's `SOURCE_SCAN_ALLOWED_NON_ASCII_CHARS`, without mentioning it.
 - No unicode escapes or runtime character constructors in source, comments
   and header included: `\u`, `\U`, `\x`, `\N{`, octal `\NNN`, CSS hex
   escapes, numeric entities (`&#65;`), `String.fromCharCode`,
