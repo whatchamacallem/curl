@@ -266,7 +266,8 @@ A diff report's run keeps these.
 | `database.html` | Templates one test's database page, the JSON model of     |
 |                 | every called function and the derived counters' terms.    |
 | `database.js`   | Draws the functions table, a row per called function, and |
-|                 | its heading's row count, sort and counters pulldowns.     |
+|                 | its heading's row count, sort order and sort direction    |
+|                 | pulldowns.                                                |
 
 ## Developer Scripts
 
@@ -323,9 +324,10 @@ A diff report's run keeps these.
 | `menu.js`        | Holds the menu controller, which draws the strip, takes |
 |                  | keys and starts every navigation.                       |
 | `preferences.js` | Holds the preferences the menu edits and a view draws   |
-|                  | with, their choices, each counters list's lines and     |
-|                  | labels, and the reader of each counter, a derived       |
-|                  | one summed from its terms.                              |
+|                  | with, their choices, each counters list's lines in the  |
+|                  | settings' order, their labels, columns and the parts a  |
+|                  | table makes of the shown ones, and the reader of each   |
+|                  | counter, a derived one summed from its terms.           |
 
 ## Overview Page
 

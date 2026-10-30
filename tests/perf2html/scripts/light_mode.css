@@ -205,6 +205,40 @@ tr.heat-map-source-information-box-synthetic-row- > td {
     border-width: var(--page-line-width-);
     border-color: var(--light-mode-menu-normal-outline-);
   }
+  /* A bar's frame as a framed box's, its clip margin plain as Chrome needs. */
+  .text-scrollbar- {
+    position: relative;
+    overflow-clip-margin: var(--page-line-width-);
+  }
+  /* A bar's clear top border, a page line in the bar's own characters. */
+  .text-scrollbar-.horizontal- {
+    border-top: calc(
+        var(--page-line-width-) /
+          var(--page-text-scrollbar-horizontal-font-multiple-)
+      )
+      solid transparent;
+  }
+  .text-scrollbar-.vertical- {
+    border-top: calc(
+        var(--page-line-width-) /
+          var(--page-text-scrollbar-vertical-font-multiple-)
+      )
+      solid transparent;
+  }
+  /* The frame, in the page's characters so its line is a page line. */
+  .text-scrollbar-::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    font-size: calc(var(--design-font-size-px-) * var(--design-font-fit-));
+    outline: var(--page-line-width-) solid
+      var(--light-mode-menu-normal-outline-);
+  }
+  /* A pulldown's bar lies under its box's clear top border, its top line. */
+  .menu-pulldown-entry-box- > .text-scrollbar- {
+    border-top: 0;
+  }
   /* A hovered node's frame, drawn the way the selected node's frame is. */
   .heat-map-tree-node-:not(.cold-):hover::before {
     inset: 0 var(--page-line-width-);

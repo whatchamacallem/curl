@@ -51,10 +51,6 @@ window.try_catch_handler_(function () {
       FLAME_GRAPH_STARTUP_POLL_DELAY_MS,
     );
   }
-  // Presses a key the menu relays on the window, where speedscope listens.
-  function relayed_key_press(key_name) {
-    window.dispatchEvent(new KeyboardEvent("keydown", { key: key_name }));
-  }
 
   if (_FORWARDED_ADDRESS.view !== FLAME_GRAPH_VIEW_ENTRY[0])
     window.throw_exception_("str_error_internal");
@@ -76,7 +72,6 @@ window.try_catch_handler_(function () {
   window.report_ui_.view_activate({
     forwards_input: false,
     recenter: () => location.reload(),
-    relayed_key_press,
   });
   const script_name = encodeURIComponent(_FORWARDED_ADDRESS.test) + ".js";
   _profile_script.src = FLAME_GRAPH_PROFILE_DIR_NAME + "/" + script_name;

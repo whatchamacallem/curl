@@ -321,7 +321,7 @@ table.table-:has(> tbody > :is(tr.row-link-, tr.clickable-):hover)::before {
 .text-scrollbar- {
   display: flex;
   contain: size;
-  overflow: hidden;
+  overflow: clip;
   white-space: pre;
   user-select: none;
   touch-action: none;

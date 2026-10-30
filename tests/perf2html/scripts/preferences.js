@@ -11,8 +11,14 @@ window.report_preferences_ = window.try_catch_handler_(function () {
   const COUNTER_LIST_CALLERS_LINE_NAME = settings_(
     "COUNTER_LIST_CALLERS_LINE_NAME",
   );
+  const COUNTER_LIST_CALLGRIND_LINE_NAMES = settings_(
+    "COUNTER_LIST_CALLGRIND_LINE_NAMES",
+  );
   const COUNTER_LIST_CALLS_LINE_NAME = settings_(
     "COUNTER_LIST_CALLS_LINE_NAME",
+  );
+  const COUNTER_LIST_NON_CALLGRIND_LINE_NAMES = settings_(
+    "COUNTER_LIST_NON_CALLGRIND_LINE_NAMES",
   );
   const DATABASE_COUNTER_LIST_DEFAULT_SHOWN_NAMES = settings_(
     "DATABASE_COUNTER_LIST_DEFAULT_SHOWN_NAMES",
@@ -49,42 +55,42 @@ window.report_preferences_ = window.try_catch_handler_(function () {
       label: window.ui_strings_.text("str_sort_alphabetical"),
     },
   ];
-  // Holds the label string of each list line that is not a counter.
-  const NON_COUNTER_LINE_STRING_IDS = {
-    [COUNTER_LIST_CALLEES_LINE_NAME]: "str_column_callees",
-    [COUNTER_LIST_CALLERS_LINE_NAME]: "str_column_callers",
-    [COUNTER_LIST_CALLS_LINE_NAME]: "str_column_calls",
+  // Holds each line that is not a callgrind counter: its title and its kind.
+  const NON_CALLGRIND_LINES = {
+    [COUNTER_LIST_CALLEES_LINE_NAME]: {
+      is_numeric: false,
+      string_id: "str_column_callees",
+    },
+    [COUNTER_LIST_CALLERS_LINE_NAME]: {
+      is_numeric: false,
+      string_id: "str_column_callers",
+    },
+    [COUNTER_LIST_CALLS_LINE_NAME]: {
+      is_numeric: true,
+      string_id: "str_column_calls",
+    },
   };
-  // Holds each counters list kind: its other lines, defaults and kept line.
+  // Lists every line of a counters list in its default order, the settings'.
+  const DEFAULT_LINE_NAMES = [
+    ...COUNTER_LIST_CALLGRIND_LINE_NAMES,
+    ...COUNTER_LIST_NON_CALLGRIND_LINE_NAMES,
+  ];
+  // Holds each counters list kind: its defaults, kept line and storage.
   const COUNTER_LIST_KINDS = {
     [DATABASE_VIEW_KEY]: {
       default_setting_name: "DATABASE_COUNTER_LIST_DEFAULT_SHOWN_NAMES",
       default_shown_names: DATABASE_COUNTER_LIST_DEFAULT_SHOWN_NAMES,
       keeps_ranking_shown: false,
-      leading_names: [
-        RANKING_COUNTER_NAME,
-        COUNTER_LIST_CALLS_LINE_NAME,
-        COUNTER_LIST_CALLERS_LINE_NAME,
-        COUNTER_LIST_CALLEES_LINE_NAME,
-      ],
-      non_counter_names: [
-        COUNTER_LIST_CALLS_LINE_NAME,
-        COUNTER_LIST_CALLERS_LINE_NAME,
-        COUNTER_LIST_CALLEES_LINE_NAME,
-      ],
       storage_key: STORAGE_KEY_DATABASE_COUNTER_LIST,
     },
     [HEAT_MAP_VIEW_ENTRY[0]]: {
       default_setting_name: "HEAT_MAP_COUNTER_LIST_DEFAULT_SHOWN_NAMES",
       default_shown_names: HEAT_MAP_COUNTER_LIST_DEFAULT_SHOWN_NAMES,
       keeps_ranking_shown: true,
-      leading_names: [COUNTER_LIST_CALLS_LINE_NAME, RANKING_COUNTER_NAME],
-      non_counter_names: [COUNTER_LIST_CALLS_LINE_NAME],
       storage_key: STORAGE_KEY_HEATMAP_COUNTER_LIST,
     },
   };
 
-  let offered_counter_names = null;
   let shown_preferences = null;
 
   // Returns the description of a counter, the words its label leads with.
@@ -139,16 +145,32 @@ window.report_preferences_ = window.try_catch_handler_(function () {
       label: curve_label,
     }));
   }
-  // Returns whether a line of a list is a counter, not one of its other lines.
-  function is_counter_line(list_key, line_name) {
-    const list_kind = COUNTER_LIST_KINDS[list_key];
-    return !list_kind.non_counter_names.includes(line_name);
+  // Returns whether a line is a callgrind counter, not a line of calls.
+  function is_callgrind_line(line_name) {
+    return !Object.hasOwn(NON_CALLGRIND_LINES, line_name);
   }
-  // Returns the label of a line of a list, a counter's or the line's string.
-  function line_label(list_key, line_name) {
-    return is_counter_line(list_key, line_name)
+  // Returns the column title of a line, a counter's name or the line's string.
+  function line_title(line_name) {
+    return is_callgrind_line(line_name)
+      ? line_name
+      : window.ui_strings_.text(NON_CALLGRIND_LINES[line_name].string_id);
+  }
+  // Returns the label of a line, a counter's label or the line's title.
+  function line_label(line_name) {
+    return is_callgrind_line(line_name)
       ? counter_label(line_name)
-      : window.ui_strings_.text(NON_COUNTER_LINE_STRING_IDS[line_name]);
+      : line_title(line_name);
+  }
+  // Returns a line's column: its title, its label, its move and its kind.
+  function line_column(line_name) {
+    return {
+      label: line_title(line_name),
+      measure: line_label(line_name),
+      move_name: line_name,
+      numeric:
+        is_callgrind_line(line_name) ||
+        NON_CALLGRIND_LINES[line_name].is_numeric,
+    };
   }
 
   // Returns the preferences the page shows, a view's those last relayed.
@@ -157,27 +179,59 @@ window.report_preferences_ = window.try_catch_handler_(function () {
       window.throw_exception_("str_error_internal");
     return shown_preferences;
   }
-  // Returns the names of the shown lines of a counters list, in its order.
-  function shown_line_names(list_key) {
+  // Returns the lines of a counters list in order, refusing an unknown list.
+  function counter_lines_of(list_key) {
     const counter_lines = now().counter_lists[list_key];
     if (!counter_lines) window.throw_exception_("str_error_internal");
-    return counter_lines
+    return counter_lines;
+  }
+  // Returns the names of the shown lines of a counters list, in its order.
+  function shown_line_names(list_key) {
+    return counter_lines_of(list_key)
       .filter((counter_line) => counter_line.is_shown)
       .map((counter_line) => counter_line.line_name);
   }
+  // Lists the parts a page makes of a list's shown lines, in the list order.
+  function shown_line_parts(list_key, callgrind_part, call_parts) {
+    return shown_line_names(list_key)
+      .map((line_name) => {
+        if (is_callgrind_line(line_name)) return callgrind_part(line_name);
+        if (!Object.hasOwn(call_parts, line_name))
+          window.throw_exception_("str_error_internal");
+        return call_parts[line_name];
+      })
+      .filter((line_part) => line_part !== null);
+  }
+  // Lists the lines of a list as choices, the one door to their order.
+  function line_choices(list_key) {
+    return counter_lines_of(list_key).map((counter_line) => ({
+      is_shown: counter_line.is_shown,
+      label: line_label(counter_line.line_name),
+      value: counter_line.line_name,
+    }));
+  }
   // Lists the counters pulldown's choices, each line of the list, marked.
   function counter_choices(list_key) {
-    return now().counter_lists[list_key].map((counter_line) => ({
+    return line_choices(list_key).map((line_choice) => ({
       label: window.ui_strings_.text_fill("str_menu_counter_entry", {
         mark: window.ui_strings_.text(
-          counter_line.is_shown
+          line_choice.is_shown
             ? "str_menu_counter_selected_mark"
             : "str_menu_counter_unselected_mark",
         ),
-        label: line_label(list_key, counter_line.line_name),
+        label: line_choice.label,
       }),
-      value: counter_line.line_name,
+      value: line_choice.value,
     }));
+  }
+  // Lists the sort order pulldown's choices, the shown lines of the list.
+  function sort_order_choices(list_key) {
+    return line_choices(list_key)
+      .filter((line_choice) => line_choice.is_shown)
+      .map((line_choice) => ({
+        label: line_choice.label,
+        value: line_choice.value,
+      }));
   }
   // Copies the lines of a counters list, each frozen as the page shows it.
   function counter_lines_freeze(counter_lines) {
@@ -230,32 +284,42 @@ window.report_preferences_ = window.try_catch_handler_(function () {
         );
     }
   }
+  // Refuses an order setting naming an offered choice other than once.
+  function setting_order_check(setting_name, ordered_values, offered_values) {
+    setting_choices_check(setting_name, ordered_values, offered_values);
+    const repeated_value = ordered_values.find(
+      (ordered_value, value_index) =>
+        ordered_values.indexOf(ordered_value) !== value_index,
+    );
+    if (repeated_value !== undefined)
+      window.throw_exception_(
+        "str_error_setting_choice_repeated",
+        setting_name,
+        repeated_value,
+      );
+    const missing_value = offered_values.find(
+      (offered_value) => !ordered_values.includes(offered_value),
+    );
+    if (missing_value !== undefined)
+      window.throw_exception_(
+        "str_error_setting_choice_missing",
+        setting_name,
+        missing_value,
+      );
+  }
   // Returns whether a list keeps a line shown, its ranking counter alone.
   function is_line_kept_shown(list_kind, line_name) {
     return list_kind.keeps_ranking_shown && line_name === RANKING_COUNTER_NAME;
   }
-  // Lists the default line order: the leading lines, then the rest by name.
-  function default_line_names(list_kind) {
-    const offered_names = [
-      ...list_kind.non_counter_names,
-      ...offered_counter_names,
-    ];
-    return [
-      ...list_kind.leading_names,
-      ...offered_names
-        .filter((line_name) => !list_kind.leading_names.includes(line_name))
-        .sort(),
-    ];
-  }
   // Lists the lines a user can hide, each but a line the list keeps shown.
   function toggled_line_names(list_kind) {
-    return default_line_names(list_kind).filter(
+    return DEFAULT_LINE_NAMES.filter(
       (line_name) => !is_line_kept_shown(list_kind, line_name),
     );
   }
   // Returns the default lines of a list, those its setting names shown.
   function default_counter_lines(list_kind) {
-    return default_line_names(list_kind).map((line_name) => ({
+    return DEFAULT_LINE_NAMES.map((line_name) => ({
       line_name,
       is_shown:
         is_line_kept_shown(list_kind, line_name) ||
@@ -272,7 +336,7 @@ window.report_preferences_ = window.try_catch_handler_(function () {
       ? stored_lines.map((stored_line) => stored_line.line_name)
       : [];
     const is_offered =
-      sorted_text(stored_names) === sorted_text(default_line_names(list_kind));
+      sorted_text(stored_names) === sorted_text(DEFAULT_LINE_NAMES);
     return is_offered ? stored_lines : default_counter_lines(list_kind);
   }
   // Returns the stored choice when this report offers it, else the default.
@@ -304,8 +368,18 @@ window.report_preferences_ = window.try_catch_handler_(function () {
       ),
     });
   }
-  // Refuses default preferences naming choices this report does not offer.
-  function preference_settings_check() {
+  // Refuses a line order or default preferences this report does not offer.
+  function preference_settings_check(counter_names) {
+    setting_order_check(
+      "COUNTER_LIST_CALLGRIND_LINE_NAMES",
+      COUNTER_LIST_CALLGRIND_LINE_NAMES,
+      counter_names,
+    );
+    setting_order_check(
+      "COUNTER_LIST_NON_CALLGRIND_LINE_NAMES",
+      COUNTER_LIST_NON_CALLGRIND_LINE_NAMES,
+      Object.keys(NON_CALLGRIND_LINES),
+    );
     for (const list_kind of Object.values(COUNTER_LIST_KINDS))
       setting_choices_check(
         list_kind.default_setting_name,
@@ -323,10 +397,9 @@ window.report_preferences_ = window.try_catch_handler_(function () {
       choice_values(HEAT_SORT_CHOICES),
     );
   }
-  // Takes the counters every list offers, checks the defaults, then seeds.
+  // Checks the settings against the report's counters, then seeds.
   function activate(counter_names) {
-    offered_counter_names = counter_names;
-    preference_settings_check();
+    preference_settings_check(counter_names);
     seed();
   }
 
@@ -337,9 +410,8 @@ window.report_preferences_ = window.try_catch_handler_(function () {
   }
   // Returns a counters list, refusing a list or a line the report lacks.
   function counter_lines_holding(list_key, line_name) {
-    const counter_lines = now().counter_lists[list_key];
+    const counter_lines = counter_lines_of(list_key);
     if (
-      !counter_lines ||
       !counter_lines.some(
         (counter_line) => counter_line.line_name === line_name,
       )
@@ -412,9 +484,12 @@ window.report_preferences_ = window.try_catch_handler_(function () {
     heat_scale_choose,
     heat_sort_choices: HEAT_SORT_CHOICES,
     heat_sort_choose,
+    line_column,
     now,
     relay_handler,
     seed,
     shown_line_names,
+    shown_line_parts,
+    sort_order_choices,
   };
 })();

@@ -73,7 +73,33 @@ CALLGRIND_UNKNOWN_NAME = "???"
 
 COUNTER_LIST_CALLEES_LINE_NAME = "callees"
 COUNTER_LIST_CALLERS_LINE_NAME = "callers"
+COUNTER_LIST_CALLGRIND_LINE_NAMES: tuple[str, ...] = (
+    "Ir",
+    "Dr",
+    "Dw",
+    "I1mr",
+    "D1mr",
+    "D1mw",
+    "ILmr",
+    "DLmr",
+    "DLmw",
+    "Bc",
+    "Bcm",
+    "Bi",
+    "Bim",
+    "D1m",
+    "DLm",
+    "L1m",
+    "LLm",
+    "Bm",
+    "CEst",
+)
 COUNTER_LIST_CALLS_LINE_NAME = "calls"
+COUNTER_LIST_NON_CALLGRIND_LINE_NAMES: tuple[str, ...] = (
+    COUNTER_LIST_CALLS_LINE_NAME,
+    COUNTER_LIST_CALLERS_LINE_NAME,
+    COUNTER_LIST_CALLEES_LINE_NAME,
+)
 
 DARK_MODE_ATTRIBUTE_NAME = "data-dark-mode-"
 DARK_MODE_DISABLED_VALUE = "disabled"
@@ -128,7 +154,6 @@ FLAME_GRAPH_MAX_RECORDED_CALLS = 200
 FLAME_GRAPH_PROFILE_DIR_NAME = "profiles"
 FLAME_GRAPH_PROFILE_GLOBAL_NAME = "report_flame_graph_profiles_"
 FLAME_GRAPH_PROFILE_NAME_FORMAT = "%s (loops=%s)"
-FLAME_GRAPH_RELAYED_KEY_NAMES: tuple[str, ...] = ("0",)
 FLAME_GRAPH_STARTUP_POLL_DELAY_MS = 50
 FLAME_GRAPH_STARTUP_POLL_MAX_ATTEMPTS = 200
 FLAME_GRAPH_TRACE_PROFILE_NAME_FORMAT = (
@@ -171,7 +196,7 @@ LOAD_LOG_NAVIGATION_CAUSE_NAME = "navigation"
 
 MENU_DIGIT_KEY_COUNT = 10
 MENU_ENTRY_NEEDS: dict[str, list[str]] = {
-    "counters": ["menu_counter_list"],
+    "counters": ["counter_list"],
     "heat_scale": ["view"],
     "heat_sort": ["view"],
     "str_menu_file": ["test"],
@@ -372,7 +397,7 @@ STYLE_TABLE_FUNCTION_LIST_COLUMN_MAX_CHARS = 48
 STYLE_TABLE_FUNCTION_NAME_MAX_CHARS = 20
 STYLE_TABLE_LOCATION_COLUMN_MAX_CHARS = 48
 STYLE_TEXT_SCROLLBAR_FONT_MULTIPLE: dict[str, float] = {
-    "horizontal": 0.75,
+    "horizontal": 1,
     "vertical": 1.5,
 }
 STYLE_TEXT_SCROLLBAR_FONT_MULTIPLE_PROPERTY: dict[str, str] = {

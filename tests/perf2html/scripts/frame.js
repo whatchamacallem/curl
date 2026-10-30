@@ -257,11 +257,6 @@ window.try_catch_handler_(function () {
         message_data.anchor_name,
         message_data.lands_after,
       );
-    else if (message_tag === "counter_line_toggle")
-      window.report_menu_.counter_line_toggle(
-        message_data.list_key,
-        message_data.line_name,
-      );
     else if (message_tag === "dark_mode_request") view_post("dark_mode_show");
     else if (message_tag === "focused_path_set")
       focused_path_set(message_data.path_entries);

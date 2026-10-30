@@ -86,6 +86,10 @@ window.ui_strings_ = (function () {
       "report incomplete, scripts/debug.js not written.",
     str_error_screenshot_label_query_unusable:
       "the {0} query value came out as {1}, expected {2}",
+    str_error_setting_choice_missing:
+      "setting {0} leaves out a choice this report offers: {1}",
+    str_error_setting_choice_repeated:
+      "setting {0} names a choice more than once: {1}",
     str_error_setting_choice_unknown:
       "setting {0} names a choice this report does not offer: {1}",
     str_error_setting_unknown: "no such setting: {0}",
@@ -98,7 +102,6 @@ window.ui_strings_ = (function () {
     str_flame_graph_page_title: "speedscope",
     str_function_list_cell_entry: "{function} ({share})",
     str_function_name_unknown: "?",
-    str_heading_functions: "functions",
     str_heading_manifest: "manifest",
     str_heading_measure_diff: "change in {column}",
     str_heading_raw_data: "raw data",

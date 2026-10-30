@@ -8,6 +8,12 @@ window.try_catch_handler_(function () {
   const CALLGRIND_FILE_DATA_ERROR_CODE = settings_(
     "CALLGRIND_FILE_DATA_ERROR_CODE",
   );
+  const COUNTER_LIST_CALLEES_LINE_NAME = settings_(
+    "COUNTER_LIST_CALLEES_LINE_NAME",
+  );
+  const COUNTER_LIST_CALLERS_LINE_NAME = settings_(
+    "COUNTER_LIST_CALLERS_LINE_NAME",
+  );
   const COUNTER_LIST_CALLS_LINE_NAME = settings_(
     "COUNTER_LIST_CALLS_LINE_NAME",
   );
@@ -39,6 +45,9 @@ window.try_catch_handler_(function () {
   const REPORT_SOURCES_DIR_NAME = settings_("REPORT_SOURCES_DIR_NAME");
   const STYLE_HEAT_MAP_TREE_INDENT_PER_LEVEL_CHARS = settings_(
     "STYLE_HEAT_MAP_TREE_INDENT_PER_LEVEL_CHARS",
+  );
+  const STYLE_TABLE_FUNCTION_LIST_COLUMN_MAX_CHARS = settings_(
+    "STYLE_TABLE_FUNCTION_LIST_COLUMN_MAX_CHARS",
   );
   const STYLE_TABLE_FUNCTION_NAME_MAX_CHARS = settings_(
     "STYLE_TABLE_FUNCTION_NAME_MAX_CHARS",
@@ -108,11 +117,6 @@ window.try_catch_handler_(function () {
     shown_line_names = report_preferences_.shown_line_names(
       HEAT_MAP_VIEW_ENTRY[0],
     );
-    const unknown_names = shown_line_names.filter(
-      (line_name) =>
-        line_name !== COUNTER_LIST_CALLS_LINE_NAME && !counter_find(line_name),
-    );
-    if (unknown_names.length) window.throw_exception_("str_error_internal");
     const scale_choices = report_preferences_.heat_scale_choices();
     active_scale = scale_choices.find(
       (choice) => choice.value === view_preferences.heat_scale_value,
@@ -370,11 +374,11 @@ window.try_catch_handler_(function () {
     };
   }
 
-  const counter_column = (counter, extra) =>
-    Object.assign(
-      { label: counter.key, measure: counter_label(counter), numeric: true },
-      extra || {},
-    );
+  const counter_column = (counter) => ({
+    label: counter.key,
+    measure: counter_label(counter),
+    numeric: true,
+  });
   const function_column = (label) => ({
     label,
     clip: STYLE_TABLE_FUNCTION_NAME_MAX_CHARS,
@@ -384,22 +388,11 @@ window.try_catch_handler_(function () {
     label: text("str_heat_map_tree_label"),
     cls: "heat-map-source-table-tree-cell-",
   };
-  const secondary_column = (secondary) =>
-    counter_column(secondary, {
-      cls: "heat-map-source-table-secondary-counter-cell-",
-      move_name: secondary.key,
-    });
-  // Lists what a table draws of each shown line, in the list's order.
-  const shown_line_parts = (line_part) =>
-    shown_line_names.flatMap((line_name) => line_part(line_name));
-  // Asks the top page to move a line of the heat map list, a column dropped.
-  const counter_line_move_send = (line_name, anchor_name, lands_after) =>
-    report_ui_.counter_line_move_send(
-      HEAT_MAP_VIEW_ENTRY[0],
-      line_name,
-      anchor_name,
-      lands_after,
-    );
+  // Returns the source table's column of a shown line, with its cell class.
+  const source_line_column = (line_name, cls) => ({
+    ...report_preferences_.line_column(line_name),
+    cls,
+  });
   // Writes the cell of one selected counter, its share heat colored.
   const secondary_cell = (percent) => ({
     text: percent ? share_text(percent) : "",
@@ -1320,42 +1313,96 @@ window.try_catch_handler_(function () {
         style: heat_style(calls_percent),
       };
     };
-    const source_self_cell = (source_row) => ({
-      text: source_row.self_cost ? share_text(source_row.self_percent) : "",
-      style: source_row.heat_style_attribute,
+    // Writes a row's callers or callees, hottest first, each by its share.
+    const source_function_list_cell = (call_rows, clip_chars) =>
+      report_ui_.function_list_cell(
+        call_rows
+          .slice()
+          .sort(
+            (call_a, call_b) =>
+              ranking_value(call_b[3]) - ranking_value(call_a[3]),
+          )
+          .map(([function_index, , , cost_vector]) => ({
+            name: function_name(function_index),
+            href: function_is_linkable(function_index)
+              ? hash_for_function(function_table[function_index].name)
+              : "",
+            share_text: share_text(
+              share_of_test(ranking_value(cost_vector), ranking_counter),
+              false,
+            ),
+          })),
+        clip_chars,
+      );
+    // Makes the part of the callers or the callees line, the calls listed.
+    const source_function_list_part = (line_name, call_rows_of) => ({
+      column: {
+        ...report_preferences_.line_column(line_name),
+        clip: STYLE_TABLE_FUNCTION_LIST_COLUMN_MAX_CHARS,
+      },
+      cell: (source_row, clip_chars) =>
+        source_function_list_cell(call_rows_of(source_row), clip_chars),
     });
-    // Pairs a shown line's column with the cell each source row writes in it.
-    function source_line_parts(line_name) {
-      if (line_name === COUNTER_LIST_CALLS_LINE_NAME) {
-        if (!HAS_CALL_GRAPH) return [];
-        const calls_column = {
-          label: text("str_column_calls"),
-          numeric: true,
-          cls: "heat-map-source-table-calls-cell-",
-          move_name: line_name,
+    // Holds the part of each line of calls, none for a report with no calls.
+    const call_parts = HAS_CALL_GRAPH
+      ? {
+          [COUNTER_LIST_CALLEES_LINE_NAME]: source_function_list_part(
+            COUNTER_LIST_CALLEES_LINE_NAME,
+            (source_row) => source_row.callees,
+          ),
+          [COUNTER_LIST_CALLERS_LINE_NAME]: source_function_list_part(
+            COUNTER_LIST_CALLERS_LINE_NAME,
+            (source_row) => source_row.callers,
+          ),
+          [COUNTER_LIST_CALLS_LINE_NAME]: {
+            column: source_line_column(
+              COUNTER_LIST_CALLS_LINE_NAME,
+              "heat-map-source-table-calls-cell-",
+            ),
+            cell: source_calls_cell,
+          },
+        }
+      : {
+          [COUNTER_LIST_CALLEES_LINE_NAME]: null,
+          [COUNTER_LIST_CALLERS_LINE_NAME]: null,
+          [COUNTER_LIST_CALLS_LINE_NAME]: null,
         };
-        return [{ column: calls_column, cell: source_calls_cell }];
-      }
-      if (line_name === RANKING_COUNTER_NAME) {
-        const self_column = counter_column(ranking_counter, {
-          cls: "heat-map-source-table-self-cell-",
-          move_name: line_name,
-        });
-        return [{ column: self_column, cell: source_self_cell }];
-      }
-      const secondary = counter_find(line_name);
-      const secondary_row_cell = (source_row) => {
-        if (!source_row.costs) return "";
-        const counter_value = secondary.get(source_row.costs[0]);
-        return secondary_cell(source_row.share(counter_value, secondary));
+    // Makes the part of a shown counter, the ranking counter's the self costs.
+    function source_counter_part(counter_name) {
+      if (counter_name === RANKING_COUNTER_NAME)
+        return {
+          column: source_line_column(
+            counter_name,
+            "heat-map-source-table-self-cell-",
+          ),
+          cell: (source_row) => ({
+            text: source_row.self_cost
+              ? share_text(source_row.self_percent)
+              : "",
+            style: source_row.heat_style_attribute,
+          }),
+        };
+      const secondary = counter_find(counter_name);
+      if (!secondary) window.throw_exception_("str_error_internal");
+      return {
+        column: source_line_column(
+          counter_name,
+          "heat-map-source-table-secondary-counter-cell-",
+        ),
+        cell: (source_row) => {
+          if (!source_row.costs) return "";
+          const counter_value = secondary.get(source_row.costs[0]);
+          return secondary_cell(source_row.share(counter_value, secondary));
+        },
       };
-      return [
-        { column: secondary_column(secondary), cell: secondary_row_cell },
-      ];
     }
-    const line_parts = shown_line_parts(source_line_parts);
+    const line_parts = report_preferences_.shown_line_parts(
+      HEAT_MAP_VIEW_ENTRY[0],
+      source_counter_part,
+      call_parts,
+    );
 
-    const rows = [],
+    const source_rows = [],
       attrs = [];
     const source_row_emit = (line_number, text) => {
       const line_costs = file.lines[line_number];
@@ -1398,20 +1445,20 @@ window.try_catch_handler_(function () {
         ...(class_names ? { class: class_names } : {}),
         "data-line-number-": line_number,
       });
-      const source_row = {
+      source_rows.push({
         calls,
+        callees: file.callees[line_number] || [],
+        callers: declared_functions(file_path, line_number).flatMap(
+          (function_index) => function_table[function_index].callers,
+        ),
         costs: row_costs,
         heat_style_attribute,
+        line_number,
         self_cost,
         self_percent,
         share: row_share,
-      };
-      rows.push([
-        "",
-        { text: String(line_number), style: heat_style_attribute },
-        { text: tabs_expand(text), style: heat_style_attribute },
-        ...line_parts.map((line_part) => line_part.cell(source_row)),
-      ]);
+        text,
+      });
     };
     const source_lines = file_source == null ? [] : file_source.split("\n");
     if (source_lines.length && source_lines[source_lines.length - 1] === "") {
@@ -1427,7 +1474,7 @@ window.try_catch_handler_(function () {
       source_row_emit(line_number, beyond_end_text);
     }
 
-    const line_column = {
+    const line_number_column = {
       label: text("str_column_line"),
       numeric: true,
       cls: "heat-map-source-table-line-number-cell-",
@@ -1437,17 +1484,35 @@ window.try_catch_handler_(function () {
       clip: HEAT_MAP_SOURCE_VIEW_WIDTH_CHARS,
       cls: "heat-map-source-table-code-cell-",
     };
-    const columns = [
-      TREE_COLUMN,
-      line_column,
-      source_column,
-      ...line_parts.map((line_part) => line_part.column),
+    // Holds the parts each row draws first, none a line of the counters list.
+    const fixed_parts = [
+      { column: TREE_COLUMN, cell: () => "" },
+      {
+        column: line_number_column,
+        cell: (source_row) => ({
+          text: String(source_row.line_number),
+          style: source_row.heat_style_attribute,
+        }),
+      },
+      {
+        column: source_column,
+        cell: (source_row) => ({
+          text: tabs_expand(source_row.text),
+          style: source_row.heat_style_attribute,
+        }),
+      },
     ];
-    markup += report_ui_.render_table("heat.src", columns, rows, {
-      row_attributes: attrs,
-      cls: "heat-map-source-table-",
-      on_column_move: counter_line_move_send,
-    });
+    markup += report_ui_.render_record_table(
+      "heat.src",
+      [...fixed_parts, ...line_parts],
+      source_rows,
+      {
+        row_attributes: attrs,
+        cls: "heat-map-source-table-",
+        counter_list_key: HEAT_MAP_VIEW_ENTRY[0],
+        on_clip_change: source_clip_change,
+      },
+    );
     const tree_state = tree_state_read();
     main_panel.innerHTML = render_element(
       "div",
@@ -2083,6 +2148,11 @@ window.try_catch_handler_(function () {
     rendered_line = line;
     main_focus_restore(main_had_focus);
     load_render_finish();
+  }
+  // Draws the source again for a column's new clip, its open line kept.
+  function source_clip_change() {
+    rendered_key = "";
+    route_render();
   }
   // Logs the view's load render once the first route has drawn.
   function load_render_finish() {

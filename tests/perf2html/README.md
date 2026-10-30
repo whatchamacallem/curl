@@ -125,8 +125,9 @@ these same names.
 
 `CEst` weights a miss by roughly what it costs and is used by default.
 
-See the [callgrind](https://valgrind.org/docs/manual/cl-manual.html) docs. GPL
-Version 3, 29 June 2007.
+See the [callgrind](https://valgrind.org/docs/manual/cl-manual.html) docs.
+
+Callgrind is GPL Version 3, 29 June 2007.
 
 ## Reading A Diff Report
 
@@ -203,5 +204,6 @@ The keybindings are:
 - Cmd+F/Ctrl+F: to open search. While open, Enter and Shift+Enter cycle through
   results
 
-[speedscope](https://github.com/jlfwong/speedscope) is Copyright (c) 2018 Jamie
-Wong
+[speedscope](https://github.com/jlfwong/speedscope) is Copyright (c) 2018+
+Jamie Wong and contributors. `speedscope` is an upstream project and is not
+affiliated with the `perf2html` project.
