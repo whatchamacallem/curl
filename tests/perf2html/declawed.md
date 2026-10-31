@@ -106,10 +106,12 @@ scripts too."""
   sharing one tree corrupts comparisons.
 - No fake data - every value is a measurement or plain arithmetic on one. If a
   tool can't supply a view's data, the view isn't built.
-- Every percentage a regular report shows of a file, a function or a line
-  is that thing's share of the test's global total of its counter, through
-  `share_of_test()`; a share of any other whole, a file's, a function's or
-  a line's, is confusing and disallowed.
+- There are two kinds of percentage. A regular report shows a file's, a
+  function's or a line's cost as a share of the test's global cost, through
+  `share_of_test()`; a regular share of any other whole, a file's, a
+  function's or a line's, is confusing and disallowed. A diff report shows
+  the simple percent difference of that thing between the two reports, its
+  change in cost over its own baseline cost, through `diff_share()`.
 - No combined test data: every number is one test's, or one diff's of one test.
   Nothing sums, merges or averages tests, and no page shows test data in a
   combined form where each test's own contribution is not explicit. The merged

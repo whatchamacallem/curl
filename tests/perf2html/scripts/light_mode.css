@@ -109,13 +109,6 @@ body {
   border-width: var(--page-line-width-);
   border-color: var(--light-mode-menu-normal-outline-);
 }
-.heat-map-source-information-line- {
-  background: var(--light-mode-page-emphasis-bg-);
-  color: var(--light-mode-page-emphasis-fg-);
-}
-.heat-map-source-information-line- a:not(:focus-visible) {
-  color: inherit;
-}
 tr.heat-map-source-information-box-synthetic-row- > td {
   background: var(--light-mode-status-bar-bg-);
   color: var(--light-mode-status-bar-fg-);

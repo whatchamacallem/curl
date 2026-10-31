@@ -1215,34 +1215,6 @@ window.try_catch_handler_(function () {
     };
   }
 
-  // Returns the self share of a file as the information line shows it.
-  function information_line_share_text(file_path) {
-    const self_cost = ranking_value(file_table[file_path].self);
-    return self_cost
-      ? share_text(ranking_share(self_cost, file_baseline(file_path)), false)
-      : report_ui_.zero_percent_text();
-  }
-  // Renders the line that stands in for the file box while that box is away.
-  function information_line_render(file_path) {
-    const link_text = text_fill("str_information_line_link", {
-      path: file_path,
-      share: information_line_share_text(file_path),
-    });
-    return render_element(
-      "div",
-      {
-        class: "heat-map-source-information-line- band- empty-",
-        "data-information-box-line-": 0,
-      },
-      render_element(
-        "a",
-        { href: hash_for_line(file_path) },
-        render_html_escape(link_text),
-      ) +
-        " " +
-        box_control_markup("copy", "str_information_box_copy"),
-    );
-  }
   // Expands each tab to its stop, so a clip counts the columns shown.
   function tabs_expand(line_text) {
     let expanded_text = "";
@@ -1298,7 +1270,6 @@ window.try_catch_handler_(function () {
     const is_first_view = current_file_path !== file_path,
       kept_scroll_top = is_first_view ? 0 : main_panel.scrollTop;
     current_file_path = file_path;
-    let markup = information_line_render(file_path);
     const file_source = source_text(file_path);
     const source_calls_cell = (source_row) => {
       const calls_percent = source_row.share(
@@ -1496,7 +1467,7 @@ window.try_catch_handler_(function () {
       },
     ];
     const column_parts = [...fixed_parts, ...line_parts];
-    markup += report_ui_.render_record_table(
+    const markup = report_ui_.render_record_table(
       "heat.src",
       column_parts,
       source_rows,
@@ -1526,28 +1497,12 @@ window.try_catch_handler_(function () {
     );
     report_ui_.layout_activate(main_panel);
     main_panel.scrollTop = kept_scroll_top;
-    information_line_refresh();
     minimap_sync();
   }
 
-  // Shows the information line once the file box is scrolled under the titles.
-  function information_line_refresh() {
-    const information_line = main_panel.querySelector(
-      ".heat-map-source-information-line-",
-    );
-    if (!information_line) return;
-    const covered_bottom_px =
-      design_rect(main_panel).top +
-      covered_height(main_panel.querySelector("table.heat-map-source-table-"));
-    information_line.classList.toggle(
-      "empty-",
-      design_rect(file_box_row()).bottom > covered_bottom_px,
-    );
-  }
   // Shows the file box at the top of the view.
   function file_box_show() {
     main_panel.scrollTop = 0;
-    information_line_refresh();
     minimap_sync();
   }
   // Shows an address in a file: the tree node if asked, then the file box.
@@ -1580,11 +1535,7 @@ window.try_catch_handler_(function () {
   }
 
   function covered_height(table_element) {
-    let height = design_rect(table_element.tHead.rows[0].cells[0]).height;
-    for (const band of main_panel.querySelectorAll(".band-")) {
-      height += design_rect(band).height;
-    }
-    return height;
+    return design_rect(table_element.tHead.rows[0].cells[0]).height;
   }
 
   function row_center(row_element) {
@@ -1753,10 +1704,6 @@ window.try_catch_handler_(function () {
   main_panel.addEventListener(
     "scroll",
     window.try_catch_handler_(minimap_sync),
-  );
-  main_panel.addEventListener(
-    "scroll",
-    window.try_catch_handler_(information_line_refresh),
   );
   // Centres the view on a pressed row outside the box, then drags the box.
   minimap_panel.addEventListener(
@@ -2229,8 +2176,5 @@ window.try_catch_handler_(function () {
     relay_handler,
   });
 
-  report_ui_.resize_settle_register(() => {
-    minimap_layout();
-    information_line_refresh();
-  });
+  report_ui_.resize_settle_register(minimap_layout);
 })();

@@ -139,10 +139,6 @@ pre {
   grid-template-rows: minmax(0, 1fr);
   height: calc(100cqh - 100%);
 }
-/* Under the information line the titles stick a band lower. */
-.heat-map-source- .heat-map-tree-track- {
-  height: calc(100cqh - 100% - var(--heat-map-source-band-height-));
-}
 #heat-map-tree- {
   overflow-x: hidden;
   overflow-y: scroll;

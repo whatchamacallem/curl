@@ -137,9 +137,8 @@ A regular report contains a suite of tests that can be explored using a menu.
 There is heat map data, call graph data, and a flame graph.
 
 A regular report shows you each counter selected in the menu's counters
-pulldown, a total for each and a percentage of that total. In most places it is
-a percentage of the global total, however in the source view it may also be a
-percentage of a file or function if selected.
+pulldown, a total for each and a percentage of that total. Every percentage of
+a file, function or line is its cost as a share of the test's global cost.
 
 ```txt
 | example     |       % |

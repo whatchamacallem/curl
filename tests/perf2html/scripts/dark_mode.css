@@ -144,13 +144,6 @@
     border-width: var(--page-line-width-);
     border-color: var(--dark-mode-menu-normal-outline-);
   }
-  .heat-map-source-information-line- {
-    background: var(--dark-mode-page-emphasis-bg-);
-    color: var(--dark-mode-page-emphasis-fg-);
-  }
-  .heat-map-source-information-line- a:not(:focus-visible) {
-    color: inherit;
-  }
   tr.heat-map-source-information-box-synthetic-row- > td {
     background: none;
     color: var(--dark-mode-status-bar-fg-);

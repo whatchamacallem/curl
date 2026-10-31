@@ -49,21 +49,6 @@
   display: block;
 }
 
-/* The information line stays over the source, the column titles under. */
-.band- {
-  position: sticky;
-  top: 0;
-  z-index: var(--heat-map-band-z-index-);
-}
-.heat-map-source- th {
-  top: var(--heat-map-source-band-height-);
-}
-.heat-map-source-information-line- {
-  white-space: pre;
-}
-.heat-map-source-information-line-.empty- {
-  visibility: hidden;
-}
 .heat-map-source-information-box- {
   position: relative;
 }

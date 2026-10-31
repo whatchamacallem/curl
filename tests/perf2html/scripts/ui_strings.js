@@ -119,7 +119,6 @@ window.ui_strings_ = (function () {
     str_information_box_function_self: "{function}: self {self}.",
     str_information_box_function_totals:
       "{function} by call count: self {self}, total {total}.",
-    str_information_line_link: "{path} self {share} info",
     str_line_self: "line self",
     str_load_log_asset_entry: "[{time}ms] {page} loaded {asset}",
     str_load_log_frame_entry:

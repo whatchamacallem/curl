@@ -409,9 +409,7 @@ STYLE_TEXT_SCROLLBAR_FONT_MULTIPLE_PROPERTY: dict[str, str] = {
 STYLE_TEXT_SCROLLBAR_THUMB_SHORTEST_CHARS = 4
 STYLE_VALUE_ENTRIES: dict[str, str] = {
     "call-graph-border-width-": "1ch",
-    "heat-map-band-z-index-": "2",
     "heat-map-minimap-width-": "110px",
-    "heat-map-source-band-height-": "1lh",
     "heat-map-source-table-line-number-cell-callee-marker-text-": '"►"',
     "heat-map-source-ticker-tape-gap-": "1ch",
     "heat-map-tree-node-hover-z-index-": "1",
