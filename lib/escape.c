@@ -32,6 +32,10 @@ struct Curl_easy;
 #include "curlx/strparse.h"
 #include "curl_printf.h"
 
+#if defined(USE_AVX_512) || defined(USE_AVX2)
+#include <immintrin.h>
+#endif
+
 /* for ABI-compatibility with previous versions */
 char *curl_escape(const char *string, int length)
 {
@@ -150,6 +154,158 @@ static const char hexpairs[][2] = {
   {'F', 'C'}, {'F', 'D'}, {'F', 'E'}, {'F', 'F'}
 };
 
+/*
+ * urldecode_block() decodes URLDECODE_BLOCK_TRIPLETS consecutive "%XX"
+ * triplets at the start of 'in' into 'out'. It returns TRUE when all of
+ * them were well-formed and FALSE otherwise, in which case 'out' may have
+ * been partially written and the caller falls back to the one triplet at a
+ * time code. The caller checks the decoded bytes against the reject limit.
+ *
+ * It reads URLDECODE_BLOCK_LOAD bytes from 'in', which for the vector
+ * bodies is a little more than the triplets cover. The caller makes sure
+ * that many bytes exist.
+ *
+ * There are three bodies, selected at build time: AVX-512 (BW and VL),
+ * AVX2 and plain C. They must produce identical results.
+ */
+
+#define URLDECODE_BLOCK_TRIPLETS 10
+
+#if defined(USE_AVX_512) || defined(USE_AVX2)
+
+/* one 32 byte load holds ten triplets, plus two bytes that are ignored */
+#define URLDECODE_BLOCK_LOAD 32
+
+/* bit i set when byte i is a '%' in a run of ten triplets */
+#define URLDECODE_PCT_MASK 0x09249249U
+/* bit i set when byte i is a hex digit in a run of ten triplets */
+#define URLDECODE_HEX_MASK 0x36db6db6U
+/* bits 30 and 31 are not part of any triplet */
+#define URLDECODE_CARE_MASK 0x3fffffffU
+
+/* vpshufb moves bytes within each 128 bit lane only. The low lane holds
+   triplets 0-4 at bytes 0-14 and the high lane holds triplets 5-9 at bytes
+   16-29, so this control gathers the first byte of each triplet from both
+   lanes into output positions 0-4 and 5-9, zeroing the rest; the two lanes
+   then OR together into ten bytes. */
+static const uint8_t urldecode_pack_ctrl[32] = {
+  1, 4, 7, 10, 13, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80,
+  0x80, 0x80,
+  0x80, 0x80, 0x80, 0x80, 0x80, 0, 3, 6, 9, 12, 0x80, 0x80, 0x80, 0x80,
+  0x80, 0x80
+};
+
+/* 'nib' holds the nibble value of every hex digit byte. Combine each pair
+   into one byte and store the ten bytes to 'out'. */
+static CURL_INLINE void urldecode_pack(__m256i nib, uint8_t *out)
+{
+  __m256i x;
+  __m128i r;
+  uint16_t tail;
+
+  /* x[i] = nib[i] << 4 | nib[i + 1]: the first byte of every triplet now
+     holds its decoded value. Bytes that are not hex digits hold garbage,
+     the mask keeps their bits from leaking across the 16 bit shift. */
+  x = _mm256_or_si256(
+    _mm256_slli_epi16(_mm256_and_si256(nib, _mm256_set1_epi8(0x0f)), 4),
+    _mm256_bsrli_epi128(nib, 1));
+  x = _mm256_shuffle_epi8(
+    x, _mm256_loadu_si256((const __m256i *)(const void *)urldecode_pack_ctrl));
+  r = _mm_or_si128(_mm256_castsi256_si128(x),
+                   _mm256_extracti128_si256(x, 1));
+  _mm_storel_epi64((__m128i *)(void *)out, r);
+  tail = (uint16_t)_mm_extract_epi16(r, 4);
+  memcpy(out + 8, &tail, sizeof(tail));
+}
+
+#endif /* USE_AVX_512 || USE_AVX2 */
+
+#ifdef USE_AVX_512
+
+static CURL_INLINE bool urldecode_block(const char *in, uint8_t *out)
+{
+  __m256i v, d, a;
+  __mmask32 kdigit, kletter;
+
+  v = _mm256_loadu_si256((const __m256i *)(const void *)in);
+
+  /* every third byte starting at zero must be a '%' */
+  if((_mm256_cmpeq_epi8_mask(v, _mm256_set1_epi8('%')) &
+      URLDECODE_CARE_MASK) != URLDECODE_PCT_MASK)
+    return FALSE;
+
+  /* classify every byte as a hex digit: d = c - '0' is a digit when
+     d <= 9, a = (c | 0x20) - 'a' is a letter when a <= 5 */
+  d = _mm256_sub_epi8(v, _mm256_set1_epi8('0'));
+  a = _mm256_sub_epi8(_mm256_or_si256(v, _mm256_set1_epi8(0x20)),
+                      _mm256_set1_epi8('a'));
+  kdigit = _mm256_cmple_epu8_mask(d, _mm256_set1_epi8(9));
+  kletter = _mm256_cmple_epu8_mask(a, _mm256_set1_epi8(5));
+  if(((kdigit | kletter) & URLDECODE_CARE_MASK) != URLDECODE_HEX_MASK)
+    return FALSE;
+
+  /* nibble value: d for digits, a + 10 for letters */
+  urldecode_pack(_mm256_mask_add_epi8(d, kletter, a, _mm256_set1_epi8(10)),
+                 out);
+  return TRUE;
+}
+
+#elif defined(USE_AVX2)
+
+static CURL_INLINE bool urldecode_block(const char *in, uint8_t *out)
+{
+  __m256i v, d, a, digit, letter;
+  unsigned int m;
+
+  v = _mm256_loadu_si256((const __m256i *)(const void *)in);
+
+  /* every third byte starting at zero must be a '%' */
+  m = (unsigned int)_mm256_movemask_epi8(
+    _mm256_cmpeq_epi8(v, _mm256_set1_epi8('%')));
+  if((m & URLDECODE_CARE_MASK) != URLDECODE_PCT_MASK)
+    return FALSE;
+
+  /* classify every byte as a hex digit: d = c - '0' is a digit when
+     d <= 9, a = (c | 0x20) - 'a' is a letter when a <= 5. AVX2 has no
+     unsigned compare, max_epu8(x, n) == n is the x <= n idiom. */
+  d = _mm256_sub_epi8(v, _mm256_set1_epi8('0'));
+  a = _mm256_sub_epi8(_mm256_or_si256(v, _mm256_set1_epi8(0x20)),
+                      _mm256_set1_epi8('a'));
+  digit = _mm256_cmpeq_epi8(_mm256_max_epu8(d, _mm256_set1_epi8(9)),
+                            _mm256_set1_epi8(9));
+  letter = _mm256_cmpeq_epi8(_mm256_max_epu8(a, _mm256_set1_epi8(5)),
+                             _mm256_set1_epi8(5));
+  m = (unsigned int)_mm256_movemask_epi8(_mm256_or_si256(digit, letter));
+  if((m & URLDECODE_CARE_MASK) != URLDECODE_HEX_MASK)
+    return FALSE;
+
+  /* nibble value: d for digits, a + 10 for letters */
+  urldecode_pack(_mm256_blendv_epi8(_mm256_add_epi8(a,
+                                                    _mm256_set1_epi8(10)),
+                                    d, digit), out);
+  return TRUE;
+}
+
+#else /* plain C */
+
+#define URLDECODE_BLOCK_LOAD (3 * URLDECODE_BLOCK_TRIPLETS)
+
+static CURL_INLINE bool urldecode_block(const char *in, uint8_t *out)
+{
+  size_t i;
+
+  for(i = 0; i < URLDECODE_BLOCK_TRIPLETS; i++, in += 3) {
+    uint8_t h1 = hextable[(uint8_t)in[1]];
+    uint8_t h2 = hextable[(uint8_t)in[2]];
+    if((in[0] != '%') || ((h1 | h2) & 0xf0))
+      return FALSE;
+    out[i] = (uint8_t)((h1 << 4) | h2);
+  }
+  return TRUE;
+}
+
+#endif /* USE_AVX_512 / USE_AVX2 / C */
+
 /* Escapes for URL the given unescaped string of given length.
  * 'data' is ignored since 7.82.0.
  */
@@ -247,6 +403,20 @@ CURLcode Curl_urldecode(const char *string, size_t length,
     uint8_t in;
 
     if(*string == '%') {
+      if((alloc >= URLDECODE_BLOCK_LOAD) &&
+         urldecode_block(string, (uint8_t *)ns)) {
+        if(reject_limit) {
+          size_t i;
+          for(i = 0; i < URLDECODE_BLOCK_TRIPLETS; i++) {
+            if((uint8_t)ns[i] < reject_limit)
+              goto error;
+          }
+        }
+        ns += URLDECODE_BLOCK_TRIPLETS;
+        string += 3 * URLDECODE_BLOCK_TRIPLETS;
+        alloc -= 3 * URLDECODE_BLOCK_TRIPLETS;
+        continue;
+      }
       if(alloc > 2) {
         uint8_t h1 = hextable[(uint8_t)string[1]];
         uint8_t h2 = hextable[(uint8_t)string[2]];

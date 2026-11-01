@@ -64,6 +64,25 @@ static CURLcode test_lib1396(const char *arg)
     { "%FF%00%ff", 9, "\xff\x00\xff", 3 },
     { "%-2", 0, "%-2", 3 },
     { "%FG", 0, "%FG", 3 },
+    /* runs of ten or more triplets are decoded a block at a time */
+    { "%41%42%43%44%45%46%47%48%49%4a", 30, "ABCDEFGHIJ", 10 },
+    { "%41%42%43%44%45%46%47%48%49%4a", 29, "ABCDEFGHI%4", 11 },
+    { "%41%42%43%44%45%46%47%48%49%4a%4b", 0, "ABCDEFGHIJK", 11 },
+    { "%41%42%43%44%45%46%47%48%49%4a%41%42%43%44%45%46%47%48%49%4a", 0,
+      "ABCDEFGHIJABCDEFGHIJ", 20 },
+    { "%41%42%43%44%45%46%47%48%49%4ax%41%42%43%44%45%46%47%48%49%4a", 0,
+      "ABCDEFGHIJxABCDEFGHIJ", 21 },
+    { "%00%01%1f%20%7f%80%fe%FF%00%ff", 0,
+      "\x00\x01\x1f\x20\x7f\x80\xfe\xff\x00\xff", 10 },
+    /* a byte that is not a hex digit anywhere in the run */
+    { "x41%42%43%44%45%46%47%48%49%4a", 0, "x41BCDEFGHIJ", 12 },
+    { "%/1%42%43%44%45%46%47%48%49%4a", 0, "%/1BCDEFGHIJ", 12 },
+    { "%41%4:%43%44%45%46%47%48%49%4a", 0, "A%4:CDEFGHIJ", 12 },
+    { "%41%42%43%44%@5%46%47%48%49%4a", 0, "ABCD%@5FGHIJ", 12 },
+    { "%41%42%43%44%45%4G%47%48%49%4a", 0, "ABCDE%4GGHIJ", 12 },
+    { "%41%42%43%44%45%46%47%48%`9%4a", 0, "ABCDEFGH%`9J", 12 },
+    { "%41%42%43%44%45%46%47%48%49%4g", 0, "ABCDEFGHI%4g", 12 },
+    { "%41%42%43%44%45%46%47%48%49%4\xff", 0, "ABCDEFGHI%4\xff", 12 },
     { NULL, 0, NULL, 0 } /* end of list marker */
   };
   /* escape, this => that */
@@ -99,6 +118,29 @@ static CURLcode test_lib1396(const char *arg)
 
     curl_mprintf("curl_easy_unescape test %d DONE\n", i);
 
+    curl_free(out);
+  }
+
+  /* every byte value in one run of triplets, odd triplets in lower case
+     hex and even ones in upper case */
+  {
+    static const char upper[] = "0123456789ABCDEF";
+    static const char lower[] = "0123456789abcdef";
+    char in[3 * 256];
+    int outlen;
+    char *out;
+    for(i = 0; i < 256; i++) {
+      const char *digits = (i & 1) ? lower : upper;
+      in[3 * i] = '%';
+      in[3 * i + 1] = digits[i >> 4];
+      in[3 * i + 2] = digits[i & 0x0f];
+    }
+    out = curl_easy_unescape(easy, in, (int)sizeof(in), &outlen);
+    abort_unless(out, "returned NULL!");
+    fail_unless(outlen == 256, "wrong output length returned");
+    for(i = 0; i < outlen; i++)
+      fail_unless((unsigned char)out[i] == i, "bad output data returned");
+    curl_mprintf("curl_easy_unescape all byte values DONE\n");
     curl_free(out);
   }
 

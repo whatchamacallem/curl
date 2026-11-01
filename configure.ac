@@ -5117,6 +5117,98 @@ if test "$want_ssls_export" != "no"; then
 fi
 
 dnl *************************************************************
+dnl check whether to enable the experimental AVX2 routines. The compiler
+dnl must accept -mavx2 and provide the AVX2 intrinsics, or configure fails.
+dnl
+AC_MSG_CHECKING([whether to enable AVX2 routines])
+AC_ARG_ENABLE(avx2,
+AS_HELP_STRING([--enable-avx2],[Enable AVX2 routines (experimental)])
+AS_HELP_STRING([--disable-avx2],[Disable AVX2 routines (experimental) (default)]),
+[ case "$enableval" in
+  no)
+    AC_MSG_RESULT([no])
+    want_avx2="no"
+    ;;
+  *)
+    AC_MSG_RESULT([yes])
+    want_avx2="yes"
+    ;;
+  esac ],
+    AC_MSG_RESULT([no])
+    want_avx2="no"
+)
+if test "$want_avx2" = "yes"; then
+  AC_MSG_CHECKING([whether the compiler supports AVX2 intrinsics])
+  CFLAGS="$CFLAGS -mavx2"
+  AC_COMPILE_IFELSE([
+    AC_LANG_PROGRAM([[
+#include <immintrin.h>
+#ifndef __AVX2__
+#error "AVX2 not enabled"
+#endif
+    ]],[[
+      __m256i v = _mm256_set1_epi8('%');
+      v = _mm256_shuffle_epi8(v, v);
+      return _mm256_movemask_epi8(v);
+    ]])
+  ],[
+    AC_MSG_RESULT([yes])
+    AC_DEFINE(USE_AVX2, 1, [if AVX2 routines are enabled])
+    experimental="$experimental AVX2"
+  ],[
+    AC_MSG_RESULT([no])
+    AC_MSG_ERROR([--enable-avx2 requires gcc or clang with -mavx2 support])
+  ])
+fi
+
+dnl *************************************************************
+dnl check whether to enable the experimental AVX-512 routines. The compiler
+dnl must accept -mavx512bw -mavx512vl and provide the AVX-512 intrinsics,
+dnl or configure fails.
+dnl
+AC_MSG_CHECKING([whether to enable AVX-512 routines])
+AC_ARG_ENABLE(avx512,
+AS_HELP_STRING([--enable-avx512],[Enable AVX-512 routines (experimental)])
+AS_HELP_STRING([--disable-avx512],[Disable AVX-512 routines (experimental) (default)]),
+[ case "$enableval" in
+  no)
+    AC_MSG_RESULT([no])
+    want_avx512="no"
+    ;;
+  *)
+    AC_MSG_RESULT([yes])
+    want_avx512="yes"
+    ;;
+  esac ],
+    AC_MSG_RESULT([no])
+    want_avx512="no"
+)
+if test "$want_avx512" = "yes"; then
+  AC_MSG_CHECKING([whether the compiler supports AVX-512 intrinsics])
+  CFLAGS="$CFLAGS -mavx512bw -mavx512vl"
+  AC_COMPILE_IFELSE([
+    AC_LANG_PROGRAM([[
+#include <immintrin.h>
+#if !defined(__AVX512BW__) || !defined(__AVX512VL__)
+#error "AVX-512 BW/VL not enabled"
+#endif
+    ]],[[
+      __m256i v = _mm256_set1_epi8('%');
+      __mmask32 k = _mm256_cmple_epu8_mask(v, v);
+      v = _mm256_mask_add_epi8(v, k, v, v);
+      return _mm256_movemask_epi8(v);
+    ]])
+  ],[
+    AC_MSG_RESULT([yes])
+    AC_DEFINE(USE_AVX_512, 1, [if AVX-512 routines are enabled])
+    experimental="$experimental AVX-512"
+  ],[
+    AC_MSG_RESULT([no])
+    AC_MSG_ERROR([--enable-avx512 requires gcc or clang with -mavx512bw -mavx512vl support])
+  ])
+fi
+
+dnl *************************************************************
 dnl check whether experimental HTTP/3 proxy support is enabled
 dnl
 if test "$want_proxy_http3" = "yes"; then

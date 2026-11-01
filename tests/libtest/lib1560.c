@@ -538,6 +538,17 @@ static const struct testcase get_parts_list[] = {
   {"http://%3a:%3a@ex4mple/%3f+?+%3f+%23#+%23%3f%g7",
    "http | : | : | [13] | ex4mple | [15] | /?+ |  ? # | +#?%g7",
    0, CURLU_URLDECODE, CURLUE_OK},
+  /* runs of ten or more triplets are decoded a block at a time */
+  {"http://ex4mple/%41%42%43%44%45%46%47%48%49%4a%4b%4c%4d%4e%4f%50%51"
+   "?%41%42%43%44%45%46%47%48%49%4a%4b%4c%4d%4e%4f%50%51%52%53%54%55",
+   "http | [11] | [12] | [13] | ex4mple | [15] | /ABCDEFGHIJKLMNOPQ | "
+   "ABCDEFGHIJKLMNOPQRSTU | [17]",
+   0, CURLU_URLDECODE, CURLUE_OK},
+  /* a control byte inside such a run is rejected on get */
+  {"http://ex4mple/%00%42%43%44%45%46%47%48%49%4a%4b%4c%4d%4e%4f%50%51"
+   "?%41%42%43%44%45%46%47%48%01%4a%4b%4c%4d%4e%4f%50%51%52%53%54%55",
+   "http | [11] | [12] | [13] | ex4mple | [15] | [6] | [6] | [17]",
+   0, CURLU_URLDECODE, CURLUE_OK},
   {"http://%3a:%3a@ex4mple/%3f?%3f%35#%35%3f%g7",
    "http | %3a | %3a | [13] | ex4mple | [15] | /%3f | %3f%35 | %35%3f%g7",
    0, 0, CURLUE_OK},
