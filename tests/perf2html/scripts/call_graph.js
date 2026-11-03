@@ -14,7 +14,6 @@ window.try_catch_handler_(function () {
   );
   const CALL_GRAPH_BRANCH_ONLY_TEXT = settings_("CALL_GRAPH_BRANCH_ONLY_TEXT");
   const CALL_GRAPH_BRANCH_PASS_TEXT = settings_("CALL_GRAPH_BRANCH_PASS_TEXT");
-  const CALL_GRAPH_CLOSED_TEXT = settings_("CALL_GRAPH_CLOSED_TEXT");
   const CALL_GRAPH_LINE_TEXT = settings_("CALL_GRAPH_LINE_TEXT");
   const CALL_GRAPH_REVEAL_CLEARANCE_CHARS = settings_(
     "CALL_GRAPH_REVEAL_CLEARANCE_CHARS",
@@ -26,23 +25,23 @@ window.try_catch_handler_(function () {
 
   const render_element = window.render_element_;
   const render_html_escape = window.render_html_escape_;
-  // Writes a group's cells: branch, share, symbol, multiple and tail.
+  // Writes a group's cells: branch, multiple, share, symbol and tail.
   function group_markup(
     branch_cell_markup,
+    multiple_cell_markup,
     share_cell_markup,
     symbol_cell_markup,
-    multiple_cell_markup,
     tail_cell_markup,
   ) {
     return (
       render_element("td", {}, branch_cell_markup) +
-      render_element("td", { class: "call-graph-share-" }, share_cell_markup) +
-      render_element("td", {}, symbol_cell_markup) +
       render_element(
         "td",
         { class: "call-graph-multiple-" },
         multiple_cell_markup,
       ) +
+      render_element("td", { class: "call-graph-share-" }, share_cell_markup) +
+      render_element("td", {}, symbol_cell_markup) +
       render_element("td", {}, tail_cell_markup)
     );
   }
@@ -219,12 +218,6 @@ window.try_catch_handler_(function () {
       );
       (layout_rows[node_row] ??= [])[group_index] = graph_node;
       next_free_rows[group_index] = node_row + 1;
-      // A row keeps a group right of a closed node, its closed mark's place.
-      if (place_is_closed(graph_node))
-        layout_rows[node_row].length = Math.max(
-          layout_rows[node_row].length,
-          group_index + 2,
-        );
       if (!is_open) return node_row;
       const child_rows = node_children(graph_node).map((child_node) =>
         node_place(child_node, node_row),
@@ -242,15 +235,6 @@ window.try_catch_handler_(function () {
     return layout_rows;
   }
 
-  // Returns whether a layout place holds a closed node with shown children.
-  function place_is_closed(layout_place) {
-    return (
-      layout_place !== undefined &&
-      layout_place !== PASS_PLACE &&
-      !node_is_open(layout_place) &&
-      shown_callee_edges(layout_place.node_path).length > 0
-    );
-  }
   // Returns a place's branch text: a node's, a passing branch's, or none.
   function place_branch_text(layout_place) {
     if (layout_place === undefined) return "";
@@ -311,20 +295,17 @@ window.try_catch_handler_(function () {
       shown_callee_edges(graph_node.node_path).length > 0;
     return group_markup(
       branch_cell_markup,
+      multiple_markup(graph_node),
       share_markup(graph_node),
       symbol_markup(graph_node, has_shown_children),
-      multiple_markup(graph_node),
       tail_markup(graph_node),
     );
   }
   // Writes a layout row's groups: a node's, a passing branch's, or empty.
   function layout_row_markup(layout_row) {
-    return Array.from(layout_row, (layout_place, group_index) => {
-      // A closed node's mark replaces the branch of the group right of it.
+    return Array.from(layout_row, (layout_place) => {
       const branch_cell_markup = render_html_escape(
-        place_is_closed(layout_row[group_index - 1])
-          ? CALL_GRAPH_CLOSED_TEXT
-          : place_branch_text(layout_place),
+        place_branch_text(layout_place),
       );
       if (layout_place === undefined || layout_place === PASS_PLACE)
         return group_markup(branch_cell_markup, "", "", "", "");

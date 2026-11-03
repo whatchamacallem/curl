@@ -158,7 +158,7 @@ window.try_catch_handler_(function () {
     },
     sort_value: (record) => [record.name],
     cell: (record) => ({ text: record.name, href: record.href }),
-    first_direction: "ascending",
+    first_direction: "descending",
   });
   const LOCATION_COLUMN = table_sort_column({
     column: {
@@ -170,7 +170,7 @@ window.try_catch_handler_(function () {
     cell: (record) => ({
       text: window.report_ui_.location_text(record.file, record.line),
     }),
-    first_direction: "ascending",
+    first_direction: "descending",
   });
   // Holds the columns no line of the counters list shows, first until moved.
   const FIXED_COLUMNS = [FUNCTION_COLUMN, LOCATION_COLUMN];
@@ -262,8 +262,8 @@ window.try_catch_handler_(function () {
       {
         counter_list_key: DATABASE_VIEW_KEY,
         heading_entries: window.report_ui_.table_sort.heading_entries({
-          order_choices:
-            window.report_preferences_.sort_order_choices(DATABASE_VIEW_KEY),
+          table_key: FUNCTIONS_TABLE_KEY,
+          sort_columns,
           sorted_column,
           sort_direction: chosen_sort_direction,
           is_diff,

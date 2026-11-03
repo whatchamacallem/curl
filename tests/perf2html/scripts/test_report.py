@@ -1802,6 +1802,14 @@ class TestReport:
                 f" expected {wanted}: {path}"
             )
 
+    # Returns a list of names, failing on any other value.
+    def names_list_check(self, names: Any, label: str, path: str) -> list[str]:
+        if not isinstance(names, list) or not all(
+            isinstance(name, str) for name in names
+        ):
+            self.fail(f"{label} holds no list of strings: {path}")
+        return names
+
     def overview_check(
         self,
         out_dir: str,
@@ -2333,7 +2341,7 @@ class TestReport:
         if layout.is_regular_report:
             self.flame_app_check(out_dir)
         self.heat_map_check(out_dir, tests, layout)
-        self.source_database_check(out_dir)
+        self.source_database_check(out_dir, tests)
         traced_tests = tests if layout.test_records_runs else []
         self.flame_graph_check(out_dir, traced_tests, layout)
         for test_name in tests:
@@ -2424,7 +2432,9 @@ class TestReport:
                 self.fail(f"{label} names {display!r} source {path}, absent")
 
     # Checks the list of every file and function the report's tests name.
-    def source_database_check(self, out_dir: str) -> None:
+    def source_database_check(
+        self, out_dir: str, tests: Sequence[str]
+    ) -> None:
         label = test_settings.TEST_SOURCE_DATABASE_SCRIPT_PATH
         path = os.path.join(out_dir, label)
         script = self.size_check(
@@ -2434,19 +2444,22 @@ class TestReport:
             script, test_settings.TEST_SOURCE_DATABASE_GLOBAL_NAME, None, path
         )
         found_keys = sorted(database)
-        if found_keys != sorted(test_settings.TEST_SOURCE_DATABASE_KEYS):
+        wanted_keys = sorted(
+            [
+                *test_settings.TEST_SOURCE_DATABASE_KEYS,
+                *test_settings.TEST_SOURCE_DATABASE_TEST_KEYS,
+            ]
+        )
+        if found_keys != wanted_keys:
             self.fail(
                 f"{label} holds the keys {found_keys}, expected"
-                f" {sorted(test_settings.TEST_SOURCE_DATABASE_KEYS)}: {path}"
+                f" {wanted_keys}: {path}"
             )
         listed: dict[str, list[str]] = {}
         for key in test_settings.TEST_SOURCE_DATABASE_KEYS:
-            names = database[key]
-            if not isinstance(names, list) or not all(
-                isinstance(name, str) for name in names
-            ):
-                self.fail(f"{label} {key} holds no list of strings: {path}")
-            listed[key] = names
+            listed[key] = self.names_list_check(
+                database[key], f"{label} {key}", path
+            )
         for file_name in listed["files"]:
             if (
                 file_name.split("/")[0]
@@ -2456,17 +2469,97 @@ class TestReport:
                     f"{label} lists {file_name!r}, a file in no known image:"
                     f" {path}"
                 )
-        unshown = sorted(set(listed["filesWithSource"]) - set(listed["files"]))
-        if unshown:
-            self.fail(
-                f"{label} lists {unshown[0]!r} with source but not among its"
-                f" files: {path}"
-            )
         if test_settings.TEST_BELOW_MAIN_FUNCTION_NAME in listed["functions"]:
             self.fail(
                 f"{label} lists"
                 f" {test_settings.TEST_BELOW_MAIN_FUNCTION_NAME!r}, valgrind's"
                 f" name for every function below main: {path}"
+            )
+        test_keys = test_settings.TEST_SOURCE_DATABASE_TEST_KEYS
+        counted: dict[str, dict[str, list[str]]] = {}
+        for key, union_key in test_keys.items():
+            by_test = database[key]
+            if not isinstance(by_test, dict):
+                self.fail(f"{label} {key} holds no map of tests: {path}")
+            counted[key] = by_test
+            if sorted(by_test) != sorted(tests):
+                self.fail(
+                    f"{label} {key} names the tests {sorted(by_test)},"
+                    f" expected {sorted(tests)}: {path}"
+                )
+            for test_name, names in by_test.items():
+                test_label = f"{label} {key} {test_name}"
+                self.names_list_check(names, test_label, path)
+                if names != sorted(set(names)):
+                    self.fail(f"{test_label} is not sorted and unique: {path}")
+                outside = sorted(set(names) - set(listed[union_key]))
+                if outside:
+                    self.fail(
+                        f"{test_label} lists {outside[0]!r}, not among its"
+                        f" {union_key}: {path}"
+                    )
+        for test_name in tests:
+            self.source_database_test_check(
+                self.heat_map_model_read(out_dir, test_name),
+                counted["filesWithCounters"][test_name],
+                counted["functionsWithCounters"][test_name],
+                f"{label} {test_name}",
+                path,
+            )
+
+    # Checks a test's files and functions with counters against its model.
+    def source_database_test_check(
+        self,
+        filed_model: Any,
+        counted_files: list[str],
+        counted_functions: list[str],
+        label: str,
+        path: str,
+    ) -> None:
+        wanted_files = {
+            file_name
+            for file_name, entry in filed_model["files"].items()
+            if any(line[0] or line[1] for line in entry["lines"].values())
+        }
+        missing_files = sorted(wanted_files - set(counted_files))
+        if missing_files:
+            self.fail(
+                f"{label} leaves out {missing_files[0]!r}, a file with a"
+                f" counter in its model: {path}"
+            )
+        extra_files = sorted(set(counted_files) - wanted_files)
+        if extra_files:
+            self.fail(
+                f"{label} lists {extra_files[0]!r}, a file with no counter in"
+                f" its model: {path}"
+            )
+        functions = filed_model["functions"]
+        must_list = {
+            function["name"]
+            for function in functions
+            if function["line"] and (function["self"] or function["calls"])
+        }
+        may_list = set(must_list)
+        for entry in filed_model["files"].values():
+            for line_key, indexes in entry["lineFunctions"].items():
+                line = entry["lines"][line_key]
+                if line[0] or line[1]:
+                    may_list.update(
+                        functions[index]["name"]
+                        for index in indexes
+                        if functions[index]["line"]
+                    )
+        missing_functions = sorted(must_list - set(counted_functions))
+        if missing_functions:
+            self.fail(
+                f"{label} leaves out {missing_functions[0]!r}, a function"
+                f" with a line and a nonzero self or calls: {path}"
+            )
+        extra_functions = sorted(set(counted_functions) - may_list)
+        if extra_functions:
+            self.fail(
+                f"{label} lists {extra_functions[0]!r}, a function with no"
+                f" line or no counter at a line it costs: {path}"
             )
 
     # Returns every address a table data's cells link.

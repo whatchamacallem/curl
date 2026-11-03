@@ -36,13 +36,12 @@ ASSET_THEME_STYLESHEET_NAME = "theme.css"
 ASSET_UI_STRINGS_SCRIPT_NAME = "ui_strings.js"
 ASSET_UTILITY_SCRIPT_NAME = "utility.js"
 
-CALL_GRAPH_BRANCH_FIRST_TEXT = "┬ "
-CALL_GRAPH_BRANCH_LAST_TEXT = "└ "
-CALL_GRAPH_BRANCH_MIDDLE_TEXT = "├ "
-CALL_GRAPH_BRANCH_ONLY_TEXT = "─ "
-CALL_GRAPH_BRANCH_PASS_TEXT = "│ "
-CALL_GRAPH_CLOSED_TEXT = "⊞ "
-CALL_GRAPH_LINE_TEXT = "─"
+CALL_GRAPH_BRANCH_FIRST_TEXT = "┳━ "
+CALL_GRAPH_BRANCH_LAST_TEXT = "┗━ "
+CALL_GRAPH_BRANCH_MIDDLE_TEXT = "┣━ "
+CALL_GRAPH_BRANCH_ONLY_TEXT = "━━ "
+CALL_GRAPH_BRANCH_PASS_TEXT = "┃"
+CALL_GRAPH_LINE_TEXT = "━"
 CALL_GRAPH_PAGE_DIR_NAME = "call-graph"
 CALL_GRAPH_REVEAL_CLEARANCE_CHARS = 1
 CALL_GRAPH_REVEAL_CLEARANCE_LINES = 0.5
@@ -199,13 +198,19 @@ LOAD_LOG_NAVIGATION_CAUSE_NAME = "navigation"
 MENU_DIGIT_KEY_COUNT = 10
 MENU_ENTRY_NEEDS: dict[str, list[str]] = {
     "counters": ["counter_list"],
-    "heat_scale": ["view"],
-    "heat_sort": ["view"],
     "str_menu_file": ["test"],
     "str_menu_function": ["test"],
     "str_view_call_graph": ["test", "view_page"],
     "str_view_database": ["test", "view_page"],
     "str_view_flame_graph": ["test", "view_page"],
+}
+MENU_ENTRY_VIEW_KEYS: dict[str, list[str]] = {
+    "heat_scale": [
+        CALL_GRAPH_VIEW_KEY,
+        DATABASE_VIEW_KEY,
+        HEAT_MAP_VIEW_ENTRY[0],
+    ],
+    "heat_sort": [CALL_GRAPH_VIEW_KEY, HEAT_MAP_VIEW_ENTRY[0]],
 }
 MENU_FLASH_DURATION_MS = 500
 MENU_PULLDOWN_KEY_NAMES: dict[str, str] = {

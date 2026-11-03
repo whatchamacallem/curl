@@ -225,15 +225,6 @@ window.report_preferences_ = window.try_catch_handler_(function () {
       value: line_choice.value,
     }));
   }
-  // Lists the sort order pulldown's choices, the shown lines of the list.
-  function sort_order_choices(list_key) {
-    return line_choices(list_key)
-      .filter((line_choice) => line_choice.is_shown)
-      .map((line_choice) => ({
-        label: line_choice.label,
-        value: line_choice.value,
-      }));
-  }
   // Copies the lines of a counters list, each frozen as the page shows it.
   function counter_lines_freeze(counter_lines) {
     return Object.freeze(
@@ -491,6 +482,5 @@ window.report_preferences_ = window.try_catch_handler_(function () {
     seed,
     shown_line_names,
     shown_line_parts,
-    sort_order_choices,
   };
 })();

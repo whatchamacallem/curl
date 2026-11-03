@@ -10,6 +10,7 @@ window.try_catch_handler_(function () {
   const FLAME_GRAPH_VIEW_ENTRY = settings_("FLAME_GRAPH_VIEW_ENTRY");
   const HEAT_MAP_VIEW_ENTRY = settings_("HEAT_MAP_VIEW_ENTRY");
   const MENU_ENTRY_NEEDS = settings_("MENU_ENTRY_NEEDS");
+  const MENU_ENTRY_VIEW_KEYS = settings_("MENU_ENTRY_VIEW_KEYS");
   const MENU_SCALE_KEY_STEPS = settings_("MENU_SCALE_KEY_STEPS");
   const SETTINGS_VIEW_ENTRY = settings_("SETTINGS_VIEW_ENTRY");
   const STYLE_MENU_LOGO_START_SHARE = settings_("STYLE_MENU_LOGO_START_SHARE");
@@ -74,9 +75,9 @@ window.try_catch_handler_(function () {
     );
     return entry_link;
   }
-  function heat_map_entries(names, entry_name, part) {
+  function heat_map_entries(names_by_test, entry_name, part) {
     const entry_test_name = active_test_name();
-    return names.map((name) =>
+    return names_by_test[entry_test_name].map((name) =>
       pulldown_link(
         name,
         window.report_ui_.address.hash({
@@ -90,14 +91,14 @@ window.try_catch_handler_(function () {
   }
   function files_entries(line_number) {
     return heat_map_entries(
-      window.report_source_database_.filesWithSource,
+      window.report_source_database_.filesWithCounters,
       "str_menu_file",
       (file_name) => ({ file: file_name, line: line_number || null }),
     );
   }
   function functions_entries() {
     return heat_map_entries(
-      window.report_source_database_.functions,
+      window.report_source_database_.functionsWithCounters,
       "str_menu_function",
       (function_name) => ({ function: function_name }),
     );
@@ -206,13 +207,18 @@ window.try_catch_handler_(function () {
     );
     window.report_frame_.view_post("preferences_apply");
   }
-  function heat_scale_choose(scale_value) {
-    window.report_preferences_.heat_scale_choose(scale_value);
-    window.report_frame_.view_post("preferences_apply");
-    preference_strip_handle.pulldown_label_set(
-      "heat_scale",
-      choice_label(heat_scale_choices, scale_value),
+  // Chooses the other heat scale, then draws the menu with its label.
+  function heat_scale_toggle() {
+    const other_choices = heat_scale_choices.filter(
+      (scale_choice) =>
+        scale_choice.value !==
+        window.report_preferences_.now().heat_scale_value,
     );
+    if (other_choices.length !== 1)
+      window.throw_exception_("str_error_internal");
+    window.report_preferences_.heat_scale_choose(other_choices[0].value);
+    window.report_frame_.view_post("preferences_apply");
+    menu_render();
   }
   function heat_sort_choose(sort_mode) {
     window.report_preferences_.heat_sort_choose(sort_mode);
@@ -265,8 +271,13 @@ window.try_catch_handler_(function () {
     return true;
   }
 
-  // Returns whether an entry shows, each need its settings row names met.
+  // Returns whether an entry shows: on a view it names, if any, each need met.
   function entry_available(entry_name, address, view_key) {
+    if (
+      Object.hasOwn(MENU_ENTRY_VIEW_KEYS, entry_name) &&
+      !MENU_ENTRY_VIEW_KEYS[entry_name].includes(address.view)
+    )
+      return false;
     if (!Object.hasOwn(MENU_ENTRY_NEEDS, entry_name)) return true;
     return MENU_ENTRY_NEEDS[entry_name].every((need_name) => {
       if (need_name === "counter_list")
@@ -275,7 +286,6 @@ window.try_catch_handler_(function () {
           address.view,
         );
       if (need_name === "test") return address.test !== null;
-      if (need_name === "view") return address.view !== null;
       if (need_name === "view_page" && view_key !== null)
         return window.report_frame_.view_has_page(view_key);
       window.throw_exception_("str_error_internal");
@@ -414,14 +424,14 @@ window.try_catch_handler_(function () {
       ...(entry_available("counters", address, null)
         ? [counters_entry(address)]
         : []),
-      preference_pulldown_entry(
+      window.report_ui_.strip.entry_make(
         "heat_scale",
-        address,
+        "action",
         choice_label(heat_scale_choices, shown_preferences.heat_scale_value),
-        () => heat_scale_choices,
-        heat_scale_choose,
-        false,
-        null,
+        {
+          is_available: entry_available("heat_scale", address, null),
+          on_activate: heat_scale_toggle,
+        },
       ),
       preference_pulldown_entry(
         "heat_sort",

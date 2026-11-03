@@ -339,16 +339,16 @@ The single function/check owning each concern - never bypass or duplicate:
   its callgrind entry line when that line carries no counter and the
   function's counters span more than one line, else the entry line
   (callgrind_to_heatmap.py).
-- `report_source_database_` - the one list of the files the tests show,
-  the files among them with source, the menu's file pulldown, and the
-  functions with a line, every test's union, names alone
-  (scripts/source_database.js).
+- `report_source_database_` - the one list of the files the tests show
+  and the functions with a line, every test's union, and of each test's
+  files and functions with a nonzero counter, the menu's file and
+  function pulldowns, names alone (scripts/source_database.js).
 - `text_clip()` - every cell text cut at its column's `clip`;
   `column_edge_drag()` every column width, a drag at the right edge grab of
   a body cell or title of a `TABLE_RESIZABLE_COLUMN_NAMES` column setting
   that column title's `min-width`, a column its bar sizes, the heat map's
   tree, set by a sideways drag of that bar instead (theme.js).
-- `checksum_compute`/`_REPORT_CHECKSUM_COMMAND` - report checksums, kept
+- `checksum_compute`/`REPORT_CHECKSUM_COMMAND` - report checksums, kept
   separate, re-verified on every open.
 - `number_exact_check()` - every settings number crossing into a page,
   a number the 64 bit float rounds refused, so every setting holds the
@@ -421,7 +421,7 @@ The single function/check owning each concern - never bypass or duplicate:
 - `heat_cell_style(percent, curve, is_diff)` - every heat color, JS
   alone; Python paints nothing.
 - `table_sort.records()` - every table sort; `render_table`'s
-  `on_sort` the one column title click, its `on_column_move` the one
+  `on_sort` the one column title click, `table_column_drop()` the one
   column title drop, which moves a counters list's line (theme.js).
 - `report_preferences_.now()` - every read of the per-page counters lists
   (`counter_lists`, each line calls, callers, callees or a counter, in
@@ -593,8 +593,8 @@ The single function/check owning each concern - never bypass or duplicate:
   one plain English sentence. `test_source_scan.py` cuts the comment marks
   and any backtick code span, then faults the first other character on each
   comment line as `comment holds 'X' outside ENGLISH_PUNCT`.
-- ASCII plus the specific whitelisted glyphs (`© ≈ ∞ ▲◄►▼ … █ ░ ▒ ▓ ◼`,
-  the call graph's `─ │ └ ├ ┬ ⊞` and a no-break space), written literally,
+- ASCII plus the specific whitelisted glyphs (`© ≈ ∞ ▲◄►▼ … ▒ ▓ ◼`,
+  the call graph's `━ ┃ ┗ ┣ ┳` and a no-break space), written literally,
   never as HTML entities.
 - A maintainer's explicit request for a Unicode character is also an
   instruction to add it to the allowed glyphs, this list and the source

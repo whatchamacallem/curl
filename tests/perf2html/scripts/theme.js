@@ -2017,7 +2017,10 @@ window.report_ui_ = window.try_catch_handler_(function () {
   }
   // Returns records ordered by a column in a direction, text by its letters.
   function table_sort_records(records, sort_column, sort_direction) {
-    const order_sign = table_sort_direction(sort_direction).order_sign;
+    // A column of text lists A first when descending, a number its greatest.
+    const order_sign =
+      table_sort_direction(sort_direction).order_sign *
+      (sort_column.column.numeric ? 1 : -1);
     const keyed_records = records.map((record) => [
       sort_column.sort_value(record),
       record,
@@ -2045,13 +2048,22 @@ window.report_ui_ = window.try_catch_handler_(function () {
   }
   // Lists a sorted table's heading entries: its sort order, direction toggle.
   function table_sort_heading_entries({
-    order_choices,
+    table_key,
+    sort_columns,
     sorted_column,
     sort_direction,
     is_diff,
     on_column_choose,
     on_direction_choose,
   }) {
+    // The sort order offers every column, in the order the table draws them.
+    const order_choices = table_column_order(
+      table_key,
+      sort_columns.map((sort_column) => sort_column.column),
+    ).map((column_index) => ({
+      label: table_sort_column_label(sort_columns[column_index]),
+      value: sort_columns[column_index].sort_name,
+    }));
     const column_label = table_sort_column_label(sorted_column);
     const sorted_label =
       is_diff && sorted_column.column.numeric

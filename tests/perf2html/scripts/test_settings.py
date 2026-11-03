@@ -107,12 +107,12 @@ SOURCE_SCAN_ALLOWED_NON_ASCII_CHARS = (
     "▓",
     "█",
     "◼",
-    "─",
-    "│",
-    "└",
-    "├",
-    "┬",
-    "⊞",
+    "━",
+    "┃",
+    "┗",
+    "┣",
+    "┳",
+    "田",
 )
 SOURCE_SCAN_BANNED_TAG_NAMES = (
     "abbr",
@@ -543,9 +543,13 @@ TEST_SHARED_IMAGES_RECORDING = (
 TEST_SHARED_IMAGES_RECORDING_NAME = "shared_images.callgrind.out"
 
 TEST_SOURCE_DATABASE_GLOBAL_NAME = "report_source_database_"
-TEST_SOURCE_DATABASE_KEYS = ("files", "filesWithSource", "functions")
+TEST_SOURCE_DATABASE_KEYS = ("files", "functions")
 TEST_SOURCE_DATABASE_LEAST_BYTES = 1000
 TEST_SOURCE_DATABASE_SCRIPT_PATH = "scripts/source_database.js"
+TEST_SOURCE_DATABASE_TEST_KEYS = {
+    "filesWithCounters": "files",
+    "functionsWithCounters": "functions",
+}
 
 TEST_TIMER_ARTIFACTS_PREFIX = "timer-artifacts-"
 

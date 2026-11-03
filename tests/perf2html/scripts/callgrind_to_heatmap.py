@@ -68,6 +68,12 @@ class CallgrindToHeatmap:
             default_factory=dict
         )
         locations: set[str] = dataclasses.field(default_factory=set)
+        files_with_counters: dict[str, list[str]] = dataclasses.field(
+            default_factory=dict
+        )
+        functions_with_counters: dict[str, list[str]] = dataclasses.field(
+            default_factory=dict
+        )
         cold: list[str] = dataclasses.field(default_factory=list)
         tests: list[CallgrindToHeatmap.ShownTest] = dataclasses.field(
             default_factory=list
@@ -188,8 +194,9 @@ class CallgrindToHeatmap:
 
     class SourceDatabase(TypedDict):
         files: list[str]
-        filesWithSource: list[str]
+        filesWithCounters: dict[str, list[str]]
         functions: list[str]
+        functionsWithCounters: dict[str, list[str]]
 
     # Holds a diff's paths and a test's function data diff.
     class TestDiff(NamedTuple):
@@ -238,14 +245,14 @@ class CallgrindToHeatmap:
             )
             self.function_data_write(artifacts_dir, database.tests, file_paths)
 
-    # Adds a test's files and functions with a line to the source database.
+    # Adds a test's files, functions with a line and those with counters.
     def database_add(
         self,
         database: CallgrindToHeatmap.DatabaseTally,
         test_name: str,
         profile: callgrind.Profile,
         info: dict[str, callgrind.PathInfo],
-        functions: Sequence[CallgrindToHeatmap.FunctionModel],
+        model: CallgrindToHeatmap.HeatModel,
     ) -> None:
         for raw, path_info in info.items():
             known = database.shown.setdefault(raw, path_info)
@@ -266,9 +273,22 @@ class CallgrindToHeatmap:
                     f"error: the test {test_name} shows {display} as"
                     f" {entry}, an earlier test as {known_entry}"
                 )
-        for function in functions:
+        for function in model["functions"]:
             if function["line"]:
                 database.locations.add(function["name"])
+        database.files_with_counters[test_name] = sorted(
+            display
+            for display, entry in model["files"].items()
+            if any(
+                line.self_cost or line.calls_cost
+                for line in entry["lines"].values()
+            )
+        )
+        database.functions_with_counters[test_name] = sorted(
+            function["name"]
+            for function in model["functions"]
+            if function["line"] and self.function_counted(profile, function)
+        )
 
     # Returns the diff's path derive or None, and the tracked files.
     def derive_resolve(
@@ -432,6 +452,22 @@ class CallgrindToHeatmap:
                 )
             )
         return {name: entry.emit() for name, entry in accumulators.items()}
+
+    # Returns whether a function's self, calls or self at a line is nonzero.
+    @staticmethod
+    def function_counted(
+        profile: callgrind.Profile, function: CallgrindToHeatmap.FunctionModel
+    ) -> bool:
+        return bool(
+            function["self"]
+            or function["calls"]
+            or any(
+                any(costs)
+                for costs in profile.function_lines.get(
+                    function["name"], {}
+                ).values()
+            )
+        )
 
     # Returns a test's function data, each file by its paths document index.
     def function_data(
@@ -833,7 +869,7 @@ class CallgrindToHeatmap:
             if line.endswith((".c", ".h"))
         ]
 
-    # Writes the shown files, those with source, and the functions with a line.
+    # Writes every test's files and functions, and each test's with counters.
     def source_database_write(
         self, report_dir: str, tally: CallgrindToHeatmap.DatabaseTally
     ) -> None:
@@ -845,12 +881,9 @@ class CallgrindToHeatmap:
         )
         database: CallgrindToHeatmap.SourceDatabase = {
             "files": sorted(tally.files),
-            "filesWithSource": sorted(
-                display
-                for display, entry in tally.files.items()
-                if entry["source"] is not None
-            ),
+            "filesWithCounters": tally.files_with_counters,
             "functions": sorted(tally.locations),
+            "functionsWithCounters": tally.functions_with_counters,
         }
         data = json.dumps(database, separators=(",", ":"), ensure_ascii=False)
         text = f"window.report_source_database_ = {data};\n"
@@ -977,9 +1010,7 @@ class CallgrindToHeatmap:
                 self.diff_model(model, profile, test_diff.function_diff)
             self.sources_write(sources_dir, info, model, derive)
             self.model_write(report_dir, test_name, model)
-            self.database_add(
-                database, test_name, profile, info, model["functions"]
-            )
+            self.database_add(database, test_name, profile, info, model)
         database.cold = self.cold_paths(tracked, database.files)
         return database
 
