@@ -593,8 +593,8 @@ The single function/check owning each concern - never bypass or duplicate:
   one plain English sentence. `test_source_scan.py` cuts the comment marks
   and any backtick code span, then faults the first other character on each
   comment line as `comment holds 'X' outside ENGLISH_PUNCT`.
-- ASCII plus the specific whitelisted glyphs (`© ≈ ∞ ▲◄►▼ … ▒ ▓ ◼`,
-  the call graph's and the heat map tree's `━ ┃ ┗ ┣ ┳ 田` and a no-break
+- ASCII plus the specific whitelisted glyphs (`© ≈ ∞ ▲◄►▼ … █ ░ ▒ ▓ ◼`,
+  the call graph's and the heat map tree's `━ ┃ ┗ ┣ ┳ ⊞` and a no-break
   space), written literally, never as HTML entities.
 - A maintainer's explicit request for a Unicode character is also an
   instruction to add it to the allowed glyphs, this list and the source
