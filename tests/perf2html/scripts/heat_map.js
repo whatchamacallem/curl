@@ -229,11 +229,7 @@ window.try_catch_handler_(function () {
       line: line || null,
     });
   const hash_for_function = (name) =>
-    report_ui_.address.hash({
-      test: shown_test_name,
-      view: HEAT_MAP_VIEW_ENTRY[0],
-      function: name,
-    });
+    report_ui_.address.function_hash(shown_test_name, name);
   // Returns the indexes of the functions a line declares, in name order.
   function declared_functions(file_path, line_number) {
     const file_lines = entry_line_index[file_path];
@@ -372,12 +368,7 @@ window.try_catch_handler_(function () {
   // Asks the top page for the other tree order at a click on the tree's title.
   function title_press(pressed_column) {
     if (pressed_column !== TREE_COLUMN) return;
-    const other_choices = report_preferences_.heat_sort_choices.filter(
-      (sort_choice) => sort_choice.value !== sort_mode,
-    );
-    if (other_choices.length !== 1)
-      window.throw_exception_("str_error_internal");
-    report_ui_.heat_sort_choose_send(other_choices[0].value);
+    report_ui_.heat_sort_toggle_send();
   }
   // Returns the source table's column of a shown line, with its cell class.
   const source_line_column = (line_name, cls) => ({

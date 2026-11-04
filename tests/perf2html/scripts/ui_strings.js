@@ -167,6 +167,7 @@ window.ui_strings_ = (function () {
     str_settings_load_log_history: "history: {count}",
     str_settings_paste: "paste",
     str_sort_alphabetical: "alphabetical",
+    str_sort_cumulative_first: "cumulative first",
     str_sort_hottest_first: "hottest first",
     str_source_beyond_end: "error: Line beyond end of file, source changed.",
     str_source_unavailable: "Source not available.",

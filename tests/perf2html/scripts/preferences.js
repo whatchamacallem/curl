@@ -5,6 +5,9 @@
 window.report_preferences_ = window.try_catch_handler_(function () {
   "use strict";
 
+  const CALL_GRAPH_SORT_DEFAULT_MODE = settings_(
+    "CALL_GRAPH_SORT_DEFAULT_MODE",
+  );
   const COUNTER_LIST_CALLEES_LINE_NAME = settings_(
     "COUNTER_LIST_CALLEES_LINE_NAME",
   );
@@ -36,6 +39,7 @@ window.report_preferences_ = window.try_catch_handler_(function () {
   const HEAT_MAP_SORT_DEFAULT_MODE = settings_("HEAT_MAP_SORT_DEFAULT_MODE");
   const HEAT_MAP_VIEW_ENTRY = settings_("HEAT_MAP_VIEW_ENTRY");
   const RANKING_COUNTER_NAME = settings_("RANKING_COUNTER_NAME");
+  const STORAGE_KEY_CALL_GRAPH_SORT = settings_("STORAGE_KEY_CALL_GRAPH_SORT");
   const STORAGE_KEY_DATABASE_COUNTER_LIST = settings_(
     "STORAGE_KEY_DATABASE_COUNTER_LIST",
   );
@@ -45,16 +49,21 @@ window.report_preferences_ = window.try_catch_handler_(function () {
   const STORAGE_KEY_HEATMAP_SCALE = settings_("STORAGE_KEY_HEATMAP_SCALE");
   const STORAGE_KEY_HEATMAP_SORT = settings_("STORAGE_KEY_HEATMAP_SORT");
 
-  const HEAT_SORT_CHOICES = [
-    {
-      value: "heat",
-      label: window.ui_strings_.text("str_sort_hottest_first"),
-    },
-    {
-      value: "name",
-      label: window.ui_strings_.text("str_sort_alphabetical"),
-    },
-  ];
+  // Holds the label of each sort a view offers, by its value.
+  const SORT_LABELS = {
+    cumulative: window.ui_strings_.text("str_sort_cumulative_first"),
+    heat: window.ui_strings_.text("str_sort_hottest_first"),
+    name: window.ui_strings_.text("str_sort_alphabetical"),
+  };
+  // Lists sort choices in the order given, each with its label.
+  function sort_choices(sort_values) {
+    return sort_values.map((sort_value) => ({
+      value: sort_value,
+      label: SORT_LABELS[sort_value],
+    }));
+  }
+  const CALL_GRAPH_SORT_CHOICES = sort_choices(["name", "cumulative", "heat"]);
+  const HEAT_SORT_CHOICES = sort_choices(["heat", "name"]);
   // Holds each line that is not a callgrind counter: its title and its kind.
   const NON_CALLGRIND_LINES = {
     [COUNTER_LIST_CALLEES_LINE_NAME]: {
@@ -239,6 +248,7 @@ window.report_preferences_ = window.try_catch_handler_(function () {
   // Shows preferences on the page, storing nothing, answering if they changed.
   function show(wanted_preferences) {
     const next_preferences = Object.freeze({
+      call_graph_sort_mode: wanted_preferences.call_graph_sort_mode,
       counter_lists: Object.freeze(
         Object.fromEntries(
           Object.entries(wanted_preferences.counter_lists).map(
@@ -342,6 +352,11 @@ window.report_preferences_ = window.try_catch_handler_(function () {
   // Shows the stored preferences, each one the user never chose its default.
   function seed() {
     show({
+      call_graph_sort_mode: stored_choice(
+        STORAGE_KEY_CALL_GRAPH_SORT,
+        choice_values(CALL_GRAPH_SORT_CHOICES),
+        CALL_GRAPH_SORT_DEFAULT_MODE,
+      ),
       counter_lists: Object.fromEntries(
         Object.entries(COUNTER_LIST_KINDS).map(([list_key, list_kind]) => [
           list_key,
@@ -362,6 +377,11 @@ window.report_preferences_ = window.try_catch_handler_(function () {
   }
   // Refuses a line order or default preferences this report does not offer.
   function preference_settings_check(counter_names) {
+    setting_choices_check(
+      "CALL_GRAPH_SORT_DEFAULT_MODE",
+      [CALL_GRAPH_SORT_DEFAULT_MODE],
+      choice_values(CALL_GRAPH_SORT_CHOICES),
+    );
     setting_order_check(
       "COUNTER_LIST_CALLGRIND_LINE_NAMES",
       COUNTER_LIST_CALLGRIND_LINE_NAMES,
@@ -450,6 +470,13 @@ window.report_preferences_ = window.try_catch_handler_(function () {
     kept_lines.splice(anchor_index + (lands_after ? 1 : 0), 0, moved_line);
     counter_lines_choose(list_key, kept_lines);
   }
+  function call_graph_sort_choose(sort_mode) {
+    preference_choose(
+      { call_graph_sort_mode: sort_mode },
+      STORAGE_KEY_CALL_GRAPH_SORT,
+      sort_mode,
+    );
+  }
   function heat_scale_choose(scale_value) {
     preference_choose(
       { heat_scale_value: scale_value },
@@ -467,6 +494,8 @@ window.report_preferences_ = window.try_catch_handler_(function () {
 
   return {
     activate,
+    call_graph_sort_choices: CALL_GRAPH_SORT_CHOICES,
+    call_graph_sort_choose,
     counter_choices,
     counter_label,
     counter_line_move,

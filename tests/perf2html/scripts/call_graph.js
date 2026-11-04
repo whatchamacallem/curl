@@ -16,6 +16,9 @@ window.try_catch_handler_(function () {
   const CALL_GRAPH_BRANCH_PASS_TEXT = settings_("CALL_GRAPH_BRANCH_PASS_TEXT");
   const CALL_GRAPH_CLOSED_TEXT = settings_("CALL_GRAPH_CLOSED_TEXT");
   const CALL_GRAPH_LINE_TEXT = settings_("CALL_GRAPH_LINE_TEXT");
+  const CALL_GRAPH_OPEN_LEAST_CUMULATIVE_PERCENT = settings_(
+    "CALL_GRAPH_OPEN_LEAST_CUMULATIVE_PERCENT",
+  );
   const CALL_GRAPH_REVEAL_CLEARANCE_CHARS = settings_(
     "CALL_GRAPH_REVEAL_CLEARANCE_CHARS",
   );
@@ -26,11 +29,33 @@ window.try_catch_handler_(function () {
 
   const render_element = window.render_element_;
   const render_html_escape = window.render_html_escape_;
+  // Holds the width of a multiple at full precision, zero's.
+  const MULTIPLE_WIDTH_CHARS = window.report_ui_.fixed_text(
+    0,
+    NUMBER_FRACTION_DIGITS,
+  ).length;
+  // Writes a share cell, the share on its heat color, empty for no share.
+  function share_cell_markup(share_percent) {
+    const cell_attributes = { class: "call-graph-share-" };
+    if (!share_percent) return render_element("td", cell_attributes, "");
+    return render_element(
+      "td",
+      {
+        ...cell_attributes,
+        style: window.report_ui_.heat_cell_style(
+          share_percent,
+          heat_curve_name,
+          false,
+        ),
+      },
+      render_html_escape(window.report_ui_.percent_text(share_percent)),
+    );
+  }
   // Writes a group's cells: branch, multiple, share, symbol and tail.
   function group_markup(
     branch_cell_markup,
     multiple_cell_markup,
-    share_cell_markup,
+    share_percent,
     symbol_cell_markup,
     tail_cell_markup,
   ) {
@@ -41,14 +66,22 @@ window.try_catch_handler_(function () {
         { class: "call-graph-multiple-" },
         multiple_cell_markup,
       ) +
-      render_element("td", { class: "call-graph-share-" }, share_cell_markup) +
-      render_element("td", {}, symbol_cell_markup) +
+      share_cell_markup(share_percent) +
+      render_element(
+        "td",
+        { class: "call-graph-symbol-" },
+        symbol_cell_markup,
+      ) +
       render_element("td", {}, tail_cell_markup)
     );
   }
   // Marks a layout group a branch passes through, holding no node.
   const PASS_PLACE = {};
   const page_scroll_box = document.getElementById("call-graph-page-");
+  const page_heading = page_scroll_box.querySelector(".page-heading-");
+  const shown_test_name = window.report_ui_.address.of_hash(
+    location.hash,
+  ).test;
   const graph_table = document.getElementById("call-graph-table-");
   const call_graph_model = JSON.parse(graph_table.getAttribute("data-model-"));
   const graph_body = window.render_element_of_(
@@ -116,19 +149,33 @@ window.try_catch_handler_(function () {
       function_records[edge_b.callee_index].name,
     );
   }
-  // Orders a caller's edges by inclusive cost, then line, then name.
-  function heat_order(edge_a, edge_b) {
+  // Orders a caller's edges by their calls' cumulative cost, line, then name.
+  function cumulative_order(edge_a, edge_b) {
     return (
       edge_b.inclusive_cost - edge_a.inclusive_cost ||
       edge_a.call_line - edge_b.call_line ||
       name_order(edge_a, edge_b)
     );
   }
-  // Orders a node's shown edges by the chosen sort, hottest first or by name.
-  function edges_sort(callee_edges) {
-    return callee_edges.toSorted(
-      heat_sort_mode === "heat" ? heat_order : name_order,
+  // Orders a caller's edges by their callees' self cost, then cumulative.
+  function heat_order(edge_a, edge_b) {
+    return (
+      function_records[edge_b.callee_index].self_cost -
+        function_records[edge_a.callee_index].self_cost ||
+      cumulative_order(edge_a, edge_b)
     );
+  }
+  // Holds the edge order of each call graph sort, by its value.
+  const SORT_ORDERS = {
+    cumulative: cumulative_order,
+    heat: heat_order,
+    name: name_order,
+  };
+  // Orders a node's shown edges by the chosen sort.
+  function edges_sort(callee_edges) {
+    if (!Object.hasOwn(SORT_ORDERS, sort_mode))
+      window.throw_exception_("str_error_internal");
+    return callee_edges.toSorted(SORT_ORDERS[sort_mode]);
   }
 
   // Returns the key of a node's path in the open set.
@@ -145,32 +192,41 @@ window.try_catch_handler_(function () {
       (call_edge) => !node_path.includes(call_edge.callee_index),
     );
   }
-  // Returns a fresh open set: the hottest path's nodes with shown children.
+  // Returns a fresh open set: each node with shown children and enough cost.
   function call_graph_open_set() {
-    const root_cost = (call_root) =>
-      function_records[call_root.function_index].cumulative_cost;
-    let hottest_root = call_roots[0];
-    for (const call_root of call_roots)
-      if (root_cost(call_root) > root_cost(hottest_root))
-        hottest_root = call_root;
     const open_set = new Set();
-    let node_path = [hottest_root.function_index];
-    let shown_edges = shown_callee_edges(node_path);
-    while (shown_edges.length) {
+    // Opens a node whose cumulative share is enough, then its children.
+    function node_open(node_path, cumulative_cost) {
+      const shown_edges = shown_callee_edges(node_path);
+      if (
+        !shown_edges.length ||
+        window.report_ui_.share_of_test(cumulative_cost, test_total) <
+          CALL_GRAPH_OPEN_LEAST_CUMULATIVE_PERCENT
+      )
+        return;
       open_set.add(path_key(node_path));
-      const hottest_edge = shown_edges.toSorted(heat_order)[0];
-      node_path = [...node_path, hottest_edge.callee_index];
-      shown_edges = shown_callee_edges(node_path);
+      for (const call_edge of shown_edges)
+        node_open(
+          [...node_path, call_edge.callee_index],
+          call_edge.inclusive_cost,
+        );
     }
+    // A root's cumulative cost is its function's, a callee's its call's.
+    for (const call_root of call_roots)
+      node_open(
+        [call_root.function_index],
+        function_records[call_root.function_index].cumulative_cost,
+      );
     return open_set;
   }
   let button_graph_nodes = new WeakMap(),
     cell_symbol_buttons = new WeakMap(),
     heat_curve_name = null,
-    heat_sort_mode = null,
     node_places = new Map(),
     open_path_keys = call_graph_open_set(),
-    rendered_preferences_text = null;
+    rendered_preferences_text = null,
+    selected_function_name = null,
+    sort_mode = null;
 
   // Makes a root's node, which draws no branch, share or multiple.
   function root_node(call_root) {
@@ -247,6 +303,11 @@ window.try_catch_handler_(function () {
       return node_row;
     }
     for (const call_root of call_roots) node_place(root_node(call_root), 0);
+    // Every row holds every group, so each column runs the table's height.
+    const group_count = Math.max(
+      ...layout_rows.map((layout_row) => layout_row.length),
+    );
+    for (const layout_row of layout_rows) layout_row.length = group_count;
     return layout_rows;
   }
 
@@ -266,49 +327,43 @@ window.try_catch_handler_(function () {
     if (layout_place === PASS_PLACE) return CALL_GRAPH_BRANCH_PASS_TEXT;
     return layout_place.branch_text;
   }
-  // Writes a node's self share of the test, heat colored by the chosen curve.
-  function share_markup(graph_node) {
-    if (graph_node.call_edge === null) return "";
-    const share_percent = self_share_of_test(
-      path_function(graph_node.node_path),
-    );
-    if (!share_percent) return "";
-    return render_element(
-      "span",
-      {
-        style: window.report_ui_.heat_cell_style(
-          share_percent,
-          heat_curve_name,
-          false,
-        ),
-      },
-      render_html_escape(window.report_ui_.percent_text(share_percent)),
-    );
+  // Returns a node's self share of the test, null for a root.
+  function node_share_percent(graph_node) {
+    if (graph_node.call_edge === null) return null;
+    return self_share_of_test(path_function(graph_node.node_path));
   }
-  // Writes a node's symbol, a button if it toggles, then its mark if beside.
+  // Writes a node's symbol, a button holding its spaces if it toggles, a mark.
   function symbol_markup(graph_node, has_shown_children, is_mark_beside) {
-    const name_markup = render_html_escape(
-      path_function(graph_node.node_path).name,
-    );
-    if (!has_shown_children) return " " + name_markup + " ";
+    const name_markup =
+      " " + render_html_escape(path_function(graph_node.node_path).name) + " ";
+    if (!has_shown_children) return name_markup;
     const button_markup = window.render_menu_button_("action", name_markup, {
       tag_name: "span",
     });
     const closed_markup = is_mark_beside
       ? render_html_escape(CALL_GRAPH_LINE_TEXT + CALL_GRAPH_CLOSED_TEXT) + " "
       : "";
-    return " " + button_markup + " " + closed_markup;
+    return button_markup + closed_markup;
+  }
+  // Returns a multiple with the most fraction digits its width holds.
+  function multiple_text(calls_multiple) {
+    let digit_count = NUMBER_FRACTION_DIGITS;
+    let fitted_text = window.report_ui_.fixed_text(
+      calls_multiple,
+      digit_count,
+    );
+    while (digit_count > 0 && fitted_text.length > MULTIPLE_WIDTH_CHARS) {
+      digit_count--;
+      fitted_text = window.report_ui_.fixed_text(calls_multiple, digit_count);
+    }
+    return fitted_text;
   }
   // Writes a node's calls multiple then "x ", if it has one.
   function multiple_markup(graph_node) {
     if (graph_node.call_edge === null) return "";
     const calls_multiple = edge_multiple(graph_node.call_edge);
     if (calls_multiple === null) return "";
-    return (
-      render_html_escape(
-        window.report_ui_.fixed_text(calls_multiple, NUMBER_FRACTION_DIGITS),
-      ) + "x "
-    );
+    return render_html_escape(multiple_text(calls_multiple)) + "x ";
   }
   // Writes a node's tail: the line to its first child or to its mark right.
   function tail_markup(graph_node, is_mark_right) {
@@ -323,7 +378,7 @@ window.try_catch_handler_(function () {
     return group_markup(
       branch_cell_markup,
       multiple_markup(graph_node),
-      share_markup(graph_node),
+      node_share_percent(graph_node),
       symbol_markup(
         graph_node,
         has_shown_children,
@@ -342,7 +397,7 @@ window.try_catch_handler_(function () {
           : place_branch_text(layout_place),
       );
       if (layout_place === undefined || layout_place === PASS_PLACE)
-        return group_markup(branch_cell_markup, "", "", "", "");
+        return group_markup(branch_cell_markup, "", null, "", "");
       return node_markup(
         layout_place,
         branch_cell_markup,
@@ -428,9 +483,31 @@ window.try_catch_handler_(function () {
       (function_index) => function_records[function_index].name,
     );
   }
-  // Opens or closes a symbol's node, draws again, shows it, sends its path.
+  // Links the selected function to its heat map after the copy entry.
+  function selected_function_show() {
+    const tail_entries =
+      selected_function_name === null
+        ? []
+        : [
+            window.report_ui_.strip.entry_make(
+              "selected_function",
+              "link",
+              selected_function_name,
+              {
+                href: window.report_ui_.address.function_hash(
+                  shown_test_name,
+                  selected_function_name,
+                ),
+              },
+            ),
+          ];
+    window.report_ui_.page_heading_tail_set(page_heading, tail_entries);
+  }
+  // Opens or closes a symbol's node, draws again, shows it, selects it.
   function node_toggle(symbol_button) {
     const graph_node = button_graph_nodes.get(symbol_button);
+    selected_function_name = path_function(graph_node.node_path).name;
+    selected_function_show();
     const node_key = path_key(graph_node.node_path);
     const is_opening = !open_path_keys.has(node_key);
     if (is_opening) open_path_keys.add(node_key);
@@ -466,22 +543,24 @@ window.try_catch_handler_(function () {
       );
     if (!scale_choice) window.throw_exception_("str_error_internal");
     heat_curve_name = scale_choice.curve;
-    heat_sort_mode = view_preferences.heat_sort_mode;
+    sort_mode = view_preferences.call_graph_sort_mode;
   }
   // Draws the graph again when the relayed preferences change what it shows.
   function preferences_apply() {
     preferences_handler();
-    const preferences_text = JSON.stringify([heat_curve_name, heat_sort_mode]);
+    const preferences_text = JSON.stringify([heat_curve_name, sort_mode]);
     if (preferences_text === rendered_preferences_text) return;
     rendered_preferences_text = preferences_text;
     graph_render();
   }
-  // Opens the hottest path alone, draws every row and clears the focused path.
+  // Opens a fresh open set, draws every row and clears the selection.
   function view_reset() {
     open_path_keys = call_graph_open_set();
     // Forgets the drawn preferences, so the graph draws again.
     rendered_preferences_text = null;
     preferences_apply();
+    selected_function_name = null;
+    selected_function_show();
     window.report_ui_.focused_path_send([]);
   }
   // Takes a relayed message: a view reset, else a change of its preferences.

@@ -76,6 +76,10 @@
     background: var(--dark-mode-page-bg-);
     color: var(--dark-mode-page-fg-);
   }
+  /* Each call graph multiple and symbol column takes the odd column color. */
+  #call-graph-table- :is(td.call-graph-multiple-, td.call-graph-symbol-) {
+    background: var(--dark-mode-panel-bg-);
+  }
   /* The manifest labels and raw data link take the odd column color. */
   #overview-raw-data- > a:not(:focus-visible),
   .overview-manifest-label- {

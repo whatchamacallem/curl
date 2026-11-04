@@ -43,9 +43,11 @@ CALL_GRAPH_BRANCH_ONLY_TEXT = "━━ "
 CALL_GRAPH_BRANCH_PASS_TEXT = "┃"
 CALL_GRAPH_CLOSED_TEXT = "⊞"
 CALL_GRAPH_LINE_TEXT = "━"
+CALL_GRAPH_OPEN_LEAST_CUMULATIVE_PERCENT = 0.1
 CALL_GRAPH_PAGE_DIR_NAME = "call-graph"
 CALL_GRAPH_REVEAL_CLEARANCE_CHARS = 1
 CALL_GRAPH_REVEAL_CLEARANCE_LINES = 0.5
+CALL_GRAPH_SORT_DEFAULT_MODE = "cumulative"
 CALL_GRAPH_VIEW_KEY = "call-graph"
 
 CALLGRIND_FILE_DATA_CODE_KEY = "t"
@@ -212,12 +214,13 @@ MENU_ENTRY_NEEDS: dict[str, list[str]] = {
     "str_view_flame_graph": ["test", "view_page"],
 }
 MENU_ENTRY_VIEW_KEYS: dict[str, list[str]] = {
+    "call_graph_sort": [CALL_GRAPH_VIEW_KEY],
     "heat_scale": [
         CALL_GRAPH_VIEW_KEY,
         DATABASE_VIEW_KEY,
         HEAT_MAP_VIEW_ENTRY[0],
     ],
-    "heat_sort": [CALL_GRAPH_VIEW_KEY, HEAT_MAP_VIEW_ENTRY[0]],
+    "heat_sort": [HEAT_MAP_VIEW_ENTRY[0]],
 }
 MENU_FLASH_DURATION_MS = 500
 MENU_PULLDOWN_KEY_NAMES: dict[str, str] = {
@@ -279,6 +282,7 @@ SETTINGS_VIEW_ENTRY: tuple[str, str] = ("settings", "settings/index.html")
 
 SIGNAL_EXIT_CODE_BASE = 128
 
+STORAGE_KEY_CALL_GRAPH_SORT = "call_graph.sort"
 STORAGE_KEY_DATABASE_COUNTER_LIST = "database.counter_list"
 STORAGE_KEY_DATABASE_FUNCTION_ROWS = "database.function_rows"
 STORAGE_KEY_HEATMAP_COUNTER_LIST = "heatmap.counter_list"
@@ -289,6 +293,7 @@ STORAGE_KEY_VIEW_DARK_MODE = "view.dark_mode"
 STORAGE_KEY_VIEW_SCALE = "view.scale"
 STORAGE_OWNED_KEYS: tuple[str, ...] = (
     FLAME_GRAPH_COLOR_SCHEME_KEY_NAME,
+    STORAGE_KEY_CALL_GRAPH_SORT,
     STORAGE_KEY_DATABASE_COUNTER_LIST,
     STORAGE_KEY_DATABASE_FUNCTION_ROWS,
     STORAGE_KEY_HEATMAP_COUNTER_LIST,

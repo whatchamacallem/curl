@@ -103,7 +103,7 @@ pre {
 #call-graph-table- :is(.call-graph-share-, .call-graph-multiple-) {
   text-align: right;
 }
-/* A symbol button has no room of its own, its template's spaces around it. */
+/* A symbol button has no room of its own, its template's spaces inside it. */
 #call-graph-table- .menu-button- {
   padding: 0;
 }

@@ -677,6 +677,14 @@ window.report_ui_ = window.try_catch_handler_(function () {
       [SETTINGS_DEBUG_HASH_KEY_NAME]: null,
     });
   }
+  // Writes the hash of a test's heat map at a function, the one door for it.
+  function address_function_hash(test_name, function_name) {
+    return address_hash({
+      test: test_name,
+      view: HEAT_MAP_VIEW_ENTRY[0],
+      function: function_name,
+    });
+  }
   function address_home_hash(test_name, view_key) {
     return address_hash({
       test: test_name,
@@ -768,9 +776,9 @@ window.report_ui_ = window.try_catch_handler_(function () {
       lands_after,
     });
   }
-  // Asks the top page to order the heat map tree by a sort mode.
-  function heat_sort_choose_send(sort_mode) {
-    parent_post({ report_ui: "heat_sort_choose", sort_mode });
+  // Asks the top page to order the heat map tree by the other sort.
+  function heat_sort_toggle_send() {
+    parent_post({ report_ui: "heat_sort_toggle" });
   }
   // Sends the call graph's focused path up, root first, for the status line.
   function focused_path_send(path_entries) {
@@ -2910,7 +2918,8 @@ window.report_ui_ = window.try_catch_handler_(function () {
       row_count_choose,
     );
     let shown_count = default_count,
-      strip_handle = null;
+      strip_handle = null,
+      tail_entries = [];
 
     function rows_show(row_count) {
       shown_count = row_count;
@@ -3001,9 +3010,15 @@ window.report_ui_ = window.try_catch_handler_(function () {
           strip_entry_make("copy", "action", copy_text, {
             on_activate: table_copy,
           }),
+          ...tail_entries,
         ],
         [],
       );
+    }
+    // Shows the entries after the copy entry, rendering the cells again.
+    function tail_entries_set(shown_entries) {
+      tail_entries = shown_entries;
+      heading_render();
     }
     // Shows the stored count, or the default one, and renders the cells again.
     function heading_reset() {
@@ -3019,8 +3034,15 @@ window.report_ui_ = window.try_catch_handler_(function () {
       reset: heading_reset,
       row_count_show,
       table_key,
+      tail_entries_set,
     });
     heading_reset();
+  }
+  // Shows a page's entries after its attached heading's copy entry.
+  function page_heading_tail_set(heading_element, tail_entries) {
+    const attached_heading = attached_headings.get(heading_element);
+    if (!attached_heading) window.throw_exception_("str_error_internal");
+    attached_heading.tail_entries_set(tail_entries);
   }
 
   // Narrows a pane that fills its room by its right edge, until a reset.
@@ -3502,6 +3524,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
   return {
     address: {
       file_href: address_file_href,
+      function_hash: address_function_hash,
       hash: address_hash,
       home_hash: address_home_hash,
       link_hash: address_link_hash,
@@ -3524,7 +3547,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
     focused_path_send,
     function_list_cell,
     heat_cell_style,
-    heat_sort_choose_send,
+    heat_sort_toggle_send,
     home_panel,
     human_text,
     layout_activate,
@@ -3534,6 +3557,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
     listeners_bind,
     load_log_history_send,
     location_text,
+    page_heading_tail_set,
     percent_text,
     ramp_channels_at,
     render_record_table,

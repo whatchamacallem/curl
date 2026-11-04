@@ -377,13 +377,13 @@ The single function/check owning each concern - never bypass or duplicate:
   uncalled caller a root, a call graph with none or with a called function
   none of them reaches refused (build_report.py).
 - `call_graph_open_set()` - the one open set of a fresh call graph view,
-  at its first render and every `view_reset`: the hottest path from the
-  root of greatest cumulative CEst, a function's self plus its calls to
-  every other function, used for that alone and never shown, at each node
-  its shown child of
-  greatest inclusive CEst (ties by call line, then name, whatever the
-  sort), each node on that path with shown children open, every other
-  closed; a shown child is a callee not already on the node's path
+  at its first render and every `view_reset`: every node with shown
+  children whose cumulative CEst, never shown, is at least
+  `CALL_GRAPH_OPEN_LEAST_CUMULATIVE_PERCENT` of the test's total CEst
+  through `share_of_test()`, open, every other closed; a root's cumulative
+  CEst is its function's self plus its calls to every other function, a
+  callee's its call's inclusive CEst, the cost the `cumulative first` sort
+  orders by; a shown child is a callee not already on the node's path
   (call_graph.js).
 - `design_scale_stop_set()` - every scale change; `menu.js` then posts
   `layout_reset`, which resets column widths, pane widths and heading row
@@ -393,7 +393,13 @@ The single function/check owning each concern - never bypass or duplicate:
   which is part of the page: the first row of the source table, in the
   source column, closed by no control (heat_map.js).
 - `hash_for_location()` - every heat map link into a file at a line, a
-  function's line written as the function's hash (heat_map.js).
+  function's line written as the function's hash (heat_map.js);
+  `report_ui_.address.function_hash(test_name, function_name)` every
+  function's hash, the menu's function pulldown, the heat map's function
+  links and the call graph heading's selected function link, the function
+  of the symbol button last pressed, none at first and after a
+  `view_reset`, shown after the heading's copy entry through
+  `report_ui_.page_heading_tail_set()` (theme.js).
 - `report_ui_.strip.render(strip_element, entries, status_entries)` - every
   strip cell: the menu and its status bar, an entry with an empty href a
   plain label there, the preference strip, the settings view's load log
@@ -425,10 +431,12 @@ The single function/check owning each concern - never bypass or duplicate:
   column title drop, which moves a counters list's line (theme.js).
 - `report_preferences_.now()` - every read of the per-page counters lists
   (`counter_lists`, each line calls, callers, callees or a counter, in
-  order, shown or not), the heat scale and the heat sort preferences;
+  order, shown or not), the heat scale, the heat sort and the call graph
+  sort preferences;
   `preference_choose()` on the top page the one writer, through
   `counter_line_toggle()`, `counter_line_move()` (a view's title drop
-  posting the `counter_line_move` message up) and the heat choices,
+  posting the `counter_line_move` message up), the heat choices and the
+  call graph sort choice,
   relayed down on every message, a view taking it through
   `report_preferences_.relay_handler()` (preferences.js).
 - `report_preferences_.counter_readers()` - every counter's reader for the
