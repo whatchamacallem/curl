@@ -14,6 +14,7 @@ window.try_catch_handler_(function () {
   );
   const CALL_GRAPH_BRANCH_ONLY_TEXT = settings_("CALL_GRAPH_BRANCH_ONLY_TEXT");
   const CALL_GRAPH_BRANCH_PASS_TEXT = settings_("CALL_GRAPH_BRANCH_PASS_TEXT");
+  const CALL_GRAPH_CLOSED_TEXT = settings_("CALL_GRAPH_CLOSED_TEXT");
   const CALL_GRAPH_LINE_TEXT = settings_("CALL_GRAPH_LINE_TEXT");
   const CALL_GRAPH_REVEAL_CLEARANCE_CHARS = settings_(
     "CALL_GRAPH_REVEAL_CLEARANCE_CHARS",
@@ -260,17 +261,20 @@ window.try_catch_handler_(function () {
       render_html_escape(window.report_ui_.percent_text(share_percent)),
     );
   }
-  // Writes a node's symbol between spaces, a button if it has shown children.
+  // Writes a node's symbol, a button if it toggles, then a closed one's mark.
   function symbol_markup(graph_node, has_shown_children) {
     const name_markup = render_html_escape(
       path_function(graph_node.node_path).name,
     );
-    const shown_markup = has_shown_children
-      ? window.render_menu_button_("action", name_markup, {
-          tag_name: "span",
-        })
-      : name_markup;
-    return " " + shown_markup + " ";
+    if (!has_shown_children) return " " + name_markup + " ";
+    const button_markup = window.render_menu_button_("action", name_markup, {
+      tag_name: "span",
+    });
+    const closed_markup = node_is_open(graph_node)
+      ? ""
+      : render_html_escape(CALL_GRAPH_LINE_TEXT + CALL_GRAPH_CLOSED_TEXT) +
+        " ";
+    return " " + button_markup + " " + closed_markup;
   }
   // Writes a node's calls multiple then "x ", if it has one.
   function multiple_markup(graph_node) {

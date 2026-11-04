@@ -5,8 +5,6 @@
 window.ui_strings_ = (function () {
   "use strict";
   const STRINGS = {
-    str_caret_down: "▼",
-    str_caret_right: "►",
     str_clip_ellipsis: "…",
     str_column_baseline_share: "vs baseline",
     str_column_branch_miss_ratio: "branch miss",

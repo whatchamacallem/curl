@@ -40,12 +40,21 @@ window.try_catch_handler_(function () {
   const HEAT_MAP_TREE_AUTO_EXPAND_ABOVE_SHARE = settings_(
     "HEAT_MAP_TREE_AUTO_EXPAND_ABOVE_SHARE",
   );
+  const HEAT_MAP_TREE_BRANCH_LAST_TEXT = settings_(
+    "HEAT_MAP_TREE_BRANCH_LAST_TEXT",
+  );
+  const HEAT_MAP_TREE_BRANCH_MIDDLE_TEXT = settings_(
+    "HEAT_MAP_TREE_BRANCH_MIDDLE_TEXT",
+  );
+  const HEAT_MAP_TREE_BRANCH_PASS_TEXT = settings_(
+    "HEAT_MAP_TREE_BRANCH_PASS_TEXT",
+  );
+  const HEAT_MAP_TREE_CLOSED_TEXT = settings_("HEAT_MAP_TREE_CLOSED_TEXT");
+  const HEAT_MAP_TREE_FILE_TEXT = settings_("HEAT_MAP_TREE_FILE_TEXT");
+  const HEAT_MAP_TREE_OPEN_TEXT = settings_("HEAT_MAP_TREE_OPEN_TEXT");
   const HEAT_MAP_VIEW_ENTRY = settings_("HEAT_MAP_VIEW_ENTRY");
   const RANKING_COUNTER_NAME = settings_("RANKING_COUNTER_NAME");
   const REPORT_SOURCES_DIR_NAME = settings_("REPORT_SOURCES_DIR_NAME");
-  const STYLE_HEAT_MAP_TREE_INDENT_PER_LEVEL_CHARS = settings_(
-    "STYLE_HEAT_MAP_TREE_INDENT_PER_LEVEL_CHARS",
-  );
   const STYLE_TABLE_FUNCTION_LIST_COLUMN_MAX_CHARS = settings_(
     "STYLE_TABLE_FUNCTION_LIST_COLUMN_MAX_CHARS",
   );
@@ -453,19 +462,36 @@ window.try_catch_handler_(function () {
       sort_mode === "heat" ? absolute(node_b.self) - absolute(node_a.self) : 0;
     return by_heat || node_a.name.localeCompare(node_b.name);
   }
-  const caret = (is_expanded) =>
-    text(is_expanded ? "str_caret_down" : "str_caret_right");
+  // Returns the mark of a node with children, open or closed.
+  const node_mark = (is_expanded) =>
+    is_expanded ? HEAT_MAP_TREE_OPEN_TEXT : HEAT_MAP_TREE_CLOSED_TEXT;
+  // Returns a child's branch and its children's bars, none at the top level.
+  function child_branch_texts(depth, parent_bars_text, is_last) {
+    if (depth === 0) return { branch_text: "", bars_text: "" };
+    return {
+      branch_text:
+        parent_bars_text +
+        (is_last
+          ? HEAT_MAP_TREE_BRANCH_LAST_TEXT
+          : HEAT_MAP_TREE_BRANCH_MIDDLE_TEXT),
+      bars_text:
+        parent_bars_text +
+        (is_last
+          ? " ".repeat(HEAT_MAP_TREE_BRANCH_PASS_TEXT.length)
+          : HEAT_MAP_TREE_BRANCH_PASS_TEXT),
+    };
+  }
   const treeitem_attributes = (node_level) => ({
     role: "treeitem",
     "aria-level": node_level,
     tabindex: -1,
   });
-  // Writes the indented caret, name and share spans that one tree node holds.
-  const tree_node_inner_markup = (caret_text, name_text, share_shown) =>
+  // Writes the branch, name and share spans that one tree node holds.
+  const tree_node_inner_markup = (branch_text, name_text, share_shown) =>
     render_element(
       "span",
-      { class: "heat-map-tree-node-caret-" },
-      render_html_escape(caret_text + " "),
+      { class: "heat-map-tree-node-branch-" },
+      render_html_escape(branch_text + " "),
     ) +
     render_element(
       "span",
@@ -484,15 +510,26 @@ window.try_catch_handler_(function () {
     // Writes the share of a node.
     const node_share_text = (tree_node) =>
       ranking_share_text(tree_node.self, tree_node.base);
-    function nodes_emit(tree_node, depth) {
+    // Writes a node's children, each after its ancestors' bars and branch.
+    function nodes_emit(tree_node, depth, bars_text) {
       const output_parts = [];
-      const indent_text = " ".repeat(
-        depth * STYLE_HEAT_MAP_TREE_INDENT_PER_LEVEL_CHARS,
-      );
       const directories = [...tree_node.dirs.values()].sort(node_compare);
-      for (const directory_node of directories) {
+      const file_list = [...tree_node.files].sort(node_compare);
+      const sampled_files = file_list.filter((file) => !file.zero);
+      const zero_cost_files = file_list.filter((file) => file.zero);
+      const last_index =
+        directories.length +
+        sampled_files.length +
+        (zero_cost_files.length ? 1 : 0) -
+        1;
+      directories.forEach((directory_node, child_index) => {
         const is_expanded = expanded_directories.has(directory_node.path);
         const heat_style_attribute = node_heat_style(directory_node);
+        const branch_texts = child_branch_texts(
+          depth,
+          bars_text,
+          child_index === last_index,
+        );
         output_parts.push(
           render_element(
             "div",
@@ -505,7 +542,7 @@ window.try_catch_handler_(function () {
               ...(heat_style_attribute ? { style: heat_style_attribute } : {}),
             },
             tree_node_inner_markup(
-              indent_text + caret(is_expanded),
+              branch_texts.branch_text + node_mark(is_expanded),
               directory_node.name + "/",
               node_share_text(directory_node),
             ),
@@ -520,12 +557,11 @@ window.try_catch_handler_(function () {
                 (is_expanded ? " open-" : ""),
               role: "group",
             },
-            nodes_emit(directory_node, depth + 1),
+            nodes_emit(directory_node, depth + 1, branch_texts.bars_text),
           ),
         );
-      }
-      const file_list = [...tree_node.files].sort(node_compare);
-      const file_row_emit = (file, node_level) => {
+      });
+      const file_row_emit = (file, node_level, branch_text) => {
         const is_selected = file.path === current_file_path;
         const heat_style_attribute = file.cold ? "" : node_heat_style(file);
         return render_element(
@@ -542,17 +578,25 @@ window.try_catch_handler_(function () {
             ...(heat_style_attribute ? { style: heat_style_attribute } : {}),
           },
           tree_node_inner_markup(
-            indent_text + caret(false),
+            branch_text + HEAT_MAP_TREE_FILE_TEXT,
             file.name,
             node_share_text(file),
           ),
         );
       };
-      const zero_cost_files = file_list.filter((file) => file.zero);
-      for (const file of file_list)
-        if (!file.zero) output_parts.push(file_row_emit(file, depth + 1));
+      sampled_files.forEach((file, file_index) => {
+        const branch_texts = child_branch_texts(
+          depth,
+          bars_text,
+          directories.length + file_index === last_index,
+        );
+        output_parts.push(
+          file_row_emit(file, depth + 1, branch_texts.branch_text),
+        );
+      });
       if (zero_cost_files.length) {
         const is_expanded = expanded_cold_groups.has(tree_node.path);
+        const branch_texts = child_branch_texts(depth, bars_text, true);
         output_parts.push(
           render_element(
             "div",
@@ -563,7 +607,7 @@ window.try_catch_handler_(function () {
               "data-more-": tree_node.path,
             },
             tree_node_inner_markup(
-              indent_text + caret(is_expanded),
+              branch_texts.branch_text + node_mark(is_expanded),
               text("str_no_samples"),
               "",
             ),
@@ -578,7 +622,17 @@ window.try_catch_handler_(function () {
                 role: "group",
               },
               zero_cost_files
-                .map((file) => file_row_emit(file, depth + 2))
+                .map((file, file_index) =>
+                  file_row_emit(
+                    file,
+                    depth + 2,
+                    child_branch_texts(
+                      depth + 1,
+                      branch_texts.bars_text,
+                      file_index === zero_cost_files.length - 1,
+                    ).branch_text,
+                  ),
+                )
                 .join(""),
             ),
           );
@@ -588,7 +642,7 @@ window.try_catch_handler_(function () {
     }
     const tree_had_focus =
       document.hasFocus() && tree_panel.contains(document.activeElement);
-    tree_panel.innerHTML = nodes_emit(tree_root, 0);
+    tree_panel.innerHTML = nodes_emit(tree_root, 0, "");
     tree_tab_stop_place(tree_had_focus);
   }
   // Reads the tree's focus and scroll before the main box draws again.
