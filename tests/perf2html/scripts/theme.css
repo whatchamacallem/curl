@@ -107,6 +107,10 @@ pre {
 #call-graph-table- .menu-button- {
   padding: 0;
 }
+/* A cell taking a symbol's click shows the pointer, as the symbol does. */
+#call-graph-table- td.clickable- {
+  cursor: pointer;
+}
 
 /* The database page grows with its table, so the bars redraw as it widens. */
 #database-page- > .page- {

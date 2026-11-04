@@ -165,6 +165,7 @@ window.try_catch_handler_(function () {
     return open_set;
   }
   let button_graph_nodes = new WeakMap(),
+    cell_symbol_buttons = new WeakMap(),
     heat_curve_name = null,
     heat_sort_mode = null,
     node_places = new Map(),
@@ -200,6 +201,13 @@ window.try_catch_handler_(function () {
   function node_is_open(graph_node) {
     return open_path_keys.has(path_key(graph_node.node_path));
   }
+  // Returns whether a node is closed and has shown children to open.
+  function node_is_closed(graph_node) {
+    return (
+      !node_is_open(graph_node) &&
+      shown_callee_edges(graph_node.node_path).length > 0
+    );
+  }
 
   // Places every drawn node in a row and a group, one group per depth.
   function graph_layout() {
@@ -219,6 +227,12 @@ window.try_catch_handler_(function () {
       );
       (layout_rows[node_row] ??= [])[group_index] = graph_node;
       next_free_rows[group_index] = node_row + 1;
+      // A row keeps a group right of a closed node, its mark's place if empty.
+      if (node_is_closed(graph_node))
+        layout_rows[node_row].length = Math.max(
+          layout_rows[node_row].length,
+          group_index + 2,
+        );
       if (!is_open) return node_row;
       const child_rows = node_children(graph_node).map((child_node) =>
         node_place(child_node, node_row),
@@ -236,6 +250,16 @@ window.try_catch_handler_(function () {
     return layout_rows;
   }
 
+  // Returns whether a row's closed node has its mark in the empty place right.
+  function mark_fits_right(layout_row, group_index) {
+    const layout_place = layout_row[group_index];
+    return (
+      layout_place !== undefined &&
+      layout_place !== PASS_PLACE &&
+      node_is_closed(layout_place) &&
+      layout_row[group_index + 1] === undefined
+    );
+  }
   // Returns a place's branch text: a node's, a passing branch's, or none.
   function place_branch_text(layout_place) {
     if (layout_place === undefined) return "";
@@ -261,8 +285,8 @@ window.try_catch_handler_(function () {
       render_html_escape(window.report_ui_.percent_text(share_percent)),
     );
   }
-  // Writes a node's symbol, a button if it toggles, then a closed one's mark.
-  function symbol_markup(graph_node, has_shown_children) {
+  // Writes a node's symbol, a button if it toggles, then its mark if beside.
+  function symbol_markup(graph_node, has_shown_children, is_mark_beside) {
     const name_markup = render_html_escape(
       path_function(graph_node.node_path).name,
     );
@@ -270,10 +294,9 @@ window.try_catch_handler_(function () {
     const button_markup = window.render_menu_button_("action", name_markup, {
       tag_name: "span",
     });
-    const closed_markup = node_is_open(graph_node)
-      ? ""
-      : render_html_escape(CALL_GRAPH_LINE_TEXT + CALL_GRAPH_CLOSED_TEXT) +
-        " ";
+    const closed_markup = is_mark_beside
+      ? render_html_escape(CALL_GRAPH_LINE_TEXT + CALL_GRAPH_CLOSED_TEXT) + " "
+      : "";
     return " " + button_markup + " " + closed_markup;
   }
   // Writes a node's calls multiple then "x ", if it has one.
@@ -287,38 +310,50 @@ window.try_catch_handler_(function () {
       ) + "x "
     );
   }
-  // Writes a node's tail: the line to its first child when open.
-  function tail_markup(graph_node) {
-    return node_is_open(graph_node)
+  // Writes a node's tail: the line to its first child or to its mark right.
+  function tail_markup(graph_node, is_mark_right) {
+    return node_is_open(graph_node) || is_mark_right
       ? render_html_escape(CALL_GRAPH_LINE_TEXT)
       : "";
   }
   // Writes a placed node's group of cells after its branch cell's markup.
-  function node_markup(graph_node, branch_cell_markup) {
+  function node_markup(graph_node, branch_cell_markup, is_mark_right) {
     const has_shown_children =
       shown_callee_edges(graph_node.node_path).length > 0;
     return group_markup(
       branch_cell_markup,
       multiple_markup(graph_node),
       share_markup(graph_node),
-      symbol_markup(graph_node, has_shown_children),
-      tail_markup(graph_node),
+      symbol_markup(
+        graph_node,
+        has_shown_children,
+        node_is_closed(graph_node) && !is_mark_right,
+      ),
+      tail_markup(graph_node, is_mark_right),
     );
   }
   // Writes a layout row's groups: a node's, a passing branch's, or empty.
   function layout_row_markup(layout_row) {
-    return Array.from(layout_row, (layout_place) => {
+    return Array.from(layout_row, (layout_place, group_index) => {
+      // A closed node's mark takes the empty branch cell right of it.
       const branch_cell_markup = render_html_escape(
-        place_branch_text(layout_place),
+        mark_fits_right(layout_row, group_index - 1)
+          ? CALL_GRAPH_CLOSED_TEXT
+          : place_branch_text(layout_place),
       );
       if (layout_place === undefined || layout_place === PASS_PLACE)
         return group_markup(branch_cell_markup, "", "", "", "");
-      return node_markup(layout_place, branch_cell_markup);
+      return node_markup(
+        layout_place,
+        branch_cell_markup,
+        mark_fits_right(layout_row, group_index),
+      );
     }).join("");
   }
   // Draws every layout row, keeping each placed node's cells and button.
   function graph_render() {
     button_graph_nodes = new WeakMap();
+    cell_symbol_buttons = new WeakMap();
     node_places = new Map();
     const graph_rows = graph_layout().map((layout_row) => {
       const graph_row = window.render_element_of_(
@@ -328,9 +363,11 @@ window.try_catch_handler_(function () {
       const group_size = row_cells.length / layout_row.length;
       layout_row.forEach((layout_place, group_index) => {
         if (layout_place === PASS_PLACE) return;
+        // A node's cells end with the next group's branch cell if its mark's.
         const node_cells = row_cells.slice(
           group_index * group_size,
-          (group_index + 1) * group_size,
+          (group_index + 1) * group_size +
+            (mark_fits_right(layout_row, group_index) ? 1 : 0),
         );
         const symbol_button = node_cells
           .map((node_cell) => node_cell.querySelector(".menu-button-"))
@@ -339,7 +376,13 @@ window.try_catch_handler_(function () {
           node_cells,
           symbol_button,
         });
-        if (symbol_button) button_graph_nodes.set(symbol_button, layout_place);
+        if (!symbol_button) return;
+        button_graph_nodes.set(symbol_button, layout_place);
+        // Each of a symbol's cells takes the click its button takes.
+        for (const node_cell of node_cells) {
+          node_cell.classList.add("clickable-");
+          cell_symbol_buttons.set(node_cell, symbol_button);
+        }
       });
       return graph_row;
     });
@@ -407,9 +450,9 @@ window.try_catch_handler_(function () {
     );
     window.report_ui_.focused_path_send(focused_path_entries(graph_node));
   }
-  // Returns the symbol button an input reached, null for none.
+  // Returns the symbol button of the cell an input reached, if any.
   function symbol_button_of(browser_event) {
-    return browser_event.target.closest(".menu-button-");
+    return cell_symbol_buttons.get(browser_event.target.closest("td"));
   }
 
   // Takes the relayed preferences: the heat curve and the sort.
