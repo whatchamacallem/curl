@@ -19,7 +19,7 @@
     <div id="overview-page-scroll-box-">
       <div id="overview-page-">
         __MENU__
-        <div id="overview-home-" hidden>
+        <div id="overview-home-" class="view-" hidden>
           <main id="overview-home-text-">
             <div class="page-">
               __TESTS_HEADING__ __TESTS__
@@ -29,6 +29,11 @@
           </main>
           <div
             class="text-scrollbar- vertical-"
+            data-scrolls-="overview-home-text-"
+            aria-hidden="true"
+          ></div>
+          <div
+            class="text-scrollbar- horizontal-"
             data-scrolls-="overview-home-text-"
             aria-hidden="true"
           ></div>

@@ -19,6 +19,7 @@ window.try_catch_handler_(function () {
   const CALL_GRAPH_OPEN_LEAST_CUMULATIVE_PERCENT = settings_(
     "CALL_GRAPH_OPEN_LEAST_CUMULATIVE_PERCENT",
   );
+  const CALL_GRAPH_PAD_TEXT = settings_("CALL_GRAPH_PAD_TEXT");
   const CALL_GRAPH_REVEAL_CLEARANCE_CHARS = settings_(
     "CALL_GRAPH_REVEAL_CLEARANCE_CHARS",
   );
@@ -26,6 +27,7 @@ window.try_catch_handler_(function () {
     "CALL_GRAPH_REVEAL_CLEARANCE_LINES",
   );
   const NUMBER_FRACTION_DIGITS = settings_("NUMBER_FRACTION_DIGITS");
+  const NUMBER_MULTIPLE_SUFFIX_TEXT = settings_("NUMBER_MULTIPLE_SUFFIX_TEXT");
 
   const render_element = window.render_element_;
   const render_html_escape = window.render_html_escape_;
@@ -51,13 +53,12 @@ window.try_catch_handler_(function () {
       render_html_escape(window.report_ui_.percent_text(share_percent)),
     );
   }
-  // Writes a group's cells: branch, multiple, share, symbol and tail.
+  // Writes a group's cells: branch, multiple, share and symbol.
   function group_markup(
     branch_cell_markup,
     multiple_cell_markup,
     share_percent,
     symbol_cell_markup,
-    tail_cell_markup,
   ) {
     return (
       render_element("td", {}, branch_cell_markup) +
@@ -67,12 +68,7 @@ window.try_catch_handler_(function () {
         multiple_cell_markup,
       ) +
       share_cell_markup(share_percent) +
-      render_element(
-        "td",
-        { class: "call-graph-symbol-" },
-        symbol_cell_markup,
-      ) +
-      render_element("td", {}, tail_cell_markup)
+      render_element("td", { class: "call-graph-symbol-" }, symbol_cell_markup)
     );
   }
   // Marks a layout group a branch passes through, holding no node.
@@ -88,12 +84,11 @@ window.try_catch_handler_(function () {
     render_element("tbody", {}, ""),
   );
 
-  // Reads one function's row, its cumulative cost and calls summed below.
+  // Reads one function's row, its calls summed below.
   function function_record_read(function_row) {
     return {
       name: function_row[0],
       self_cost: function_row[1],
-      cumulative_cost: function_row[1],
       invocation_count: 0,
       callee_edges: [],
     };
@@ -121,13 +116,9 @@ window.try_catch_handler_(function () {
     function_records[call_root.function_index].invocation_count +=
       call_root.calls;
   for (const call_edge of call_graph_model.edges.map(call_edge_read)) {
-    const caller_record = function_records[call_edge.caller_index];
-    caller_record.callee_edges.push(call_edge);
+    function_records[call_edge.caller_index].callee_edges.push(call_edge);
     function_records[call_edge.callee_index].invocation_count +=
       call_edge.calls;
-    // A self call's cost is already inside the caller's own and other calls.
-    if (call_edge.callee_index !== call_edge.caller_index)
-      caller_record.cumulative_cost += call_edge.inclusive_cost;
   }
 
   // Returns a function's self cost as a percent of the test's total cost.
@@ -192,31 +183,25 @@ window.try_catch_handler_(function () {
       (call_edge) => !node_path.includes(call_edge.callee_index),
     );
   }
-  // Returns a fresh open set: each node with shown children and enough cost.
+  // Returns whether a call's cumulative share of the test opens its caller.
+  function edge_opens_caller(call_edge) {
+    return (
+      window.report_ui_.share_of_test(call_edge.inclusive_cost, test_total) >=
+      CALL_GRAPH_OPEN_LEAST_CUMULATIVE_PERCENT
+    );
+  }
+  // Returns a fresh open set: each shown node with a child of enough cost.
   function call_graph_open_set() {
     const open_set = new Set();
-    // Opens a node whose cumulative share is enough, then its children.
-    function node_open(node_path, cumulative_cost) {
+    // Opens a node with a shown child of enough cost, then each child.
+    function node_open(node_path) {
       const shown_edges = shown_callee_edges(node_path);
-      if (
-        !shown_edges.length ||
-        window.report_ui_.share_of_test(cumulative_cost, test_total) <
-          CALL_GRAPH_OPEN_LEAST_CUMULATIVE_PERCENT
-      )
-        return;
+      if (!shown_edges.some(edge_opens_caller)) return;
       open_set.add(path_key(node_path));
       for (const call_edge of shown_edges)
-        node_open(
-          [...node_path, call_edge.callee_index],
-          call_edge.inclusive_cost,
-        );
+        node_open([...node_path, call_edge.callee_index]);
     }
-    // A root's cumulative cost is its function's, a callee's its call's.
-    for (const call_root of call_roots)
-      node_open(
-        [call_root.function_index],
-        function_records[call_root.function_index].cumulative_cost,
-      );
+    for (const call_root of call_roots) node_open([call_root.function_index]);
     return open_set;
   }
   let button_graph_nodes = new WeakMap(),
@@ -332,18 +317,68 @@ window.try_catch_handler_(function () {
     if (graph_node.call_edge === null) return null;
     return self_share_of_test(path_function(graph_node.node_path));
   }
-  // Writes a node's symbol, a button holding its spaces if it toggles, a mark.
-  function symbol_markup(graph_node, has_shown_children, is_mark_beside) {
-    const name_markup =
-      " " + render_html_escape(path_function(graph_node.node_path).name) + " ";
-    if (!has_shown_children) return name_markup;
-    const button_markup = window.render_menu_button_("action", name_markup, {
-      tag_name: "span",
-    });
-    const closed_markup = is_mark_beside
-      ? render_html_escape(CALL_GRAPH_LINE_TEXT + CALL_GRAPH_CLOSED_TEXT) + " "
-      : "";
-    return button_markup + closed_markup;
+  // Returns a placed node's name and bar end texts, and whether bars follow.
+  function symbol_parts(layout_row, group_index) {
+    const graph_node = layout_row[group_index];
+    const name_text =
+      CALL_GRAPH_PAD_TEXT +
+      path_function(graph_node.node_path).name +
+      CALL_GRAPH_PAD_TEXT;
+    if (node_is_open(graph_node) || mark_fits_right(layout_row, group_index))
+      return { name_text, has_bars: true, end_text: "" };
+    if (node_is_closed(graph_node))
+      return {
+        name_text,
+        has_bars: true,
+        end_text: CALL_GRAPH_CLOSED_TEXT + CALL_GRAPH_PAD_TEXT,
+      };
+    return { name_text, has_bars: false, end_text: "" };
+  }
+  // Returns the fewest characters a placed node's symbol takes, one bar long.
+  function symbol_least_width(layout_row, group_index) {
+    const symbol_part = symbol_parts(layout_row, group_index);
+    if (!symbol_part.has_bars) return symbol_part.name_text.length;
+    return (
+      symbol_part.name_text.length +
+      CALL_GRAPH_LINE_TEXT.length +
+      symbol_part.end_text.length
+    );
+  }
+  // Lists each group's symbol column width, its widest symbol's characters.
+  function symbol_column_widths(layout_rows) {
+    const column_widths = new Array(layout_rows[0].length).fill(0);
+    for (const layout_row of layout_rows)
+      layout_row.forEach((layout_place, group_index) => {
+        if (layout_place === undefined || layout_place === PASS_PLACE) return;
+        column_widths[group_index] = Math.max(
+          column_widths[group_index],
+          symbol_least_width(layout_row, group_index),
+        );
+      });
+    return column_widths;
+  }
+  // Writes a node's symbol, a button if it toggles, its bars to the width.
+  function symbol_markup(layout_row, group_index, symbol_width) {
+    const graph_node = layout_row[group_index];
+    const symbol_part = symbol_parts(layout_row, group_index);
+    const name_markup = render_html_escape(symbol_part.name_text);
+    const shown_name_markup =
+      shown_callee_edges(graph_node.node_path).length > 0
+        ? window.render_menu_button_("action", name_markup, {
+            tag_name: "span",
+          })
+        : name_markup;
+    if (!symbol_part.has_bars) return shown_name_markup;
+    const bar_width =
+      symbol_width -
+      symbol_part.name_text.length -
+      symbol_part.end_text.length;
+    return (
+      shown_name_markup +
+      render_html_escape(
+        CALL_GRAPH_LINE_TEXT.repeat(bar_width) + symbol_part.end_text,
+      )
+    );
   }
   // Returns a multiple with the most fraction digits its width holds.
   function multiple_text(calls_multiple) {
@@ -358,37 +393,20 @@ window.try_catch_handler_(function () {
     }
     return fitted_text;
   }
-  // Writes a node's calls multiple then "x ", if it has one.
+  // Writes a node's calls multiple and its suffix between pads, if it has one.
   function multiple_markup(graph_node) {
     if (graph_node.call_edge === null) return "";
     const calls_multiple = edge_multiple(graph_node.call_edge);
     if (calls_multiple === null) return "";
-    return render_html_escape(multiple_text(calls_multiple)) + "x ";
-  }
-  // Writes a node's tail: the line to its first child or to its mark right.
-  function tail_markup(graph_node, is_mark_right) {
-    return node_is_open(graph_node) || is_mark_right
-      ? render_html_escape(CALL_GRAPH_LINE_TEXT)
-      : "";
-  }
-  // Writes a placed node's group of cells after its branch cell's markup.
-  function node_markup(graph_node, branch_cell_markup, is_mark_right) {
-    const has_shown_children =
-      shown_callee_edges(graph_node.node_path).length > 0;
-    return group_markup(
-      branch_cell_markup,
-      multiple_markup(graph_node),
-      node_share_percent(graph_node),
-      symbol_markup(
-        graph_node,
-        has_shown_children,
-        node_is_closed(graph_node) && !is_mark_right,
-      ),
-      tail_markup(graph_node, is_mark_right),
+    return render_html_escape(
+      CALL_GRAPH_PAD_TEXT +
+        multiple_text(calls_multiple) +
+        NUMBER_MULTIPLE_SUFFIX_TEXT +
+        CALL_GRAPH_PAD_TEXT,
     );
   }
   // Writes a layout row's groups: a node's, a passing branch's, or empty.
-  function layout_row_markup(layout_row) {
+  function layout_row_markup(layout_row, symbol_widths) {
     return Array.from(layout_row, (layout_place, group_index) => {
       // A closed node's mark takes the empty branch cell right of it.
       const branch_cell_markup = render_html_escape(
@@ -397,11 +415,12 @@ window.try_catch_handler_(function () {
           : place_branch_text(layout_place),
       );
       if (layout_place === undefined || layout_place === PASS_PLACE)
-        return group_markup(branch_cell_markup, "", null, "", "");
-      return node_markup(
-        layout_place,
+        return group_markup(branch_cell_markup, "", null, "");
+      return group_markup(
         branch_cell_markup,
-        mark_fits_right(layout_row, group_index),
+        multiple_markup(layout_place),
+        node_share_percent(layout_place),
+        symbol_markup(layout_row, group_index, symbol_widths[group_index]),
       );
     }).join("");
   }
@@ -410,9 +429,11 @@ window.try_catch_handler_(function () {
     button_graph_nodes = new WeakMap();
     cell_symbol_buttons = new WeakMap();
     node_places = new Map();
-    const graph_rows = graph_layout().map((layout_row) => {
+    const layout_rows = graph_layout();
+    const symbol_widths = symbol_column_widths(layout_rows);
+    const graph_rows = layout_rows.map((layout_row) => {
       const graph_row = window.render_element_of_(
-        render_element("tr", {}, layout_row_markup(layout_row)),
+        render_element("tr", {}, layout_row_markup(layout_row, symbol_widths)),
       );
       const row_cells = [...graph_row.cells];
       const group_size = row_cells.length / layout_row.length;
@@ -477,15 +498,9 @@ window.try_catch_handler_(function () {
       parseFloat(table_style.scrollMarginLeft),
     );
   }
-  // Lists the focused path of a node, each function's name from its root on.
-  function focused_path_entries(graph_node) {
-    return graph_node.node_path.map(
-      (function_index) => function_records[function_index].name,
-    );
-  }
-  // Links the selected function to its heat map after the copy entry.
-  function selected_function_show() {
-    const tail_entries =
+  // Shows the selected function after the heading's copy and download.
+  function heading_tail_show() {
+    const selected_entries =
       selected_function_name === null
         ? []
         : [
@@ -501,13 +516,13 @@ window.try_catch_handler_(function () {
               },
             ),
           ];
-    window.report_ui_.page_heading_tail_set(page_heading, tail_entries);
+    window.report_ui_.page_heading_tail_set(page_heading, selected_entries);
   }
   // Opens or closes a symbol's node, draws again, shows it, selects it.
   function node_toggle(symbol_button) {
     const graph_node = button_graph_nodes.get(symbol_button);
     selected_function_name = path_function(graph_node.node_path).name;
-    selected_function_show();
+    heading_tail_show();
     const node_key = path_key(graph_node.node_path);
     const is_opening = !open_path_keys.has(node_key);
     if (is_opening) open_path_keys.add(node_key);
@@ -525,7 +540,7 @@ window.try_catch_handler_(function () {
           )
         : toggled_place.node_cells,
     );
-    window.report_ui_.focused_path_send(focused_path_entries(graph_node));
+    window.report_ui_.focused_path_send([selected_function_name]);
   }
   // Returns the symbol button of the cell an input reached, if any.
   function symbol_button_of(browser_event) {
@@ -545,22 +560,22 @@ window.try_catch_handler_(function () {
     heat_curve_name = scale_choice.curve;
     sort_mode = view_preferences.call_graph_sort_mode;
   }
-  // Draws the graph again when the relayed preferences change what it shows.
+  // Draws the graph and its heading's tail when the preferences change it.
   function preferences_apply() {
     preferences_handler();
     const preferences_text = JSON.stringify([heat_curve_name, sort_mode]);
     if (preferences_text === rendered_preferences_text) return;
     rendered_preferences_text = preferences_text;
     graph_render();
+    heading_tail_show();
   }
   // Opens a fresh open set, draws every row and clears the selection.
   function view_reset() {
     open_path_keys = call_graph_open_set();
+    selected_function_name = null;
     // Forgets the drawn preferences, so the graph draws again.
     rendered_preferences_text = null;
     preferences_apply();
-    selected_function_name = null;
-    selected_function_show();
     window.report_ui_.focused_path_send([]);
   }
   // Takes a relayed message: a view reset, else a change of its preferences.

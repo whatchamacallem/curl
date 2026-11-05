@@ -18,7 +18,9 @@ _ASSET_TEMPLATE_CALL_GRAPH_PAGE_NAME: str = ""
 _ASSET_TEMPLATE_DATABASE_PAGE_NAME: str = ""
 _ASSET_TEMPLATE_OVERVIEW_PAGE_NAME: str = ""
 _ASSET_TEMPLATE_SETTINGS_PAGE_NAME: str = ""
+_CALL_GRAPH_DOWNLOAD_FILE_NAME_SUFFIX: str = ""
 _CALL_GRAPH_PAGE_DIR_NAME: str = ""
+_DATABASE_DOWNLOAD_FILE_NAME_SUFFIX: str = ""
 _DATABASE_PAGE_DIR_NAME: str = ""
 _DATABASE_VIEW_KEY: str = ""
 _FLAME_GRAPH_LOCAL_PROFILE_PATH: str = ""
@@ -258,6 +260,15 @@ class BuildReport:
                 ),
                 "__PAGE_TITLE__": theme.render_html_escape(test_name),
                 "__CALL_GRAPH__": theme.render_element(
+                    "div",
+                    {
+                        "class": "page-heading-",
+                        "data-download-file-name-": test_name
+                        + _CALL_GRAPH_DOWNLOAD_FILE_NAME_SUFFIX,
+                    },
+                    "",
+                )
+                + theme.render_element(
                     "table",
                     {"id": "call-graph-table-", "data-model-": model_text},
                     "",
@@ -427,6 +438,8 @@ class BuildReport:
                     {
                         "id": "database-model-",
                         "data-diff-": str(int(is_diff)),
+                        "data-download-file-name-": test_name
+                        + _DATABASE_DOWNLOAD_FILE_NAME_SUFFIX,
                         "data-model-": model_text,
                     },
                     "",

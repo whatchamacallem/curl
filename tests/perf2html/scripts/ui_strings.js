@@ -173,6 +173,7 @@ window.ui_strings_ = (function () {
     str_source_unavailable: "Source not available.",
     str_strip_gap: " ",
     str_table_heading_copy: "copy",
+    str_table_heading_download: "download",
     str_text_scrollbar_chevron_down: "▼",
     str_text_scrollbar_chevron_left: "◄",
     str_text_scrollbar_chevron_right: "►",

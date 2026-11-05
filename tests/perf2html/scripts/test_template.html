@@ -22,8 +22,13 @@
         padding: 4px;
         background: inherit;
       }
-      #strip- select {
+      #strip- select,
+      #strip- input,
+      #strip- button {
         font: inherit;
+      }
+      #strip- form {
+        display: inline;
       }
       #grid- table {
         width: 100%;
@@ -72,6 +77,18 @@
       <a href="test_verbose.md">test_verbose.md</a>
       <label for="width-">width:</label>
       <select id="width-" autocomplete="off"></select>
+      <form id="resolution-form-">
+        <label for="resolution-">resolution:</label>
+        <input
+          id="resolution-"
+          type="number"
+          min="1"
+          step="1"
+          required
+          autocomplete="off"
+        />p
+        <button type="submit">apply</button>
+      </form>
     </div>
     <div id="grid-"></div>
     <table id="page-timings-">
@@ -92,15 +109,20 @@
           document.getElementById("shot-list-").textContent,
         );
         const select = document.getElementById("width-");
+        const resolution_box = document.getElementById("resolution-");
+        const resolution_form = document.getElementById("resolution-form-");
         const grid = document.getElementById("grid-");
         const report_links = document.getElementById("report-links-");
         const timing_table = document.getElementById("page-timings-");
+        const RESOLUTION_HASH_KEY = "resolution";
         // The page y of the menu and view boundary, kept on whole pixels.
         const SCALE_QUANTUM_PAGE_Y = 51;
         const WIDTH_CHOICE_MAX = 16;
         const WIDTH_DEFAULT = 4;
         const WIDTH_STORAGE_KEY = "perf2html.test.thumbs_width";
-        let layout_animation_frame = 0;
+        let frame_height = 0,
+          frame_width = 0,
+          layout_animation_frame = 0;
         for (let n = 1; n <= WIDTH_CHOICE_MAX; n++) {
           const option = document.createElement("option");
           option.value = String(n);
@@ -155,15 +177,52 @@
           localStorage.setItem(WIDTH_STORAGE_KEY, select.value);
         }
 
+        // Returns the hash's resolution, the frame height, null for none.
+        function hash_resolution_read() {
+          const resolution_text = new URLSearchParams(
+            location.hash.slice(1),
+          ).get(RESOLUTION_HASH_KEY);
+          if (resolution_text === null) {
+            return null;
+          }
+          if (!/^[1-9][0-9]*$/.test(resolution_text)) {
+            throw new Error(RESOLUTION_HASH_KEY + " holds " + resolution_text);
+          }
+          return Number(resolution_text);
+        }
+
+        // Returns the hash holding a resolution.
+        function resolution_hash(resolution) {
+          return (
+            "#" + new URLSearchParams({ [RESOLUTION_HASH_KEY]: resolution })
+          );
+        }
+
+        // Sizes every frame to a resolution, its width in the shots' aspect.
+        function resolution_apply(resolution) {
+          frame_height = resolution;
+          frame_width = Math.round((resolution * data.width) / data.height);
+          resolution_box.value = String(resolution);
+          build();
+        }
+
+        // Applies the hash's resolution, writing the shots' height when none.
+        function hash_resolution_take() {
+          if (hash_resolution_read() === null) {
+            history.replaceState(null, "", resolution_hash(data.height));
+          }
+          resolution_apply(hash_resolution_read());
+        }
+
         // Sizes whole pixel boxes under a scale quantized for whole rows.
         function layout() {
           const count = Number(select.value);
           const cell_width = grid.clientWidth / count;
           const scale =
-            Math.floor((cell_width / data.width) * SCALE_QUANTUM_PAGE_Y) /
+            Math.floor((cell_width / frame_width) * SCALE_QUANTUM_PAGE_Y) /
             SCALE_QUANTUM_PAGE_Y;
-          const box_width = Math.floor(data.width * scale);
-          const box_height = Math.floor(data.height * scale);
+          const box_width = Math.floor(frame_width * scale);
+          const box_height = Math.floor(frame_height * scale);
           for (const cell of grid.querySelectorAll(".cell-")) {
             cell.style.width = box_width + "px";
             cell.style.height = box_height + "px";
@@ -195,8 +254,8 @@
             box.className = "cell-";
             const frame = document.createElement("iframe");
             frame.src = page.href;
-            frame.width = data.width;
-            frame.height = data.height;
+            frame.width = frame_width;
+            frame.height = frame_height;
             // Opens the page as a user loads it, with no screenshot code.
             const page_address = new URL(page.href, document.baseURI);
             for (const screenshot_key of data.screenshot_keys) {
@@ -220,12 +279,18 @@
           width_choice_write();
           build();
         });
+        // Puts the edited resolution in the hash, which applies it.
+        resolution_form.addEventListener("submit", function (submit_event) {
+          submit_event.preventDefault();
+          location.hash = resolution_hash(Number(resolution_box.value));
+        });
+        window.addEventListener("hashchange", hash_resolution_take);
         new ResizeObserver(layout_defer).observe(grid);
         // Takes the focus from the frames, each of which may have focused one.
         window.addEventListener("load", function () {
           window.focus();
         });
-        build();
+        hash_resolution_take();
       })();
     </script>
   </body>

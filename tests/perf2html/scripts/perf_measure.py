@@ -21,6 +21,9 @@ _PROFILE_SKIPPED_FUNCTION_PATTERN: str = ""
 _PROFILE_START_FUNCTION_NAME: str = ""
 _PROFILE_STOP_FUNCTION_NAME: str = ""
 _SIGNAL_EXIT_CODE_BASE: int = 0
+_TABLE_MARKDOWN_PAD_TEXT: str = ""
+_TABLE_MARKDOWN_PIPE_TEXT: str = ""
+_TABLE_MARKDOWN_RULE_TEXT: str = ""
 _TEST_LOOPS: int = 0
 _TIMING_COLUMN_NAMES: tuple[str, ...] = ()
 _TIMING_COUNTER_RATIOS: tuple[tuple[str, str, str], ...] = ()
@@ -544,20 +547,29 @@ class PerfMeasure:
         ]
         table_rows = [
             value_names,
-            ["-" * column_width for column_width in column_widths],
+            [
+                _TABLE_MARKDOWN_RULE_TEXT * column_width
+                for column_width in column_widths
+            ],
             value_cells,
         ]
         print(
             "",
             *(
-                "| "
-                + " | ".join(
+                _TABLE_MARKDOWN_PIPE_TEXT
+                + _TABLE_MARKDOWN_PAD_TEXT
+                + (
+                    _TABLE_MARKDOWN_PAD_TEXT
+                    + _TABLE_MARKDOWN_PIPE_TEXT
+                    + _TABLE_MARKDOWN_PAD_TEXT
+                ).join(
                     table_cell.ljust(column_width)
                     for table_cell, column_width in zip(
                         table_row, column_widths, strict=True
                     )
                 )
-                + " |"
+                + _TABLE_MARKDOWN_PAD_TEXT
+                + _TABLE_MARKDOWN_PIPE_TEXT
                 for table_row in table_rows
             ),
             sep="\n",

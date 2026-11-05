@@ -135,7 +135,8 @@
     border-width: var(--page-line-width-);
     border-color: var(--dark-mode-menu-normal-outline-);
   }
-  table.table-::before {
+  table.table-::before,
+  #call-graph-table-::before {
     left: anchor(left);
     right: anchor(right);
     bottom: calc(anchor(bottom) - var(--page-line-width-));

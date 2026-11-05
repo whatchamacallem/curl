@@ -16,7 +16,8 @@ is labelled with. Tab also moves focus forward through interactive elements
 (links, buttons, inputs), and Shift+Tab moves backward. This is the primary
 navigation system for keyboard-only users, including screen reader users and
 switch device users. Enter or Space activates the focused element, and arrow
-keys control widgets.
+keys control widgets. Use `+`/`=` or `-` to zoom instead of the browser's
+built-in zoom controls.
 
 The HTML will open straight from disk, with no server. Start by opening the top
 level `index.html` in the report and then bookmarks will work.

@@ -39,6 +39,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
   const NUMBER_LARGEST_PRINTED_MULTIPLE_TIMES = settings_(
     "NUMBER_LARGEST_PRINTED_MULTIPLE_TIMES",
   );
+  const NUMBER_MULTIPLE_SUFFIX_TEXT = settings_("NUMBER_MULTIPLE_SUFFIX_TEXT");
   const OVERVIEW_PAGE_PATH = settings_("OVERVIEW_PAGE_PATH");
   const SETTINGS_DEBUG_HASH_KEY_NAME = settings_(
     "SETTINGS_DEBUG_HASH_KEY_NAME",
@@ -94,6 +95,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
   );
   const STYLE_HEAT_COLOR_STOPS = settings_("STYLE_HEAT_COLOR_STOPS");
   const STYLE_PAGE_FONT_FAMILY = settings_("STYLE_PAGE_FONT_FAMILY");
+  const STYLE_SVG_NAMESPACE_URL = settings_("STYLE_SVG_NAMESPACE_URL");
   const STYLE_TABLE_COLUMN_EDGE_GRAB_CHARS = settings_(
     "STYLE_TABLE_COLUMN_EDGE_GRAB_CHARS",
   );
@@ -103,9 +105,17 @@ window.report_ui_ = window.try_catch_handler_(function () {
   const STYLE_TEXT_SCROLLBAR_THUMB_SHORTEST_CHARS = settings_(
     "STYLE_TEXT_SCROLLBAR_THUMB_SHORTEST_CHARS",
   );
+  const TABLE_DOWNLOAD_URL_PREFIX = settings_("TABLE_DOWNLOAD_URL_PREFIX");
   const TABLE_MARKDOWN_COLUMN_NARROWEST_CHARS = settings_(
     "TABLE_MARKDOWN_COLUMN_NARROWEST_CHARS",
   );
+  const TABLE_MARKDOWN_ESCAPE_TEXT = settings_("TABLE_MARKDOWN_ESCAPE_TEXT");
+  const TABLE_MARKDOWN_PAD_TEXT = settings_("TABLE_MARKDOWN_PAD_TEXT");
+  const TABLE_MARKDOWN_PIPE_TEXT = settings_("TABLE_MARKDOWN_PIPE_TEXT");
+  const TABLE_MARKDOWN_RULE_RIGHT_TEXT = settings_(
+    "TABLE_MARKDOWN_RULE_RIGHT_TEXT",
+  );
+  const TABLE_MARKDOWN_RULE_TEXT = settings_("TABLE_MARKDOWN_RULE_TEXT");
   const TABLE_RESIZABLE_COLUMN_NAMES = settings_(
     "TABLE_RESIZABLE_COLUMN_NAMES",
   );
@@ -147,6 +157,8 @@ window.report_ui_ = window.try_catch_handler_(function () {
     [SETTINGS_VIEW_ENTRY[0], false],
   ]);
   const CH_UNIT_GLYPH = "0";
+  // Holds the computed background color of an element that paints none.
+  const CLEAR_BACKGROUND_COLOR = "rgba(0, 0, 0, 0)";
   const CLIP_ELLIPSIS_TEXT = window.ui_strings_.text("str_clip_ellipsis");
   const DESIGN_CHARACTER_WIDTH_PX =
     STYLE_DESIGN_FONT_SIZE_PX * STYLE_DESIGN_FONT_CHARACTER_WIDTH_SHARE;
@@ -521,7 +533,9 @@ window.report_ui_ = window.try_catch_handler_(function () {
     } else if (times >= NUMBER_LARGEST_PRINTED_MULTIPLE_TIMES) {
       amount_text = "≈∞%";
     } else {
-      amount_text = fixed_text(times, NUMBER_FRACTION_DIGITS) + "x";
+      amount_text =
+        fixed_text(times, NUMBER_FRACTION_DIGITS) +
+        NUMBER_MULTIPLE_SUFFIX_TEXT;
     }
     if (!uses_whitespace) return arrow + amount_text;
     return arrow + amount_text.padStart(SIGNED_PERCENT_AMOUNT_CHARS);
@@ -1645,13 +1659,6 @@ window.report_ui_ = window.try_catch_handler_(function () {
     };
   }
 
-  function column_longest(cell_rows, column_index) {
-    let longest = 0;
-    for (const row of cell_rows) {
-      longest = Math.max(longest, row[column_index].text.length);
-    }
-    return longest;
-  }
   // Cuts text past a column's limit, the last character kept the ellipsis.
   function text_clip(text, clip_chars) {
     if (text.length <= clip_chars) return text;
@@ -1662,61 +1669,139 @@ window.report_ui_ = window.try_catch_handler_(function () {
     value && typeof value === "object"
       ? value
       : { text: value == null ? "" : String(value) };
-  // Writes columns and rows as a markdown table, numbers right aligned.
-  function table_markdown(columns, rows) {
-    const cell_rows = rows.map((row) =>
-      row.map((value) => ({
-        text: cell_normalize(value).text.replaceAll("|", "\\|"),
-      })),
+  // Escapes a markdown cell's text, each pipe kept as text.
+  const markdown_escape = (cell_text) =>
+    cell_text.replaceAll(
+      TABLE_MARKDOWN_PIPE_TEXT,
+      TABLE_MARKDOWN_ESCAPE_TEXT + TABLE_MARKDOWN_PIPE_TEXT,
     );
-    const column_width_list = columns.map((column, column_index) =>
+  // Keeps a piece's text as the page shows it.
+  const text_as_shown = (piece_text) => piece_text;
+  // Splits a cell's text into pieces, each a text node's, by its element.
+  function cell_text_pieces(table_cell, piece_escape) {
+    const text_walker = document.createTreeWalker(
+      table_cell,
+      NodeFilter.SHOW_TEXT,
+    );
+    const text_pieces = [];
+    for (
+      let text_node = text_walker.nextNode();
+      text_node;
+      text_node = text_walker.nextNode()
+    )
+      text_pieces.push({
+        text: piece_escape(text_node.data),
+        element: text_node.parentElement,
+      });
+    return text_pieces;
+  }
+  // Joins a placed run's pieces into its text.
+  function run_text(placed_run) {
+    return placed_run.text_pieces
+      .map((text_piece) => text_piece.text)
+      .join("");
+  }
+  // Makes a markdown cell of plain text, which takes its table's style.
+  function markdown_text_cell(cell_text) {
+    return {
+      table_cell: null,
+      text_pieces: [{ text: cell_text, element: null }],
+    };
+  }
+  // Places markdown lines: titles, rule and rows, each cell between pipes.
+  function markdown_lines_place(column_numerics, title_cells, cell_rows) {
+    const column_widths = title_cells.map((title_cell, column_index) =>
       Math.max(
         TABLE_MARKDOWN_COLUMN_NARROWEST_CHARS,
-        column.label.length,
-        column_longest(cell_rows, column_index),
+        run_text(title_cell).length,
+        ...cell_rows.map(
+          (cell_row) => run_text(cell_row[column_index]).length,
+        ),
       ),
     );
-    const pad = (text, width, numeric) =>
-      numeric ? text.padStart(width) : text.padEnd(width);
-    const line = (cells) =>
-      "| " +
-      cells
-        .map((text, column_index) =>
-          pad(
-            text,
-            column_width_list[column_index],
-            columns[column_index].numeric,
-          ),
-        )
-        .join(" | ") +
-      " |";
-    const output_parts = [line(columns.map((column) => column.label))];
-    const rule = columns.map((column, column_index) =>
-      column.numeric
-        ? "-".repeat(column_width_list[column_index] - 1) + ":"
-        : "-".repeat(column_width_list[column_index]),
+    const rule_cells = column_widths.map((column_width, column_index) =>
+      markdown_text_cell(
+        column_numerics[column_index]
+          ? TABLE_MARKDOWN_RULE_TEXT.repeat(
+              column_width - TABLE_MARKDOWN_RULE_RIGHT_TEXT.length,
+            ) + TABLE_MARKDOWN_RULE_RIGHT_TEXT
+          : TABLE_MARKDOWN_RULE_TEXT.repeat(column_width),
+      ),
     );
-    output_parts.push("| " + rule.join(" | ") + " |");
-    for (const row of cell_rows) {
-      output_parts.push(
-        line(columns.map((column, column_index) => row[column_index].text)),
-      );
+    // Places a line's cells, each padded on both sides, a pipe around each.
+    function line_place(line_cells) {
+      let column_start = 0;
+      const placed_runs = [];
+      function pipe_place() {
+        placed_runs.push({
+          ...markdown_text_cell(TABLE_MARKDOWN_PIPE_TEXT),
+          column_start,
+          column_width: TABLE_MARKDOWN_PIPE_TEXT.length,
+          text_start: column_start,
+        });
+        column_start += TABLE_MARKDOWN_PIPE_TEXT.length;
+      }
+      pipe_place();
+      line_cells.forEach((line_cell, column_index) => {
+        const right_room = column_numerics[column_index]
+          ? column_widths[column_index] - run_text(line_cell).length
+          : 0;
+        const column_width =
+          TABLE_MARKDOWN_PAD_TEXT.length +
+          column_widths[column_index] +
+          TABLE_MARKDOWN_PAD_TEXT.length;
+        placed_runs.push({
+          ...line_cell,
+          column_start,
+          column_width,
+          text_start:
+            column_start + TABLE_MARKDOWN_PAD_TEXT.length + right_room,
+        });
+        column_start += column_width;
+        pipe_place();
+      });
+      return placed_runs;
     }
-    return output_parts.join("\n");
+    return [title_cells, rule_cells, ...cell_rows].map(line_place);
   }
-  // Reads the column titles and the rows a table shows into a markdown table.
-  function table_element_markdown(table_element) {
+  // Writes columns and rows as a markdown table, numbers right aligned.
+  function table_markdown(columns, rows) {
+    return placed_lines_text(
+      markdown_lines_place(
+        columns.map((column) => column.numeric),
+        columns.map((column) => markdown_text_cell(column.label)),
+        rows.map((row) =>
+          row.map((value) =>
+            markdown_text_cell(markdown_escape(cell_normalize(value).text)),
+          ),
+        ),
+      ),
+    );
+  }
+  // Places a shown table as markdown lines, each piece styled as its element.
+  function table_element_markdown_lines(table_element) {
     const title_row = table_element.tHead ? table_element.tHead.rows[0] : null;
     const body_rows = [...table_element.tBodies[0].rows];
     const sample_cells = [...(title_row || body_rows[0]).cells];
-    const markdown_columns = sample_cells.map((sample_cell) => ({
-      label: title_row ? sample_cell.textContent : "",
-      numeric: sample_cell.classList.contains("numeric-"),
-    }));
-    const markdown_rows = body_rows.map((body_row) =>
-      [...body_row.cells].map((body_cell) => body_cell.textContent),
+    return markdown_lines_place(
+      sample_cells.map((sample_cell) =>
+        sample_cell.classList.contains("numeric-"),
+      ),
+      sample_cells.map((sample_cell) =>
+        title_row
+          ? {
+              table_cell: sample_cell,
+              text_pieces: cell_text_pieces(sample_cell, text_as_shown),
+            }
+          : markdown_text_cell(""),
+      ),
+      body_rows.map((body_row) =>
+        [...body_row.cells].map((body_cell) => ({
+          table_cell: body_cell,
+          text_pieces: cell_text_pieces(body_cell, markdown_escape),
+        })),
+      ),
     );
-    return table_markdown(markdown_columns, markdown_rows);
   }
   // Lists functions and their shares, cut before the entry passing the clip.
   function function_list_cell(list_entries, clip_chars) {
@@ -2881,6 +2966,190 @@ window.report_ui_ = window.try_catch_handler_(function () {
       ...entry_fields,
     };
   }
+  // Places each layout table cell in its row's line, padded to its column.
+  function layout_table_lines(layout_table) {
+    const table_rows = [...layout_table.rows];
+    const column_widths = new Array(
+      Math.max(...table_rows.map((table_row) => table_row.cells.length)),
+    ).fill(0);
+    for (const table_row of table_rows)
+      [...table_row.cells].forEach((table_cell, cell_index) => {
+        column_widths[cell_index] = Math.max(
+          column_widths[cell_index],
+          table_cell.textContent.length,
+        );
+      });
+    return table_rows.map((table_row) => {
+      let column_start = 0;
+      return [...table_row.cells].map((table_cell, cell_index) => {
+        const column_width = column_widths[cell_index];
+        const right_room =
+          getComputedStyle(table_cell).textAlign === "right"
+            ? column_width - table_cell.textContent.length
+            : 0;
+        const placed_cell = {
+          table_cell,
+          text_pieces: cell_text_pieces(table_cell, text_as_shown),
+          column_start,
+          column_width,
+          text_start: column_start + right_room,
+        };
+        column_start += column_width;
+        return placed_cell;
+      });
+    });
+  }
+  // Writes placed lines as text, each run at its place in its column.
+  function placed_lines_text(placed_lines) {
+    return placed_lines
+      .map((placed_runs) => {
+        let line_text = "";
+        for (const placed_run of placed_runs)
+          line_text = (
+            line_text.padEnd(placed_run.text_start) + run_text(placed_run)
+          ).padEnd(placed_run.column_start + placed_run.column_width);
+        return line_text.trimEnd();
+      })
+      .join("\n");
+  }
+  // Returns an element's computed background color, null for a clear one.
+  function painted_background_color(painted_element) {
+    const background_color = getComputedStyle(painted_element).backgroundColor;
+    return background_color === CLEAR_BACKGROUND_COLOR
+      ? null
+      : background_color;
+  }
+  // Draws placed lines as an SVG image in their table's computed style.
+  function placed_lines_svg(placed_lines, shown_table) {
+    const table_style = getComputedStyle(shown_table);
+    const line_height = parseFloat(table_style.lineHeight);
+    if (!Number.isFinite(line_height))
+      window.throw_exception_("str_error_internal");
+    const measure_context = document.createElement("canvas").getContext("2d");
+    measure_context.font = table_style.fontSize + " " + table_style.fontFamily;
+    const glyph_metrics = measure_context.measureText(CH_UNIT_GLYPH);
+    const character_width = glyph_metrics.width;
+    // Drops the baseline as a line box does, the font's height centred in it.
+    const baseline_drop =
+      (line_height +
+        glyph_metrics.fontBoundingBoxAscent -
+        glyph_metrics.fontBoundingBoxDescent) /
+      2;
+    const inset_left = parseFloat(table_style.borderLeftWidth);
+    const inset_top = parseFloat(table_style.borderTopWidth);
+    let ground_element = shown_table;
+    while (painted_background_color(ground_element) === null) {
+      ground_element = ground_element.parentElement;
+      if (!ground_element) window.throw_exception_("str_error_internal");
+    }
+    const line_characters = Math.max(
+      ...placed_lines
+        .flat()
+        .map(
+          (placed_run) => placed_run.column_start + placed_run.column_width,
+        ),
+    );
+    const image_width =
+      inset_left +
+      line_characters * character_width +
+      parseFloat(table_style.borderRightWidth);
+    const image_height =
+      inset_top +
+      placed_lines.length * line_height +
+      parseFloat(table_style.borderBottomWidth);
+    const shape_markups = [
+      render_element(
+        "rect",
+        {
+          width: image_width,
+          height: image_height,
+          fill: painted_background_color(ground_element),
+        },
+        "",
+      ),
+    ];
+    const text_markups = [];
+    // Draws a background over a span of a line's characters.
+    function span_paint(line_top, span_start, span_length, fill_color) {
+      shape_markups.push(
+        render_element(
+          "rect",
+          {
+            x: inset_left + span_start * character_width,
+            y: line_top,
+            width: span_length * character_width,
+            height: line_height,
+            fill: fill_color,
+          },
+          "",
+        ),
+      );
+    }
+    placed_lines.forEach((placed_runs, line_index) => {
+      const line_top = inset_top + line_index * line_height;
+      for (const placed_run of placed_runs) {
+        const table_cell = placed_run.table_cell;
+        const cell_color =
+          table_cell === null ? null : painted_background_color(table_cell);
+        if (cell_color !== null)
+          span_paint(
+            line_top,
+            placed_run.column_start,
+            placed_run.column_width,
+            cell_color,
+          );
+        let piece_start = placed_run.text_start;
+        for (const text_piece of placed_run.text_pieces) {
+          const piece_text = text_piece.text;
+          const piece_element = text_piece.element;
+          // A piece inside its cell takes its nearest own background under it.
+          for (
+            let painted_element = piece_element;
+            painted_element !== null && painted_element !== table_cell;
+            painted_element = painted_element.parentElement
+          ) {
+            const piece_color = painted_background_color(painted_element);
+            if (piece_color === null) continue;
+            span_paint(line_top, piece_start, piece_text.length, piece_color);
+            break;
+          }
+          // A piece of no element, a pipe or a rule, takes the table's color.
+          const text_color =
+            piece_element === null
+              ? table_style.color
+              : getComputedStyle(piece_element).color;
+          for (const word_match of piece_text.matchAll(/\S+/g))
+            text_markups.push(
+              render_element(
+                "text",
+                {
+                  x:
+                    inset_left +
+                    (piece_start + word_match.index) * character_width,
+                  y: line_top + baseline_drop,
+                  fill: text_color,
+                  textLength: word_match[0].length * character_width,
+                },
+                render_html_escape(word_match[0]),
+              ),
+            );
+          piece_start += piece_text.length;
+        }
+      }
+    });
+    return render_element(
+      "svg",
+      {
+        xmlns: STYLE_SVG_NAMESPACE_URL,
+        width: image_width,
+        height: image_height,
+        "font-family": table_style.fontFamily,
+        "font-size": table_style.fontSize,
+        "shape-rendering": "crispEdges",
+      },
+      shape_markups.join("") + text_markups.join(""),
+    );
+  }
   // Shows a heading as a strip, any title as page emphasis, its table's state.
   function page_heading_attach(heading_element) {
     const heading_text = heading_element.textContent;
@@ -2891,11 +3160,17 @@ window.report_ui_ = window.try_catch_handler_(function () {
     const default_count_text = heading_element.getAttribute(
       "data-row-count-default-",
     );
+    const download_file_name = heading_element.getAttribute(
+      "data-download-file-name-",
+    );
     const shown_element = heading_element.nextElementSibling;
     if (!shown_element) window.throw_exception_("str_error_internal");
     const table_element = shown_element.matches("table.table-")
       ? shown_element
       : null;
+    const is_table_shown = shown_element.matches("table");
+    if (download_file_name !== null && !is_table_shown)
+      window.throw_exception_("str_error_internal");
     const table_key = table_element
       ? table_element.getAttribute("data-key-")
       : null;
@@ -2913,6 +3188,9 @@ window.report_ui_ = window.try_catch_handler_(function () {
     const table_body = table_element ? table_element.tBodies[0] : null;
     const all_rows = table_body ? [...table_body.rows] : [];
     const copy_text = window.ui_strings_.text("str_table_heading_copy");
+    const download_text = window.ui_strings_.text(
+      "str_table_heading_download",
+    );
     const row_count_options = choice_pulldown_options(
       row_count_entries,
       row_count_choose,
@@ -2950,31 +3228,11 @@ window.report_ui_ = window.try_catch_handler_(function () {
         pulldown_options: row_count_options,
       });
     }
-    // Writes a layout table a line per row, each cell padded to its column.
-    function layout_table_text(layout_table) {
-      const table_rows = [...layout_table.rows];
-      const column_widths = new Array(
-        Math.max(...table_rows.map((table_row) => table_row.cells.length)),
-      ).fill(0);
-      for (const table_row of table_rows)
-        [...table_row.cells].forEach((table_cell, cell_index) => {
-          column_widths[cell_index] = Math.max(
-            column_widths[cell_index],
-            table_cell.textContent.length,
-          );
-        });
-      return table_rows
-        .map((table_row) =>
-          [...table_row.cells]
-            .map((table_cell, cell_index) =>
-              getComputedStyle(table_cell).textAlign === "right"
-                ? table_cell.textContent.padStart(column_widths[cell_index])
-                : table_cell.textContent.padEnd(column_widths[cell_index]),
-            )
-            .join("")
-            .trimEnd(),
-        )
-        .join("\n");
+    // Places the shown table's copy text: a data table's markdown, else lines.
+    function shown_table_lines() {
+      return table_element
+        ? table_element_markdown_lines(table_element)
+        : layout_table_lines(shown_element);
     }
     // Copies tables as markdown or lines, a lone link its address, else text.
     function table_copy() {
@@ -2983,14 +3241,29 @@ window.report_ui_ = window.try_catch_handler_(function () {
         lone_link !== null &&
         lone_link.textContent === shown_element.textContent;
       return navigator.clipboard.writeText(
-        table_element
-          ? table_element_markdown(table_element)
-          : shown_element.matches("table")
-            ? layout_table_text(shown_element)
-            : is_link_line
-              ? lone_link.href
-              : shown_element.textContent,
+        is_table_shown
+          ? placed_lines_text(shown_table_lines())
+          : is_link_line
+            ? lone_link.href
+            : shown_element.textContent,
       );
+    }
+    // Saves the table's copy text drawn as an SVG image under the file name.
+    function table_download() {
+      const link_markup = render_element(
+        "a",
+        {
+          href:
+            TABLE_DOWNLOAD_URL_PREFIX +
+            encodeURIComponent(
+              placed_lines_svg(shown_table_lines(), shown_element),
+            ),
+          download: download_file_name,
+        },
+        "",
+      );
+      // A made element saves nothing until the page adopts it.
+      document.adoptNode(render_element_of(link_markup)).click();
     }
     function heading_render() {
       const title_entries = heading_text
@@ -3001,6 +3274,14 @@ window.report_ui_ = window.try_catch_handler_(function () {
           ]
         : [];
       const count_entries = count_key === null ? [] : [count_entry()];
+      const download_entries =
+        download_file_name === null
+          ? []
+          : [
+              strip_entry_make("download", "action", download_text, {
+                on_activate: table_download,
+              }),
+            ];
       strip_handle = strip_render(
         heading_element,
         [
@@ -3010,12 +3291,13 @@ window.report_ui_ = window.try_catch_handler_(function () {
           strip_entry_make("copy", "action", copy_text, {
             on_activate: table_copy,
           }),
+          ...download_entries,
           ...tail_entries,
         ],
         [],
       );
     }
-    // Shows the entries after the copy entry, rendering the cells again.
+    // Shows entries after the copy and download, rendering cells again.
     function tail_entries_set(shown_entries) {
       tail_entries = shown_entries;
       heading_render();
@@ -3038,7 +3320,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
     });
     heading_reset();
   }
-  // Shows a page's entries after its attached heading's copy entry.
+  // Shows a page's entries after its attached heading's copy and download.
   function page_heading_tail_set(heading_element, tail_entries) {
     const attached_heading = attached_headings.get(heading_element);
     if (!attached_heading) window.throw_exception_("str_error_internal");

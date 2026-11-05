@@ -41,6 +41,9 @@ window.try_catch_handler_(function () {
   const page_element = page_scroll_box.querySelector(":scope > .page-");
   const model_data = document.getElementById("database-model-");
   const is_diff = model_data.getAttribute("data-diff-") === "1";
+  const download_file_name = model_data.getAttribute(
+    "data-download-file-name-",
+  );
   const database_model = JSON.parse(model_data.getAttribute("data-model-"));
   const counter_readers = window.report_preferences_.counter_readers(
     database_model.counterNames,
@@ -250,6 +253,7 @@ window.try_catch_handler_(function () {
       "div",
       {
         class: "page-heading-",
+        "data-download-file-name-": download_file_name,
         "data-row-count-default-": String(DATABASE_TOP_FUNCTION_ROWS),
         "data-row-count-key-": STORAGE_KEY_DATABASE_FUNCTION_ROWS,
       },

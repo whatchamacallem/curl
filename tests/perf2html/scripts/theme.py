@@ -34,6 +34,7 @@ _DARK_MODE_ATTRIBUTE_NAME: str = ""
 _DARK_MODE_DISABLED_VALUE: str = ""
 _NUMBER_FRACTION_DIGITS: int = 0
 _NUMBER_LARGEST_PRINTED_MULTIPLE_TIMES: float = 0.0
+_NUMBER_MULTIPLE_SUFFIX_TEXT: str = ""
 _STYLE_COLOR_DARK_MODE: dict[str, list[str]] = {}
 _STYLE_COLOR_DARK_MODE_ROLE_PREFIX: str = ""
 _STYLE_COLOR_LIGHT_MODE: dict[str, list[str]] = {}
@@ -130,7 +131,10 @@ class Theme:
             elif times >= _NUMBER_LARGEST_PRINTED_MULTIPLE_TIMES:
                 amount_text = "≈∞%"
             else:
-                amount_text = self.fixed_text(times, digit_count) + "x"
+                amount_text = (
+                    self.fixed_text(times, digit_count)
+                    + _NUMBER_MULTIPLE_SUFFIX_TEXT
+                )
             return arrow + amount_text.rjust(self.signed_percent_amount_chars)
 
         def time(self, seconds: float) -> str:

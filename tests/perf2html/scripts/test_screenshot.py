@@ -816,12 +816,18 @@ class Screenshots:
                 )
         return written
 
-    def index_shoot(self, prefix: str, index_path: str) -> int:
+    # Shoots the index page at the given hash, else at its view's own.
+    def index_shoot(
+        self, prefix: str, index_path: str, index_hash: str
+    ) -> int:
         written = 0
         for view_index, view in self.report_views:
             if view.shot_flags & test_settings.SHOOT_INDEX_PAGE:
                 written += self.view_shoot(
-                    index_path, view_index, prefix, view
+                    index_path,
+                    view_index,
+                    prefix,
+                    view._replace(view_hash=index_hash or view.view_hash),
                 )
         return written
 
@@ -1158,6 +1164,7 @@ def main() -> int:
     parser.add_argument(
         "--diff", action="store_true", help="the report is a diff report"
     )
+    parser.add_argument("--index-hash", default="", metavar="HASH")
     parser.add_argument(
         "--out",
         default="",
@@ -1195,6 +1202,13 @@ def main() -> int:
 
     if namespace.compare_only and not namespace.compare_gold:
         print("error: --compare-only needs --compare-gold", file=sys.stderr)
+        return 2
+
+    if namespace.index_hash and not namespace.index_hash.startswith("#"):
+        print(
+            f"error: --index-hash {namespace.index_hash} starts with no #",
+            file=sys.stderr,
+        )
         return 2
 
     if not namespace.browser and not namespace.compare_only:
@@ -1258,6 +1272,7 @@ def main() -> int:
     written += shooter.index_shoot(
         namespace.prefix,
         os.path.join(perf2html_dir, test_settings.INDEX_PAGE_NAME),
+        namespace.index_hash,
     )
     if namespace.verbose:
         verbose_print(namespace.verbose, [f"{written} screenshot(s)"])

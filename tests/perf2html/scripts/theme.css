@@ -53,14 +53,9 @@ pre {
   grid-template-rows: auto auto minmax(0, 1fr);
   height: 100%;
 }
+/* The home panel, a view across the page's columns. */
 #overview-home- {
-  display: grid;
   grid-column: 1 / -1;
-  grid-template-columns: minmax(0, 1fr) auto;
-}
-#overview-home-text- {
-  overflow-x: hidden;
-  overflow-y: auto;
 }
 /* The home page column, as wide as its widest line, centred in its box. */
 #overview-home-text- > .page- {
@@ -90,6 +85,7 @@ pre {
 
 /* The call graph table, as wide as its longest row, in its clear border. */
 #call-graph-table- {
+  position: relative;
   width: max-content;
   border: var(--call-graph-border-width-) solid transparent;
   border-collapse: separate;
@@ -111,19 +107,29 @@ pre {
 #call-graph-table- td.clickable- {
   cursor: pointer;
 }
+/* A hovered row's frame draws over the symbol buttons it crosses. */
+#call-graph-table-::before {
+  z-index: var(--call-graph-hover-row-z-index-);
+}
 
 /* The database page grows with its table, so the bars redraw as it widens. */
 #database-page- > .page- {
   min-width: max-content;
 }
 
-/* The heat map: the main box, then the minimap and its bar following it. */
+/* The heat map: the main column, then the minimap and the main box's bar. */
 #heat-map- {
   display: flex;
 }
-/* The main box fills the row until its edge narrows it, sizing the tree. */
-#heat-map-main- {
+/* The main column fills the row until its edge narrows it, sizing the tree. */
+#heat-map-main-column- {
   flex: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) auto;
+}
+/* The main box, over its sideways bar, sizes the tree that hangs in it. */
+#heat-map-main- {
   container-type: size;
   overflow-x: hidden;
   overflow-y: auto;
@@ -289,15 +295,17 @@ tr.row-link- {
 /* A cell or pane whose right edge the pointer may drag shows the cursor. */
 .table- :is(th, td).column-edge-grab-,
 .table- :is(th, td).column-edge-grab- *,
-#heat-map-main-.column-edge-grab-,
-#heat-map-main-.column-edge-grab- * {
+#heat-map-main-column-.column-edge-grab-,
+#heat-map-main-column-.column-edge-grab- * {
   cursor: col-resize;
 }
-/* A hovered row a click acts on anchors the frame its table draws over it. */
-.table- > tbody > :is(tr.row-link-, tr.clickable-):hover {
+/* A hovered row a click acts on, or a call graph row, anchors its frame. */
+.table- > tbody > :is(tr.row-link-, tr.clickable-):hover,
+#call-graph-table- > tbody > tr:hover {
   anchor-name: --table-hover-row-;
 }
-table.table-:has(> tbody > :is(tr.row-link-, tr.clickable-):hover)::before {
+table.table-:has(> tbody > :is(tr.row-link-, tr.clickable-):hover)::before,
+#call-graph-table-:has(> tbody > tr:hover)::before {
   content: "";
   position: absolute;
   position-anchor: --table-hover-row-;

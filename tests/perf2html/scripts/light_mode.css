@@ -198,6 +198,63 @@ tr.heat-map-source-information-box-synthetic-row- > td {
     border-width: var(--page-line-width-);
     border-color: var(--light-mode-menu-normal-outline-);
   }
+  /* A hovered call graph row's frame, its bottom below, as in dark mode. */
+  #call-graph-table-::before {
+    left: anchor(left);
+    right: anchor(right);
+    bottom: calc(anchor(bottom) - var(--page-line-width-));
+    border-width: var(--page-line-width-);
+    border-color: var(--light-mode-menu-normal-outline-);
+  }
+  /* A call graph node's frame runs from its multiple through its name. */
+  #call-graph-table-
+    td.clickable-:is(.call-graph-multiple-, .call-graph-share-),
+  #call-graph-table- td.call-graph-symbol-:has(> .menu-button-) {
+    position: relative;
+  }
+  /* A cell's piece draws its top line, its bottom line hung below the cell. */
+  #call-graph-table-
+    td.clickable-:is(.call-graph-multiple-, .call-graph-share-)::before,
+  #call-graph-table-
+    td.clickable-:is(.call-graph-multiple-, .call-graph-share-)::after,
+  #call-graph-table- td.call-graph-symbol-:has(> .menu-button-)::before,
+  #call-graph-table- td.call-graph-symbol-:has(> .menu-button-)::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    pointer-events: none;
+    border-top: var(--page-line-width-) solid
+      var(--light-mode-menu-normal-outline-);
+  }
+  #call-graph-table-
+    td.clickable-:is(.call-graph-multiple-, .call-graph-share-)::before,
+  #call-graph-table- td.call-graph-symbol-:has(> .menu-button-)::before {
+    top: 100%;
+    bottom: auto;
+  }
+  #call-graph-table- td.clickable-.call-graph-multiple-::after {
+    border-left: var(--page-line-width-) solid
+      var(--light-mode-menu-normal-outline-);
+  }
+  /* The name's piece closes the frame at the right of the name's button. */
+  #call-graph-table- td.call-graph-symbol- > .menu-button- {
+    anchor-name: --call-graph-symbol-button-;
+  }
+  #call-graph-table- td.call-graph-symbol-:has(> .menu-button-)::before,
+  #call-graph-table- td.call-graph-symbol-:has(> .menu-button-)::after {
+    right: anchor(--call-graph-symbol-button- right);
+  }
+  #call-graph-table- td.call-graph-symbol-:has(> .menu-button-)::after {
+    border-right: var(--page-line-width-) solid
+      var(--light-mode-menu-normal-outline-);
+  }
+  /* A symbol button draws no frame of its own, its cell's piece framing it. */
+  #call-graph-table- .menu-button-::after {
+    content: none;
+  }
   /* A bar's frame as a framed box's, its clip margin plain as Chrome needs. */
   .text-scrollbar- {
     position: relative;
