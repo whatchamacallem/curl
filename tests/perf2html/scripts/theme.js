@@ -240,6 +240,10 @@ window.report_ui_ = window.try_catch_handler_(function () {
   const view_frame = document.getElementById("overview-view-frame-");
   const is_scaled = !is_framed && !!home_panel;
   const page_element = document.getElementById("overview-page-");
+  const page_scroll_box = document.getElementById("overview-page-scroll-box-");
+  const page_scroll_bar = document.querySelector(
+    '.text-scrollbar-[data-scrolls-="overview-page-scroll-box-"]',
+  );
   const attached_headings = new WeakMap();
   const attached_scrollbars = new WeakMap();
   const wheel_taken_events = {
@@ -247,6 +251,8 @@ window.report_ui_ = window.try_catch_handler_(function () {
     vertical: new WeakSet(),
   };
   const kept_column_orders = new Map();
+  // Holds whether each top page pane's bar holds the top page's scroll.
+  const page_scroll_claims = { frame: false, home: false };
   const kept_column_widths = new Map();
   const redrawn_tables = new Map();
   const registered_panes = [];
@@ -256,6 +262,9 @@ window.report_ui_ = window.try_catch_handler_(function () {
   const table_heading_entries = new Map();
   const table_sort_callbacks = new Map();
   const view_storage = window.report_view_storage_;
+  let page_scroll_redraw = null;
+  // Holds the top page's scroll a framed page was last shown, or null.
+  let page_scroll_shown = null;
   let settle_animation_frame = 0;
   let window_resize_is_pending = false;
   let tests_pulldown_is_open = false;
@@ -557,6 +566,11 @@ window.report_ui_ = window.try_catch_handler_(function () {
       }),
     );
   }
+  // A framed page takes the top page's sideways scroll its chained bar drives.
+  parent_listen((message_data) => {
+    if (message_data.report_ui === "page_scroll_show")
+      page_scroll_show(message_data);
+  });
   function hash_value_encode(value) {
     return encodeURIComponent(value).replace(/%2F/g, "/");
   }
@@ -906,7 +920,11 @@ window.report_ui_ = window.try_catch_handler_(function () {
     }
     parent_listen((message_data) => {
       const message_name = message_data.report_ui;
-      if (message_name === "settings_relay") return;
+      if (
+        message_name === "settings_relay" ||
+        message_name === "page_scroll_show"
+      )
+        return;
       // The view takes what a message carries before the message acts.
       if (view_options.relay_handler) view_options.relay_handler(message_data);
       if (message_name === "layout_reset") {
@@ -3401,7 +3419,126 @@ window.report_ui_ = window.try_catch_handler_(function () {
       return wheel_delta * page_size;
     window.throw_exception_("str_error_internal");
   }
-  // Shows and drives the target's scroll offset on one axis in text cells.
+  // Returns the screen pixels a unit of the top page's scroll box spans.
+  function page_scroll_screen_px() {
+    return (
+      page_scroll_box.getBoundingClientRect().width /
+      page_scroll_box.offsetWidth
+    );
+  }
+  // Returns the top page's scroll and the frame part shown, in screen pixels.
+  function page_scroll_state() {
+    const screen_px = page_scroll_screen_px();
+    const box_rect = page_scroll_box.getBoundingClientRect();
+    const frame_rect = view_frame.getBoundingClientRect();
+    return {
+      frame_shown_end: box_rect.right - frame_rect.left,
+      frame_shown_start: box_rect.left - frame_rect.left,
+      frame_width: frame_rect.width,
+      page_scroll_offset: page_scroll_box.scrollLeft * screen_px,
+      page_scroll_span:
+        (page_scroll_box.scrollWidth - page_scroll_box.clientWidth) *
+        screen_px,
+    };
+  }
+  // Scrolls the top page sideways to an offset in screen pixels.
+  function page_scroll_offset_set(offset_px) {
+    page_scroll_box.scrollLeft = offset_px / page_scroll_screen_px();
+  }
+  // Hides the top page's bar while the shown pane's bar holds its scroll.
+  function page_scroll_lend_show() {
+    const is_lent =
+      (page_scroll_claims.home && !home_panel.hidden) ||
+      (page_scroll_claims.frame && !view_frame.hidden);
+    page_scroll_bar.classList.toggle("lent-to-view-", is_lent);
+  }
+  // Notes whether a pane's bar holds the top page's sideways scroll.
+  function page_scroll_claim_set(claimant_name, is_claimed) {
+    if (!Object.hasOwn(page_scroll_claims, claimant_name))
+      window.throw_exception_("str_error_internal");
+    page_scroll_claims[claimant_name] = is_claimed;
+    page_scroll_lend_show();
+  }
+  function page_scroll_is_claimed(claimant_name) {
+    if (!Object.hasOwn(page_scroll_claims, claimant_name))
+      window.throw_exception_("str_error_internal");
+    return page_scroll_claims[claimant_name];
+  }
+  // Calls back at each scroll of the top page and resize of its box or frame.
+  function page_scroll_change_listen(change_callback) {
+    const change_handler = window.try_catch_handler_(change_callback);
+    page_scroll_box.addEventListener("scroll", change_handler);
+    const resize_observer = new ResizeObserver(change_handler);
+    resize_observer.observe(page_scroll_box);
+    resize_observer.observe(view_frame);
+  }
+  // Takes the top page's sideways scroll a framed page is shown, then redraws.
+  function page_scroll_show(message_data) {
+    page_scroll_shown = {
+      frame_shown_end: message_data.frame_shown_end,
+      frame_shown_start: message_data.frame_shown_start,
+      frame_width: message_data.frame_width,
+      page_scroll_offset: message_data.page_scroll_offset,
+      page_scroll_span: message_data.page_scroll_span,
+    };
+    if (page_scroll_redraw) page_scroll_redraw();
+  }
+  // Makes the top page's sideways scroll a marked bar drives, else null.
+  function page_scroll_chain_make(bar_element, axis_name, chain_redraw) {
+    if (!bar_element.hasAttribute("data-chains-page-")) return null;
+    if (axis_name !== "horizontal")
+      window.throw_exception_("str_error_internal");
+    // The home panel's bar reads the top page's box, in the same pixels.
+    if (is_scaled) {
+      page_scroll_change_listen(chain_redraw);
+      return {
+        claim: (is_claimed) => page_scroll_claim_set("home", is_claimed),
+        offset: () => page_scroll_state().page_scroll_offset,
+        offset_set: page_scroll_offset_set,
+        shown_range: () => {
+          const box_rect = page_scroll_box.getBoundingClientRect();
+          return [box_rect.left, box_rect.right];
+        },
+        span: () => page_scroll_state().page_scroll_span,
+      };
+    }
+    // A view opened alone has no top page to scroll.
+    if (!is_framed) return null;
+    if (page_scroll_redraw) window.throw_exception_("str_error_internal");
+    page_scroll_redraw = chain_redraw;
+    let posted_claim = null;
+    // Returns the view's own pixels a screen pixel of its frame spans.
+    const view_px = () =>
+      document.documentElement.clientWidth / page_scroll_shown.frame_width;
+    return {
+      claim: (is_claimed) => {
+        if (is_claimed === posted_claim) return;
+        posted_claim = is_claimed;
+        parent_post({ report_ui: "page_scroll_claim", is_claimed });
+      },
+      offset: () =>
+        page_scroll_shown
+          ? page_scroll_shown.page_scroll_offset * view_px()
+          : 0,
+      offset_set: (offset_px) => {
+        page_scroll_shown.page_scroll_offset = offset_px / view_px();
+        parent_post({
+          report_ui: "page_scroll_set",
+          page_scroll_offset: page_scroll_shown.page_scroll_offset,
+        });
+      },
+      shown_range: () =>
+        page_scroll_shown
+          ? [
+              page_scroll_shown.frame_shown_start * view_px(),
+              page_scroll_shown.frame_shown_end * view_px(),
+            ]
+          : null,
+      span: () =>
+        page_scroll_shown ? page_scroll_shown.page_scroll_span * view_px() : 0,
+    };
+  }
+  // Drives the target's scroll in text cells, a chained top page's first.
   function text_scrollbar_attach(bar_element, target_element, axis_name) {
     if (
       !Object.hasOwn(TEXT_SCROLLBAR_AXES, axis_name) ||
@@ -3423,6 +3560,11 @@ window.report_ui_ = window.try_catch_handler_(function () {
     const gutter_text = window.ui_strings_.text("str_text_scrollbar_gutter");
     const thumb_text = window.ui_strings_.text("str_text_scrollbar_thumb");
     const taken_wheel_events = wheel_taken_events[axis_name];
+    const page_chain = page_scroll_chain_make(
+      bar_element,
+      axis_name,
+      scrollbar_draw,
+    );
     let draw_frame = 0,
       press_state = null;
     function cell_make() {
@@ -3437,6 +3579,35 @@ window.report_ui_ = window.try_catch_handler_(function () {
         target_element[scroll_axis.client_size]
       );
     }
+    // Returns the target's own units a pixel of its page spans on the axis.
+    function target_units_per_px() {
+      return (
+        target_element[scroll_axis.layout_size] /
+        target_element.getBoundingClientRect()[scroll_axis.rect_size]
+      );
+    }
+    // Returns the chained top page's span in the target's units.
+    function page_span_units() {
+      return page_chain ? page_chain.span() * target_units_per_px() : 0;
+    }
+    // Returns the size the bar scrolls: the chained top page's and target's.
+    function scroll_size_now() {
+      return target_element[scroll_axis.scroll_size] + page_span_units();
+    }
+    function scroll_offset_now() {
+      const page_offset = page_chain
+        ? page_chain.offset() * target_units_per_px()
+        : 0;
+      return target_element[scroll_axis.scroll_offset] + page_offset;
+    }
+    // Scrolls to an offset, the chained top page first, the target after.
+    function scroll_offset_set(scroll_offset) {
+      const page_span = page_span_units();
+      const page_offset = Math.min(page_span, Math.max(0, scroll_offset));
+      if (page_span > 0)
+        page_chain.offset_set(page_offset / target_units_per_px());
+      target_element[scroll_axis.scroll_offset] = scroll_offset - page_offset;
+    }
     // Measures the target in its characters, the bar in its cells, or null.
     function geometry() {
       const bar_rect = bar_element.getBoundingClientRect();
@@ -3450,14 +3621,12 @@ window.report_ui_ = window.try_catch_handler_(function () {
         (cell_screen_px * target_element[scroll_axis.layout_size]) /
         (target_screen_px * font_multiple);
       const content_min = 0;
-      const content_size =
-        target_element[scroll_axis.scroll_size] / units_per_char;
+      const content_size = scroll_size_now() / units_per_char;
       const content_max = content_min + content_size - 1;
       const page_size =
         target_element[scroll_axis.client_size] / units_per_char;
       const scroll_position =
-        content_min +
-        target_element[scroll_axis.scroll_offset] / units_per_char;
+        content_min + scroll_offset_now() / units_per_char;
       const scroll_span = content_max - page_size + 1 - content_min;
       const cell_count = Math.floor(
         bar_rect[scroll_axis.rect_size] / cell_screen_px,
@@ -3498,9 +3667,28 @@ window.report_ui_ = window.try_catch_handler_(function () {
       const thumb_first = Math.round(bar_geometry.thumb_position);
       return [thumb_first, thumb_first + bar_geometry.thumb_length];
     }
+    // Fits a chained bar to the part of its place the window shows.
+    function chained_bar_fit() {
+      const shown_range = page_chain.shown_range();
+      const target_rect = target_element.getBoundingClientRect();
+      if (!shown_range || !target_rect.width) return;
+      const fit_start = Math.max(target_rect.left, shown_range[0]);
+      const fit_end = Math.max(
+        fit_start,
+        Math.min(target_rect.right, shown_range[1]),
+      );
+      const units_per_px = target_units_per_px();
+      bar_element.style.marginLeft =
+        (fit_start - target_rect.left) * units_per_px + "px";
+      bar_element.style.width = (fit_end - fit_start) * units_per_px + "px";
+    }
     // Hides the bar while its target fits, else draws chevrons, track, thumb.
     function scrollbar_draw() {
       bar_element.classList.toggle("target-fits-", !target_scrolls());
+      if (page_chain) {
+        page_chain.claim(target_scrolls());
+        chained_bar_fit();
+      }
       const bar_geometry = geometry();
       if (!bar_geometry) return;
       const cell_count = Math.max(bar_geometry.cell_count, 1);
@@ -3533,8 +3721,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
       if (thumb_room > 0) {
         const scroll_position =
           content_min + (thumb_position * scroll_span) / thumb_room;
-        target_element[scroll_axis.scroll_offset] =
-          (scroll_position - content_min) * units_per_char;
+        scroll_offset_set((scroll_position - content_min) * units_per_char);
       }
       return thumb_position;
     }
@@ -3545,17 +3732,17 @@ window.report_ui_ = window.try_catch_handler_(function () {
       );
     }
     function scroll_can_move(step_direction) {
-      const scroll_offset = target_element[scroll_axis.scroll_offset];
+      const scroll_offset = scroll_offset_now();
       const scroll_limit =
-        target_element[scroll_axis.scroll_size] -
-        target_element[scroll_axis.client_size];
+        scroll_size_now() - target_element[scroll_axis.client_size];
       return step_direction < 0
         ? Math.floor(scroll_offset) > 0
         : Math.ceil(scroll_offset) < scroll_limit;
     }
     function scroll_step(step_chars, bar_geometry) {
-      target_element[scroll_axis.scroll_offset] +=
-        step_chars * bar_geometry.units_per_char;
+      scroll_offset_set(
+        scroll_offset_now() + step_chars * bar_geometry.units_per_char,
+      );
     }
     // Returns the column title or pane a sideways drag sizes, or null.
     function bar_sized_target() {
@@ -3840,6 +4027,14 @@ window.report_ui_ = window.try_catch_handler_(function () {
     load_log_history_send,
     location_text,
     page_heading_tail_set,
+    page_scroll: {
+      change_listen: page_scroll_change_listen,
+      claim_set: page_scroll_claim_set,
+      is_claimed: page_scroll_is_claimed,
+      lend_show: page_scroll_lend_show,
+      offset_set: page_scroll_offset_set,
+      state: page_scroll_state,
+    },
     percent_text,
     ramp_channels_at,
     render_record_table,

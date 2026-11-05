@@ -362,6 +362,10 @@ table.table-:has(> tbody > :is(tr.row-link-, tr.clickable-):hover)::before,
 .text-scrollbar-.target-fits- {
   display: none;
 }
+/* The top page's bar takes no room while a view's bar holds its scroll. */
+.text-scrollbar-.lent-to-view- {
+  display: none;
+}
 
 .screenshot- {
   position: fixed;

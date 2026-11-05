@@ -133,6 +133,8 @@ window.try_catch_handler_(function () {
     );
     loaded_view_href = view_href;
     focused_path_entries = [];
+    // The new page claims the top page's sideways scroll at its first draw.
+    window.report_ui_.page_scroll.claim_set("frame", false);
   }
   function view_show() {
     const shown_address = window.report_ui_.address.of_hash(location.hash);
@@ -153,6 +155,7 @@ window.try_catch_handler_(function () {
       view_frame.hidden = true;
       window.report_overview_.heat_colors_apply();
       home_panel.hidden = false;
+      window.report_ui_.page_scroll.lend_show();
       window.report_ui_.layout_refresh(home_panel);
       if (frame_had_focus) {
         const tab_stops = home_panel.querySelectorAll('[tabindex="0"]');
@@ -167,6 +170,8 @@ window.try_catch_handler_(function () {
     const home_had_focus = home_panel.contains(document.activeElement);
     home_panel.hidden = true;
     view_frame.hidden = false;
+    window.report_ui_.page_scroll.lend_show();
+    page_scroll_post();
     if (home_had_focus) view_frame.focus();
   }
   function address_request(requested_hash) {
@@ -239,6 +244,14 @@ window.try_catch_handler_(function () {
     load_log_shown_count = line_count;
     load_log_relay_post();
   }
+  // Shows the shown view's chained bar the top page's sideways scroll.
+  function page_scroll_post() {
+    if (
+      window.report_ui_.page_scroll.is_claimed("frame") &&
+      !view_frame.hidden
+    )
+      view_post("page_scroll_show", window.report_ui_.page_scroll.state());
+  }
   // Holds the focused path the view sent, then draws the menu with it.
   function focused_path_set(path_entries) {
     focused_path_entries = path_entries;
@@ -273,7 +286,17 @@ window.try_catch_handler_(function () {
         )
       )
         view_post("tests_pulldown_closed");
-    } else if (message_tag === "settings_apply")
+    } else if (message_tag === "page_scroll_claim") {
+      window.report_ui_.page_scroll.claim_set(
+        "frame",
+        message_data.is_claimed,
+      );
+      page_scroll_post();
+    } else if (message_tag === "page_scroll_set")
+      window.report_ui_.page_scroll.offset_set(
+        message_data.page_scroll_offset,
+      );
+    else if (message_tag === "settings_apply")
       settings_apply(message_data.setting_name, message_data.setting_value);
     else if (message_tag === "settings_debug_toggle")
       settings_debug_load(!SETTINGS_DEBUG_ENABLED);
@@ -309,6 +332,7 @@ window.try_catch_handler_(function () {
       "message",
       window.try_catch_handler_(view_message_handler),
     );
+    window.report_ui_.page_scroll.change_listen(page_scroll_post);
     view_show();
     window.report_load_log_.page_render_log(() => {});
   }

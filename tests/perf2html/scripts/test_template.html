@@ -77,7 +77,7 @@
       <a href="test_verbose.md">test_verbose.md</a>
       <label for="width-">width:</label>
       <select id="width-" autocomplete="off"></select>
-      <form id="resolution-form-">
+      <form id="window-form-">
         <label for="resolution-">resolution:</label>
         <input
           id="resolution-"
@@ -87,6 +87,15 @@
           required
           autocomplete="off"
         />p
+        <label for="zoom-">zoom:</label>
+        <input
+          id="zoom-"
+          type="number"
+          min="1"
+          step="1"
+          required
+          autocomplete="off"
+        />%
         <button type="submit">apply</button>
       </form>
     </div>
@@ -110,7 +119,8 @@
         );
         const select = document.getElementById("width-");
         const resolution_box = document.getElementById("resolution-");
-        const resolution_form = document.getElementById("resolution-form-");
+        const zoom_box = document.getElementById("zoom-");
+        const window_form = document.getElementById("window-form-");
         const grid = document.getElementById("grid-");
         const report_links = document.getElementById("report-links-");
         const timing_table = document.getElementById("page-timings-");
@@ -120,8 +130,12 @@
         const WIDTH_CHOICE_MAX = 16;
         const WIDTH_DEFAULT = 4;
         const WIDTH_STORAGE_KEY = "perf2html.test.thumbs_width";
+        const ZOOM_HASH_KEY = "zoom";
+        // The zoom percent of no zoom, which a frame takes when none is given.
+        const ZOOM_WHOLE_PERCENT = 100;
         let frame_height = 0,
           frame_width = 0,
+          frame_zoom = 0,
           layout_animation_frame = 0;
         for (let n = 1; n <= WIDTH_CHOICE_MAX; n++) {
           const option = document.createElement("option");
@@ -177,41 +191,61 @@
           localStorage.setItem(WIDTH_STORAGE_KEY, select.value);
         }
 
-        // Returns the hash's resolution, the frame height, null for none.
-        function hash_resolution_read() {
-          const resolution_text = new URLSearchParams(
-            location.hash.slice(1),
-          ).get(RESOLUTION_HASH_KEY);
-          if (resolution_text === null) {
+        // Returns a hash key's whole number above zero, null for none.
+        function hash_number_read(hash_key) {
+          const number_text = new URLSearchParams(location.hash.slice(1)).get(
+            hash_key,
+          );
+          if (number_text === null) {
             return null;
           }
-          if (!/^[1-9][0-9]*$/.test(resolution_text)) {
-            throw new Error(RESOLUTION_HASH_KEY + " holds " + resolution_text);
+          if (!/^[1-9][0-9]*$/.test(number_text)) {
+            throw new Error(hash_key + " holds " + number_text);
           }
-          return Number(resolution_text);
+          return Number(number_text);
         }
 
-        // Returns the hash holding a resolution.
-        function resolution_hash(resolution) {
+        // Returns the hash holding a resolution and a zoom percent.
+        function window_hash(resolution, zoom_percent) {
           return (
-            "#" + new URLSearchParams({ [RESOLUTION_HASH_KEY]: resolution })
+            "#" +
+            new URLSearchParams({
+              [RESOLUTION_HASH_KEY]: resolution,
+              [ZOOM_HASH_KEY]: zoom_percent,
+            })
           );
         }
 
-        // Sizes every frame to a resolution, its width in the shots' aspect.
-        function resolution_apply(resolution) {
+        // Sizes every frame to a resolution in the shots' aspect, zoomed.
+        function window_apply(resolution, zoom_percent) {
           frame_height = resolution;
           frame_width = Math.round((resolution * data.width) / data.height);
+          frame_zoom = zoom_percent / ZOOM_WHOLE_PERCENT;
           resolution_box.value = String(resolution);
+          zoom_box.value = String(zoom_percent);
           build();
         }
 
-        // Applies the hash's resolution, writing the shots' height when none.
-        function hash_resolution_take() {
-          if (hash_resolution_read() === null) {
-            history.replaceState(null, "", resolution_hash(data.height));
+        // Applies the hash's window, writing in each default it lacks.
+        function hash_window_take() {
+          const hash_resolution = hash_number_read(RESOLUTION_HASH_KEY);
+          const hash_zoom_percent = hash_number_read(ZOOM_HASH_KEY);
+          if (hash_resolution === null || hash_zoom_percent === null) {
+            history.replaceState(
+              null,
+              "",
+              window_hash(
+                hash_resolution === null ? data.height : hash_resolution,
+                hash_zoom_percent === null
+                  ? ZOOM_WHOLE_PERCENT
+                  : hash_zoom_percent,
+              ),
+            );
           }
-          resolution_apply(hash_resolution_read());
+          window_apply(
+            hash_number_read(RESOLUTION_HASH_KEY),
+            hash_number_read(ZOOM_HASH_KEY),
+          );
         }
 
         // Sizes whole pixel boxes under a scale quantized for whole rows.
@@ -254,8 +288,10 @@
             box.className = "cell-";
             const frame = document.createElement("iframe");
             frame.src = page.href;
-            frame.width = frame_width;
-            frame.height = frame_height;
+            // Shows the page the window a browser zoom gives, in the same box.
+            frame.style.width = frame_width / frame_zoom + "px";
+            frame.style.height = frame_height / frame_zoom + "px";
+            frame.style.zoom = String(frame_zoom);
             // Opens the page as a user loads it, with no screenshot code.
             const page_address = new URL(page.href, document.baseURI);
             for (const screenshot_key of data.screenshot_keys) {
@@ -279,18 +315,21 @@
           width_choice_write();
           build();
         });
-        // Puts the edited resolution in the hash, which applies it.
-        resolution_form.addEventListener("submit", function (submit_event) {
+        // Puts the edited window in the hash, which applies it.
+        window_form.addEventListener("submit", function (submit_event) {
           submit_event.preventDefault();
-          location.hash = resolution_hash(Number(resolution_box.value));
+          location.hash = window_hash(
+            Number(resolution_box.value),
+            Number(zoom_box.value),
+          );
         });
-        window.addEventListener("hashchange", hash_resolution_take);
+        window.addEventListener("hashchange", hash_window_take);
         new ResizeObserver(layout_defer).observe(grid);
         // Takes the focus from the frames, each of which may have focused one.
         window.addEventListener("load", function () {
           window.focus();
         });
-        hash_resolution_take();
+        hash_window_take();
       })();
     </script>
   </body>
