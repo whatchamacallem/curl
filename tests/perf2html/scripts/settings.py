@@ -44,7 +44,6 @@ CALL_GRAPH_BRANCH_PASS_TEXT = "┃"
 CALL_GRAPH_CLOSED_TEXT = "⊞"
 CALL_GRAPH_DOWNLOAD_FILE_NAME_SUFFIX = "_call_graph.svg"
 CALL_GRAPH_LINE_TEXT = "━"
-CALL_GRAPH_OPEN_LEAST_CUMULATIVE_PERCENT = 0.1
 CALL_GRAPH_PAD_TEXT = " "
 CALL_GRAPH_PAGE_DIR_NAME = "call-graph"
 CALL_GRAPH_REVEAL_CLEARANCE_CHARS = 1
@@ -172,12 +171,7 @@ FLAME_GRAPH_VIEW_ENTRY: tuple[str, str] = (
 )
 
 HEAT_MAP_COUNTER_DESCRIPTION_STRING_ID_PREFIX = "str_counter_"
-HEAT_MAP_COUNTER_LIST_DEFAULT_SHOWN_NAMES: tuple[str, ...] = (
-    COUNTER_LIST_CALLS_LINE_NAME,
-    "Bcm",
-    "D1m",
-    "DLm",
-)
+HEAT_MAP_COUNTER_LIST_DEFAULT_SHOWN_NAMES: tuple[str, ...] = ("Bm",)
 HEAT_MAP_MINIMAP_VIEWPORT_BOX_SMALLEST_PX = 8
 HEAT_MAP_MODEL_DIR_NAME = "data"
 HEAT_MAP_MODEL_GLOBAL_NAME = "report_heat_map_models_"
@@ -188,7 +182,6 @@ HEAT_MAP_SOURCE_TICKER_TAPE_ENTRY_MAX_COUNT = 10
 HEAT_MAP_SOURCE_TAB_SIZE_CHARS = 4
 HEAT_MAP_SOURCE_VIEW_WIDTH_CHARS = 80
 HEAT_MAP_TREE_ALWAYS_LISTED_DIRS = ("lib", "include", "src", "tests/perf")
-HEAT_MAP_TREE_AUTO_EXPAND_ABOVE_SHARE = 0.05
 HEAT_MAP_TREE_BRANCH_LAST_TEXT = "┗━"
 HEAT_MAP_TREE_BRANCH_MIDDLE_TEXT = "┣━"
 HEAT_MAP_TREE_BRANCH_PASS_TEXT = "┃ "
@@ -361,6 +354,7 @@ STYLE_COLOR_LIGHT_MODE: dict[str, list[str]] = {
     ],
     "#10AAA9": [
         "light-mode-status-bar-bg-",
+        "light-mode-table-hover-outline-",
     ],
 }
 STYLE_COLOR_LIGHT_MODE_ROLE_PREFIX = "light-mode-"
@@ -452,6 +446,7 @@ STYLE_VALUE_ENTRIES: dict[str, str] = {
     "page-inset-inline-": "2ch",
     "page-line-width-": "0.1em",
     "page-table-cell-padding-inline-": "1ch",
+    "page-table-title-tool-tip-z-index-": "2",
     "page-table-title-z-index-": "1",
     "page-text-scrollbar-horizontal-height-": "1lh",
     "page-text-scrollbar-vertical-width-": "1ch",
@@ -537,6 +532,8 @@ TRACE_LOAD_SEGMENT_COMMAND: tuple[str, ...] = ("readelf", "-lW")
 TRACE_LOAD_SEGMENT_KEYWORD = "LOAD"
 TRACE_MAPS_EXECUTABLE_FLAG = "x"
 TRACE_RECORD_WORDS = 2
+
+TREE_OPEN_LEAST_CUMULATIVE_PERCENT = 0.1
 
 WIDGET_KEY_NAMES: dict[str, str] = {
     "activate": "Enter",

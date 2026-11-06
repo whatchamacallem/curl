@@ -16,9 +16,6 @@ window.try_catch_handler_(function () {
   const CALL_GRAPH_BRANCH_PASS_TEXT = settings_("CALL_GRAPH_BRANCH_PASS_TEXT");
   const CALL_GRAPH_CLOSED_TEXT = settings_("CALL_GRAPH_CLOSED_TEXT");
   const CALL_GRAPH_LINE_TEXT = settings_("CALL_GRAPH_LINE_TEXT");
-  const CALL_GRAPH_OPEN_LEAST_CUMULATIVE_PERCENT = settings_(
-    "CALL_GRAPH_OPEN_LEAST_CUMULATIVE_PERCENT",
-  );
   const CALL_GRAPH_PAD_TEXT = settings_("CALL_GRAPH_PAD_TEXT");
   const CALL_GRAPH_REVEAL_CLEARANCE_CHARS = settings_(
     "CALL_GRAPH_REVEAL_CLEARANCE_CHARS",
@@ -29,6 +26,7 @@ window.try_catch_handler_(function () {
   const NUMBER_FRACTION_DIGITS = settings_("NUMBER_FRACTION_DIGITS");
   const NUMBER_MULTIPLE_SUFFIX_TEXT = settings_("NUMBER_MULTIPLE_SUFFIX_TEXT");
 
+  const render_character_cells = window.render_character_cells_;
   const render_element = window.render_element_;
   const render_html_escape = window.render_html_escape_;
   // Holds the width of a multiple at full precision, zero's.
@@ -183,26 +181,25 @@ window.try_catch_handler_(function () {
       (call_edge) => !node_path.includes(call_edge.callee_index),
     );
   }
-  // Returns whether a call's cumulative share of the test opens its caller.
-  function edge_opens_caller(call_edge) {
-    return (
-      window.report_ui_.share_of_test(call_edge.inclusive_cost, test_total) >=
-      CALL_GRAPH_OPEN_LEAST_CUMULATIVE_PERCENT
-    );
+  // Lists a path's shown children as the open set reads them.
+  function path_open_edges(node_path) {
+    return shown_callee_edges(node_path).map((call_edge) => ({
+      child_node: [...node_path, call_edge.callee_index],
+      cumulative_cost: call_edge.inclusive_cost,
+    }));
   }
-  // Returns a fresh open set: each shown node with a child of enough cost.
+  // Returns a fresh open set, each root's calls its top nodes.
   function call_graph_open_set() {
-    const open_set = new Set();
-    // Opens a node with a shown child of enough cost, then each child.
-    function node_open(node_path) {
-      const shown_edges = shown_callee_edges(node_path);
-      if (!shown_edges.some(edge_opens_caller)) return;
-      open_set.add(path_key(node_path));
-      for (const call_edge of shown_edges)
-        node_open([...node_path, call_edge.callee_index]);
-    }
-    for (const call_root of call_roots) node_open([call_root.function_index]);
-    return open_set;
+    return window.report_preferences_.tree_open_set(
+      call_roots.flatMap((call_root) =>
+        path_open_edges([call_root.function_index]).map(
+          (open_edge) => open_edge.child_node,
+        ),
+      ),
+      path_open_edges,
+      path_key,
+      test_total,
+    );
   }
   let button_graph_nodes = new WeakMap(),
     cell_symbol_buttons = new WeakMap(),
@@ -213,20 +210,12 @@ window.try_catch_handler_(function () {
     selected_function_name = null,
     sort_mode = null;
 
-  // Makes a root's node, which draws no branch, share or multiple.
-  function root_node(call_root) {
-    return {
-      node_path: [call_root.function_index],
-      call_edge: null,
-      branch_text: "",
-    };
-  }
-  // Lists a node's shown children by the chosen sort, each with its branch.
-  function node_children(graph_node) {
-    const shown_edges = edges_sort(shown_callee_edges(graph_node.node_path));
+  // Lists a path's shown children by the chosen sort, each with its branch.
+  function path_children(node_path) {
+    const shown_edges = edges_sort(shown_callee_edges(node_path));
     const last_index = shown_edges.length - 1;
     return shown_edges.map((call_edge, child_index) => ({
-      node_path: [...graph_node.node_path, call_edge.callee_index],
+      node_path: [...node_path, call_edge.callee_index],
       call_edge,
       branch_text:
         child_index === 0
@@ -254,9 +243,22 @@ window.try_catch_handler_(function () {
   function graph_layout() {
     const layout_rows = [];
     const next_free_rows = [];
+    // Places a path's children from a row, their branch passing between them.
+    function children_place(node_path, least_row) {
+      const child_rows = path_children(node_path).map((child_node) =>
+        node_place(child_node, least_row),
+      );
+      for (
+        let pass_row = child_rows[0] + 1;
+        pass_row < child_rows.at(-1);
+        pass_row++
+      )
+        if (!child_rows.includes(pass_row))
+          layout_rows[pass_row][node_path.length - 1] = PASS_PLACE;
+    }
     // Places a node, then its children when open, and returns its row.
     function node_place(graph_node, least_row) {
-      const group_index = graph_node.node_path.length - 1;
+      const group_index = graph_node.node_path.length - 2;
       const is_open = node_is_open(graph_node);
       // An open node sits below every branch right of it, any other beside.
       const node_row = Math.max(
@@ -274,20 +276,15 @@ window.try_catch_handler_(function () {
           layout_rows[node_row].length,
           group_index + 2,
         );
-      if (!is_open) return node_row;
-      const child_rows = node_children(graph_node).map((child_node) =>
-        node_place(child_node, node_row),
-      );
-      for (
-        let pass_row = child_rows[0] + 1;
-        pass_row < child_rows.at(-1);
-        pass_row++
-      )
-        if (!child_rows.includes(pass_row))
-          layout_rows[pass_row][group_index + 1] = PASS_PLACE;
+      if (is_open) children_place(graph_node.node_path, node_row);
       return node_row;
     }
-    for (const call_root of call_roots) node_place(root_node(call_root), 0);
+    // A root draws no node, its calls starting below every drawn row.
+    for (const call_root of call_roots)
+      children_place(
+        [call_root.function_index],
+        Math.max(0, ...next_free_rows),
+      );
     // Every row holds every group, so each column runs the table's height.
     const group_count = Math.max(
       ...layout_rows.map((layout_row) => layout_row.length),
@@ -311,11 +308,6 @@ window.try_catch_handler_(function () {
     if (layout_place === undefined) return "";
     if (layout_place === PASS_PLACE) return CALL_GRAPH_BRANCH_PASS_TEXT;
     return layout_place.branch_text;
-  }
-  // Returns a node's self share of the test, null for a root.
-  function node_share_percent(graph_node) {
-    if (graph_node.call_edge === null) return null;
-    return self_share_of_test(path_function(graph_node.node_path));
   }
   // Returns a placed node's name and bar end texts, and whether bars follow.
   function symbol_parts(layout_row, group_index) {
@@ -375,9 +367,8 @@ window.try_catch_handler_(function () {
       symbol_part.end_text.length;
     return (
       shown_name_markup +
-      render_html_escape(
-        CALL_GRAPH_LINE_TEXT.repeat(bar_width) + symbol_part.end_text,
-      )
+      render_html_escape(CALL_GRAPH_LINE_TEXT.repeat(bar_width)) +
+      render_character_cells(symbol_part.end_text)
     );
   }
   // Returns a multiple with the most fraction digits its width holds.
@@ -395,7 +386,6 @@ window.try_catch_handler_(function () {
   }
   // Writes a node's calls multiple and its suffix between pads, if it has one.
   function multiple_markup(graph_node) {
-    if (graph_node.call_edge === null) return "";
     const calls_multiple = edge_multiple(graph_node.call_edge);
     if (calls_multiple === null) return "";
     return render_html_escape(
@@ -409,17 +399,15 @@ window.try_catch_handler_(function () {
   function layout_row_markup(layout_row, symbol_widths) {
     return Array.from(layout_row, (layout_place, group_index) => {
       // A closed node's mark takes the empty branch cell right of it.
-      const branch_cell_markup = render_html_escape(
-        mark_fits_right(layout_row, group_index - 1)
-          ? CALL_GRAPH_CLOSED_TEXT
-          : place_branch_text(layout_place),
-      );
+      const branch_cell_markup = mark_fits_right(layout_row, group_index - 1)
+        ? render_character_cells(CALL_GRAPH_CLOSED_TEXT)
+        : render_html_escape(place_branch_text(layout_place));
       if (layout_place === undefined || layout_place === PASS_PLACE)
         return group_markup(branch_cell_markup, "", null, "");
       return group_markup(
         branch_cell_markup,
         multiple_markup(layout_place),
-        node_share_percent(layout_place),
+        self_share_of_test(path_function(layout_place.node_path)),
         symbol_markup(layout_row, group_index, symbol_widths[group_index]),
       );
     }).join("");
@@ -498,7 +486,7 @@ window.try_catch_handler_(function () {
       parseFloat(table_style.scrollMarginLeft),
     );
   }
-  // Shows the selected function after the heading's copy and download.
+  // Shows the selected function after the heading's copy.
   function heading_tail_show() {
     const selected_entries =
       selected_function_name === null
@@ -534,7 +522,7 @@ window.try_catch_handler_(function () {
     if (had_focus) toggled_place.symbol_button.focus({ preventScroll: true });
     cells_reveal(
       is_opening
-        ? node_children(graph_node).flatMap(
+        ? path_children(graph_node.node_path).flatMap(
             (child_node) =>
               node_places.get(path_key(child_node.node_path)).node_cells,
           )

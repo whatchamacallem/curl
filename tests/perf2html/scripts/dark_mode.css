@@ -114,6 +114,7 @@
   .menu-button-:focus-visible,
   .menu-button-.flash-,
   .menu-button-.open-,
+  .menu-button-.table-title-tool-tip-,
   .menu-pulldown-entry-list- > .highlighted-entry- {
     background: var(--dark-mode-menu-focus-bg-);
     color: var(--dark-mode-menu-focus-fg-);
@@ -142,6 +143,10 @@
     bottom: calc(anchor(bottom) - var(--page-line-width-));
     border-width: var(--page-line-width-);
     border-color: var(--dark-mode-menu-normal-outline-);
+  }
+  /* A hovered source line's frame starts at the tree's edge, in view. */
+  table.heat-map-source-table-::before {
+    left: anchor(--heat-map-source-hover-tree-cell- right);
   }
   .heat-map-tree-node-:not(.cold-):hover::before {
     inset: 0 0 calc(-1 * var(--page-line-width-));

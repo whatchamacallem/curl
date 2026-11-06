@@ -117,9 +117,15 @@ pre {
   min-width: max-content;
 }
 
-/* The heat map: the main column, then the minimap and the main box's bar. */
+/* The heat map: its hottest lines over the panes. */
 #heat-map- {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+/* The panes: the main column, then the minimap and the main box's bar. */
+#heat-map-panes- {
   display: flex;
+  min-height: 0;
 }
 /* The main column fills the row until its edge narrows it, sizing the tree. */
 #heat-map-main-column- {
@@ -162,6 +168,12 @@ pre {
   display: inline-block;
   padding: 0 var(--page-emphasis-padding-inline-);
   white-space: pre;
+}
+
+/* A character in one page character's room, whatever font draws it. */
+.character-cell- {
+  display: inline-block;
+  width: 1ch;
 }
 
 /* A strip: a line of buttons, a status line under the menu's. */
@@ -299,12 +311,27 @@ tr.row-link- {
 #heat-map-main-column-.column-edge-grab- * {
   cursor: col-resize;
 }
-/* A hovered row a click acts on, or a call graph row, anchors its frame. */
-.table- > tbody > :is(tr.row-link-, tr.clickable-):hover,
+/* A title's tool tip hangs under it, flipped to stay in the window. */
+.table- th[data-tool-tip-text-]:hover {
+  anchor-name: --table-title-tool-tip-anchor-;
+}
+.menu-button-.table-title-tool-tip- {
+  position: fixed;
+  position-anchor: --table-title-tool-tip-anchor-;
+  position-try-fallbacks: flip-inline;
+  top: anchor(bottom);
+  right: anchor(right);
+  z-index: var(--page-table-title-tool-tip-z-index-);
+  pointer-events: none;
+}
+/* A hovered link row, source line or call graph row anchors its frame. */
+.table- > tbody > :is(tr.row-link-, tr[data-line-number-]):hover,
 #call-graph-table- > tbody > tr:hover {
   anchor-name: --table-hover-row-;
 }
-table.table-:has(> tbody > :is(tr.row-link-, tr.clickable-):hover)::before,
+table.table-:has(
+    > tbody > :is(tr.row-link-, tr[data-line-number-]):hover
+  )::before,
 #call-graph-table-:has(> tbody > tr:hover)::before {
   content: "";
   position: absolute;

@@ -46,6 +46,9 @@ window.report_preferences_ = window.try_catch_handler_(function () {
   const STORAGE_KEY_HEATMAP_COUNTER_LIST = settings_(
     "STORAGE_KEY_HEATMAP_COUNTER_LIST",
   );
+  const TREE_OPEN_LEAST_CUMULATIVE_PERCENT = settings_(
+    "TREE_OPEN_LEAST_CUMULATIVE_PERCENT",
+  );
   const STORAGE_KEY_HEATMAP_SCALE = settings_("STORAGE_KEY_HEATMAP_SCALE");
   const STORAGE_KEY_HEATMAP_SORT = settings_("STORAGE_KEY_HEATMAP_SORT");
 
@@ -223,16 +226,36 @@ window.report_preferences_ = window.try_catch_handler_(function () {
   // Lists the counters pulldown's choices, each line of the list, marked.
   function counter_choices(list_key) {
     return line_choices(list_key).map((line_choice) => ({
-      label: window.ui_strings_.text_fill("str_menu_counter_entry", {
-        mark: window.ui_strings_.text(
-          line_choice.is_shown
-            ? "str_menu_counter_selected_mark"
-            : "str_menu_counter_unselected_mark",
-        ),
-        label: line_choice.label,
-      }),
+      label: line_choice.label,
+      mark: window.ui_strings_.text(
+        line_choice.is_shown
+          ? "str_menu_counter_selected_mark"
+          : "str_menu_counter_unselected_mark",
+      ),
       value: line_choice.value,
     }));
+  }
+  // Returns a fresh open set: each node with a child of enough cost.
+  function tree_open_set(top_nodes, node_edges, node_key, test_total) {
+    const open_set = new Set();
+    // Returns whether an edge's cumulative share of the test opens its parent.
+    function edge_opens_parent(child_edge) {
+      return (
+        window.report_ui_.share_of_test(
+          child_edge.cumulative_cost,
+          test_total,
+        ) >= TREE_OPEN_LEAST_CUMULATIVE_PERCENT
+      );
+    }
+    // Opens a node with a child of enough cost, then each child.
+    function node_open(tree_node) {
+      const child_edges = node_edges(tree_node);
+      if (!child_edges.some(edge_opens_parent)) return;
+      open_set.add(node_key(tree_node));
+      for (const child_edge of child_edges) node_open(child_edge.child_node);
+    }
+    top_nodes.forEach(node_open);
+    return open_set;
   }
   // Copies the lines of a counters list, each frozen as the page shows it.
   function counter_lines_freeze(counter_lines) {
@@ -511,5 +534,6 @@ window.report_preferences_ = window.try_catch_handler_(function () {
     seed,
     shown_line_names,
     shown_line_parts,
+    tree_open_set,
   };
 })();

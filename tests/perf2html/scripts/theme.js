@@ -1043,6 +1043,16 @@ window.report_ui_ = window.try_catch_handler_(function () {
       label_markup,
     );
   }
+  // Writes text a cell per character, so a wide fallback glyph moves nothing.
+  function render_character_cells(cell_text) {
+    return Array.from(cell_text, (cell_character) =>
+      render_element(
+        "span",
+        { class: "character-cell-" },
+        render_html_escape(cell_character),
+      ),
+    ).join("");
+  }
 
   function pulldown_pattern(search_text) {
     try {
@@ -1169,8 +1179,9 @@ window.report_ui_ = window.try_catch_handler_(function () {
       if (relabelled_entries.length !== entries.length)
         window.throw_exception_("str_error_internal");
       entries.forEach((entry_element, entry_index) => {
-        entry_element.textContent =
-          relabelled_entries[entry_index].textContent;
+        entry_element.replaceChildren(
+          ...relabelled_entries[entry_index].childNodes,
+        );
       });
     }
     function root_focus() {
@@ -2030,6 +2041,9 @@ window.report_ui_ = window.try_catch_handler_(function () {
                 ...(column.name ? { "data-column-name-": column.name } : {}),
                 ...(column.is_sized_by_bar
                   ? { "data-column-sized-by-bar-": "" }
+                  : {}),
+                ...(column.measure && column.measure !== column.label
+                  ? { "data-tool-tip-text-": column.measure }
                   : {}),
               },
               render_html_escape(column.label),
@@ -2942,14 +2956,15 @@ window.report_ui_ = window.try_catch_handler_(function () {
       })),
     );
   }
-  // Makes one pulldown entry element per choice of a label and a value.
+  // Makes one pulldown entry element per choice: any mark, a label, a value.
   function strip_choice_entries(choices) {
     return choices.map((choice) =>
       render_element_of(
         render_element(
           "span",
           { "data-entry-value-": choice.value },
-          render_html_escape(choice.label),
+          render_character_cells(choice.mark || "") +
+            render_html_escape(choice.label),
         ),
       ),
     );
@@ -3205,10 +3220,24 @@ window.report_ui_ = window.try_catch_handler_(function () {
         : row_count_checked(count_key, Number(default_count_text));
     const table_body = table_element ? table_element.tBodies[0] : null;
     const all_rows = table_body ? [...table_body.rows] : [];
-    const copy_text = window.ui_strings_.text("str_table_heading_copy");
-    const download_text = window.ui_strings_.text(
-      "str_table_heading_download",
+    // Holds the copy pulldown's entries, each with the action it takes.
+    const copy_choices = [
+      {
+        label: window.ui_strings_.text("str_table_heading_copy_text"),
+        on_select: table_copy,
+        value: "text",
+      },
+      {
+        label: window.ui_strings_.text("str_table_heading_copy_svg"),
+        on_select: table_download,
+        value: "svg",
+      },
+    ];
+    const copy_options = choice_pulldown_options(
+      () => strip_choice_entries(copy_choices),
+      copy_choose,
     );
+    const copy_text = window.ui_strings_.text("str_table_heading_copy");
     const row_count_options = choice_pulldown_options(
       row_count_entries,
       row_count_choose,
@@ -3283,6 +3312,12 @@ window.report_ui_ = window.try_catch_handler_(function () {
       // A made element saves nothing until the page adopts it.
       document.adoptNode(render_element_of(link_markup)).click();
     }
+    // Takes the copy pulldown's chosen entry's action.
+    function copy_choose(chosen_value) {
+      copy_choices
+        .find((copy_choice) => copy_choice.value === chosen_value)
+        .on_select();
+    }
     function heading_render() {
       const title_entries = heading_text
         ? [
@@ -3292,30 +3327,27 @@ window.report_ui_ = window.try_catch_handler_(function () {
           ]
         : [];
       const count_entries = count_key === null ? [] : [count_entry()];
-      const download_entries =
+      const copy_entry =
         download_file_name === null
-          ? []
-          : [
-              strip_entry_make("download", "action", download_text, {
-                on_activate: table_download,
-              }),
-            ];
+          ? strip_entry_make("copy", "action", copy_text, {
+              on_activate: table_copy,
+            })
+          : strip_entry_make("copy", "pulldown", copy_text, {
+              pulldown_options: copy_options,
+            });
       strip_handle = strip_render(
         heading_element,
         [
           ...title_entries,
           ...count_entries,
           ...state_entries,
-          strip_entry_make("copy", "action", copy_text, {
-            on_activate: table_copy,
-          }),
-          ...download_entries,
+          copy_entry,
           ...tail_entries,
         ],
         [],
       );
     }
-    // Shows entries after the copy and download, rendering cells again.
+    // Shows entries after the copy, rendering cells again.
     function tail_entries_set(shown_entries) {
       tail_entries = shown_entries;
       heading_render();
@@ -3338,7 +3370,7 @@ window.report_ui_ = window.try_catch_handler_(function () {
     });
     heading_reset();
   }
-  // Shows a page's entries after its attached heading's copy and download.
+  // Shows a page's entries after its attached heading's copy.
   function page_heading_tail_set(heading_element, tail_entries) {
     const attached_heading = attached_headings.get(heading_element);
     if (!attached_heading) window.throw_exception_("str_error_internal");
@@ -3968,11 +4000,34 @@ window.report_ui_ = window.try_catch_handler_(function () {
     resize_settle_callbacks.push(settle_callback);
   }
 
+  // Shows the tool tip of the column title under the pointer, none elsewhere.
+  function title_tool_tip_show(pointer_event) {
+    const title_cell = pointer_event.target.closest("th[data-tool-tip-text-]");
+    title_tool_tip.hidden = !title_cell;
+    if (title_cell)
+      title_tool_tip.textContent = title_cell.getAttribute(
+        "data-tool-tip-text-",
+      );
+  }
+
+  window.render_character_cells_ = render_character_cells;
   window.render_element_ = render_element;
   window.render_element_of_ = render_element_of;
   window.render_html_escape_ = render_html_escape;
   window.render_menu_button_ = render_menu_button;
   window.render_page_emphasis_ = render_page_emphasis;
+  const title_tool_tip = render_element_of(
+    render_element(
+      "div",
+      { class: "menu-button- table-title-tool-tip-", hidden: "" },
+      "",
+    ),
+  );
+  document.body.append(title_tool_tip);
+  document.addEventListener(
+    "pointerover",
+    window.try_catch_handler_(title_tool_tip_show),
+  );
   font_fit_apply();
   dark_mode_show(window.report_dark_mode_.opening_enabled());
   if (is_scaled) design_scale_stop = design_scale_stored_stop();
