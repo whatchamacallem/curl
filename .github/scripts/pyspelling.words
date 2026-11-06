@@ -47,7 +47,6 @@ autoreconf
 Autotools
 autotools
 AVR
-AVX
 AVX2
 AWS
 AWS-LC

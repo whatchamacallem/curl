@@ -167,12 +167,19 @@ static int inet_pton6(const char *src, unsigned char *dst)
     *tp++ = (unsigned char)(val & 0xff);
   }
   if(colonp) {
-    const size_t n = (size_t)(tp - colonp);
+    /*
+     * Since some memmove()'s erroneously fail to handle
+     * overlapping regions, we do the shift by hand.
+     */
+    const ssize_t n = tp - colonp;
+    ssize_t i;
 
     if(tp == endp)
       return 0;
-    memmove(endp - n, colonp, n);
-    memset(colonp, 0, (size_t)(endp - n - colonp));
+    for(i = 1; i <= n; i++) {
+      *(endp - i) = *(colonp + n - i);
+      *(colonp + n - i) = 0;
+    }
     tp = endp;
   }
   if(tp != endp)

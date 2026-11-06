@@ -268,11 +268,6 @@ jobs:
             CFLAGS: -O2
             generate: -DENABLE_DEBUG=ON -DUSE_AVX2=ON
 
-          - name: 'openssl AVX-512'
-            install_steps: skipall  # the runner CPU may lack AVX-512
-            CFLAGS: -O2
-            generate: -DENABLE_DEBUG=ON -DUSE_AVX_512=ON
-
           - name: 'openssl clang krb5 openldap static'
             image: ubuntu-24.04
             install_steps: openldap-static
@@ -883,7 +878,6 @@ jobs:
           ./scripts/singleuse.pl --unit "${libcurla}"
 
       - name: 'curl -V'
-        if: ${{ !contains(matrix.build.generate, '-DUSE_AVX_512=ON') }}
         run: |
           find . -type f \( -name curl -o -name '*.so.*' -o -name '*.a' \) -print0 | sort -z | xargs -0 file --
           find . -type f \( -name curl -o -name '*.so.*' -o -name '*.a' \) -print0 | sort -z | xargs -0 stat -c '%10s bytes: %n' --

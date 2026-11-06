@@ -1135,35 +1135,6 @@ if(USE_AVX2)
   message(STATUS "AVX2 routines enabled (experimental)")
 endif()
 
-option(USE_AVX_512 "Enable AVX-512 routines (experimental)" OFF)
-if(USE_AVX_512)
-  if(MSVC)
-    set(_avx512_flags "/arch:AVX512")
-  else()
-    set(_avx512_flags "-mavx512bw -mavx512vl")
-  endif()
-  cmake_push_check_state()
-  string(APPEND CMAKE_REQUIRED_FLAGS " ${_avx512_flags}")
-  check_c_source_compiles("
-    #include <immintrin.h>
-    #if !defined(__AVX512BW__) || !defined(__AVX512VL__)
-    #error \"AVX-512 BW/VL not enabled\"
-    #endif
-    int main(void)
-    {
-      __m256i v = _mm256_set1_epi8('%');
-      __mmask32 k = _mm256_cmple_epu8_mask(v, v);
-      v = _mm256_mask_add_epi8(v, k, v, v);
-      return _mm256_movemask_epi8(v);
-    }" HAVE_AVX_512_INTRINSICS)
-  cmake_pop_check_state()
-  if(NOT HAVE_AVX_512_INTRINSICS)
-    message(FATAL_ERROR "USE_AVX_512 requires a compiler with ${_avx512_flags} support")
-  endif()
-  string(APPEND CMAKE_C_FLAGS " ${_avx512_flags}")
-  message(STATUS "AVX-512 routines enabled (experimental)")
-endif()
-
 option(USE_PROXY_HTTP3 "Enable HTTP/3 proxy support (experimental)" OFF)
 
 option(USE_NGHTTP2 "Use nghttp2 library" ON)

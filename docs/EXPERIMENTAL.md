@@ -87,27 +87,23 @@ Graduation requirements:
 
 - feedback from users saying that session export works for their use cases
 
-## AVX2 and AVX-512 routines
+## AVX2 routines
 
 Vectorized versions of selected internal string routines. Enabled with
-`--enable-avx2` or `-DUSE_AVX2=ON`, and `--enable-avx512` or
-`-DUSE_AVX_512=ON`. Each option adds the matching `-m` flags, or `/arch:`
-for MSVC, to the build and fails if the compiler does not support them, so
-the resulting binaries
-require a CPU with that instruction set. When both are enabled the AVX-512
-version is used. The first routine is the `%XX` decoding in
-`Curl_urldecode()`.
+`--enable-avx2` or `-DUSE_AVX2=ON`. The option adds `-mavx2`, or
+`/arch:AVX2` for MSVC, to the build and fails if the compiler does not
+support it, so the resulting binaries require a CPU with AVX2. The first
+routine is the `%XX` decoding in `Curl_urldecode()`.
 
 Graduation requirements:
 
 - runtime CPU dispatch, so that distribution builds benefit without
   compiler architecture flags
 
-- measurements showing a gain on real inputs, with the AVX-512 frequency
-  effect quantified
+- measurements showing a gain on real inputs
 
-- the C, AVX2 and AVX-512 versions produce identical output, verified by
-  the existing tests in CI on every run, and no test cases disabled
+- the C and AVX2 versions produce identical output, verified by the
+  existing tests in CI on every run, and no test cases disabled
 
 - at least one more routine converted, to prove the scheme generalizes
 
